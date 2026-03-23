@@ -143,8 +143,16 @@ export default function Office() {
   const [streaming, setStreaming] = useState(false);
   const [positions, setPositions] = useState<Record<string, AgentPos>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [inMeeting, setInMeeting] = useState(false);
+  const [meetingTopic, setMeetingTopic] = useState("");
+  const [meetingLog, setMeetingLog] = useState<{ agent: string; color: string; text: string }[]>([]);
+  const [meetingRunning, setMeetingRunning] = useState(false);
+  const [meetingInput, setMeetingInput] = useState("");
+  const meetingAbortRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const meetingEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const meetingInputRef = useRef<HTMLInputElement>(null);
   const animRef = useRef<number>(0);
   const posRef = useRef<Record<string, AgentPos>>({});
   const toastIdRef = useRef(0);
@@ -378,13 +386,136 @@ export default function Office() {
     if (e.key === "Escape") closeChat();
   }
 
+  function callMeeting() {
+    closeChat();
+    setInMeeting(true);
+    setMeetingLog([]);
+    setMeetingTopic("");
+    setMeetingRunning(false);
+    meetingAbortRef.current = false;
+    setTimeout(() => meetingInputRef.current?.focus(), 200);
+  }
+
+  function leaveMeeting() {
+    meetingAbortRef.current = true;
+    setInMeeting(false);
+    setMeetingRunning(false);
+    setMeetingLog([]);
+  }
+
+  async function callAgent(agent: Agent, history: { role: string; content: string }[]): Promise<string> {
+    const body: Record<string, unknown> = {
+      model: agent.model,
+      max_tokens: 1024,
+      messages: history,
+      stream: false,
+    };
+    const sysPrompt = `${agent.systemPrompt ? agent.systemPrompt + "\n\n" : ""}You are ${agent.name}${agent.jobTitle ? `, ${agent.jobTitle}` : ""}. You are in a meeting with colleagues. Keep your responses concise (2-4 sentences). Be conversational and direct.`;
+    body.system = sysPrompt;
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": agent.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) return `[Error: ${res.status}]`;
+    const data = await res.json();
+    return data.content?.[0]?.text || "[No response]";
+  }
+
+  async function startMeeting(e: React.FormEvent) {
+    e.preventDefault();
+    if (!meetingInput.trim() || agents.length < 2 || meetingRunning) return;
+
+    const topic = meetingInput.trim();
+    setMeetingInput("");
+    setMeetingTopic(topic);
+    setMeetingRunning(true);
+    meetingAbortRef.current = false;
+
+    const log: { agent: string; color: string; text: string }[] = [];
+    const conversationHistory: { role: string; content: string }[] = [
+      { role: "user", content: `Meeting topic: ${topic}\n\nPlease share your thoughts on this topic.` },
+    ];
+
+    // 2 rounds of discussion (each agent speaks once per round)
+    for (let round = 0; round < 2; round++) {
+      for (let i = 0; i < agents.length; i++) {
+        if (meetingAbortRef.current) return;
+
+        const agent = agents[i];
+        const color = COLORS[i % COLORS.length];
+
+        // Add thinking indicator
+        const thinkingEntry = { agent: agent.name, color, text: "..." };
+        setMeetingLog([...log, thinkingEntry]);
+
+        const response = await callAgent(agent, conversationHistory);
+        if (meetingAbortRef.current) return;
+
+        const entry = { agent: agent.name, color, text: response };
+        log.push(entry);
+        setMeetingLog([...log]);
+
+        // Add this agent's response to history so next agent sees it
+        conversationHistory.push({ role: "assistant", content: `${agent.name}: ${response}` });
+        if (i < agents.length - 1 || round < 1) {
+          conversationHistory.push({ role: "user", content: "Please respond to what was just said and add your perspective." });
+        }
+      }
+    }
+
+    setMeetingRunning(false);
+  }
+
+  useEffect(() => {
+    meetingEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [meetingLog]);
+
+  function handleMeetingKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); startMeeting(e); }
+    if (e.key === "Escape") leaveMeeting();
+  }
+
+  // Get seat positions around a conference table
+  function getSeatPosition(index: number, total: number) {
+    // Distribute agents around an oval conference table
+    const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
+    const rx = 30; // x radius
+    const ry = 18; // y radius
+    return {
+      x: 50 + rx * Math.cos(angle),
+      y: 52 + ry * Math.sin(angle),
+    };
+  }
+
   if (loading) return <p className="text-gray-500">Loading...</p>;
 
   return (
     <div className="flex gap-4 h-[calc(100vh-4rem)]">
-      {/* Left: Office room */}
+      {/* Left: Room */}
       <div className="flex-1 flex flex-col min-w-0">
-        <h1 className="text-2xl font-bold mb-4 shrink-0">Office</h1>
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <h1 className="text-2xl font-bold">{inMeeting ? "Meeting Room" : "Office"}</h1>
+          {agents.length >= 2 && (
+            <button
+              onClick={inMeeting ? leaveMeeting : callMeeting}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+                inMeeting
+                  ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                  : "bg-white/10 text-white hover:bg-white/15 border border-white/10"
+              }`}
+            >
+              {inMeeting ? "Leave Meeting" : "Call Meeting"}
+            </button>
+          )}
+        </div>
 
         <div className="relative flex-1 max-h-[600px] rounded-lg overflow-visible" style={{
           aspectRatio: "4/3",
@@ -612,10 +743,134 @@ export default function Office() {
             );
           })}
         </div>
+
+        {/* Meeting Room — overlays the office when in meeting */}
+        {inMeeting && (
+          <div className="absolute inset-0 rounded-lg overflow-hidden" style={{
+            background: "#d8ccb8",
+            boxShadow: "inset 0 0 0 4px #6b7b8d, inset 0 0 0 6px #4a5568",
+            zIndex: 40,
+          }}>
+            {/* Meeting room floor */}
+            <div className="absolute inset-0 rounded-lg" style={{
+              background: "repeating-conic-gradient(#d0c4ae 0% 25%, #d8ccb8 0% 50%) 0 0 / 40px 40px",
+            }} />
+
+            {/* Wall */}
+            <div className="absolute top-0 left-0 right-0 h-[15%] rounded-t-lg" style={{
+              background: "linear-gradient(180deg, #5a6a7a 0%, #6a7a8a 100%)",
+            }}>
+              <div className="absolute bottom-0 left-0 right-0 h-[4px] bg-[#4a5060]" />
+              {/* Big window */}
+              <div className="absolute top-[10%] left-[15%] w-[70%] h-[65%] rounded-sm overflow-hidden" style={{
+                background: "linear-gradient(180deg, #87ceeb 0%, #aadcf0 100%)",
+                border: "3px solid #5a6a7a",
+              }}>
+                <div className="absolute inset-0 border-r-2 border-[#5a6a7a]" style={{ width: "33%" }} />
+                <div className="absolute inset-0 border-r-2 border-[#5a6a7a]" style={{ width: "66%" }} />
+              </div>
+              {/* "MEETING ROOM" sign */}
+              <div className="absolute top-[15%] right-[4%] px-2 py-0.5 bg-[#f5f0e0] border border-[#8b7355] rounded-sm">
+                <span className="text-[6px] font-bold text-[#5a4a30]">MEETING</span>
+              </div>
+            </div>
+
+            {/* Big conference table */}
+            <div className="absolute left-1/2 top-[52%] -translate-x-1/2 -translate-y-1/2" style={{ zIndex: 5 }}>
+              <svg viewBox="0 0 160 80" className="w-64 h-32" style={{ imageRendering: "pixelated" }}>
+                <ellipse cx="84" cy="44" rx="78" ry="38" fill="rgba(0,0,0,0.08)" />
+                <ellipse cx="80" cy="40" rx="78" ry="38" fill="#b8905a" />
+                <ellipse cx="80" cy="40" rx="74" ry="34" fill="#c8a06a" />
+                <ellipse cx="80" cy="36" rx="74" ry="34" fill="#d4ad78" opacity="0.4" />
+              </svg>
+            </div>
+
+            {/* Agents seated around table */}
+            {agents.map((agent, i) => {
+              const seat = getSeatPosition(i, agents.length);
+              const color = COLORS[i % COLORS.length];
+              const female = isFemale(agent.name);
+              const facingRight = seat.x < 50;
+              return (
+                <div
+                  key={agent.id}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+                  style={{ left: `${seat.x}%`, top: `${seat.y}%`, zIndex: Math.round(seat.y) + 5 }}
+                >
+                  <div className="mb-0.5 text-center">
+                    <div className="text-[9px] font-bold whitespace-nowrap" style={{ color }}>{agent.name}</div>
+                    {agent.jobTitle && <div className="text-[7px] text-gray-500 whitespace-nowrap">{agent.jobTitle}</div>}
+                  </div>
+                  {female
+                    ? <FemaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
+                    : <MaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
+                  }
+                  <div className="w-6 h-1.5 rounded-full bg-black/15 -mt-0.5" />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
+      {/* Right: Meeting log panel */}
+      {inMeeting && (
+        <div className="w-80 shrink-0 flex flex-col border-l border-white/10 pl-4">
+          <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3 shrink-0">
+            <div>
+              <h2 className="font-bold text-sm">Meeting</h2>
+              {meetingTopic && <p className="text-gray-500 text-[10px] truncate max-w-[200px]">{meetingTopic}</p>}
+            </div>
+            {meetingRunning && (
+              <span className="text-[10px] text-green-400 animate-pulse">In progress...</span>
+            )}
+          </div>
+
+          {/* Meeting log */}
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {meetingLog.length === 0 && !meetingRunning && (
+              <p className="text-gray-600 text-xs text-center mt-8">Enter a topic to start the meeting</p>
+            )}
+            {meetingLog.map((entry, i) => (
+              <div key={i}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
+                  <span className="text-xs font-bold" style={{ color: entry.color }}>{entry.agent}</span>
+                </div>
+                <div className="ml-3.5 text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">
+                  {entry.text === "..." ? (
+                    <span className="text-gray-500 animate-pulse">thinking...</span>
+                  ) : entry.text}
+                </div>
+              </div>
+            ))}
+            <div ref={meetingEndRef} />
+          </div>
+
+          {/* Meeting input */}
+          <form onSubmit={startMeeting} className="flex gap-2 items-center pt-3 border-t border-white/10 mt-2 shrink-0">
+            <input
+              ref={meetingInputRef}
+              value={meetingInput}
+              onChange={(e) => setMeetingInput(e.target.value)}
+              onKeyDown={handleMeetingKeyDown}
+              placeholder={meetingRunning ? "Meeting in progress..." : "Meeting topic..."}
+              disabled={meetingRunning}
+              className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-xs"
+            />
+            <button
+              type="submit"
+              disabled={meetingRunning || !meetingInput.trim()}
+              className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs"
+            >
+              Start
+            </button>
+          </form>
+        </div>
+      )}
+
       {/* Right: Conversation panel */}
-      {chatAgent && (
+      {!inMeeting && chatAgent && (
         <div className="w-80 shrink-0 flex flex-col border-l border-white/10 pl-4">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3 shrink-0">
