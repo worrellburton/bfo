@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 const navItems = [
   { to: "/", label: "Home" },
   { to: "/frameworks", label: "Frameworks" },
+  { to: "/assets", label: "Assets" },
   { to: "/notes", label: "Notes" },
 ];
 

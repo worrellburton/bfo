@@ -5,6 +5,8 @@ export default [
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
     route("frameworks", "routes/frameworks.tsx"),
+    route("assets", "routes/assets.tsx"),
+    route("assets/:id", "routes/asset-detail.tsx"),
     route("notes", "routes/notes.tsx"),
   ]),
 ] satisfies RouteConfig;
