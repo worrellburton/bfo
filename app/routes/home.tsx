@@ -1,19 +1,12 @@
-import { redirect } from "react-router";
-import type { Route } from "./+types/home";
-import { isAuthenticated } from "../session.server";
+import { useNavigate } from "react-router";
+import { useEffect } from "react";
+import { isAuthenticated } from "../auth";
 
 export function meta() {
   return [
     { title: "BFO - Weight tailored to you" },
     { name: "description", content: "Look, feel and perform your best every day." },
   ];
-}
-
-export async function loader({ request }: Route.LoaderArgs) {
-  if (!(await isAuthenticated(request))) {
-    throw redirect("/login");
-  }
-  return {};
 }
 
 const heroCards = [
@@ -54,6 +47,16 @@ const trustBadges = [
 ];
 
 export default function Home() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate("/login");
+    }
+  }, [navigate]);
+
+  if (!isAuthenticated()) return null;
+
   return (
     <div className="min-h-screen bg-white text-gray-900">
       {/* Navigation */}

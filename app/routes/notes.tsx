@@ -1,17 +1,9 @@
-import { redirect } from "react-router";
-import type { Route } from "./+types/notes";
-import { isAuthenticated } from "../session.server";
+import { useNavigate } from "react-router";
 import { useEffect, useState } from "react";
+import { isAuthenticated } from "../auth";
 
 export function meta() {
   return [{ title: "BFO - Notes" }];
-}
-
-export async function loader({ request }: Route.LoaderArgs) {
-  if (!(await isAuthenticated(request))) {
-    throw redirect("/login");
-  }
-  return {};
 }
 
 interface Note {
@@ -22,10 +14,17 @@ interface Note {
 }
 
 export default function Notes() {
+  const navigate = useNavigate();
   const [notes, setNotes] = useState<Note[]>([]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate("/login");
+    }
+  }, [navigate]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
