@@ -8,6 +8,8 @@ const navItems = [
   { to: "/frameworks", label: "Frameworks" },
   { to: "/assets", label: "Assets" },
   { to: "/notes", label: "Notes" },
+  { to: "/agents", label: "Agents" },
+  { to: "/office", label: "Office" },
 ];
 
 export default function AppLayout() {

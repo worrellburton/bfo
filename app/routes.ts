@@ -8,5 +8,8 @@ export default [
     route("assets", "routes/assets.tsx"),
     route("assets/:id", "routes/asset-detail.tsx"),
     route("notes", "routes/notes.tsx"),
+    route("agents", "routes/agents.tsx"),
+    route("agents/:id", "routes/agent-chat.tsx"),
+    route("office", "routes/office.tsx"),
   ]),
 ] satisfies RouteConfig;
