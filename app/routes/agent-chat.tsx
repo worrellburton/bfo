@@ -12,15 +12,16 @@ interface Agent {
   apiKey: string;
 }
 
-interface PdfAttachment {
+interface FileAttachment {
   name: string;
   base64: string;
+  mediaType: string;
 }
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  pdf?: PdfAttachment;
+  file?: FileAttachment;
 }
 
 export default function AgentChat() {
@@ -30,11 +31,13 @@ export default function AgentChat() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pendingPdf, setPendingPdf] = useState<PdfAttachment | null>(null);
+  const [pendingFile, setPendingFile] = useState<FileAttachment | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ACCEPTED_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"];
 
   useEffect(() => {
     async function loadAgent() {
@@ -72,11 +75,11 @@ export default function AgentChat() {
   }, [input]);
 
   function handleFile(file: File) {
-    if (file.type !== "application/pdf") return;
+    if (!ACCEPTED_TYPES.includes(file.type)) return;
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = (reader.result as string).split(",")[1];
-      setPendingPdf({ name: file.name, base64 });
+      setPendingFile({ name: file.name, base64, mediaType: file.type });
     };
     reader.readAsDataURL(file);
   }
@@ -96,23 +99,23 @@ export default function AgentChat() {
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if ((!input.trim() && !pendingPdf) || !agent || streaming) return;
+    if ((!input.trim() && !pendingFile) || !agent || streaming) return;
 
-    const userMessage: Message = { role: "user", content: input.trim() || (pendingPdf ? `[Attached: ${pendingPdf.name}]` : ""), pdf: pendingPdf || undefined };
-    const currentPdf = pendingPdf;
+    const userMessage: Message = { role: "user", content: input.trim() || (pendingFile ? `[Attached: ${pendingFile.name}]` : ""), file: pendingFile || undefined };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput("");
-    setPendingPdf(null);
+    setPendingFile(null);
     setStreaming(true);
 
     try {
       const apiMessages = newMessages.map((m) => {
-        if (m.pdf) {
-          const content: unknown[] = [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: m.pdf.base64 } },
-          ];
-          if (m.content && m.content !== `[Attached: ${m.pdf.name}]`) {
+        if (m.file) {
+          const isImage = m.file.mediaType.startsWith("image/");
+          const content: unknown[] = isImage
+            ? [{ type: "image", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }]
+            : [{ type: "document", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }];
+          if (m.content && m.content !== `[Attached: ${m.file.name}]`) {
             content.push({ type: "text", text: m.content });
           }
           return { role: m.role, content };
@@ -247,7 +250,7 @@ export default function AgentChat() {
               <svg className="w-8 h-8 text-blue-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
-              <p className="text-blue-400 text-sm font-medium">Drop PDF here</p>
+              <p className="text-blue-400 text-sm font-medium">Drop file here</p>
             </div>
           </div>
         )}
@@ -255,7 +258,7 @@ export default function AgentChat() {
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-gray-600 text-sm">Send a message to start chatting with {agent.name}</p>
-              <p className="text-gray-700 text-xs mt-2">You can drag & drop PDFs into the chat</p>
+              <p className="text-gray-700 text-xs mt-2">You can drag & drop PDFs or images into the chat</p>
             </div>
           </div>
         )}
@@ -268,15 +271,19 @@ export default function AgentChat() {
                   : "bg-white/5 text-gray-200 rounded-bl-md"
               }`}
             >
-              {msg.pdf && (
-                <div className="flex items-center gap-2 mb-1.5 px-2 py-1.5 bg-white/5 rounded-lg">
-                  <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  <span className="text-xs text-gray-300 truncate">{msg.pdf.name}</span>
-                </div>
+              {msg.file && (
+                msg.file.mediaType.startsWith("image/") ? (
+                  <img src={`data:${msg.file.mediaType};base64,${msg.file.base64}`} alt={msg.file.name} className="max-w-full max-h-48 rounded-lg mb-1.5" />
+                ) : (
+                  <div className="flex items-center gap-2 mb-1.5 px-2 py-1.5 bg-white/5 rounded-lg">
+                    <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-xs text-gray-300 truncate">{msg.file.name}</span>
+                  </div>
+                )
               )}
-              {msg.content && msg.content !== `[Attached: ${msg.pdf?.name}]` && msg.content}
+              {msg.content && msg.content !== `[Attached: ${msg.file?.name}]` && msg.content}
               {streaming && i === messages.length - 1 && msg.role === "assistant" && (
                 <span className="inline-block w-1.5 h-4 bg-white/50 ml-0.5 animate-pulse" />
               )}
@@ -286,14 +293,18 @@ export default function AgentChat() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Pending PDF indicator */}
-      {pendingPdf && (
+      {/* Pending file indicator */}
+      {pendingFile && (
         <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg mt-2">
-          <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
-          <span className="text-xs text-gray-300 truncate flex-1">{pendingPdf.name}</span>
-          <button onClick={() => setPendingPdf(null)} className="text-gray-500 hover:text-white cursor-pointer">
+          {pendingFile.mediaType.startsWith("image/") ? (
+            <img src={`data:${pendingFile.mediaType};base64,${pendingFile.base64}`} alt={pendingFile.name} className="w-10 h-10 rounded object-cover shrink-0" />
+          ) : (
+            <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          )}
+          <span className="text-xs text-gray-300 truncate flex-1">{pendingFile.name}</span>
+          <button onClick={() => setPendingFile(null)} className="text-gray-500 hover:text-white cursor-pointer">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -302,14 +313,14 @@ export default function AgentChat() {
       )}
 
       {/* Input */}
-      <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" onChange={handleFileInput} className="hidden" />
+      <input ref={fileInputRef} type="file" accept=".pdf,application/pdf,image/png,image/jpeg,image/gif,image/webp" onChange={handleFileInput} className="hidden" />
       <form onSubmit={handleSend} className="shrink-0 flex gap-2 items-end pt-4 border-t border-white/10">
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={streaming}
           className="px-2.5 py-2.5 text-gray-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 shrink-0"
-          title="Attach PDF"
+          title="Attach file"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -327,7 +338,7 @@ export default function AgentChat() {
         />
         <button
           type="submit"
-          disabled={streaming || (!input.trim() && !pendingPdf)}
+          disabled={streaming || (!input.trim() && !pendingFile)}
           className="px-4 py-2.5 bg-white text-black font-medium rounded-xl hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
         >
           {streaming ? (

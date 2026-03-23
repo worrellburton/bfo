@@ -13,15 +13,16 @@ interface Agent {
   apiKey: string;
 }
 
-interface PdfAttachment {
+interface FileAttachment {
   name: string;
   base64: string;
+  mediaType: string;
 }
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  pdf?: PdfAttachment;
+  file?: FileAttachment;
 }
 
 interface AgentPos {
@@ -149,7 +150,8 @@ export default function Office() {
   const [streaming, setStreaming] = useState(false);
   const [positions, setPositions] = useState<Record<string, AgentPos>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [pendingPdf, setPendingPdf] = useState<PdfAttachment | null>(null);
+  const [pendingFile, setPendingFile] = useState<FileAttachment | null>(null);
+  const ACCEPTED_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"];
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [inMeeting, setInMeeting] = useState(false);
@@ -308,39 +310,39 @@ export default function Office() {
     setStreaming(false);
   }
 
-  function handlePdfFile(file: File) {
-    if (file.type !== "application/pdf") return;
+  function handleAttachFile(file: File) {
+    if (!ACCEPTED_TYPES.includes(file.type)) return;
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = (reader.result as string).split(",")[1];
-      setPendingPdf({ name: file.name, base64 });
+      setPendingFile({ name: file.name, base64, mediaType: file.type });
     };
     reader.readAsDataURL(file);
   }
 
-  function handlePdfDrop(e: React.DragEvent) {
+  function handleFileDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handlePdfFile(file);
+    if (file) handleAttachFile(file);
   }
 
-  function handlePdfInput(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) handlePdfFile(file);
+    if (file) handleAttachFile(file);
     e.target.value = "";
   }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if ((!input.trim() && !pendingPdf) || !chatAgent || streaming) return;
+    if ((!input.trim() && !pendingFile) || !chatAgent || streaming) return;
 
-    const userMessage: Message = { role: "user", content: input.trim() || (pendingPdf ? `[Attached: ${pendingPdf.name}]` : ""), pdf: pendingPdf || undefined };
+    const userMessage: Message = { role: "user", content: input.trim() || (pendingFile ? `[Attached: ${pendingFile.name}]` : ""), file: pendingFile || undefined };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     saveConversation(chatAgent.id, newMessages);
     setInput("");
-    setPendingPdf(null);
+    setPendingFile(null);
     setStreaming(true);
     addToast(`You: ${userMessage.content.slice(0, 60)}${userMessage.content.length > 60 ? "..." : ""}`, chatAgent.name);
 
@@ -349,11 +351,12 @@ export default function Office() {
         model: chatAgent.model,
         max_tokens: 4096,
         messages: newMessages.map((m) => {
-          if (m.pdf) {
-            const content: unknown[] = [
-              { type: "document", source: { type: "base64", media_type: "application/pdf", data: m.pdf.base64 } },
-            ];
-            if (m.content && m.content !== `[Attached: ${m.pdf.name}]`) {
+          if (m.file) {
+            const isImage = m.file.mediaType.startsWith("image/");
+            const content: unknown[] = isImage
+              ? [{ type: "image", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }]
+              : [{ type: "document", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }];
+            if (m.content && m.content !== `[Attached: ${m.file.name}]`) {
               content.push({ type: "text", text: m.content });
             }
             return { role: m.role, content };
@@ -561,7 +564,7 @@ export default function Office() {
           )}
         </div>
 
-        <div className="relative flex-1 max-h-[600px] rounded-lg overflow-visible" style={{
+        <div className="relative flex-1 max-h-[400px] rounded-lg overflow-visible" style={{
           aspectRatio: "4/3",
           background: "#e8dcc8",
           boxShadow: "inset 0 0 0 4px #6b7b8d, inset 0 0 0 6px #4a5568",
@@ -946,19 +949,19 @@ export default function Office() {
             }`}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
-            onDrop={handlePdfDrop}
+            onDrop={handleFileDrop}
           >
             {dragOver && (
               <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
                 <div className="bg-blue-500/10 border border-dashed border-blue-400/40 rounded-lg px-4 py-3 text-center">
-                  <p className="text-blue-400 text-[10px] font-medium">Drop PDF here</p>
+                  <p className="text-blue-400 text-[10px] font-medium">Drop file here</p>
                 </div>
               </div>
             )}
             {messages.length === 0 && !dragOver && (
               <div className="text-center mt-8">
                 <p className="text-gray-600 text-xs">Start a conversation with {chatAgent.name}</p>
-                <p className="text-gray-700 text-[10px] mt-1">Drop a PDF to attach it</p>
+                <p className="text-gray-700 text-[10px] mt-1">Drop a PDF or image to attach it</p>
               </div>
             )}
             {messages.map((msg, i) => (
@@ -968,15 +971,19 @@ export default function Office() {
                     ? "bg-white/10 text-white rounded-br-sm"
                     : "bg-white/5 text-gray-200 rounded-bl-sm"
                 }`}>
-                  {msg.pdf && (
-                    <div className="flex items-center gap-1.5 mb-1 px-1.5 py-1 bg-white/5 rounded">
-                      <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-[10px] text-gray-300 truncate">{msg.pdf.name}</span>
-                    </div>
+                  {msg.file && (
+                    msg.file.mediaType.startsWith("image/") ? (
+                      <img src={`data:${msg.file.mediaType};base64,${msg.file.base64}`} alt={msg.file.name} className="max-w-full max-h-32 rounded mb-1" />
+                    ) : (
+                      <div className="flex items-center gap-1.5 mb-1 px-1.5 py-1 bg-white/5 rounded">
+                        <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-[10px] text-gray-300 truncate">{msg.file.name}</span>
+                      </div>
+                    )
                   )}
-                  {msg.content && msg.content !== `[Attached: ${msg.pdf?.name}]` && msg.content}
+                  {msg.content && msg.content !== `[Attached: ${msg.file?.name}]` && msg.content}
                   {streaming && i === messages.length - 1 && msg.role === "assistant" && (
                     <span className="inline-block w-1 h-3 bg-white/40 ml-0.5 animate-pulse rounded-sm" />
                   )}
@@ -986,14 +993,18 @@ export default function Office() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Pending PDF */}
-          {pendingPdf && (
+          {/* Pending file */}
+          {pendingFile && (
             <div className="flex items-center gap-1.5 px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg mt-1">
-              <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              <span className="text-[10px] text-gray-300 truncate flex-1">{pendingPdf.name}</span>
-              <button onClick={() => setPendingPdf(null)} className="text-gray-500 hover:text-white cursor-pointer">
+              {pendingFile.mediaType.startsWith("image/") ? (
+                <img src={`data:${pendingFile.mediaType};base64,${pendingFile.base64}`} alt={pendingFile.name} className="w-8 h-8 rounded object-cover shrink-0" />
+              ) : (
+                <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+              )}
+              <span className="text-[10px] text-gray-300 truncate flex-1">{pendingFile.name}</span>
+              <button onClick={() => setPendingFile(null)} className="text-gray-500 hover:text-white cursor-pointer">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1002,14 +1013,14 @@ export default function Office() {
           )}
 
           {/* Input */}
-          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" onChange={handlePdfInput} className="hidden" />
+          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf,image/png,image/jpeg,image/gif,image/webp" onChange={handleFileInput} className="hidden" />
           <form onSubmit={handleSend} className="flex gap-2 items-center pt-3 border-t border-white/10 mt-2 shrink-0">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={streaming}
               className="text-gray-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 shrink-0"
-              title="Attach PDF"
+              title="Attach file"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -1026,7 +1037,7 @@ export default function Office() {
             />
             <button
               type="submit"
-              disabled={streaming || (!input.trim() && !pendingPdf)}
+              disabled={streaming || (!input.trim() && !pendingFile)}
               className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs"
             >
               {streaming ? "..." : "Send"}
