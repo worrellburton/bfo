@@ -69,6 +69,276 @@ function isFemale(name: string): boolean {
   return FEMALE_NAMES.has(name.trim().split(/\s+/)[0].toLowerCase());
 }
 
+// --- Sprite trait system: derive visual appearance from system prompt + job title ---
+interface SpriteTraits {
+  hairColor: string;
+  hairStyle: "short" | "long" | "bun" | "mohawk" | "bald" | "curly" | "ponytail" | "spiky";
+  skinTone: string;
+  shirtColor: string;
+  pantsColor: string;
+  shoeColor: string;
+  accessory: "none" | "glasses" | "sunglasses" | "headphones" | "hat" | "hardhat" | "crown" | "bowtie" | "stethoscope";
+  extra: "none" | "beard" | "mustache";
+}
+
+function parseTraits(prompt: string, jobTitle: string, name: string, fallbackColor: string): SpriteTraits {
+  const text = `${prompt} ${jobTitle} ${name}`.toLowerCase();
+
+  // Hair color
+  let hairColor = "#3b2f1e";
+  if (/\b(blonde|blond)\b/.test(text)) hairColor = "#d4a843";
+  else if (/\b(red hair|redhead|ginger)\b/.test(text)) hairColor = "#b5451b";
+  else if (/\b(white hair|silver hair|gray hair|grey hair|elderly|old)\b/.test(text)) hairColor = "#c0c0c0";
+  else if (/\b(black hair)\b/.test(text)) hairColor = "#1a1a1a";
+  else if (/\b(blue hair)\b/.test(text)) hairColor = "#4466cc";
+  else if (/\b(pink hair)\b/.test(text)) hairColor = "#e87baa";
+  else if (/\b(purple hair)\b/.test(text)) hairColor = "#8855cc";
+  else if (/\b(green hair)\b/.test(text)) hairColor = "#44aa66";
+  else if (isFemale(name)) hairColor = "#6b3a2a";
+
+  // Hair style
+  let hairStyle: SpriteTraits["hairStyle"] = isFemale(name) ? "long" : "short";
+  if (/\b(bald|shaved head)\b/.test(text)) hairStyle = "bald";
+  else if (/\b(mohawk|punk)\b/.test(text)) hairStyle = "mohawk";
+  else if (/\b(bun|top.?knot)\b/.test(text)) hairStyle = "bun";
+  else if (/\b(curly|afro)\b/.test(text)) hairStyle = "curly";
+  else if (/\b(ponytail)\b/.test(text)) hairStyle = "ponytail";
+  else if (/\b(spiky|spiked)\b/.test(text)) hairStyle = "spiky";
+  else if (/\b(long hair)\b/.test(text)) hairStyle = "long";
+  else if (/\b(short hair)\b/.test(text)) hairStyle = "short";
+
+  // Skin tone
+  let skinTone = "#f5c6a0";
+  if (/\b(dark skin|african|black person)\b/.test(text)) skinTone = "#8d5524";
+  else if (/\b(brown skin|indian|latino|latina|hispanic|south asian)\b/.test(text)) skinTone = "#c68642";
+  else if (/\b(olive skin|mediterranean|middle eastern)\b/.test(text)) skinTone = "#d4a574";
+  else if (/\b(east asian|asian|japanese|chinese|korean)\b/.test(text)) skinTone = "#f1d0a4";
+  else if (/\b(pale|fair skin)\b/.test(text)) skinTone = "#fce4d6";
+
+  // Shirt color from job/persona
+  let shirtColor = fallbackColor;
+  if (/\b(doctor|nurse|medical|hospital|lab)\b/.test(text)) shirtColor = "#e8e8e8";
+  else if (/\b(military|army|soldier|camo)\b/.test(text)) shirtColor = "#5a6b3c";
+  else if (/\b(chef|cook|baker|kitchen)\b/.test(text)) shirtColor = "#f0f0f0";
+  else if (/\b(fireman|firefighter|fire)\b/.test(text)) shirtColor = "#cc3333";
+  else if (/\b(police|cop|officer|law enforcement)\b/.test(text)) shirtColor = "#2a3a6a";
+  else if (/\b(goth|dark|metal|emo)\b/.test(text)) shirtColor = "#222222";
+  else if (/\b(business|executive|ceo|formal|suit|corporate|lawyer|attorney)\b/.test(text)) shirtColor = "#2d3748";
+  else if (/\b(artist|creative|painter|designer)\b/.test(text)) shirtColor = "#8b5cf6";
+  else if (/\b(punk|rock|rebel)\b/.test(text)) shirtColor = "#111111";
+  else if (/\b(hippie|bohemian|free.?spirit)\b/.test(text)) shirtColor = "#e8944a";
+  else if (/\b(tech|engineer|developer|programmer|coder|hacker)\b/.test(text)) shirtColor = "#334155";
+  else if (/\b(sports|athlete|coach|fitness|trainer)\b/.test(text)) shirtColor = "#dc2626";
+
+  // Pants color
+  let pantsColor = "#2d4a7a";
+  if (/\b(khaki|casual)\b/.test(text)) pantsColor = "#a08060";
+  else if (/\b(suit|formal|business|corporate|lawyer|attorney)\b/.test(text)) pantsColor = "#1e293b";
+  else if (/\b(military|army|camo)\b/.test(text)) pantsColor = "#4a5a2c";
+  else if (/\b(goth|punk|dark|metal)\b/.test(text)) pantsColor = "#111111";
+  else if (/\b(scrubs|doctor|nurse|medical)\b/.test(text)) pantsColor = "#5b9bd5";
+  else if (/\b(chef|cook)\b/.test(text)) pantsColor = "#1a1a1a";
+  else if (/\b(sports|athlete|fitness)\b/.test(text)) pantsColor = "#1e293b";
+
+  // Shoe color
+  let shoeColor = "#333";
+  if (/\b(sports|athlete|fitness|runner)\b/.test(text)) shoeColor = "#e8e8e8";
+  else if (/\b(cowboy|western|country)\b/.test(text)) shoeColor = "#8b4513";
+  else if (/\b(formal|suit|business)\b/.test(text)) shoeColor = "#1a1a1a";
+
+  // Accessory
+  let accessory: SpriteTraits["accessory"] = "none";
+  if (/\b(glasses|spectacles|nerdy|nerd|professor|academic|librarian)\b/.test(text)) accessory = "glasses";
+  else if (/\b(sunglasses|cool|shades|secret agent|spy)\b/.test(text)) accessory = "sunglasses";
+  else if (/\b(headphones|music|dj|audio|podcast)\b/.test(text)) accessory = "headphones";
+  else if (/\b(hard.?hat|construction|builder|safety)\b/.test(text)) accessory = "hardhat";
+  else if (/\b(hat|cowboy|cap|beanie)\b/.test(text)) accessory = "hat";
+  else if (/\b(crown|king|queen|royal|princess|prince)\b/.test(text)) accessory = "crown";
+  else if (/\b(bow.?tie|fancy|butler|waiter|classy)\b/.test(text)) accessory = "bowtie";
+  else if (/\b(doctor|physician|medical|stethoscope)\b/.test(text)) accessory = "stethoscope";
+
+  // Extra facial
+  let extra: SpriteTraits["extra"] = "none";
+  if (/\b(beard|bearded|lumberjack)\b/.test(text)) extra = "beard";
+  else if (/\b(mustache|moustache)\b/.test(text)) extra = "mustache";
+
+  return { hairColor, hairStyle, skinTone, shirtColor, pantsColor, shoeColor, accessory, extra };
+}
+
+function CharacterSprite({ traits, frame, facing }: { traits: SpriteTraits; frame: number; facing: string }) {
+  const flip = facing === "left";
+  const f = frame % 2;
+  const { hairColor, hairStyle, skinTone, shirtColor, pantsColor, shoeColor, accessory, extra } = traits;
+
+  return (
+    <svg viewBox="0 0 16 22" className="w-8 h-11" style={{ imageRendering: "pixelated", transform: flip ? "scaleX(-1)" : "" }}>
+      {/* Hair back layer for long styles */}
+      {(hairStyle === "long" || hairStyle === "ponytail") && (
+        <>
+          <rect x="3" y="3" width="2" height="5" fill={hairColor} />
+          <rect x="11" y="3" width="2" height="5" fill={hairColor} />
+        </>
+      )}
+
+      {/* Hair top */}
+      {hairStyle === "bald" ? null :
+       hairStyle === "mohawk" ? (
+        <>
+          <rect x="6" y="-2" width="4" height="4" fill={hairColor} />
+          <rect x="7" y="-3" width="2" height="1" fill={hairColor} />
+        </>
+       ) : hairStyle === "curly" ? (
+        <>
+          <rect x="4" y="-1" width="8" height="3" fill={hairColor} />
+          <rect x="3" y="0" width="10" height="3" fill={hairColor} />
+          <rect x="3" y="2" width="2" height="2" fill={hairColor} />
+          <rect x="11" y="2" width="2" height="2" fill={hairColor} />
+        </>
+       ) : hairStyle === "spiky" ? (
+        <>
+          <rect x="4" y="0" width="8" height="2" fill={hairColor} />
+          <rect x="5" y="-1" width="2" height="1" fill={hairColor} />
+          <rect x="8" y="-2" width="2" height="2" fill={hairColor} />
+          <rect x="11" y="-1" width="1" height="1" fill={hairColor} />
+        </>
+       ) : hairStyle === "bun" ? (
+        <>
+          <rect x="5" y="0" width="6" height="2" fill={hairColor} />
+          <rect x="4" y="1" width="8" height="1" fill={hairColor} />
+          <circle cx="8" cy="-1" r="2" fill={hairColor} />
+        </>
+       ) : hairStyle === "ponytail" ? (
+        <>
+          <rect x="5" y="0" width="6" height="2" fill={hairColor} />
+          <rect x="4" y="1" width="8" height="1" fill={hairColor} />
+          <rect x="11" y="2" width="2" height="6" fill={hairColor} />
+          <rect x="12" y="5" width="2" height="3" fill={hairColor} />
+        </>
+       ) : hairStyle === "long" ? (
+        <>
+          <rect x="4" y="0" width="8" height="2" fill={hairColor} />
+          <rect x="3" y="1" width="10" height="2" fill={hairColor} />
+        </>
+       ) : ( // short
+        <>
+          <rect x="5" y="0" width="6" height="2" fill={hairColor} />
+          <rect x="4" y="1" width="8" height="1" fill={hairColor} />
+        </>
+       )
+      }
+
+      {/* Head */}
+      <rect x="5" y="2" width="6" height="5" fill={skinTone} />
+
+      {/* Eyes */}
+      <rect x="6" y="4" width="1" height="1" fill="#222" />
+      <rect x="9" y="4" width="1" height="1" fill="#222" />
+
+      {/* Accessory: glasses */}
+      {accessory === "glasses" && (
+        <>
+          <rect x="5" y="3.5" width="3" height="2" rx="0.5" fill="none" stroke="#555" strokeWidth="0.5" />
+          <rect x="8.5" y="3.5" width="3" height="2" rx="0.5" fill="none" stroke="#555" strokeWidth="0.5" />
+          <line x1="8" y1="4.2" x2="8.5" y2="4.2" stroke="#555" strokeWidth="0.4" />
+        </>
+      )}
+      {accessory === "sunglasses" && (
+        <>
+          <rect x="5" y="3.5" width="3" height="2" rx="0.5" fill="#111" />
+          <rect x="8.5" y="3.5" width="3" height="2" rx="0.5" fill="#111" />
+          <line x1="8" y1="4.2" x2="8.5" y2="4.2" stroke="#333" strokeWidth="0.5" />
+        </>
+      )}
+
+      {/* Facial extras */}
+      {extra === "beard" && (
+        <rect x="5.5" y="6" width="5" height="2" rx="1" fill={hairColor} opacity="0.8" />
+      )}
+      {extra === "mustache" && (
+        <rect x="6" y="5.5" width="4" height="1" rx="0.5" fill={hairColor} opacity="0.8" />
+      )}
+
+      {/* Accessory: headphones */}
+      {accessory === "headphones" && (
+        <>
+          <rect x="3" y="2" width="2" height="3" rx="1" fill="#444" />
+          <rect x="11" y="2" width="2" height="3" rx="1" fill="#444" />
+          <rect x="4" y="0" width="8" height="1" rx="0.5" fill="#555" />
+        </>
+      )}
+
+      {/* Accessory: hardhat */}
+      {accessory === "hardhat" && (
+        <>
+          <rect x="3" y="-1" width="10" height="3" rx="1" fill="#f5c542" />
+          <rect x="2" y="1" width="12" height="1" fill="#daa520" />
+        </>
+      )}
+
+      {/* Accessory: hat */}
+      {accessory === "hat" && (
+        <>
+          <rect x="4" y="-1" width="8" height="3" rx="1" fill="#5a4030" />
+          <rect x="2" y="1" width="12" height="1" fill="#4a3020" />
+        </>
+      )}
+
+      {/* Accessory: crown */}
+      {accessory === "crown" && (
+        <>
+          <rect x="4" y="-1" width="8" height="2" fill="#ffd700" />
+          <rect x="5" y="-3" width="1" height="2" fill="#ffd700" />
+          <rect x="7.5" y="-3" width="1" height="2" fill="#ffd700" />
+          <rect x="10" y="-3" width="1" height="2" fill="#ffd700" />
+          <circle cx="5.5" cy="-3" r="0.6" fill="#e44" />
+          <circle cx="8" cy="-3" r="0.6" fill="#4ae" />
+          <circle cx="10.5" cy="-3" r="0.6" fill="#4e4" />
+        </>
+      )}
+
+      {/* Shirt */}
+      <rect x="4" y="7" width="8" height="5" fill={shirtColor} />
+
+      {/* Accessory: bowtie */}
+      {accessory === "bowtie" && (
+        <>
+          <rect x="6" y="7" width="4" height="1.5" fill="#cc2233" />
+          <rect x="7.5" y="7.2" width="1" height="1" fill="#881122" />
+        </>
+      )}
+
+      {/* Accessory: stethoscope */}
+      {accessory === "stethoscope" && (
+        <>
+          <line x1="7" y1="7" x2="6" y2="10" stroke="#4488aa" strokeWidth="0.6" />
+          <line x1="9" y1="7" x2="10" y2="10" stroke="#4488aa" strokeWidth="0.6" />
+          <circle cx="8" cy="11" r="1" fill="#5599bb" />
+        </>
+      )}
+
+      {/* Collar/tie for suits */}
+      {/suit|formal|business|corporate|lawyer|executive/.test(shirtColor === "#2d3748" ? "suit" : "") && (
+        <rect x="7" y="7" width="2" height="4" fill="#888" opacity="0.5" />
+      )}
+
+      {/* Arms */}
+      <rect x="2" y={f === 0 ? "8" : "9"} width="2" height="4" fill={shirtColor} />
+      <rect x="12" y={f === 0 ? "9" : "8"} width="2" height="4" fill={shirtColor} />
+      <rect x="2" y={f === 0 ? "12" : "13"} width="2" height="1" fill={skinTone} />
+      <rect x="12" y={f === 0 ? "13" : "12"} width="2" height="1" fill={skinTone} />
+
+      {/* Pants */}
+      <rect x="5" y="12" width="6" height="4" fill={pantsColor} />
+      <rect x="5" y="16" width="2" height={f === 0 ? "3" : "2"} fill={pantsColor} />
+      <rect x="9" y="16" width="2" height={f === 0 ? "2" : "3"} fill={pantsColor} />
+
+      {/* Shoes */}
+      <rect x="4" y={f === 0 ? "19" : "18"} width="3" height="2" fill={shoeColor} />
+      <rect x="9" y={f === 0 ? "18" : "19"} width="3" height="2" fill={shoeColor} />
+    </svg>
+  );
+}
+
 function getModelDomain(model: string): { domain: string; name: string } {
   const m = model.toLowerCase();
   if (m.includes("claude") || m.includes("anthropic")) return { domain: "anthropic.com", name: "Anthropic" };
@@ -763,6 +1033,7 @@ export default function Office() {
             const isActive = chatAgent?.id === agent.id;
             const female = isFemale(agent.name);
             const isWalking = pos.state === "walking";
+            const traits = parseTraits(agent.systemPrompt, agent.jobTitle, agent.name, color);
             return (
               <div
                 key={agent.id}
@@ -793,9 +1064,7 @@ export default function Office() {
                 >
                   {isDog(agent)
                     ? <DogSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
-                    : female
-                      ? <FemaleSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
-                      : <MaleSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
+                    : <CharacterSprite traits={traits} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
                   }
                 </div>
                 <div className="w-6 h-1.5 rounded-full bg-black/20 -mt-0.5" />
@@ -849,8 +1118,8 @@ export default function Office() {
             {agents.map((agent, i) => {
               const seat = getSeatPosition(i, agents.length);
               const color = COLORS[i % COLORS.length];
-              const female = isFemale(agent.name);
               const facingRight = seat.x < 50;
+              const meetingTraits = parseTraits(agent.systemPrompt, agent.jobTitle, agent.name, color);
               return (
                 <div
                   key={agent.id}
@@ -866,9 +1135,7 @@ export default function Office() {
                   </div>
                   {isDog(agent)
                     ? <DogSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
-                    : female
-                      ? <FemaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
-                      : <MaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
+                    : <CharacterSprite traits={meetingTraits} frame={0} facing={facingRight ? "right" : "left"} />
                   }
                   <div className="w-6 h-1.5 rounded-full bg-black/15 -mt-0.5" />
                 </div>
