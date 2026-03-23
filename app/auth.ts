@@ -13,3 +13,7 @@ export function authenticate(password: string): boolean {
   }
   return false;
 }
+
+export function logout(): void {
+  sessionStorage.removeItem(STORAGE_KEY);
+}
