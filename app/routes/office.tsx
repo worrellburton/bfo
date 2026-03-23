@@ -114,7 +114,7 @@ function FemaleSprite({ color, frame, facing }: { color: string; frame: number; 
 }
 
 const COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
-const WATER_COOLER = { x: 8, y: 55 };
+const WATER_COOLER = { x: 7, y: 50 };
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -386,31 +386,72 @@ export default function Office() {
       <div className="flex-1 flex flex-col min-w-0">
         <h1 className="text-2xl font-bold mb-4 shrink-0">Office</h1>
 
-        <div className="relative flex-1 max-h-[600px] rounded-xl border border-white/10 overflow-visible" style={{
-          background: "linear-gradient(180deg, #1a1c2e 0%, #12141f 100%)",
+        <div className="relative flex-1 max-h-[600px] rounded-lg overflow-visible" style={{
           aspectRatio: "4/3",
+          background: "#e8dcc8",
+          boxShadow: "inset 0 0 0 4px #6b7b8d, inset 0 0 0 6px #4a5568",
         }}>
-          {/* Carpet */}
-          <div className="absolute inset-0 rounded-xl" style={{
-            background: "repeating-conic-gradient(rgba(255,255,255,0.015) 0% 25%, transparent 0% 50%) 0 0 / 48px 48px",
+          {/* Floor tile pattern */}
+          <div className="absolute inset-0 rounded-lg" style={{
+            background: "repeating-conic-gradient(#e2d4be 0% 25%, #e8dcc8 0% 50%) 0 0 / 40px 40px",
+          }} />
+          {/* Floor light cast from windows */}
+          <div className="absolute top-[18%] left-[15%] w-[30%] h-[35%] rounded-sm" style={{
+            background: "linear-gradient(180deg, rgba(255,255,230,0.15) 0%, transparent 100%)",
+          }} />
+          <div className="absolute top-[18%] right-[15%] w-[30%] h-[35%] rounded-sm" style={{
+            background: "linear-gradient(180deg, rgba(255,255,230,0.15) 0%, transparent 100%)",
           }} />
 
           {/* Wall */}
-          <div className="absolute top-0 left-0 right-0 h-[20%] rounded-t-xl" style={{
-            background: "linear-gradient(180deg, #252840 0%, #1e2035 100%)",
+          <div className="absolute top-0 left-0 right-0 h-[18%] rounded-t-lg" style={{
+            background: "linear-gradient(180deg, #6b7b8d 0%, #7a8a9c 100%)",
           }}>
-            <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#3a3520]" />
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-28 h-[65%] border border-white/10 rounded-sm overflow-hidden bg-gradient-to-b from-[#1a2a4a] to-[#0f1a30]">
-              <div className="absolute inset-0 border-r border-white/5 w-1/2" />
-              <div className="absolute inset-0 border-b border-white/5 h-1/2" />
+            {/* Baseboard */}
+            <div className="absolute bottom-0 left-0 right-0 h-[4px] bg-[#4a5060]" />
+            {/* Window left */}
+            <div className="absolute top-[15%] left-[6%] w-[22%] h-[60%] rounded-sm overflow-hidden" style={{
+              background: "linear-gradient(180deg, #87ceeb 0%, #aadcf0 100%)",
+              border: "3px solid #5a6a7a",
+              boxShadow: "inset 0 0 0 1px #9ab",
+            }}>
+              <div className="absolute inset-0 border-r-2 border-[#5a6a7a] w-1/2" />
             </div>
-            <div className="absolute top-2 left-[10%] w-16 h-[70%] rounded-sm border border-white/10 bg-white/5">
-              <div className="m-1 h-0.5 bg-white/10 w-3/4" />
-              <div className="m-1 h-0.5 bg-white/10 w-1/2" />
+            {/* Window right */}
+            <div className="absolute top-[15%] right-[6%] w-[22%] h-[60%] rounded-sm overflow-hidden" style={{
+              background: "linear-gradient(180deg, #87ceeb 0%, #aadcf0 100%)",
+              border: "3px solid #5a6a7a",
+              boxShadow: "inset 0 0 0 1px #9ab",
+            }}>
+              <div className="absolute inset-0 border-r-2 border-[#5a6a7a] w-1/2" />
+            </div>
+            {/* Clock */}
+            <div className="absolute top-[20%] left-[42%] w-5 h-5 rounded-full bg-[#f5f0e0] border-2 border-[#8b7355]">
+              <div className="absolute w-0.5 h-1.5 bg-[#333] top-[20%] left-1/2 -translate-x-1/2 origin-bottom rotate-[30deg]" />
+              <div className="absolute w-0.5 h-1 bg-[#555] top-[30%] left-1/2 -translate-x-1/2 origin-bottom rotate-[150deg]" />
+            </div>
+            {/* Whiteboard / Chart */}
+            <div className="absolute top-[10%] left-[50%] w-[14%] h-[65%] rounded-sm bg-white/90 border-2 border-[#8b7355]">
+              <div className="absolute bottom-1 left-1 w-1.5 h-[40%] bg-[#4285f4]" />
+              <div className="absolute bottom-1 left-[35%] w-1.5 h-[60%] bg-[#0f9d58]" />
+              <div className="absolute bottom-1 right-[35%] w-1.5 h-[30%] bg-[#f4b400]" />
+              <div className="absolute bottom-1 right-1 w-1.5 h-[50%] bg-[#ea4335]" />
             </div>
           </div>
 
-          {/* Desks */}
+          {/* Conference table — center */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ zIndex: 2 }}>
+            <svg viewBox="0 0 80 40" className="w-32 h-16" style={{ imageRendering: "pixelated" }}>
+              {/* Table shadow */}
+              <rect x="4" y="4" width="76" height="36" rx="4" fill="rgba(0,0,0,0.1)" />
+              {/* Table */}
+              <rect x="0" y="0" width="80" height="36" rx="4" fill="#c8a06a" />
+              <rect x="0" y="0" width="80" height="4" rx="4" fill="#d4ad78" />
+              <rect x="2" y="4" width="76" height="28" fill="#dbb880" opacity="0.3" />
+            </svg>
+          </div>
+
+          {/* Desks along the walls */}
           {agents.map((agent, i) => {
             const maxPerRow = Math.ceil(agents.length / 2);
             const row = i < maxPerRow ? 0 : 1;
@@ -418,42 +459,109 @@ export default function Office() {
             const rowCount = row === 0 ? maxPerRow : agents.length - maxPerRow;
             const xStep = 70 / (rowCount + 1);
             const deskX = 15 + xStep * (col + 1);
-            const deskY = row === 0 ? 38 : 68;
+            const deskY = row === 0 ? 32 : 72;
             return (
-              <div key={`desk-${agent.id}`} className="absolute -translate-x-1/2" style={{ left: `${deskX}%`, top: `${deskY + 4}%` }}>
-                <svg viewBox="0 0 48 20" className="w-20 h-8" style={{ imageRendering: "pixelated" }}>
-                  <rect x="0" y="0" width="48" height="5" fill="#7a5c34" />
-                  <rect x="0" y="0" width="48" height="2" fill="#8b6a3a" />
-                  <rect x="2" y="5" width="3" height="14" fill="#5a4020" />
-                  <rect x="43" y="5" width="3" height="14" fill="#5a4020" />
-                  <rect x="16" y="-10" width="16" height="10" fill="#1a1a2e" rx="1" />
-                  <rect x="17" y="-9" width="14" height="8" fill="#2a3a5a" />
-                  <rect x="22" y="0" width="4" height="2" fill="#333" />
+              <div key={`desk-${agent.id}`} className="absolute -translate-x-1/2" style={{ left: `${deskX}%`, top: `${deskY + 4}%`, zIndex: 3 }}>
+                <svg viewBox="0 0 52 24" className="w-20 h-8" style={{ imageRendering: "pixelated" }}>
+                  {/* Desk shadow */}
+                  <rect x="3" y="3" width="49" height="8" rx="1" fill="rgba(0,0,0,0.08)" />
+                  {/* Desk surface */}
+                  <rect x="0" y="0" width="52" height="7" rx="1" fill="#a0784a" />
+                  <rect x="0" y="0" width="52" height="3" rx="1" fill="#b8905a" />
+                  {/* Drawers */}
+                  <rect x="2" y="7" width="18" height="14" fill="#8b6a40" />
+                  <rect x="3" y="8" width="16" height="5" fill="#9a7850" />
+                  <rect x="9" y="10" width="4" height="1" fill="#c8a06a" />
+                  <rect x="3" y="14" width="16" height="5" fill="#9a7850" />
+                  <rect x="9" y="16" width="4" height="1" fill="#c8a06a" />
+                  {/* Legs */}
+                  <rect x="34" y="7" width="3" height="16" fill="#7a5c34" />
+                  <rect x="47" y="7" width="3" height="16" fill="#7a5c34" />
+                  {/* Monitor */}
+                  <rect x="20" y="-11" width="18" height="11" rx="1" fill="#2a2a3a" />
+                  <rect x="21" y="-10" width="16" height="9" fill="#3a5a7a" />
+                  <rect x="27" y="0" width="4" height="2" fill="#444" />
+                  {/* Chair */}
+                  <rect x="24" y="22" width="12" height="3" rx="1" fill="#5a7090" />
+                  <rect x="23" y="18" width="14" height="5" rx="1" fill="#6a80a0" />
                 </svg>
               </div>
             );
           })}
 
-          {/* Water cooler */}
-          <div className="absolute" style={{ left: `${WATER_COOLER.x}%`, top: `${WATER_COOLER.y}%` }}>
-            <svg viewBox="0 0 14 28" className="w-5 h-9" style={{ imageRendering: "pixelated" }}>
-              <rect x="4" y="0" width="6" height="10" fill="#90caf9" opacity="0.5" />
-              <rect x="3" y="10" width="8" height="2" fill="#bbb" />
-              <rect x="4" y="12" width="6" height="12" fill="#e0e0e0" />
-              <rect x="3" y="24" width="8" height="2" fill="#999" />
-              <rect x="4" y="26" width="2" height="2" fill="#777" />
-              <rect x="8" y="26" width="2" height="2" fill="#777" />
+          {/* Water cooler — left side */}
+          <div className="absolute" style={{ left: "4%", top: "50%", zIndex: 3 }}>
+            <svg viewBox="0 0 16 32" className="w-6 h-10" style={{ imageRendering: "pixelated" }}>
+              <rect x="4" y="0" width="8" height="12" fill="#a8d8ea" opacity="0.6" />
+              <rect x="4" y="0" width="8" height="4" fill="#c8e8f8" opacity="0.4" />
+              <rect x="3" y="12" width="10" height="3" fill="#ccc" />
+              <rect x="4" y="15" width="8" height="12" fill="#e8e8e8" />
+              <rect x="5" y="16" width="6" height="4" fill="#ddd" />
+              <rect x="3" y="27" width="10" height="2" fill="#aaa" />
+              <rect x="4" y="29" width="3" height="3" fill="#888" />
+              <rect x="9" y="29" width="3" height="3" fill="#888" />
+              <rect x="1" y="18" width="3" height="3" fill="#4a90d9" rx="1" />
             </svg>
           </div>
 
-          {/* Plant */}
-          <div className="absolute" style={{ right: "5%", bottom: "6%" }}>
-            <svg viewBox="0 0 16 24" className="w-5 h-7" style={{ imageRendering: "pixelated" }}>
-              <rect x="5" y="16" width="6" height="8" fill="#8b6a3a" />
-              <rect x="6" y="6" width="4" height="11" fill="#2d7a2d" />
-              <rect x="3" y="3" width="4" height="7" fill="#3a9a3a" />
-              <rect x="9" y="4" width="4" height="6" fill="#3a9a3a" />
-              <rect x="5" y="1" width="3" height="4" fill="#45b045" />
+          {/* Plant — bottom left */}
+          <div className="absolute" style={{ left: "4%", bottom: "6%", zIndex: 3 }}>
+            <svg viewBox="0 0 24 32" className="w-8 h-10" style={{ imageRendering: "pixelated" }}>
+              {/* Pot */}
+              <rect x="7" y="20" width="10" height="12" fill="#8b6a3a" />
+              <rect x="6" y="19" width="12" height="3" fill="#a07840" />
+              {/* Soil */}
+              <rect x="8" y="19" width="8" height="2" fill="#5a4020" />
+              {/* Leaves */}
+              <rect x="9" y="8" width="6" height="12" fill="#2d7a2d" />
+              <rect x="4" y="4" width="7" height="10" fill="#3a9a3a" />
+              <rect x="13" y="5" width="7" height="9" fill="#3a9a3a" />
+              <rect x="6" y="1" width="5" height="6" fill="#50b050" />
+              <rect x="13" y="2" width="5" height="6" fill="#50b050" />
+              <rect x="9" y="0" width="4" height="4" fill="#60c060" />
+            </svg>
+          </div>
+
+          {/* Plant — top right corner */}
+          <div className="absolute" style={{ right: "4%", top: "20%", zIndex: 3 }}>
+            <svg viewBox="0 0 20 28" className="w-6 h-8" style={{ imageRendering: "pixelated" }}>
+              <rect x="6" y="18" width="8" height="10" fill="#8b6a3a" />
+              <rect x="5" y="17" width="10" height="2" fill="#a07840" />
+              <rect x="7" y="6" width="6" height="12" fill="#2d7a2d" />
+              <rect x="3" y="3" width="6" height="8" fill="#3a9a3a" />
+              <rect x="11" y="4" width="6" height="7" fill="#3a9a3a" />
+              <rect x="5" y="0" width="4" height="5" fill="#50b050" />
+              <rect x="11" y="1" width="4" height="5" fill="#50b050" />
+            </svg>
+          </div>
+
+          {/* Filing cabinet — right wall */}
+          <div className="absolute" style={{ right: "4%", top: "42%", zIndex: 3 }}>
+            <svg viewBox="0 0 16 28" className="w-5 h-8" style={{ imageRendering: "pixelated" }}>
+              <rect x="0" y="0" width="16" height="28" fill="#b0a090" />
+              <rect x="0" y="0" width="16" height="2" fill="#c0b0a0" />
+              <rect x="1" y="3" width="14" height="7" fill="#a89880" />
+              <rect x="5" y="5" width="6" height="2" fill="#c8b8a0" />
+              <rect x="1" y="12" width="14" height="7" fill="#a89880" />
+              <rect x="5" y="14" width="6" height="2" fill="#c8b8a0" />
+              <rect x="1" y="21" width="14" height="7" fill="#a89880" />
+              <rect x="5" y="23" width="6" height="2" fill="#c8b8a0" />
+            </svg>
+          </div>
+
+          {/* Side table with vase — top left */}
+          <div className="absolute" style={{ left: "4%", top: "20%", zIndex: 3 }}>
+            <svg viewBox="0 0 20 24" className="w-6 h-7" style={{ imageRendering: "pixelated" }}>
+              <rect x="0" y="6" width="20" height="5" fill="#a0784a" />
+              <rect x="0" y="6" width="20" height="2" fill="#b8905a" />
+              <rect x="2" y="11" width="3" height="13" fill="#7a5c34" />
+              <rect x="15" y="11" width="3" height="13" fill="#7a5c34" />
+              {/* Vase */}
+              <rect x="7" y="1" width="6" height="6" fill="#d4d8e0" />
+              <rect x="8" y="0" width="4" height="2" fill="#e0e4ec" />
+              {/* Flower */}
+              <rect x="8" y="-3" width="2" height="4" fill="#3a8a3a" />
+              <rect x="7" y="-5" width="4" height="3" fill="#e06080" />
             </svg>
           </div>
 
