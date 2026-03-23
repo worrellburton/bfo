@@ -1,6 +1,4 @@
-import { useNavigate } from "react-router";
 import { useEffect, useState } from "react";
-import { isAuthenticated } from "../auth";
 
 export function meta() {
   return [{ title: "BFO - Notes" }];
@@ -14,17 +12,10 @@ interface Note {
 }
 
 export default function Notes() {
-  const navigate = useNavigate();
   const [notes, setNotes] = useState<Note[]>([]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      navigate("/login");
-    }
-  }, [navigate]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -79,59 +70,58 @@ export default function Notes() {
   }
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 800, margin: "0 auto", padding: "2rem" }}>
-      <h1>Notes</h1>
+    <div>
+      <h1 className="text-3xl font-bold mb-6">Notes</h1>
 
-      <form onSubmit={handleCreate} style={{ marginBottom: "2rem" }}>
-        <div style={{ marginBottom: "0.5rem" }}>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            required
-            style={{ width: "100%", padding: "0.5rem", fontSize: "1rem" }}
-          />
-        </div>
-        <div style={{ marginBottom: "0.5rem" }}>
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Write your note..."
-            required
-            rows={4}
-            style={{ width: "100%", padding: "0.5rem", fontSize: "1rem" }}
-          />
-        </div>
-        <button type="submit">Add Note</button>
+      <form onSubmit={handleCreate} className="mb-8 space-y-3 max-w-lg">
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Title"
+          required
+          className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+        />
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Write your note..."
+          required
+          rows={3}
+          className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 resize-none"
+        />
+        <button
+          type="submit"
+          className="px-5 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer"
+        >
+          Add Note
+        </button>
       </form>
 
       {loading ? (
-        <p>Loading...</p>
+        <p className="text-gray-500">Loading...</p>
       ) : notes.length === 0 ? (
-        <p>No notes yet. Add one above!</p>
+        <p className="text-gray-500">No notes yet.</p>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
+        <div className="space-y-3 max-w-lg">
           {notes.map((note) => (
-            <li
-              key={note.id}
-              style={{
-                border: "1px solid #ccc",
-                borderRadius: "8px",
-                padding: "1rem",
-                marginBottom: "1rem",
-              }}
-            >
-              <h2 style={{ margin: "0 0 0.5rem" }}>{note.title}</h2>
-              <p style={{ margin: "0 0 0.5rem" }}>{note.body}</p>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <small style={{ color: "#666" }}>
-                  {new Date(note.createdAt).toLocaleDateString()}
-                </small>
-                <button onClick={() => handleDelete(note.id)}>Delete</button>
+            <div key={note.id} className="p-4 bg-white/5 border border-white/10 rounded-lg">
+              <div className="flex justify-between items-start">
+                <h3 className="font-semibold">{note.title}</h3>
+                <button
+                  onClick={() => handleDelete(note.id)}
+                  className="text-gray-500 hover:text-red-400 text-sm cursor-pointer"
+                >
+                  Delete
+                </button>
               </div>
-            </li>
+              {note.body && <p className="text-gray-400 text-sm mt-1">{note.body}</p>}
+              <small className="text-gray-600 text-xs mt-2 block">
+                {new Date(note.createdAt).toLocaleDateString()}
+              </small>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
