@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAtSSBoP5s0VsFuoqA1XqkD92Pkr62TYm0",
@@ -14,3 +15,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
+export const auth = getAuth(app);
+
+// Sign in anonymously so database rules (auth != null) are satisfied
+export const authReady: Promise<void> = new Promise((resolve) => {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      resolve();
+    } else {
+      signInAnonymously(auth).catch(console.error);
+    }
+  });
+});

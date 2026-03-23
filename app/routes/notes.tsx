@@ -31,7 +31,8 @@ export default function Notes() {
     let unsubscribe: (() => void) | undefined;
 
     async function setup() {
-      const { db } = await import("../firebase");
+      const { db, authReady } = await import("../firebase");
+      await authReady;
       const { ref, onValue } = await import("firebase/database");
 
       const notesRef = ref(db, "notes");
