@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { streamChat, callLLM } from "../llm";
 
 export function meta() {
   return [{ title: "BFO - Office" }];
@@ -148,6 +149,38 @@ function FemaleSprite({ color, frame, facing }: { color: string; frame: number; 
 
 const COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 const WATER_COOLER = { x: 7, y: 50 };
+
+function isDog(agent: { jobTitle: string }): boolean {
+  return agent.jobTitle.toLowerCase().includes("office dog");
+}
+
+function DogSprite({ color, frame, facing }: { color: string; frame: number; facing: string }) {
+  const flip = facing === "left";
+  const bobY = frame % 2 === 0 ? 0 : -0.5;
+  const tailWag = frame % 2 === 0 ? 12 : -8;
+  return (
+    <svg viewBox="0 0 20 20" width="28" height="28" style={{ transform: `scaleX(${flip ? -1 : 1})`, imageRendering: "pixelated" }}>
+      {/* Body */}
+      <ellipse cx="10" cy={12 + bobY} rx="5" ry="3" fill={color} />
+      {/* Head */}
+      <circle cx="15" cy={9 + bobY} r="3" fill={color} />
+      {/* Ear */}
+      <ellipse cx="16.5" cy={7 + bobY} rx="1.5" ry="2" fill={color} opacity="0.7" />
+      {/* Eye */}
+      <circle cx="16" cy={8.5 + bobY} r="0.8" fill="#111" />
+      <circle cx="16.3" cy={8.2 + bobY} r="0.3" fill="white" />
+      {/* Nose */}
+      <circle cx="17.5" cy={9.5 + bobY} r="0.6" fill="#333" />
+      {/* Tongue (panting) */}
+      {frame % 3 === 0 && <ellipse cx="17" cy={11 + bobY} rx="0.6" ry="1" fill="#ff7b9c" />}
+      {/* Tail */}
+      <line x1="5" y1={11 + bobY} x2="3" y2={8 + bobY + tailWag * 0.05} stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      {/* Legs */}
+      <line x1="8" y1={14 + bobY} x2="8" y2="17" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="12" y1={14 + bobY} x2="12" y2="17" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -359,6 +392,22 @@ export default function Office() {
     e.target.value = "";
   }
 
+  function buildApiMessages(msgs: Message[]) {
+    return msgs.map((m) => {
+      if (m.file) {
+        const isImage = m.file.mediaType.startsWith("image/");
+        const content: unknown[] = isImage
+          ? [{ type: "image", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }]
+          : [{ type: "document", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }];
+        if (m.content && m.content !== `[Attached: ${m.file.name}]`) {
+          content.push({ type: "text", text: m.content });
+        }
+        return { role: m.role, content };
+      }
+      return { role: m.role, content: m.content };
+    });
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if ((!input.trim() && !pendingFile) || !chatAgent || streaming) return;
@@ -372,74 +421,28 @@ export default function Office() {
     setStreaming(true);
     addToast(`You: ${userMessage.content.slice(0, 60)}${userMessage.content.length > 60 ? "..." : ""}`, chatAgent.name);
 
+    let content = "";
+    setMessages([...newMessages, { role: "assistant", content: "" }]);
+
     try {
-      const body: Record<string, unknown> = {
-        model: chatAgent.model,
-        max_tokens: 4096,
-        messages: newMessages.map((m) => {
-          if (m.file) {
-            const isImage = m.file.mediaType.startsWith("image/");
-            const content: unknown[] = isImage
-              ? [{ type: "image", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }]
-              : [{ type: "document", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }];
-            if (m.content && m.content !== `[Attached: ${m.file.name}]`) {
-              content.push({ type: "text", text: m.content });
-            }
-            return { role: m.role, content };
-          }
-          return { role: m.role, content: m.content };
-        }),
-        stream: true,
-      };
-      if (chatAgent.systemPrompt) body.system = chatAgent.systemPrompt;
-
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": chatAgent.apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
+      await streamChat(
+        chatAgent.model,
+        chatAgent.apiKey,
+        buildApiMessages(newMessages),
+        chatAgent.systemPrompt || undefined,
+        {
+          onToken: (text) => {
+            content += text;
+            setMessages([...newMessages, { role: "assistant" as const, content }]);
+          },
+          onDone: () => {},
+          onError: (err) => {
+            const withErr = [...newMessages, { role: "assistant" as const, content: `Error: ${err}` }];
+            setMessages(withErr);
+            saveConversation(chatAgent.id, withErr);
+          },
         },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const errMsg = `Error: ${res.status}`;
-        const withErr = [...newMessages, { role: "assistant" as const, content: errMsg }];
-        setMessages(withErr);
-        saveConversation(chatAgent.id, withErr);
-        setStreaming(false);
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No reader");
-      const decoder = new TextDecoder();
-      let content = "";
-      setMessages([...newMessages, { role: "assistant", content: "" }]);
-
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-              content += parsed.delta.text;
-              const updated = [...newMessages, { role: "assistant" as const, content }];
-              setMessages(updated);
-            }
-          } catch { /* skip */ }
-        }
-      }
+      );
 
       const final = [...newMessages, { role: "assistant" as const, content }];
       setMessages(final);
@@ -477,29 +480,8 @@ export default function Office() {
   }
 
   async function callAgent(agent: Agent, history: { role: string; content: string }[]): Promise<string> {
-    const body: Record<string, unknown> = {
-      model: agent.model,
-      max_tokens: 1024,
-      messages: history,
-      stream: false,
-    };
     const sysPrompt = `${agent.systemPrompt ? agent.systemPrompt + "\n\n" : ""}You are ${agent.name}${agent.jobTitle ? `, ${agent.jobTitle}` : ""}. You are in a meeting with colleagues. Keep your responses concise (2-4 sentences). Be conversational and direct.`;
-    body.system = sysPrompt;
-
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": agent.apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) return `[Error: ${res.status}]`;
-    const data = await res.json();
-    return data.content?.[0]?.text || "[No response]";
+    return callLLM(agent.model, agent.apiKey, history, sysPrompt);
   }
 
   async function startMeeting(e: React.FormEvent) {
@@ -809,9 +791,11 @@ export default function Office() {
                   onMouseLeave={() => setHoveredId(null)}
                   onClick={() => isActive ? closeChat() : openChat(agent)}
                 >
-                  {female
-                    ? <FemaleSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
-                    : <MaleSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
+                  {isDog(agent)
+                    ? <DogSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
+                    : female
+                      ? <FemaleSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
+                      : <MaleSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
                   }
                 </div>
                 <div className="w-6 h-1.5 rounded-full bg-black/20 -mt-0.5" />
@@ -880,9 +864,11 @@ export default function Office() {
                     </div>
                     {agent.jobTitle && <div className="text-[7px] text-gray-500 whitespace-nowrap">{agent.jobTitle}</div>}
                   </div>
-                  {female
-                    ? <FemaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
-                    : <MaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
+                  {isDog(agent)
+                    ? <DogSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
+                    : female
+                      ? <FemaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
+                      : <MaleSprite color={color} frame={0} facing={facingRight ? "right" : "left"} />
                   }
                   <div className="w-6 h-1.5 rounded-full bg-black/15 -mt-0.5" />
                 </div>

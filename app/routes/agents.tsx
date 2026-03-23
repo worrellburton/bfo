@@ -16,11 +16,40 @@ interface Agent {
 }
 
 const MODELS = [
-  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-  { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
-  { value: "claude-haiku-4-20250506", label: "Claude Haiku 4" },
-  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
+  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "anthropic" },
+  { value: "claude-opus-4-20250514", label: "Claude Opus 4", provider: "anthropic" },
+  { value: "claude-haiku-4-20250506", label: "Claude Haiku 4", provider: "anthropic" },
+  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet", provider: "anthropic" },
+  { value: "gpt-4o", label: "GPT-4o", provider: "openai" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini", provider: "openai" },
+  { value: "gpt-4.1", label: "GPT-4.1", provider: "openai" },
+  { value: "gpt-4.1-mini", label: "GPT-4.1 Mini", provider: "openai" },
+  { value: "o3-mini", label: "o3-mini", provider: "openai" },
 ];
+
+const DOG_BREEDS = [
+  "Golden Retriever", "Labrador", "German Shepherd", "Poodle", "Bulldog",
+  "Beagle", "Rottweiler", "Dachshund", "Corgi", "Husky",
+  "Shiba Inu", "Pomeranian", "Chihuahua", "Great Dane", "Dalmatian",
+  "Border Collie", "Boxer", "Doberman", "Akita", "Samoyed",
+  "Australian Shepherd", "Bernese Mountain Dog", "Cavalier King Charles",
+  "French Bulldog", "Maltese", "Papillon", "Pug", "Shih Tzu",
+  "Whippet", "Weimaraner", "Vizsla", "Basenji", "Bichon Frise",
+];
+
+const DOG_NAMES = [
+  "Buddy", "Max", "Charlie", "Cooper", "Rocky", "Bear", "Duke",
+  "Tucker", "Jack", "Buster", "Milo", "Rex", "Scout", "Zeus",
+  "Luna", "Bella", "Daisy", "Sadie", "Molly", "Coco", "Rosie",
+];
+
+const DOG_SYSTEM_PROMPT = `You are an office dog. You can ONLY respond with dog sounds and actions. You must NEVER use human words or sentences. Your entire vocabulary is:
+- "Woof!" "Woof woof!" "WOOF!"
+- "Bark!" "Bark bark!" "BARK!"
+- "Arf!" "Yip!" "Ruff!"
+- "*wags tail*" "*tilts head*" "*pants happily*" "*sniffs around*" "*rolls over*" "*zoomies*" "*sits*" "*drops ball at feet*" "*happy wiggle*" "*licks face*"
+
+Mix these up naturally. If someone talks to you, respond with enthusiasm. If another agent says something interesting, bark at them. Keep responses short (1-3 actions/sounds). You are a very good dog.`;
 
 export default function Agents() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -33,6 +62,9 @@ export default function Agents() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [showDogForm, setShowDogForm] = useState(false);
+  const [dogApiKey, setDogApiKey] = useState("");
+  const [dogModel, setDogModel] = useState(MODELS[0].value);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -125,6 +157,29 @@ export default function Agents() {
     await remove(ref(db, `agents/${id}`));
   }
 
+  async function handleAddDog(e: React.FormEvent) {
+    e.preventDefault();
+    if (!dogApiKey.trim()) return;
+
+    const { db } = await import("../firebase");
+    const { push, ref } = await import("firebase/database");
+
+    const breed = DOG_BREEDS[Math.floor(Math.random() * DOG_BREEDS.length)];
+    const dogName = DOG_NAMES[Math.floor(Math.random() * DOG_NAMES.length)];
+
+    await push(ref(db, "agents"), {
+      name: dogName,
+      jobTitle: `Office Dog (${breed})`,
+      model: dogModel,
+      systemPrompt: DOG_SYSTEM_PROMPT,
+      apiKey: dogApiKey.trim(),
+      createdAt: Date.now(),
+    });
+
+    setDogApiKey("");
+    setShowDogForm(false);
+  }
+
   function maskKey(key: string) {
     if (key.length <= 12) return "****";
     return key.slice(0, 7) + "..." + key.slice(-4);
@@ -134,13 +189,70 @@ export default function Agents() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold">Agents</h1>
-        <button
-          onClick={() => showForm ? resetForm() : setShowForm(true)}
-          className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm"
-        >
-          {showForm ? "Cancel" : "+ New Agent"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setShowDogForm(!showDogForm); if (showForm) resetForm(); }}
+            className={`px-4 py-2 font-medium rounded-lg transition-colors cursor-pointer text-sm ${
+              showDogForm
+                ? "bg-white/10 text-white border border-white/10"
+                : "bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10"
+            }`}
+          >
+            {showDogForm ? "Cancel" : "Add Dog"}
+          </button>
+          <button
+            onClick={() => { showForm ? resetForm() : setShowForm(true); setShowDogForm(false); }}
+            className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm"
+          >
+            {showForm ? "Cancel" : "+ New Agent"}
+          </button>
+        </div>
       </div>
+
+      {showDogForm && (
+        <form onSubmit={handleAddDog} className="mb-8 p-6 bg-white/5 border border-white/10 rounded-xl max-w-lg space-y-4">
+          <div className="text-center mb-2">
+            <span className="text-3xl">🐕</span>
+            <p className="text-sm text-gray-400 mt-1">Add an office dog! You'll get a surprise breed.</p>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Model</label>
+            <select
+              value={dogModel}
+              onChange={(e) => setDogModel(e.target.value)}
+              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30"
+            >
+              <optgroup label="Anthropic">
+                {MODELS.filter((m) => m.provider === "anthropic").map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="OpenAI">
+                {MODELS.filter((m) => m.provider === "openai").map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">API Key</label>
+            <input
+              type="password"
+              value={dogApiKey}
+              onChange={(e) => setDogApiKey(e.target.value)}
+              placeholder={MODELS.find((m) => m.value === dogModel)?.provider === "openai" ? "sk-..." : "sk-ant-..."}
+              required
+              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 font-mono text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer"
+          >
+            Adopt a Dog
+          </button>
+        </form>
+      )}
 
       {showForm && (
         <form onSubmit={handleSave} className="mb-8 p-6 bg-white/5 border border-white/10 rounded-xl max-w-lg space-y-4">
@@ -175,9 +287,16 @@ export default function Agents() {
               onChange={(e) => setModel(e.target.value)}
               className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30"
             >
-              {MODELS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
+              <optgroup label="Anthropic">
+                {MODELS.filter((m) => m.provider === "anthropic").map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="OpenAI">
+                {MODELS.filter((m) => m.provider === "openai").map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </optgroup>
             </select>
           </div>
 
@@ -188,7 +307,7 @@ export default function Agents() {
                 type={showKey ? "text" : "password"}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
+                placeholder={MODELS.find((m) => m.value === model)?.provider === "openai" ? "sk-..." : "sk-ant-..."}
                 required
                 className="w-full px-4 py-2 pr-16 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 font-mono text-sm"
               />

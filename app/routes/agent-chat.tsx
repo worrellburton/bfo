@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router";
+import { streamChat } from "../llm";
 
 export function meta() {
   return [{ title: "BFO - Agent Chat" }];
@@ -97,6 +98,22 @@ export default function AgentChat() {
     e.target.value = "";
   }
 
+  function buildApiMessages(msgs: Message[]) {
+    return msgs.map((m) => {
+      if (m.file) {
+        const isImage = m.file.mediaType.startsWith("image/");
+        const content: unknown[] = isImage
+          ? [{ type: "image", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }]
+          : [{ type: "document", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }];
+        if (m.content && m.content !== `[Attached: ${m.file.name}]`) {
+          content.push({ type: "text", text: m.content });
+        }
+        return { role: m.role, content };
+      }
+      return { role: m.role, content: m.content };
+    });
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if ((!input.trim() && !pendingFile) || !agent || streaming) return;
@@ -108,82 +125,26 @@ export default function AgentChat() {
     setPendingFile(null);
     setStreaming(true);
 
+    let assistantContent = "";
+    setMessages([...newMessages, { role: "assistant", content: "" }]);
+
     try {
-      const apiMessages = newMessages.map((m) => {
-        if (m.file) {
-          const isImage = m.file.mediaType.startsWith("image/");
-          const content: unknown[] = isImage
-            ? [{ type: "image", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }]
-            : [{ type: "document", source: { type: "base64", media_type: m.file.mediaType, data: m.file.base64 } }];
-          if (m.content && m.content !== `[Attached: ${m.file.name}]`) {
-            content.push({ type: "text", text: m.content });
-          }
-          return { role: m.role, content };
-        }
-        return { role: m.role, content: m.content };
-      });
-
-      const body: Record<string, unknown> = {
-        model: agent.model,
-        max_tokens: 4096,
-        messages: apiMessages,
-        stream: true,
-      };
-
-      if (agent.systemPrompt) {
-        body.system = agent.systemPrompt;
-      }
-
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": agent.apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
+      await streamChat(
+        agent.model,
+        agent.apiKey,
+        buildApiMessages(newMessages),
+        agent.systemPrompt || undefined,
+        {
+          onToken: (text) => {
+            assistantContent += text;
+            setMessages([...newMessages, { role: "assistant", content: assistantContent }]);
+          },
+          onDone: () => {},
+          onError: (err) => {
+            setMessages([...newMessages, { role: "assistant", content: `Error: ${err}` }]);
+          },
         },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        setMessages([...newMessages, { role: "assistant", content: `Error: ${res.status} — ${err}` }]);
-        setStreaming(false);
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No reader");
-      const decoder = new TextDecoder();
-
-      let assistantContent = "";
-      setMessages([...newMessages, { role: "assistant", content: "" }]);
-
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-              assistantContent += parsed.delta.text;
-              setMessages([...newMessages, { role: "assistant", content: assistantContent }]);
-            }
-          } catch {
-            // skip malformed JSON
-          }
-        }
-      }
+      );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
       setMessages([...newMessages, { role: "assistant", content: `Error: ${errMsg}` }]);
