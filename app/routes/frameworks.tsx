@@ -4,6 +4,59 @@ export function meta() {
   return [{ title: "BFO - Frameworks" }];
 }
 
+function UrlIcon({ url }: { url: string }) {
+  if (url.includes("docs.google.com/spreadsheets")) {
+    // Google Sheets icon
+    return (
+      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="1" width="18" height="22" rx="2" fill="#0f9d58" />
+        <rect x="6" y="8" width="12" height="10" rx="1" fill="white" />
+        <line x1="6" y1="11.5" x2="18" y2="11.5" stroke="#0f9d58" strokeWidth="0.8" />
+        <line x1="6" y1="14.5" x2="18" y2="14.5" stroke="#0f9d58" strokeWidth="0.8" />
+        <line x1="11" y1="8" x2="11" y2="18" stroke="#0f9d58" strokeWidth="0.8" />
+      </svg>
+    );
+  }
+  if (url.includes("docs.google.com/document")) {
+    // Google Docs icon
+    return (
+      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="1" width="18" height="22" rx="2" fill="#4285f4" />
+        <rect x="7" y="7" width="10" height="1" rx="0.5" fill="white" />
+        <rect x="7" y="10" width="10" height="1" rx="0.5" fill="white" />
+        <rect x="7" y="13" width="7" height="1" rx="0.5" fill="white" />
+        <rect x="7" y="16" width="10" height="1" rx="0.5" fill="white" />
+      </svg>
+    );
+  }
+  if (url.includes("docs.google.com/presentation")) {
+    // Google Slides icon
+    return (
+      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="1" width="18" height="22" rx="2" fill="#f4b400" />
+        <rect x="6" y="7" width="12" height="10" rx="1" fill="white" />
+        <rect x="8" y="10" width="8" height="4" rx="0.5" fill="#f4b400" opacity="0.5" />
+      </svg>
+    );
+  }
+  if (url.includes("drive.google.com")) {
+    // Google Drive icon
+    return (
+      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none">
+        <path d="M8 2l8 0 4 7H4L8 2z" fill="#f4b400" />
+        <path d="M4 9l4 7h12l-4-7H4z" fill="#4285f4" />
+        <path d="M16 2l4 7-4 7-4-7 4-7z" fill="#0f9d58" />
+      </svg>
+    );
+  }
+  // Generic link icon
+  return (
+    <svg className="w-4 h-4 shrink-0 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+  );
+}
+
 interface Framework {
   id: string;
   title: string;
@@ -310,16 +363,21 @@ export default function Frameworks() {
                           />
                         </div>
                       ) : (
-                        <div>
-                          <a
-                            href={fw.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 truncate block"
-                          >
-                            {fw.title}
-                          </a>
-                          <span className="text-gray-600 text-xs truncate block">{fw.url}</span>
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5">
+                            <UrlIcon url={fw.url} />
+                          </div>
+                          <div className="min-w-0">
+                            <a
+                              href={fw.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:text-blue-300 truncate block"
+                            >
+                              {fw.title}
+                            </a>
+                            <span className="text-gray-600 text-xs truncate block">{fw.url}</span>
+                          </div>
                         </div>
                       )}
                     </td>
