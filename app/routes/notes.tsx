@@ -1,58 +1,91 @@
-import { data, Form, useLoaderData, useNavigation } from "react-router";
+import { redirect } from "react-router";
 import type { Route } from "./+types/notes";
-import { prisma } from "../db.server";
+import { isAuthenticated } from "../session.server";
+import { useEffect, useState } from "react";
 
 export function meta() {
-  return [{ title: "Notes" }];
+  return [{ title: "BFO - Notes" }];
 }
 
-export async function loader() {
-  const notes = await prisma.note.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-  return { notes };
+export async function loader({ request }: Route.LoaderArgs) {
+  if (!(await isAuthenticated(request))) {
+    throw redirect("/login");
+  }
+  return {};
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-
-  if (intent === "create") {
-    const title = formData.get("title");
-    const body = formData.get("body");
-
-    if (typeof title !== "string" || typeof body !== "string") {
-      return data({ error: "Title and body are required" }, { status: 400 });
-    }
-
-    await prisma.note.create({ data: { title, body } });
-  }
-
-  if (intent === "delete") {
-    const id = formData.get("id");
-    if (typeof id !== "string") {
-      return data({ error: "ID is required" }, { status: 400 });
-    }
-    await prisma.note.delete({ where: { id: parseInt(id) } });
-  }
-
-  return { ok: true };
+interface Note {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: number;
 }
 
 export default function Notes() {
-  const { notes } = useLoaderData<typeof loader>();
-  const navigation = useNavigation();
-  const isSubmitting = navigation.state === "submitting";
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    async function setup() {
+      const { db } = await import("../firebase");
+      const {
+        collection,
+        onSnapshot,
+        orderBy,
+        query,
+      } = await import("firebase/firestore");
+
+      const q = query(collection(db, "notes"), orderBy("createdAt", "desc"));
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const notesData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Note[];
+        setNotes(notesData);
+        setLoading(false);
+      });
+    }
+
+    setup();
+    return () => unsubscribe?.();
+  }, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim() || !body.trim()) return;
+
+    const { db } = await import("../firebase");
+    const { addDoc, collection } = await import("firebase/firestore");
+
+    await addDoc(collection(db, "notes"), {
+      title: title.trim(),
+      body: body.trim(),
+      createdAt: Date.now(),
+    });
+
+    setTitle("");
+    setBody("");
+  }
+
+  async function handleDelete(id: string) {
+    const { db } = await import("../firebase");
+    const { deleteDoc, doc } = await import("firebase/firestore");
+    await deleteDoc(doc(db, "notes", id));
+  }
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 800, margin: "0 auto", padding: "2rem" }}>
       <h1>Notes</h1>
 
-      <Form method="post" style={{ marginBottom: "2rem" }}>
-        <input type="hidden" name="intent" value="create" />
+      <form onSubmit={handleCreate} style={{ marginBottom: "2rem" }}>
         <div style={{ marginBottom: "0.5rem" }}>
           <input
-            name="title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             placeholder="Title"
             required
             style={{ width: "100%", padding: "0.5rem", fontSize: "1rem" }}
@@ -60,19 +93,20 @@ export default function Notes() {
         </div>
         <div style={{ marginBottom: "0.5rem" }}>
           <textarea
-            name="body"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
             placeholder="Write your note..."
             required
             rows={4}
             style={{ width: "100%", padding: "0.5rem", fontSize: "1rem" }}
           />
         </div>
-        <button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Adding..." : "Add Note"}
-        </button>
-      </Form>
+        <button type="submit">Add Note</button>
+      </form>
 
-      {notes.length === 0 ? (
+      {loading ? (
+        <p>Loading...</p>
+      ) : notes.length === 0 ? (
         <p>No notes yet. Add one above!</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
@@ -92,11 +126,7 @@ export default function Notes() {
                 <small style={{ color: "#666" }}>
                   {new Date(note.createdAt).toLocaleDateString()}
                 </small>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="delete" />
-                  <input type="hidden" name="id" value={note.id} />
-                  <button type="submit">Delete</button>
-                </Form>
+                <button onClick={() => handleDelete(note.id)}>Delete</button>
               </div>
             </li>
           ))}
