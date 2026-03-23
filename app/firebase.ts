@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAtSSBoP5s0VsFuoqA1XqkD92Pkr62TYm0",
@@ -9,7 +9,8 @@ const firebaseConfig = {
   messagingSenderId: "743937608762",
   appId: "1:743937608762:web:5d2151f2c3cdf33c277903",
   measurementId: "G-VS67NK7HXM",
+  databaseURL: "https://bfoffice-89093-default-rtdb.firebaseio.com",
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const db = getDatabase(app);

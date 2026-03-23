@@ -32,20 +32,21 @@ export default function Notes() {
 
     async function setup() {
       const { db } = await import("../firebase");
-      const {
-        collection,
-        onSnapshot,
-        orderBy,
-        query,
-      } = await import("firebase/firestore");
+      const { ref, onValue } = await import("firebase/database");
 
-      const q = query(collection(db, "notes"), orderBy("createdAt", "desc"));
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const notesData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Note[];
-        setNotes(notesData);
+      const notesRef = ref(db, "notes");
+      unsubscribe = onValue(notesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const notesArray = Object.entries(data).map(([id, value]) => ({
+            id,
+            ...(value as Omit<Note, "id">),
+          }));
+          notesArray.sort((a, b) => b.createdAt - a.createdAt);
+          setNotes(notesArray);
+        } else {
+          setNotes([]);
+        }
         setLoading(false);
       });
     }
@@ -59,9 +60,9 @@ export default function Notes() {
     if (!title.trim() || !body.trim()) return;
 
     const { db } = await import("../firebase");
-    const { addDoc, collection } = await import("firebase/firestore");
+    const { push, ref } = await import("firebase/database");
 
-    await addDoc(collection(db, "notes"), {
+    await push(ref(db, "notes"), {
       title: title.trim(),
       body: body.trim(),
       createdAt: Date.now(),
@@ -73,8 +74,8 @@ export default function Notes() {
 
   async function handleDelete(id: string) {
     const { db } = await import("../firebase");
-    const { deleteDoc, doc } = await import("firebase/firestore");
-    await deleteDoc(doc(db, "notes", id));
+    const { ref, remove } = await import("firebase/database");
+    await remove(ref(db, "notes/" + id));
   }
 
   return (
