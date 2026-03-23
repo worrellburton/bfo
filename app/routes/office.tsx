@@ -881,17 +881,101 @@ export default function Office() {
             }}>
               <div className="absolute inset-0 border-r-2 border-[#5a6a7a] w-1/2" />
             </div>
-            {/* Clock */}
-            <div className="absolute top-[20%] left-[42%] w-5 h-5 rounded-full bg-[#f5f0e0] border-2 border-[#8b7355]">
-              <div className="absolute w-0.5 h-1.5 bg-[#333] top-[20%] left-1/2 -translate-x-1/2 origin-bottom rotate-[30deg]" />
-              <div className="absolute w-0.5 h-1 bg-[#555] top-[30%] left-1/2 -translate-x-1/2 origin-bottom rotate-[150deg]" />
-            </div>
-            {/* Whiteboard / Chart */}
-            <div className="absolute top-[10%] left-[50%] w-[14%] h-[65%] rounded-sm bg-white/90 border-2 border-[#8b7355]">
-              <div className="absolute bottom-1 left-1 w-1.5 h-[40%] bg-[#4285f4]" />
-              <div className="absolute bottom-1 left-[35%] w-1.5 h-[60%] bg-[#0f9d58]" />
-              <div className="absolute bottom-1 right-[35%] w-1.5 h-[30%] bg-[#f4b400]" />
-              <div className="absolute bottom-1 right-1 w-1.5 h-[50%] bg-[#ea4335]" />
+            {/* Center window — rainy scene with two children holding umbrellas */}
+            <div className="absolute top-[8%] left-[32%] w-[36%] h-[75%] rounded-sm overflow-hidden" style={{
+              border: "3px solid #5a6a7a",
+              boxShadow: "inset 0 0 0 1px #9ab",
+            }}>
+              {/* Sky — overcast */}
+              <div className="absolute inset-0" style={{
+                background: "linear-gradient(180deg, #8899aa 0%, #a0b0c0 40%, #b0bfcc 70%, #7a9a6a 85%, #6a8a5a 100%)",
+              }} />
+              {/* Rain streaks */}
+              <svg className="absolute inset-0 w-full h-full" style={{ opacity: 0.3 }}>
+                <line x1="15%" y1="0" x2="12%" y2="30%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="30%" y1="5%" x2="27%" y2="35%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="50%" y1="0" x2="47%" y2="28%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="70%" y1="8%" x2="67%" y2="38%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="85%" y1="2%" x2="82%" y2="32%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="22%" y1="15%" x2="19%" y2="45%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="42%" y1="10%" x2="39%" y2="40%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="62%" y1="3%" x2="59%" y2="33%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="78%" y1="12%" x2="75%" y2="42%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="10%" y1="20%" x2="7%" y2="50%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="55%" y1="18%" x2="52%" y2="48%" stroke="#6688aa" strokeWidth="0.5" />
+                <line x1="90%" y1="15%" x2="87%" y2="45%" stroke="#6688aa" strokeWidth="0.5" />
+              </svg>
+              {/* Puddles on ground */}
+              <div className="absolute bottom-[12%] left-[10%] w-[25%] h-[4%] rounded-full bg-[#7a9a9a] opacity-30" />
+              <div className="absolute bottom-[10%] right-[15%] w-[20%] h-[3%] rounded-full bg-[#7a9a9a] opacity-25" />
+              {/* Child 1 — left, with red umbrella, looking right (toward window) */}
+              <svg className="absolute bottom-[14%] left-[18%]" width="24" height="30" viewBox="0 0 24 30" style={{ imageRendering: "pixelated" }}>
+                {/* Umbrella */}
+                <ellipse cx="12" cy="5" rx="10" ry="5" fill="#cc3333" />
+                <ellipse cx="12" cy="5" rx="10" ry="5" fill="url(#umbrellaShine1)" />
+                <line x1="12" y1="5" x2="12" y2="22" stroke="#6b4226" strokeWidth="1" />
+                <path d="M12 22 Q14 24 12 25" fill="none" stroke="#6b4226" strokeWidth="0.8" />
+                {/* Head */}
+                <circle cx="12" cy="14" r="3" fill="#f5c6a0" />
+                {/* Hair */}
+                <rect x="9" y="11" width="6" height="2" rx="1" fill="#5a3a1a" />
+                {/* Eyes looking at window */}
+                <rect x="13" y="13.5" width="1" height="1" fill="#222" />
+                {/* Body — raincoat */}
+                <rect x="9" y="17" width="6" height="6" rx="1" fill="#e8c840" />
+                {/* Legs + boots */}
+                <rect x="10" y="23" width="2" height="3" fill="#e8c840" />
+                <rect x="13" y="23" width="2" height="3" fill="#e8c840" />
+                <rect x="9.5" y="26" width="3" height="2" rx="0.5" fill="#cc3333" />
+                <rect x="12.5" y="26" width="3" height="2" rx="0.5" fill="#cc3333" />
+                <defs>
+                  <radialGradient id="umbrellaShine1" cx="40%" cy="30%">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
+              </svg>
+              {/* Child 2 — right, with blue umbrella, looking right (toward window) */}
+              <svg className="absolute bottom-[14%] right-[15%]" width="22" height="28" viewBox="0 0 22 28" style={{ imageRendering: "pixelated" }}>
+                {/* Umbrella */}
+                <ellipse cx="11" cy="4" rx="9" ry="4.5" fill="#4488cc" />
+                <ellipse cx="11" cy="4" rx="9" ry="4.5" fill="url(#umbrellaShine2)" />
+                <line x1="11" y1="4" x2="11" y2="20" stroke="#6b4226" strokeWidth="1" />
+                <path d="M11 20 Q13 22 11 23" fill="none" stroke="#6b4226" strokeWidth="0.8" />
+                {/* Head */}
+                <circle cx="11" cy="13" r="2.8" fill="#c68642" />
+                {/* Hair — curly/short */}
+                <rect x="8" y="10" width="6" height="2.5" rx="1.2" fill="#2a1a0a" />
+                {/* Eyes looking at window */}
+                <rect x="12" y="12.5" width="1" height="1" fill="#222" />
+                {/* Body — blue raincoat */}
+                <rect x="8" y="16" width="6" height="5" rx="1" fill="#3366aa" />
+                {/* Legs + boots */}
+                <rect x="9" y="21" width="2" height="3" fill="#3366aa" />
+                <rect x="12" y="21" width="2" height="3" fill="#3366aa" />
+                <rect x="8.5" y="24" width="3" height="2" rx="0.5" fill="#4488cc" />
+                <rect x="11.5" y="24" width="3" height="2" rx="0.5" fill="#4488cc" />
+                <defs>
+                  <radialGradient id="umbrellaShine2" cx="40%" cy="30%">
+                    <stop offset="0%" stopColor="white" stopOpacity="0.2" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
+              </svg>
+              {/* Window divider (cross pane) */}
+              <div className="absolute inset-0 border-r-2 border-[#5a6a7a]" style={{ width: "50%" }} />
+              <div className="absolute inset-0 border-b-2 border-[#5a6a7a]" style={{ height: "50%" }} />
+              {/* Rain drops on glass */}
+              <svg className="absolute inset-0 w-full h-full" style={{ opacity: 0.15 }}>
+                <circle cx="20%" cy="25%" r="1" fill="#aabbcc" />
+                <circle cx="60%" cy="15%" r="1.2" fill="#aabbcc" />
+                <circle cx="80%" cy="40%" r="0.8" fill="#aabbcc" />
+                <circle cx="35%" cy="55%" r="1" fill="#aabbcc" />
+                <circle cx="70%" cy="65%" r="1.1" fill="#aabbcc" />
+                <circle cx="15%" cy="70%" r="0.9" fill="#aabbcc" />
+                <circle cx="45%" cy="35%" r="1.3" fill="#aabbcc" />
+                <circle cx="85%" cy="20%" r="0.7" fill="#aabbcc" />
+              </svg>
             </div>
           </div>
 
