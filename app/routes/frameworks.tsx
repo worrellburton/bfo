@@ -290,7 +290,7 @@ export default function Frameworks() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider">
+              <tr className="border-b border-white/10 text-gray-400 text-xs tracking-wider">
                 <th className="py-3 w-8"></th>
                 <th className="py-3 pr-4 font-medium">Name</th>
                 <th className="py-3 pr-4 font-medium">Asset</th>

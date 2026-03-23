@@ -427,14 +427,14 @@ export default function AssetDetail() {
           ].map(([label, value]) =>
             value ? (
               <div key={label} className="p-3 bg-white/5 border border-white/10 rounded-lg">
-                <p className="text-gray-500 text-xs uppercase tracking-wider">{label}</p>
+                <p className="text-gray-500 text-xs tracking-wider">{label}</p>
                 <p className="text-sm mt-1">{value}</p>
               </div>
             ) : null
           )}
           {asset.notes && (
             <div className="col-span-2 p-3 bg-white/5 border border-white/10 rounded-lg">
-              <p className="text-gray-500 text-xs uppercase tracking-wider">Notes</p>
+              <p className="text-gray-500 text-xs tracking-wider">Notes</p>
               <p className="text-sm mt-1 whitespace-pre-wrap">{asset.notes}</p>
             </div>
           )}
@@ -543,7 +543,7 @@ export default function AssetDetail() {
                   <div>
                     <table className="w-full text-sm text-left mb-3">
                       <thead>
-                        <tr className="border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider">
+                        <tr className="border-b border-white/10 text-gray-400 text-xs tracking-wider">
                           <th className="py-2 pr-3 font-medium">Name</th>
                           <th className="py-2 pr-3 font-medium">Shares</th>
                           <th className="py-2 pr-3 font-medium">Class</th>
@@ -596,19 +596,19 @@ export default function AssetDetail() {
             {corpTab === "stock" && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Authorized Shares</label>
+                  <label className="text-gray-500 text-xs tracking-wider block mb-1">Authorized Shares</label>
                   <input type="number" value={corpData.authorizedShares || ""} onChange={(e) => updateCorpField("authorizedShares", Number(e.target.value) || 0)} placeholder="e.g. 10,000,000" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
                 </div>
                 <div>
-                  <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Issued Shares</label>
+                  <label className="text-gray-500 text-xs tracking-wider block mb-1">Issued Shares</label>
                   <input type="number" value={corpData.issuedShares || ""} onChange={(e) => updateCorpField("issuedShares", Number(e.target.value) || 0)} placeholder="e.g. 1,000,000" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
                 </div>
                 <div>
-                  <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Par Value</label>
+                  <label className="text-gray-500 text-xs tracking-wider block mb-1">Par Value</label>
                   <input value={corpData.parValue || ""} onChange={(e) => updateCorpField("parValue", e.target.value)} placeholder="e.g. $0.001" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
                 </div>
                 <div>
-                  <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Stock Classes</label>
+                  <label className="text-gray-500 text-xs tracking-wider block mb-1">Stock Classes</label>
                   <input value={corpData.stockClasses || ""} onChange={(e) => updateCorpField("stockClasses", e.target.value)} placeholder="e.g. Common, Preferred A" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
                 </div>
               </div>
@@ -619,11 +619,11 @@ export default function AssetDetail() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Fiscal Year End</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">Fiscal Year End</label>
                     <input value={corpData.fiscalYearEnd || ""} onChange={(e) => updateCorpField("fiscalYearEnd", e.target.value)} placeholder="e.g. December 31" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
                   </div>
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">State Filing Status</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">State Filing Status</label>
                     <select value={corpData.stateFilingStatus || ""} onChange={(e) => updateCorpField("stateFilingStatus", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-white/30">
                       <option value="">Select...</option>
                       <option value="Current">Current</option>
@@ -633,23 +633,23 @@ export default function AssetDetail() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Annual Report Due</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">Annual Report Due</label>
                     <input type="date" value={corpData.annualReportDue || ""} onChange={(e) => updateCorpField("annualReportDue", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
                   </div>
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Next Board Meeting</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">Next Board Meeting</label>
                     <input type="date" value={corpData.nextBoardMeeting || ""} onChange={(e) => updateCorpField("nextBoardMeeting", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
                   </div>
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Incorporation Date</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">Incorporation Date</label>
                     <input type="date" value={corpData.incorporationDate || ""} onChange={(e) => updateCorpField("incorporationDate", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
                   </div>
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Last Annual Report</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">Last Annual Report</label>
                     <input type="date" value={corpData.lastAnnualReport || ""} onChange={(e) => updateCorpField("lastAnnualReport", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
                   </div>
                   <div>
-                    <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">Last Board Meeting</label>
+                    <label className="text-gray-500 text-xs tracking-wider block mb-1">Last Board Meeting</label>
                     <input type="date" value={corpData.lastBoardMeeting || ""} onChange={(e) => updateCorpField("lastBoardMeeting", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
                   </div>
                 </div>

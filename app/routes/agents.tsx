@@ -216,7 +216,7 @@ export default function Agents() {
             <p className="text-sm text-gray-400 mt-1">Add an office dog! You'll get a surprise breed.</p>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Model</label>
+            <label className="block text-xs text-gray-400 tracking-wider mb-1.5">Model</label>
             <select
               value={dogModel}
               onChange={(e) => setDogModel(e.target.value)}
@@ -235,7 +235,7 @@ export default function Agents() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">API Key</label>
+            <label className="block text-xs text-gray-400 tracking-wider mb-1.5">API Key</label>
             <input
               type="password"
               value={dogApiKey}
@@ -258,7 +258,7 @@ export default function Agents() {
         <form onSubmit={handleSave} className="mb-8 p-6 bg-white/5 border border-white/10 rounded-xl max-w-lg space-y-4">
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Name</label>
+              <label className="block text-xs text-gray-400 tracking-wider mb-1.5">Name</label>
               <input
                 type="text"
                 value={name}
@@ -269,7 +269,7 @@ export default function Agents() {
               />
             </div>
             <div className="flex-1">
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Job Title</label>
+              <label className="block text-xs text-gray-400 tracking-wider mb-1.5">Job Title</label>
               <input
                 type="text"
                 value={jobTitle}
@@ -281,7 +281,7 @@ export default function Agents() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Model</label>
+            <label className="block text-xs text-gray-400 tracking-wider mb-1.5">Model</label>
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
@@ -301,7 +301,7 @@ export default function Agents() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">API Key</label>
+            <label className="block text-xs text-gray-400 tracking-wider mb-1.5">API Key</label>
             <div className="relative">
               <input
                 type={showKey ? "text" : "password"}
@@ -322,7 +322,7 @@ export default function Agents() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">System Prompt</label>
+            <label className="block text-xs text-gray-400 tracking-wider mb-1.5">System Prompt</label>
             <textarea
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
@@ -350,7 +350,20 @@ export default function Agents() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
           {agents.map((agent) => (
-            <div key={agent.id} className="p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/[0.07] transition-colors">
+            <div key={agent.id} className="group/card relative p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/[0.07] transition-colors">
+              <button
+                onClick={() => {
+                  const info = [agent.name, agent.jobTitle, MODELS.find((m) => m.value === agent.model)?.label || agent.model, agent.systemPrompt].filter(Boolean).join("\n");
+                  navigator.clipboard.writeText(info);
+                }}
+                className="absolute top-2 right-2 p-1.5 text-gray-500 hover:text-white transition-all cursor-pointer rounded-lg hover:bg-white/10 opacity-0 group-hover/card:opacity-100"
+                title="Copy info"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth={2} />
+                  <path strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+              </button>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-lg truncate">{agent.name}</h3>

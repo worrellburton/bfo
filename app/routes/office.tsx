@@ -1184,7 +1184,7 @@ export default function Office() {
               </div>
               {/* "MEETING ROOM" sign */}
               <div className="absolute top-[15%] right-[4%] px-2 py-0.5 bg-[#f5f0e0] border border-[#8b7355] rounded-sm">
-                <span className="text-[6px] font-bold text-[#5a4a30]">MEETING</span>
+                <span className="text-[6px] font-bold text-[#5a4a30]">Meeting</span>
               </div>
             </div>
 

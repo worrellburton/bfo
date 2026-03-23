@@ -178,7 +178,7 @@ export default function Assets() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider">
+              <tr className="border-b border-white/10 text-gray-400 text-xs tracking-wider">
                 <th className="py-3 pr-4 font-medium">Name</th>
                 <th className="py-3 pr-4 font-medium">Type</th>
                 <th className="py-3 pr-4 font-medium">State</th>
@@ -210,24 +210,40 @@ export default function Assets() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
           {assets.map((asset) => (
-            <Link
-              key={asset.id}
-              to={`/assets/${asset.id}`}
-              className="p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors block"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold text-lg">{asset.name}</h3>
-                  <p className="text-gray-400 text-sm mt-1">{asset.state || "No state"}</p>
+            <div key={asset.id} className="group/card relative">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const info = [asset.name, asset.type, asset.state, asset.ein ? `EIN: ${asset.ein}` : ""].filter(Boolean).join("\n");
+                  navigator.clipboard.writeText(info);
+                }}
+                className="absolute top-2 right-2 z-10 p-1.5 text-gray-500 hover:text-white transition-all cursor-pointer rounded-lg hover:bg-white/10 opacity-0 group-hover/card:opacity-100"
+                title="Copy info"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth={2} />
+                  <path strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+              </button>
+              <Link
+                to={`/assets/${asset.id}`}
+                className="p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors block"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-semibold text-lg">{asset.name}</h3>
+                    <p className="text-gray-400 text-sm mt-1">{asset.state || "No state"}</p>
+                  </div>
+                  <span className="text-xs font-mono bg-white/10 px-2 py-1 rounded text-gray-300">
+                    {asset.type}
+                  </span>
                 </div>
-                <span className="text-xs font-mono bg-white/10 px-2 py-1 rounded text-gray-300">
-                  {asset.type}
-                </span>
-              </div>
-              {asset.ein && (
-                <p className="text-gray-500 text-xs mt-3">EIN: {asset.ein}</p>
-              )}
-            </Link>
+                {asset.ein && (
+                  <p className="text-gray-500 text-xs mt-3">EIN: {asset.ein}</p>
+                )}
+              </Link>
+            </div>
           ))}
         </div>
       )}
