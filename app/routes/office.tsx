@@ -68,6 +68,93 @@ function isFemale(name: string): boolean {
   return FEMALE_NAMES.has(name.trim().split(/\s+/)[0].toLowerCase());
 }
 
+function getModelProvider(model: string): { name: string; color: string; icon: React.ReactNode } {
+  const m = model.toLowerCase();
+  if (m.includes("claude") || m.includes("anthropic")) {
+    return {
+      name: "Anthropic",
+      color: "#d4a27f",
+      icon: (
+        <svg viewBox="0 0 16 16" className="w-full h-full">
+          <path d="M9.5 3L13.5 13H11.2L7.2 3H9.5Z" fill="currentColor" />
+          <path d="M6.5 3L2.5 13H4.8L8.8 3H6.5Z" fill="currentColor" />
+        </svg>
+      ),
+    };
+  }
+  if (m.includes("gpt") || m.includes("o1") || m.includes("o3") || m.includes("openai")) {
+    return {
+      name: "OpenAI",
+      color: "#10a37f",
+      icon: (
+        <svg viewBox="0 0 16 16" className="w-full h-full">
+          <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 2v3M8 11v3M2 8h3M11 8h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      ),
+    };
+  }
+  if (m.includes("gemini") || m.includes("google")) {
+    return {
+      name: "Google",
+      color: "#4285f4",
+      icon: (
+        <svg viewBox="0 0 16 16" className="w-full h-full">
+          <path d="M8 3l2 5-2 5-2-5z" fill="currentColor" />
+          <path d="M3 8l5-2 5 2-5 2z" fill="currentColor" opacity="0.6" />
+        </svg>
+      ),
+    };
+  }
+  if (m.includes("llama") || m.includes("meta")) {
+    return {
+      name: "Meta",
+      color: "#0668E1",
+      icon: (
+        <svg viewBox="0 0 16 16" className="w-full h-full">
+          <path d="M4 12C4 8 6 4 8 4s4 4 4 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      ),
+    };
+  }
+  if (m.includes("grok") || m.includes("xai")) {
+    return {
+      name: "xAI",
+      color: "#fff",
+      icon: (
+        <svg viewBox="0 0 16 16" className="w-full h-full">
+          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      ),
+    };
+  }
+  return {
+    name: "AI",
+    color: "#888",
+    icon: (
+      <svg viewBox="0 0 16 16" className="w-full h-full">
+        <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="8" cy="8" r="1.5" fill="currentColor" />
+      </svg>
+    ),
+  };
+}
+
+function ModelBadge({ model }: { model: string }) {
+  const provider = getModelProvider(model);
+  return (
+    <div
+      className="w-3.5 h-3.5 rounded-full flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.5)", color: provider.color, border: `1px solid ${provider.color}40` }}
+      title={provider.name}
+    >
+      <div className="w-2 h-2">
+        {provider.icon}
+      </div>
+    </div>
+  );
+}
+
 function MaleSprite({ color, frame, facing }: { color: string; frame: number; facing: string }) {
   const flip = facing === "left";
   return (
@@ -765,9 +852,12 @@ export default function Office() {
                   transition: "left 100ms linear, top 100ms linear",
                 }}
               >
-                {/* Name + job title always visible */}
+                {/* Name + job title + model badge */}
                 <div className={`mb-0.5 text-center transition-opacity ${hoveredId === agent.id || isActive ? "opacity-100" : "opacity-50"}`}>
-                  <div className="text-[9px] font-bold whitespace-nowrap" style={{ color }}>{agent.name}</div>
+                  <div className="flex items-center justify-center gap-0.5">
+                    <ModelBadge model={agent.model} />
+                    <div className="text-[9px] font-bold whitespace-nowrap" style={{ color }}>{agent.name}</div>
+                  </div>
                   {agent.jobTitle && (
                     <div className="text-[7px] text-gray-500 whitespace-nowrap">{agent.jobTitle}</div>
                   )}
@@ -845,7 +935,10 @@ export default function Office() {
                   style={{ left: `${seat.x}%`, top: `${seat.y}%`, zIndex: Math.round(seat.y) + 5 }}
                 >
                   <div className="mb-0.5 text-center">
-                    <div className="text-[9px] font-bold whitespace-nowrap" style={{ color }}>{agent.name}</div>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <ModelBadge model={agent.model} />
+                      <div className="text-[9px] font-bold whitespace-nowrap" style={{ color }}>{agent.name}</div>
+                    </div>
                     {agent.jobTitle && <div className="text-[7px] text-gray-500 whitespace-nowrap">{agent.jobTitle}</div>}
                   </div>
                   {female
