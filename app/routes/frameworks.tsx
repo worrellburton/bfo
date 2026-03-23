@@ -376,7 +376,7 @@ export default function Frameworks() {
                             >
                               {fw.title}
                             </a>
-                            <span className="text-gray-600 text-xs truncate block">{fw.url}</span>
+                            <span className="text-gray-600 text-xs truncate block opacity-0 group-hover:opacity-100 transition-opacity">{fw.url}</span>
                           </div>
                         </div>
                       )}

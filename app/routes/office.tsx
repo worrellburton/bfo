@@ -13,9 +13,15 @@ interface Agent {
   apiKey: string;
 }
 
+interface PdfAttachment {
+  name: string;
+  base64: string;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
+  pdf?: PdfAttachment;
 }
 
 interface AgentPos {
@@ -143,6 +149,9 @@ export default function Office() {
   const [streaming, setStreaming] = useState(false);
   const [positions, setPositions] = useState<Record<string, AgentPos>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pendingPdf, setPendingPdf] = useState<PdfAttachment | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [inMeeting, setInMeeting] = useState(false);
   const [meetingTopic, setMeetingTopic] = useState("");
   const [meetingLog, setMeetingLog] = useState<{ agent: string; color: string; text: string }[]>([]);
@@ -299,15 +308,39 @@ export default function Office() {
     setStreaming(false);
   }
 
+  function handlePdfFile(file: File) {
+    if (file.type !== "application/pdf") return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      setPendingPdf({ name: file.name, base64 });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handlePdfDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handlePdfFile(file);
+  }
+
+  function handlePdfInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handlePdfFile(file);
+    e.target.value = "";
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || !chatAgent || streaming) return;
+    if ((!input.trim() && !pendingPdf) || !chatAgent || streaming) return;
 
-    const userMessage: Message = { role: "user", content: input.trim() };
+    const userMessage: Message = { role: "user", content: input.trim() || (pendingPdf ? `[Attached: ${pendingPdf.name}]` : ""), pdf: pendingPdf || undefined };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     saveConversation(chatAgent.id, newMessages);
     setInput("");
+    setPendingPdf(null);
     setStreaming(true);
     addToast(`You: ${userMessage.content.slice(0, 60)}${userMessage.content.length > 60 ? "..." : ""}`, chatAgent.name);
 
@@ -315,7 +348,18 @@ export default function Office() {
       const body: Record<string, unknown> = {
         model: chatAgent.model,
         max_tokens: 4096,
-        messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+        messages: newMessages.map((m) => {
+          if (m.pdf) {
+            const content: unknown[] = [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: m.pdf.base64 } },
+            ];
+            if (m.content && m.content !== `[Attached: ${m.pdf.name}]`) {
+              content.push({ type: "text", text: m.content });
+            }
+            return { role: m.role, content };
+          }
+          return { role: m.role, content: m.content };
+        }),
         stream: true,
       };
       if (chatAgent.systemPrompt) body.system = chatAgent.systemPrompt;
@@ -895,10 +939,27 @@ export default function Office() {
             </div>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-            {messages.length === 0 && (
-              <p className="text-gray-600 text-xs text-center mt-8">Start a conversation with {chatAgent.name}</p>
+          {/* Messages — drop zone */}
+          <div
+            className={`flex-1 overflow-y-auto space-y-2 pr-1 relative rounded-lg transition-colors ${
+              dragOver ? "bg-blue-500/5 ring-2 ring-blue-400/30 ring-inset" : ""
+            }`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handlePdfDrop}
+          >
+            {dragOver && (
+              <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                <div className="bg-blue-500/10 border border-dashed border-blue-400/40 rounded-lg px-4 py-3 text-center">
+                  <p className="text-blue-400 text-[10px] font-medium">Drop PDF here</p>
+                </div>
+              </div>
+            )}
+            {messages.length === 0 && !dragOver && (
+              <div className="text-center mt-8">
+                <p className="text-gray-600 text-xs">Start a conversation with {chatAgent.name}</p>
+                <p className="text-gray-700 text-[10px] mt-1">Drop a PDF to attach it</p>
+              </div>
             )}
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -907,7 +968,15 @@ export default function Office() {
                     ? "bg-white/10 text-white rounded-br-sm"
                     : "bg-white/5 text-gray-200 rounded-bl-sm"
                 }`}>
-                  {msg.content}
+                  {msg.pdf && (
+                    <div className="flex items-center gap-1.5 mb-1 px-1.5 py-1 bg-white/5 rounded">
+                      <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-[10px] text-gray-300 truncate">{msg.pdf.name}</span>
+                    </div>
+                  )}
+                  {msg.content && msg.content !== `[Attached: ${msg.pdf?.name}]` && msg.content}
                   {streaming && i === messages.length - 1 && msg.role === "assistant" && (
                     <span className="inline-block w-1 h-3 bg-white/40 ml-0.5 animate-pulse rounded-sm" />
                   )}
@@ -917,8 +986,35 @@ export default function Office() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Pending PDF */}
+          {pendingPdf && (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg mt-1">
+              <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <span className="text-[10px] text-gray-300 truncate flex-1">{pendingPdf.name}</span>
+              <button onClick={() => setPendingPdf(null)} className="text-gray-500 hover:text-white cursor-pointer">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
           {/* Input */}
+          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" onChange={handlePdfInput} className="hidden" />
           <form onSubmit={handleSend} className="flex gap-2 items-center pt-3 border-t border-white/10 mt-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={streaming}
+              className="text-gray-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 shrink-0"
+              title="Attach PDF"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
             <input
               ref={inputRef}
               value={input}
@@ -930,7 +1026,7 @@ export default function Office() {
             />
             <button
               type="submit"
-              disabled={streaming || !input.trim()}
+              disabled={streaming || (!input.trim() && !pendingPdf)}
               className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs"
             >
               {streaming ? "..." : "Send"}
