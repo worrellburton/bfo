@@ -42,6 +42,42 @@ interface Toast {
   agent: string;
 }
 
+interface AgentChatter {
+  id: number;
+  agentA: string;  // agent id
+  agentB: string;  // agent id
+  bubbleA?: string; // what agent A is saying
+  bubbleB?: string; // what agent B is saying
+  phase: "walking" | "talking" | "done";
+}
+
+// Load/save agent memories — things agents have learned about each other
+function loadMemories(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem("bfo-agent-memories");
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveMemories(memories: Record<string, string[]>) {
+  localStorage.setItem("bfo-agent-memories", JSON.stringify(memories));
+}
+
+function getMemoryKey(a: string, b: string) {
+  return [a, b].sort().join(":");
+}
+
+// Conversation starters for agents to learn about each other
+const CONVO_PROMPTS = [
+  "Start a casual conversation. Ask about their hobbies or interests.",
+  "Ask them what they've been working on lately or what excites them about their job.",
+  "Share something fun about yourself and ask them about their favorite things.",
+  "Ask them about something they're passionate about outside of work.",
+  "Talk about weekend plans or a fun experience you've had recently.",
+  "Ask what kind of music, movies, or books they enjoy.",
+  "Share a fun fact about yourself and ask them to share one too.",
+];
+
 const FEMALE_NAMES = new Set([
   "mary","patricia","jennifer","linda","barbara","elizabeth","susan","jessica",
   "sarah","karen","lisa","nancy","betty","margaret","sandra","ashley","dorothy",
@@ -497,6 +533,12 @@ export default function Office() {
   const posRef = useRef<Record<string, AgentPos>>({});
   const toastIdRef = useRef(0);
 
+  // Autonomous agent chatter
+  const [chatters, setChatters] = useState<AgentChatter[]>([]);
+  const chatterIdRef = useRef(0);
+  const chatterBusyRef = useRef<Set<string>>(new Set());
+  const chatterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     async function setup() {
@@ -807,6 +849,150 @@ export default function Office() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); startMeeting(e); }
     if (e.key === "Escape") leaveMeeting();
   }
+
+  // --- Autonomous agent-to-agent chatter ---
+  async function startChatter(agentA: Agent, agentB: Agent) {
+    const id = ++chatterIdRef.current;
+    chatterBusyRef.current.add(agentA.id);
+    chatterBusyRef.current.add(agentB.id);
+
+    // Load existing memories between these two
+    const memories = loadMemories();
+    const memKey = getMemoryKey(agentA.id, agentB.id);
+    const pastMemories = memories[memKey] || [];
+    const memoryContext = pastMemories.length > 0
+      ? `\n\nThings you remember from past conversations with ${agentB.name}:\n${pastMemories.slice(-5).map(m => `- ${m}`).join("\n")}`
+      : "";
+
+    const prompt = CONVO_PROMPTS[Math.floor(Math.random() * CONVO_PROMPTS.length)];
+
+    // Phase 1: walking toward each other
+    const chatter: AgentChatter = { id, agentA: agentA.id, agentB: agentB.id, phase: "walking" };
+    setChatters(prev => [...prev, chatter]);
+
+    // Move agents toward a midpoint
+    const posA = posRef.current[agentA.id];
+    const posB = posRef.current[agentB.id];
+    if (posA && posB) {
+      const midX = (posA.x + posB.x) / 2;
+      const midY = (posA.y + posB.y) / 2;
+      posA.state = "walking";
+      posA.targetX = Math.max(5, Math.min(85, midX - 3));
+      posA.targetY = Math.max(25, Math.min(90, midY));
+      posB.state = "walking";
+      posB.targetX = Math.max(5, Math.min(85, midX + 3));
+      posB.targetY = Math.max(25, Math.min(90, midY));
+    }
+
+    // Wait for agents to walk close
+    await new Promise(r => setTimeout(r, 2500));
+
+    // Phase 2: Agent A speaks
+    const sysA = `${agentA.systemPrompt ? agentA.systemPrompt + "\n\n" : ""}You are ${agentA.name}${agentA.jobTitle ? `, ${agentA.jobTitle}` : ""}. You're having a casual chat with your coworker ${agentB.name}${agentB.jobTitle ? ` (${agentB.jobTitle})` : ""} at the office. Keep it to 1-2 short sentences. Be friendly and natural.${memoryContext}`;
+
+    setChatters(prev => prev.map(c => c.id === id ? { ...c, phase: "talking", bubbleA: "..." } : c));
+
+    let responseA: string;
+    try {
+      responseA = await callLLM(agentA.model, agentA.apiKey,
+        [{ role: "user", content: prompt }], sysA);
+    } catch {
+      responseA = "Hey, how's it going?";
+    }
+    responseA = responseA.slice(0, 120);
+
+    setChatters(prev => prev.map(c => c.id === id ? { ...c, bubbleA: responseA } : c));
+    // Face each other
+    if (posRef.current[agentA.id] && posRef.current[agentB.id]) {
+      posRef.current[agentA.id].facing = posRef.current[agentA.id].x < posRef.current[agentB.id].x ? "right" : "left";
+      posRef.current[agentB.id].facing = posRef.current[agentB.id].x < posRef.current[agentA.id].x ? "right" : "left";
+    }
+
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Phase 3: Agent B responds
+    const memoryContextB = pastMemories.length > 0
+      ? `\n\nThings you remember from past conversations with ${agentA.name}:\n${pastMemories.slice(-5).map(m => `- ${m}`).join("\n")}`
+      : "";
+    const sysB = `${agentB.systemPrompt ? agentB.systemPrompt + "\n\n" : ""}You are ${agentB.name}${agentB.jobTitle ? `, ${agentB.jobTitle}` : ""}. You're chatting with your coworker ${agentA.name}${agentA.jobTitle ? ` (${agentA.jobTitle})` : ""} at the office. Keep it to 1-2 short sentences. Be friendly and natural.${memoryContextB}`;
+
+    setChatters(prev => prev.map(c => c.id === id ? { ...c, bubbleB: "..." } : c));
+
+    let responseB: string;
+    try {
+      responseB = await callLLM(agentB.model, agentB.apiKey,
+        [{ role: "user", content: `${agentA.name} says: "${responseA}"\n\nRespond naturally.` }], sysB);
+    } catch {
+      responseB = "Oh nice! That's cool.";
+    }
+    responseB = responseB.slice(0, 120);
+
+    setChatters(prev => prev.map(c => c.id === id ? { ...c, bubbleA: responseA, bubbleB: responseB } : c));
+
+    // Save memories — extract what they learned about each other
+    try {
+      const summaryAgent = agentA.apiKey ? agentA : agentB;
+      const summary = await callLLM(summaryAgent.model, summaryAgent.apiKey,
+        [{ role: "user", content: `Extract 1-2 key facts or interests learned from this conversation. Return only bullet points, no preamble.\n\n${agentA.name}: "${responseA}"\n${agentB.name}: "${responseB}"` }],
+        "You extract key personal facts and interests from conversations. Return 1-2 bullet points. Each starts with the person's name.");
+      const facts = summary.split("\n").filter(l => l.trim().startsWith("-") || l.trim().startsWith("*")).map(l => l.replace(/^[\s*-]+/, "").trim()).filter(Boolean);
+      if (facts.length > 0) {
+        const updated = { ...loadMemories() };
+        if (!updated[memKey]) updated[memKey] = [];
+        updated[memKey] = [...updated[memKey], ...facts].slice(-15);
+        saveMemories(updated);
+      }
+    } catch { /* memory extraction failed, that's ok */ }
+
+    await new Promise(r => setTimeout(r, 4000));
+
+    // Phase 4: done — agents walk back to desks
+    setChatters(prev => prev.map(c => c.id === id ? { ...c, phase: "done" } : c));
+    if (posRef.current[agentA.id]) {
+      posRef.current[agentA.id].state = "walking";
+      posRef.current[agentA.id].targetX = posRef.current[agentA.id].deskX;
+      posRef.current[agentA.id].targetY = posRef.current[agentA.id].deskY;
+    }
+    if (posRef.current[agentB.id]) {
+      posRef.current[agentB.id].state = "walking";
+      posRef.current[agentB.id].targetX = posRef.current[agentB.id].deskX;
+      posRef.current[agentB.id].targetY = posRef.current[agentB.id].deskY;
+    }
+    chatterBusyRef.current.delete(agentA.id);
+    chatterBusyRef.current.delete(agentB.id);
+
+    // Remove chatter after fade out
+    setTimeout(() => setChatters(prev => prev.filter(c => c.id !== id)), 1000);
+  }
+
+  // Periodically trigger agent-to-agent conversations
+  useEffect(() => {
+    if (agents.length < 2) return;
+
+    function tryChatter() {
+      if (inMeeting) return;
+      // Pick two random agents that aren't busy
+      const available = agents.filter(a => !chatterBusyRef.current.has(a.id) && a.apiKey);
+      if (available.length < 2) return;
+
+      const shuffled = [...available].sort(() => Math.random() - 0.5);
+      startChatter(shuffled[0], shuffled[1]);
+    }
+
+    // First chatter after 10-20s, then every 25-45s
+    const initialDelay = 10000 + Math.random() * 10000;
+    chatterTimerRef.current = setTimeout(() => {
+      tryChatter();
+      const interval = setInterval(() => {
+        tryChatter();
+      }, 25000 + Math.random() * 20000);
+      chatterTimerRef.current = interval as unknown as ReturnType<typeof setTimeout>;
+    }, initialDelay);
+
+    return () => {
+      if (chatterTimerRef.current) clearTimeout(chatterTimerRef.current);
+    };
+  }, [agents, inMeeting]);
 
   // Get seat positions around a conference table
   function getSeatPosition(index: number, total: number) {
@@ -1185,6 +1371,82 @@ export default function Office() {
               </div>
             );
           })}
+
+          {/* Agent-to-agent chatter bubbles */}
+          {chatters.filter(c => c.phase === "talking").map((chatter) => {
+            const posA = positions[chatter.agentA];
+            const posB = positions[chatter.agentB];
+            const agentA = agents.find(a => a.id === chatter.agentA);
+            const agentB = agents.find(a => a.id === chatter.agentB);
+            if (!posA || !posB || !agentA || !agentB) return null;
+            const idxA = agents.indexOf(agentA);
+            const idxB = agents.indexOf(agentB);
+            return (
+              <div key={chatter.id}>
+                {/* Agent A's speech bubble */}
+                {chatter.bubbleA && (
+                  <div
+                    className="absolute pointer-events-none animate-chatter-in"
+                    style={{
+                      left: `${posA.x}%`,
+                      top: `${posA.y - 8}%`,
+                      transform: "translateX(-50%)",
+                      zIndex: 35,
+                    }}
+                  >
+                    <div className="relative bg-white rounded-lg px-2 py-1.5 shadow-lg max-w-[160px]" style={{
+                      border: `2px solid ${COLORS[idxA % COLORS.length]}20`,
+                    }}>
+                      <div className="text-[8px] font-bold mb-0.5" style={{ color: COLORS[idxA % COLORS.length] }}>{agentA.name}</div>
+                      <div className="text-[9px] text-gray-700 leading-tight">
+                        {chatter.bubbleA === "..." ? (
+                          <span className="inline-flex gap-0.5">
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                          </span>
+                        ) : chatter.bubbleA}
+                      </div>
+                      {/* Tail */}
+                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0"
+                        style={{ borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid white" }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Agent B's speech bubble */}
+                {chatter.bubbleB && (
+                  <div
+                    className="absolute pointer-events-none animate-chatter-in"
+                    style={{
+                      left: `${posB.x}%`,
+                      top: `${posB.y - 8}%`,
+                      transform: "translateX(-50%)",
+                      zIndex: 35,
+                    }}
+                  >
+                    <div className="relative bg-white rounded-lg px-2 py-1.5 shadow-lg max-w-[160px]" style={{
+                      border: `2px solid ${COLORS[idxB % COLORS.length]}20`,
+                    }}>
+                      <div className="text-[8px] font-bold mb-0.5" style={{ color: COLORS[idxB % COLORS.length] }}>{agentB.name}</div>
+                      <div className="text-[9px] text-gray-700 leading-tight">
+                        {chatter.bubbleB === "..." ? (
+                          <span className="inline-flex gap-0.5">
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                          </span>
+                        ) : chatter.bubbleB}
+                      </div>
+                      {/* Tail */}
+                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0"
+                        style={{ borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid white" }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Meeting Room — overlays the office when in meeting */}
@@ -1476,6 +1738,13 @@ export default function Office() {
         }
         .animate-toast-in {
           animation: toast-in 0.3s ease-out, toast-out 0.5s ease-in 3.5s forwards;
+        }
+        @keyframes chatter-in {
+          0% { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.9); }
+          100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+        }
+        .animate-chatter-in {
+          animation: chatter-in 0.3s ease-out forwards;
         }
       `}</style>
     </div>
