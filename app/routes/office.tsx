@@ -1139,17 +1139,47 @@ export default function Office() {
                   )}
                 </div>
 
-                {/* Character */}
-                <div
-                  className={`cursor-pointer transition-transform ${isActive ? "scale-125" : "hover:scale-110"}`}
-                  onMouseEnter={() => setHoveredId(agent.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  onClick={() => isActive ? closeChat() : openChat(agent)}
-                >
-                  {isDog(agent)
-                    ? <DogSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
-                    : <CharacterSprite traits={traits} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
-                  }
+                {/* Character + Speech bubble */}
+                <div className="relative">
+                  {/* Speech bubble — click to open dialogue */}
+                  <div
+                    className={`absolute -top-3 cursor-pointer z-10 transition-all duration-200 ${
+                      isActive
+                        ? "scale-110 opacity-100"
+                        : "hover:scale-125 opacity-80 hover:opacity-100"
+                    }`}
+                    style={{
+                      [pos.facing === "right" ? "left" : "right"]: "100%",
+                      marginLeft: pos.facing === "right" ? "-2px" : undefined,
+                      marginRight: pos.facing === "left" ? "-2px" : undefined,
+                    }}
+                    onClick={() => isActive ? closeChat() : openChat(agent)}
+                    title={`Talk to ${agent.name}`}
+                  >
+                    <svg viewBox="0 0 20 16" className="w-6 h-5" style={{ imageRendering: "auto" }}>
+                      <path
+                        d="M2 1 h14 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-4 l-3 3 l-1 -3 h-6 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2z"
+                        fill="white"
+                        stroke="rgba(0,0,0,0.2)"
+                        strokeWidth="0.5"
+                      />
+                      {/* Three dots */}
+                      <circle cx="6" cy="6.5" r="1" fill="#999" />
+                      <circle cx="10" cy="6.5" r="1" fill="#999" />
+                      <circle cx="14" cy="6.5" r="1" fill="#999" />
+                    </svg>
+                  </div>
+
+                  <div
+                    className={`transition-transform ${isActive ? "scale-125" : ""}`}
+                    onMouseEnter={() => setHoveredId(agent.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                  >
+                    {isDog(agent)
+                      ? <DogSprite color={color} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
+                      : <CharacterSprite traits={traits} frame={isWalking ? pos.walkFrame : 0} facing={pos.facing} />
+                    }
+                  </div>
                 </div>
                 <div className="w-6 h-1.5 rounded-full bg-black/20 -mt-0.5" />
               </div>
