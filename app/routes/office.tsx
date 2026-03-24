@@ -572,23 +572,42 @@ export default function Office() {
   useEffect(() => {
     if (agents.length === 0) return;
     const newPos: Record<string, AgentPos> = {};
-    const maxPerRow = Math.ceil(agents.length / 2);
-    agents.forEach((agent, i) => {
-      const row = i < maxPerRow ? 0 : 1;
-      const col = row === 0 ? i : i - maxPerRow;
-      const rowCount = row === 0 ? maxPerRow : agents.length - maxPerRow;
-      const xStep = 70 / (rowCount + 1);
-      const deskX = 15 + xStep * (col + 1);
-      const deskY = row === 0 ? 38 : 68;
-      if (posRef.current[agent.id]) {
-        newPos[agent.id] = { ...posRef.current[agent.id], deskX, deskY };
+    const nonDogs = agents.filter(a => !isDog(a));
+    const maxPerRow = Math.ceil(nonDogs.length / 2);
+    let deskIdx = 0;
+    agents.forEach((agent) => {
+      if (isDog(agent)) {
+        // Dogs roam freely — no desk
+        const startX = 20 + Math.random() * 60;
+        const startY = 30 + Math.random() * 40;
+        if (posRef.current[agent.id]) {
+          newPos[agent.id] = { ...posRef.current[agent.id], deskX: startX, deskY: startY };
+        } else {
+          newPos[agent.id] = {
+            x: startX, y: startY, targetX: startX, targetY: startY,
+            deskX: startX, deskY: startY, state: "walking",
+            stateTimer: 10 + Math.random() * 30,
+            facing: Math.random() > 0.5 ? "right" : "left", walkFrame: 0,
+          };
+        }
       } else {
-        newPos[agent.id] = {
-          x: deskX, y: deskY, targetX: deskX, targetY: deskY,
-          deskX, deskY, state: "working",
-          stateTimer: 200 + Math.random() * 300,
-          facing: "right", walkFrame: 0,
-        };
+        const row = deskIdx < maxPerRow ? 0 : 1;
+        const col = row === 0 ? deskIdx : deskIdx - maxPerRow;
+        const rowCount = row === 0 ? maxPerRow : nonDogs.length - maxPerRow;
+        const xStep = 70 / (rowCount + 1);
+        const deskX = 15 + xStep * (col + 1);
+        const deskY = row === 0 ? 38 : 68;
+        if (posRef.current[agent.id]) {
+          newPos[agent.id] = { ...posRef.current[agent.id], deskX, deskY };
+        } else {
+          newPos[agent.id] = {
+            x: deskX, y: deskY, targetX: deskX, targetY: deskY,
+            deskX, deskY, state: "working",
+            stateTimer: 200 + Math.random() * 300,
+            facing: "right", walkFrame: 0,
+          };
+        }
+        deskIdx++;
       }
     });
     posRef.current = newPos;
@@ -606,23 +625,34 @@ export default function Office() {
       frameCount++;
       const pos = posRef.current;
       let changed = false;
+      // Check which IDs are dogs
+      const dogIds = new Set(agents.filter(a => isDog(a)).map(a => a.id));
       for (const id of Object.keys(pos)) {
         const p = pos[id];
+        const isDogAgent = dogIds.has(id);
         p.stateTimer -= dt;
         if (p.state === "working" && p.stateTimer <= 0) {
-          const roll = Math.random();
-          if (roll < 0.25) {
+          if (isDogAgent) {
+            // Dogs always wander — pick a random spot
             p.state = "walking";
-            p.targetX = WATER_COOLER.x + Math.random() * 6;
-            p.targetY = WATER_COOLER.y + Math.random() * 6 - 3;
-          } else if (roll < 0.45) {
-            p.state = "walking";
-            p.targetX = Math.max(5, Math.min(85, p.deskX + (Math.random() - 0.5) * 20));
-            p.targetY = Math.max(25, Math.min(90, p.deskY + (Math.random() - 0.5) * 15));
+            p.targetX = 10 + Math.random() * 75;
+            p.targetY = 25 + Math.random() * 55;
+            changed = true;
           } else {
-            p.stateTimer = 150 + Math.random() * 250;
+            const roll = Math.random();
+            if (roll < 0.25) {
+              p.state = "walking";
+              p.targetX = WATER_COOLER.x + Math.random() * 6;
+              p.targetY = WATER_COOLER.y + Math.random() * 6 - 3;
+            } else if (roll < 0.45) {
+              p.state = "walking";
+              p.targetX = Math.max(5, Math.min(85, p.deskX + (Math.random() - 0.5) * 20));
+              p.targetY = Math.max(25, Math.min(90, p.deskY + (Math.random() - 0.5) * 15));
+            } else {
+              p.stateTimer = 150 + Math.random() * 250;
+            }
+            changed = true;
           }
-          changed = true;
         }
         if (p.state === "walking") {
           const dx = p.targetX - p.x;
@@ -644,8 +674,14 @@ export default function Office() {
         }
         if ((p.state === "water" || p.state === "idle") && p.stateTimer <= 0) {
           p.state = "walking";
-          p.targetX = p.deskX;
-          p.targetY = p.deskY;
+          if (isDogAgent) {
+            // Dogs wander to a new random spot instead of a desk
+            p.targetX = 10 + Math.random() * 75;
+            p.targetY = 25 + Math.random() * 55;
+          } else {
+            p.targetX = p.deskX;
+            p.targetY = p.deskY;
+          }
           changed = true;
         }
       }
@@ -1009,27 +1045,30 @@ export default function Office() {
   if (loading) return <p className="text-gray-500">Loading...</p>;
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-4rem)]">
-      {/* Left: Room */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center justify-between mb-4 shrink-0">
-          <h1 className="text-2xl font-bold">{inMeeting ? "Meeting Room" : "Office"}</h1>
-          {agents.length >= 2 && (
-            <button
-              onClick={inMeeting ? leaveMeeting : callMeeting}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                inMeeting
-                  ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                  : "bg-white/10 text-white hover:bg-white/15 border border-white/10"
-              }`}
-            >
-              {inMeeting ? "Leave Meeting" : "Call Meeting"}
-            </button>
-          )}
-        </div>
+    <div className="flex flex-col items-center h-[calc(100vh-4rem)]">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3 shrink-0 w-full max-w-[1200px] px-4">
+        <h1 className="text-2xl font-bold">{inMeeting ? "Meeting Room" : "Office"}</h1>
+        {agents.length >= 2 && (
+          <button
+            onClick={inMeeting ? leaveMeeting : callMeeting}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+              inMeeting
+                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                : "bg-white/10 text-white hover:bg-white/15 border border-white/10"
+            }`}
+          >
+            {inMeeting ? "Leave Meeting" : "Call Meeting"}
+          </button>
+        )}
+      </div>
 
-        <div className="relative flex-1 max-h-[400px] rounded-lg overflow-visible" style={{
-          aspectRatio: "4/3",
+      <div className="flex gap-4 flex-1 min-h-0 w-full max-w-[1200px] px-4">
+      {/* Room */}
+      <div className="flex-1 flex flex-col items-center min-w-0">
+        <div className="relative w-full rounded-lg overflow-visible" style={{
+          aspectRatio: "16/9",
+          maxHeight: "calc(100vh - 8rem)",
           background: "#e8dcc8",
           boxShadow: "inset 0 0 0 4px #6b7b8d, inset 0 0 0 6px #4a5568",
         }}>
@@ -1177,12 +1216,13 @@ export default function Office() {
             </svg>
           </div>
 
-          {/* Desks along the walls */}
-          {agents.map((agent, i) => {
-            const maxPerRow = Math.ceil(agents.length / 2);
+          {/* Desks along the walls — dogs don't get desks */}
+          {agents.filter(a => !isDog(a)).map((agent, i) => {
+            const nonDogCount = agents.filter(a => !isDog(a)).length;
+            const maxPerRow = Math.ceil(nonDogCount / 2);
             const row = i < maxPerRow ? 0 : 1;
             const col = row === 0 ? i : i - maxPerRow;
-            const rowCount = row === 0 ? maxPerRow : agents.length - maxPerRow;
+            const rowCount = row === 0 ? maxPerRow : nonDogCount - maxPerRow;
             const xStep = 70 / (rowCount + 1);
             const deskX = 15 + xStep * (col + 1);
             const deskY = row === 0 ? 32 : 72;
@@ -1372,7 +1412,7 @@ export default function Office() {
             );
           })}
 
-          {/* Agent-to-agent chatter bubbles */}
+          {/* Agent-to-agent chatter bubbles — positioned to the side like speech from mouth */}
           {chatters.filter(c => c.phase === "talking").map((chatter) => {
             const posA = positions[chatter.agentA];
             const posB = positions[chatter.agentB];
@@ -1381,66 +1421,82 @@ export default function Office() {
             if (!posA || !posB || !agentA || !agentB) return null;
             const idxA = agents.indexOf(agentA);
             const idxB = agents.indexOf(agentB);
+            // Agent A is on the left, bubble goes right; Agent B on the right, bubble goes left
+            const aOnLeft = posA.x <= posB.x;
             return (
               <div key={chatter.id}>
-                {/* Agent A's speech bubble */}
+                {/* Agent A's speech bubble — from mouth level, to the side */}
                 {chatter.bubbleA && (
                   <div
                     className="absolute pointer-events-none animate-chatter-in"
                     style={{
-                      left: `${posA.x}%`,
-                      top: `${posA.y - 8}%`,
-                      transform: "translateX(-50%)",
-                      zIndex: 35,
+                      left: `${posA.x + (aOnLeft ? 3 : -3)}%`,
+                      top: `${posA.y - 1.5}%`,
+                      transform: aOnLeft ? "translateY(-50%)" : "translateX(-100%) translateY(-50%)",
+                      zIndex: 36,
                     }}
                   >
-                    <div className="relative bg-white rounded-lg px-2 py-1.5 shadow-lg max-w-[160px]" style={{
-                      border: `2px solid ${COLORS[idxA % COLORS.length]}20`,
+                    <div className="relative bg-white rounded-xl px-2.5 py-2 shadow-lg" style={{
+                      border: `2px solid ${COLORS[idxA % COLORS.length]}30`,
+                      maxWidth: "180px",
+                      minWidth: "60px",
                     }}>
-                      <div className="text-[8px] font-bold mb-0.5" style={{ color: COLORS[idxA % COLORS.length] }}>{agentA.name}</div>
-                      <div className="text-[9px] text-gray-700 leading-tight">
+                      <div className="text-[9px] font-bold mb-0.5" style={{ color: COLORS[idxA % COLORS.length] }}>{agentA.name}</div>
+                      <div className="text-[10px] text-gray-800 leading-snug">
                         {chatter.bubbleA === "..." ? (
-                          <span className="inline-flex gap-0.5">
-                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                          <span className="inline-flex gap-0.5 items-center">
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                           </span>
                         ) : chatter.bubbleA}
                       </div>
-                      {/* Tail */}
-                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0"
-                        style={{ borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid white" }} />
+                      {/* Tail pointing toward agent's mouth */}
+                      <div className="absolute top-1/2 -translate-y-1/2" style={{
+                        [aOnLeft ? "left" : "right"]: "-6px",
+                        width: 0, height: 0,
+                        borderTop: "5px solid transparent",
+                        borderBottom: "5px solid transparent",
+                        [aOnLeft ? "borderRight" : "borderLeft"]: "6px solid white",
+                      }} />
                     </div>
                   </div>
                 )}
 
-                {/* Agent B's speech bubble */}
+                {/* Agent B's speech bubble — from mouth level, to the other side */}
                 {chatter.bubbleB && (
                   <div
                     className="absolute pointer-events-none animate-chatter-in"
                     style={{
-                      left: `${posB.x}%`,
-                      top: `${posB.y - 8}%`,
-                      transform: "translateX(-50%)",
-                      zIndex: 35,
+                      left: `${posB.x + (aOnLeft ? -3 : 3)}%`,
+                      top: `${posB.y - 1.5}%`,
+                      transform: aOnLeft ? "translateX(-100%) translateY(-50%)" : "translateY(-50%)",
+                      zIndex: 36,
                     }}
                   >
-                    <div className="relative bg-white rounded-lg px-2 py-1.5 shadow-lg max-w-[160px]" style={{
-                      border: `2px solid ${COLORS[idxB % COLORS.length]}20`,
+                    <div className="relative bg-white rounded-xl px-2.5 py-2 shadow-lg" style={{
+                      border: `2px solid ${COLORS[idxB % COLORS.length]}30`,
+                      maxWidth: "180px",
+                      minWidth: "60px",
                     }}>
-                      <div className="text-[8px] font-bold mb-0.5" style={{ color: COLORS[idxB % COLORS.length] }}>{agentB.name}</div>
-                      <div className="text-[9px] text-gray-700 leading-tight">
+                      <div className="text-[9px] font-bold mb-0.5" style={{ color: COLORS[idxB % COLORS.length] }}>{agentB.name}</div>
+                      <div className="text-[10px] text-gray-800 leading-snug">
                         {chatter.bubbleB === "..." ? (
-                          <span className="inline-flex gap-0.5">
-                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                          <span className="inline-flex gap-0.5 items-center">
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                           </span>
                         ) : chatter.bubbleB}
                       </div>
-                      {/* Tail */}
-                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0"
-                        style={{ borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid white" }} />
+                      {/* Tail pointing toward agent's mouth */}
+                      <div className="absolute top-1/2 -translate-y-1/2" style={{
+                        [aOnLeft ? "right" : "left"]: "-6px",
+                        width: 0, height: 0,
+                        borderTop: "5px solid transparent",
+                        borderBottom: "5px solid transparent",
+                        [aOnLeft ? "borderLeft" : "borderRight"]: "6px solid white",
+                      }} />
                     </div>
                   </div>
                 )}
@@ -1706,6 +1762,8 @@ export default function Office() {
           </form>
         </div>
       )}
+
+      </div>{/* end flex wrapper */}
 
       {/* Toast notifications — fixed bottom center, liquid glass */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
