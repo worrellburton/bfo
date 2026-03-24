@@ -1217,8 +1217,8 @@ export default function Office() {
           </div>
 
           {/* Desks along the walls — dogs don't get desks */}
-          {agents.filter(a => !isDog(a)).map((agent, i) => {
-            const nonDogCount = agents.filter(a => !isDog(a)).length;
+          {(() => { const nonDogAgents = agents.filter(a => !isDog(a)); return nonDogAgents.map((agent, i) => {
+            const nonDogCount = nonDogAgents.length;
             const maxPerRow = Math.ceil(nonDogCount / 2);
             const row = i < maxPerRow ? 0 : 1;
             const col = row === 0 ? i : i - maxPerRow;
@@ -1253,7 +1253,7 @@ export default function Office() {
                 </svg>
               </div>
             );
-          })}
+          }); })()}
 
           {/* Water cooler — left side */}
           <div className="absolute" style={{ left: "4%", top: "50%", zIndex: 3 }}>

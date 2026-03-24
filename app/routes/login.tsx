@@ -1,90 +1,19 @@
 import { useNavigate } from "react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { authenticate, isAuthenticated } from "../auth";
+import { ParticleCanvas } from "../particles";
 
 export default function Login() {
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const [shake, setShake] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (isAuthenticated()) {
       navigate("/");
     }
   }, [navigate]);
-
-  // Particle background
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let animId: number;
-    const particles: { x: number; y: number; vx: number; vy: number; r: number; o: number }[] = [];
-
-    function resize() {
-      canvas!.width = window.innerWidth;
-      canvas!.height = window.innerHeight;
-    }
-    resize();
-    window.addEventListener("resize", resize);
-
-    for (let i = 0; i < 60; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        r: Math.random() * 1.5 + 0.5,
-        o: Math.random() * 0.3 + 0.1,
-      });
-    }
-
-    function draw() {
-      ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
-
-      for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.x < 0) p.x = canvas!.width;
-        if (p.x > canvas!.width) p.x = 0;
-        if (p.y < 0) p.y = canvas!.height;
-        if (p.y > canvas!.height) p.y = 0;
-
-        ctx!.beginPath();
-        ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(255, 255, 255, ${p.o})`;
-        ctx!.fill();
-      }
-
-      // Draw connections
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            ctx!.beginPath();
-            ctx!.moveTo(particles[i].x, particles[i].y);
-            ctx!.lineTo(particles[j].x, particles[j].y);
-            ctx!.strokeStyle = `rgba(255, 255, 255, ${0.03 * (1 - dist / 120)})`;
-            ctx!.stroke();
-          }
-        }
-      }
-
-      animId = requestAnimationFrame(draw);
-    }
-    draw();
-
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -98,19 +27,25 @@ export default function Login() {
     }
   }
 
-  // Show dots for entered characters
   const dots = password.length;
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0" />
+      <ParticleCanvas
+        count={60}
+        speed={0.3}
+        maxRadius={1.5}
+        connectionDistance={120}
+        dotOpacity={0.2}
+        lineOpacity={0.03}
+        className="absolute inset-0 w-full h-full"
+      />
 
       <div className={`w-full max-w-sm text-center px-6 relative z-10 ${shake ? "animate-shake" : ""}`}>
         <h1 className="text-5xl font-bold text-white tracking-tight mb-2">BFO</h1>
         <p className="text-gray-500 text-sm mb-12">Enter password to continue</p>
 
         <form onSubmit={handleSubmit}>
-          {/* Password dots display */}
           <div className="flex justify-center gap-3 mb-8 h-4">
             {Array.from({ length: Math.max(dots, 0) }).map((_, i) => (
               <div

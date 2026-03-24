@@ -20,7 +20,6 @@ function toOpenAIMessages(messages: LLMMessage[], systemPrompt?: string): unknow
     if (typeof m.content === "string") {
       out.push({ role: m.role, content: m.content });
     } else if (Array.isArray(m.content)) {
-      // Convert Anthropic content blocks to OpenAI format
       const parts: unknown[] = [];
       for (const block of m.content as Record<string, unknown>[]) {
         if (block.type === "text") {
@@ -32,7 +31,6 @@ function toOpenAIMessages(messages: LLMMessage[], systemPrompt?: string): unknow
             image_url: { url: `data:${src.media_type};base64,${src.data}` },
           });
         } else if (block.type === "document") {
-          // OpenAI doesn't natively support PDFs in chat — send as text note
           parts.push({ type: "text", text: "[PDF document attached — PDF content analysis not available with this model]" });
         }
       }
@@ -48,6 +46,78 @@ export interface StreamCallbacks {
   onError: (error: string) => void;
 }
 
+// Shared SSE stream reader — extracts text deltas from an SSE response
+async function readSSEStream(
+  res: Response,
+  extractToken: (parsed: Record<string, unknown>) => string | undefined,
+  { onToken, onDone, onError }: StreamCallbacks,
+) {
+  const reader = res.body?.getReader();
+  if (!reader) { onError("No reader"); return; }
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6);
+      if (data === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(data);
+        const token = extractToken(parsed);
+        if (token) onToken(token);
+      } catch { /* skip */ }
+    }
+  }
+  onDone();
+}
+
+// Build request config for each provider
+function anthropicRequest(model: string, apiKey: string, messages: LLMMessage[], systemPrompt: string | undefined, stream: boolean) {
+  const body: Record<string, unknown> = { model, max_tokens: stream ? 4096 : 1024, messages, stream };
+  if (systemPrompt) body.system = systemPrompt;
+  return {
+    url: "https://api.anthropic.com/v1/messages",
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
+function openAIRequest(model: string, apiKey: string, messages: LLMMessage[], systemPrompt: string | undefined, stream: boolean) {
+  const openAIMessages = toOpenAIMessages(messages, systemPrompt);
+  return {
+    url: "https://api.openai.com/v1/chat/completions",
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, messages: openAIMessages, ...(stream ? { stream: true } : {}) }),
+    },
+  };
+}
+
+// Token extractors for each provider's SSE format
+const anthropicExtract = (parsed: Record<string, unknown>) =>
+  parsed.type === "content_block_delta" ? (parsed.delta as Record<string, string>)?.text : undefined;
+
+const openAIExtract = (parsed: Record<string, unknown>) =>
+  ((parsed.choices as Record<string, unknown>[])?.[0]?.delta as Record<string, string>)?.content;
+
 export async function streamChat(
   model: string,
   apiKey: string,
@@ -55,124 +125,19 @@ export async function streamChat(
   systemPrompt: string | undefined,
   callbacks: StreamCallbacks,
 ): Promise<void> {
-  if (isOpenAI(model)) {
-    await streamOpenAI(model, apiKey, messages, systemPrompt, callbacks);
-  } else {
-    await streamAnthropic(model, apiKey, messages, systemPrompt, callbacks);
-  }
-}
+  const useOpenAI = isOpenAI(model);
+  const { url, init } = useOpenAI
+    ? openAIRequest(model, apiKey, messages, systemPrompt, true)
+    : anthropicRequest(model, apiKey, messages, systemPrompt, true);
 
-async function streamAnthropic(
-  model: string,
-  apiKey: string,
-  messages: LLMMessage[],
-  systemPrompt: string | undefined,
-  { onToken, onDone, onError }: StreamCallbacks,
-) {
-  const body: Record<string, unknown> = {
-    model,
-    max_tokens: 4096,
-    messages,
-    stream: true,
-  };
-  if (systemPrompt) body.system = systemPrompt;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify(body),
-  });
-
+  const res = await fetch(url, init);
   if (!res.ok) {
     const err = await res.text();
-    onError(`${res.status} — ${err}`);
+    callbacks.onError(`${res.status} — ${err}`);
     return;
   }
 
-  const reader = res.body?.getReader();
-  if (!reader) { onError("No reader"); return; }
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6);
-      if (data === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-          onToken(parsed.delta.text);
-        }
-      } catch { /* skip */ }
-    }
-  }
-  onDone();
-}
-
-async function streamOpenAI(
-  model: string,
-  apiKey: string,
-  messages: LLMMessage[],
-  systemPrompt: string | undefined,
-  { onToken, onDone, onError }: StreamCallbacks,
-) {
-  const openAIMessages = toOpenAIMessages(messages, systemPrompt);
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: openAIMessages,
-      stream: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    onError(`${res.status} — ${err}`);
-    return;
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) { onError("No reader"); return; }
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6);
-      if (data === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          onToken(delta);
-        }
-      } catch { /* skip */ }
-    }
-  }
-  onDone();
+  await readSSEStream(res, useOpenAI ? openAIExtract : anthropicExtract, callbacks);
 }
 
 // Non-streaming call for meetings
@@ -182,39 +147,16 @@ export async function callLLM(
   messages: LLMMessage[],
   systemPrompt: string | undefined,
 ): Promise<string> {
-  if (isOpenAI(model)) {
-    const openAIMessages = toOpenAIMessages(messages, systemPrompt);
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, messages: openAIMessages }),
-    });
-    if (!res.ok) return `[Error: ${res.status}]`;
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "[No response]";
-  } else {
-    const body: Record<string, unknown> = {
-      model,
-      max_tokens: 1024,
-      messages,
-      stream: false,
-    };
-    if (systemPrompt) body.system = systemPrompt;
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return `[Error: ${res.status}]`;
-    const data = await res.json();
-    return data.content?.[0]?.text || "[No response]";
-  }
+  const useOpenAI = isOpenAI(model);
+  const { url, init } = useOpenAI
+    ? openAIRequest(model, apiKey, messages, systemPrompt, false)
+    : anthropicRequest(model, apiKey, messages, systemPrompt, false);
+
+  const res = await fetch(url, init);
+  if (!res.ok) return `[Error: ${res.status}]`;
+  const data = await res.json();
+
+  return useOpenAI
+    ? data.choices?.[0]?.message?.content || "[No response]"
+    : data.content?.[0]?.text || "[No response]";
 }
