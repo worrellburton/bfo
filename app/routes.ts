@@ -11,5 +11,7 @@ export default [
     route("agents", "routes/agents.tsx"),
     route("agents/:id", "routes/agent-chat.tsx"),
     route("office", "routes/office.tsx"),
+    route("calculations", "routes/calculations.tsx"),
+    route("calculations/developer-payment", "routes/calc-dev-payment.tsx"),
   ]),
 ] satisfies RouteConfig;
