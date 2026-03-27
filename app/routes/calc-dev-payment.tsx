@@ -222,7 +222,7 @@ export default function DevPaymentCalculator() {
           <input
             type="range"
             min={10000}
-            max={200000}
+            max={100000}
             step={1000}
             value={samAnnual}
             onChange={(e) => setSamAnnual(Number(e.target.value))}
@@ -230,7 +230,7 @@ export default function DevPaymentCalculator() {
           />
           <div className="flex justify-between text-[9px] text-gray-600 mt-1">
             <span>$10k</span>
-            <span>$200k</span>
+            <span>$100k</span>
           </div>
         </div>
 
