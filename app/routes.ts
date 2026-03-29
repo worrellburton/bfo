@@ -17,5 +17,6 @@ export default [
     route("tools/fdj-hesperia", "./routes/fdj-hesperia.tsx"),
     route("tools/fdj-hesperia/financials", "./routes/fdj-hesperia-financials.tsx"),
     route("tools/fdj-hesperia/documents", "./routes/fdj-hesperia-documents.tsx"),
+    route("tools/fdj-hesperia/advisory", "./routes/fdj-hesperia-advisory.tsx"),
   ]),
 ] satisfies RouteConfig;
