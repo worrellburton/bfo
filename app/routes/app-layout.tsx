@@ -11,6 +11,7 @@ const navItems = [
   { to: "/notes", label: "Notes" },
   { to: "/office", label: "Office" },
   { to: "/tools", label: "Tools" },
+  { to: "/tools/fdj-hesperia", label: "FDJ Hesperia" },
 ];
 
 export default function AppLayout() {

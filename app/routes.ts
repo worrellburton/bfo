@@ -14,5 +14,6 @@ export default [
     route("tools", "routes/calculations.tsx"),
     route("tools/developer-payment", "routes/calc-dev-payment.tsx"),
     route("tools/property-analysis", "routes/calc-property-analysis.tsx"),
+    route("tools/fdj-hesperia", "./routes/fdj-hesperia.tsx"),
   ]),
 ] satisfies RouteConfig;
