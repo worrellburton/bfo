@@ -254,7 +254,7 @@ function PropertyCard({
 const tabs = [
   { label: "Overview", href: "/tools/fdj-hesperia", active: true },
   { label: "Financials", href: "/tools/fdj-hesperia/financials", active: false },
-  { label: "Documents", href: "#", active: false },
+  { label: "Documents", href: "/tools/fdj-hesperia/documents", active: false },
   { label: "Advisory", href: "#", active: false },
 ];
 

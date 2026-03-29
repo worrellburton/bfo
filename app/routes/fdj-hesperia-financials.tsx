@@ -38,7 +38,7 @@ function PctBadge({ value }: { value: number }) {
 const tabs = [
   { label: "Overview", href: "/tools/fdj-hesperia", active: false },
   { label: "Financials", href: "/tools/fdj-hesperia/financials", active: true },
-  { label: "Documents", href: "#", active: false },
+  { label: "Documents", href: "/tools/fdj-hesperia/documents", active: false },
   { label: "Advisory", href: "#", active: false },
 ];
 
