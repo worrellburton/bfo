@@ -5,13 +5,21 @@ import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
 
 const navItems = [
-  { to: "/", label: "Home" },
-  { to: "/frameworks", label: "Frameworks" },
-  { to: "/assets", label: "Assets" },
-  { to: "/notes", label: "Notes" },
-  { to: "/office", label: "Office" },
-  { to: "/tools", label: "Tools" },
-  { to: "/tools/fdj-hesperia", label: "FDJ Hesperia" },
+  { to: "/", label: "Home", icon: null },
+  { to: "/frameworks", label: "Frameworks", icon: null },
+  { to: "/assets", label: "Assets", icon: null },
+  { to: "/notes", label: "Notes", icon: null },
+  { to: "/office", label: "Office", icon: null },
+  { to: "/tools", label: "Tools", icon: null },
+  {
+    to: "/tools/fdj-hesperia",
+    label: "FDJ Hesperia",
+    icon: (
+      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+    ),
+  },
 ];
 
 export default function AppLayout() {
@@ -74,6 +82,7 @@ export default function AppLayout() {
                 }`
               }
             >
+              {item.icon && <span className="inline-flex mr-2">{item.icon}</span>}
               {item.label}
             </NavLink>
           ))}

@@ -261,6 +261,17 @@ const tabs = [
 // --- Main Component ---
 
 export default function FDJHesperia() {
+  const [showPublicLink, setShowPublicLink] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function handleCopyLink() {
+    const url = `${window.location.origin}/public/fdj-hesperia`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
     <div className="max-w-6xl">
       {/* Breadcrumb */}
@@ -279,12 +290,78 @@ export default function FDJHesperia() {
           <p className="text-gray-500 text-sm">Burton Family Investment Mission Control</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowPublicLink(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Create Public Link
+          </button>
           <StatusBadge status="amber" label="Monitoring" />
           <div className="text-[10px] text-gray-500">
             Master leases expire <span className="text-amber-400 font-medium">Apr 30, 2027</span>
           </div>
         </div>
       </div>
+
+      {/* Public Link Modal */}
+      {showPublicLink && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onClick={() => setShowPublicLink(false)}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative bg-[#111] border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowPublicLink(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors cursor-pointer"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Public Link</h3>
+                <p className="text-[11px] text-gray-500">Share a read-only summary</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white/[0.04] border border-white/10 p-3 mb-3">
+              <div className="text-xs text-gray-300 font-mono break-all">
+                {typeof window !== "undefined" ? window.location.origin : ""}/public/fdj-hesperia
+              </div>
+            </div>
+
+            <button
+              onClick={handleCopyLink}
+              className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                copied
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "bg-white/10 text-white border border-white/10 hover:bg-white/15"
+              }`}
+            >
+              {copied ? "Copied!" : "Copy Link"}
+            </button>
+
+            <p className="text-[10px] text-gray-500 mt-3 text-center leading-relaxed">
+              This link shows a read-only summary. No login required.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex gap-1 border-b border-white/10 mb-8">
