@@ -182,6 +182,7 @@ const documents: Document[] = [
     parties: ["Robert Burton (Lender)", "BWL Investments LLC (Borrower)"],
     keyTerms: [
       "Principal: $1,400,000 at 3% interest",
+      "Part of total $4.4M in loans to BWL",
     ],
   },
   {
@@ -190,10 +191,10 @@ const documents: Document[] = [
     category: "financial",
     date: "Apr 12, 2022",
     docType: "Letter",
-    parties: ["Randal Dix", "Robert Burton"],
+    parties: ["Randal Dix (From)", "Robert Burton (To)"],
     keyTerms: [
       "Summary of deal performance and cash flows received",
-      "Marriott ownership details",
+      "Marriott ownership details and distribution info",
     ],
   },
   {
@@ -202,7 +203,7 @@ const documents: Document[] = [
     category: "financial",
     date: "Apr 2021",
     docType: "Summary",
-    parties: ["Internal"],
+    parties: ["Internal document"],
     keyTerms: [
       "Property values, income, expenses, NOI for both properties",
       "Cash flow and debt details",
