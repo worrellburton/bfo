@@ -1,12 +1,12 @@
 import { Link } from "react-router";
 
 export function meta() {
-  return [{ title: "BFO - Calculations" }];
+  return [{ title: "BFO - Tools" }];
 }
 
 const calculators = [
   {
-    to: "/calculations/developer-payment",
+    to: "/tools/developer-payment",
     title: "Developer Payment Calculator",
     description: "Breakdown of Sam & Mercy's compensation — weekly, monthly, daily insights.",
     icon: (
@@ -17,7 +17,7 @@ const calculators = [
     color: "#6366f1",
   },
   {
-    to: "/calculations/property-analysis",
+    to: "/tools/property-analysis",
     title: "Property Analysis: 1344 Tydings Rd",
     description: "Full analysis of 1344 Tydings Rd, Annapolis — value, mortgage, appreciation & more.",
     icon: (
@@ -32,7 +32,7 @@ const calculators = [
 export default function Calculations() {
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Calculations</h1>
+      <h1 className="text-2xl font-bold mb-1">Tools</h1>
       <p className="text-gray-500 text-sm mb-8">Financial tools and calculators</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

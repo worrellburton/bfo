@@ -10,7 +10,7 @@ const navItems = [
   { to: "/assets", label: "Assets" },
   { to: "/notes", label: "Notes" },
   { to: "/office", label: "Office" },
-  { to: "/calculations", label: "Calculations" },
+  { to: "/tools", label: "Tools" },
 ];
 
 export default function AppLayout() {
