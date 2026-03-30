@@ -830,14 +830,435 @@ function ConsequencesTab() {
   );
 }
 
+// --- Strategic Plan Scorecard ---
+
+const strategicPlanItems: {
+  pillar: string;
+  objective: string;
+  targets: { target: string; status: "fail" | "unknown" | "partial" }[];
+}[] = [
+  {
+    pillar: "Operations",
+    objective: "Maintain, grow, and optimize the company both locally and nationally in a responsible and steady manner",
+    targets: [
+      { target: "Open at least one pathfinder program annually between 2022\u20132027", status: "unknown" },
+      { target: "Open at least one community based program annually between 2022\u20132027", status: "unknown" },
+      { target: "Expand current ORR programs by 10% between 2022\u20132027", status: "unknown" },
+    ],
+  },
+  {
+    pillar: "Finance",
+    objective: "Improve revenues and financial reporting",
+    targets: [
+      { target: "Complete FY2022 with .5% profit margin then increase profitability to 8% by end of FY2027", status: "fail" },
+      { target: "Ensure 100% compliance with Creditors\u2019 covenants and other bank requirements", status: "unknown" },
+      { target: "Ensure the financial audit is completed by March of the following fiscal year", status: "unknown" },
+    ],
+  },
+  {
+    pillar: "Human Resources",
+    objective: "Create a diverse culture that promotes inclusion, innovation, and staff advancement",
+    targets: [
+      { target: "Increase Recruitment and Hiring by 10% annually starting in 2022", status: "unknown" },
+      { target: "Increase staff retention by 10% annually starting in 2022", status: "unknown" },
+      { target: "Enhance technological infrastructure for remote work to reduce overhead costs", status: "unknown" },
+    ],
+  },
+  {
+    pillar: "Compliance",
+    objective: "Ensure compliance with local, state, federal and other contractual obligations",
+    targets: [
+      { target: "Ensure programs are compliant with licensing and contract requirements at 100%", status: "unknown" },
+      { target: "Ensure all policies and procedures are reviewed and updated annually", status: "unknown" },
+      { target: "Compliance alignment with outcomes", status: "unknown" },
+    ],
+  },
+];
+
+// --- Job Description Violations ---
+
+const jobDescViolations: {
+  duty: string;
+  source: string;
+  failure: string;
+  strength: "critical" | "strong" | "supporting";
+}[] = [
+  {
+    duty: "Develop strategic objectives and direction",
+    source: "Job Description \u2014 Principal Duties",
+    failure: "Failed to develop a funding strategy or pivot the company\u2019s direction in response to $50M revenue decline over 3 years",
+    strength: "critical",
+  },
+  {
+    duty: "Partner with high level officers to grow the company and to strengthen and ensure the company\u2019s sustainability",
+    source: "Job Description \u2014 Principal Duties",
+    failure: "Company lost $50M in revenue \u2014 the opposite of growth. Sustainability is now threatened. CEO did not lead the company to new funding sources despite knowing they were available.",
+    strength: "critical",
+  },
+  {
+    duty: "Work closely with the CFO to set yearly budgets to allocate capital in consideration of factors like net income, cash flow, and the valuation they wish to achieve",
+    source: "Job Description \u2014 Principal Duties",
+    failure: "Capital allocation failed to account for revenue decline. Budgets did not adapt to the $50M shortfall. No evidence of strategic capital redeployment.",
+    strength: "strong",
+  },
+  {
+    duty: "Track the company\u2019s performance relative to competitors and monitor the market for potential acquisitions or significant regulatory developments",
+    source: "Job Description \u2014 Principal Duties",
+    failure: "Failed to identify and/or pursue available funding sources. Did not monitor the market for opportunities that could offset the revenue decline.",
+    strength: "critical",
+  },
+  {
+    duty: "Responsible for the overall leadership, management, and operation of VisionQuest",
+    source: "Employment Agreement \u2014 Section 1(a)",
+    failure: "Overall leadership failed to prevent or reverse a $50M revenue loss. The most fundamental CEO responsibility was not met.",
+    strength: "critical",
+  },
+  {
+    duty: "Take such steps as are reasonably necessary to assure the financial strength and integrity of VisionQuest",
+    source: "Employment Agreement \u2014 Section 1(a)",
+    failure: "The financial strength of VisionQuest was not assured \u2014 it was decimated. Steps that were reasonably necessary (pursuing known funding) were not taken.",
+    strength: "critical",
+  },
+  {
+    duty: "Devote substantially all of Executive\u2019s professional time to the performance of his duties",
+    source: "Employment Agreement \u2014 Section 1(b)",
+    failure: "If CEO was not devoting full professional time to addressing the revenue crisis and pursuing funding, this is a direct contract violation.",
+    strength: "supporting",
+  },
+];
+
+// --- Termination Playbook Steps ---
+
+const playbookSteps: {
+  step: number;
+  title: string;
+  detail: string;
+  timing: string;
+  critical?: boolean;
+}[] = [
+  {
+    step: 1,
+    title: "DOCUMENT \u2014 Compile Evidence",
+    detail: "Gather quarterly financial statements showing consecutive revenue decline. Compile list of funding opportunities the CEO knew about but did not pursue. Collect Board meeting minutes where revenue/funding was discussed. Pull CEO\u2019s performance reviews and any prior written warnings.",
+    timing: "Start immediately",
+    critical: true,
+  },
+  {
+    step: 2,
+    title: "LEGAL REVIEW \u2014 Engage Arizona Employment Counsel",
+    detail: "Have an Arizona employment attorney review the termination strategy and evidence package. Confirm the for-cause grounds are sufficient under Arizona law. Ensure compliance with the agreement\u2019s procedural requirements.",
+    timing: "Within 1 week",
+    critical: true,
+  },
+  {
+    step: 3,
+    title: "BOARD RESOLUTION \u2014 Formal Termination Vote",
+    detail: "Convene a Board meeting. Present the evidence of Causes #8, #11, #12, and #13. Pass a formal Board resolution to terminate the CEO for Cause. Document the vote, the specific grounds cited, and the evidence supporting each ground.",
+    timing: "After legal review",
+    critical: true,
+  },
+  {
+    step: 4,
+    title: "WRITTEN NOTICE \u2014 Deliver Termination Letter",
+    detail: "Prepare formal written termination notice per Section 4(d) specifying all applicable Cause grounds. For Cause #11, if this is the first notice, this starts the 30-day cure clock. If the Board has previously raised these same issues, cite that \u201csuccessive failures are incapable of being cured.\u201d Deliver via first-class mail, hand delivery, or overnight courier to: 11921 N. Silver Village Place, Oro Valley, AZ 85737.",
+    timing: "Immediately after Board vote",
+    critical: true,
+  },
+  {
+    step: 5,
+    title: "CURE PERIOD \u2014 30 Days (If Required for Cause #11)",
+    detail: "If this is the first written notice for Cause #11, the CEO has 30 calendar days to cure the negligence/failure. Monitor closely. If the CEO fails to cure, proceed with termination. NOTE: Causes #12 and #13 have NO cure period \u2014 termination can proceed immediately on those grounds alone.",
+    timing: "30 days after notice (if applicable)",
+  },
+  {
+    step: 6,
+    title: "EFFECTIVE TERMINATION \u2014 Cease Salary",
+    detail: "On the Termination Date, VisionQuest\u2019s obligation to pay salary ceases. The CEO is no longer an employee. All benefits terminate. Demand return of all company property per Section 4(g).",
+    timing: "Termination Date",
+  },
+  {
+    step: 7,
+    title: "SECURE PROPERTY \u2014 Materials Return",
+    detail: "Collect all keys, computers, software, documents, files, notes, contracts, data, and any reproductions or copies. VisionQuest may withhold accrued vacation pay (but not Salary) to recover unreturned materials. Change passwords, revoke system access, secure facilities.",
+    timing: "Termination Date",
+  },
+  {
+    step: 8,
+    title: "MONITOR COVENANTS \u2014 Non-Compete & Non-Solicitation",
+    detail: "Track the former CEO\u2019s activities for 12 months. The non-compete covers AZ, DE, MD, PA, TX in any capacity (employee, consultant, advisor, etc.). The non-solicitation covers VisionQuest clients and employees. VisionQuest has the right to notify future employers of these restrictions (Section 5(f)).",
+    timing: "12 months post-termination",
+  },
+  {
+    step: 9,
+    title: "PREPARE FOR CHALLENGE \u2014 Dispute Defense",
+    detail: "The CEO may challenge the for-cause termination. All proceedings are in Pima County, AZ. Jury trial is waived. VisionQuest is entitled to injunctive relief without proving actual damages or posting bond. Maintain all documentation securely. The non-disparagement clause (Section 7) prohibits both parties from making negative public statements.",
+    timing: "Ongoing",
+  },
+];
+
+// --- Arizona Employment Law ---
+
+const arizonaLawPoints: {
+  title: string;
+  detail: string;
+  citation?: string;
+}[] = [
+  {
+    title: "Arizona is an At-Will Employment State",
+    detail: "Under Arizona law, employment is presumed at-will (A.R.S. \u00A7 23-1501). However, this Employment Agreement creates a contractual for-cause standard during the Employment Period, overriding at-will default. The Board must follow the contract\u2019s termination procedures.",
+    citation: "A.R.S. \u00A7 23-1501",
+  },
+  {
+    title: "Contract Supersedes At-Will",
+    detail: "Arizona courts enforce employment agreements as written. The for-cause provisions in Section 4(d) create specific, enumerated grounds that VisionQuest must satisfy to terminate without paying severance. Using multiple grounds simultaneously strengthens the position.",
+  },
+  {
+    title: "Burden of Proof on Employer",
+    detail: "The burden of proving \u201cCause\u201d for termination rests with VisionQuest (the employer). This is why thorough documentation is critical \u2014 Board minutes, financial records, written notices, and CEO communications all serve as evidence.",
+  },
+  {
+    title: "Covenant Not to Compete \u2014 Reasonableness",
+    detail: "Arizona courts apply a reasonableness test to non-compete agreements (Amex Distributing Co. v. Mascari). The 12-month duration and 5-state geographic scope are likely enforceable given the CEO\u2019s access to confidential information and client relationships.",
+    citation: "Amex Distributing Co. v. Mascari, 150 Ariz. 510 (1986)",
+  },
+  {
+    title: "Implied Covenant of Good Faith",
+    detail: "Arizona recognizes an implied covenant of good faith and fair dealing in employment contracts (Wagenseller v. Scottsdale Memorial Hospital). Termination must be in good faith and consistent with the contract terms \u2014 not pretextual.",
+    citation: "Wagenseller v. Scottsdale Memorial Hospital, 147 Ariz. 370 (1985)",
+  },
+  {
+    title: "Jury Trial Waiver is Enforceable",
+    detail: "Arizona generally enforces jury trial waivers in commercial contracts when knowingly and voluntarily agreed to. Section 10(b) of this agreement contains an express, mutual waiver. Both parties initialed it. This limits the CEO\u2019s litigation options.",
+  },
+  {
+    title: "Injunctive Relief Available",
+    detail: "Under Section 9(a), VisionQuest can seek preliminary and permanent injunctive relief to prevent covenant breaches without proving actual damages or posting a bond. This is a powerful enforcement tool if the CEO violates non-compete or confidentiality provisions.",
+  },
+];
+
+// --- War Room Tab ---
+
 function WarRoomTab() {
+  const strengthColors = {
+    critical: { bg: "bg-red-500/15", text: "text-red-400", label: "CRITICAL" },
+    strong: { bg: "bg-orange-500/15", text: "text-orange-400", label: "STRONG" },
+    supporting: { bg: "bg-amber-500/15", text: "text-amber-400", label: "SUPPORTING" },
+  };
+
+  const statusColors = {
+    fail: { bg: "bg-red-500/15", text: "text-red-400", label: "FAILED" },
+    unknown: { bg: "bg-gray-500/15", text: "text-gray-500", label: "VERIFY" },
+    partial: { bg: "bg-amber-500/15", text: "text-amber-400", label: "PARTIAL" },
+  };
+
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
-      <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-      </svg>
-      <div className="text-sm font-semibold text-gray-400 mb-1">$50M Revenue Loss War Room — Phase 4</div>
-      <div className="text-xs text-gray-600">Strategic Plan scorecard, Job Description violations, Arizona law, termination playbook</div>
+    <div className="space-y-6">
+      {/* Scenario Summary */}
+      <div className="rounded-xl border-2 border-red-500/30 bg-red-500/[0.03] p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+          </svg>
+          <div className="text-sm font-bold text-red-400">$50M Revenue Loss — Scenario Analysis</div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-center">
+            <div className="text-xl font-black text-red-400">~$50M</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Revenue Lost</div>
+          </div>
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-center">
+            <div className="text-xl font-black text-red-400">3 Years</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Of Inaction</div>
+          </div>
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-center">
+            <div className="text-xl font-black text-amber-400">Known</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Funding Available</div>
+          </div>
+          <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-center">
+            <div className="text-xl font-black text-emerald-400">4 Grounds</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">For Termination</div>
+          </div>
+        </div>
+        <div className="text-xs text-gray-400 leading-relaxed">
+          The company lost approximately $50 million in revenue. The CEO did not lead the company to a new funding source in the last 3 years, despite knowing that funding was available. This maps directly to <span className="text-white font-semibold">4 for-cause termination grounds</span> and violates <span className="text-white font-semibold">6 specific duties</span> from the Employment Agreement and Job Description.
+        </div>
+      </div>
+
+      {/* Strategic Plan Scorecard */}
+      <section>
+        <h3 className="text-sm font-semibold text-orange-400 mb-2">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          Strategic Plan V5.2 Scorecard (2022-2027)
+        </h3>
+        <p className="text-[10px] text-gray-500 mb-3">Board-approved strategic plan objectives mapped against CEO performance. This document is key evidence for Cause #13: &ldquo;Inability to execute the company&rsquo;s strategic plan.&rdquo;</p>
+        <div className="space-y-4">
+          {strategicPlanItems.map((pillar) => (
+            <div key={pillar.pillar} className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <div className="text-xs font-bold text-orange-400 mb-1">{pillar.pillar}</div>
+              <div className="text-[10px] text-gray-500 italic mb-3">&ldquo;{pillar.objective}&rdquo;</div>
+              <div className="space-y-2">
+                {pillar.targets.map((t, i) => {
+                  const st = statusColors[t.status];
+                  return (
+                    <div key={i} className="flex items-center gap-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${st.bg} ${st.text}`}>
+                        {st.label}
+                      </span>
+                      <span className="text-xs text-gray-400">{t.target}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-lg bg-red-500/[0.05] border border-red-500/20 p-3">
+          <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider mb-1">Key Finding</div>
+          <div className="text-xs text-gray-400">The Finance pillar objective to &ldquo;Improve revenues and financial reporting&rdquo; and achieve 8% profitability by FY2027 is <span className="text-red-400 font-semibold">directly contradicted</span> by a $50M revenue loss. This alone satisfies Cause #13.</div>
+        </div>
+      </section>
+
+      {/* Job Description Violations */}
+      <section>
+        <h3 className="text-sm font-semibold text-orange-400 mb-2">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+          </svg>
+          Job Description & Contract Duty Violations
+        </h3>
+        <p className="text-[10px] text-gray-500 mb-3">Each CEO duty mapped to a specific failure. The Job Description is incorporated into the Employment Agreement by reference (Section 1(a), Exhibit A).</p>
+        <div className="space-y-3">
+          {jobDescViolations.map((v, i) => {
+            const sc = strengthColors[v.strength];
+            return (
+              <div key={i} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${sc.bg} ${sc.text}`}>
+                    {sc.label}
+                  </span>
+                  <span className="text-[10px] text-gray-500">{v.source}</span>
+                </div>
+                <div className="rounded-lg bg-white/[0.03] border border-white/5 p-2.5 mb-2">
+                  <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-0.5">Duty</div>
+                  <div className="text-xs text-gray-300 italic">&ldquo;{v.duty}&rdquo;</div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-red-400 uppercase tracking-wider font-semibold mb-0.5">Failure</div>
+                  <div className="text-xs text-gray-400">{v.failure}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Arizona Employment Law */}
+      <section>
+        <h3 className="text-sm font-semibold text-orange-400 mb-2">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+          </svg>
+          Arizona Employment Law Framework
+        </h3>
+        <p className="text-[10px] text-gray-500 mb-3">Key legal principles governing this termination under Arizona law (Choice of Law: Section 13).</p>
+        <div className="space-y-3">
+          {arizonaLawPoints.map((p, i) => (
+            <div key={i} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-semibold text-gray-200">{p.title}</span>
+              </div>
+              <div className="text-xs text-gray-400 leading-relaxed">{p.detail}</div>
+              {p.citation && (
+                <div className="mt-1.5 text-[10px] text-orange-400/70 font-mono">{p.citation}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Termination Playbook */}
+      <section>
+        <h3 className="text-sm font-semibold text-orange-400 mb-2">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Step-by-Step Termination Playbook
+        </h3>
+        <p className="text-[10px] text-gray-500 mb-3">Execute these steps in order. Critical steps must not be skipped.</p>
+        <div className="space-y-3">
+          {playbookSteps.map((s) => (
+            <div key={s.step} className={`rounded-xl border ${s.critical ? "border-orange-500/20" : "border-white/10"} bg-white/[0.02] p-4`}>
+              <div className="flex items-start gap-3">
+                <div className={`flex-shrink-0 w-8 h-8 rounded-lg ${s.critical ? "bg-orange-500/15" : "bg-white/5"} flex items-center justify-center`}>
+                  <span className={`text-xs font-black ${s.critical ? "text-orange-400" : "text-gray-500"}`}>{s.step}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold text-gray-200">{s.title}</span>
+                    {s.critical && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 font-bold uppercase tracking-wider">Critical</span>
+                    )}
+                    <span className="text-[10px] text-gray-600">{s.timing}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 leading-relaxed">{s.detail}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Risk Assessment */}
+      <section>
+        <h3 className="text-sm font-semibold text-orange-400 mb-3">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          Risk Assessment for VisionQuest
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Wrongful Termination Claim</div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-sm font-bold text-amber-400">MEDIUM</div>
+              <span className="text-[10px] text-gray-500">(LOW if documentation is thorough)</span>
+            </div>
+            <div className="text-xs text-gray-400">CEO may claim termination was pretextual. Mitigate by using multiple grounds simultaneously and documenting every step.</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Severance Exposure if For-Cause Fails</div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-sm font-bold text-red-400">~${severanceCost.toLocaleString()}</div>
+              <span className="text-[10px] text-gray-500">remaining term salary</span>
+            </div>
+            <div className="text-xs text-gray-400">If a court determines termination was not for valid Cause, VisionQuest would owe the full remaining term salary as severance.</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Non-Compete Enforceability</div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-sm font-bold text-emerald-400">HIGH</div>
+            </div>
+            <div className="text-xs text-gray-400">12 months, 5 states. Arizona courts generally enforce reasonable non-competes for C-suite executives with access to trade secrets.</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Recommended Strategy</div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-sm font-bold text-orange-400">MULTI-GROUND</div>
+            </div>
+            <div className="text-xs text-gray-400">Use grounds #8, #11, #12, #13 simultaneously. If one ground is challenged, the others stand independently. This provides maximum legal protection.</div>
+          </div>
+        </div>
+      </section>
+
+      {/* Disclaimer */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Disclaimer</div>
+        <div className="text-[10px] text-gray-600 leading-relaxed">
+          This analysis is for informational purposes only and does not constitute legal advice. BFO should engage qualified Arizona employment counsel before initiating any termination. The strategic plan scorecard items marked &ldquo;VERIFY&rdquo; require confirmation with actual company records. Risk assessments are subjective based on the contract terms and general Arizona employment law principles.
+        </div>
+      </div>
     </div>
   );
 }
