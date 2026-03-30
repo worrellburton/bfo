@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import jsPDF from "jspdf";
 
 export function meta() {
   return [{ title: "BFO - CEO Agreement Review" }];
@@ -1263,6 +1264,342 @@ function WarRoomTab() {
   );
 }
 
+// --- PDF Report Generator ---
+
+function generatePDF() {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const margin = 18;
+  const maxW = W - margin * 2;
+  let y = 20;
+
+  function checkPage(need: number) {
+    if (y + need > 275) { doc.addPage(); y = 20; }
+  }
+
+  function heading(text: string, size = 16) {
+    checkPage(14);
+    doc.setFontSize(size);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(249, 115, 22);
+    doc.text(text, margin, y);
+    y += size * 0.5 + 4;
+  }
+
+  function subheading(text: string) {
+    checkPage(10);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(60, 60, 60);
+    doc.text(text, margin, y);
+    y += 6;
+  }
+
+  function body(text: string, indent = 0) {
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(80, 80, 80);
+    const lines = doc.splitTextToSize(text, maxW - indent);
+    for (const line of lines) {
+      checkPage(5);
+      doc.text(line, margin + indent, y);
+      y += 4.2;
+    }
+    y += 1;
+  }
+
+  function boldBody(text: string, indent = 0) {
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(50, 50, 50);
+    const lines = doc.splitTextToSize(text, maxW - indent);
+    for (const line of lines) {
+      checkPage(5);
+      doc.text(line, margin + indent, y);
+      y += 4.2;
+    }
+    y += 1;
+  }
+
+  function separator() {
+    checkPage(6);
+    doc.setDrawColor(220, 220, 220);
+    doc.line(margin, y, W - margin, y);
+    y += 5;
+  }
+
+  // ===== COVER PAGE =====
+  doc.setFillColor(20, 20, 20);
+  doc.rect(0, 0, W, 297, "F");
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(249, 115, 22);
+  doc.text("BFO — CONFIDENTIAL", margin, 30);
+
+  doc.setFontSize(28);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(255, 255, 255);
+  doc.text("CEO Employment", margin, 60);
+  doc.text("Agreement Review", margin, 72);
+
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 180, 180);
+  doc.text("Yousef Awwad — VisionQuest National, Ltd", margin, 90);
+
+  doc.setFontSize(11);
+  doc.setTextColor(249, 115, 22);
+  doc.text("TERMINATION ANALYSIS & STRATEGY", margin, 105);
+
+  doc.setFontSize(9);
+  doc.setTextColor(140, 140, 140);
+  doc.text("Prepared: " + new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), margin, 120);
+  doc.text("Classification: CONFIDENTIAL — Attorney-Client Privileged", margin, 126);
+
+  // Key stats
+  doc.setFontSize(40);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(239, 68, 68);
+  doc.text("~$50M", margin, 165);
+  doc.setFontSize(11);
+  doc.setTextColor(180, 180, 180);
+  doc.text("Revenue Loss", margin, 172);
+
+  doc.setFontSize(40);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(34, 197, 94);
+  doc.text("$0", margin + 80, 165);
+  doc.setFontSize(11);
+  doc.setTextColor(180, 180, 180);
+  doc.text("For-Cause Severance", margin + 80, 172);
+
+  doc.setFontSize(40);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(249, 115, 22);
+  const savingsStr = `~$${severanceCost.toLocaleString()}`;
+  doc.text(savingsStr, margin, 200);
+  doc.setFontSize(11);
+  doc.setTextColor(180, 180, 180);
+  doc.text("Savings vs Without-Cause", margin, 207);
+
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text("This report is for informational purposes only and does not constitute legal advice.", margin, 270);
+  doc.text("BFO should engage qualified Arizona employment counsel before initiating any termination.", margin, 275);
+
+  // ===== PAGE 2: OVERVIEW =====
+  doc.addPage();
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, W, 297, "F");
+  y = 20;
+
+  heading("1. Agreement Overview");
+  const overviewPairs = [
+    ["Executive:", "Yousef Awwad — Chief Executive Officer"],
+    ["Company:", "VisionQuest National, Ltd (Arizona LLC)"],
+    ["Reports To:", "Board of Directors"],
+    ["Effective Date:", "December 27-28, 2022"],
+    ["Employment Period:", "5 years, auto-renewed for subsequent 5-year terms"],
+    ["Salary:", "$350,000 per year"],
+    ["Bonus:", "5% of Fiscal Year Net Income (quarterly)"],
+    ["Non-Compete:", "12 months post-termination — AZ, DE, MD, PA, TX"],
+    ["Governing Law:", "State of Arizona — Pima County courts"],
+    ["Jury Trial:", "Waived by both parties"],
+  ];
+  for (const [label, val] of overviewPairs) {
+    checkPage(6);
+    boldBody(label, 0);
+    y -= 5.2;
+    body(val, 35);
+  }
+
+  separator();
+  heading("2. Compensation Structure");
+  boldBody("Base Salary: $350,000/year");
+  body("Paid in substantially equal periodic installments. Increases determined by annual performance evaluation. Prorated for partial years.");
+  y += 2;
+  boldBody("Quarterly Bonus: 5% of Fiscal Year Net Income");
+  body("Calculated by HR/Payroll/Finance Director. Paid as lump sum within 30 days after quarter end. If quarterly Net Income is a loss, subsequent bonus is offset. Must be employed by VQ to earn. If terminated before fiscal year end, receives 5% of net income prorated for months employed.");
+  y += 2;
+  boldBody("Benefits: Full executive package");
+  body("Medical, life insurance, disability, long-term care, retirement plan. VQ may modify or terminate plans at any time.");
+
+  separator();
+  heading("3. Restrictive Covenants");
+  const covenantPairs = [
+    ["Non-Competition:", "Employment + 12 months in AZ, DE, MD, PA, TX. Cannot engage in any Competing Business in any capacity."],
+    ["Non-Solicitation:", "Employment + 12 months. Cannot solicit VQ clients or employees."],
+    ["Confidentiality:", "Perpetual. All proprietary information remains VQ property."],
+    ["Intellectual Property:", "Perpetual. All IP conceived during employment is exclusive VQ property."],
+    ["Non-Disparagement:", "Mutual. Neither party can defame or disparage the other."],
+  ];
+  for (const [label, val] of covenantPairs) {
+    boldBody(label);
+    body(val, 4);
+    y += 1;
+  }
+
+  // ===== PAGE: TERMINATION GROUNDS =====
+  doc.addPage(); y = 20;
+  heading("4. Termination for Cause — All 13 Grounds (Section 4(d))");
+  body("Termination for Cause means ZERO severance — VisionQuest's obligation to pay salary ceases on the Termination Date. Below is each ground analyzed against the $50M revenue loss scenario.");
+  y += 3;
+
+  for (const g of terminationGrounds) {
+    checkPage(30);
+    const appliesLabel = g.applies === "yes" ? "[APPLIES]" : g.applies === "partial" ? "[PARTIAL]" : g.applies === "unknown" ? "[INVESTIGATE]" : "[N/A]";
+    subheading(`#${g.num}: ${g.title}  —  ${g.severity.toUpperCase()}  ${appliesLabel}`);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(120, 120, 120);
+    const excerpt = doc.splitTextToSize(`"${g.contractExcerpt}"`, maxW - 4);
+    for (const line of excerpt) { checkPage(4); doc.text(line, margin + 2, y); y += 3.8; }
+    y += 1;
+    body("Analysis: " + g.analysis, 2);
+    y += 2;
+  }
+
+  // ===== PAGE: CONSEQUENCES =====
+  doc.addPage(); y = 20;
+  heading("5. Termination Consequences & Cost Calculator");
+
+  subheading("Severance Cost Calculator");
+  boldBody(`Annual Salary: $${SALARY.toLocaleString()}`);
+  boldBody(`Monthly Salary: $${monthlySalary.toLocaleString()}`);
+  boldBody(`Months Remaining in Term: ${remainingMonths} (~${remainingYears} years to Dec 2027)`);
+  y += 2;
+  boldBody("If Terminated FOR Cause: $0 severance");
+  body("Salary ceases immediately on Termination Date. Only prorated bonus for months already worked.");
+  y += 2;
+  boldBody(`If Terminated WITHOUT Cause: ~$${severanceCost.toLocaleString()} severance`);
+  body(`${remainingMonths} months x $${monthlySalary.toLocaleString()}/mo. Paid in installments per standard payroll.`);
+  y += 2;
+  boldBody(`FOR-CAUSE SAVINGS: ~$${severanceCost.toLocaleString()}`);
+  y += 3;
+
+  separator();
+  subheading("Termination FOR Cause");
+  for (const item of scenarios[0].items) {
+    body(`${item.label}: ${item.value}${item.note ? " — " + item.note : ""}`, 2);
+  }
+  y += 2;
+  subheading("Termination WITHOUT Cause");
+  for (const item of scenarios[1].items) {
+    body(`${item.label}: ${item.value}${item.note ? " — " + item.note : ""}`, 2);
+  }
+  y += 2;
+  subheading("Resignation by Executive");
+  for (const item of scenarios[2].items) {
+    body(`${item.label}: ${item.value}${item.note ? " — " + item.note : ""}`, 2);
+  }
+
+  separator();
+  subheading("Section 409A Compliance");
+  body("If severance benefits are subject to IRC Section 409A and the CEO is a 'specified employee,' severance payments will not begin until the first day of the seventh month following the Termination Date. For-Cause termination avoids this issue entirely.");
+  y += 2;
+  subheading("Release Requirement (Section 4(e)(ii))");
+  body("To receive Severance Pay (Without Cause only), the Executive must sign a general release and waiver of all claims within 60 calendar days following the Termination Date. If the Executive does not sign or revokes the release, no Severance Pay is owed.");
+  y += 2;
+  subheading("Covenant Breach Clawback (Section 5(e))");
+  body("If the Executive breaches any restrictive covenant post-termination, VisionQuest can cease all payments and claw back amounts already paid. Executive retains only $2,000 as consideration for the release.");
+
+  // ===== PAGE: WAR ROOM =====
+  doc.addPage(); y = 20;
+  heading("6. $50M Revenue Loss — War Room Analysis");
+
+  subheading("Scenario Summary");
+  body("Revenue Loss: ~$50,000,000");
+  body("Funding Gap: CEO did not lead the company to a new funding source in the last 3 years");
+  body("CEO Knowledge: Knew that funding was available and possible");
+  body("Applicable For-Cause Grounds: #8 (Material Breach), #11 (Negligence), #12 (Quarterly Losses), #13 (Strategic Plan)");
+  y += 3;
+
+  separator();
+  subheading("Strategic Plan V5.2 Scorecard (2022-2027)");
+  body("The Board-approved VisionQuest Strategic Plan V5.2 establishes specific, measurable objectives. This document is key evidence for Cause #13.");
+  y += 2;
+  for (const pillar of strategicPlanItems) {
+    checkPage(20);
+    boldBody(`${pillar.pillar}: "${pillar.objective}"`);
+    for (const t of pillar.targets) {
+      const label = t.status === "fail" ? "FAILED" : "VERIFY";
+      body(`  [${label}] ${t.target}`, 4);
+    }
+    y += 2;
+  }
+
+  separator();
+  subheading("Job Description & Contract Duty Violations");
+  body("The Job Description is incorporated into the Employment Agreement by reference (Section 1(a), Exhibit A).");
+  y += 2;
+  for (const v of jobDescViolations) {
+    checkPage(18);
+    boldBody(`[${v.strength.toUpperCase()}] "${v.duty}"`);
+    body(`Source: ${v.source}`, 4);
+    body(`Failure: ${v.failure}`, 4);
+    y += 2;
+  }
+
+  // ===== PAGE: ARIZONA LAW =====
+  doc.addPage(); y = 20;
+  heading("7. Arizona Employment Law Framework");
+  body("Choice of Law: State of Arizona (Section 13). All proceedings in Pima County, AZ.");
+  y += 2;
+  for (const p of arizonaLawPoints) {
+    checkPage(18);
+    subheading(p.title);
+    body(p.detail, 2);
+    if (p.citation) { body(`Citation: ${p.citation}`, 4); }
+    y += 2;
+  }
+
+  // ===== PAGE: PLAYBOOK =====
+  separator();
+  heading("8. Step-by-Step Termination Playbook");
+  for (const s of playbookSteps) {
+    checkPage(18);
+    subheading(`Step ${s.step}: ${s.title}${s.critical ? " [CRITICAL]" : ""}`);
+    body(`Timing: ${s.timing}`, 2);
+    body(s.detail, 2);
+    y += 2;
+  }
+
+  // ===== PAGE: RISK & RECOMMENDATION =====
+  separator();
+  heading("9. Risk Assessment & Recommendation");
+
+  subheading("Risk Assessment");
+  body("Wrongful Termination Claim Risk: MEDIUM (LOW if documentation is thorough)");
+  body(`Severance Exposure if For-Cause Fails: ~$${severanceCost.toLocaleString()} (remaining term salary)`);
+  body("Non-Compete Enforceability: HIGH (12 months, 5 states, C-suite access to trade secrets)");
+  y += 3;
+
+  subheading("BFO RECOMMENDATION");
+  boldBody("Terminate FOR CAUSE using grounds #8, #11, #12, and #13 simultaneously.");
+  body(`This eliminates the ~$${severanceCost.toLocaleString()} severance obligation entirely. Using multiple grounds provides redundancy — if one is challenged, the others stand independently.`);
+  y += 3;
+  boldBody("Immediate next steps:");
+  body("1. Compile quarterly financials showing consecutive revenue decline");
+  body("2. Document funding opportunities the CEO knew about but did not pursue");
+  body("3. Engage Arizona employment counsel to review strategy");
+  body("4. Convene Board meeting and pass termination resolution");
+  y += 5;
+
+  // Disclaimer
+  checkPage(15);
+  doc.setDrawColor(200, 200, 200);
+  doc.line(margin, y, W - margin, y);
+  y += 5;
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(150, 150, 150);
+  const disc = doc.splitTextToSize("DISCLAIMER: This report is for informational purposes only and does not constitute legal advice. BFO should engage qualified Arizona employment counsel before initiating any termination. Risk assessments are subjective based on contract terms and general Arizona employment law principles.", maxW);
+  for (const line of disc) { doc.text(line, margin, y); y += 3.5; }
+
+  doc.save("CEO-Agreement-Review-VisionQuest.pdf");
+}
+
 // --- Main Component ---
 
 export default function CEOAgreement() {
@@ -1292,7 +1629,18 @@ export default function CEOAgreement() {
             <p className="text-gray-500 text-sm">Yousef Awwad — VisionQuest National, Ltd Employment Agreement</p>
           </div>
         </div>
-        <StatusBadge status="orange" label="Under Review" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={generatePDF}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25 transition-all"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Download Report
+          </button>
+          <StatusBadge status="orange" label="Under Review" />
+        </div>
       </div>
 
       {/* Tabs */}
