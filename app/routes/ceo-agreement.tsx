@@ -563,14 +563,269 @@ function GroundsTab() {
   );
 }
 
+// --- Termination Scenarios Data ---
+
+const scenarios: {
+  id: string;
+  title: string;
+  color: string;
+  borderColor: string;
+  items: { label: string; value: string; note?: string }[];
+}[] = [
+  {
+    id: "for-cause",
+    title: "Termination FOR Cause",
+    color: "text-emerald-400",
+    borderColor: "border-emerald-500/20",
+    items: [
+      { label: "Salary", value: "Ceases immediately", note: "On Termination Date" },
+      { label: "Bonus", value: "Prorated only", note: "5% of net income for months employed before termination" },
+      { label: "Severance", value: "$0", note: "No severance pay whatsoever" },
+      { label: "Benefits", value: "Cease on Termination Date" },
+      { label: "Non-Compete", value: "12 months enforced", note: "AZ, DE, MD, PA, TX" },
+      { label: "Non-Solicitation", value: "12 months enforced", note: "Clients & employees" },
+      { label: "Confidentiality", value: "Perpetual", note: "Survives termination forever" },
+      { label: "Return of Materials", value: "Immediate", note: "All keys, property, docs, computers, software" },
+      { label: "Cooperation", value: "Required post-termination", note: "Must cooperate with litigation, investigations" },
+      { label: "Non-Disparagement", value: "Mutual", note: "Neither party can disparage; CEO updates LinkedIn" },
+    ],
+  },
+  {
+    id: "without-cause",
+    title: "Termination WITHOUT Cause",
+    color: "text-red-400",
+    borderColor: "border-red-500/20",
+    items: [
+      { label: "Salary", value: "Ceases on Termination Date" },
+      { label: "Bonus", value: "Prorated through Termination Date" },
+      { label: "Severance", value: "FULL remaining term salary", note: "Paid in installments per standard payroll schedule" },
+      { label: "Release Required", value: "Yes — within 60 days", note: "Must sign general release and waiver of all claims" },
+      { label: "Release Revocation", value: "Standard revocation period applies", note: "If revoked, no severance" },
+      { label: "Section 409A", value: "May delay payments 7 months", note: "If CEO is a 'specified employee' under IRC 409A" },
+      { label: "Non-Compete", value: "12 months still enforced" },
+      { label: "Non-Solicitation", value: "12 months still enforced" },
+      { label: "Confidentiality", value: "Perpetual" },
+      { label: "Non-Disparagement", value: "Mutual" },
+    ],
+  },
+  {
+    id: "resignation",
+    title: "Resignation by Executive",
+    color: "text-amber-400",
+    borderColor: "border-amber-500/20",
+    items: [
+      { label: "Salary", value: "Ceases on Termination Date" },
+      { label: "Bonus", value: "Prorated for months employed" },
+      { label: "Severance", value: "$0", note: "No severance on voluntary resignation" },
+      { label: "All Restrictive Covenants", value: "Survive termination", note: "Non-compete, non-solicit, confidentiality, IP — all enforced" },
+      { label: "Cooperation", value: "Required post-termination" },
+      { label: "Return of Materials", value: "Immediate" },
+    ],
+  },
+  {
+    id: "death",
+    title: "Death During Employment",
+    color: "text-gray-400",
+    borderColor: "border-white/10",
+    items: [
+      { label: "Date of Death", value: "= Termination Date" },
+      { label: "Accrued Obligations", value: "Paid to estate/beneficiaries", note: "Accrued compensation, unpaid vacation, sick leave" },
+      { label: "Severance", value: "$0" },
+    ],
+  },
+  {
+    id: "disability",
+    title: "Disability",
+    color: "text-gray-400",
+    borderColor: "border-white/10",
+    items: [
+      { label: "Trigger", value: "Mentally or physically incapable", note: "Even with reasonable accommodation" },
+      { label: "Accrued Obligations", value: "Paid in cash" },
+      { label: "Severance", value: "$0" },
+    ],
+  },
+];
+
+// --- Cost Calculator ---
+
+// Agreement signed Dec 27-28, 2022. Initial 5-year term expires Dec 27, 2027.
+// Current date assumption: March 30, 2026
+const SALARY = 350000;
+const TERM_START = new Date("2022-12-27");
+const TERM_END = new Date("2027-12-27");
+const TODAY = new Date("2026-03-30");
+const remainingMs = TERM_END.getTime() - TODAY.getTime();
+const remainingMonths = Math.ceil(remainingMs / (1000 * 60 * 60 * 24 * 30.44));
+const remainingYears = (remainingMonths / 12).toFixed(1);
+const severanceCost = Math.round((remainingMonths / 12) * SALARY);
+const monthlySalary = Math.round(SALARY / 12);
+
 function ConsequencesTab() {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
-      <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-      </svg>
-      <div className="text-sm font-semibold text-gray-400 mb-1">Consequences & Cost Calculator — Phase 3</div>
-      <div className="text-xs text-gray-600">For Cause vs Without Cause comparison, severance math, Section 409A</div>
+    <div className="space-y-6">
+      {/* Cost Calculator Hero */}
+      <div className="rounded-xl border-2 border-orange-500/30 bg-orange-500/[0.03] p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="text-sm font-bold text-orange-400">Severance Cost Calculator</div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <StatCard label="Annual Salary" value={`$${SALARY.toLocaleString()}`} color="#f97316" />
+          <StatCard label="Monthly Salary" value={`$${monthlySalary.toLocaleString()}`} sub="Per installment" />
+          <StatCard label="Months Remaining" value={`${remainingMonths}`} sub={`${remainingYears} years to Dec 2027`} />
+          <StatCard label="Term End" value="Dec 27, 2027" sub="Initial 5-year term" />
+        </div>
+
+        {/* For Cause vs Without Cause comparison */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-5">
+            <div className="text-[9px] text-emerald-400 uppercase tracking-wider font-bold mb-2">If Terminated FOR Cause</div>
+            <div className="text-3xl font-black text-emerald-400 mb-1">$0</div>
+            <div className="text-xs text-gray-500">Zero severance obligation</div>
+            <div className="mt-3 text-[10px] text-gray-500">Salary ceases immediately. Only prorated bonus for months already worked. VisionQuest saves the full remaining term salary.</div>
+          </div>
+          <div className="rounded-xl border border-red-500/20 bg-red-500/[0.03] p-5">
+            <div className="text-[9px] text-red-400 uppercase tracking-wider font-bold mb-2">If Terminated WITHOUT Cause</div>
+            <div className="text-3xl font-black text-red-400 mb-1">${severanceCost.toLocaleString()}</div>
+            <div className="text-xs text-gray-500">Remaining salary through Dec 2027</div>
+            <div className="mt-3 text-[10px] text-gray-500">{remainingMonths} months × ${monthlySalary.toLocaleString()}/mo. Paid in installments per standard payroll. First payment after release revocation period expires.</div>
+          </div>
+        </div>
+
+        {/* Savings callout */}
+        <div className="mt-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 text-center">
+          <div className="text-[10px] text-emerald-400 uppercase tracking-wider font-bold mb-1">For-Cause Termination Savings</div>
+          <div className="text-2xl font-black text-emerald-400">${severanceCost.toLocaleString()}</div>
+          <div className="text-xs text-gray-500 mt-1">This is the cost VisionQuest avoids by establishing valid Cause grounds</div>
+        </div>
+      </div>
+
+      {/* Section 409A Warning */}
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-4">
+        <div className="flex items-start gap-2">
+          <svg className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+          </svg>
+          <div>
+            <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-1">Section 409A Compliance (Section 22)</div>
+            <div className="text-xs text-gray-400 leading-relaxed">
+              If severance benefits are subject to IRC Section 409A and the CEO is a &ldquo;specified employee,&rdquo; severance payments <span className="text-amber-400 font-semibold">will not begin until the first day of the seventh month</span> following the Termination Date. This is a deferred compensation rule that can delay Without-Cause severance payments significantly. For-Cause termination avoids this issue entirely since there is no severance.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Release Requirement */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <h3 className="text-sm font-semibold text-orange-400 mb-3">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Release Requirement (Section 4(e)(ii))
+        </h3>
+        <div className="text-xs text-gray-400 leading-relaxed mb-3">
+          To receive Severance Pay (Without Cause only), the Executive <span className="text-white font-semibold">must sign a general release and waiver</span> of all claims within 60 calendar days following the Termination Date. If the Executive does not sign (or revokes) the release, no Severance Pay is owed.
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Deadline</div>
+            <div className="text-sm font-semibold text-gray-200">60 calendar days</div>
+            <div className="text-[10px] text-gray-500">After Termination Date</div>
+          </div>
+          <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Scope</div>
+            <div className="text-sm font-semibold text-gray-200">General release & waiver</div>
+            <div className="text-[10px] text-gray-500">All claims related to employment</div>
+          </div>
+          <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3">
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">First Payment</div>
+            <div className="text-sm font-semibold text-gray-200">After revocation period</div>
+            <div className="text-[10px] text-gray-500">First regular payroll after release is final</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Scenario Comparison Cards */}
+      <div>
+        <h3 className="text-sm font-semibold text-orange-400 mb-3">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+          </svg>
+          All Termination Scenarios — Side by Side
+        </h3>
+        <div className="space-y-4">
+          {scenarios.map((s) => (
+            <div key={s.id} className={`rounded-xl border ${s.borderColor} bg-white/[0.02] p-5`}>
+              <div className={`text-sm font-bold ${s.color} mb-3`}>{s.title}</div>
+              <div className="space-y-2">
+                {s.items.map((item, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <div className="w-28 flex-shrink-0">
+                      <span className="text-[10px] text-gray-500 font-medium">{item.label}</span>
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-xs text-gray-200 font-medium">{item.value}</span>
+                      {item.note && <span className="text-[10px] text-gray-500 ml-2">— {item.note}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Covenant Breach Clawback */}
+      <div className="rounded-xl border border-red-500/20 bg-red-500/[0.03] p-5">
+        <h3 className="text-sm font-semibold text-red-400 mb-3">
+          <svg className="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+          </svg>
+          Clawback — If Executive Breaches Restrictive Covenants (Section 5(e))
+        </h3>
+        <div className="text-xs text-gray-400 leading-relaxed mb-3">
+          Even if termination is Without Cause and severance is being paid, VisionQuest has the right to <span className="text-red-400 font-semibold">cease all payments and claw back amounts already paid</span> if the Executive breaches any restrictive covenant (non-compete, non-solicitation, confidentiality).
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg bg-red-500/[0.05] border border-red-500/15 p-3">
+            <div className="text-[9px] text-red-400 uppercase tracking-wider font-semibold mb-1">Clawback</div>
+            <div className="text-xs text-gray-400">Must repay all amounts received during the breach period to VisionQuest</div>
+          </div>
+          <div className="rounded-lg bg-red-500/[0.05] border border-red-500/15 p-3">
+            <div className="text-[9px] text-red-400 uppercase tracking-wider font-semibold mb-1">Retention</div>
+            <div className="text-xs text-gray-400">Executive keeps only $2,000 as consideration for the release agreement</div>
+          </div>
+        </div>
+      </div>
+
+      {/* BFO Recommendation */}
+      <div className="rounded-xl border-2 border-emerald-500/30 bg-emerald-500/[0.03] p-5">
+        <div className="text-sm font-bold text-emerald-400 mb-2">
+          <svg className="w-4 h-4 inline mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          BFO Recommendation
+        </div>
+        <div className="text-xs text-gray-400 leading-relaxed mb-3">
+          Terminate FOR CAUSE using grounds #8, #11, #12, and #13 simultaneously. This eliminates the ${severanceCost.toLocaleString()} severance obligation entirely. Using multiple grounds provides redundancy — if one is challenged, the others stand independently. Document everything thoroughly before initiating termination.
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-lg bg-emerald-500/[0.05] border border-emerald-500/20 p-3 text-center">
+            <div className="text-xl font-black text-emerald-400">$0</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">For-Cause Severance</div>
+          </div>
+          <div className="rounded-lg bg-red-500/[0.05] border border-red-500/20 p-3 text-center">
+            <div className="text-xl font-black text-red-400">${severanceCost.toLocaleString()}</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Without-Cause Cost</div>
+          </div>
+          <div className="rounded-lg bg-orange-500/[0.05] border border-orange-500/20 p-3 text-center">
+            <div className="text-xl font-black text-orange-400">${severanceCost.toLocaleString()}</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Total Savings</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
