@@ -22,5 +22,6 @@ export default [
     route("tools/penguin-nyc", "./routes/penguin-nyc.tsx"),
     route("tools/penguin-nyc/advisory", "./routes/penguin-nyc-advisory.tsx"),
     route("tools/penguin-nyc/clauses", "./routes/penguin-nyc-clauses.tsx"),
+    route("tools/ceo-agreement", "./routes/ceo-agreement.tsx"),
   ]),
 ] satisfies RouteConfig;
