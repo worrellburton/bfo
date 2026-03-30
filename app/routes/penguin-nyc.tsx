@@ -548,15 +548,28 @@ export default function PenguinNYC() {
         <StatusBadge status="red" label="Not Signed" />
       </div>
 
+      {/* Sub-page Nav */}
+      <div className="flex gap-1 mb-4 border-b border-white/10 pb-px">
+        <span className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-cyan-400 bg-white/5 border-b-2 border-cyan-400">
+          Overview
+        </span>
+        <Link
+          to="/tools/penguin-nyc/advisory"
+          className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-gray-500 hover:text-gray-300 hover:bg-white/[0.02] transition-all duration-200"
+        >
+          Advisory
+        </Link>
+      </div>
+
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px">
+      <div className="flex gap-1 mb-6">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-xs font-medium rounded-t-lg transition-all duration-200 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
               activeTab === tab.id
-                ? "text-cyan-400 bg-white/5 border-b-2 border-cyan-400"
+                ? "text-cyan-400 bg-cyan-500/10"
                 : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
             }`}
           >
