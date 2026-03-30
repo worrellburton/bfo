@@ -559,6 +559,12 @@ export default function PenguinNYC() {
         >
           Advisory
         </Link>
+        <Link
+          to="/tools/penguin-nyc/clauses"
+          className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-gray-500 hover:text-gray-300 hover:bg-white/[0.02] transition-all duration-200"
+        >
+          Clause Analysis
+        </Link>
       </div>
 
       {/* Tabs */}

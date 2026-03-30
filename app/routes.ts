@@ -21,5 +21,6 @@ export default [
     route("tools/fdj-hesperia/advisory", "./routes/fdj-hesperia-advisory.tsx"),
     route("tools/penguin-nyc", "./routes/penguin-nyc.tsx"),
     route("tools/penguin-nyc/advisory", "./routes/penguin-nyc-advisory.tsx"),
+    route("tools/penguin-nyc/clauses", "./routes/penguin-nyc-clauses.tsx"),
   ]),
 ] satisfies RouteConfig;

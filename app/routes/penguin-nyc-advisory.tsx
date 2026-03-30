@@ -51,6 +51,7 @@ function GradeBadge({ grade, color }: { grade: string; color: string }) {
 const tabs = [
   { label: "Overview", href: "/tools/penguin-nyc", active: false },
   { label: "Advisory", href: "/tools/penguin-nyc/advisory", active: true },
+  { label: "Clause Analysis", href: "/tools/penguin-nyc/clauses", active: false },
 ];
 
 // --- Risk Score Data ---
