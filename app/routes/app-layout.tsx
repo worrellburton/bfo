@@ -5,12 +5,12 @@ import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
 
 const navItems = [
-  { to: "/", label: "Home" },
-  { to: "/frameworks", label: "Frameworks" },
-  { to: "/assets", label: "Assets" },
-  { to: "/notes", label: "Notes" },
-  { to: "/office", label: "Office" },
-  { to: "/tools", label: "Tools" },
+  { to: "/", label: "Home", icon: null },
+  { to: "/frameworks", label: "Frameworks", icon: null },
+  { to: "/assets", label: "Assets", icon: null },
+  { to: "/notes", label: "Notes", icon: null },
+  { to: "/office", label: "Office", icon: null },
+  { to: "/tools", label: "Tools", icon: null },
 ];
 
 export default function AppLayout() {
@@ -73,6 +73,7 @@ export default function AppLayout() {
                 }`
               }
             >
+              {item.icon && <span className="inline-flex mr-2">{item.icon}</span>}
               {item.label}
             </NavLink>
           ))}

@@ -2,6 +2,7 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 
 export default [
   route("login", "routes/login.tsx"),
+  route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
     route("frameworks", "routes/frameworks.tsx"),
@@ -14,5 +15,9 @@ export default [
     route("tools", "routes/calculations.tsx"),
     route("tools/developer-payment", "routes/calc-dev-payment.tsx"),
     route("tools/property-analysis", "routes/calc-property-analysis.tsx"),
+    route("tools/fdj-hesperia", "./routes/fdj-hesperia.tsx"),
+    route("tools/fdj-hesperia/financials", "./routes/fdj-hesperia-financials.tsx"),
+    route("tools/fdj-hesperia/documents", "./routes/fdj-hesperia-documents.tsx"),
+    route("tools/fdj-hesperia/advisory", "./routes/fdj-hesperia-advisory.tsx"),
   ]),
 ] satisfies RouteConfig;
