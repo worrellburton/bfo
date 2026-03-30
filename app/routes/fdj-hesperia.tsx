@@ -264,8 +264,18 @@ export default function FDJHesperia() {
   const [showPublicLink, setShowPublicLink] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  function getOrCreateToken() {
+    let token = localStorage.getItem("fdj-public-token");
+    if (!token) {
+      token = crypto.randomUUID();
+      localStorage.setItem("fdj-public-token", token);
+    }
+    return token;
+  }
+
   function handleCopyLink() {
-    const url = `${window.location.origin}/public/fdj-hesperia`;
+    const token = getOrCreateToken();
+    const url = `${window.location.origin}/public/fdj-hesperia?token=${token}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -341,7 +351,7 @@ export default function FDJHesperia() {
 
             <div className="rounded-lg bg-white/[0.04] border border-white/10 p-3 mb-3">
               <div className="text-xs text-gray-300 font-mono break-all">
-                {typeof window !== "undefined" ? window.location.origin : ""}/public/fdj-hesperia
+                {typeof window !== "undefined" ? `${window.location.origin}/public/fdj-hesperia?token=${getOrCreateToken()}` : ""}
               </div>
             </div>
 

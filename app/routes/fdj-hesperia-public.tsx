@@ -1,5 +1,24 @@
+import { useState, useEffect } from "react";
+
 export function meta() {
   return [{ title: "Burton Family Investment Summary - FDJ Hesperia" }];
+}
+
+function usePublicAccess() {
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    const stored = localStorage.getItem("fdj-public-token");
+    if (token && stored && token === stored) {
+      setAuthorized(true);
+    } else {
+      setAuthorized(false);
+    }
+  }, []);
+
+  return authorized;
 }
 
 function fmt(n: number) {
@@ -236,6 +255,28 @@ function PropertyCard({
 // --- Main Component ---
 
 export default function FDJHesperiaPublic() {
+  const authorized = usePublicAccess();
+
+  if (authorized === null) {
+    return <div className="min-h-screen bg-[#0a0a0a]" />;
+  }
+
+  if (!authorized) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+        <div className="text-center max-w-md px-6">
+          <div className="w-16 h-16 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Access Required</h1>
+          <p className="text-gray-500 text-sm">This page requires a valid public link. Please request one from the Burton Family Office.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
       {/* Confidential Badge - Fixed */}
