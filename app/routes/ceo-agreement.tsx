@@ -328,16 +328,237 @@ function OverviewTab() {
   );
 }
 
-// --- Placeholder Tabs (Phase 2, 3, 4) ---
+// --- Termination Grounds Data ---
+
+const terminationGrounds: {
+  num: number;
+  title: string;
+  severity: "critical" | "high" | "medium";
+  applies: "yes" | "partial" | "no" | "unknown";
+  contractExcerpt: string;
+  analysis: string;
+}[] = [
+  {
+    num: 1,
+    title: "Criminal Conviction / Felony / Fraud / Embezzlement",
+    severity: "critical",
+    applies: "no",
+    contractExcerpt: "conviction or entry of a plea of nolo contendere for a crime or offense involving misappropriation of monies or other property, or any felony offense (including Foreign Corrupt Practices Act of 1977), or Executive\u2019s commission of fraud or embezzlement",
+    analysis: "No evidence of criminal activity. This ground is not applicable to the $50M revenue loss scenario unless fraud or embezzlement is discovered during investigation.",
+  },
+  {
+    num: 2,
+    title: "Breach of Fiduciary Duties",
+    severity: "critical",
+    applies: "partial",
+    contractExcerpt: "breach by Executive of Executive\u2019s fiduciary duties to VisionQuest",
+    analysis: "POTENTIALLY APPLICABLE. A CEO\u2019s fiduciary duty of care requires acting with the care an ordinarily prudent person would exercise. Knowingly failing to pursue available funding while the company hemorrhages $50M in revenue could constitute a breach of the duty of care. Requires showing the CEO knew funding was available and chose not to act.",
+  },
+  {
+    num: 3,
+    title: "Insubordination / Willful Failure to Discharge Duties",
+    severity: "high",
+    applies: "yes",
+    contractExcerpt: "insubordination or willful failure to discharge any of Executive\u2019s duties or obligations under this Agreement",
+    analysis: "STRONG GROUND. If the Board directed the CEO to pursue funding and the CEO failed to do so, this is direct insubordination. Even without specific Board direction, the Job Description requires the CEO to \u201cpartner with high level officers to grow the company and strengthen and ensure the company\u2019s sustainability\u201d and \u201cwork closely with the CFO to set yearly budgets to allocate capital.\u201d Willful inaction on a $50M revenue decline qualifies.",
+  },
+  {
+    num: 4,
+    title: "Violation of Law / Regulation",
+    severity: "critical",
+    applies: "no",
+    contractExcerpt: "violation of any law, rule, or regulation of any governmental agency with jurisdiction over VisionQuest which could reasonably be expected to impair VisionQuest\u2019s ability to conduct its business in its usual manner or could reasonably be expected to subject VisionQuest to public disrespect, scandal, or ridicule",
+    analysis: "Not directly applicable unless the CEO\u2019s actions (or inactions) resulted in regulatory violations. Would need to investigate whether any compliance failures occurred during the revenue decline.",
+  },
+  {
+    num: 5,
+    title: "Insobriety / Drug Use Affecting Duties",
+    severity: "critical",
+    applies: "no",
+    contractExcerpt: "insobriety or non-therapeutic use of drugs, chemicals, or controlled substances either: (A) in the course of performing Executive\u2019s duties and responsibilities under this Agreement; or (B) in any other manner affecting Executive\u2019s ability to perform Executive\u2019s duties",
+    analysis: "Not applicable to the $50M revenue loss scenario.",
+  },
+  {
+    num: 6,
+    title: "Willful Misconduct (Business Affairs / Code of Ethics)",
+    severity: "high",
+    applies: "partial",
+    contractExcerpt: "willful misconduct with respect to the business and affairs of VisionQuest or any subsidiary or affiliate thereof, including, but not limited to, Executive\u2019s willful violation of any Code of Ethics or any other material policy of VisionQuest",
+    analysis: "POTENTIALLY APPLICABLE. Willfully ignoring a deteriorating $50M financial position and consciously choosing not to pursue known funding sources could be construed as willful misconduct with respect to VisionQuest\u2019s business affairs. The key question is whether the CEO\u2019s inaction was willful (intentional) versus merely negligent.",
+  },
+  {
+    num: 7,
+    title: "Dishonesty",
+    severity: "critical",
+    applies: "unknown",
+    contractExcerpt: "dishonesty",
+    analysis: "INVESTIGATE. If the CEO misrepresented the company\u2019s financial condition to the Board, concealed the availability of funding sources, or provided misleading reports about revenue projections, this ground applies. Review Board meeting minutes, financial presentations, and CEO communications for any misrepresentations.",
+  },
+  {
+    num: 8,
+    title: "Material Breach by Act or Omission",
+    severity: "high",
+    applies: "yes",
+    contractExcerpt: "any act or omission constituting a material breach by Executive of any provision of this Agreement",
+    analysis: "STRONG GROUND. An OMISSION (failure to act) explicitly qualifies as a material breach. The CEO\u2019s duty under Section 1(a) is to be \u201cresponsible for the overall leadership, management, and operation of VisionQuest\u201d and to \u201ctake such steps as are reasonably necessary to assure the financial strength and integrity of VisionQuest.\u201d Failing to pursue funding while revenue declined $50M is a material omission of this core duty.",
+  },
+  {
+    num: 9,
+    title: "Policy Violation (Harassment, Discrimination, IP, Confidentiality)",
+    severity: "critical",
+    applies: "no",
+    contractExcerpt: "Executive\u2019s violation of any VisionQuest policy involving harassment, discrimination, intellectual property, and/or confidentiality",
+    analysis: "Not applicable to the revenue loss scenario unless separate policy violations are discovered.",
+  },
+  {
+    num: 10,
+    title: "Disparaging Statements About VisionQuest",
+    severity: "medium",
+    applies: "no",
+    contractExcerpt: "Executive has made oral or written statements disparaging the reputation of VisionQuest, its products, or its services",
+    analysis: "Not directly applicable. However, if the CEO made negative statements about VisionQuest\u2019s financial viability to third parties (funders, partners, employees) that contributed to the revenue decline, this could be explored.",
+  },
+  {
+    num: 11,
+    title: "Negligence / Failure to Perform Duties",
+    severity: "high",
+    applies: "yes",
+    contractExcerpt: "Executive\u2019s negligence or refusal or failure to perform Executive\u2019s duties as set forth in this Agreement, which, if curable, is not cured within 30 calendar days after receipt of written notice from the Board of such unsatisfactory performance; provided, however, that successive refusals or failures involving the same unsatisfactory performance by Executive shall be deemed incapable of being cured",
+    analysis: "THIS IS THE STRONGEST GROUND. The CEO\u2019s duty per Section 1(a) is to \u201cassure the financial strength and integrity of VisionQuest.\u201d Losing $50M in revenue while not pursuing known funding sources is textbook negligence/failure to perform. CRITICAL: If the Board previously raised this issue and the CEO didn\u2019t fix it, the 30-day cure period is ELIMINATED \u2014 \u201csuccessive refusals or failures involving the same unsatisfactory performance shall be deemed incapable of being cured.\u201d",
+  },
+  {
+    num: 12,
+    title: "Multiple Consecutive Quarterly Losses",
+    severity: "high",
+    applies: "yes",
+    contractExcerpt: "Multiple consecutive quarterly losses due to declining of gross income or net profits",
+    analysis: "DIRECT HIT. A $50M revenue loss would produce multiple consecutive quarters of declining gross income. This is the most straightforward ground \u2014 no subjective interpretation needed. If VisionQuest\u2019s financials show consecutive quarters of declining revenue or net income, this ground is satisfied on its face. No cure period. No ambiguity.",
+  },
+  {
+    num: 13,
+    title: "Inability to Execute Strategic Plan",
+    severity: "high",
+    applies: "yes",
+    contractExcerpt: "Inability to execute the company\u2019s strategic plan",
+    analysis: "STRONG GROUND \u2014 NOW BULLETPROOF WITH THE STRATEGIC PLAN DOCUMENT. The VisionQuest Strategic Plan V5.2 (2022-2027) explicitly requires: (1) \u201cImprove revenues and financial reporting,\u201d (2) \u201cComplete FY2022 with .5% profit margin then increase profitability 8% by the end of FY2027,\u201d (3) \u201cMaintain, grow, and optimize the company.\u201d A $50M revenue loss is the opposite of every financial objective in the Board-approved strategic plan.",
+  },
+];
+
+// --- Grounds Tab ---
 
 function GroundsTab() {
+  const applicableCount = terminationGrounds.filter(g => g.applies === "yes").length;
+  const partialCount = terminationGrounds.filter(g => g.applies === "partial").length;
+
+  const severityColors = {
+    critical: { border: "border-red-500/20", bg: "bg-red-500/15", text: "text-red-400" },
+    high: { border: "border-orange-500/20", bg: "bg-orange-500/15", text: "text-orange-400" },
+    medium: { border: "border-amber-500/20", bg: "bg-amber-500/15", text: "text-amber-400" },
+  };
+
+  const appliesColors = {
+    yes: { bg: "bg-emerald-500/15", text: "text-emerald-400", border: "border-emerald-500/30", label: "APPLIES" },
+    partial: { bg: "bg-amber-500/15", text: "text-amber-400", border: "border-amber-500/30", label: "PARTIAL" },
+    no: { bg: "bg-gray-500/15", text: "text-gray-500", border: "border-gray-500/30", label: "N/A" },
+    unknown: { bg: "bg-purple-500/15", text: "text-purple-400", border: "border-purple-500/30", label: "INVESTIGATE" },
+  };
+
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
-      <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
-      </svg>
-      <div className="text-sm font-semibold text-gray-400 mb-1">Termination Grounds — Phase 2</div>
-      <div className="text-xs text-gray-600">All 13 for-cause grounds with severity ratings and $50M applicability analysis</div>
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.03] p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+          </svg>
+          <div className="text-sm font-bold text-orange-400">Section 4(d) — Termination for Cause</div>
+        </div>
+        <p className="text-xs text-gray-400 leading-relaxed mb-3">
+          The Employment Agreement defines 13 specific grounds for termination &ldquo;for Cause.&rdquo; Termination for Cause means <span className="text-white font-semibold">zero severance</span> — VisionQuest&rsquo;s obligation to pay salary ceases on the Termination Date. Below is each ground analyzed against the $50M revenue loss scenario.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge status="green" label={`${applicableCount} Directly Apply`} />
+          <StatusBadge status="amber" label={`${partialCount} Partially Apply`} />
+          <StatusBadge status="orange" label="13 Total Grounds" />
+        </div>
+      </div>
+
+      {/* Cure Period Warning */}
+      <div className="rounded-xl border border-red-500/20 bg-red-500/[0.03] p-4">
+        <div className="flex items-start gap-2">
+          <svg className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+          </svg>
+          <div>
+            <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider mb-1">Critical: 30-Day Cure Period (Cause #11 Only)</div>
+            <div className="text-xs text-gray-400">Cause #11 (Negligence/Failure to Perform) has a 30-day cure period after written notice. <span className="text-red-400 font-semibold">However, &ldquo;successive refusals or failures involving the same unsatisfactory performance shall be deemed incapable of being cured.&rdquo;</span> If the Board has previously raised the revenue/funding issue, the cure period is waived. All other grounds have NO cure period.</div>
+          </div>
+        </div>
+      </div>
+
+      {/* All 13 Grounds */}
+      {terminationGrounds.map((g) => {
+        const sev = severityColors[g.severity];
+        const app = appliesColors[g.applies];
+        return (
+          <div key={g.num} className={`rounded-xl border ${g.applies === "yes" ? "border-emerald-500/20" : "border-white/10"} bg-white/[0.02] p-5`}>
+            <div className="flex items-start gap-3">
+              {/* Number */}
+              <div className={`flex-shrink-0 w-8 h-8 rounded-lg ${g.applies === "yes" ? "bg-emerald-500/15" : "bg-white/5"} flex items-center justify-center`}>
+                <span className={`text-xs font-black ${g.applies === "yes" ? "text-emerald-400" : "text-gray-500"}`}>{g.num}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                {/* Header */}
+                <div className="flex items-center flex-wrap gap-2 mb-2">
+                  <span className="text-sm font-semibold text-gray-200">{g.title}</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${sev.bg} ${sev.text} ${sev.border}`}>
+                    {g.severity}
+                  </span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${app.bg} ${app.text} ${app.border}`}>
+                    {app.label}
+                  </span>
+                </div>
+                {/* Contract Excerpt */}
+                <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3 mb-3">
+                  <div className="text-[9px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Contract Language</div>
+                  <div className="text-xs text-gray-400 italic leading-relaxed">&ldquo;{g.contractExcerpt}&rdquo;</div>
+                </div>
+                {/* BFO Analysis */}
+                <div className="text-xs text-gray-400 leading-relaxed">
+                  <span className="text-[9px] text-orange-400 uppercase tracking-wider font-semibold">BFO Analysis: </span>
+                  {g.analysis}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Bottom Summary */}
+      <div className="rounded-xl border-2 border-emerald-500/30 bg-emerald-500/[0.03] p-5">
+        <div className="text-sm font-bold text-emerald-400 mb-2">
+          <svg className="w-4 h-4 inline mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Strongest Grounds for Termination
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          {[
+            { num: 12, title: "Multiple Consecutive Quarterly Losses", strength: "DIRECT HIT — objective, no interpretation needed" },
+            { num: 11, title: "Negligence / Failure to Perform", strength: "STRONGEST — duty to assure financial strength" },
+            { num: 13, title: "Inability to Execute Strategic Plan", strength: "BULLETPROOF — Strategic Plan V5.2 documents targets" },
+            { num: 8, title: "Material Breach by Omission", strength: "STRONG — omission explicitly covered in contract" },
+          ].map((s) => (
+            <div key={s.num} className="rounded-lg bg-emerald-500/[0.05] border border-emerald-500/20 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/20 w-5 h-5 rounded flex items-center justify-center">#{s.num}</span>
+                <span className="text-xs font-semibold text-emerald-300">{s.title}</span>
+              </div>
+              <div className="text-[10px] text-gray-500">{s.strength}</div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
