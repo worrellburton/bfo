@@ -3,6 +3,14 @@ import crypto from "crypto";
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   const clientId = process.env.QUICKBOOKS_CLIENT_ID;
+
+  if (!clientId) {
+    return res.status(500).json({
+      error: "QUICKBOOKS_CLIENT_ID environment variable is not set",
+      hint: "Add it in Vercel → Project Settings → Environment Variables, then redeploy",
+    });
+  }
+
   const redirectUri = `https://bfoffice.vercel.app/api/quickbooks/callback`;
   const scope = "com.intuit.quickbooks.accounting";
   const state = crypto.randomBytes(16).toString("hex");
