@@ -11,6 +11,7 @@ const navItems = [
   { to: "/notes", label: "Notes", icon: null },
   { to: "/office", label: "Office", icon: null },
   { to: "/tools", label: "Tools", icon: null },
+  { to: "/tools/quickbooks", label: "QuickBooks", icon: null },
 ];
 
 export default function AppLayout() {
