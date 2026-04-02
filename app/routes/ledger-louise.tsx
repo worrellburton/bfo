@@ -253,7 +253,227 @@ function OverviewTab() {
 }
 
 // ========================
-// PLACEHOLDER TABS (Phases 2-6)
+// PHASE 2 — K-1 READINESS
+// ========================
+function K1ReadinessTab() {
+  const checklist = [
+    { item: "EIN Obtained for Ledger Louise, LLC", status: "yellow" as const, statusLabel: "VERIFY", detail: "Confirm EIN exists and is associated with partnership tax filing (Form 1065). If not obtained, apply via IRS Form SS-4." },
+    { item: "QuickBooks Online Connected", status: "yellow" as const, statusLabel: "IN PROGRESS", detail: "QuickBooks integration built in BFO. Complete OAuth connection to pull live financial data." },
+    { item: "Dedicated Bank Account", status: "green" as const, statusLabel: "DONE", detail: "Ledger Louise has an active bank account. Ensure all LL transactions flow through this account." },
+    { item: "Chart of Accounts Established", status: "red" as const, statusLabel: "NOT STARTED", detail: "Set up holding company COA in QuickBooks: management fee income, intercompany receivables, distributions, operating expenses." },
+    { item: "Bank Account Reconciled (2023–Present)", status: "red" as const, statusLabel: "NOT STARTED", detail: "Reconcile all bank activity from formation (Sept 2023) through current. Classify all transactions." },
+    { item: "Subsidiary Income/Loss Tracked", status: "red" as const, statusLabel: "NOT STARTED", detail: "Track K-1 income flowing from each subsidiary (Swisshelm, Sundown, Ledger Burton, Worrell Burton) into Ledger Louise." },
+    { item: "Capital Accounts Maintained per IRC 704-1(b)", status: "red" as const, statusLabel: "NOT STARTED", detail: "Required by the Operating Agreement (Section III.9). Track contributions, allocations, and distributions for the Trust's capital account." },
+    { item: "Form 1065 Filed — Tax Year 2023 (Partial Year)", status: "red" as const, statusLabel: "CRITICAL", detail: "Ledger Louise was formed Sept 12, 2023. A 2023 Form 1065 was due March 15, 2024 (or Sept 15 with extension). Verify if filed." },
+    { item: "Form 1065 Filed — Tax Year 2024", status: "red" as const, statusLabel: "CRITICAL", detail: "Full year 2024 Form 1065 was due March 15, 2025 (or Sept 15, 2025 with extension). Verify if filed or if extension was requested." },
+    { item: "Form 1065 Filed — Tax Year 2025", status: "yellow" as const, statusLabel: "UPCOMING", detail: "Due March 15, 2026 (or Sept 15, 2026 with extension). This is the next filing if prior years are caught up." },
+    { item: "Schedule K-1 Issued to Burton Family Revocable Trust", status: "red" as const, statusLabel: "CRITICAL", detail: "K-1 must be issued to the Trust for each tax year. The Trust then reports this income on its Form 1041." },
+    { item: "Nevada Commerce Tax Evaluated", status: "yellow" as const, statusLabel: "VERIFY", detail: "Nevada has no income tax, but the Commerce Tax applies if Nevada-sourced gross revenue exceeds $4M. Verify threshold." },
+    { item: "Nevada Annual List Filed", status: "yellow" as const, statusLabel: "VERIFY", detail: "Nevada LLCs must file an Annual List with the Secretary of State and pay $150 fee. Due by last day of anniversary month (September)." },
+  ];
+
+  const k1LineItems = [
+    { line: "Line 1", description: "Ordinary business income (loss)", source: "Net income from management fees, operations", applies: true },
+    { line: "Line 2", description: "Net rental real estate income (loss)", source: "Pass-through from subsidiary real estate holdings", applies: true },
+    { line: "Line 3", description: "Other net rental income (loss)", source: "Non-real-estate rental activity", applies: false },
+    { line: "Line 4", description: "Guaranteed payments for services", source: "N/A — Operating Agreement provides no compensation to managers", applies: false },
+    { line: "Line 5", description: "Interest income", source: "Bank interest, intercompany loans", applies: true },
+    { line: "Line 6a", description: "Ordinary dividends", source: "Dividends from Catalog Digital, Atlas Hydration if applicable", applies: true },
+    { line: "Line 7", description: "Royalties", source: "If any IP licensing exists", applies: false },
+    { line: "Line 8", description: "Net short-term capital gain (loss)", source: "From investment sales < 1 year", applies: true },
+    { line: "Line 9a", description: "Net long-term capital gain (loss)", source: "From investment/property sales > 1 year", applies: true },
+    { line: "Line 10", description: "Net Section 1231 gain (loss)", source: "Business property sales (real estate, equipment)", applies: true },
+    { line: "Line 11", description: "Other income (loss)", source: "Miscellaneous income items", applies: true },
+    { line: "Line 13", description: "Other deductions", source: "Section 179, charitable contributions, etc.", applies: true },
+    { line: "Line 14", description: "Self-employment earnings", source: "Only if members are active in management of real estate", applies: false },
+    { line: "Line 20", description: "Section 199A (QBI) information", source: "Qualified Business Income for 20% deduction — critical for pass-through entities", applies: true },
+  ];
+
+  const deadlines = [
+    { year: "2023", form: "Form 1065 (Partial Year)", due: "March 15, 2024", extended: "Sept 15, 2024", status: "red" as const, statusLabel: "VERIFY" },
+    { year: "2024", form: "Form 1065 (Full Year)", due: "March 15, 2025", extended: "Sept 15, 2025", status: "red" as const, statusLabel: "VERIFY" },
+    { year: "2025", form: "Form 1065 (Full Year)", due: "March 15, 2026", extended: "Sept 15, 2026", status: "yellow" as const, statusLabel: "UPCOMING" },
+    { year: "Annual", form: "Nevada Annual List", due: "September 30 each year", extended: "N/A", status: "yellow" as const, statusLabel: "VERIFY" },
+  ];
+
+  const criticalCount = checklist.filter((c) => c.statusLabel === "CRITICAL").length;
+  const doneCount = checklist.filter((c) => c.status === "green").length;
+  const verifyCount = checklist.filter((c) => c.statusLabel === "VERIFY").length;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Items", value: checklist.length, color: accent },
+          { label: "Completed", value: doneCount, color: "#22c55e" },
+          { label: "Critical", value: criticalCount, color: "#ef4444" },
+          { label: "Need Verification", value: verifyCount, color: "#eab308" },
+        ].map((m) => (
+          <Card key={m.label}>
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{m.label}</p>
+            <p className="text-2xl font-bold" style={{ color: m.color }}>{m.value}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Critical Alert */}
+      <Card>
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-red-500/15 shrink-0">
+            <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm text-red-400 mb-1">Priority: Verify Prior Year Tax Filings</h3>
+            <p className="text-gray-400 text-xs leading-relaxed">
+              Ledger Louise was formed September 12, 2023. As a multi-member LLC taxed as a partnership, it is <strong>required</strong> to file Form 1065 for each tax year and issue Schedule K-1 to the Burton Family Revocable Trust. Late filing penalties are <strong>$220/month per partner</strong> (for 2024 returns). Check immediately whether 2023 and 2024 returns were filed or if extensions were obtained.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Readiness Checklist */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          K-1 Readiness Checklist
+        </SectionTitle>
+        <div className="space-y-2">
+          {checklist.map((item, i) => (
+            <div key={i} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-gray-200">{item.item}</p>
+                <Badge status={item.status} label={item.statusLabel} />
+              </div>
+              <p className="text-[10px] text-gray-500 leading-relaxed">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* K-1 Line Items */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+          Schedule K-1 Line Items — What Flows to the Trust
+        </SectionTitle>
+        <p className="text-[10px] text-gray-500 mb-3">
+          The K-1 issued to the Burton Family Revocable Trust will report these items. The Trust then reports them on its Form 1041 (or individual returns if grantor trust).
+        </p>
+        <div className="rounded-lg border border-white/10 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.03]">
+                <th className="text-left px-3 py-2 text-gray-400 font-medium w-16">Line</th>
+                <th className="text-left px-3 py-2 text-gray-400 font-medium">Description</th>
+                <th className="text-left px-3 py-2 text-gray-400 font-medium hidden sm:table-cell">Source</th>
+                <th className="text-center px-3 py-2 text-gray-400 font-medium w-20">Applies</th>
+              </tr>
+            </thead>
+            <tbody>
+              {k1LineItems.map((item) => (
+                <tr key={item.line} className="border-b border-white/5">
+                  <td className="px-3 py-2 font-mono text-gray-500">{item.line}</td>
+                  <td className="px-3 py-2 text-gray-300">{item.description}</td>
+                  <td className="px-3 py-2 text-gray-500 hidden sm:table-cell">{item.source}</td>
+                  <td className="px-3 py-2 text-center">
+                    {item.applies ? (
+                      <span className="text-blue-400">&#10003;</span>
+                    ) : (
+                      <span className="text-gray-600">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Filing Deadlines */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+          </svg>
+          Filing Deadlines & Status
+        </SectionTitle>
+        <div className="rounded-lg border border-white/10 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.03]">
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">Tax Year</th>
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">Form</th>
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">Due Date</th>
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">Extended</th>
+                <th className="text-center px-4 py-2 text-gray-400 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deadlines.map((d) => (
+                <tr key={d.year} className="border-b border-white/5">
+                  <td className="px-4 py-2.5 font-semibold text-gray-200">{d.year}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{d.form}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{d.due}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{d.extended}</td>
+                  <td className="px-4 py-2.5 text-center"><Badge status={d.status} label={d.statusLabel} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+          <p className="text-[10px] text-red-400 leading-relaxed">
+            <strong>Late Filing Penalty (IRC 6698):</strong> $220/month per partner (2024 returns), up to 12 months. Since Ledger Louise has 1 partner (the Trust), the maximum penalty per year is $2,640. If 2023 AND 2024 are both unfiled, potential combined penalties could reach $5,280 plus interest. Filing as soon as possible reduces the penalty window.
+          </p>
+        </div>
+      </Card>
+
+      {/* K-1 Flow Diagram */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+          K-1 Flow: Subsidiaries → Ledger Louise → Trust
+        </SectionTitle>
+        <div className="flex flex-col items-center gap-2">
+          <div className="grid grid-cols-4 gap-2 w-full">
+            {["Swisshelm Mtn", "Sundown Inv.", "Ledger Burton", "Worrell Burton"].map((s) => (
+              <div key={s} className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-center">
+                <p className="text-[10px] font-semibold text-gray-300">{s}</p>
+                <p className="text-[9px] text-gray-600">Issues K-1 ↓</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4].map((i) => (
+              <svg key={i} className="w-4 h-5 text-gray-600" viewBox="0 0 16 20"><path d="M8 0v20M4 16l4 4 4-4" fill="none" stroke="currentColor" strokeWidth={1.5} /></svg>
+            ))}
+          </div>
+          <div className="px-6 py-3 rounded-xl border-2 border-blue-400/40 bg-blue-400/15 text-center w-full max-w-sm">
+            <p className="text-sm font-bold" style={{ color: accent }}>Ledger Louise, LLC</p>
+            <p className="text-[10px] text-gray-400">Receives K-1s from subs · Consolidates · Files Form 1065</p>
+          </div>
+          <svg className="w-4 h-6 text-blue-400" viewBox="0 0 16 24"><path d="M8 0v24M4 20l4 4 4-4" fill="none" stroke="currentColor" strokeWidth={2} /></svg>
+          <div className="px-6 py-3 rounded-xl border-2 border-blue-500/30 bg-blue-500/10 text-center w-full max-w-sm">
+            <p className="text-sm font-bold text-blue-400">Burton Family Revocable Trust</p>
+            <p className="text-[10px] text-gray-400">Receives K-1 from Ledger Louise · Reports on Form 1041</p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ========================
+// PLACEHOLDER TABS (Phases 3-6)
 // ========================
 function PlaceholderTab({ phase, title }: { phase: number; title: string }) {
   return (
@@ -322,7 +542,7 @@ export default function LedgerLouise() {
 
       {/* Tab Content */}
       {activeTab === "overview" && <OverviewTab />}
-      {activeTab === "k1" && <PlaceholderTab phase={2} title="K-1 Readiness Assessment" />}
+      {activeTab === "k1" && <K1ReadinessTab />}
       {activeTab === "activation" && <PlaceholderTab phase={3} title="Management Activation" />}
       {activeTab === "subsidiaries" && <PlaceholderTab phase={4} title="Subsidiary Map & K-1 Flow" />}
       {activeTab === "tax" && <PlaceholderTab phase={5} title="Tax & Compliance Framework" />}
