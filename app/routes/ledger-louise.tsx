@@ -473,7 +473,188 @@ function K1ReadinessTab() {
 }
 
 // ========================
-// PLACEHOLDER TABS (Phases 3-6)
+// PHASE 3 — MANAGEMENT ACTIVATION
+// ========================
+function ActivationTab() {
+  type ActionStatus = "done" | "in-progress" | "not-started" | "critical";
+  const statusMap: Record<ActionStatus, { badge: "green" | "yellow" | "red" | "gray"; label: string }> = {
+    "done": { badge: "green", label: "DONE" },
+    "in-progress": { badge: "yellow", label: "IN PROGRESS" },
+    "not-started": { badge: "gray", label: "NOT STARTED" },
+    "critical": { badge: "red", label: "CRITICAL" },
+  };
+
+  const phases = [
+    {
+      phase: "A",
+      title: "Foundation — Immediate Actions",
+      description: "Establish the basic infrastructure needed before Ledger Louise can operate as a management company.",
+      actions: [
+        { action: "Obtain / verify EIN for Ledger Louise, LLC", status: "in-progress" as ActionStatus, detail: "Required for Form 1065 filing. If EIN exists, confirm it's set up for partnership filing, not disregarded entity." },
+        { action: "Open dedicated operating bank account", status: "done" as ActionStatus, detail: "Ledger Louise has an active bank account. All management fee income and operating expenses should flow through this account." },
+        { action: "Connect QuickBooks Online", status: "in-progress" as ActionStatus, detail: "BFO integration built. Complete OAuth flow to pull real-time financials into the dashboard." },
+        { action: "Establish Chart of Accounts for holding company", status: "not-started" as ActionStatus, detail: "Create accounts: Management Fee Income, Intercompany Receivables, Distributions Received, Distributions Paid, Operating Expenses, Professional Fees, Travel & Entertainment." },
+        { action: "File delinquent tax returns (2023, 2024)", status: "critical" as ActionStatus, detail: "Engage CPA to prepare and file Form 1065 for 2023 (partial year: Sept–Dec) and 2024 (full year). Issue K-1s to Trust for each year." },
+        { action: "Designate registered agent in Nevada", status: "in-progress" as ActionStatus, detail: "Verify current registered agent is active. Nevada requires a registered agent with a physical address in the state." },
+      ],
+    },
+    {
+      phase: "B",
+      title: "Intercompany Framework — Management Services",
+      description: "Establish formal agreements that create legitimate management fee income for Ledger Louise and deductible expenses for subsidiaries.",
+      actions: [
+        { action: "Draft Management Services Agreement (MSA) template", status: "not-started" as ActionStatus, detail: "Master agreement template covering: scope of services, fee structure, payment terms, termination, confidentiality. Each subsidiary gets a customized version." },
+        { action: "Execute MSA with Swisshelm Mountain Ventures, LLC", status: "not-started" as ActionStatus, detail: "Services: financial oversight of AZ Center for Recovery, Persons Lodge, Breezewood. Accounting, compliance, strategic planning, capital allocation." },
+        { action: "Execute MSA with Sundown Investments, LLC", status: "not-started" as ActionStatus, detail: "Services: financial oversight of FDJ Hesperia, FDJ CFS, Palomino Ranch. Property management oversight, lease administration, financial reporting." },
+        { action: "Execute MSA with Ledger Burton, LLC", status: "not-started" as ActionStatus, detail: "Services: oversight of VQ National investment. Strategic advisory, performance monitoring, governance support." },
+        { action: "Execute MSA with Worrell Burton, LLC", status: "not-started" as ActionStatus, detail: "Services: oversight of Catalog Digital and Atlas Hydration. Business development support, financial reporting, compliance." },
+        { action: "Establish management fee structure", status: "not-started" as ActionStatus, detail: "Options: (1) Percentage of revenue (1–5% typical), (2) Fixed annual fee per subsidiary, (3) Cost-plus model (actual costs + markup). Must be arm's-length and reasonable." },
+        { action: "Create intercompany billing procedures", status: "not-started" as ActionStatus, detail: "Monthly or quarterly invoicing from Ledger Louise to each subsidiary. Document services rendered, hours, and fee calculations." },
+        { action: "Document cost allocation methodology", status: "not-started" as ActionStatus, detail: "Allocate shared costs (accounting software, legal, insurance) across subsidiaries. Use reasonable allocation keys (revenue, headcount, assets)." },
+      ],
+    },
+    {
+      phase: "C",
+      title: "Active Management — Centralized Operations",
+      description: "Transform Ledger Louise into the central management hub for the Burton family enterprise.",
+      actions: [
+        { action: "Centralize accounting and financial reporting", status: "not-started" as ActionStatus, detail: "All subsidiary financials flow through Ledger Louise. Produce consolidated management reports for the family." },
+        { action: "Implement consolidated financial statements", status: "not-started" as ActionStatus, detail: "Quarterly consolidated P&L, balance sheet, and cash flow across all entities. Track intercompany eliminations." },
+        { action: "Manage subsidiary distributions to Ledger Louise", status: "not-started" as ActionStatus, detail: "Establish distribution policies for each subsidiary. Cash flows up from operating entities to Ledger Louise for centralized capital allocation." },
+        { action: "Manage distributions from Ledger Louise to Trust", status: "not-started" as ActionStatus, detail: "Per Section 5.01: distributions in excess of operating requirements, pro rata by ownership (100% to Trust)." },
+        { action: "Strategic planning and capital allocation", status: "not-started" as ActionStatus, detail: "Ledger Louise serves as the capital allocation committee — deciding which subsidiaries receive investment, which distribute cash." },
+        { action: "Centralize insurance programs", status: "not-started" as ActionStatus, detail: "Per Section 2.06(l): obtain and maintain commercial general liability, D&O insurance. Negotiate group rates across all entities." },
+        { action: "Establish compliance calendar", status: "not-started" as ActionStatus, detail: "Track all filing deadlines, annual reports, license renewals, insurance renewals, and tax deadlines across all entities." },
+      ],
+    },
+    {
+      phase: "D",
+      title: "Tax Optimization — Maximize Pass-Through Benefits",
+      description: "Ensure the K-1 structure is optimized for tax efficiency across the Trust and its beneficiaries.",
+      actions: [
+        { action: "Ensure proper K-1 cascade: Subs → LL → Trust", status: "not-started" as ActionStatus, detail: "Each subsidiary issues K-1 to Ledger Louise. LL consolidates and issues single K-1 to the Trust. Trust reports on Form 1041." },
+        { action: "Evaluate management fee deductibility", status: "not-started" as ActionStatus, detail: "Management fees paid by subsidiaries are deductible business expenses (IRC 162). Fees received by Ledger Louise are ordinary income. Net effect: income shifts to LL level." },
+        { action: "Analyze Section 199A (QBI) implications", status: "not-started" as ActionStatus, detail: "Qualified Business Income deduction (20%) may apply to pass-through income. Evaluate which subsidiary income qualifies. Management company income generally qualifies if below threshold." },
+        { action: "Review Nevada Commerce Tax threshold", status: "not-started" as ActionStatus, detail: "Nevada Commerce Tax applies to entities with Nevada-sourced gross revenue > $4M. Rate is 0.051%. Evaluate if Ledger Louise or subsidiaries exceed threshold." },
+        { action: "Evaluate Section 754 election", status: "not-started" as ActionStatus, detail: "A 754 election allows basis step-up on transfers of partnership interests. Consider whether beneficial given the Trust structure." },
+        { action: "Consider entity classification elections", status: "not-started" as ActionStatus, detail: "All LLCs currently default to partnership treatment. Evaluate if any subsidiary would benefit from S-corp election (Form 2553) for self-employment tax savings." },
+        { action: "Review state nexus and filing requirements", status: "not-started" as ActionStatus, detail: "Subsidiaries operate in multiple states (AZ, CA, NV). Evaluate state-level partnership returns and withholding requirements for each entity." },
+      ],
+    },
+  ];
+
+  const totalActions = phases.reduce((sum, p) => sum + p.actions.length, 0);
+  const doneActions = phases.reduce((sum, p) => sum + p.actions.filter((a) => a.status === "done").length, 0);
+  const criticalActions = phases.reduce((sum, p) => sum + p.actions.filter((a) => a.status === "critical").length, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Progress Bar */}
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <SectionTitle>Transformation Progress</SectionTitle>
+          <span className="text-xs text-gray-400">{doneActions} of {totalActions} actions complete</span>
+        </div>
+        <div className="w-full h-2 rounded-full bg-white/5 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${(doneActions / totalActions) * 100}%`, background: accent }}
+          />
+        </div>
+        <div className="flex gap-4 mt-3 text-[10px]">
+          <span className="text-green-400">{doneActions} Done</span>
+          <span className="text-yellow-400">{phases.reduce((s, p) => s + p.actions.filter((a) => a.status === "in-progress").length, 0)} In Progress</span>
+          <span className="text-red-400">{criticalActions} Critical</span>
+          <span className="text-gray-500">{phases.reduce((s, p) => s + p.actions.filter((a) => a.status === "not-started").length, 0)} Not Started</span>
+        </div>
+      </Card>
+
+      {/* Management Fee Explainer */}
+      <Card>
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}15` }}>
+            <svg className="w-5 h-5" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm mb-1">Why Management Fees Matter</h3>
+            <p className="text-gray-400 text-xs leading-relaxed">
+              By charging subsidiaries management fees, Ledger Louise creates <strong>legitimate operating income</strong> that flows through the K-1 to the Trust. This centralizes income at the holding company level, creating a single point of financial control. The fees must be <strong>arm's-length</strong> (comparable to what an unrelated third-party management company would charge) to withstand IRS scrutiny. Typical holding company fees range from <strong>1–5% of subsidiary revenue</strong> or a fixed annual fee.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Phase Cards */}
+      {phases.map((p) => (
+        <Card key={p.phase}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold" style={{ background: `${accent}15`, color: accent }}>
+              {p.phase}
+            </div>
+            <div>
+              <h3 className="font-semibold text-sm">{p.title}</h3>
+              <p className="text-[10px] text-gray-500">{p.description}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {p.actions.map((a, i) => (
+              <div key={i} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] ${
+                      a.status === "done" ? "bg-green-500/20 text-green-400" :
+                      a.status === "in-progress" ? "bg-yellow-500/20 text-yellow-400" :
+                      a.status === "critical" ? "bg-red-500/20 text-red-400" :
+                      "bg-white/5 text-gray-600"
+                    }`}>
+                      {a.status === "done" ? "✓" : a.status === "critical" ? "!" : i + 1}
+                    </span>
+                    <p className="text-xs font-semibold text-gray-200">{a.action}</p>
+                  </div>
+                  <Badge status={statusMap[a.status].badge} label={statusMap[a.status].label} />
+                </div>
+                <p className="text-[10px] text-gray-500 leading-relaxed ml-7">{a.detail}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+
+      {/* Operating Agreement Authority */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21" />
+          </svg>
+          Operating Agreement Authority for These Actions
+        </SectionTitle>
+        <div className="space-y-2">
+          {[
+            { section: "II.5", title: "Purpose & Scope", text: "The Company may engage in any lawful business or activity — no amendment needed to add management services." },
+            { section: "2.06(a)", title: "Authorized Acts — Contracts", text: "Managing Members may enter into any contract or agreement necessary to further Company Business, including MSAs with subsidiaries." },
+            { section: "2.06(c)", title: "Authorized Acts — Hire Professionals", text: "May hire consultants, brokers, attorneys, accountants — supports engaging CPA for delinquent filings." },
+            { section: "2.06(h)", title: "Authorized Acts — Tax Returns", text: "May prepare and file all necessary returns and statements, pay all taxes — authorizes catching up on Form 1065 filings." },
+            { section: "2.06(i)", title: "Authorized Acts — Accounting Methods", text: "May determine accounting methods and conventions — supports establishing QuickBooks COA and procedures." },
+            { section: "IV.1(c)", title: "Reimbursement", text: "Managing Members entitled to reimbursement for all costs and expenses incurred in management — but no compensation. Management fees go to the Company, not to members personally." },
+          ].map((item) => (
+            <div key={item.section} className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-white/[0.02] transition-colors">
+              <span className="text-[10px] font-mono text-blue-400/60 w-16 shrink-0 pt-0.5">§{item.section}</span>
+              <div>
+                <p className="text-xs font-semibold text-gray-300">{item.title}</p>
+                <p className="text-[10px] text-gray-500">{item.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ========================
+// PLACEHOLDER TABS (Phases 4-6)
 // ========================
 function PlaceholderTab({ phase, title }: { phase: number; title: string }) {
   return (
@@ -543,7 +724,7 @@ export default function LedgerLouise() {
       {/* Tab Content */}
       {activeTab === "overview" && <OverviewTab />}
       {activeTab === "k1" && <K1ReadinessTab />}
-      {activeTab === "activation" && <PlaceholderTab phase={3} title="Management Activation" />}
+      {activeTab === "activation" && <ActivationTab />}
       {activeTab === "subsidiaries" && <PlaceholderTab phase={4} title="Subsidiary Map & K-1 Flow" />}
       {activeTab === "tax" && <PlaceholderTab phase={5} title="Tax & Compliance Framework" />}
       {activeTab === "roadmap" && <PlaceholderTab phase={6} title="Transformation Roadmap" />}
