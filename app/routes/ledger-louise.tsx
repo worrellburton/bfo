@@ -902,7 +902,217 @@ function SubsidiaryMapTab() {
 }
 
 // ========================
-// PLACEHOLDER TABS (Phases 5-6)
+// PHASE 5 — TAX & COMPLIANCE
+// ========================
+function TaxComplianceTab() {
+  const federalFilings = [
+    { form: "Form 1065", title: "U.S. Return of Partnership Income", frequency: "Annual", due: "March 15 (or Sept 15 with extension)", entity: "Ledger Louise, LLC", status: "red" as const, statusLabel: "VERIFY 2023/2024", notes: "Primary partnership return. Reports all income, deductions, credits. Generates Schedule K-1 for each partner." },
+    { form: "Schedule K-1", title: "Partner's Share of Income, Deductions, Credits", frequency: "Annual (with 1065)", due: "With Form 1065", entity: "Issued to: Burton Family Revocable Trust", status: "red" as const, statusLabel: "VERIFY", notes: "Reports the Trust's 100% allocable share of income/loss. Trust then reports on Form 1041 or individual returns (if grantor trust)." },
+    { form: "Form 7004", title: "Extension of Time to File", frequency: "As needed", due: "March 15", entity: "Ledger Louise, LLC", status: "yellow" as const, statusLabel: "CHECK", notes: "Provides automatic 6-month extension (to Sept 15). Must be filed by original due date. Does NOT extend time to pay." },
+    { form: "Form 8825", title: "Rental Real Estate Income and Expenses", frequency: "Annual (if applicable)", due: "With Form 1065", entity: "Ledger Louise, LLC", status: "gray" as const, statusLabel: "IF APPLICABLE", notes: "Required if Ledger Louise directly holds rental real estate. May not apply if rental properties are held at subsidiary level." },
+    { form: "Form 1041", title: "U.S. Income Tax Return for Estates and Trusts", frequency: "Annual", due: "April 15 (or Oct 15 with extension)", entity: "Burton Family Revocable Trust", status: "yellow" as const, statusLabel: "TRUST FILING", notes: "The Trust files this return and includes K-1 income from Ledger Louise. If grantor trust, income may flow to individual returns instead." },
+  ];
+
+  const stateFilings = [
+    { state: "Nevada", filing: "Annual List of Members/Managers", due: "Last day of anniversary month (September)", fee: "$150", status: "yellow" as const, statusLabel: "VERIFY", notes: "Filed with NV Secretary of State. Lists managing members and registered agent. $150 filing fee." },
+    { state: "Nevada", filing: "Business License Renewal", due: "Anniversary of formation", fee: "$200", status: "yellow" as const, statusLabel: "VERIFY", notes: "Nevada state business license. Required for all entities doing business in Nevada." },
+    { state: "Nevada", filing: "Commerce Tax Return", due: "Aug 14 (for prior year)", fee: "0.051% if >$4M", status: "green" as const, statusLabel: "LIKELY N/A", notes: "Only applies if Nevada-sourced gross revenue exceeds $4M. Most holding companies fall below this threshold. Rate is 0.051% of gross revenue above $4M." },
+    { state: "Arizona", filing: "Partnership Income Tax Return (Form 165)", due: "April 15", fee: "N/A", status: "yellow" as const, statusLabel: "EVALUATE", notes: "Required if Ledger Louise has Arizona-sourced income (e.g., through Swisshelm/AZ Center for Recovery). Arizona requires withholding on nonresident partners' shares." },
+    { state: "California", filing: "Partnership Return (Form 565)", due: "March 15", fee: "$800 min tax", status: "yellow" as const, statusLabel: "EVALUATE", notes: "Required if doing business in CA or having CA-sourced income (e.g., through FDJ properties). California charges an $800 minimum annual LLC fee." },
+  ];
+
+  const complianceCalendar = [
+    { month: "January", items: ["Gather subsidiary K-1s from prior year", "Begin Form 1065 preparation", "Send W-9s to any new vendors/service providers"] },
+    { month: "March", items: ["File Form 1065 or Form 7004 extension (by March 15)", "Issue Schedule K-1 to Burton Family Revocable Trust", "File California Form 565 if applicable (by March 15)"] },
+    { month: "April", items: ["Trust files Form 1041 or individual returns (by April 15)", "File Arizona Form 165 if applicable (by April 15)", "Q1 estimated tax payments if applicable"] },
+    { month: "June", items: ["Q2 estimated tax payments if applicable", "Mid-year financial review", "Review intercompany balances"] },
+    { month: "August", items: ["Nevada Commerce Tax return (by Aug 14) if applicable", "Review YTD financials and tax projections"] },
+    { month: "September", items: ["File extended Form 1065 if extension was filed (by Sept 15)", "Nevada Annual List due (anniversary month)", "Nevada Business License renewal", "Q3 estimated tax payments if applicable"] },
+    { month: "December", items: ["Year-end close procedures", "Review and finalize distributions", "Tax planning for next year", "Q4 estimated tax payments if applicable"] },
+  ];
+
+  const taxElections = [
+    { election: "Partnership Tax Classification (Default)", code: "IRC 7701 / Form 8832", status: "green" as const, statusLabel: "CURRENT", description: "Ledger Louise defaults to partnership treatment as a multi-member LLC. No election needed — this is the correct classification for K-1 issuance.", recommendation: "Maintain current classification. Do NOT elect corporate treatment." },
+    { election: "Section 754 — Basis Adjustment", code: "IRC 754", status: "gray" as const, statusLabel: "EVALUATE", description: "Allows step-up (or step-down) in basis of partnership assets when a partnership interest is transferred or when a distribution is made.", recommendation: "Consider if Trust plans to transfer interests to beneficiaries. A 754 election is irrevocable once made and applies to all future transfers." },
+    { election: "Section 199A — QBI Deduction", code: "IRC 199A", status: "yellow" as const, statusLabel: "ANALYZE", description: "Qualified Business Income deduction allows 20% deduction on pass-through business income. Management company income may qualify if below income thresholds ($364,200 joint / $182,100 single for 2024).", recommendation: "CPA should analyze which income streams qualify. Real estate rental income has special rules. Specified service trades may be limited." },
+    { election: "Tax Matters Partner Designation", code: "IRC 6223(a)", status: "green" as const, statusLabel: "DESIGNATED", description: "Robert W. Burton is designated as Tax Matters Member per the Operating Agreement. Responsible for all IRS communications, audits, and elections.", recommendation: "Current designation is appropriate. Ensure Robert W. Burton is aware of responsibilities." },
+    { election: "Accounting Method", code: "IRC 446", status: "gray" as const, statusLabel: "DETERMINE", description: "Partnership must select cash or accrual method of accounting. Most small partnerships use cash method. Accrual required if gross receipts exceed $29M average over 3 years.", recommendation: "Cash method is likely appropriate for Ledger Louise as a holding company. CPA should confirm." },
+    { election: "Depreciation Method (Subsidiaries)", code: "IRC 168 / Bonus Depreciation", status: "gray" as const, statusLabel: "EVALUATE", description: "Real estate subsidiaries should evaluate MACRS depreciation schedules. Bonus depreciation is phasing down: 40% in 2025, 20% in 2026, 0% in 2027.", recommendation: "Cost segregation studies on hotel properties (FDJ) could accelerate depreciation deductions flowing through K-1s." },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Federal Filing Requirements */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21" />
+          </svg>
+          Federal Filing Requirements
+        </SectionTitle>
+        <div className="space-y-2">
+          {federalFilings.map((f) => (
+            <div key={f.form + f.entity} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-gray-400">{f.form}</span>
+                  <p className="text-xs font-semibold text-gray-200">{f.title}</p>
+                </div>
+                <Badge status={f.status} label={f.statusLabel} />
+              </div>
+              <div className="flex gap-4 mt-1 text-[10px] text-gray-500">
+                <span>Entity: {f.entity}</span>
+                <span>Due: {f.due}</span>
+                <span>Frequency: {f.frequency}</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">{f.notes}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* State Filing Requirements */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+          </svg>
+          State Filing Requirements
+        </SectionTitle>
+        <div className="rounded-lg border border-white/10 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.03]">
+                <th className="text-left px-3 py-2 text-gray-400 font-medium">State</th>
+                <th className="text-left px-3 py-2 text-gray-400 font-medium">Filing</th>
+                <th className="text-left px-3 py-2 text-gray-400 font-medium">Due</th>
+                <th className="text-left px-3 py-2 text-gray-400 font-medium">Fee</th>
+                <th className="text-center px-3 py-2 text-gray-400 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stateFilings.map((s, i) => (
+                <tr key={i} className="border-b border-white/5">
+                  <td className="px-3 py-2 font-semibold text-gray-300">{s.state}</td>
+                  <td className="px-3 py-2 text-gray-400">{s.filing}</td>
+                  <td className="px-3 py-2 text-gray-400">{s.due}</td>
+                  <td className="px-3 py-2 text-gray-400">{s.fee}</td>
+                  <td className="px-3 py-2 text-center"><Badge status={s.status} label={s.statusLabel} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/10">
+          <p className="text-[10px] text-yellow-400 leading-relaxed">
+            <strong>California $800 Minimum:</strong> If Ledger Louise is deemed to be "doing business" in California (through Sundown's FDJ properties), it may owe an $800 annual LLC fee regardless of income. This is separate from the subsidiary's own California filing obligations.
+          </p>
+        </div>
+      </Card>
+
+      {/* Tax Elections & Strategies */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Tax Elections & Strategies
+        </SectionTitle>
+        <div className="space-y-3">
+          {taxElections.map((e) => (
+            <div key={e.election} className="p-4 rounded-lg bg-white/[0.02] border border-white/5">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="text-xs font-semibold text-gray-200">{e.election}</p>
+                  <p className="text-[10px] font-mono text-gray-600">{e.code}</p>
+                </div>
+                <Badge status={e.status} label={e.statusLabel} />
+              </div>
+              <p className="text-[10px] text-gray-500 leading-relaxed mb-2">{e.description}</p>
+              <div className="p-2 rounded bg-blue-500/5 border border-blue-500/10">
+                <p className="text-[10px] text-blue-400 leading-relaxed"><strong>Recommendation:</strong> {e.recommendation}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Compliance Calendar */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+          </svg>
+          Annual Compliance Calendar
+        </SectionTitle>
+        <div className="space-y-2">
+          {complianceCalendar.map((month) => (
+            <div key={month.month} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+              <p className="text-xs font-semibold text-gray-200 mb-1.5">{month.month}</p>
+              <div className="space-y-1 ml-2">
+                {month.items.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[10px] text-gray-400">
+                    <span className="text-blue-400 mt-0.5">&#9679;</span>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Penalty Exposure Summary */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+          Penalty Exposure Summary
+        </SectionTitle>
+        <div className="rounded-lg border border-white/10 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.03]">
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">Penalty Type</th>
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">IRC Section</th>
+                <th className="text-left px-4 py-2 text-gray-400 font-medium">Rate</th>
+                <th className="text-right px-4 py-2 text-gray-400 font-medium">Max Exposure</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { type: "Late filing Form 1065 (2023)", code: "IRC 6698", rate: "$220/month × 1 partner × up to 12 months", max: "$2,640" },
+                { type: "Late filing Form 1065 (2024)", code: "IRC 6698", rate: "$220/month × 1 partner × up to 12 months", max: "$2,640" },
+                { type: "Late K-1 to Trust", code: "IRC 6722", rate: "$290 per incorrect/late K-1 (2024)", max: "$290" },
+                { type: "Nevada Annual List late fee", code: "NRS 86.5628", rate: "$150 + penalties", max: "$150+" },
+                { type: "Failure to file state returns (AZ/CA)", code: "Varies", rate: "Varies by state", max: "TBD" },
+              ].map((p) => (
+                <tr key={p.type} className="border-b border-white/5">
+                  <td className="px-4 py-2.5 text-gray-300">{p.type}</td>
+                  <td className="px-4 py-2.5 font-mono text-gray-500 text-[10px]">{p.code}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{p.rate}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-red-400">{p.max}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex justify-between items-center p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+          <p className="text-xs text-red-400 font-semibold">Total Maximum Exposure (if 2023 + 2024 unfiled)</p>
+          <p className="text-lg font-bold text-red-400">$5,720+</p>
+        </div>
+        <p className="text-[10px] text-gray-500 mt-2 leading-relaxed">
+          <strong>Note:</strong> The IRS may abate first-time penalties under the First Time Penalty Abatement (FTA) program if Ledger Louise has no prior penalty history. CPA should request abatement when filing delinquent returns.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
+// ========================
+// PLACEHOLDER TAB (Phase 6)
 // ========================
 function PlaceholderTab({ phase, title }: { phase: number; title: string }) {
   return (
@@ -974,7 +1184,7 @@ export default function LedgerLouise() {
       {activeTab === "k1" && <K1ReadinessTab />}
       {activeTab === "activation" && <ActivationTab />}
       {activeTab === "subsidiaries" && <SubsidiaryMapTab />}
-      {activeTab === "tax" && <PlaceholderTab phase={5} title="Tax & Compliance Framework" />}
+      {activeTab === "tax" && <TaxComplianceTab />}
       {activeTab === "roadmap" && <PlaceholderTab phase={6} title="Transformation Roadmap" />}
     </div>
   );
