@@ -7,7 +7,7 @@ export function meta() {
 
 const accent = "#3b82f6";
 
-type Tab = "overview" | "k1" | "activation" | "subsidiaries" | "tax" | "roadmap";
+type Tab = "overview" | "k1" | "activation" | "subsidiaries" | "tax" | "roadmap" | "chart" | "list" | "grid";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Phase 1 — Overview" },
@@ -16,6 +16,9 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "subsidiaries", label: "Phase 4 — Subsidiary Map" },
   { id: "tax", label: "Phase 5 — Tax & Compliance" },
   { id: "roadmap", label: "Phase 6 — Transformation Roadmap" },
+  { id: "chart", label: "Phase 7 — Structure: Chart" },
+  { id: "list", label: "Phase 8 — Structure: List" },
+  { id: "grid", label: "Phase 9 — Structure: Grid" },
 ];
 
 function Badge({ status, label }: { status: "green" | "yellow" | "red" | "blue" | "gray"; label: string }) {
@@ -1112,7 +1115,309 @@ function TaxComplianceTab() {
 }
 
 // ========================
-// PLACEHOLDER TAB (Phase 6)
+// PHASE 6 — TRANSFORMATION ROADMAP
+// ========================
+function RoadmapTab() {
+  const milestones = [
+    {
+      quarter: "Q2 2026",
+      title: "Emergency Catch-Up",
+      status: "active" as const,
+      priority: "CRITICAL",
+      priorityColor: "#ef4444",
+      goals: [
+        "Verify EIN and partnership classification with IRS",
+        "Engage CPA to prepare 2023 Form 1065 (partial year: Sept–Dec)",
+        "Engage CPA to prepare 2024 Form 1065 (full year)",
+        "Issue Schedule K-1 to Burton Family Revocable Trust for 2023 & 2024",
+        "Request First Time Penalty Abatement if penalties assessed",
+        "File Nevada Annual List if overdue",
+        "Complete QuickBooks Online connection",
+      ],
+      cost: "$5,000–$15,000 (CPA fees for delinquent returns + potential penalties)",
+      outcome: "Ledger Louise becomes tax-compliant. Trust receives K-1s for prior years.",
+    },
+    {
+      quarter: "Q3 2026",
+      title: "Financial Infrastructure",
+      status: "upcoming" as const,
+      priority: "HIGH",
+      priorityColor: "#f97316",
+      goals: [
+        "Establish Chart of Accounts in QuickBooks",
+        "Reconcile bank account from formation (Sept 2023) through current",
+        "Set up capital account tracking per IRC 704-1(b)",
+        "Classify all historical transactions",
+        "Begin tracking subsidiary K-1 income flowing into Ledger Louise",
+        "File Form 7004 extension for 2025 Form 1065 if needed",
+      ],
+      cost: "$2,000–$5,000 (bookkeeping setup + ongoing monthly)",
+      outcome: "Clean books, proper capital accounts, ready for ongoing management.",
+    },
+    {
+      quarter: "Q4 2026",
+      title: "Intercompany Framework",
+      status: "upcoming" as const,
+      priority: "HIGH",
+      priorityColor: "#f97316",
+      goals: [
+        "Draft Management Services Agreement template with attorney",
+        "Execute MSA with Swisshelm Mountain Ventures, LLC",
+        "Execute MSA with Sundown Investments, LLC",
+        "Execute MSA with Ledger Burton, LLC",
+        "Execute MSA with Worrell Burton, LLC",
+        "Establish management fee structure (recommend 2-3% of subsidiary revenue)",
+        "Set up intercompany billing in QuickBooks",
+        "Begin invoicing subsidiaries for Q4 2026 management services",
+      ],
+      cost: "$3,000–$8,000 (legal fees for MSA drafting)",
+      outcome: "Ledger Louise has legitimate management fee income. Subsidiaries have deductible expenses.",
+    },
+    {
+      quarter: "Q1 2027",
+      title: "First Clean Tax Year",
+      status: "upcoming" as const,
+      priority: "MEDIUM",
+      priorityColor: "#eab308",
+      goals: [
+        "File 2025 Form 1065 on time (March 15, 2027) — or file extension",
+        "Issue 2025 K-1 to Trust on time",
+        "Year-end close for 2026 books",
+        "Prepare 2026 Form 1065 with management fee income",
+        "Analyze Section 199A QBI deduction eligibility",
+        "Review state filing requirements (NV, AZ, CA)",
+        "Evaluate Section 754 election need",
+      ],
+      cost: "$3,000–$6,000 (annual CPA fees)",
+      outcome: "First full tax year with Ledger Louise operating as active management company.",
+    },
+    {
+      quarter: "Q2–Q3 2027",
+      title: "Active Management & Optimization",
+      status: "future" as const,
+      priority: "STANDARD",
+      priorityColor: "#3b82f6",
+      goals: [
+        "Implement consolidated financial reporting across all entities",
+        "Establish quarterly management reporting to Trust",
+        "Centralize insurance programs for cost savings",
+        "Build compliance calendar with automated reminders",
+        "Evaluate cost segregation studies for hotel properties (FDJ)",
+        "Consider entity restructuring if tax benefits warrant it",
+        "Review bonus depreciation phase-down impact (20% in 2026, 0% in 2027)",
+      ],
+      cost: "$5,000–$15,000 (consulting + implementation)",
+      outcome: "Fully operational holding and management company with optimized tax structure.",
+    },
+    {
+      quarter: "Q4 2027+",
+      title: "Steady State Operations",
+      status: "future" as const,
+      priority: "ONGOING",
+      priorityColor: "#22c55e",
+      goals: [
+        "Annual Form 1065 filing and K-1 issuance on time every year",
+        "Monthly management fee invoicing and collection",
+        "Quarterly consolidated financial reporting",
+        "Annual strategic planning and capital allocation review",
+        "Annual insurance renewal and compliance review",
+        "Ongoing tax optimization and election monitoring",
+        "Verify ownership chain of related entities (Quail Lakes, HSL TP, HSL Placita)",
+      ],
+      cost: "$10,000–$20,000/year (CPA, legal, bookkeeping)",
+      outcome: "Ledger Louise operates as a proper holding & management company, issuing K-1s annually to the Trust.",
+    },
+  ];
+
+  const statusColors = {
+    active: { bg: "bg-green-500/15", text: "text-green-400", border: "border-green-500/30", label: "ACTIVE NOW" },
+    upcoming: { bg: "bg-yellow-500/15", text: "text-yellow-400", border: "border-yellow-500/30", label: "UPCOMING" },
+    future: { bg: "bg-gray-500/10", text: "text-gray-400", border: "border-white/10", label: "FUTURE" },
+  };
+
+  const totalCostLow = 28000;
+  const totalCostHigh = 69000;
+
+  return (
+    <div className="space-y-6">
+      {/* Executive Summary */}
+      <Card>
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}15` }}>
+            <svg className="w-5 h-5" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm mb-1">Transformation Summary</h3>
+            <p className="text-gray-400 text-xs leading-relaxed mb-3">
+              The roadmap below transforms Ledger Louise from a passive holding entity with a bank account into a fully operational holding and management company that issues annual K-1s to the Burton Family Revocable Trust. The process spans approximately 18 months.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5 text-center">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Timeline</p>
+                <p className="text-sm font-bold" style={{ color: accent }}>18 months</p>
+              </div>
+              <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5 text-center">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Est. Total Cost</p>
+                <p className="text-sm font-bold text-green-400">${(totalCostLow / 1000).toFixed(0)}K–${(totalCostHigh / 1000).toFixed(0)}K</p>
+              </div>
+              <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5 text-center">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Milestones</p>
+                <p className="text-sm font-bold text-purple-400">{milestones.length}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Timeline */}
+      <div className="space-y-4">
+        {milestones.map((m, idx) => {
+          const sc = statusColors[m.status];
+          return (
+            <Card key={m.quarter}>
+              <div className="flex items-start gap-4">
+                {/* Timeline indicator */}
+                <div className="flex flex-col items-center shrink-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${sc.border} ${sc.bg}`}>
+                    <span className={`text-xs font-bold ${sc.text}`}>{idx + 1}</span>
+                  </div>
+                  {idx < milestones.length - 1 && (
+                    <div className="w-px h-full min-h-[20px] bg-white/10 mt-2" />
+                  )}
+                </div>
+
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-sm">{m.title}</h3>
+                        <Badge status={sc.text.includes("green") ? "green" : sc.text.includes("yellow") ? "yellow" : "gray"} label={sc.label} />
+                      </div>
+                      <p className="text-[10px] text-gray-500">{m.quarter}</p>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded" style={{ background: `${m.priorityColor}15`, color: m.priorityColor }}>
+                      {m.priority}
+                    </span>
+                  </div>
+
+                  {/* Goals */}
+                  <div className="space-y-1 mb-3">
+                    {m.goals.map((g, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[10px] text-gray-400">
+                        <span className="mt-0.5" style={{ color: m.priorityColor }}>&#9679;</span>
+                        <span>{g}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Cost & Outcome */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Estimated Cost</p>
+                      <p className="text-xs font-semibold text-gray-300">{m.cost}</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Outcome</p>
+                      <p className="text-xs text-gray-400">{m.outcome}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Before & After */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+          Before & After
+        </SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10">
+            <p className="text-xs font-bold text-red-400 mb-2">Current State (Before)</p>
+            <div className="space-y-1.5">
+              {[
+                "Passive holding entity with bank account",
+                "No Form 1065 filed (2023, 2024)",
+                "No K-1 issued to Trust",
+                "No management fee income",
+                "No intercompany agreements",
+                "No centralized financial reporting",
+                "Potential $5,720+ in IRS penalties",
+                "Trust not receiving proper tax documentation",
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-[10px] text-red-300/80">
+                  <span className="text-red-400 mt-0.5">&#10005;</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="p-4 rounded-lg bg-green-500/5 border border-green-500/10">
+            <p className="text-xs font-bold text-green-400 mb-2">Target State (After)</p>
+            <div className="space-y-1.5">
+              {[
+                "Active holding & management company",
+                "Annual Form 1065 filed on time",
+                "K-1 issued to Trust every year",
+                "Management fee income from 4 subsidiaries",
+                "Formal MSAs with each subsidiary",
+                "Consolidated quarterly financial reporting",
+                "Full tax compliance across NV, AZ, CA",
+                "Section 199A QBI deduction optimized",
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-[10px] text-green-300/80">
+                  <span className="text-green-400 mt-0.5">&#10003;</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Next Steps */}
+      <Card>
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-red-500/15 shrink-0">
+            <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm text-red-400 mb-1">Immediate Next Steps</h3>
+            <div className="space-y-2">
+              {[
+                { step: "1", action: "Engage a CPA", detail: "Find a CPA experienced with partnership returns and multi-entity family office structures. They need to prepare 2023 and 2024 Form 1065s." },
+                { step: "2", action: "Verify EIN status", detail: "Call the IRS Business & Specialty Tax Line (800-829-4933) or check IRS records to confirm Ledger Louise's EIN and tax classification." },
+                { step: "3", action: "Gather subsidiary K-1s", detail: "Collect K-1s from all four subsidiaries for 2023 and 2024. These are needed as input for Ledger Louise's Form 1065." },
+                { step: "4", action: "Complete QuickBooks connection", detail: "Finish the OAuth flow on BFO to connect Ledger Louise's QuickBooks account for real-time financial visibility." },
+              ].map((s) => (
+                <div key={s.step} className="flex items-start gap-3 p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500/15 text-red-400 shrink-0">{s.step}</span>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-200">{s.action}</p>
+                    <p className="text-[10px] text-gray-500">{s.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ========================
+// PLACEHOLDER TABS (Phases 7-9)
 // ========================
 function PlaceholderTab({ phase, title }: { phase: number; title: string }) {
   return (
@@ -1185,7 +1490,10 @@ export default function LedgerLouise() {
       {activeTab === "activation" && <ActivationTab />}
       {activeTab === "subsidiaries" && <SubsidiaryMapTab />}
       {activeTab === "tax" && <TaxComplianceTab />}
-      {activeTab === "roadmap" && <PlaceholderTab phase={6} title="Transformation Roadmap" />}
+      {activeTab === "roadmap" && <RoadmapTab />}
+      {activeTab === "chart" && <PlaceholderTab phase={7} title="Structure: Chart View" />}
+      {activeTab === "list" && <PlaceholderTab phase={8} title="Structure: List View" />}
+      {activeTab === "grid" && <PlaceholderTab phase={9} title="Structure: Grid View" />}
     </div>
   );
 }
