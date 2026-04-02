@@ -1417,7 +1417,340 @@ function RoadmapTab() {
 }
 
 // ========================
-// PLACEHOLDER TABS (Phases 7-9)
+// SHARED ENTITY DATA (Phases 7-9)
+// ========================
+const entities = [
+  {
+    id: "trust",
+    name: "Burton Family Revocable Trust",
+    shortName: "BFRT",
+    type: "Trust" as const,
+    state: "Arizona",
+    color: "#a855f7",
+    icon: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21",
+    role: "Ultimate beneficial owner",
+    link: null,
+    parent: null,
+    taxFiling: "Form 1041 (Fiduciary Return)",
+    children: ["ledger-louise", "penguin-nyc", "fdj-hesperia"],
+  },
+  {
+    id: "ledger-louise",
+    name: "Ledger Louise, LLC",
+    shortName: "LL",
+    type: "Holding & Management" as const,
+    state: "Nevada",
+    color: "#3b82f6",
+    icon: "M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3H21m-3.75 3H21",
+    role: "Holding & management company — issues K-1 to Trust",
+    link: "/tools/ledger-louise",
+    parent: "trust",
+    taxFiling: "Form 1065 (Partnership)",
+    children: ["swisshelm", "sundown", "ledger-burton", "worrell-burton"],
+  },
+  {
+    id: "swisshelm",
+    name: "Swisshelm Mountain Ventures, LLC",
+    shortName: "SMV",
+    type: "Operating" as const,
+    state: "Arizona",
+    color: "#f97316",
+    icon: "M2.25 18L9 11.25l4.306 4.306a11.95 11.95 0 015.814-5.518l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941",
+    role: "Real estate & venture investments",
+    link: null,
+    parent: "ledger-louise",
+    taxFiling: "Form 1065 → K-1 to Ledger Louise",
+    children: [],
+  },
+  {
+    id: "sundown",
+    name: "Sundown Investments, LLC",
+    shortName: "SI",
+    type: "Operating" as const,
+    state: "Arizona",
+    color: "#22c55e",
+    icon: "M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z",
+    role: "Investment portfolio management",
+    link: null,
+    parent: "ledger-louise",
+    taxFiling: "Form 1065 → K-1 to Ledger Louise",
+    children: [],
+  },
+  {
+    id: "ledger-burton",
+    name: "Ledger Burton, LLC",
+    shortName: "LB",
+    type: "Operating" as const,
+    state: "Arizona",
+    color: "#a855f7",
+    icon: "M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0",
+    role: "Business operations & consulting",
+    link: null,
+    parent: "ledger-louise",
+    taxFiling: "Form 1065 → K-1 to Ledger Louise",
+    children: [],
+  },
+  {
+    id: "worrell-burton",
+    name: "Worrell Burton, LLC",
+    shortName: "WB",
+    type: "Operating" as const,
+    state: "Arizona",
+    color: "#06b6d4",
+    icon: "M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25",
+    role: "Technology & software development",
+    link: null,
+    parent: "ledger-louise",
+    taxFiling: "Form 1065 → K-1 to Ledger Louise",
+    children: [],
+  },
+  {
+    id: "penguin-nyc",
+    name: "Penguin NYC, LLC",
+    shortName: "PNYC",
+    type: "Operating" as const,
+    state: "New York",
+    color: "#06b6d4",
+    icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",
+    role: "NYC real estate operations",
+    link: "/tools/penguin-nyc",
+    parent: "trust",
+    taxFiling: "Form 1065 → K-1 to Trust",
+    children: [],
+  },
+  {
+    id: "fdj-hesperia",
+    name: "FDJ Hesperia, LLC",
+    shortName: "FDJ",
+    type: "Operating" as const,
+    state: "California",
+    color: "#eab308",
+    icon: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V3.545M12.75 21h7.5V10.75M2.25 21h1.5m18 0h-18M2.25 9l4.5-1.636M18.75 3l-1.5.545m0 6.205l3 1m1.5.5l-1.5-.5M6.75 7.364V3h-3v18m3-13.636l10.5-3.819",
+    role: "Hesperia real estate investment",
+    link: "/tools/fdj-hesperia",
+    parent: "trust",
+    taxFiling: "Form 1065 → K-1 to Trust",
+    children: [],
+  },
+];
+
+// ========================
+// PHASE 7 — STRUCTURE: CHART VIEW
+// ========================
+function ChartViewTab() {
+  const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
+  const selected = entities.find((e) => e.id === selectedEntity);
+
+  const trust = entities.find((e) => e.id === "trust")!;
+  const trustChildren = entities.filter((e) => e.parent === "trust");
+  const ledgerLouise = entities.find((e) => e.id === "ledger-louise")!;
+  const llChildren = entities.filter((e) => e.parent === "ledger-louise");
+
+  function EntityNode({ entity, size = "md" }: { entity: typeof entities[0]; size?: "lg" | "md" | "sm" }) {
+    const isSelected = selectedEntity === entity.id;
+    const sizeClasses = {
+      lg: "px-5 py-4",
+      md: "px-4 py-3",
+      sm: "px-3 py-2.5",
+    };
+    const textSize = { lg: "text-sm", md: "text-xs", sm: "text-[11px]" };
+    const iconSize = { lg: "w-5 h-5", md: "w-4 h-4", sm: "w-3.5 h-3.5" };
+
+    return (
+      <button
+        onClick={() => setSelectedEntity(isSelected ? null : entity.id)}
+        className={`rounded-xl border transition-all duration-200 text-left ${sizeClasses[size]} ${
+          isSelected
+            ? "border-white/20 bg-white/[0.06] shadow-lg shadow-black/20 scale-[1.02]"
+            : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/15"
+        }`}
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-lg flex items-center justify-center shrink-0" style={{ background: `${entity.color}15`, width: size === "lg" ? 36 : size === "md" ? 30 : 26, height: size === "lg" ? 36 : size === "md" ? 30 : 26 }}>
+            <svg className={iconSize[size]} style={{ color: entity.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d={entity.icon} />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <p className={`font-semibold text-gray-200 truncate ${textSize[size]}`}>{entity.name}</p>
+            <p className="text-[10px] text-gray-500">{entity.type} — {entity.state}</p>
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  function Connector({ label, vertical = true }: { label?: string; vertical?: boolean }) {
+    if (vertical) {
+      return (
+        <div className="flex flex-col items-center">
+          <div className="w-px h-6 bg-white/10" />
+          {label && <span className="text-[9px] text-gray-500 px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/5 my-1">{label}</span>}
+          <div className="w-px h-6 bg-white/10" />
+          <svg className="w-3 h-3 text-white/20 -mt-1" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 16l-6-6h12l-6 6z" />
+          </svg>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Chart Header */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" />
+          </svg>
+          Organization Chart
+        </SectionTitle>
+        <p className="text-[10px] text-gray-500 mb-6">Click any entity to view details. Entities with pages link directly.</p>
+
+        {/* Org Chart */}
+        <div className="flex flex-col items-center">
+          {/* Trust — Top Level */}
+          <EntityNode entity={trust} size="lg" />
+
+          {/* Connector down from Trust */}
+          <Connector label="100% ownership" />
+
+          {/* Trust's direct children row */}
+          <div className="flex flex-wrap justify-center gap-4">
+            {trustChildren.map((child) => (
+              <div key={child.id} className="flex flex-col items-center">
+                <EntityNode entity={child} size={child.id === "ledger-louise" ? "md" : "sm"} />
+
+                {/* If Ledger Louise, show its children */}
+                {child.id === "ledger-louise" && llChildren.length > 0 && (
+                  <>
+                    <Connector label="100% ownership" />
+                    <div className="flex flex-wrap justify-center gap-3">
+                      {llChildren.map((sub) => (
+                        <EntityNode key={sub.id} entity={sub} size="sm" />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* Entity Detail Panel */}
+      {selected && (
+        <Card>
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: `${selected.color}15` }}>
+                <svg className="w-5 h-5" style={{ color: selected.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={selected.icon} />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">{selected.name}</h3>
+                <p className="text-[10px] text-gray-500">{selected.type} — {selected.state}</p>
+              </div>
+            </div>
+            <button onClick={() => setSelectedEntity(null)} className="text-gray-500 hover:text-gray-300 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            {[
+              { label: "Role", value: selected.role },
+              { label: "Tax Filing", value: selected.taxFiling },
+              { label: "State", value: selected.state },
+              { label: "Subsidiaries", value: selected.children.length > 0 ? `${selected.children.length} entities` : "None" },
+            ].map((item) => (
+              <div key={item.label} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">{item.label}</p>
+                <p className="text-xs text-gray-300">{item.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Relationships */}
+          {selected.children.length > 0 && (
+            <div className="mb-4">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Direct Subsidiaries</p>
+              <div className="flex flex-wrap gap-2">
+                {selected.children.map((childId) => {
+                  const child = entities.find((e) => e.id === childId);
+                  if (!child) return null;
+                  return (
+                    <button key={childId} onClick={() => setSelectedEntity(childId)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/10 hover:bg-white/[0.06] transition-colors text-xs text-gray-300">
+                      <span className="w-2 h-2 rounded-full" style={{ background: child.color }} />
+                      {child.shortName}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {selected.parent && (
+            <div className="mb-4">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Parent Entity</p>
+              <button onClick={() => setSelectedEntity(selected.parent!)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/10 hover:bg-white/[0.06] transition-colors text-xs text-gray-300">
+                {(() => { const p = entities.find((e) => e.id === selected.parent); return p ? <><span className="w-2 h-2 rounded-full" style={{ background: p.color }} />{p.name}</> : null; })()}
+              </button>
+            </div>
+          )}
+
+          {/* Link to page */}
+          {selected.link && (
+            <Link to={selected.link} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors" style={{ background: `${selected.color}15`, color: selected.color }}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              Go to {selected.shortName} Page
+            </Link>
+          )}
+        </Card>
+      )}
+
+      {/* K-1 Flow Legend */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+          K-1 Flow
+        </SectionTitle>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {[
+            { from: "Operating Subs", to: "Ledger Louise", label: "K-1 (1065)", color: "#f97316" },
+            { from: "Ledger Louise", to: "Trust", label: "K-1 (1065)", color: "#3b82f6" },
+            { from: "Trust", to: "Beneficiaries", label: "K-1 (1041)", color: "#a855f7" },
+          ].map((flow, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-400 px-2 py-1 rounded bg-white/[0.03] border border-white/5">{flow.from}</span>
+              <div className="flex items-center gap-1">
+                <div className="w-6 h-px" style={{ background: flow.color }} />
+                <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: `${flow.color}15`, color: flow.color }}>{flow.label}</span>
+                <div className="w-6 h-px" style={{ background: flow.color }} />
+                <svg className="w-2.5 h-2.5" style={{ color: flow.color }} fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              </div>
+              <span className="text-[10px] font-medium text-gray-400 px-2 py-1 rounded bg-white/[0.03] border border-white/5">{flow.to}</span>
+              {i < 2 && <span className="text-gray-600 mx-1">→</span>}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ========================
+// PLACEHOLDER TABS (Phases 8-9)
 // ========================
 function PlaceholderTab({ phase, title }: { phase: number; title: string }) {
   return (
@@ -1491,7 +1824,7 @@ export default function LedgerLouise() {
       {activeTab === "subsidiaries" && <SubsidiaryMapTab />}
       {activeTab === "tax" && <TaxComplianceTab />}
       {activeTab === "roadmap" && <RoadmapTab />}
-      {activeTab === "chart" && <PlaceholderTab phase={7} title="Structure: Chart View" />}
+      {activeTab === "chart" && <ChartViewTab />}
       {activeTab === "list" && <PlaceholderTab phase={8} title="Structure: List View" />}
       {activeTab === "grid" && <PlaceholderTab phase={9} title="Structure: Grid View" />}
     </div>
