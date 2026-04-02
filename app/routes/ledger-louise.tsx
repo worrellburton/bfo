@@ -654,7 +654,255 @@ function ActivationTab() {
 }
 
 // ========================
-// PLACEHOLDER TABS (Phases 4-6)
+// PHASE 4 — SUBSIDIARY MAP
+// ========================
+function SubsidiaryMapTab() {
+  type SubStatus = "active" | "passive" | "dormant" | "unknown";
+  const statusColors: Record<SubStatus, { badge: "green" | "yellow" | "gray" | "blue"; label: string }> = {
+    active: { badge: "green", label: "ACTIVE" },
+    passive: { badge: "yellow", label: "PASSIVE" },
+    dormant: { badge: "gray", label: "DORMANT" },
+    unknown: { badge: "blue", label: "VERIFY" },
+  };
+
+  const subsidiaries = [
+    {
+      name: "Swisshelm Mountain Ventures, LLC",
+      color: "#f97316",
+      status: "active" as SubStatus,
+      role: "Behavioral Health & Recovery Operations",
+      state: "Arizona",
+      holdings: [
+        { name: "Arizona Center for Recovery — A New Direction, LLC", ownership: "Operating Entity", type: "Behavioral Health", status: "active" as SubStatus },
+        { name: "Persons Lodge LLC", ownership: "100%", type: "Residential Treatment", status: "active" as SubStatus },
+        { name: "Breezewood", ownership: "100%", type: "Residential Treatment", status: "active" as SubStatus },
+      ],
+      k1Items: ["Ordinary business income/loss", "Rental income (if facilities owned)", "Depreciation", "Employee costs pass-through"],
+      mgmtServices: ["Financial reporting & accounting", "Regulatory compliance oversight", "Strategic planning", "HR & payroll administration", "Insurance management"],
+      estimatedFee: "3-5% of gross revenue",
+    },
+    {
+      name: "Sundown Investments, LLC",
+      color: "#22c55e",
+      status: "active" as SubStatus,
+      role: "Real Estate Holdings — Hospitality & Commercial",
+      state: "California / Nevada",
+      holdings: [
+        { name: "FDJ Hesperia, LLC", ownership: "100%", type: "Hotel Property", status: "active" as SubStatus },
+        { name: "FDJ CFS, LLC", ownership: "100%", type: "Hotel Property", status: "active" as SubStatus },
+        { name: "Palomino Ranch on the Bend, LLC", ownership: "Interest", type: "Ranch / Land", status: "unknown" as SubStatus },
+      ],
+      k1Items: ["Net rental real estate income/loss", "Depreciation (MACRS)", "Interest expense", "Property tax deductions", "Section 1231 gains on sale"],
+      mgmtServices: ["Property management oversight", "Lease administration", "Capital improvement planning", "Financial reporting", "Tax compliance"],
+      estimatedFee: "2-4% of gross revenue or $5K-$15K/property/year",
+    },
+    {
+      name: "Ledger Burton, LLC",
+      color: "#a855f7",
+      status: "passive" as SubStatus,
+      role: "VisionQuest National Investment Vehicle",
+      state: "Nevada / Arizona",
+      holdings: [
+        { name: "VQ National", ownership: "Investment Interest", type: "Behavioral Health Services", status: "active" as SubStatus },
+      ],
+      k1Items: ["Ordinary business income/loss (pass-through from VQ)", "Guaranteed payments (if any)", "Section 199A QBI"],
+      mgmtServices: ["Investment monitoring", "Performance reporting", "Governance & board participation", "Strategic advisory"],
+      estimatedFee: "1-2% of invested capital or flat $10K-$25K/year",
+    },
+    {
+      name: "Worrell Burton, LLC",
+      color: "#06b6d4",
+      status: "active" as SubStatus,
+      role: "Technology & Consumer Products Ventures",
+      state: "Nevada",
+      holdings: [
+        { name: "Catalog Digital, Inc", ownership: "Equity Interest", type: "Technology / Digital", status: "active" as SubStatus },
+        { name: "Atlas Hydration, Inc", ownership: "Equity Interest", type: "Consumer Products / Beverage", status: "active" as SubStatus },
+      ],
+      k1Items: ["Ordinary business income/loss", "Dividends (if C-corp distributions)", "Capital gains on equity events", "Startup costs / losses"],
+      mgmtServices: ["Business development support", "Financial reporting & accounting", "Cap table management", "Investor relations", "Legal & compliance"],
+      estimatedFee: "2-3% of revenue or flat $5K-$15K/entity/year",
+    },
+  ];
+
+  const relatedEntities = [
+    { name: "Quail Lakes Apartments, LLC", type: "Multi-Family Real Estate", status: "unknown" as SubStatus, relationship: "Direct or indirect interest — verify ownership chain" },
+    { name: "HSL TP Hotel, LLC", type: "Hospitality", status: "unknown" as SubStatus, relationship: "Direct or indirect interest — verify ownership chain" },
+    { name: "HSL Placita West Ltd Partners", type: "Real Estate Partnership", status: "unknown" as SubStatus, relationship: "Limited partnership interest — verify ownership chain" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Overview Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Direct Subsidiaries", value: "4", color: accent },
+          { label: "Total Holdings", value: "10+", color: "#22c55e" },
+          { label: "States", value: "NV, AZ, CA", color: "#a855f7" },
+          { label: "Related Entities", value: "3", color: "#eab308" },
+        ].map((m) => (
+          <Card key={m.label}>
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{m.label}</p>
+            <p className="text-xl font-bold" style={{ color: m.color }}>{m.value}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Full Hierarchy */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+          Complete Entity Hierarchy
+        </SectionTitle>
+
+        {/* Trust → LL */}
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <div className="px-5 py-2.5 rounded-xl border-2 border-blue-500/30 bg-blue-500/10 text-center w-full max-w-sm">
+            <p className="text-xs font-bold text-blue-400">Burton Family Revocable Trust</p>
+            <p className="text-[10px] text-gray-500">100% owner · Receives K-1 from Ledger Louise</p>
+          </div>
+          <svg className="w-4 h-5 text-blue-400" viewBox="0 0 16 20"><path d="M8 0v20M4 16l4 4 4-4" fill="none" stroke="currentColor" strokeWidth={2} /></svg>
+          <div className="px-5 py-2.5 rounded-xl border-2 border-blue-400/40 bg-blue-400/15 text-center w-full max-w-sm">
+            <p className="text-sm font-bold" style={{ color: accent }}>Ledger Louise, LLC</p>
+            <p className="text-[10px] text-gray-400">Holding & Management Company · Files Form 1065</p>
+          </div>
+        </div>
+
+        {/* Connector line */}
+        <div className="flex justify-center mb-2">
+          <div className="w-[80%] h-px bg-white/10 relative">
+            {[0, 33, 66, 100].map((pct) => (
+              <div key={pct} className="absolute top-0 w-px h-3 bg-white/10" style={{ left: `${pct}%` }} />
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* Subsidiary Detail Cards */}
+      {subsidiaries.map((sub) => (
+        <Card key={sub.name}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold" style={{ background: `${sub.color}20`, color: sub.color }}>
+                {sub.name.charAt(0)}
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">{sub.name}</h3>
+                <p className="text-[10px] text-gray-500">{sub.role} · {sub.state}</p>
+              </div>
+            </div>
+            <Badge status={statusColors[sub.status].badge} label={statusColors[sub.status].label} />
+          </div>
+
+          {/* Holdings */}
+          <div className="mb-4">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">Holdings</p>
+            <div className="space-y-1.5">
+              {sub.holdings.map((h) => (
+                <div key={h.name} className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
+                  <div>
+                    <p className="text-xs font-medium text-gray-300">{h.name}</p>
+                    <p className="text-[10px] text-gray-500">{h.type} · {h.ownership}</p>
+                  </div>
+                  <Badge status={statusColors[h.status].badge} label={statusColors[h.status].label} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* K-1 Items & Management Services side by side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">K-1 Items Expected</p>
+              <div className="space-y-1">
+                {sub.k1Items.map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-[10px] text-gray-400">
+                    <span style={{ color: sub.color }}>&#8226;</span>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">Management Services (MSA)</p>
+              <div className="space-y-1">
+                {sub.mgmtServices.map((svc) => (
+                  <div key={svc} className="flex items-center gap-2 text-[10px] text-gray-400">
+                    <span style={{ color: accent }}>&#8226;</span>
+                    {svc}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 px-2 py-1 rounded bg-white/[0.03] border border-white/5 inline-block">
+                <p className="text-[10px] text-gray-500">Est. Fee: <span className="font-semibold text-gray-300">{sub.estimatedFee}</span></p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      ))}
+
+      {/* Related Entities */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+          </svg>
+          Related Entities — Ownership Verification Needed
+        </SectionTitle>
+        <p className="text-[10px] text-gray-500 mb-3">
+          These entities appear in the org chart but their ownership chain through Ledger Louise needs verification. They may be held directly by the Trust, by a subsidiary, or by another family entity.
+        </p>
+        <div className="space-y-2">
+          {relatedEntities.map((e) => (
+            <div key={e.name} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/5">
+              <div>
+                <p className="text-xs font-semibold text-gray-300">{e.name}</p>
+                <p className="text-[10px] text-gray-500">{e.type} · {e.relationship}</p>
+              </div>
+              <Badge status="blue" label="VERIFY" />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Intercompany Flow Summary */}
+      <Card>
+        <SectionTitle>
+          <svg className="w-4 h-4" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+          Intercompany Cash Flow Architecture
+        </SectionTitle>
+        <div className="space-y-3">
+          {[
+            { direction: "UP", label: "Subsidiaries → Ledger Louise", items: ["Distributions of operating profits", "K-1 income/loss allocations", "Management fee payments"], color: "#22c55e" },
+            { direction: "DOWN", label: "Ledger Louise → Subsidiaries", items: ["Capital contributions for growth", "Intercompany loans", "Management services (billed via MSA)"], color: "#3b82f6" },
+            { direction: "UP", label: "Ledger Louise → Trust", items: ["Distributions to Trust (per Section 5.01)", "K-1 reporting (Form 1065 → Schedule K-1)", "Tax information for Form 1041"], color: "#a855f7" },
+          ].map((flow) => (
+            <div key={flow.label} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${flow.color}20`, color: flow.color }}>
+                  {flow.direction === "UP" ? "↑" : "↓"}
+                </span>
+                <p className="text-xs font-semibold text-gray-300">{flow.label}</p>
+              </div>
+              <div className="ml-7 space-y-0.5">
+                {flow.items.map((item) => (
+                  <p key={item} className="text-[10px] text-gray-500">• {item}</p>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ========================
+// PLACEHOLDER TABS (Phases 5-6)
 // ========================
 function PlaceholderTab({ phase, title }: { phase: number; title: string }) {
   return (
@@ -725,7 +973,7 @@ export default function LedgerLouise() {
       {activeTab === "overview" && <OverviewTab />}
       {activeTab === "k1" && <K1ReadinessTab />}
       {activeTab === "activation" && <ActivationTab />}
-      {activeTab === "subsidiaries" && <PlaceholderTab phase={4} title="Subsidiary Map & K-1 Flow" />}
+      {activeTab === "subsidiaries" && <SubsidiaryMapTab />}
       {activeTab === "tax" && <PlaceholderTab phase={5} title="Tax & Compliance Framework" />}
       {activeTab === "roadmap" && <PlaceholderTab phase={6} title="Transformation Roadmap" />}
     </div>
