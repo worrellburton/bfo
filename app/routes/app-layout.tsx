@@ -12,7 +12,6 @@ const navItems = [
   { to: "/office", label: "Office", icon: null },
   { to: "/tools", label: "Tools", icon: null },
   { to: "/tools/quickbooks", label: "QuickBooks", icon: null },
-  { to: "/tools/vq-balance-sheet", label: "VQ Balance Sheet", icon: null },
 ];
 
 export default function AppLayout() {

@@ -299,7 +299,7 @@ export default function FDJHesperia() {
           <h1 className="text-2xl font-bold mb-1">FDJ Hesperia</h1>
           <p className="text-gray-500 text-sm">Burton Family Investment Mission Control</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <button
             onClick={() => setShowPublicLink(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer"
@@ -310,7 +310,7 @@ export default function FDJHesperia() {
             Create Public Link
           </button>
           <StatusBadge status="amber" label="Monitoring" />
-          <div className="text-[10px] text-gray-500">
+          <div className="text-[10px] text-gray-500 w-full sm:w-auto">
             Master leases expire <span className="text-amber-400 font-medium">Apr 30, 2027</span>
           </div>
         </div>
@@ -374,12 +374,12 @@ export default function FDJHesperia() {
       )}
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-white/10 mb-8">
+      <div className="flex gap-1 border-b border-white/10 mb-8 overflow-x-auto -mx-1 px-1 scrollbar-hide">
         {tabs.map((tab) => (
           <Link
             key={tab.label}
             to={tab.href}
-            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            className={`px-4 py-2 text-sm font-medium transition-colors relative whitespace-nowrap shrink-0 ${
               tab.active
                 ? "text-white"
                 : "text-gray-500 hover:text-gray-300"
@@ -529,7 +529,7 @@ export default function FDJHesperia() {
       </div>
 
       {/* Key Parties */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
         <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Key Parties</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
@@ -552,6 +552,240 @@ export default function FDJHesperia() {
             <div className="text-xs text-gray-300">EDA PSA (Jul 2021)</div>
           </div>
         </div>
+      </div>
+
+      {/* Tax Analysis — Sale to BWL */}
+      <TaxAnalysisSection />
+    </div>
+  );
+}
+
+// ============================================================
+// TAX ANALYSIS — BWL Buys FDJ Hesperia, LLC
+// ============================================================
+function TaxAnalysisSection() {
+  const [scenario, setScenario] = useState<"low" | "mid" | "high">("mid");
+
+  // Core assumptions
+  const purchasePrice = 12748000; // $5.475M + $7.273M
+  const buildingBasis = purchasePrice * 0.8; // ~80% of purchase is depreciable building
+  // Weighted avg depreciation (mix of 27.5yr residential and 39yr commercial)
+  // El Dorado: $5.475M * 80% / 27.5 = $159,273/yr
+  // Comfort Suites: $7.273M * 80% / 39 = $149,190/yr
+  // Total: ~$308,463/yr × 9 years ≈ $2.78M
+  const accumulatedDepr = 2776163;
+  const adjustedBasis = purchasePrice - accumulatedDepr; // ~$9.97M
+
+  const scenarios = {
+    low: { label: "At Cost", salePrice: 12748000, desc: "Sell to BWL at original purchase price (conservative)" },
+    mid: { label: "Modest Growth", salePrice: 15000000, desc: "~18% appreciation over 9 years (below market)" },
+    high: { label: "Market Value", salePrice: 18000000, desc: "~41% appreciation (reasonable for Tucson real estate)" },
+  };
+
+  const current = scenarios[scenario];
+  const totalGain = current.salePrice - adjustedBasis;
+  const depRecapture = Math.min(accumulatedDepr, totalGain); // Section 1250 unrecaptured
+  const ltcgAmount = Math.max(0, totalGain - depRecapture);
+
+  // Federal taxes
+  const depRecaptureTax = depRecapture * 0.25; // Max 25% on unrecaptured §1250 gain
+  const ltcgTax = ltcgAmount * 0.2; // 20% top LTCG bracket
+  const niit = totalGain * 0.038; // 3.8% Net Investment Income Tax on full gain
+  const fedTotal = depRecaptureTax + ltcgTax + niit;
+
+  // State tax (Arizona flat 2.5%)
+  const stateTax = totalGain * 0.025;
+
+  const totalTax = fedTotal + stateTax;
+  const netProceeds = current.salePrice - totalTax;
+
+  function fmtTax(n: number) {
+    return `$${Math.round(n).toLocaleString()}`;
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-gradient-to-br from-amber-500/[0.03] to-purple-500/[0.03] p-5 mb-8">
+      <div className="flex items-start gap-3 mb-5">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 border border-amber-500/30 shrink-0">
+          <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.375m-8.25-3a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm6.75-6a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm-13.5 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-bold text-white">Tax Analysis — Sale to BWL Investments, LLC</h3>
+          <p className="text-[11px] text-gray-500 mt-0.5">Scenario: BWL Investments purchases 100% membership interest in FDJ Hesperia, LLC</p>
+        </div>
+      </div>
+
+      {/* Scenario Toggle */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        {(Object.keys(scenarios) as Array<keyof typeof scenarios>).map((key) => {
+          const s = scenarios[key];
+          const isActive = scenario === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setScenario(key)}
+              className={`flex-1 min-w-[120px] px-3 py-2.5 rounded-lg text-xs font-medium transition-all border ${
+                isActive
+                  ? "bg-amber-500/15 text-amber-300 border-amber-500/40"
+                  : "bg-white/[0.02] text-gray-400 border-white/10 hover:bg-white/[0.04]"
+              }`}
+            >
+              <div className="font-bold">{s.label}</div>
+              <div className="text-[10px] opacity-70 tabular-nums mt-0.5">{fmtTax(s.salePrice)}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-[10px] text-gray-500 mb-5 leading-relaxed italic">{current.desc}</p>
+
+      {/* Key Numbers */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/10">
+          <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Sale Price</div>
+          <div className="text-sm font-bold text-white tabular-nums">{fmtTax(current.salePrice)}</div>
+        </div>
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/10">
+          <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Adjusted Basis</div>
+          <div className="text-sm font-bold text-gray-300 tabular-nums">{fmtTax(adjustedBasis)}</div>
+          <div className="text-[9px] text-gray-500 mt-0.5">After $2.78M depreciation</div>
+        </div>
+        <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+          <div className="text-[9px] text-amber-400/70 uppercase tracking-wider mb-1">Total Gain</div>
+          <div className="text-sm font-bold text-amber-300 tabular-nums">{fmtTax(totalGain)}</div>
+        </div>
+        <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+          <div className="text-[9px] text-red-400/70 uppercase tracking-wider mb-1">Est. Total Tax</div>
+          <div className="text-sm font-bold text-red-300 tabular-nums">{fmtTax(totalTax)}</div>
+        </div>
+      </div>
+
+      {/* Tax Breakdown */}
+      <div className="rounded-lg bg-black/30 border border-white/5 p-4 mb-5">
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">Federal & State Tax Breakdown</div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex-1">
+              <span className="text-gray-300">Depreciation Recapture</span>
+              <span className="text-[9px] text-gray-600 ml-2">IRC §1250 · 25% rate</span>
+            </div>
+            <div className="text-right tabular-nums">
+              <div className="text-gray-400">{fmtTax(depRecapture)} × 25%</div>
+              <div className="text-red-400 font-semibold">{fmtTax(depRecaptureTax)}</div>
+            </div>
+          </div>
+          <div className="h-px bg-white/5" />
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex-1">
+              <span className="text-gray-300">Long-Term Capital Gains</span>
+              <span className="text-[9px] text-gray-600 ml-2">IRC §1(h) · 20% top rate</span>
+            </div>
+            <div className="text-right tabular-nums">
+              <div className="text-gray-400">{fmtTax(ltcgAmount)} × 20%</div>
+              <div className="text-red-400 font-semibold">{fmtTax(ltcgTax)}</div>
+            </div>
+          </div>
+          <div className="h-px bg-white/5" />
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex-1">
+              <span className="text-gray-300">Net Investment Income Tax</span>
+              <span className="text-[9px] text-gray-600 ml-2">IRC §1411 · 3.8%</span>
+            </div>
+            <div className="text-right tabular-nums">
+              <div className="text-gray-400">{fmtTax(totalGain)} × 3.8%</div>
+              <div className="text-red-400 font-semibold">{fmtTax(niit)}</div>
+            </div>
+          </div>
+          <div className="h-px bg-white/5" />
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex-1">
+              <span className="text-gray-300">Arizona State Tax</span>
+              <span className="text-[9px] text-gray-600 ml-2">2.5% flat</span>
+            </div>
+            <div className="text-right tabular-nums">
+              <div className="text-gray-400">{fmtTax(totalGain)} × 2.5%</div>
+              <div className="text-red-400 font-semibold">{fmtTax(stateTax)}</div>
+            </div>
+          </div>
+          <div className="h-px bg-white/10 mt-1" />
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs font-bold text-white">Total Estimated Tax</span>
+            <span className="text-sm font-bold text-red-300 tabular-nums">{fmtTax(totalTax)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-white">Net Proceeds (pre-debt payoff)</span>
+            <span className="text-sm font-bold text-emerald-400 tabular-nums">{fmtTax(netProceeds)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* How Entity Sale Works */}
+      <div className="rounded-lg bg-white/[0.02] border border-white/10 p-4 mb-4">
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">How an Entity Sale Works</div>
+        <p className="text-xs text-gray-400 leading-relaxed mb-2">
+          When BWL buys 100% of FDJ Hesperia, LLC, the Burtons are selling their <strong className="text-gray-300">membership interests</strong>, not the
+          properties directly. Under IRC §741, gain from selling a partnership/LLC interest is generally treated as capital gain — <em>except</em> for the
+          portion attributable to "hot assets" under IRC §751 (depreciation recapture), which is taxed as ordinary income at the unrecaptured §1250 rate (25%).
+        </p>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          For the buyer, an LLC interest purchase of a disregarded entity or partnership is <strong className="text-gray-300">treated as an asset purchase</strong> —
+          BWL gets a stepped-up basis in the underlying properties equal to the purchase price (IRC §743(b) if §754 election made, or automatic if FDJ becomes disregarded).
+        </p>
+      </div>
+
+      {/* Key Considerations */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-[11px] font-bold text-emerald-300">Tax Savings Options</span>
+          </div>
+          <ul className="text-[10px] text-gray-400 space-y-1 list-disc pl-4">
+            <li><strong className="text-gray-300">1031 Exchange:</strong> Defer ALL tax by rolling proceeds into like-kind real estate (must identify in 45 days, close in 180)</li>
+            <li><strong className="text-gray-300">Installment Sale (§453):</strong> Spread gain across payment years, reducing marginal rate impact</li>
+            <li><strong className="text-gray-300">Opportunity Zones:</strong> Invest gains in QOZ fund for 10-year deferral and potential exclusion</li>
+            <li><strong className="text-gray-300">Charitable CRT:</strong> Gift to Charitable Remainder Trust for immediate deduction + lifetime income</li>
+          </ul>
+        </div>
+        <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="text-[11px] font-bold text-amber-300">Complications to Watch</span>
+          </div>
+          <ul className="text-[10px] text-gray-400 space-y-1 list-disc pl-4">
+            <li><strong className="text-gray-300">$4.4M BWL Promissory Notes:</strong> If offset against purchase price, may trigger cancellation of indebtedness income separately</li>
+            <li><strong className="text-gray-300">$5.85M Property Debt:</strong> Assumption of debt counts as part of sale proceeds (boot)</li>
+            <li><strong className="text-gray-300">Holding Period:</strong> 9+ years confirms long-term capital gain treatment</li>
+            <li><strong className="text-gray-300">Community Property (AZ):</strong> Spouses may split gain 50/50; step-up at first death could reduce future tax</li>
+            <li><strong className="text-gray-300">Entity Classification:</strong> Actual tax depends on whether FDJ is taxed as partnership, disregarded entity, or corp</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Assumptions */}
+      <div className="rounded-lg bg-black/20 border border-white/5 p-3">
+        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-2">Assumptions & Sources</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-gray-500 leading-relaxed">
+          <div>• Combined purchase price: $12.748M (El Dorado $5.475M + Comfort Suites $7.273M)</div>
+          <div>• Building basis ~80% of purchase (land non-depreciable)</div>
+          <div>• El Dorado: 27.5-yr residential MACRS (IRC §168)</div>
+          <div>• Comfort Suites: 39-yr commercial MACRS</div>
+          <div>• Accumulated depreciation ~$2.78M over 9 years</div>
+          <div>• Federal LTCG 20% top bracket for high earners</div>
+          <div>• Unrecaptured §1250 gain capped at 25% (IRC §1(h)(6))</div>
+          <div>• NIIT 3.8% applies (IRC §1411) for passive investors</div>
+          <div>• Arizona state income tax 2.5% flat (2024+)</div>
+          <div>• Excludes transaction costs, legal fees, and AMT</div>
+        </div>
+        <p className="text-[9px] text-amber-400/70 mt-3 italic">
+          ⚠ This is an estimate for planning purposes. Actual tax will depend on FDJ Hesperia's entity classification, each spouse's tax bracket, prior suspended passive losses, state of residence, and how the $4.4M BWL note is settled. Consult a qualified tax professional before acting.
+        </p>
       </div>
     </div>
   );
