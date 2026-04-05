@@ -3,6 +3,7 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 export default [
   route("login", "routes/login.tsx"),
   route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),
+  route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
   route("legal/terms", "./routes/legal-terms.tsx"),
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   layout("routes/app-layout.tsx", [
@@ -27,5 +28,6 @@ export default [
     route("tools/ceo-agreement", "./routes/ceo-agreement.tsx"),
     route("tools/quickbooks", "./routes/quickbooks.tsx"),
     route("tools/ledger-louise", "./routes/ledger-louise.tsx"),
+    route("tools/vq-balance-sheet", "./routes/vq-balance-sheet.tsx"),
   ]),
 ] satisfies RouteConfig;
