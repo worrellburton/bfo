@@ -22,6 +22,7 @@ export default [
     route("tools/fdj-hesperia/financials", "./routes/fdj-hesperia-financials.tsx"),
     route("tools/fdj-hesperia/documents", "./routes/fdj-hesperia-documents.tsx"),
     route("tools/fdj-hesperia/advisory", "./routes/fdj-hesperia-advisory.tsx"),
+    route("tools/fdj-hesperia/tax", "./routes/fdj-hesperia-tax.tsx"),
     route("tools/penguin-nyc", "./routes/penguin-nyc.tsx"),
     route("tools/penguin-nyc/advisory", "./routes/penguin-nyc-advisory.tsx"),
     route("tools/penguin-nyc/clauses", "./routes/penguin-nyc-clauses.tsx"),

@@ -60,6 +60,7 @@ const tabs = [
   { label: "Financials", href: "/tools/fdj-hesperia/financials" },
   { label: "Documents", href: "/tools/fdj-hesperia/documents" },
   { label: "Advisory", href: "/tools/fdj-hesperia/advisory" },
+  { label: "Tax", href: "/tools/fdj-hesperia/tax" },
 ];
 
 // --- Concern Card ---
