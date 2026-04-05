@@ -374,6 +374,7 @@ const tabs = [
   { label: "Financials", href: "/tools/fdj-hesperia/financials", active: false },
   { label: "Documents", href: "/tools/fdj-hesperia/documents", active: true },
   { label: "Advisory", href: "/tools/fdj-hesperia/advisory", active: false },
+  { label: "Tax", href: "/tools/fdj-hesperia/tax", active: false },
 ];
 
 // --- Main Component ---
