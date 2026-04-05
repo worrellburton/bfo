@@ -28,18 +28,79 @@ const tabs = [
   { label: "Tax", href: "/tools/fdj-hesperia/tax", active: true },
 ];
 
+const entityOptions = {
+  "fdj-hesperia": {
+    label: "FDJ Hesperia, LLC",
+    subtitle: "Both properties (El Dorado + Comfort Suites)",
+    purchasePrice: 12748000,
+    accumulatedDepr: 2776163,
+    deprNote: "El Dorado 27.5yr + Comfort Suites 39yr MACRS",
+    debt: 5850000,
+    bwlNotes: 4400000,
+    scenarios: {
+      low: { label: "At Cost", salePrice: 12748000, desc: "Sell to BWL at original purchase price (conservative)" },
+      mid: { label: "Modest Growth", salePrice: 15000000, desc: "~18% appreciation over 9 years (below market)" },
+      high: { label: "Market Value", salePrice: 18000000, desc: "~41% appreciation (reasonable for Tucson real estate)" },
+    },
+    assumptions: [
+      "Combined purchase price: $12.748M (El Dorado $5.475M + Comfort Suites $7.273M)",
+      "Building basis ~80% of purchase (land non-depreciable)",
+      "El Dorado: 27.5-yr residential MACRS (IRC §168)",
+      "Comfort Suites: 39-yr commercial MACRS",
+      "Accumulated depreciation ~$2.78M over 9 years",
+    ],
+    complications: [
+      { bold: "$4.4M BWL Promissory Notes:", text: "If offset against purchase price, may trigger cancellation of indebtedness income separately" },
+      { bold: "$5.85M Property Debt:", text: "Assumption of debt counts as part of sale proceeds (boot)" },
+      { bold: "Holding Period:", text: "9+ years confirms long-term capital gain treatment" },
+      { bold: "Community Property (AZ):", text: "Spouses may split gain 50/50; step-up at first death could reduce future tax" },
+      { bold: "Entity Classification:", text: "Actual tax depends on whether FDJ is taxed as partnership, disregarded entity, or corp" },
+    ],
+    entitySaleDesc: "When BWL buys 100% of FDJ Hesperia, LLC, the Burtons are selling their membership interests, not the properties directly.",
+    disclaimer: "This is an estimate for planning purposes. Actual tax will depend on FDJ Hesperia's entity classification, each spouse's tax bracket, prior suspended passive losses, state of residence, and how the $4.4M BWL note is settled. Consult a qualified tax professional before acting.",
+  },
+  "fdj-cfs": {
+    label: "FDJ CFS, LLC",
+    subtitle: "Comfort Suites Tucson only (86 rooms, hospitality)",
+    purchasePrice: 7273000,
+    accumulatedDepr: 1342708,
+    deprNote: "39-yr commercial MACRS (hospitality)",
+    debt: 3350000,
+    bwlNotes: 0,
+    scenarios: {
+      low: { label: "At Cost", salePrice: 7273000, desc: "Sell CFS to BWL at original purchase price (conservative)" },
+      mid: { label: "Modest Growth", salePrice: 8500000, desc: "~17% appreciation over 9 years (below market for hospitality)" },
+      high: { label: "Market Value", salePrice: 10000000, desc: "~37% appreciation (strong hospitality market)" },
+    },
+    assumptions: [
+      "Purchase price: $7.273M (Comfort Suites Tucson, 86 rooms)",
+      "Building basis ~80% of purchase (land non-depreciable)",
+      "39-yr commercial MACRS depreciation (IRC §168)",
+      "Accumulated depreciation ~$1.34M over 9 years",
+      "Hospitality asset — classified as nonresidential real property",
+    ],
+    complications: [
+      { bold: "$3.35M Property Debt:", text: "Assumption of debt by BWL counts as part of sale proceeds (boot)" },
+      { bold: "Holding Period:", text: "9+ years confirms long-term capital gain treatment" },
+      { bold: "FF&E / Personal Property:", text: "Hotel furniture, fixtures & equipment may be subject to ordinary income recapture (IRC §1245) rather than §1250 rates" },
+      { bold: "Community Property (AZ):", text: "Spouses may split gain 50/50; step-up at first death could reduce future tax" },
+      { bold: "Franchise Agreement:", text: "Transfer of Choice Hotels franchise may require approval and trigger assignment fees" },
+    ],
+    entitySaleDesc: "When BWL buys 100% of FDJ CFS, LLC, the Burtons are selling their membership interest in the Comfort Suites entity only — not the El Dorado property.",
+    disclaimer: "This is an estimate for planning purposes. Actual tax will depend on FDJ CFS's entity classification, allocation between real property and FF&E, each spouse's tax bracket, prior suspended passive losses, and state of residence. Consult a qualified tax professional before acting.",
+  },
+};
+
 export default function FDJHesperiaTax() {
+  const [entity, setEntity] = useState<"fdj-hesperia" | "fdj-cfs">("fdj-hesperia");
   const [scenario, setScenario] = useState<"low" | "mid" | "high">("mid");
 
-  const purchasePrice = 12748000;
-  const accumulatedDepr = 2776163;
+  const ent = entityOptions[entity];
+  const purchasePrice = ent.purchasePrice;
+  const accumulatedDepr = ent.accumulatedDepr;
   const adjustedBasis = purchasePrice - accumulatedDepr;
 
-  const scenarios = {
-    low: { label: "At Cost", salePrice: 12748000, desc: "Sell to BWL at original purchase price (conservative)" },
-    mid: { label: "Modest Growth", salePrice: 15000000, desc: "~18% appreciation over 9 years (below market)" },
-    high: { label: "Market Value", salePrice: 18000000, desc: "~41% appreciation (reasonable for Tucson real estate)" },
-  };
+  const scenarios = ent.scenarios;
 
   const current = scenarios[scenario];
   const totalGain = current.salePrice - adjustedBasis;
@@ -56,6 +117,11 @@ export default function FDJHesperiaTax() {
 
   function fmtTax(n: number) {
     return `$${Math.round(n).toLocaleString()}`;
+  }
+
+  function fmtDepr(n: number) {
+    if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
+    return `$${Math.round(n / 1000).toLocaleString()}K`;
   }
 
   return (
@@ -108,8 +174,30 @@ export default function FDJHesperiaTax() {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-base font-bold text-white">Tax Analysis — Sale to BWL Investments, LLC</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Scenario: BWL Investments purchases 100% membership interest in FDJ Hesperia, LLC</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Scenario: BWL Investments purchases 100% membership interest in {ent.label}</p>
           </div>
+        </div>
+
+        {/* Entity Toggle */}
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          {(Object.keys(entityOptions) as Array<keyof typeof entityOptions>).map((key) => {
+            const e = entityOptions[key];
+            const isActive = entity === key;
+            return (
+              <button
+                key={key}
+                onClick={() => { setEntity(key); setScenario("mid"); }}
+                className={`flex-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-all border ${
+                  isActive
+                    ? "bg-purple-500/15 text-purple-300 border-purple-500/40"
+                    : "bg-white/[0.02] text-gray-400 border-white/10 hover:bg-white/[0.04]"
+                }`}
+              >
+                <div className="font-bold">{e.label}</div>
+                <div className="text-[10px] opacity-70 mt-0.5">{e.subtitle}</div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Scenario Toggle */}
@@ -145,7 +233,7 @@ export default function FDJHesperiaTax() {
           <div className="p-3 rounded-lg bg-white/[0.02] border border-white/10">
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Adjusted Basis</div>
             <div className="text-sm font-bold text-gray-300 tabular-nums">{fmtTax(adjustedBasis)}</div>
-            <div className="text-[9px] text-gray-500 mt-0.5">After $2.78M depreciation</div>
+            <div className="text-[9px] text-gray-500 mt-0.5">After {fmtDepr(accumulatedDepr)} depreciation</div>
           </div>
           <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
             <div className="text-[9px] text-amber-400/70 uppercase tracking-wider mb-1">Total Gain</div>
@@ -220,13 +308,12 @@ export default function FDJHesperiaTax() {
         <div className="rounded-lg bg-white/[0.02] border border-white/10 p-4 mb-4">
           <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">How an Entity Sale Works</div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            When BWL buys 100% of FDJ Hesperia, LLC, the Burtons are selling their <strong className="text-gray-300">membership interests</strong>, not the
-            properties directly. Under IRC §741, gain from selling a partnership/LLC interest is generally treated as capital gain — <em>except</em> for the
+            {ent.entitySaleDesc} Under IRC §741, gain from selling a partnership/LLC interest is generally treated as capital gain — <em>except</em> for the
             portion attributable to "hot assets" under IRC §751 (depreciation recapture), which is taxed as ordinary income at the unrecaptured §1250 rate (25%).
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
             For the buyer, an LLC interest purchase of a disregarded entity or partnership is <strong className="text-gray-300">treated as an asset purchase</strong> —
-            BWL gets a stepped-up basis in the underlying properties equal to the purchase price (IRC §743(b) if §754 election made, or automatic if FDJ becomes disregarded).
+            BWL gets a stepped-up basis in the underlying properties equal to the purchase price (IRC §743(b) if §754 election made, or automatic if the entity becomes disregarded).
           </p>
         </div>
 
@@ -254,11 +341,9 @@ export default function FDJHesperiaTax() {
               <span className="text-[11px] font-bold text-amber-300">Complications to Watch</span>
             </div>
             <ul className="text-[10px] text-gray-400 space-y-1 list-disc pl-4">
-              <li><strong className="text-gray-300">$4.4M BWL Promissory Notes:</strong> If offset against purchase price, may trigger cancellation of indebtedness income separately</li>
-              <li><strong className="text-gray-300">$5.85M Property Debt:</strong> Assumption of debt counts as part of sale proceeds (boot)</li>
-              <li><strong className="text-gray-300">Holding Period:</strong> 9+ years confirms long-term capital gain treatment</li>
-              <li><strong className="text-gray-300">Community Property (AZ):</strong> Spouses may split gain 50/50; step-up at first death could reduce future tax</li>
-              <li><strong className="text-gray-300">Entity Classification:</strong> Actual tax depends on whether FDJ is taxed as partnership, disregarded entity, or corp</li>
+              {ent.complications.map((c, i) => (
+                <li key={i}><strong className="text-gray-300">{c.bold}</strong> {c.text}</li>
+              ))}
             </ul>
           </div>
         </div>
@@ -267,11 +352,9 @@ export default function FDJHesperiaTax() {
         <div className="rounded-lg bg-black/20 border border-white/5 p-3">
           <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-2">Assumptions & Sources</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-gray-500 leading-relaxed">
-            <div>• Combined purchase price: $12.748M (El Dorado $5.475M + Comfort Suites $7.273M)</div>
-            <div>• Building basis ~80% of purchase (land non-depreciable)</div>
-            <div>• El Dorado: 27.5-yr residential MACRS (IRC §168)</div>
-            <div>• Comfort Suites: 39-yr commercial MACRS</div>
-            <div>• Accumulated depreciation ~$2.78M over 9 years</div>
+            {ent.assumptions.map((a, i) => (
+              <div key={i}>• {a}</div>
+            ))}
             <div>• Federal LTCG 20% top bracket for high earners</div>
             <div>• Unrecaptured §1250 gain capped at 25% (IRC §1(h)(6))</div>
             <div>• NIIT 3.8% applies (IRC §1411) for passive investors</div>
@@ -279,7 +362,7 @@ export default function FDJHesperiaTax() {
             <div>• Excludes transaction costs, legal fees, and AMT</div>
           </div>
           <p className="text-[9px] text-amber-400/70 mt-3 italic">
-            This is an estimate for planning purposes. Actual tax will depend on FDJ Hesperia's entity classification, each spouse's tax bracket, prior suspended passive losses, state of residence, and how the $4.4M BWL note is settled. Consult a qualified tax professional before acting.
+            {ent.disclaimer}
           </p>
         </div>
       </div>
