@@ -325,6 +325,236 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
           <span className="font-mono tabular-nums text-lg font-bold" style={{ color: accent }}>{fmt(totalLiabilitiesEquity)}</span>
         </div>
       </Card>
+
+      {/* Equity Deep Dive */}
+      <div className="mt-10 mb-4">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-500/15">
+            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold">Equity Accounts Explained</h2>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">Plain-English breakdown of each equity line item</p>
+      </div>
+
+      <div className="space-y-4">
+        {/* Common Stock */}
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-gray-500">31110</span>
+              <h3 className="text-sm font-bold text-gray-200">Common Stock</h3>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$1,444,543.33</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What it is:</strong> The <em>par value</em> of all shares VQ has issued to shareholders. Par value is a nominal
+            amount (often $0.01 or $1) assigned to each share when the company was incorporated — it's an accounting legacy, not market value.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Why it matters:</strong> This represents the legal capital of the company — the minimum amount shareholders
+            contributed. It doesn't change unless new shares are issued or retired.
+          </p>
+        </Card>
+
+        {/* Additional Paid In Capital */}
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-gray-500">31120</span>
+              <h3 className="text-sm font-bold text-gray-200">Additional Paid-In Capital (APIC)</h3>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$160,014.69</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What it is:</strong> The amount shareholders paid <em>above</em> par value when buying stock directly from the company.
+            If par is $1 and shareholders paid $10, the extra $9 per share goes here.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Why it matters:</strong> APIC plus Common Stock = the total cash shareholders put into the business for their
+            ownership stake. For VQ: <strong className="text-gray-300">$1.44M + $160K = $1.60M</strong> total contributed capital.
+          </p>
+        </Card>
+
+        {/* Retained Earnings */}
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-gray-500">31210</span>
+              <h3 className="text-sm font-bold text-gray-200">Retained Earnings</h3>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$466.42</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What it is:</strong> The cumulative net profits (or losses) the company has kept <em>from prior years</em>, after
+            paying out any dividends. A negative number means accumulated losses exceed accumulated profits historically.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Why it matters:</strong> VQ's retained earnings are essentially zero (-$466) — meaning historically, profits and
+            losses have roughly cancelled out. The current year's $1.64M loss will roll into this account at year-end, making it significantly negative.
+          </p>
+        </Card>
+
+        {/* Treasury Stock — THE BIG ONE */}
+        <Card className="border-yellow-500/30 bg-yellow-500/[0.03]">
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-gray-500">31300</span>
+              <h3 className="text-sm font-bold text-yellow-300">Treasury Stock</h3>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border bg-yellow-500/15 text-yellow-400 border-yellow-500/30">
+                Largest Item
+              </span>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$5,836,850.09</span>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">What It Is</p>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Treasury stock is <strong>VQ's own shares that the company bought back from shareholders</strong>. When a company repurchases its own stock,
+                those shares aren't cancelled — they're held "in the treasury" and recorded as a negative number that reduces total equity. This is called a
+                <em> contra-equity account</em>.
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Why It's Negative</p>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                The company used $5.84M of its cash to buy back shares. That cash left the company (reducing assets) and in exchange the company got
+                back its own stock (which doesn't count as an asset — you can't own yourself). The result is a permanent reduction in equity of $5.84M.
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Why Companies Do This</p>
+              <ul className="text-xs text-gray-300 leading-relaxed space-y-1 list-disc pl-5">
+                <li><strong>Buying out departing shareholders</strong> — a co-founder or early investor wants to exit, the company buys their shares.</li>
+                <li><strong>Estate planning / succession</strong> — common in family businesses when ownership is being consolidated.</li>
+                <li><strong>Employee stock plans</strong> — shares held in treasury to issue to employees later.</li>
+                <li><strong>Concentrating ownership</strong> — fewer shares outstanding means remaining shareholders own a bigger percentage.</li>
+                <li><strong>Returning cash to shareholders</strong> — an alternative to paying dividends.</li>
+              </ul>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">What This Means for VQ</p>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                VQ has spent <strong className="text-yellow-300">$5.84M of its cash</strong> to repurchase shares at some point in the past. This is 4x the size of total
+                contributed capital ($1.6M), which means the buybacks were funded by retained earnings from prior profitable years or by taking on debt (note
+                the $2.09M related-party note to Bob Burton). The Grace Dix Stock Repurchase line ($5,277 in current liabilities) suggests stock repurchase
+                activity is ongoing.
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Impact on Equity</p>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Without the treasury stock position, VQ's total equity would be approximately
+                <strong className="text-green-400"> $7.46M</strong> instead of $1.62M. The buybacks account for 78% of the gap between contributed capital
+                and current equity. Combined with the $1.64M current year loss, they leave VQ with minimal equity cushion against liabilities.
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Deferred Comp Obligation */}
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-gray-500">31500</span>
+              <h3 className="text-sm font-bold text-gray-200">Deferred Compensation Obligation</h3>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$936,472.43</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What it is:</strong> Compensation that has been earned by employees or executives but isn't paid until a future
+            date (retirement, vesting, or termination). It's a promise to pay later, recorded in equity because it's often tied to stock-based or
+            ownership-linked arrangements.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">Why it's here and not in liabilities:</strong> When deferred comp is funded through a rabbi trust or tied to
+            company stock, it appears in equity as an offsetting entry. There's also a "VQ Deferred Compensation" line of $66,666.67 in current liabilities —
+            likely the portion due within the next 12 months.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Why it matters:</strong> $936K in future comp obligations is material. These will eventually be paid out in cash,
+            reducing equity further when paid.
+          </p>
+        </Card>
+
+        {/* Opening Balance Equity */}
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-200">Opening Balance Equity</h3>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border bg-orange-500/15 text-orange-400 border-orange-500/30">
+                Cleanup Needed
+              </span>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$6,557,006.86</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What it is:</strong> A <em>QuickBooks-generated temporary account</em> that holds offsetting entries when
+            opening balances were entered during initial setup or migration. It should eventually be reclassified into Retained Earnings, Common Stock, or
+            APIC — whichever is appropriate.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">Why a clean balance sheet shouldn't have this:</strong> An Opening Balance Equity balance of $6.56M means the
+            QuickBooks file was set up with offsetting entries that were never properly reclassified. CPAs typically zero this account out by reclassifying
+            it to the correct equity account during year-end close.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Action item:</strong> Work with the bookkeeper or CPA to identify what this balance represents (likely prior
+            year retained earnings or capital contributions) and reclassify it. This is the single largest cleanup item on the balance sheet.
+          </p>
+        </Card>
+
+        {/* Net Income */}
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-200">Net Income (Current Period)</h3>
+            </div>
+            <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$1,639,698.50</span>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What it is:</strong> The profit or loss from the current accounting period (year-to-date or full year). This
+            flows from the Income Statement and increases or decreases equity depending on whether the company made money.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+            <strong className="text-gray-300">What $1.64M loss means:</strong> VQ spent $1.64M more than it brought in during the current period. At year-end
+            this loss will be closed out of Net Income and added to Retained Earnings, making retained earnings roughly -$1.64M going into next year.
+          </p>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Trajectory concern:</strong> With only $1.62M of total equity and a current-period loss of $1.64M, <em>another
+            year of similar losses would wipe out equity entirely</em>. Recovery requires either cutting expenses, growing revenue, or raising new capital.
+          </p>
+        </Card>
+
+        {/* Summary Card */}
+        <Card className="border-purple-500/30 bg-purple-500/[0.03]">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-purple-500/15 shrink-0">
+              <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-purple-300 mb-2">How Equity Actually Got to $1.62M</h3>
+              <div className="space-y-1 text-xs text-gray-300">
+                <div className="flex justify-between"><span>Common stock + APIC (money from shareholders)</span><span className="font-mono text-green-400">+$1,604,558</span></div>
+                <div className="flex justify-between"><span>Retained earnings (historical profit/loss)</span><span className="font-mono text-red-400">-$466</span></div>
+                <div className="flex justify-between"><span>Treasury stock (buybacks)</span><span className="font-mono text-red-400">-$5,836,850</span></div>
+                <div className="flex justify-between"><span>Deferred comp obligation</span><span className="font-mono text-green-400">+$936,472</span></div>
+                <div className="flex justify-between"><span>Opening balance equity (QB cleanup)</span><span className="font-mono text-green-400">+$6,557,007</span></div>
+                <div className="flex justify-between"><span>Net income (current period loss)</span><span className="font-mono text-red-400">-$1,639,699</span></div>
+                <div className="flex justify-between pt-2 border-t border-white/10 font-bold">
+                  <span className="text-purple-300">Total Equity</span>
+                  <span className="font-mono text-purple-300">$1,621,022</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
