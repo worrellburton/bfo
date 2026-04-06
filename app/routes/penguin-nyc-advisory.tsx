@@ -274,16 +274,16 @@ export default function PenguinNYCAdvisory() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Deal Advisory & Risk Analysis</h1>
+          <h1 className="text-xl sm:text-2xl font-bold mb-1">Deal Advisory & Risk Analysis</h1>
           <p className="text-gray-500 text-sm">Risk scoring, negotiation playbook, and BFO recommendation</p>
         </div>
         <StatusBadge status="amber" label="Proceed w/ Caution" />
       </div>
 
       {/* Sub-Nav Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px">
+      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px overflow-x-auto">
         {tabs.map((tab) => (
           <Link
             key={tab.href}
