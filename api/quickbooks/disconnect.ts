@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@libsql/client";
+import { createClient } from "@supabase/supabase-js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -7,14 +7,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const db = createClient({
-      url: process.env.DATABASE_URL || "",
-      authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
-    });
+    const supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_KEY!
+    );
 
-    // Revoke token with Intuit
-    const result = await db.execute("SELECT * FROM quickbooks_tokens WHERE id = 1");
-    const row = result.rows[0];
+    // Get existing token to revoke with Intuit
+    const { data: row } = await supabase
+      .from("quickbooks_tokens")
+      .select("*")
+      .eq("id", 1)
+      .single();
 
     if (row) {
       const clientId = process.env.QUICKBOOKS_CLIENT_ID!;
@@ -31,7 +34,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: JSON.stringify({ token: row.refresh_token }),
       }).catch(() => {});
 
-      await db.execute("DELETE FROM quickbooks_tokens WHERE id = 1");
+      await supabase
+        .from("quickbooks_tokens")
+        .delete()
+        .eq("id", 1);
     }
 
     res.json({ success: true });

@@ -18,6 +18,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,6 +40,11 @@ export default function AppLayout() {
     }
   }, [menuOpen]);
 
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [navigate]);
+
   if (!isAuthenticated()) return null;
 
   const isDark = theme === "dark";
@@ -53,8 +59,38 @@ export default function AppLayout() {
       {/* Particle canvas */}
       <ParticleCanvas themeAware className="absolute inset-0 w-full h-full pointer-events-none" />
 
+      {/* Mobile header bar */}
+      <div className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden ${isDark ? "bg-black/90 backdrop-blur-md border-b border-white/10" : "bg-white/90 backdrop-blur-md border-b border-gray-200"}`}>
+        <span className="text-xl font-bold tracking-tight">BFO</span>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-white/10 text-gray-300" : "hover:bg-gray-100 text-gray-600"}`}
+        >
+          {sidebarOpen ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className={`w-56 border-r flex flex-col p-6 shrink-0 relative z-10 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+      <aside className={`
+        fixed top-0 left-0 h-full z-50 w-64 border-r flex flex-col p-6 shrink-0 relative
+        transition-transform duration-200 ease-in-out
+        lg:sticky lg:translate-x-0 lg:w-56 lg:z-10
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        ${isDark ? "border-white/10 bg-black" : "border-gray-200 bg-white"}
+      `}>
         <span className="text-2xl font-bold tracking-tight mb-10">BFO</span>
         <nav className="flex flex-col gap-1 flex-1">
           {navItems.map((item) => (
@@ -62,6 +98,7 @@ export default function AppLayout() {
               key={item.to}
               to={item.to}
               end={item.to === "/"}
+              onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   isActive
@@ -135,6 +172,7 @@ export default function AppLayout() {
               <button
                 onClick={() => {
                   setMenuOpen(false);
+                  setSidebarOpen(false);
                   navigate("/agents");
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
@@ -150,6 +188,7 @@ export default function AppLayout() {
               <button
                 onClick={() => {
                   setMenuOpen(false);
+                  setSidebarOpen(false);
                   navigate("/settings");
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
@@ -168,6 +207,7 @@ export default function AppLayout() {
               <button
                 onClick={() => {
                   setMenuOpen(false);
+                  setSidebarOpen(false);
                   handleLogout();
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
@@ -185,7 +225,7 @@ export default function AppLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 p-8 relative z-10">
+      <main className="flex-1 p-4 pt-16 sm:p-6 sm:pt-16 lg:p-8 lg:pt-8 relative z-10">
         <Outlet />
       </main>
     </div>

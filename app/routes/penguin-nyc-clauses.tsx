@@ -267,9 +267,9 @@ export default function PenguinNYCClauses() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Contract Clause Analysis</h1>
+          <h1 className="text-xl sm:text-2xl font-bold mb-1">Contract Clause Analysis</h1>
           <p className="text-gray-500 text-sm">Section-by-section review of the subscription agreement, side letter, and risk factors</p>
         </div>
         <div className="text-right">
@@ -278,7 +278,7 @@ export default function PenguinNYCClauses() {
       </div>
 
       {/* Sub-page Nav */}
-      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px">
+      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px overflow-x-auto">
         {navTabs.map((tab) => (
           <Link
             key={tab.href}
@@ -295,7 +295,7 @@ export default function PenguinNYCClauses() {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {(["favorable", "neutral", "caution", "critical"] as const).map((r) => {
           const cfg = ratingConfig[r];
           return (
@@ -318,7 +318,7 @@ export default function PenguinNYCClauses() {
       </div>
 
       {/* Source Filter */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         <span className="text-[10px] text-gray-500 uppercase tracking-wider">Source:</span>
         {([
           { value: "all" as const, label: "All Documents" },
@@ -356,14 +356,14 @@ export default function PenguinNYCClauses() {
 
                 {/* Section & Title */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-mono text-gray-500">{clause.section}</span>
                     <span className={`text-sm font-semibold ${cfg.text}`}>{clause.title}</span>
                   </div>
                 </div>
 
                 {/* Badges */}
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
                   <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text}`}>
                     {cfg.label}
                   </span>

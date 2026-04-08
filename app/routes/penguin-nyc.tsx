@@ -486,7 +486,7 @@ function EmailDraftTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="text-xs text-gray-500">Pre-written email with critical due diligence questions</div>
           <div className="text-[10px] text-gray-600 mt-0.5">13 questions covering financial terms, operations, and negotiation points</div>
@@ -540,16 +540,16 @@ export default function PenguinNYC() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Penguin NYC Contract Review</h1>
+          <h1 className="text-xl sm:text-2xl font-bold mb-1">Penguin NYC Contract Review</h1>
           <p className="text-gray-500 text-sm">Subscription agreement analysis for Penguin Flagship NYC LLC</p>
         </div>
         <StatusBadge status="red" label="Not Signed" />
       </div>
 
       {/* Sub-page Nav */}
-      <div className="flex gap-1 mb-4 border-b border-white/10 pb-px">
+      <div className="flex gap-1 mb-4 border-b border-white/10 pb-px overflow-x-auto">
         <span className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-cyan-400 bg-white/5 border-b-2 border-cyan-400">
           Overview
         </span>
@@ -568,7 +568,7 @@ export default function PenguinNYC() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6">
+      <div className="flex flex-wrap gap-1 mb-6">
         {tabs.map((tab) => (
           <button
             key={tab.id}

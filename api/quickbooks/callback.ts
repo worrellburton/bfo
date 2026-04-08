@@ -1,24 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@libsql/client";
+import { createClient } from "@supabase/supabase-js";
 
-async function getDb() {
-  return createClient({
-    url: process.env.DATABASE_URL || "",
-    authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
-  });
-}
-
-async function ensureTable(db: ReturnType<typeof createClient>) {
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS quickbooks_tokens (
-      id INTEGER PRIMARY KEY DEFAULT 1,
-      access_token TEXT NOT NULL,
-      refresh_token TEXT NOT NULL,
-      realm_id TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_KEY!
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -56,16 +43,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const tokens = await tokenRes.json();
-    const expiresAt = Date.now() + tokens.expires_in * 1000;
+    const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    const db = await getDb();
-    await ensureTable(db);
+    const supabase = getSupabase();
 
-    await db.execute({
-      sql: `INSERT OR REPLACE INTO quickbooks_tokens (id, access_token, refresh_token, realm_id, expires_at)
-            VALUES (1, ?, ?, ?, ?)`,
-      args: [tokens.access_token, tokens.refresh_token, realmId as string, expiresAt],
-    });
+    const { error } = await supabase
+      .from("quickbooks_tokens")
+      .upsert({
+        id: 1,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        realm_id: realmId as string,
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "id" });
+
+    if (error) {
+      console.error("Supabase upsert error:", error);
+      return res.redirect(302, `/tools/quickbooks?error=db_error`);
+    }
 
     res.redirect(302, `/tools/quickbooks?connected=true`);
   } catch (err) {
