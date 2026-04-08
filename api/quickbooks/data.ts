@@ -1,19 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@libsql/client";
+import { createClient } from "@supabase/supabase-js";
 
-async function getDb() {
-  return createClient({
-    url: process.env.DATABASE_URL || "",
-    authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
-  });
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_KEY!
+  );
 }
 
-async function getTokens(db: ReturnType<typeof createClient>) {
-  const result = await db.execute("SELECT * FROM quickbooks_tokens WHERE id = 1");
-  return result.rows[0] || null;
-}
-
-async function refreshAccessToken(db: ReturnType<typeof createClient>, refreshToken: string) {
+async function refreshAccessToken(supabase: ReturnType<typeof createClient>, refreshToken: string) {
   const clientId = process.env.QUICKBOOKS_CLIENT_ID!;
   const clientSecret = process.env.QUICKBOOKS_CLIENT_SECRET!;
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
@@ -36,12 +31,17 @@ async function refreshAccessToken(db: ReturnType<typeof createClient>, refreshTo
   }
 
   const tokens = await res.json();
-  const expiresAt = Date.now() + tokens.expires_in * 1000;
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-  await db.execute({
-    sql: `UPDATE quickbooks_tokens SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = datetime('now') WHERE id = 1`,
-    args: [tokens.access_token, tokens.refresh_token, expiresAt],
-  });
+  await supabase
+    .from("quickbooks_tokens")
+    .update({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", 1);
 
   return tokens.access_token;
 }
@@ -79,21 +79,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const db = await getDb();
-    const row = await getTokens(db);
+    const supabase = getSupabase();
+    const { data: row, error: dbError } = await supabase
+      .from("quickbooks_tokens")
+      .select("*")
+      .eq("id", 1)
+      .single();
 
-    if (!row) {
+    if (dbError || !row) {
       return res.status(401).json({ error: "not_connected", message: "QuickBooks not connected" });
     }
 
     let accessToken = row.access_token as string;
     const refreshToken = row.refresh_token as string;
     const realmId = row.realm_id as string;
-    const expiresAt = row.expires_at as number;
+    const expiresAt = new Date(row.expires_at).getTime();
 
     // Refresh if token expires within 5 minutes
     if (Date.now() > expiresAt - 5 * 60 * 1000) {
-      accessToken = await refreshAccessToken(db, refreshToken);
+      accessToken = await refreshAccessToken(supabase, refreshToken);
     }
 
     let data;
