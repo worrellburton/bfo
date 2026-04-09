@@ -197,8 +197,8 @@ export default function Agents() {
             onClick={() => { setShowDogForm(!showDogForm); if (showForm) resetForm(); }}
             className={`px-4 py-2 font-medium rounded-lg transition-colors cursor-pointer text-sm ${
               showDogForm
-                ? "bg-white/10 text-white border border-white/10"
-                : "bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10"
+                ? `bg-white/10 ${isDark ? "text-white" : "text-gray-900"} border ${isDark ? "border-white/10" : "border-gray-200"}`
+                : `${isDark ? "bg-white/5" : "bg-black/5"} ${isDark ? "text-gray-300" : "text-gray-700"} border ${isDark ? "border-white/10" : "border-gray-200"} hover:bg-white/10`
             }`}
           >
             {showDogForm ? "Cancel" : "Add Dog"}
@@ -213,10 +213,10 @@ export default function Agents() {
       </div>
 
       {showDogForm && (
-        <form onSubmit={handleAddDog} className="mb-8 p-6 bg-white/5 border border-white/10 rounded-xl max-w-lg space-y-4">
+        <form onSubmit={handleAddDog} className={`mb-8 p-6 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-xl max-w-lg space-y-4`}>
           <div className="text-center mb-2">
             <span className="text-3xl">🐕</span>
-            <p className="text-sm text-gray-400 mt-1">Add an office dog! You'll get a surprise breed.</p>
+            <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"} mt-1`}>Add an office dog! You'll get a surprise breed.</p>
           </div>
           <div>
             <label className="block text-xs text-gray-400 tracking-wider mb-1.5">Model</label>
@@ -258,7 +258,7 @@ export default function Agents() {
       )}
 
       {showForm && (
-        <form onSubmit={handleSave} className="mb-8 p-6 bg-white/5 border border-white/10 rounded-xl max-w-lg space-y-4">
+        <form onSubmit={handleSave} className={`mb-8 p-6 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-xl max-w-lg space-y-4`}>
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs text-gray-400 tracking-wider mb-1.5">Name</label>
@@ -353,7 +353,7 @@ export default function Agents() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
           {agents.map((agent) => (
-            <div key={agent.id} className="group/card relative p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/[0.07] transition-colors">
+            <div key={agent.id} className={`group/card relative p-5 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-xl hover:bg-white/[0.07] transition-colors`}>
               <button
                 onClick={() => {
                   const info = [agent.name, agent.jobTitle, MODELS.find((m) => m.value === agent.model)?.label || agent.model, agent.systemPrompt].filter(Boolean).join("\n");
