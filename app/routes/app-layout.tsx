@@ -87,7 +87,7 @@ export default function AppLayout() {
       <aside className={`
         fixed top-0 left-0 h-full z-50 w-64 border-r flex flex-col p-6 shrink-0 relative
         transition-transform duration-200 ease-in-out
-        lg:sticky lg:translate-x-0 lg:w-56 lg:z-10
+        lg:sticky lg:top-0 lg:translate-x-0 lg:w-56 lg:z-10 lg:h-screen
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
         ${isDark ? "border-white/10 bg-black" : "border-gray-200 bg-white"}
       `}>
