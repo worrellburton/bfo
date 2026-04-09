@@ -8,7 +8,7 @@ function getSupabase() {
   );
 }
 
-async function refreshAccessToken(supabase: ReturnType<typeof createClient>, refreshToken: string) {
+async function refreshAccessToken(supabase: ReturnType<typeof createClient>, refreshToken: string, realmId: string) {
   const clientId = process.env.QUICKBOOKS_CLIENT_ID!;
   const clientSecret = process.env.QUICKBOOKS_CLIENT_SECRET!;
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
@@ -41,7 +41,7 @@ async function refreshAccessToken(supabase: ReturnType<typeof createClient>, ref
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", 1);
+    .eq("realm_id", realmId);
 
   return tokens.access_token;
 }
@@ -72,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  const { report } = req.query;
+  const { report, realm_id } = req.query;
 
   if (!report) {
     return res.status(400).json({ error: "Missing report parameter" });
@@ -80,15 +80,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const supabase = getSupabase();
-    const { data: row, error: dbError } = await supabase
-      .from("quickbooks_tokens")
-      .select("*")
-      .eq("id", 1)
-      .single();
 
-    if (dbError || !row) {
+    // List all connected companies
+    if (report === "list") {
+      const { data: rows, error: dbError } = await supabase
+        .from("quickbooks_tokens")
+        .select("realm_id, company_name, updated_at");
+      if (dbError) {
+        return res.status(500).json({ error: "db_error", message: dbError.message });
+      }
+      return res.json({ companies: rows || [] });
+    }
+
+    // For all other reports, need a specific company
+    // If realm_id provided, use it; otherwise use the first connected company
+    let query = supabase.from("quickbooks_tokens").select("*");
+    if (realm_id) {
+      query = query.eq("realm_id", realm_id as string);
+    }
+    const { data: rows, error: dbError } = await query;
+
+    if (dbError || !rows || rows.length === 0) {
       return res.status(401).json({ error: "not_connected", message: "QuickBooks not connected" });
     }
+
+    const row = realm_id ? rows[0] : rows[0];
 
     let accessToken = row.access_token as string;
     const refreshToken = row.refresh_token as string;
@@ -97,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Refresh if token expires within 5 minutes
     if (Date.now() > expiresAt - 5 * 60 * 1000) {
-      accessToken = await refreshAccessToken(supabase, refreshToken);
+      accessToken = await refreshAccessToken(supabase, refreshToken, realmId);
     }
 
     let data;
@@ -138,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
         break;
       case "status":
-        data = { connected: true, realmId };
+        data = { connected: true, realmId, companyName: row.company_name };
         break;
       default:
         return res.status(400).json({ error: "Unknown report type" });
