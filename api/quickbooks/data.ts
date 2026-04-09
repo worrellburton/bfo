@@ -81,6 +81,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = getSupabase();
 
+    // Debug endpoint
+    if (report === "debug") {
+      const { data: rows, error: dbError, count } = await supabase
+        .from("quickbooks_tokens")
+        .select("realm_id, company_name, updated_at", { count: "exact" });
+      return res.json({
+        supabase_url_set: !!process.env.SUPABASE_URL,
+        service_key_set: !!process.env.SUPABASE_SERVICE_KEY,
+        db_error: dbError?.message || null,
+        row_count: count,
+        rows: (rows || []).map((r: any) => ({ realm_id: r.realm_id, company_name: r.company_name, updated_at: r.updated_at })),
+      });
+    }
+
     // List all connected companies
     if (report === "list") {
       const { data: rows, error: dbError } = await supabase
