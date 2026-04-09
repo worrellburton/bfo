@@ -85,14 +85,101 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "debug") {
       const { data: rows, error: dbError, count } = await supabase
         .from("quickbooks_tokens")
-        .select("realm_id, updated_at", { count: "exact" });
+        .select("*", { count: "exact" });
+
+      // Check table schema
+      const { data: schemaRows, error: schemaError } = await supabase
+        .rpc("", {}).then(() => ({ data: null, error: null })).catch(() => ({ data: null, error: null }));
+
+      // Test insert/delete capability
+      let writeTest = "not_tested";
+      try {
+        const testId = "__debug_test__";
+        const { error: delErr } = await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
+        if (delErr) {
+          writeTest = `delete_failed: ${delErr.message}`;
+        } else {
+          const { error: insErr } = await supabase.from("quickbooks_tokens").insert({
+            realm_id: testId,
+            access_token: "test",
+            refresh_token: "test",
+            expires_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          if (insErr) {
+            writeTest = `insert_failed: ${insErr.message}`;
+          } else {
+            await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
+            writeTest = "ok";
+          }
+        }
+      } catch (e: any) {
+        writeTest = `error: ${e.message}`;
+      }
+
+      // For each connected company, check if token is valid
+      const companyDetails = await Promise.all(
+        (rows || []).map(async (r: any) => {
+          const tokenExpired = new Date(r.expires_at).getTime() < Date.now();
+          const tokenExpiresIn = Math.round((new Date(r.expires_at).getTime() - Date.now()) / 60000);
+          let companyName = "";
+          let apiTest = "not_tested";
+          try {
+            let token = r.access_token;
+            if (tokenExpired) {
+              try {
+                token = await refreshAccessToken(supabase, r.refresh_token, r.realm_id);
+                apiTest = "token_refreshed";
+              } catch (e: any) {
+                apiTest = `refresh_failed: ${e.message}`;
+                return {
+                  realm_id: r.realm_id,
+                  updated_at: r.updated_at,
+                  token_expired: tokenExpired,
+                  token_expires_in_min: tokenExpiresIn,
+                  has_access_token: !!r.access_token,
+                  has_refresh_token: !!r.refresh_token,
+                  access_token_preview: r.access_token ? `${r.access_token.substring(0, 10)}...` : "EMPTY",
+                  api_test: apiTest,
+                  company_name: "",
+                };
+              }
+            }
+            const info = await qboFetch(token, r.realm_id, `companyinfo/${r.realm_id}`);
+            companyName = info?.CompanyInfo?.CompanyName || "";
+            apiTest = "ok";
+          } catch (e: any) {
+            apiTest = `failed: ${e.message}`;
+          }
+          return {
+            realm_id: r.realm_id,
+            company_name: companyName,
+            updated_at: r.updated_at,
+            token_expired: tokenExpired,
+            token_expires_in_min: tokenExpiresIn,
+            has_access_token: !!r.access_token,
+            has_refresh_token: !!r.refresh_token,
+            access_token_preview: r.access_token ? `${r.access_token.substring(0, 10)}...` : "EMPTY",
+            api_test: apiTest,
+          };
+        })
+      );
+
       return res.json({
-        supabase_url_set: !!process.env.SUPABASE_URL,
-        service_key_set: !!process.env.SUPABASE_SERVICE_KEY,
-        supabase_url_preview: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 30) + "..." : "NOT SET",
-        db_error: dbError?.message || null,
-        row_count: count,
-        rows: (rows || []).map((r: any) => ({ realm_id: r.realm_id, updated_at: r.updated_at })),
+        timestamp: new Date().toISOString(),
+        env: {
+          supabase_url_set: !!process.env.SUPABASE_URL,
+          service_key_set: !!process.env.SUPABASE_SERVICE_KEY,
+          supabase_url_preview: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 30) + "..." : "NOT SET",
+          qb_client_id_set: !!process.env.QUICKBOOKS_CLIENT_ID,
+          qb_client_id_preview: process.env.QUICKBOOKS_CLIENT_ID ? `${process.env.QUICKBOOKS_CLIENT_ID.substring(0, 8)}...` : "NOT SET",
+        },
+        database: {
+          db_error: dbError?.message || null,
+          row_count: count,
+          write_test: writeTest,
+        },
+        companies: companyDetails,
       });
     }
 
