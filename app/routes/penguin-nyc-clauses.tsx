@@ -258,15 +258,15 @@ export default function PenguinNYCClauses() {
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <Link to="/tools/penguin-nyc" className="hover:text-white transition-colors">Penguin NYC</Link>
+        <Link to="/tools/penguin-nyc" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Penguin NYC</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Clause Analysis</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Clause Analysis</span>
       </div>
 
       {/* Header */}
@@ -281,15 +281,15 @@ export default function PenguinNYCClauses() {
       </div>
 
       {/* Sub-page Nav */}
-      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px overflow-x-auto">
+      <div className={`flex gap-1 mb-6 border-b ${isDark ? "border-white/10" : "border-gray-200"} pb-px overflow-x-auto`}>
         {navTabs.map((tab) => (
           <Link
             key={tab.href}
             to={tab.href}
             className={`px-4 py-2.5 text-xs font-medium rounded-t-lg transition-all duration-200 ${
               tab.active
-                ? "text-cyan-400 bg-white/5 border-b-2 border-cyan-400"
-                : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
+                ? `text-cyan-400 ${isDark ? "bg-white/5" : "bg-black/5"} border-b-2 border-cyan-400`
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"} hover:bg-white/[0.02]`
             }`}
           >
             {tab.label}
@@ -306,7 +306,7 @@ export default function PenguinNYCClauses() {
               key={r}
               onClick={() => setFilterRating(filterRating === r ? "all" : r)}
               className={`rounded-xl border p-4 text-center transition-all ${
-                filterRating === r ? `${cfg.border} ${cfg.bg}` : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
+                filterRating === r ? `${cfg.border} ${cfg.bg}` : `${isDark ? "border-white/10" : "border-gray-200"} bg-white/[0.02] hover:bg-white/[0.04]`
               }`}
             >
               <div className={`text-2xl font-black tabular-nums ${filterRating === r ? cfg.text : "text-gray-200"}`}>
