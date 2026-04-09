@@ -415,7 +415,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
           <div className="space-y-3">
             <div>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">What It Is</p>
-              <p className="text-xs text-gray-300 leading-relaxed">
+              <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 Treasury stock is <strong>VQ's own shares that the company bought back from shareholders</strong>. When a company repurchases its own stock,
                 those shares aren't cancelled — they're held "in the treasury" and recorded as a negative number that reduces total equity. This is called a
                 <em> contra-equity account</em>.
@@ -423,14 +423,14 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             </div>
             <div>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Why It's Negative</p>
-              <p className="text-xs text-gray-300 leading-relaxed">
+              <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 The company used $5.84M of its cash to buy back shares. That cash left the company (reducing assets) and in exchange the company got
                 back its own stock (which doesn't count as an asset — you can't own yourself). The result is a permanent reduction in equity of $5.84M.
               </p>
             </div>
             <div>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Why Companies Do This</p>
-              <ul className="text-xs text-gray-300 leading-relaxed space-y-1 list-disc pl-5">
+              <ul className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed space-y-1 list-disc pl-5`}>
                 <li><strong>Buying out departing shareholders</strong> — a co-founder or early investor wants to exit, the company buys their shares.</li>
                 <li><strong>Estate planning / succession</strong> — common in family businesses when ownership is being consolidated.</li>
                 <li><strong>Employee stock plans</strong> — shares held in treasury to issue to employees later.</li>
@@ -440,7 +440,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             </div>
             <div>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">What This Means for VQ</p>
-              <p className="text-xs text-gray-300 leading-relaxed">
+              <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 VQ has spent <strong className="text-yellow-300">$5.84M of its cash</strong> to repurchase shares at some point in the past. This is 4x the size of total
                 contributed capital ($1.6M), which means the buybacks were funded by retained earnings from prior profitable years or by taking on debt (note
                 the $2.09M related-party note to Bob Burton). The Grace Dix Stock Repurchase line ($5,277 in current liabilities) suggests stock repurchase
@@ -449,7 +449,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             </div>
             <div>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Impact on Equity</p>
-              <p className="text-xs text-gray-300 leading-relaxed">
+              <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 Without the treasury stock position, VQ's total equity would be approximately
                 <strong className="text-green-400"> $7.46M</strong> instead of $1.62M. The buybacks account for 78% of the gap between contributed capital
                 and current equity. Combined with the $1.64M current year loss, they leave VQ with minimal equity cushion against liabilities.
@@ -542,7 +542,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             </div>
             <div>
               <h3 className="text-sm font-bold text-purple-300 mb-2">How Equity Actually Got to $1.62M</h3>
-              <div className="space-y-1 text-xs text-gray-300">
+              <div className={`space-y-1 text-xs ${isDark ? "text-gray-300" : "text-gray-700"}`}>
                 <div className="flex justify-between"><span>Common stock + APIC (money from shareholders)</span><span className="font-mono text-green-400">+$1,604,558</span></div>
                 <div className="flex justify-between"><span>Retained earnings (historical profit/loss)</span><span className="font-mono text-red-400">-$466</span></div>
                 <div className="flex justify-between"><span>Treasury stock (buybacks)</span><span className="font-mono text-red-400">-$5,836,850</span></div>
