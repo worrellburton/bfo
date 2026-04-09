@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Asset" }];
@@ -58,6 +59,10 @@ interface Framework {
 
 export default function AssetDetail() {
   const { id } = useParams();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const inputCls = `${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`;
+  const cardCls = `${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg`;
   const [asset, setAsset] = useState<Asset | null>(null);
   const [docs, setDocs] = useState<AssetDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -286,7 +291,7 @@ export default function AssetDetail() {
   if (!asset) {
     return (
       <div>
-        <Link to="/assets" className="text-gray-400 hover:text-white text-sm mb-4 inline-block">
+        <Link to="/assets" className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm mb-4 inline-block`}>
           &larr; Back to Assets
         </Link>
         <p className="text-gray-500">Entity not found.</p>
@@ -297,7 +302,7 @@ export default function AssetDetail() {
   return (
     <div>
       {/* Back nav */}
-      <Link to="/assets" className="text-gray-400 hover:text-white text-sm mb-6 inline-flex items-center gap-1">
+      <Link to="/assets" className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm mb-6 inline-flex items-center gap-1`}>
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
@@ -309,10 +314,10 @@ export default function AssetDetail() {
         <div>
           <h1 className="text-3xl font-bold">{asset.name}</h1>
           <div className="flex items-center gap-3 mt-2">
-            <span className="text-xs font-mono bg-white/10 px-2 py-1 rounded text-gray-300">
+            <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-1 rounded`}>
               {asset.type}
             </span>
-            <span className="text-sm text-gray-400">{asset.state || "No state"}</span>
+            <span className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.state || "No state"}</span>
             {asset.status && (
               <span className={`text-xs px-2 py-1 rounded ${
                 asset.status === "Active" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"
@@ -325,13 +330,13 @@ export default function AssetDetail() {
         <div className="flex gap-2">
           <button
             onClick={() => setEditing(!editing)}
-            className="px-4 py-2 text-sm bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className={`px-4 py-2 text-sm ${isDark ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-black/5 border-gray-200 hover:bg-gray-100"} border rounded-lg transition-colors cursor-pointer`}
           >
             {editing ? "Cancel" : "Edit"}
           </button>
           <button
             onClick={handleDeleteAsset}
-            className="px-4 py-2 text-sm text-red-400 bg-white/5 border border-white/10 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+            className={`px-4 py-2 text-sm text-red-400 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer`}
           >
             Delete
           </button>
@@ -340,25 +345,25 @@ export default function AssetDetail() {
 
       {/* Details / Edit form */}
       {editing ? (
-        <div className="max-w-lg space-y-3 mb-10 p-6 bg-white/5 border border-white/10 rounded-xl">
+        <div className={`max-w-lg space-y-3 mb-10 p-6 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-xl`}>
           <input
             value={form.name || ""}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="Entity name"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           />
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => setForm({ ...form, type: "LLC" })}
-              className={`flex-1 py-2 rounded-lg text-sm cursor-pointer ${form.type === "LLC" ? "bg-white text-black" : "bg-white/5 text-gray-400 border border-white/10"}`}
+              className={`flex-1 py-2 rounded-lg text-sm cursor-pointer ${form.type === "LLC" ? "bg-white text-black" : `${isDark ? "bg-white/5 text-gray-400 border-white/10" : "bg-black/5 text-gray-500 border-gray-200"} border`}`}
             >
               LLC
             </button>
             <button
               type="button"
               onClick={() => setForm({ ...form, type: "C-Corp" })}
-              className={`flex-1 py-2 rounded-lg text-sm cursor-pointer ${form.type === "C-Corp" ? "bg-white text-black" : "bg-white/5 text-gray-400 border border-white/10"}`}
+              className={`flex-1 py-2 rounded-lg text-sm cursor-pointer ${form.type === "C-Corp" ? "bg-white text-black" : `${isDark ? "bg-white/5 text-gray-400 border-white/10" : "bg-black/5 text-gray-500 border-gray-200"} border`}`}
             >
               C-Corp
             </button>
@@ -367,36 +372,36 @@ export default function AssetDetail() {
             value={form.state || ""}
             onChange={(e) => setForm({ ...form, state: e.target.value })}
             placeholder="State of formation"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           />
           <input
             value={form.ein || ""}
             onChange={(e) => setForm({ ...form, ein: e.target.value })}
             placeholder="EIN"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           />
           <input
             value={form.registeredAgent || ""}
             onChange={(e) => setForm({ ...form, registeredAgent: e.target.value })}
             placeholder="Registered agent"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           />
           <input
             value={form.address || ""}
             onChange={(e) => setForm({ ...form, address: e.target.value })}
             placeholder="Principal address"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           />
           <input
             type="date"
             value={form.formationDate || ""}
             onChange={(e) => setForm({ ...form, formationDate: e.target.value })}
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           />
           <select
             value={form.status || "Active"}
             onChange={(e) => setForm({ ...form, status: e.target.value })}
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${inputCls}`}
           >
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
@@ -408,7 +413,7 @@ export default function AssetDetail() {
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
             placeholder="Notes"
             rows={3}
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 resize-none"
+            className={`w-full px-4 py-2 ${inputCls} resize-none`}
           />
           <button
             onClick={handleSave}
@@ -426,14 +431,14 @@ export default function AssetDetail() {
             ["Formation Date", asset.formationDate],
           ].map(([label, value]) =>
             value ? (
-              <div key={label} className="p-3 bg-white/5 border border-white/10 rounded-lg">
+              <div key={label} className={`p-3 ${cardCls}`}>
                 <p className="text-gray-500 text-xs tracking-wider">{label}</p>
                 <p className="text-sm mt-1">{value}</p>
               </div>
             ) : null
           )}
           {asset.notes && (
-            <div className="col-span-2 p-3 bg-white/5 border border-white/10 rounded-lg">
+            <div className={`col-span-2 p-3 ${cardCls}`}>
               <p className="text-gray-500 text-xs tracking-wider">Notes</p>
               <p className="text-sm mt-1 whitespace-pre-wrap">{asset.notes}</p>
             </div>
@@ -447,7 +452,7 @@ export default function AssetDetail() {
           <h2 className="text-xl font-bold mb-4">Corporate Management</h2>
 
           {/* Tabs */}
-          <div className="flex gap-1 mb-6 bg-white/5 border border-white/10 rounded-lg p-1 max-w-2xl">
+          <div className={`flex gap-1 mb-6 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg p-1 max-w-2xl`}>
             {([
               ["board", "Board of Directors"],
               ["officers", "Officers"],
@@ -459,7 +464,7 @@ export default function AssetDetail() {
                 key={key}
                 onClick={() => setCorpTab(key)}
                 className={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                  corpTab === key ? "bg-white text-black" : "text-gray-400 hover:text-white hover:bg-white/5"
+                  corpTab === key ? "bg-white text-black" : `${isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"}`
                 }`}
               >
                 {label}
@@ -474,7 +479,7 @@ export default function AssetDetail() {
                 {directors.length > 0 ? (
                   <div className="space-y-2">
                     {directors.map((d) => (
-                      <div key={d.id} className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-lg group">
+                      <div key={d.id} className={`flex items-center justify-between p-3 ${cardCls} group`}>
                         <div>
                           <p className="text-sm font-medium">{d.name}</p>
                           <p className="text-xs text-gray-500">{d.title}{d.since ? ` — Since ${d.since}` : ""}</p>
@@ -487,13 +492,13 @@ export default function AssetDetail() {
                   <p className="text-gray-500 text-sm">No directors added yet.</p>
                 )}
                 {addingDirector ? (
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-2">
-                    <input value={dirForm.name} onChange={(e) => setDirForm({ ...dirForm, name: e.target.value })} placeholder="Name" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
-                    <input value={dirForm.title} onChange={(e) => setDirForm({ ...dirForm, title: e.target.value })} placeholder="Title (e.g. Director, Chairman)" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
-                    <input type="date" value={dirForm.since} onChange={(e) => setDirForm({ ...dirForm, since: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                  <div className={`p-4 ${cardCls} space-y-2`}>
+                    <input value={dirForm.name} onChange={(e) => setDirForm({ ...dirForm, name: e.target.value })} placeholder="Name" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
+                    <input value={dirForm.title} onChange={(e) => setDirForm({ ...dirForm, title: e.target.value })} placeholder="Title (e.g. Director, Chairman)" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
+                    <input type="date" value={dirForm.since} onChange={(e) => setDirForm({ ...dirForm, since: e.target.value })} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                     <div className="flex gap-2">
                       <button onClick={addDirector} className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-200 cursor-pointer">Add</button>
-                      <button onClick={() => setAddingDirector(false)} className="px-4 py-2 text-gray-400 text-sm hover:text-white cursor-pointer">Cancel</button>
+                      <button onClick={() => setAddingDirector(false)} className={`px-4 py-2 ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm cursor-pointer`}>Cancel</button>
                     </div>
                   </div>
                 ) : (
@@ -508,7 +513,7 @@ export default function AssetDetail() {
                 {officers.length > 0 ? (
                   <div className="space-y-2">
                     {officers.map((o) => (
-                      <div key={o.id} className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-lg group">
+                      <div key={o.id} className={`flex items-center justify-between p-3 ${cardCls} group`}>
                         <div>
                           <p className="text-sm font-medium">{o.name}</p>
                           <p className="text-xs text-gray-500">{o.title}{o.since ? ` — Since ${o.since}` : ""}</p>
@@ -521,13 +526,13 @@ export default function AssetDetail() {
                   <p className="text-gray-500 text-sm">No officers added yet.</p>
                 )}
                 {addingOfficer ? (
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-2">
-                    <input value={offForm.name} onChange={(e) => setOffForm({ ...offForm, name: e.target.value })} placeholder="Name" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
-                    <input value={offForm.title} onChange={(e) => setOffForm({ ...offForm, title: e.target.value })} placeholder="Title (CEO, CFO, Secretary, etc.)" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
-                    <input type="date" value={offForm.since} onChange={(e) => setOffForm({ ...offForm, since: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                  <div className={`p-4 ${cardCls} space-y-2`}>
+                    <input value={offForm.name} onChange={(e) => setOffForm({ ...offForm, name: e.target.value })} placeholder="Name" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
+                    <input value={offForm.title} onChange={(e) => setOffForm({ ...offForm, title: e.target.value })} placeholder="Title (CEO, CFO, Secretary, etc.)" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
+                    <input type="date" value={offForm.since} onChange={(e) => setOffForm({ ...offForm, since: e.target.value })} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                     <div className="flex gap-2">
                       <button onClick={addOfficer} className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-200 cursor-pointer">Add</button>
-                      <button onClick={() => setAddingOfficer(false)} className="px-4 py-2 text-gray-400 text-sm hover:text-white cursor-pointer">Cancel</button>
+                      <button onClick={() => setAddingOfficer(false)} className={`px-4 py-2 ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm cursor-pointer`}>Cancel</button>
                     </div>
                   </div>
                 ) : (
@@ -543,7 +548,7 @@ export default function AssetDetail() {
                   <div>
                     <table className="w-full text-sm text-left mb-3">
                       <thead>
-                        <tr className="border-b border-white/10 text-gray-400 text-xs tracking-wider">
+                        <tr className={`border-b ${isDark ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-500"} text-xs tracking-wider`}>
                           <th className="py-2 pr-3 font-medium">Name</th>
                           <th className="py-2 pr-3 font-medium">Shares</th>
                           <th className="py-2 pr-3 font-medium">Class</th>
@@ -553,11 +558,11 @@ export default function AssetDetail() {
                       </thead>
                       <tbody>
                         {shareholders.map((s) => (
-                          <tr key={s.id} className="border-b border-white/5 group">
+                          <tr key={s.id} className={`border-b ${isDark ? "border-white/5" : "border-gray-100"} group`}>
                             <td className="py-2 pr-3">{s.name}</td>
-                            <td className="py-2 pr-3 text-gray-400">{s.shares.toLocaleString()}</td>
-                            <td className="py-2 pr-3 text-gray-400">{s.class}</td>
-                            <td className="py-2 pr-3 text-gray-400">{s.percentage}%</td>
+                            <td className={`py-2 pr-3 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{s.shares.toLocaleString()}</td>
+                            <td className={`py-2 pr-3 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{s.class}</td>
+                            <td className={`py-2 pr-3 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{s.percentage}%</td>
                             <td className="py-2">
                               <button onClick={() => removeShareholder(s.id)} className="text-gray-600 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">Remove</button>
                             </td>
@@ -570,20 +575,20 @@ export default function AssetDetail() {
                   <p className="text-gray-500 text-sm">No shareholders added yet.</p>
                 )}
                 {addingShareholder ? (
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-2">
-                    <input value={shForm.name} onChange={(e) => setShForm({ ...shForm, name: e.target.value })} placeholder="Shareholder name" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                  <div className={`p-4 ${cardCls} space-y-2`}>
+                    <input value={shForm.name} onChange={(e) => setShForm({ ...shForm, name: e.target.value })} placeholder="Shareholder name" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                     <div className="flex gap-2">
-                      <input type="number" value={shForm.shares} onChange={(e) => setShForm({ ...shForm, shares: e.target.value })} placeholder="Shares" className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
-                      <select value={shForm.class} onChange={(e) => setShForm({ ...shForm, class: e.target.value })} className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-white/30">
+                      <input type="number" value={shForm.shares} onChange={(e) => setShForm({ ...shForm, shares: e.target.value })} placeholder="Shares" className={`flex-1 px-3 py-2 ${inputCls} text-sm`} />
+                      <select value={shForm.class} onChange={(e) => setShForm({ ...shForm, class: e.target.value })} className={`px-3 py-2 ${inputCls} text-sm`}>
                         <option value="Common">Common</option>
                         <option value="Preferred A">Preferred A</option>
                         <option value="Preferred B">Preferred B</option>
                       </select>
-                      <input type="number" value={shForm.percentage} onChange={(e) => setShForm({ ...shForm, percentage: e.target.value })} placeholder="%" step="0.01" className="w-20 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                      <input type="number" value={shForm.percentage} onChange={(e) => setShForm({ ...shForm, percentage: e.target.value })} placeholder="%" step="0.01" className={`w-20 px-3 py-2 ${inputCls} text-sm`} />
                     </div>
                     <div className="flex gap-2">
                       <button onClick={addShareholder} className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-200 cursor-pointer">Add</button>
-                      <button onClick={() => setAddingShareholder(false)} className="px-4 py-2 text-gray-400 text-sm hover:text-white cursor-pointer">Cancel</button>
+                      <button onClick={() => setAddingShareholder(false)} className={`px-4 py-2 ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm cursor-pointer`}>Cancel</button>
                     </div>
                   </div>
                 ) : (
@@ -597,19 +602,19 @@ export default function AssetDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-gray-500 text-xs tracking-wider block mb-1">Authorized Shares</label>
-                  <input type="number" value={corpData.authorizedShares || ""} onChange={(e) => updateCorpField("authorizedShares", Number(e.target.value) || 0)} placeholder="e.g. 10,000,000" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                  <input type="number" value={corpData.authorizedShares || ""} onChange={(e) => updateCorpField("authorizedShares", Number(e.target.value) || 0)} placeholder="e.g. 10,000,000" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                 </div>
                 <div>
                   <label className="text-gray-500 text-xs tracking-wider block mb-1">Issued Shares</label>
-                  <input type="number" value={corpData.issuedShares || ""} onChange={(e) => updateCorpField("issuedShares", Number(e.target.value) || 0)} placeholder="e.g. 1,000,000" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                  <input type="number" value={corpData.issuedShares || ""} onChange={(e) => updateCorpField("issuedShares", Number(e.target.value) || 0)} placeholder="e.g. 1,000,000" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                 </div>
                 <div>
                   <label className="text-gray-500 text-xs tracking-wider block mb-1">Par Value</label>
-                  <input value={corpData.parValue || ""} onChange={(e) => updateCorpField("parValue", e.target.value)} placeholder="e.g. $0.001" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                  <input value={corpData.parValue || ""} onChange={(e) => updateCorpField("parValue", e.target.value)} placeholder="e.g. $0.001" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                 </div>
                 <div>
                   <label className="text-gray-500 text-xs tracking-wider block mb-1">Stock Classes</label>
-                  <input value={corpData.stockClasses || ""} onChange={(e) => updateCorpField("stockClasses", e.target.value)} placeholder="e.g. Common, Preferred A" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                  <input value={corpData.stockClasses || ""} onChange={(e) => updateCorpField("stockClasses", e.target.value)} placeholder="e.g. Common, Preferred A" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                 </div>
               </div>
             )}
@@ -620,11 +625,11 @@ export default function AssetDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">Fiscal Year End</label>
-                    <input value={corpData.fiscalYearEnd || ""} onChange={(e) => updateCorpField("fiscalYearEnd", e.target.value)} placeholder="e.g. December 31" className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm" />
+                    <input value={corpData.fiscalYearEnd || ""} onChange={(e) => updateCorpField("fiscalYearEnd", e.target.value)} placeholder="e.g. December 31" className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                   </div>
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">State Filing Status</label>
-                    <select value={corpData.stateFilingStatus || ""} onChange={(e) => updateCorpField("stateFilingStatus", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-white/30">
+                    <select value={corpData.stateFilingStatus || ""} onChange={(e) => updateCorpField("stateFilingStatus", e.target.value)} className={`w-full px-3 py-2 ${inputCls} text-sm`}>
                       <option value="">Select...</option>
                       <option value="Current">Current</option>
                       <option value="Due Soon">Due Soon</option>
@@ -634,34 +639,34 @@ export default function AssetDetail() {
                   </div>
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">Annual Report Due</label>
-                    <input type="date" value={corpData.annualReportDue || ""} onChange={(e) => updateCorpField("annualReportDue", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                    <input type="date" value={corpData.annualReportDue || ""} onChange={(e) => updateCorpField("annualReportDue", e.target.value)} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                   </div>
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">Next Board Meeting</label>
-                    <input type="date" value={corpData.nextBoardMeeting || ""} onChange={(e) => updateCorpField("nextBoardMeeting", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                    <input type="date" value={corpData.nextBoardMeeting || ""} onChange={(e) => updateCorpField("nextBoardMeeting", e.target.value)} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                   </div>
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">Incorporation Date</label>
-                    <input type="date" value={corpData.incorporationDate || ""} onChange={(e) => updateCorpField("incorporationDate", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                    <input type="date" value={corpData.incorporationDate || ""} onChange={(e) => updateCorpField("incorporationDate", e.target.value)} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                   </div>
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">Last Annual Report</label>
-                    <input type="date" value={corpData.lastAnnualReport || ""} onChange={(e) => updateCorpField("lastAnnualReport", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                    <input type="date" value={corpData.lastAnnualReport || ""} onChange={(e) => updateCorpField("lastAnnualReport", e.target.value)} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                   </div>
                   <div>
                     <label className="text-gray-500 text-xs tracking-wider block mb-1">Last Board Meeting</label>
-                    <input type="date" value={corpData.lastBoardMeeting || ""} onChange={(e) => updateCorpField("lastBoardMeeting", e.target.value)} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-white/30 text-sm" />
+                    <input type="date" value={corpData.lastBoardMeeting || ""} onChange={(e) => updateCorpField("lastBoardMeeting", e.target.value)} className={`w-full px-3 py-2 ${inputCls} text-sm`} />
                   </div>
                 </div>
 
                 {/* Compliance status summary */}
                 {(corpData.annualReportDue || corpData.nextBoardMeeting) && (
-                  <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-lg">
+                  <div className={`mt-4 p-4 ${cardCls}`}>
                     <h3 className="text-sm font-medium mb-2">Upcoming Deadlines</h3>
                     <div className="space-y-1">
                       {corpData.annualReportDue && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-400">Annual Report</span>
+                          <span className={`${isDark ? "text-gray-400" : "text-gray-500"}`}>Annual Report</span>
                           <span className={new Date(corpData.annualReportDue) < new Date() ? "text-red-400" : "text-green-400"}>
                             {corpData.annualReportDue}
                           </span>
@@ -669,7 +674,7 @@ export default function AssetDetail() {
                       )}
                       {corpData.nextBoardMeeting && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-400">Board Meeting</span>
+                          <span className={`${isDark ? "text-gray-400" : "text-gray-500"}`}>Board Meeting</span>
                           <span className={new Date(corpData.nextBoardMeeting) < new Date() ? "text-red-400" : "text-green-400"}>
                             {corpData.nextBoardMeeting}
                           </span>
@@ -693,7 +698,7 @@ export default function AssetDetail() {
             {assignedFrameworks.map((fw) => (
               <div
                 key={fw.id}
-                className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-lg group"
+                className={`flex items-center justify-between p-3 ${cardCls} group`}
               >
                 <div className="flex-1 min-w-0">
                   <a
@@ -728,7 +733,7 @@ export default function AssetDetail() {
               }
             }}
             defaultValue=""
-            className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-white/30 max-w-lg w-full"
+            className={`px-4 py-2 ${inputCls} text-sm max-w-lg w-full`}
           >
             <option value="" disabled>
               + Assign a framework...
@@ -759,7 +764,7 @@ export default function AssetDetail() {
             onChange={(e) => setDocName(e.target.value)}
             placeholder="Document name"
             required
-            className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm"
+            className={`flex-1 px-4 py-2 ${inputCls} text-sm`}
           />
           <input
             value={docUrl}
@@ -767,7 +772,7 @@ export default function AssetDetail() {
             placeholder="URL"
             type="url"
             required
-            className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm"
+            className={`flex-1 px-4 py-2 ${inputCls} text-sm`}
           />
           <button
             type="submit"
@@ -784,7 +789,7 @@ export default function AssetDetail() {
             {docs.map((doc) => (
               <div
                 key={doc.id}
-                className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-lg group"
+                className={`flex items-center justify-between p-3 ${cardCls} group`}
               >
                 <a
                   href={doc.url}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Notes" }];
@@ -12,6 +13,9 @@ interface Note {
 }
 
 export default function Notes() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   const [notes, setNotes] = useState<Note[]>([]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -80,7 +84,7 @@ export default function Notes() {
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title"
           required
-          className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+          className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"}`}
         />
         <textarea
           value={body}
@@ -88,11 +92,11 @@ export default function Notes() {
           placeholder="Write your note..."
           required
           rows={3}
-          className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 resize-none"
+          className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"} resize-none`}
         />
         <button
           type="submit"
-          className="px-5 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer"
+          className={`px-5 py-2 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"} font-medium rounded-lg transition-colors cursor-pointer`}
         >
           Add Note
         </button>
@@ -105,7 +109,7 @@ export default function Notes() {
       ) : (
         <div className="space-y-3 max-w-lg">
           {notes.map((note) => (
-            <div key={note.id} className="p-4 bg-white/5 border border-white/10 rounded-lg">
+            <div key={note.id} className={`p-4 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg`}>
               <div className="flex justify-between items-start">
                 <h3 className="font-semibold">{note.title}</h3>
                 <button
@@ -115,7 +119,7 @@ export default function Notes() {
                   Delete
                 </button>
               </div>
-              {note.body && <p className="text-gray-400 text-sm mt-1">{note.body}</p>}
+              {note.body && <p className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm mt-1`}>{note.body}</p>}
               <small className="text-gray-600 text-xs mt-2 block">
                 {new Date(note.createdAt).toLocaleDateString()}
               </small>

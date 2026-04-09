@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router";
 import { streamChat } from "../llm";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Agent Chat" }];
@@ -26,6 +27,8 @@ interface Message {
 }
 
 export default function AgentChat() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const { id } = useParams();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);

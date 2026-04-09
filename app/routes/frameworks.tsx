@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Frameworks" }];
@@ -72,6 +73,8 @@ interface Asset {
 }
 
 export default function Frameworks() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [url, setUrl] = useState("");

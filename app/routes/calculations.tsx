@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Tools" }];
@@ -96,6 +97,9 @@ const calculators = [
 ];
 
 export default function Calculations() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Tools</h1>
@@ -106,7 +110,7 @@ export default function Calculations() {
           <Link
             key={calc.to}
             to={calc.to}
-            className="group relative rounded-xl border border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.04] p-6 transition-all duration-200"
+            className={`group relative rounded-xl border ${isDark ? "border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.04]" : "border-gray-200 hover:border-gray-300 bg-black/[0.02] hover:bg-gray-100"} p-6 transition-all duration-200`}
           >
             <div
               className="w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-transform group-hover:scale-110"
@@ -116,7 +120,7 @@ export default function Calculations() {
             </div>
             <h3 className="font-semibold text-sm mb-1">{calc.title}</h3>
             <p className="text-gray-500 text-xs leading-relaxed">{calc.description}</p>
-            <div className="absolute top-5 right-5 text-gray-600 group-hover:text-white transition-colors">
+            <div className={`absolute top-5 right-5 text-gray-600 ${isDark ? "group-hover:text-white" : "group-hover:text-gray-900"} transition-colors`}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>

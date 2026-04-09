@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - FDJ Hesperia Documents" }];
@@ -311,24 +312,24 @@ function DocTypeIcon({ docType }: { docType: DocType }) {
   }
 }
 
-function DocTypeBadge({ docType }: { docType: DocType }) {
+function DocTypeBadge({ docType, isDark }: { docType: DocType; isDark: boolean }) {
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider bg-white/5 text-gray-400 border border-white/5">
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider ${isDark ? "bg-white/5" : "bg-black/5"} ${isDark ? "text-gray-400" : "text-gray-500"} border ${isDark ? "border-white/5" : "border-gray-200"}`}>
       {docType}
     </span>
   );
 }
 
-function DocumentCard({ doc }: { doc: Document }) {
+function DocumentCard({ doc, isDark }: { doc: Document; isDark: boolean }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 hover:border-white/25 transition-colors group">
+    <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5 ${isDark ? "hover:border-white/25" : "hover:border-gray-300"} transition-colors group`}>
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5 group-hover:border-white/10 transition-colors">
+          <div className={`p-2 rounded-lg ${isDark ? "bg-white/[0.03]" : "bg-black/5"} border ${isDark ? "border-white/5" : "border-gray-200"} ${isDark ? "group-hover:border-white/10" : "group-hover:border-gray-300"} transition-colors`}>
             <DocTypeIcon docType={doc.docType} />
           </div>
           <div>
-            <div className="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">{doc.name}</div>
+            <div className={`text-sm font-semibold ${isDark ? "text-gray-200" : "text-gray-800"} ${isDark ? "group-hover:text-white" : "group-hover:text-gray-900"} transition-colors`}>{doc.name}</div>
             <div className="text-[10px] text-gray-500 tabular-nums mt-0.5">{doc.date}</div>
           </div>
         </div>
@@ -336,21 +337,21 @@ function DocumentCard({ doc }: { doc: Document }) {
 
       <div className="flex items-center gap-2 mb-3">
         <CategoryBadge category={doc.category} />
-        <DocTypeBadge docType={doc.docType} />
+        <DocTypeBadge docType={doc.docType} isDark={isDark} />
       </div>
 
       <div className="space-y-1.5 mb-3">
         {doc.keyTerms.map((term, i) => (
-          <div key={i} className="flex items-start gap-2 text-[11px] text-gray-400">
-            <span className="text-gray-600 mt-0.5 shrink-0">&#8226;</span>
+          <div key={i} className={`flex items-start gap-2 text-[11px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+            <span className={`${isDark ? "text-gray-600" : "text-gray-400"} mt-0.5 shrink-0`}>&#8226;</span>
             <span>{term}</span>
           </div>
         ))}
       </div>
 
-      <div className="border-t border-white/5 pt-3">
+      <div className={`border-t ${isDark ? "border-white/5" : "border-gray-200"} pt-3`}>
         <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Parties</div>
-        <div className="text-[11px] text-gray-400">
+        <div className={`text-[11px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>
           {doc.parties.join(" / ")}
         </div>
       </div>
@@ -380,6 +381,8 @@ const tabs = [
 // --- Main Component ---
 
 export default function FDJHesperiaDocuments() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [activeCategory, setActiveCategory] = useState<Category>("all");
 
   const filtered = activeCategory === "all" ? documents : documents.filter((d) => d.category === activeCategory);
@@ -388,15 +391,15 @@ export default function FDJHesperiaDocuments() {
     <div className="max-w-6xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <Link to="/tools/fdj-hesperia" className="hover:text-white transition-colors">FDJ Hesperia</Link>
+        <Link to="/tools/fdj-hesperia" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>FDJ Hesperia</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Documents</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-800"}>Documents</span>
       </div>
 
       {/* Header */}
@@ -408,15 +411,15 @@ export default function FDJHesperiaDocuments() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-white/10 mb-8">
+      <div className={`flex gap-1 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-8`}>
         {tabs.map((tab) => (
           <Link
             key={tab.label}
             to={tab.href}
             className={`px-4 py-2 text-sm font-medium transition-colors relative ${
               tab.active
-                ? "text-white"
-                : "text-gray-500 hover:text-gray-300"
+                ? isDark ? "text-white" : "text-gray-900"
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`
             }`}
           >
             {tab.label}
@@ -435,12 +438,12 @@ export default function FDJHesperiaDocuments() {
             onClick={() => setActiveCategory(tab.key)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
               activeCategory === tab.key
-                ? "bg-white/10 text-white border-white/20"
-                : "bg-white/[0.02] text-gray-500 border-white/5 hover:border-white/15 hover:text-gray-300"
+                ? isDark ? "bg-white/10 text-white border-white/20" : "bg-black/5 text-gray-900 border-gray-300"
+                : isDark ? "bg-white/[0.02] text-gray-500 border-white/5 hover:border-white/15 hover:text-gray-300" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
             }`}
           >
             {tab.label}
-            <span className={`ml-1.5 text-[10px] tabular-nums ${activeCategory === tab.key ? "text-gray-300" : "text-gray-600"}`}>
+            <span className={`ml-1.5 text-[10px] tabular-nums ${activeCategory === tab.key ? (isDark ? "text-gray-300" : "text-gray-800") : (isDark ? "text-gray-600" : "text-gray-400")}`}>
               {tab.count}
             </span>
           </button>
@@ -450,21 +453,21 @@ export default function FDJHesperiaDocuments() {
       {/* Document Cards Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         {filtered.map((doc) => (
-          <DocumentCard key={doc.id} doc={doc} />
+          <DocumentCard key={doc.id} doc={doc} isDark={isDark} />
         ))}
       </div>
 
       {/* Agreement Status Tracker + Key Dates */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         {/* Agreement Status Tracker */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Agreement Status Tracker</h3>
+        <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5`}>
+          <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>Agreement Status Tracker</h3>
           <div className="space-y-3">
             {agreementStatuses.map((a, i) => (
               <div key={i} className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <StatusDot status={a.status} />
-                  <span className="text-sm text-gray-300">{a.name}</span>
+                  <span className={`text-sm ${isDark ? "text-gray-300" : "text-gray-800"}`}>{a.name}</span>
                 </div>
                 <span className={`text-[10px] font-semibold uppercase tracking-wider ${
                   a.status === "green" ? "text-emerald-400" : a.status === "amber" ? "text-amber-400" : "text-red-400"
@@ -477,8 +480,8 @@ export default function FDJHesperiaDocuments() {
         </div>
 
         {/* Key Dates */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Key Dates from Documents</h3>
+        <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5`}>
+          <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>Key Dates from Documents</h3>
           <div className="space-y-0">
             {keyDates.map((kd, i) => {
               const urgencyColors = {
@@ -488,13 +491,13 @@ export default function FDJHesperiaDocuments() {
               };
               const uc = urgencyColors[kd.urgency];
               return (
-                <div key={i} className="flex items-center gap-4 py-3 border-b border-white/5 last:border-b-0">
+                <div key={i} className={`flex items-center gap-4 py-3 border-b ${isDark ? "border-white/5" : "border-gray-200"} last:border-b-0`}>
                   <div className={`px-3 py-1.5 rounded-lg text-xs font-semibold tabular-nums border ${uc.dateBg} ${uc.dateText} ${uc.dateBorder} min-w-[110px] text-center`}>
                     {kd.date}
                   </div>
                   <div className="flex items-center gap-2.5">
                     <span className={`w-1.5 h-1.5 rounded-full ${uc.dot}`} />
-                    <span className="text-sm text-gray-300">{kd.label}</span>
+                    <span className={`text-sm ${isDark ? "text-gray-300" : "text-gray-800"}`}>{kd.label}</span>
                   </div>
                 </div>
               );

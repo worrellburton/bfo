@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { streamChat, callLLM } from "../llm";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Office" }];
@@ -506,6 +507,8 @@ function saveConversation(agentId: string, messages: Message[]) {
 }
 
 export default function Office() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -1055,7 +1058,7 @@ export default function Office() {
             className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
               inMeeting
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                : "bg-white/10 text-white hover:bg-white/15 border border-white/10"
+                : `${isDark ? "bg-white/10 text-white hover:bg-white/15 border-white/10" : "bg-black/5 text-gray-900 hover:bg-gray-100 border-gray-200"} border`
             }`}
           >
             {inMeeting ? "Leave Meeting" : "Call Meeting"}
@@ -1579,8 +1582,8 @@ export default function Office() {
 
       {/* Right: Meeting log panel */}
       {inMeeting && (
-        <div className="w-80 shrink-0 flex flex-col border-l border-white/10 pl-4">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3 shrink-0">
+        <div className={`w-80 shrink-0 flex flex-col border-l ${isDark ? "border-white/10" : "border-gray-200"} pl-4`}>
+          <div className={`flex items-center justify-between pb-3 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-3 shrink-0`}>
             <div>
               <h2 className="font-bold text-sm">Meeting</h2>
               {meetingTopic && <p className="text-gray-500 text-[10px] truncate max-w-[200px]">{meetingTopic}</p>}
@@ -1601,7 +1604,7 @@ export default function Office() {
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
                   <span className="text-xs font-bold" style={{ color: entry.color }}>{entry.agent}</span>
                 </div>
-                <div className="ml-3.5 text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">
+                <div className={`ml-3.5 text-xs ${isDark ? "text-gray-300" : "text-gray-700"} whitespace-pre-wrap leading-relaxed`}>
                   {entry.text === "..." ? (
                     <span className="text-gray-500 animate-pulse">thinking...</span>
                   ) : entry.text}
@@ -1612,7 +1615,7 @@ export default function Office() {
           </div>
 
           {/* Meeting input */}
-          <form onSubmit={startMeeting} className="flex gap-2 items-center pt-3 border-t border-white/10 mt-2 shrink-0">
+          <form onSubmit={startMeeting} className={`flex gap-2 items-center pt-3 border-t ${isDark ? "border-white/10" : "border-gray-200"} mt-2 shrink-0`}>
             <input
               ref={meetingInputRef}
               value={meetingInput}
@@ -1620,7 +1623,7 @@ export default function Office() {
               onKeyDown={handleMeetingKeyDown}
               placeholder={meetingRunning ? "Meeting in progress..." : "Meeting topic..."}
               disabled={meetingRunning}
-              className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-xs"
+              className={`flex-1 px-3 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none text-xs`}
             />
             <button
               type="submit"
@@ -1635,9 +1638,9 @@ export default function Office() {
 
       {/* Right: Conversation panel */}
       {!inMeeting && chatAgent && (
-        <div className="w-80 shrink-0 flex flex-col border-l border-white/10 pl-4">
+        <div className={`w-80 shrink-0 flex flex-col border-l ${isDark ? "border-white/10" : "border-gray-200"} pl-4`}>
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3 shrink-0">
+          <div className={`flex items-center justify-between pb-3 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-3 shrink-0`}>
             <div>
               <h2 className="font-bold text-sm">{chatAgent.name}</h2>
               {chatAgent.jobTitle && <p className="text-gray-500 text-[10px]">{chatAgent.jobTitle}</p>}
@@ -1646,12 +1649,12 @@ export default function Office() {
               {messages.length > 0 && (
                 <button
                   onClick={() => { setMessages([]); saveConversation(chatAgent.id, []); }}
-                  className="text-[10px] text-gray-500 hover:text-white cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/5"
+                  className={`text-[10px] text-gray-500 ${isDark ? "hover:text-white hover:bg-white/5" : "hover:text-gray-900 hover:bg-gray-100"} cursor-pointer px-1.5 py-0.5 rounded`}
                 >
                   Clear
                 </button>
               )}
-              <button onClick={closeChat} className="text-gray-500 hover:text-white cursor-pointer p-0.5">
+              <button onClick={closeChat} className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer p-0.5`}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1685,18 +1688,18 @@ export default function Office() {
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[90%] px-3 py-2 rounded-xl text-xs whitespace-pre-wrap ${
                   msg.role === "user"
-                    ? "bg-white/10 text-white rounded-br-sm"
-                    : "bg-white/5 text-gray-200 rounded-bl-sm"
+                    ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"} rounded-br-sm`
+                    : `${isDark ? "bg-white/5 text-gray-200" : "bg-black/5 text-gray-700"} rounded-bl-sm`
                 }`}>
                   {msg.file && (
                     msg.file.mediaType.startsWith("image/") ? (
                       <img src={`data:${msg.file.mediaType};base64,${msg.file.base64}`} alt={msg.file.name} className="max-w-full max-h-32 rounded mb-1" />
                     ) : (
-                      <div className="flex items-center gap-1.5 mb-1 px-1.5 py-1 bg-white/5 rounded">
+                      <div className={`flex items-center gap-1.5 mb-1 px-1.5 py-1 ${isDark ? "bg-white/5" : "bg-black/5"} rounded`}>
                         <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                         </svg>
-                        <span className="text-[10px] text-gray-300 truncate">{msg.file.name}</span>
+                        <span className={`text-[10px] ${isDark ? "text-gray-300" : "text-gray-700"} truncate`}>{msg.file.name}</span>
                       </div>
                     )
                   )}
@@ -1712,7 +1715,7 @@ export default function Office() {
 
           {/* Pending file */}
           {pendingFile && (
-            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg mt-1">
+            <div className={`flex items-center gap-1.5 px-2 py-1.5 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg mt-1`}>
               {pendingFile.mediaType.startsWith("image/") ? (
                 <img src={`data:${pendingFile.mediaType};base64,${pendingFile.base64}`} alt={pendingFile.name} className="w-8 h-8 rounded object-cover shrink-0" />
               ) : (
@@ -1720,8 +1723,8 @@ export default function Office() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
               )}
-              <span className="text-[10px] text-gray-300 truncate flex-1">{pendingFile.name}</span>
-              <button onClick={() => setPendingFile(null)} className="text-gray-500 hover:text-white cursor-pointer">
+              <span className={`text-[10px] ${isDark ? "text-gray-300" : "text-gray-700"} truncate flex-1`}>{pendingFile.name}</span>
+              <button onClick={() => setPendingFile(null)} className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer`}>
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1731,12 +1734,12 @@ export default function Office() {
 
           {/* Input */}
           <input ref={fileInputRef} type="file" accept=".pdf,application/pdf,image/png,image/jpeg,image/gif,image/webp" onChange={handleFileInput} className="hidden" />
-          <form onSubmit={handleSend} className="flex gap-2 items-center pt-3 border-t border-white/10 mt-2 shrink-0">
+          <form onSubmit={handleSend} className={`flex gap-2 items-center pt-3 border-t ${isDark ? "border-white/10" : "border-gray-200"} mt-2 shrink-0`}>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={streaming}
-              className="text-gray-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 shrink-0"
+              className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors cursor-pointer disabled:opacity-30 shrink-0`}
               title="Attach file"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1750,7 +1753,7 @@ export default function Office() {
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               disabled={streaming}
-              className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-xs"
+              className={`flex-1 px-3 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none text-xs`}
             />
             <button
               type="submit"
