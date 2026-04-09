@@ -359,7 +359,7 @@ export default function Agents() {
                   const info = [agent.name, agent.jobTitle, MODELS.find((m) => m.value === agent.model)?.label || agent.model, agent.systemPrompt].filter(Boolean).join("\n");
                   navigator.clipboard.writeText(info);
                 }}
-                className="absolute top-2 right-2 p-1.5 text-gray-500 hover:text-white transition-all cursor-pointer rounded-lg hover:bg-white/10 opacity-0 group-hover/card:opacity-100"
+                className={`absolute top-2 right-2 p-1.5 text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-all cursor-pointer rounded-lg hover:bg-white/10 opacity-0 group-hover/card:opacity-100`}
                 title="Copy info"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -371,19 +371,19 @@ export default function Agents() {
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-lg truncate">{agent.name}</h3>
                   {agent.jobTitle && (
-                    <p className="text-gray-400 text-xs">{agent.jobTitle}</p>
+                    <p className={`${isDark ? "text-gray-400" : "text-gray-500"} text-xs`}>{agent.jobTitle}</p>
                   )}
                   <p className="text-gray-500 text-xs mt-0.5">
                     {MODELS.find((m) => m.value === agent.model)?.label || agent.model}
                   </p>
                 </div>
                 <div className="flex gap-1 ml-2 shrink-0">
-                  <button onClick={() => startEdit(agent)} className="p-1.5 text-gray-500 hover:text-white transition-colors cursor-pointer rounded-lg hover:bg-white/5" title="Edit">
+                  <button onClick={() => startEdit(agent)} className={`p-1.5 text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors cursor-pointer rounded-lg ${isDark ? "hover:bg-white/5" : "hover:bg-gray-100"}`} title="Edit">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
                   </button>
-                  <button onClick={() => handleDelete(agent.id)} className="p-1.5 text-gray-500 hover:text-red-400 transition-colors cursor-pointer rounded-lg hover:bg-white/5" title="Delete">
+                  <button onClick={() => handleDelete(agent.id)} className={`p-1.5 text-gray-500 hover:text-red-400 transition-colors cursor-pointer rounded-lg ${isDark ? "hover:bg-white/5" : "hover:bg-gray-100"}`} title="Delete">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
@@ -392,12 +392,12 @@ export default function Agents() {
               </div>
 
               {agent.systemPrompt && (
-                <p className="text-gray-400 text-sm mb-3 line-clamp-2">{agent.systemPrompt}</p>
+                <p className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm mb-3 line-clamp-2`}>{agent.systemPrompt}</p>
               )}
 
               <div className="flex items-center justify-between">
                 <span className="text-gray-600 text-xs font-mono">{maskKey(agent.apiKey)}</span>
-                <Link to={`/agents/${agent.id}`} className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white text-xs font-medium rounded-lg transition-colors">
+                <Link to={`/agents/${agent.id}`} className={`px-3 py-1.5 bg-white/10 hover:bg-white/15 ${isDark ? "text-white" : "text-gray-900"} text-xs font-medium rounded-lg transition-colors`}>
                   Chat
                 </Link>
               </div>
