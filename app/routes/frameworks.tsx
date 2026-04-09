@@ -264,7 +264,7 @@ export default function Frameworks() {
             onBlur={() => fetchTitle(url)}
             placeholder="Paste a URL to add..."
             required
-            className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`flex-1 px-4 py-2.5 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none focus:border-white/30`}
           />
           <button
             type="submit"
@@ -280,7 +280,7 @@ export default function Frameworks() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={fetching ? "Detecting title..." : "Title (auto-detected)"}
-              className="w-full px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm"
+              className={`w-full px-3 py-1.5 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none focus:border-white/30 text-sm`}
             />
           </div>
         )}
@@ -293,7 +293,7 @@ export default function Frameworks() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400 text-xs tracking-wider">
+              <tr className={`border-b ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "text-gray-400" : "text-gray-500"} text-xs tracking-wider`}>
                 <th className="py-3 w-8"></th>
                 <th className="py-3 pr-4 font-medium">Name</th>
                 <th className="py-3 pr-4 font-medium">Asset</th>
@@ -328,7 +328,7 @@ export default function Frameworks() {
                       setDragId(null);
                       setDragOverId(null);
                     }}
-                    className={`border-b group hover:bg-white/5 transition-colors ${
+                    className={`border-b group ${isDark ? "hover:bg-white/5" : "hover:bg-gray-100"} transition-colors ${
                       dragId === fw.id
                         ? "opacity-40 border-white/5"
                         : dragOverId === fw.id
@@ -356,13 +356,13 @@ export default function Frameworks() {
                             value={editTitle}
                             onChange={(e) => setEditTitle(e.target.value)}
                             placeholder="Title"
-                            className="px-2 py-1 bg-white/5 border border-white/20 rounded text-white text-sm w-full focus:outline-none focus:border-white/40"
+                            className={`px-2 py-1 ${isDark ? "bg-white/5" : "bg-black/5"} border border-white/20 rounded ${isDark ? "text-white" : "text-gray-900"} text-sm w-full focus:outline-none focus:border-white/40`}
                           />
                           <input
                             value={editUrl}
                             onChange={(e) => setEditUrl(e.target.value)}
                             placeholder="URL"
-                            className="px-2 py-1 bg-white/5 border border-white/20 rounded text-gray-400 text-xs w-full focus:outline-none focus:border-white/40"
+                            className={`px-2 py-1 ${isDark ? "bg-white/5" : "bg-black/5"} border border-white/20 rounded ${isDark ? "text-gray-400" : "text-gray-500"} text-xs w-full focus:outline-none focus:border-white/40`}
                           />
                         </div>
                       ) : (
@@ -391,7 +391,7 @@ export default function Frameworks() {
                         <select
                           value={editAssetId}
                           onChange={(e) => setEditAssetId(e.target.value)}
-                          className="px-2 py-1 bg-white/5 border border-white/20 rounded text-white text-sm focus:outline-none focus:border-white/40"
+                          className={`px-2 py-1 ${isDark ? "bg-white/5" : "bg-black/5"} border border-white/20 rounded ${isDark ? "text-white" : "text-gray-900"} text-sm focus:outline-none focus:border-white/40`}
                         >
                           <option value="">Unassigned</option>
                           {assets.map((a) => (
@@ -402,7 +402,7 @@ export default function Frameworks() {
                         <select
                           value={fw.assetId || ""}
                           onChange={(e) => updateAsset(fw.id, e.target.value)}
-                          className="px-2 py-1 bg-transparent border border-transparent hover:border-white/10 rounded text-sm cursor-pointer focus:outline-none focus:border-white/20 appearance-none"
+                          className={`px-2 py-1 bg-transparent border border-transparent ${isDark ? "hover:border-white/10" : "hover:border-gray-200"} rounded text-sm cursor-pointer focus:outline-none focus:border-white/20 appearance-none`}
                           style={{ color: fw.assetId ? undefined : "#6b7280" }}
                         >
                           <option value="">Unassigned</option>
@@ -440,7 +440,7 @@ export default function Frameworks() {
                         <div className="flex gap-2 items-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => startEdit(fw)}
-                            className="text-gray-500 hover:text-white cursor-pointer"
+                            className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer`}
                             title="Edit"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

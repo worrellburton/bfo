@@ -335,7 +335,7 @@ export default function PenguinNYCClauses() {
             className={`px-3 py-1 rounded-lg text-xs transition-all ${
               filterSource === opt.value
                 ? "bg-cyan-500/10 text-cyan-400"
-                : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"} hover:bg-white/[0.02]`
             }`}
           >
             {opt.label}
@@ -370,7 +370,7 @@ export default function PenguinNYCClauses() {
                   <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text}`}>
                     {cfg.label}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider bg-white/5 text-gray-500">
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider ${isDark ? "bg-white/5" : "bg-black/5"} text-gray-500`}>
                     {clause.source === "side-letter" ? "Side Letter" : clause.source === "risk-factors" ? "Risk Factor" : "Subscription"}
                   </span>
                 </div>
@@ -392,20 +392,20 @@ export default function PenguinNYCClauses() {
                   <div>
                     <div className="text-[9px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Contract Language</div>
                     <div className="rounded-lg bg-white/[0.03] border border-white/5 p-4">
-                      <p className="text-xs text-gray-400 italic leading-relaxed">{clause.excerpt}</p>
+                      <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"} italic leading-relaxed`}>{clause.excerpt}</p>
                     </div>
                   </div>
 
                   {/* Analysis */}
                   <div>
                     <div className="text-[9px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Analysis</div>
-                    <p className="text-xs text-gray-300 leading-relaxed">{clause.analysis}</p>
+                    <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>{clause.analysis}</p>
                   </div>
 
                   {/* BFO Impact */}
                   <div className={`rounded-lg ${cfg.bg} border ${cfg.border} p-4`}>
                     <div className={`text-[9px] ${cfg.text} uppercase tracking-wider font-semibold mb-1`}>BFO Impact</div>
-                    <p className="text-xs text-gray-300 leading-relaxed">{clause.bfoImpact}</p>
+                    <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>{clause.bfoImpact}</p>
                   </div>
                 </div>
               )}
@@ -415,7 +415,7 @@ export default function PenguinNYCClauses() {
       </div>
 
       {/* Bottom Note */}
-      <div className="mt-8 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <div className={`mt-8 rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} bg-white/[0.02] p-4`}>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Note</div>
         <div className="text-[10px] text-gray-600 leading-relaxed">
           This clause analysis covers the Subscription Agreement and Side Letter only. The Operating Agreement (Exhibit A) contains
