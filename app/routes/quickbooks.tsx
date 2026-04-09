@@ -319,11 +319,6 @@ export default function QuickBooks() {
                   >
                     <td className="py-3.5 px-5">
                       <div className={`font-medium ${light ? "text-gray-900" : "text-white"}`}>{data.companyName}</div>
-                      {data.companyInfo?.CompanyAddr?.City && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {data.companyInfo.CompanyAddr.City}, {data.companyInfo.CompanyAddr.CountrySubDivisionCode}
-                        </div>
-                      )}
                     </td>
                     {METRIC_COLS.map((col) => (
                       <td key={col.key} className={`py-3.5 px-4 text-right tabular-nums hidden lg:table-cell ${light ? "text-gray-700" : "text-gray-400"}`}>
