@@ -118,7 +118,7 @@ export default function AppLayout() {
         </nav>
 
         {/* User + Settings — bottom of sidebar */}
-        <div className="relative" ref={menuRef}>
+        <div className="relative mt-auto" ref={menuRef}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
