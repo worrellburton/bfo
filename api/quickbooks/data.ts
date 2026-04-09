@@ -118,18 +118,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .rpc("", {}).then(() => ({ data: null, error: null })).catch(() => ({ data: null, error: null }));
 
       // Test write capability using raw REST upsert
+      // Note: uses a dedicated test row that persists (JS client delete is unsafe)
       let writeTest = "not_tested";
       try {
-        const testId = "__debug_test__";
         await rawUpsertToken({
-          realm_id: testId,
+          realm_id: "__debug_test__",
           access_token: "test",
           refresh_token: "test",
           expires_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
-        // Clean up test row
-        await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
         writeTest = "ok";
       } catch (e: any) {
         writeTest = `error: ${e.message}`;
