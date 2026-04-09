@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 export function meta() {
-  return [{ title: "BFO - Balance Sheet | QuickBooks" }];
+  return [{ title: "BFO - Balance Sheet | Finance" }];
 }
 
 type ReportRow = {
@@ -80,7 +80,10 @@ export default function BalanceSheet() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
+  const [searchParams] = useSearchParams();
+  const realmId = searchParams.get("realm_id") || "";
 
+  const [companyName, setCompanyName] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("current");
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -92,17 +95,27 @@ export default function BalanceSheet() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
+    if (!realmId) return;
+    fetch(`/api/quickbooks/data?report=company-info&realm_id=${realmId}`)
+      .then((r) => r.json())
+      .then((d) => setCompanyName(d?.CompanyInfo?.CompanyName || ""))
+      .catch(() => {});
+  }, [realmId]);
+
+  useEffect(() => {
     if (!lastUpdated) return;
     setLastUpdatedText(timeAgo(lastUpdated));
     const interval = setInterval(() => setLastUpdatedText(timeAgo(lastUpdated)), 30000);
     return () => clearInterval(interval);
   }, [lastUpdated]);
 
+  const realmParam = realmId ? `&realm_id=${realmId}` : "";
+
   const fetchBS = useCallback(async (asOf: string) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/quickbooks/data?report=balance-sheet-detail&as_of=${asOf}`);
+      const res = await fetch(`/api/quickbooks/data?report=balance-sheet-detail&as_of=${asOf}${realmParam}`);
       const data = await res.json();
       if (data.error === "not_connected" || data.error === "auth_expired") {
         setError("QuickBooks not connected. Please reconnect.");
@@ -133,7 +146,7 @@ export default function BalanceSheet() {
     }
 
     fetchBS(asOf);
-  }, [viewMode, selectedYear, selectedMonth, fetchBS]);
+  }, [viewMode, selectedYear, selectedMonth, fetchBS, realmParam]);
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
@@ -225,7 +238,7 @@ export default function BalanceSheet() {
         </div>
       </div>
       <div className="flex items-center gap-3 mb-6">
-        <p className={`${mutedText} text-sm`}>Ledger Louise, LLC</p>
+        <p className={`${mutedText} text-sm`}>{companyName || "Loading..."}</p>
         {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdatedText}</span>}
       </div>
 

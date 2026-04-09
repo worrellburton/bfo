@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 export function meta() {
-  return [{ title: "BFO - Trial Balance | QuickBooks" }];
+  return [{ title: "BFO - Trial Balance | Finance" }];
 }
 
 type ReportRow = {
@@ -73,7 +73,10 @@ function timeAgo(date: Date): string {
 
 export default function TrialBalance() {
   const currentYear = new Date().getFullYear();
+  const [searchParams] = useSearchParams();
+  const realmId = searchParams.get("realm_id") || "";
 
+  const [companyName, setCompanyName] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [report, setReport] = useState<{ title: string; columns: string[]; rows: ReportRow[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,17 +86,27 @@ export default function TrialBalance() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
+    if (!realmId) return;
+    fetch(`/api/quickbooks/data?report=company-info&realm_id=${realmId}`)
+      .then((r) => r.json())
+      .then((d) => setCompanyName(d?.CompanyInfo?.CompanyName || ""))
+      .catch(() => {});
+  }, [realmId]);
+
+  useEffect(() => {
     if (!lastUpdated) return;
     setLastUpdatedText(timeAgo(lastUpdated));
     const interval = setInterval(() => setLastUpdatedText(timeAgo(lastUpdated)), 30000);
     return () => clearInterval(interval);
   }, [lastUpdated]);
 
+  const realmParam = realmId ? `&realm_id=${realmId}` : "";
+
   const fetchTB = useCallback(async (asOf: string) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/quickbooks/data?report=trial-balance&as_of=${asOf}`);
+      const res = await fetch(`/api/quickbooks/data?report=trial-balance&as_of=${asOf}${realmParam}`);
       const data = await res.json();
       if (data.error === "not_connected" || data.error === "auth_expired") {
         setError("QuickBooks not connected. Please reconnect.");
@@ -111,7 +124,7 @@ export default function TrialBalance() {
 
   useEffect(() => {
     fetchTB(`${selectedYear}-12-31`);
-  }, [selectedYear, fetchTB]);
+  }, [selectedYear, fetchTB, realmParam]);
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
@@ -203,7 +216,7 @@ export default function TrialBalance() {
         </div>
       </div>
       <div className="flex items-center gap-3 mb-6">
-        <p className={`${mutedText} text-sm`}>Ledger Louise, LLC</p>
+        <p className={`${mutedText} text-sm`}>{companyName || "Loading..."}</p>
         {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdatedText}</span>}
       </div>
 

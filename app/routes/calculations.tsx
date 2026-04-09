@@ -62,7 +62,7 @@ const calculators = [
   },
   {
     to: "/tools/quickbooks",
-    title: "QuickBooks — Ledger Louise",
+    title: "Finance",
     description: "Live financial dashboard — P&L, balance sheet, and key metrics from QuickBooks Online.",
     icon: (
       <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5}>

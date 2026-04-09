@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 export function meta() {
-  return [{ title: "BFO - General Ledger | QuickBooks" }];
+  return [{ title: "BFO - General Ledger | Finance" }];
 }
 
 type ReportRow = {
@@ -77,7 +77,10 @@ export default function GeneralLedger() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
+  const [searchParams] = useSearchParams();
+  const realmId = searchParams.get("realm_id") || "";
 
+  const [companyName, setCompanyName] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [report, setReport] = useState<{ title: string; columns: string[]; rows: ReportRow[] } | null>(null);
@@ -88,17 +91,27 @@ export default function GeneralLedger() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
+    if (!realmId) return;
+    fetch(`/api/quickbooks/data?report=company-info&realm_id=${realmId}`)
+      .then((r) => r.json())
+      .then((d) => setCompanyName(d?.CompanyInfo?.CompanyName || ""))
+      .catch(() => {});
+  }, [realmId]);
+
+  useEffect(() => {
     if (!lastUpdated) return;
     setLastUpdatedText(timeAgo(lastUpdated));
     const interval = setInterval(() => setLastUpdatedText(timeAgo(lastUpdated)), 30000);
     return () => clearInterval(interval);
   }, [lastUpdated]);
 
+  const realmParam = realmId ? `&realm_id=${realmId}` : "";
+
   const fetchGL = useCallback(async (startDate: string, endDate: string) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/quickbooks/data?report=general-ledger&start_date=${startDate}&end_date=${endDate}`);
+      const res = await fetch(`/api/quickbooks/data?report=general-ledger&start_date=${startDate}&end_date=${endDate}${realmParam}`);
       const data = await res.json();
       if (data.error === "not_connected" || data.error === "auth_expired") {
         setError("QuickBooks not connected. Please reconnect.");
@@ -119,7 +132,7 @@ export default function GeneralLedger() {
     const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
     const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${lastDay}`;
     fetchGL(startDate, endDate);
-  }, [selectedYear, selectedMonth, fetchGL]);
+  }, [selectedYear, selectedMonth, fetchGL, realmParam]);
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
@@ -211,7 +224,7 @@ export default function GeneralLedger() {
         </div>
       </div>
       <div className="flex items-center gap-3 mb-6">
-        <p className={`${mutedText} text-sm`}>Ledger Louise, LLC</p>
+        <p className={`${mutedText} text-sm`}>{companyName || "Loading..."}</p>
         {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdatedText}</span>}
       </div>
 
