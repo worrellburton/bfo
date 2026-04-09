@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 export function meta() {
   return [{ title: "BFO - Finance | Financial Dashboard" }];
@@ -64,12 +64,14 @@ const REPORTS = [
 ];
 
 export default function QuickBooks() {
+  const [searchParams] = useSearchParams();
+  const urlError = searchParams.get("error");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyData, setCompanyData] = useState<Record<string, CompanyData>>({});
   const [expandedRealm, setExpandedRealm] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "connected" | "disconnected">("loading");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(urlError ? `Connection failed: ${urlError}` : "");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
 
