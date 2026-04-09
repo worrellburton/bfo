@@ -179,8 +179,8 @@ export default function AgentChat() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Header */}
-      <div className="flex items-center gap-3 pb-4 border-b border-white/10 mb-4 shrink-0">
-        <Link to="/agents" className="text-gray-500 hover:text-white transition-colors">
+      <div className={`flex items-center gap-3 pb-4 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-4 shrink-0`}>
+        <Link to="/agents" className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
@@ -192,7 +192,7 @@ export default function AgentChat() {
         {messages.length > 0 && (
           <button
             onClick={() => setMessages([])}
-            className="ml-auto text-xs text-gray-500 hover:text-white cursor-pointer px-2 py-1 rounded hover:bg-white/5"
+            className={`ml-auto text-xs text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer px-2 py-1 rounded ${isDark ? "hover:bg-white/5" : "hover:bg-gray-100"}`}
           >
             Clear
           </button>
@@ -231,19 +231,19 @@ export default function AgentChat() {
             <div
               className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${
                 msg.role === "user"
-                  ? "bg-white/10 text-white rounded-br-md"
-                  : "bg-white/5 text-gray-200 rounded-bl-md"
+                  ? `bg-white/10 ${isDark ? "text-white" : "text-gray-900"} rounded-br-md`
+                  : `${isDark ? "bg-white/5" : "bg-black/5"} text-gray-200 rounded-bl-md`
               }`}
             >
               {msg.file && (
                 msg.file.mediaType.startsWith("image/") ? (
                   <img src={`data:${msg.file.mediaType};base64,${msg.file.base64}`} alt={msg.file.name} className="max-w-full max-h-48 rounded-lg mb-1.5" />
                 ) : (
-                  <div className="flex items-center gap-2 mb-1.5 px-2 py-1.5 bg-white/5 rounded-lg">
+                  <div className={`flex items-center gap-2 mb-1.5 px-2 py-1.5 ${isDark ? "bg-white/5" : "bg-black/5"} rounded-lg`}>
                     <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
-                    <span className="text-xs text-gray-300 truncate">{msg.file.name}</span>
+                    <span className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} truncate`}>{msg.file.name}</span>
                   </div>
                 )
               )}
@@ -259,7 +259,7 @@ export default function AgentChat() {
 
       {/* Pending file indicator */}
       {pendingFile && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg mt-2">
+        <div className={`flex items-center gap-2 px-3 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg mt-2`}>
           {pendingFile.mediaType.startsWith("image/") ? (
             <img src={`data:${pendingFile.mediaType};base64,${pendingFile.base64}`} alt={pendingFile.name} className="w-10 h-10 rounded object-cover shrink-0" />
           ) : (
@@ -267,8 +267,8 @@ export default function AgentChat() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
           )}
-          <span className="text-xs text-gray-300 truncate flex-1">{pendingFile.name}</span>
-          <button onClick={() => setPendingFile(null)} className="text-gray-500 hover:text-white cursor-pointer">
+          <span className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} truncate flex-1`}>{pendingFile.name}</span>
+          <button onClick={() => setPendingFile(null)} className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -278,12 +278,12 @@ export default function AgentChat() {
 
       {/* Input */}
       <input ref={fileInputRef} type="file" accept=".pdf,application/pdf,image/png,image/jpeg,image/gif,image/webp" onChange={handleFileInput} className="hidden" />
-      <form onSubmit={handleSend} className="shrink-0 flex gap-2 items-end pt-4 border-t border-white/10">
+      <form onSubmit={handleSend} className={`shrink-0 flex gap-2 items-end pt-4 border-t ${isDark ? "border-white/10" : "border-gray-200"}`}>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={streaming}
-          className="px-2.5 py-2.5 text-gray-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 shrink-0"
+          className={`px-2.5 py-2.5 text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors cursor-pointer disabled:opacity-30 shrink-0`}
           title="Attach file"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -298,7 +298,7 @@ export default function AgentChat() {
           placeholder="Type a message..."
           rows={1}
           disabled={streaming}
-          className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-white/30 resize-none text-sm"
+          className={`flex-1 px-4 py-2.5 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-xl ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none focus:border-white/30 resize-none text-sm`}
         />
         <button
           type="submit"
