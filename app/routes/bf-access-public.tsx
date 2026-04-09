@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router";
 
 export function meta() {
   return [{ title: "BFO - BeachFleischman Access" }];
@@ -7,6 +8,7 @@ export function meta() {
 function formatCurrency(val: string | number): string {
   const num = typeof val === "string" ? parseFloat(val) : val;
   if (isNaN(num)) return val as string;
+  if (num === 0) return "-";
   const negative = num < 0;
   const formatted = Math.abs(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return negative ? `(${formatted})` : formatted;
@@ -53,7 +55,36 @@ function timeAgo(date: Date): string {
 type Company = { realm_id: string; company_name: string; updated_at: string };
 type CompanyData = { companyInfo: any; companyName: string; metrics: Record<string, string> };
 
-const COLORS = ["#16a34a", "#2563eb", "#9333ea", "#d97706", "#db2777"];
+function applyStoredOrder(companies: Company[]): Company[] {
+  try {
+    const stored = localStorage.getItem("qb-company-order");
+    const order: string[] = stored ? JSON.parse(stored) : [];
+    if (order.length === 0) return companies;
+    const map = new Map(companies.map((c) => [c.realm_id, c]));
+    const ordered: Company[] = [];
+    for (const id of order) {
+      const c = map.get(id);
+      if (c) { ordered.push(c); map.delete(id); }
+    }
+    for (const c of map.values()) ordered.push(c);
+    return ordered;
+  } catch { return companies; }
+}
+
+const REPORTS = [
+  { key: "profit-loss", label: "Profit & Loss" },
+  { key: "balance-sheet", label: "Balance Sheet" },
+  { key: "trial-balance", label: "Trial Balance" },
+  { key: "general-ledger", label: "General Ledger" },
+];
+
+const METRIC_COLS = [
+  { key: "totalIncome", label: "Total Income" },
+  { key: "totalExpenses", label: "Total Expenses" },
+  { key: "netIncome", label: "Net Income" },
+  { key: "totalAssets", label: "Total Assets" },
+  { key: "totalEquity", label: "Total Equity" },
+];
 
 export default function BFAccessPublic() {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -92,7 +123,7 @@ export default function BFAccessPublic() {
         setLoading(false);
         return;
       }
-      const companyList: Company[] = listRes.companies;
+      const companyList: Company[] = applyStoredOrder(listRes.companies);
       setCompanies(companyList);
       setStatus("connected");
 
@@ -121,10 +152,10 @@ export default function BFAccessPublic() {
   }, [fetchReport]);
 
   return (
-    <div className="min-h-screen bg-white text-gray-900" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+    <div className="min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
       {/* Header */}
       <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-xl font-bold tracking-tight text-gray-900">BFO</span>
             <div className="h-5 w-px bg-gray-200" />
@@ -137,12 +168,7 @@ export default function BFAccessPublic() {
       </header>
 
       {/* Content */}
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Financial Dashboard</h1>
-          <p className="text-sm text-gray-500">QuickBooks connected entities overview</p>
-        </div>
-
+      <main className="max-w-7xl mx-auto px-6 py-8">
         {status === "loading" && loading && (
           <div className="flex items-center justify-center py-24">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-gray-600" />
@@ -151,122 +177,101 @@ export default function BFAccessPublic() {
 
         {status === "disconnected" && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-6">
-              <svg viewBox="0 0 24 24" className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.886-3.497l4.5-4.5a4.5 4.5 0 016.364 6.364l-1.757 1.757M10.5 13.5l3-3" />
-              </svg>
-            </div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">No Connected Accounts</h2>
-            <p className="text-gray-500 text-sm max-w-md">No QuickBooks accounts are currently connected.</p>
+            <p className="text-gray-500 text-sm">No QuickBooks accounts are currently connected.</p>
           </div>
         )}
 
         {status === "connected" && !loading && (
-          <div className="space-y-4">
-            {companies.map((c, ci) => {
-              const data = companyData[c.realm_id];
-              if (!data) return null;
-              const name = data.companyName;
-              const m = data.metrics;
-              const color = COLORS[ci % COLORS.length];
-              const isExpanded = expandedRealm === c.realm_id;
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-left py-3 px-5 text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
+                  {METRIC_COLS.map((col) => (
+                    <th key={col.key} className="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">{col.label}</th>
+                  ))}
+                  <th className="w-10 px-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {companies.map((c) => {
+                  const data = companyData[c.realm_id];
+                  if (!data) return null;
+                  const m = data.metrics;
+                  const isExpanded = expandedRealm === c.realm_id;
 
-              return (
-                <div key={c.realm_id} className="rounded-xl border border-gray-200 bg-white overflow-hidden transition-all shadow-sm">
-                  <button
-                    onClick={() => setExpandedRealm(isExpanded ? null : c.realm_id)}
-                    className="w-full text-left p-5 hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3 mb-4">
-                      <div
-                        className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm text-white shrink-0"
-                        style={{ background: color }}
+                  return (
+                    <tbody key={c.realm_id}>
+                      <tr
+                        onClick={() => setExpandedRealm(isExpanded ? null : c.realm_id)}
+                        className={`border-b border-gray-100 cursor-pointer transition-colors ${isExpanded ? "bg-gray-50" : "hover:bg-gray-50"}`}
                       >
-                        {name.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm text-gray-900 truncate">{name}</h3>
-                        {data.companyInfo?.CompanyAddr?.City && (
-                          <p className="text-gray-400 text-xs truncate">
-                            {data.companyInfo.CompanyAddr.City}, {data.companyInfo.CompanyAddr.CountrySubDivisionCode}
-                            {data.companyInfo.FiscalYearStartMonth && ` \u00b7 FY starts month ${data.companyInfo.FiscalYearStartMonth}`}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="flex items-center gap-1.5 text-xs text-green-600">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                          Connected
-                        </div>
-                        <svg
-                          className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                          fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                      {[
-                        { label: "Total Income", key: "totalIncome", color: "#16a34a" },
-                        { label: "Total Expenses", key: "totalExpenses", color: "#dc2626" },
-                        { label: "Net Income", key: "netIncome", color: parseFloat(m.netIncome || "0") >= 0 ? "#16a34a" : "#dc2626" },
-                        { label: "Total Assets", key: "totalAssets", color: "#2563eb" },
-                        { label: "Total Equity", key: "totalEquity", color: "#9333ea" },
-                      ].map((metric) =>
-                        m[metric.key] ? (
-                          <div key={metric.label} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-                            <p className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">{metric.label}</p>
-                            <p className="text-sm font-bold tabular-nums" style={{ color: metric.color }}>
-                              ${formatCurrency(m[metric.key])}
-                            </p>
-                          </div>
-                        ) : null
+                        <td className="py-3.5 px-5">
+                          <div className="font-medium text-gray-900">{data.companyName}</div>
+                          {data.companyInfo?.CompanyAddr?.City && (
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              {data.companyInfo.CompanyAddr.City}, {data.companyInfo.CompanyAddr.CountrySubDivisionCode}
+                            </div>
+                          )}
+                        </td>
+                        {METRIC_COLS.map((col) => (
+                          <td key={col.key} className="py-3.5 px-4 text-right tabular-nums text-gray-700 hidden lg:table-cell">
+                            {m[col.key] ? `$${formatCurrency(m[col.key])}` : "-"}
+                          </td>
+                        ))}
+                        <td className="px-3">
+                          <svg
+                            className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <td colSpan={METRIC_COLS.length + 2} className="px-5 py-4">
+                            {/* Mobile metrics */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 lg:hidden">
+                              {METRIC_COLS.map((col) =>
+                                m[col.key] ? (
+                                  <div key={col.key}>
+                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider">{col.label}</div>
+                                    <div className="text-sm font-medium tabular-nums text-gray-900">${formatCurrency(m[col.key])}</div>
+                                  </div>
+                                ) : null
+                              )}
+                            </div>
+                            {/* Report links */}
+                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">Reports</div>
+                            <div className="flex flex-wrap gap-2">
+                              {REPORTS.map((r) => (
+                                <Link
+                                  key={r.key}
+                                  to={`/public/bf-access/${r.key}?realm_id=${c.realm_id}`}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:border-gray-400 hover:text-gray-900 transition-colors"
+                                >
+                                  {r.label}
+                                  <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                </Link>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </div>
-                  </button>
-
-                  {isExpanded && data.companyInfo && (
-                    <div className="border-t border-gray-200 p-5 bg-gray-50">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                        {data.companyInfo.CompanyName && (
-                          <div>
-                            <p className="text-gray-400 text-[9px] uppercase tracking-wider mb-0.5">Company</p>
-                            <p className="font-medium text-gray-900">{data.companyInfo.CompanyName}</p>
-                          </div>
-                        )}
-                        {data.companyInfo.CompanyAddr?.City && (
-                          <div>
-                            <p className="text-gray-400 text-[9px] uppercase tracking-wider mb-0.5">Location</p>
-                            <p className="font-medium text-gray-900">{data.companyInfo.CompanyAddr.City}, {data.companyInfo.CompanyAddr.CountrySubDivisionCode}</p>
-                          </div>
-                        )}
-                        {data.companyInfo.FiscalYearStartMonth && (
-                          <div>
-                            <p className="text-gray-400 text-[9px] uppercase tracking-wider mb-0.5">Fiscal Year Start</p>
-                            <p className="font-medium text-gray-900">Month {data.companyInfo.FiscalYearStartMonth}</p>
-                          </div>
-                        )}
-                        {data.companyInfo.CompanyStartDate && (
-                          <div>
-                            <p className="text-gray-400 text-[9px] uppercase tracking-wider mb-0.5">Company Start</p>
-                            <p className="font-medium text-gray-900">{data.companyInfo.CompanyStartDate}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    </tbody>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-gray-200 bg-white mt-12">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold tracking-tight text-gray-900">BFO</span>
             <span className="text-[10px] text-gray-400">Burton Family Office</span>

@@ -5,6 +5,10 @@ export default [
   route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),
   route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
   route("public/bf-access", "./routes/bf-access-public.tsx"),
+  route("public/bf-access/profit-loss", "./routes/quickbooks-profit-loss.tsx"),
+  route("public/bf-access/balance-sheet", "./routes/quickbooks-balance-sheet.tsx"),
+  route("public/bf-access/trial-balance", "./routes/quickbooks-trial-balance.tsx"),
+  route("public/bf-access/general-ledger", "./routes/quickbooks-general-ledger.tsx"),
   route("legal/terms", "./routes/legal-terms.tsx"),
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   layout("routes/app-layout.tsx", [
