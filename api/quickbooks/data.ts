@@ -85,13 +85,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "debug") {
       const { data: rows, error: dbError, count } = await supabase
         .from("quickbooks_tokens")
-        .select("realm_id, company_name, updated_at", { count: "exact" });
+        .select("realm_id, updated_at", { count: "exact" });
       return res.json({
         supabase_url_set: !!process.env.SUPABASE_URL,
         service_key_set: !!process.env.SUPABASE_SERVICE_KEY,
+        supabase_url_preview: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 30) + "..." : "NOT SET",
         db_error: dbError?.message || null,
         row_count: count,
-        rows: (rows || []).map((r: any) => ({ realm_id: r.realm_id, company_name: r.company_name, updated_at: r.updated_at })),
+        rows: (rows || []).map((r: any) => ({ realm_id: r.realm_id, updated_at: r.updated_at })),
       });
     }
 
@@ -99,11 +100,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "list") {
       const { data: rows, error: dbError } = await supabase
         .from("quickbooks_tokens")
-        .select("realm_id, company_name, updated_at");
+        .select("realm_id, updated_at");
       if (dbError) {
         return res.status(500).json({ error: "db_error", message: dbError.message });
       }
-      return res.json({ companies: rows || [] });
+      return res.json({ companies: (rows || []).map((r: any) => ({ realm_id: r.realm_id, company_name: "", updated_at: r.updated_at })) });
     }
 
     // For all other reports, need a specific company
