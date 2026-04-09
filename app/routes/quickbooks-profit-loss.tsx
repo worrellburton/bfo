@@ -115,6 +115,16 @@ export default function ProfitLoss() {
   const [drill, setDrill] = useState<DrillDown | null>(null);
   const [drillEntries, setDrillEntries] = useState<LedgerEntry[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
+  const [focusMode, setFocusMode] = useState(true);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
+
+  function getCellHighlight(rowId: string, colIdx: number, isLabel?: boolean): string {
+    if (!focusMode || isLabel) return "";
+    if (hoveredRow === null || hoveredCol === null) return "";
+    if (rowId === hoveredRow || colIdx === hoveredCol) return "";
+    return "opacity-20";
+  }
 
   useEffect(() => {
     if (!realmId) return;
@@ -286,7 +296,9 @@ export default function ProfitLoss() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `profit-loss-${selectedYear}.csv`;
+    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    a.download = `BFO${entity}ProfitLoss${today}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -400,7 +412,7 @@ export default function ProfitLoss() {
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500/50";
 
   return (
-    <div className={`${pageBg} min-h-screen transition-colors duration-200`}>
+    <div className={`${pageBg} min-h-screen flex flex-col transition-colors duration-200`}>
       {isPublic && (
         <header className="border-b border-gray-200 bg-white sticky top-0 z-10 mb-6">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -412,7 +424,7 @@ export default function ProfitLoss() {
           </div>
         </header>
       )}
-      <div className={isPublic ? "px-6 sm:px-10" : ""}>
+      <div className={isPublic ? "px-6 sm:px-10 flex-1 flex flex-col" : ""}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
@@ -431,6 +443,13 @@ export default function ProfitLoss() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             )}
           </button>
+          <button
+            onClick={() => { setFocusMode((v) => !v); setHoveredRow(null); setHoveredCol(null); }}
+            className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${focusMode ? "bg-green-500/10 text-green-600 border border-green-500/20" : btnBorder}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" strokeWidth={2} /><line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" strokeWidth={2} /><line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" strokeWidth={2} /><line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth={2} /></svg>
+            Focus
+          </button>
           <button onClick={handleExportCSV} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             CSV
@@ -448,6 +467,10 @@ export default function ProfitLoss() {
 
       {/* View Mode Tabs + Year */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
+        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
+          {years.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <div className={`h-4 w-px ${light ? "bg-gray-300" : "bg-gray-600"}`} />
         <div className="flex items-center gap-2">
           {(["monthly", "annual"] as ViewMode[]).map((mode) => (
             <button
@@ -459,9 +482,6 @@ export default function ProfitLoss() {
             </button>
           ))}
         </div>
-        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
-          {years.map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
       </div>
 
       {/* Error */}
@@ -515,11 +535,12 @@ export default function ProfitLoss() {
                   </tr>
                 </thead>
               )}
-              <tbody>
+              <tbody onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
                 {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
                   const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("net ");
                   const isSection = row.bold && row.values.every((v) => !v);
                   const isNet = isTotal && row.label.toLowerCase().includes("net");
+                  const rowId = `${row.label}-${i}`;
 
                   return (
                     <tr
@@ -532,7 +553,7 @@ export default function ProfitLoss() {
                             : ""
                       }
                     >
-                      {/* Label cell */}
+                      {/* Label cell — never dims */}
                       <td
                         className={`py-2 px-6 ${
                           isSection ? "pt-4 pb-1" : ""
@@ -552,14 +573,15 @@ export default function ProfitLoss() {
                           return (
                             <td
                               key={vi}
+                              onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(vi); }}
                               onClick={clickable ? () => handleCellClick(row.label, vi) : undefined}
-                              className={`py-2 px-4 text-right tabular-nums whitespace-nowrap ${
+                              className={`py-2 px-4 text-right tabular-nums whitespace-nowrap transition-opacity duration-200 ${
                                 isTotal
                                   ? `font-bold ${light ? "text-gray-900" : "text-white"}`
                                   : parseFloat(val) < 0
                                     ? "text-red-500"
                                     : light ? "text-gray-600" : "text-gray-400"
-                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""}`}
+                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""} ${getCellHighlight(rowId, vi)}`}
                               style={isNet ? { color: "#22c55e" } : {}}
                             >
                               {val ? formatCurrency(val) : ""}
@@ -571,14 +593,15 @@ export default function ProfitLoss() {
                           const clickable = !isTotal && !isSection && !row.bold && row.values[0] && parseFloat(row.values[0]) !== 0;
                           return (
                             <td
+                              onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(0); }}
                               onClick={clickable ? () => handleCellClick(row.label, 0) : undefined}
-                              className={`py-1.5 px-4 text-right tabular-nums ${
+                              className={`py-1.5 px-4 text-right tabular-nums transition-opacity duration-200 ${
                                 isTotal
                                   ? `font-bold ${light ? "text-gray-900" : "text-white"}`
                                   : parseFloat(row.values[0]) < 0
                                     ? "text-red-500"
                                     : light ? "text-gray-600" : "text-gray-400"
-                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""}`}
+                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""} ${getCellHighlight(rowId, 0)}`}
                               style={isNet ? { color: "#22c55e" } : {}}
                             >
                               {row.values[0] ? formatCurrency(row.values[0]) : ""}
@@ -602,7 +625,7 @@ export default function ProfitLoss() {
       )}
 
       {isPublic && (
-        <footer className="border-t border-gray-200 mt-12 pt-6 flex items-center justify-between">
+        <footer className="border-t border-gray-200 mt-auto pt-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold tracking-tight text-gray-900">BFO</span>
             <span className="text-[10px] text-gray-400">Burton Family Office</span>
@@ -617,18 +640,76 @@ export default function ProfitLoss() {
           <div className="absolute inset-0 bg-black/60" />
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl shadow-2xl ${light ? "bg-white" : "bg-[#0d0d0d]"} border ${light ? "border-gray-200" : "border-white/10"}`}
+            className={`relative w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl ${light ? "bg-white" : "bg-[#0d0d0d]"} border ${light ? "border-gray-200" : "border-white/10"}`}
           >
             <div className="sticky top-0 z-10 p-5 border-b flex items-center justify-between rounded-t-xl" style={{ borderColor: light ? "#e5e7eb" : "rgba(255,255,255,0.1)", background: light ? "#ffffff" : "#0d0d0d" }}>
               <div>
                 <h3 className={`font-semibold text-sm ${headingText}`}>{drill.account}</h3>
                 <p className={`text-xs ${mutedText}`}>General Ledger &middot; {drill.period}</p>
               </div>
-              <button onClick={() => setDrill(null)} className={`p-1.5 rounded-lg ${btnBorder}`}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (!drillEntries.length) return;
+                    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+                    const header = ["Date", "Type", "Name", "Memo", "Amount", "Balance"].map(esc).join(",");
+                    const rows = drillEntries.map((e) => [e.date, e.type, e.name, e.memo, e.amount, e.balance].map(esc).join(","));
+                    const csv = [header, ...rows].join("\n");
+                    const blob = new Blob([csv], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+                    const acct = drill.account.replace(/[^a-zA-Z0-9]/g, "");
+                    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+                    a.download = `BFO${entity}${acct}${today}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={drillEntries.length === 0}
+                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  CSV
+                </button>
+                <button
+                  onClick={() => {
+                    if (!drillEntries.length) return;
+                    const pw = window.open("", "_blank");
+                    if (!pw) return;
+                    const genDate = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+                    pw.document.write(`<!DOCTYPE html><html><head><title>${drill.account} - GL</title><style>
+                      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+                      *{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',sans-serif;font-size:11px;padding:40px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+                      .header{margin-bottom:24px}.brand{display:flex;align-items:center;gap:10px;margin-bottom:16px}.brand-icon{width:36px;height:36px;background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+                      .brand-name{font-size:16px;font-weight:700;color:#1a1a2e}.brand-sub{font-size:10px;color:#64748b}.divider{height:2px;background:linear-gradient(90deg,#1a1a2e,#3b82f6,#1a1a2e);border-radius:2px;margin-bottom:8px}
+                      .title{font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:4px}.period{font-size:11px;color:#64748b}
+                      table{width:100%;border-collapse:collapse;margin-top:16px}thead th{padding:8px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left}
+                      thead th.right{text-align:right}tbody td{padding:6px 8px;font-size:10px;border-bottom:1px solid #f1f5f9;color:#475569}td.right{text-align:right;font-variant-numeric:tabular-nums}
+                      .footer{margin-top:32px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:9px;color:#94a3b8}
+                      @media print{body{padding:20px}}
+                    </style></head><body>
+                      <div class="header"><div class="brand"><div class="brand-icon">BFO</div><div><div class="brand-name">Burton Family Office</div><div class="brand-sub">${companyName || ""}</div></div></div><div class="divider"></div>
+                      <div class="title">${drill.account}</div><div class="period">General Ledger &middot; ${drill.period} &middot; Generated ${genDate}</div></div>
+                      <table><thead><tr><th>Date</th><th>Type</th><th>Name</th><th>Memo</th><th class="right">Amount</th><th class="right">Balance</th></tr></thead><tbody>
+                      ${drillEntries.map((e) => `<tr><td>${e.date}</td><td>${e.type}</td><td>${e.name}</td><td>${e.memo}</td><td class="right">${e.amount ? formatCurrency(e.amount) : ""}</td><td class="right">${e.balance ? formatCurrency(e.balance) : ""}</td></tr>`).join("")}
+                      </tbody></table><div class="footer"><div>Burton Family Office &middot; Confidential</div><div>QuickBooks Online</div></div>
+                    </body></html>`);
+                    pw.document.close();
+                    setTimeout(() => pw.print(), 500);
+                  }}
+                  disabled={drillEntries.length === 0}
+                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                  PDF
+                </button>
+                <button onClick={() => setDrill(null)} className={`p-1.5 rounded-lg ${btnBorder}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
             </div>
-            <div className="p-5">
+            <div className="p-6">
               {drillLoading && (
                 <div className="flex items-center justify-center py-16">
                   <div className={`animate-spin rounded-full h-6 w-6 border-2 ${light ? "border-gray-200 border-t-gray-600" : "border-white/20 border-t-white/80"}`} />
@@ -641,25 +722,25 @@ export default function ProfitLoss() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className={`${mutedText}`}>
-                      <th className="text-left py-2 px-2 font-medium">Date</th>
-                      <th className="text-left py-2 px-2 font-medium">Type</th>
-                      <th className="text-left py-2 px-2 font-medium">Name</th>
-                      <th className="text-left py-2 px-2 font-medium">Memo</th>
-                      <th className="text-right py-2 px-2 font-medium">Amount</th>
-                      <th className="text-right py-2 px-2 font-medium">Balance</th>
+                      <th className="text-left py-2 px-3 font-medium">Date</th>
+                      <th className="text-left py-2 px-3 font-medium">Type</th>
+                      <th className="text-left py-2 px-3 font-medium">Name</th>
+                      <th className="text-left py-2 px-3 font-medium">Memo</th>
+                      <th className="text-right py-2 px-3 font-medium">Amount</th>
+                      <th className="text-right py-2 px-3 font-medium">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {drillEntries.map((entry, ei) => (
                       <tr key={ei} className={`border-t ${light ? "border-gray-100" : "border-white/5"}`}>
-                        <td className={`py-1.5 px-2 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.date}</td>
-                        <td className={`py-1.5 px-2 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.type}</td>
-                        <td className={`py-1.5 px-2 ${light ? "text-gray-800" : "text-gray-300"}`}>{entry.name}</td>
-                        <td className={`py-1.5 px-2 ${mutedText} max-w-[200px] truncate`}>{entry.memo}</td>
-                        <td className={`py-1.5 px-2 text-right tabular-nums whitespace-nowrap ${parseFloat(entry.amount) < 0 ? "text-red-500" : light ? "text-gray-800" : "text-gray-300"}`}>
+                        <td className={`py-2 px-3 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.date}</td>
+                        <td className={`py-2 px-3 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.type}</td>
+                        <td className={`py-2 px-3 ${light ? "text-gray-800" : "text-gray-300"}`}>{entry.name}</td>
+                        <td className={`py-2 px-3 ${mutedText}`}>{entry.memo}</td>
+                        <td className={`py-2 px-3 text-right tabular-nums whitespace-nowrap ${parseFloat(entry.amount) < 0 ? "text-red-500" : light ? "text-gray-800" : "text-gray-300"}`}>
                           {entry.amount ? formatCurrency(entry.amount) : ""}
                         </td>
-                        <td className={`py-1.5 px-2 text-right tabular-nums whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>
+                        <td className={`py-2 px-3 text-right tabular-nums whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>
                           {entry.balance ? formatCurrency(entry.balance) : ""}
                         </td>
                       </tr>

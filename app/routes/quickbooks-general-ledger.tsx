@@ -92,6 +92,16 @@ export default function GeneralLedger() {
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [light, setLight] = useState(isPublic);
   const [searchQuery, setSearchQuery] = useState("");
+  const [focusMode, setFocusMode] = useState(true);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
+
+  function getCellHighlight(rowId: string, colIdx: number, isLabel?: boolean): string {
+    if (!focusMode || isLabel) return "";
+    if (hoveredRow === null || hoveredCol === null) return "";
+    if (rowId === hoveredRow || colIdx === hoveredCol) return "";
+    return "opacity-20";
+  }
 
   useEffect(() => {
     if (!realmId) return;
@@ -157,8 +167,9 @@ export default function GeneralLedger() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const period = selectedMonth !== null ? `${MONTHS_SHORT[selectedMonth]}-${selectedYear}` : `${selectedYear}`;
-    a.download = `general-ledger-${period}.csv`;
+    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    a.download = `BFO${entity}GeneralLedger${today}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -265,7 +276,7 @@ export default function GeneralLedger() {
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500/50";
 
   return (
-    <div className={`${pageBg} min-h-screen transition-colors duration-200`}>
+    <div className={`${pageBg} min-h-screen flex flex-col transition-colors duration-200`}>
       {isPublic && (
         <header className="border-b border-gray-200 bg-white sticky top-0 z-10 mb-6">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -277,7 +288,7 @@ export default function GeneralLedger() {
           </div>
         </header>
       )}
-      <div className={isPublic ? "px-6 sm:px-10" : ""}>
+      <div className={isPublic ? "px-6 sm:px-10 flex-1 flex flex-col" : ""}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
           <Link to={isPublic ? "/public/bf-access" : "/tools/quickbooks"} className={`${mutedText} hover:text-white transition-colors`}>
@@ -294,6 +305,13 @@ export default function GeneralLedger() {
             ) : (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             )}
+          </button>
+          <button
+            onClick={() => { setFocusMode((v) => !v); setHoveredRow(null); setHoveredCol(null); }}
+            className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${focusMode ? "bg-cyan-500/10 text-cyan-600 border border-cyan-500/20" : btnBorder}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" strokeWidth={2} /><line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" strokeWidth={2} /><line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" strokeWidth={2} /><line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth={2} /></svg>
+            Focus
           </button>
           <button onClick={handleExportCSV} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -315,6 +333,7 @@ export default function GeneralLedger() {
         <select value={selectedYear} onChange={(e) => { setSelectedYear(Number(e.target.value)); }} className={selectStyle}>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
+        <div className={`h-4 w-px ${light ? "bg-gray-300" : "bg-gray-600"}`} />
         <button
           onClick={() => setSelectedMonth(null)}
           className={`text-xs px-3 py-1 rounded-md transition-colors ${
@@ -325,7 +344,6 @@ export default function GeneralLedger() {
         >
           Full Year
         </button>
-        <div className="h-4 w-px bg-gray-600" />
         <div className="flex flex-wrap gap-1">
           {MONTHS_SHORT.map((m, i) => {
             const disabled = selectedYear === currentYear && i > currentMonth;
@@ -388,10 +406,11 @@ export default function GeneralLedger() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
                 {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
                   const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("balance");
                   const isSection = row.bold && row.values.every((v) => !v);
+                  const rowId = `${row.label}-${i}`;
                   return (
                     <tr key={i} className={isTotal ? `border-t ${light ? "border-gray-200" : "border-white/10"}` : ""}>
                       <td
@@ -405,9 +424,10 @@ export default function GeneralLedger() {
                       {row.values.map((val, vi) => (
                         <td
                           key={vi}
-                          className={`py-1 px-3 text-right tabular-nums whitespace-nowrap ${
+                          onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(vi); }}
+                          className={`py-1 px-3 text-right tabular-nums whitespace-nowrap transition-opacity duration-200 ${
                             isTotal ? `font-bold ${light ? "text-gray-900" : "text-white"}` : light ? "text-gray-600" : "text-gray-400"
-                          }`}
+                          } ${getCellHighlight(rowId, vi)}`}
                         >
                           {val && !isNaN(parseFloat(val)) ? formatCurrency(val) : val || ""}
                         </td>
@@ -426,7 +446,7 @@ export default function GeneralLedger() {
       )}
 
       {isPublic && (
-        <footer className="border-t border-gray-200 mt-12 pt-6 flex items-center justify-between">
+        <footer className="border-t border-gray-200 mt-auto pt-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold tracking-tight text-gray-900">BFO</span>
             <span className="text-[10px] text-gray-400">Burton Family Office</span>
