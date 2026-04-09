@@ -400,7 +400,19 @@ export default function ProfitLoss() {
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500/50";
 
   return (
-    <div className={`${pageBg} min-h-screen transition-colors duration-200 ${isPublic ? "p-6 sm:p-10" : ""}`}>
+    <div className={`${pageBg} min-h-screen transition-colors duration-200`}>
+      {isPublic && (
+        <header className="border-b border-gray-200 bg-white sticky top-0 z-10 mb-6">
+          <div className="px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-bold tracking-tight text-gray-900">BFO</span>
+              <div className="h-5 w-px bg-gray-200" />
+              <span className="text-xs text-gray-400 uppercase tracking-wider">BeachFleischman Access</span>
+            </div>
+          </div>
+        </header>
+      )}
+      <div className={isPublic ? "px-6 sm:px-10" : ""}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
@@ -659,6 +671,7 @@ export default function ProfitLoss() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

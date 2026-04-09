@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Finance | Financial Dashboard" }];
@@ -116,7 +117,8 @@ export default function QuickBooks() {
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [light, setLight] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
+  const light = theme === "light";
 
   useEffect(() => {
     if (!lastUpdated) return;
@@ -201,7 +203,7 @@ export default function QuickBooks() {
           <h1 className={`text-2xl font-bold ${light ? "text-gray-900" : ""}`}>Finance</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setLight((v) => !v)} className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${btnBorder}`}>
+          <button onClick={toggleTheme} className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${btnBorder}`}>
             {light ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
             ) : (
