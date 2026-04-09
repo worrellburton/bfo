@@ -4,6 +4,7 @@ export default [
   route("login", "routes/login.tsx"),
   route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),
   route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
+  route("public/bf-access", "./routes/bf-access-public.tsx"),
   route("legal/terms", "./routes/legal-terms.tsx"),
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   layout("routes/app-layout.tsx", [

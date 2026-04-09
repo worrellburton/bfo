@@ -12,7 +12,7 @@ type ReportRow = {
   bold?: boolean;
 };
 
-type ViewMode = "monthly" | "annual" | "custom";
+type ViewMode = "monthly" | "annual";
 
 type DrillDown = {
   account: string;
@@ -153,10 +153,8 @@ export default function ProfitLoss() {
   useEffect(() => {
     if (viewMode === "monthly") {
       fetchPL(`/api/quickbooks/data?report=profit-loss-monthly&year=${selectedYear}${realmParam}`);
-    } else if (viewMode === "annual") {
-      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${selectedYear}-01-01&end_date=${selectedYear}-12-31${realmParam}`);
     } else {
-      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${currentYear}-01-01&end_date=${now.toISOString().split("T")[0]}${realmParam}`);
+      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${selectedYear}-01-01&end_date=${selectedYear}-12-31${realmParam}`);
     }
   }, [viewMode, selectedYear, fetchPL, realmParam]);
 
@@ -261,14 +259,10 @@ export default function ProfitLoss() {
       const lastDay = new Date(selectedYear, month + 1, 0).getDate();
       endDate = `${selectedYear}-${String(month + 1).padStart(2, "0")}-${lastDay}`;
       period = `${MONTHS_FULL[month]} ${selectedYear}`;
-    } else if (viewMode === "annual") {
+    } else {
       startDate = `${selectedYear}-01-01`;
       endDate = `${selectedYear}-12-31`;
       period = `${selectedYear}`;
-    } else {
-      startDate = `${currentYear}-01-01`;
-      endDate = now.toISOString().split("T")[0];
-      period = `YTD ${currentYear}`;
     }
     setDrill({ account, period, startDate, endDate });
   }
@@ -285,9 +279,7 @@ export default function ProfitLoss() {
 
     const periodLabel = viewMode === "monthly"
       ? `Monthly ${selectedYear}`
-      : viewMode === "annual"
-        ? `Annual ${selectedYear}`
-        : `Year to Date ${currentYear}`;
+      : `Annual ${selectedYear}`;
 
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
@@ -385,21 +377,19 @@ export default function ProfitLoss() {
       {/* View Mode Tabs + Year */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex items-center gap-2">
-          {(["monthly", "annual", "custom"] as ViewMode[]).map((mode) => (
+          {(["monthly", "annual"] as ViewMode[]).map((mode) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
               className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${viewMode === mode ? btnActive : btnBorder}`}
             >
-              {mode === "monthly" ? "Monthly" : mode === "annual" ? "Annual" : "Year to Date"}
+              {mode === "monthly" ? "Monthly" : "Annual"}
             </button>
           ))}
         </div>
-        {viewMode !== "custom" && (
-          <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        )}
+        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
+          {years.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
       </div>
 
       {/* Error */}
@@ -420,9 +410,9 @@ export default function ProfitLoss() {
       {/* Report */}
       {!loading && report && report.rows.length > 0 && (
         <div className={`${card} overflow-hidden`}>
-          <div className="p-4 sm:p-6 pb-2">
+          <div className="p-5 sm:p-8 pb-3">
             <h3 className={`font-semibold text-sm ${headingText}`}>
-              {viewMode === "monthly" ? `${selectedYear} Monthly Breakdown` : viewMode === "annual" ? `Annual ${selectedYear}` : `Year to Date ${currentYear}`}
+              {viewMode === "monthly" ? `${selectedYear} Monthly Breakdown` : `Annual ${selectedYear}`}
             </h3>
             <p className={`text-xs ${mutedText}`}>{report.title}</p>
           </div>
@@ -433,11 +423,11 @@ export default function ProfitLoss() {
               {isMultiColumn && (
                 <thead>
                   <tr>
-                    <th className={`text-left py-2 px-4 ${mutedText} font-medium sticky left-0 ${light ? "bg-gray-50" : "bg-[#0d0d0d]"}`} style={{ minWidth: "200px" }}>
+                    <th className={`text-left py-3 px-6 ${mutedText} font-medium sticky left-0 ${light ? "bg-gray-50" : "bg-[#0d0d0d]"}`} style={{ minWidth: "200px" }}>
                       Account
                     </th>
                     {report.columns.map((col, ci) => (
-                      <th key={ci} className={`text-right py-2 px-3 ${mutedText} font-medium whitespace-nowrap`} style={{ minWidth: "90px" }}>
+                      <th key={ci} className={`text-right py-3 px-4 ${mutedText} font-medium whitespace-nowrap`} style={{ minWidth: "90px" }}>
                         {col}
                       </th>
                     ))}
@@ -463,7 +453,7 @@ export default function ProfitLoss() {
                     >
                       {/* Label cell */}
                       <td
-                        className={`py-1.5 px-4 ${
+                        className={`py-2 px-6 ${
                           isSection ? "pt-4 pb-1" : ""
                         } ${
                           row.bold
@@ -482,7 +472,7 @@ export default function ProfitLoss() {
                             <td
                               key={vi}
                               onClick={clickable ? () => handleCellClick(row.label, vi) : undefined}
-                              className={`py-1.5 px-3 text-right tabular-nums whitespace-nowrap ${
+                              className={`py-2 px-4 text-right tabular-nums whitespace-nowrap ${
                                 isTotal
                                   ? `font-bold ${light ? "text-gray-900" : "text-white"}`
                                   : parseFloat(val) < 0

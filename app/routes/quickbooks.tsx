@@ -63,6 +63,31 @@ const REPORTS = [
   { key: "general-ledger", label: "General Ledger", desc: "Transaction-level detail", color: "#06b6d4", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" },
 ];
 
+function loadCompanyOrder(): string[] {
+  try {
+    const stored = localStorage.getItem("qb-company-order");
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
+}
+
+function saveCompanyOrder(order: string[]) {
+  localStorage.setItem("qb-company-order", JSON.stringify(order));
+}
+
+function applyStoredOrder(companies: Company[]): Company[] {
+  const order = loadCompanyOrder();
+  if (order.length === 0) return companies;
+  const map = new Map(companies.map((c) => [c.realm_id, c]));
+  const ordered: Company[] = [];
+  for (const id of order) {
+    const c = map.get(id);
+    if (c) { ordered.push(c); map.delete(id); }
+  }
+  // Append any new companies not in saved order
+  for (const c of map.values()) ordered.push(c);
+  return ordered;
+}
+
 export default function QuickBooks() {
   const [searchParams] = useSearchParams();
   const urlError = searchParams.get("error");
@@ -83,6 +108,8 @@ export default function QuickBooks() {
   );
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!lastUpdated) return;
@@ -112,7 +139,7 @@ export default function QuickBooks() {
         setLoading(false);
         return;
       }
-      const companyList: Company[] = listRes.companies;
+      const companyList: Company[] = applyStoredOrder(listRes.companies);
       setCompanies(companyList);
       setStatus("connected");
 
@@ -222,9 +249,33 @@ export default function QuickBooks() {
             const m = data.metrics;
             const color = COLORS[ci % COLORS.length];
             const isExpanded = expandedRealm === c.realm_id;
+            const isDragging = dragIndex === ci;
+            const isDragOver = dragOverIndex === ci;
 
             return (
-              <div key={c.realm_id} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden transition-all">
+              <div
+                key={c.realm_id}
+                draggable
+                onDragStart={() => setDragIndex(ci)}
+                onDragOver={(e) => { e.preventDefault(); setDragOverIndex(ci); }}
+                onDragEnd={() => {
+                  if (dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
+                    setCompanies((prev) => {
+                      const next = [...prev];
+                      const [moved] = next.splice(dragIndex, 1);
+                      next.splice(dragOverIndex, 0, moved);
+                      saveCompanyOrder(next.map((c) => c.realm_id));
+                      return next;
+                    });
+                  }
+                  setDragIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onDragLeave={() => setDragOverIndex(null)}
+                className={`rounded-xl border overflow-hidden transition-all ${
+                  isDragOver ? "border-green-500/50 bg-green-500/5" : isDragging ? "opacity-50 border-white/10 bg-white/[0.02]" : "border-white/10 bg-white/[0.02]"
+                }`}
+              >
                 {/* Company header + metrics — clickable */}
                 <button
                   onClick={() => setExpandedRealm(isExpanded ? null : c.realm_id)}
