@@ -277,11 +277,11 @@ export default function LedgerLouise() {
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Ledger Louise</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Ledger Louise</span>
       </div>
 
       {/* Header */}
@@ -305,8 +305,8 @@ export default function LedgerLouise() {
       {/* Context Banner */}
       <Card className="mb-8">
         <p className="text-xs text-gray-400 leading-relaxed">
-          Ledger Louise is a <strong className="text-gray-300">disregarded entity</strong> owned by the Burton Family Revocable Trust.
-          It stays that way — no elections, no entity changes. Make it an <strong className="text-gray-300">active business</strong> so
+          Ledger Louise is a <strong className={isDark ? "text-gray-300" : "text-gray-700"}>disregarded entity</strong> owned by the Burton Family Revocable Trust.
+          It stays that way — no elections, no entity changes. Make it an <strong className={isDark ? "text-gray-300" : "text-gray-700"}>active business</strong> so
           expenses are deductible on the Trust's Form 1041.
         </p>
       </Card>
