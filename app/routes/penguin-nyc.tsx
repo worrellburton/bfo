@@ -102,9 +102,9 @@ function EntityMap() {
         <span className="text-[9px] text-gray-500">8 Class B Units @ $25K = $200K</span>
       </div>
       {/* Company */}
-      <div className="rounded-xl border border-white/20 bg-white/5 px-5 py-3 text-center">
-        <div className="text-xs font-bold text-white">Penguin Flagship NYC LLC</div>
-        <div className="text-[10px] text-gray-400">NYC Restaurant/Bar Venture</div>
+      <div className={`rounded-xl border ${isDark ? "border-white/20 bg-white/5" : "border-gray-300 bg-gray-50"} px-5 py-3 text-center`}>
+        <div className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Penguin Flagship NYC LLC</div>
+        <div className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>NYC Restaurant/Bar Venture</div>
         <div className="text-[10px] text-gray-500">Formed Nov 17, 2025 in New York</div>
       </div>
       {/* Arrow */}
@@ -117,7 +117,7 @@ function EntityMap() {
       {/* Manager */}
       <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 text-center">
         <div className="text-xs font-bold text-amber-400">People&apos;s Hospitality Inc.</div>
-        <div className="text-[10px] text-gray-400">CEO: Emmet McDermott</div>
+        <div className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>CEO: Emmet McDermott</div>
         <div className="text-[10px] text-gray-500">Manager / Class A Holder</div>
       </div>
     </div>
@@ -274,6 +274,9 @@ Sundown Investments LLC`;
 // --- Overview Tab ---
 
 function OverviewTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const sectionCls = `rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"} p-6`;
   return (
     <div className="space-y-6">
       {/* Contract Status */}
@@ -284,7 +287,7 @@ function OverviewTab() {
       </div>
 
       {/* Deal Summary */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+      <div className={sectionCls}>
         <h3 className="text-sm font-semibold text-cyan-400 mb-4">Deal Summary</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Investment" value="$200,000" color="#06b6d4" />
@@ -301,7 +304,7 @@ function OverviewTab() {
       </div>
 
       {/* Side Letter Rights */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+      <div className={sectionCls}>
         <h3 className="text-sm font-semibold text-cyan-400 mb-4">Side Letter Rights</h3>
         <div className="space-y-3">
           <div className="flex items-start gap-3">
@@ -311,7 +314,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-200">IPCO Rights</div>
+              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">IPCO Rights</div>
               <div className="text-xs text-gray-500">Right to purchase Class A Units in a new IP entity (&ldquo;IPCO&rdquo;) for $50,000 (25% of the $200K subscription)</div>
             </div>
           </div>
@@ -322,7 +325,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-200">Additional Investment Option</div>
+              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">Additional Investment Option</div>
               <div className="text-xs text-gray-500">Once company raises $8M total, option to buy additional $200K Class B + $50K IPCO units at same terms</div>
             </div>
           </div>
@@ -333,7 +336,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-200">30-Day Decision Window</div>
+              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">30-Day Decision Window</div>
               <div className="text-xs text-gray-500">Must accept or reject additional investment option within 30 days of notification from Manager</div>
             </div>
           </div>
@@ -344,7 +347,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-200">Rights Termination</div>
+              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">Rights Termination</div>
               <div className="text-xs text-gray-500">All side letter rights terminate if investor no longer owns the 8 Class B Units. Rights are not assignable without Manager consent.</div>
             </div>
           </div>

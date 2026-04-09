@@ -449,6 +449,8 @@ const terminationGrounds: {
 // --- Grounds Tab ---
 
 function GroundsTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const applicableCount = terminationGrounds.filter(g => g.applies === "yes").length;
   const partialCount = terminationGrounds.filter(g => g.applies === "partial").length;
 
@@ -476,7 +478,7 @@ function GroundsTab() {
           <div className="text-sm font-bold text-orange-400">Section 4(d) — Termination for Cause</div>
         </div>
         <p className="text-xs text-gray-400 leading-relaxed mb-3">
-          The Employment Agreement defines 13 specific grounds for termination &ldquo;for Cause.&rdquo; Termination for Cause means <span className="text-white font-semibold">zero severance</span> — VisionQuest&rsquo;s obligation to pay salary ceases on the Termination Date. Below is each ground analyzed against the $50M revenue loss scenario.
+          The Employment Agreement defines 13 specific grounds for termination &ldquo;for Cause.&rdquo; Termination for Cause means <span className={`${isDark ? "text-white" : "text-gray-900"} font-semibold`}>zero severance</span> — VisionQuest&rsquo;s obligation to pay salary ceases on the Termination Date. Below is each ground analyzed against the $50M revenue loss scenario.
         </p>
         <div className="flex flex-wrap gap-2">
           <StatusBadge status="green" label={`${applicableCount} Directly Apply`} />
@@ -663,6 +665,8 @@ const severanceCost = Math.round((remainingMonths / 12) * SALARY);
 const monthlySalary = Math.round(SALARY / 12);
 
 function ConsequencesTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div className="space-y-6">
       {/* Cost Calculator Hero */}
@@ -728,7 +732,7 @@ function ConsequencesTab() {
           Release Requirement (Section 4(e)(ii))
         </h3>
         <div className="text-xs text-gray-400 leading-relaxed mb-3">
-          To receive Severance Pay (Without Cause only), the Executive <span className="text-white font-semibold">must sign a general release and waiver</span> of all claims within 60 calendar days following the Termination Date. If the Executive does not sign (or revokes) the release, no Severance Pay is owed.
+          To receive Severance Pay (Without Cause only), the Executive <span className={`${isDark ? "text-white" : "text-gray-900"} font-semibold`}>must sign a general release and waiver</span> of all claims within 60 calendar days following the Termination Date. If the Executive does not sign (or revokes) the release, no Severance Pay is owed.
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-lg bg-white/[0.03] border border-white/5 p-3">
@@ -1041,6 +1045,8 @@ const arizonaLawPoints: {
 // --- War Room Tab ---
 
 function WarRoomTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const strengthColors = {
     critical: { bg: "bg-red-500/15", text: "text-red-400", label: "CRITICAL" },
     strong: { bg: "bg-orange-500/15", text: "text-orange-400", label: "STRONG" },
@@ -1082,7 +1088,7 @@ function WarRoomTab() {
           </div>
         </div>
         <div className="text-xs text-gray-400 leading-relaxed">
-          The company lost approximately $50 million in revenue. The CEO did not lead the company to a new funding source in the last 3 years, despite knowing that funding was available. This maps directly to <span className="text-white font-semibold">4 for-cause termination grounds</span> and violates <span className="text-white font-semibold">6 specific duties</span> from the Employment Agreement and Job Description.
+          The company lost approximately $50 million in revenue. The CEO did not lead the company to a new funding source in the last 3 years, despite knowing that funding was available. This maps directly to <span className={`${isDark ? "text-white" : "text-gray-900"} font-semibold`}>4 for-cause termination grounds</span> and violates <span className={`${isDark ? "text-white" : "text-gray-900"} font-semibold`}>6 specific duties</span> from the Employment Agreement and Job Description.
         </div>
       </div>
 
