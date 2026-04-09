@@ -194,8 +194,7 @@ export default function BFAccessPublic() {
                   <th className="w-10 px-3"></th>
                 </tr>
               </thead>
-              <tbody>
-                {companies.map((c) => {
+              {companies.map((c) => {
                   const data = companyData[c.realm_id];
                   if (!data) return null;
                   const m = data.metrics;
@@ -263,7 +262,6 @@ export default function BFAccessPublic() {
                     </tbody>
                   );
                 })}
-              </tbody>
             </table>
           </div>
         )}
