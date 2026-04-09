@@ -10,7 +10,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const scope = "com.intuit.quickbooks.accounting";
     const state = "debug-test";
     const authUrl =
-      `https://appcenter.intuit.com/connect/oauth2?` +
+      `https://appcenter.intuit.com/app/connect/oauth2?` +
       `client_id=${clientId}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=code` +
@@ -39,7 +39,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   const state = crypto.randomBytes(16).toString("hex");
 
   const authUrl =
-    `https://appcenter.intuit.com/connect/oauth2?` +
+    `https://appcenter.intuit.com/app/connect/oauth2?` +
     `client_id=${clientId}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code` +
