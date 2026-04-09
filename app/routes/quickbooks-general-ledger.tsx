@@ -82,7 +82,7 @@ export default function GeneralLedger() {
 
   const [companyName, setCompanyName] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(currentMonth);
   const [report, setReport] = useState<{ title: string; columns: string[]; rows: ReportRow[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -128,9 +128,15 @@ export default function GeneralLedger() {
   }, []);
 
   useEffect(() => {
-    const startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`;
-    const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-    const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${lastDay}`;
+    let startDate: string, endDate: string;
+    if (selectedMonth !== null) {
+      startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+      endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${lastDay}`;
+    } else {
+      startDate = `${selectedYear}-01-01`;
+      endDate = `${selectedYear}-12-31`;
+    }
     fetchGL(startDate, endDate);
   }, [selectedYear, selectedMonth, fetchGL, realmParam]);
 
@@ -149,7 +155,7 @@ export default function GeneralLedger() {
     const colHeaders = report.columns.map((c) => `<th style="text-align:right;padding:4px 6px;font-size:8px;color:${mutedColor};font-weight:500;white-space:nowrap">${c}</th>`).join("");
 
     printWindow.document.write(`<!DOCTYPE html><html><head>
-      <title>General Ledger - ${MONTHS_SHORT[selectedMonth]} ${selectedYear}</title>
+      <title>General Ledger - ${selectedMonth !== null ? `${MONTHS_SHORT[selectedMonth]} ${selectedYear}` : `${selectedYear} Full Year`}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: ${bgColor}; color: ${textColor}; padding: 30px; font-size: 9px; }
@@ -169,7 +175,7 @@ export default function GeneralLedger() {
       </style></head><body>
       <div class="header">
         <h1>General Ledger</h1>
-        <p>${MONTHS_SHORT[selectedMonth]} ${selectedYear} &middot; Generated ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
+        <p>${selectedMonth !== null ? `${MONTHS_SHORT[selectedMonth]} ${selectedYear}` : `${selectedYear} Full Year`} &middot; Generated ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
       </div>
       <table>
         <thead><tr><th class="label">Account / Transaction</th>${colHeaders}</tr></thead>
@@ -230,9 +236,20 @@ export default function GeneralLedger() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
+        <select value={selectedYear} onChange={(e) => { setSelectedYear(Number(e.target.value)); }} className={selectStyle}>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
+        <button
+          onClick={() => setSelectedMonth(null)}
+          className={`text-xs px-3 py-1 rounded-md transition-colors ${
+            selectedMonth === null
+              ? light ? "bg-cyan-100 text-cyan-700 font-medium" : "bg-cyan-500/20 text-cyan-400 font-medium"
+              : light ? "text-gray-600 hover:bg-gray-100 border border-gray-200" : "text-gray-400 hover:bg-white/5 border border-white/10"
+          }`}
+        >
+          Full Year
+        </button>
+        <div className="h-4 w-px bg-gray-600" />
         <div className="flex flex-wrap gap-1">
           {MONTHS_SHORT.map((m, i) => {
             const disabled = selectedYear === currentYear && i > currentMonth;
@@ -271,7 +288,7 @@ export default function GeneralLedger() {
       {!loading && report && report.rows.length > 0 && (
         <div className={`${card} overflow-hidden`}>
           <div className="p-4 sm:p-6 pb-2">
-            <h3 className={`font-semibold text-sm ${headingText}`}>{MONTHS_SHORT[selectedMonth]} {selectedYear}</h3>
+            <h3 className={`font-semibold text-sm ${headingText}`}>{selectedMonth !== null ? `${MONTHS_SHORT[selectedMonth]} ${selectedYear}` : `${selectedYear} Full Year`}</h3>
             <p className={`text-xs ${mutedText}`}>{report.title} &middot; {report.rows.length} rows</p>
           </div>
           <div className="overflow-x-auto">
