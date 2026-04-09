@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         refresh_token: tokens.refresh_token,
         expires_at: expiresAt,
         updated_at: new Date().toISOString(),
-      })
+      }, { count: "exact" })
       .eq("realm_id", realmId as string);
 
     if (updateError) {
@@ -63,8 +63,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(updateError.message)}`);
     }
 
-    // If no row was updated, insert a new one
-    if (count === 0) {
+    // If no row was updated (new company), insert
+    if (!count || count === 0) {
       const { error: insertError } = await supabase
         .from("quickbooks_tokens")
         .insert({
