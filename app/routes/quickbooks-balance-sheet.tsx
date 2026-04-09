@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useSearchParams, useLocation } from "react-router";
 
 export function meta() {
   return [{ title: "BFO - Balance Sheet | Finance" }];
@@ -81,6 +81,8 @@ export default function BalanceSheet() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const isPublic = location.pathname.startsWith("/public/");
   const realmId = searchParams.get("realm_id") || "";
 
   const [companyName, setCompanyName] = useState("");
@@ -92,7 +94,7 @@ export default function BalanceSheet() {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
-  const [light, setLight] = useState(false);
+  const [light, setLight] = useState(isPublic);
 
   useEffect(() => {
     if (!realmId) return;
@@ -258,7 +260,7 @@ export default function BalanceSheet() {
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500/50";
 
   return (
-    <div className={`${pageBg} min-h-screen transition-colors duration-200`}>
+    <div className={`${pageBg} min-h-screen transition-colors duration-200 ${isPublic ? "p-6 sm:p-10" : ""}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
