@@ -1604,17 +1604,19 @@ function generatePDF() {
 // --- Main Component ---
 
 export default function CEOAgreement() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   return (
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">CEO Agreement Review</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>CEO Agreement Review</span>
       </div>
 
       {/* Header */}
