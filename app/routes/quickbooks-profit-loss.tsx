@@ -14,6 +14,23 @@ type ReportRow = {
 
 type ViewMode = "monthly" | "annual" | "custom";
 
+type DrillDown = {
+  account: string;
+  period: string;
+  startDate: string;
+  endDate: string;
+};
+
+type LedgerEntry = {
+  date: string;
+  type: string;
+  docNum: string;
+  name: string;
+  memo: string;
+  amount: string;
+  balance: string;
+};
+
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -92,6 +109,9 @@ export default function ProfitLoss() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [light, setLight] = useState(false);
+  const [drill, setDrill] = useState<DrillDown | null>(null);
+  const [drillEntries, setDrillEntries] = useState<LedgerEntry[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
 
   useEffect(() => {
     if (!realmId) return;
@@ -139,6 +159,72 @@ export default function ProfitLoss() {
       fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${currentYear}-01-01&end_date=${now.toISOString().split("T")[0]}${realmParam}`);
     }
   }, [viewMode, selectedYear, fetchPL, realmParam]);
+
+  // Drill-down: fetch GL for a specific account + period
+  useEffect(() => {
+    if (!drill) return;
+    setDrillLoading(true);
+    setDrillEntries([]);
+    fetch(`/api/quickbooks/data?report=general-ledger&start_date=${drill.startDate}&end_date=${drill.endDate}${realmParam}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.Rows?.Row) { setDrillLoading(false); return; }
+        const entries: LedgerEntry[] = [];
+        let inAccount = false;
+        function walk(rows: any[]) {
+          for (const row of rows) {
+            // Account section header
+            if (row.Header?.ColData) {
+              const headerName = row.Header.ColData[0]?.value || "";
+              inAccount = headerName.toLowerCase() === drill.account.toLowerCase();
+            }
+            // Transaction rows within the matched account
+            if (inAccount && row.ColData && !row.Summary) {
+              const cols = row.ColData;
+              entries.push({
+                date: cols[0]?.value || "",
+                type: cols[1]?.value || "",
+                docNum: cols[2]?.value || "",
+                name: cols[3]?.value || "",
+                memo: cols[4]?.value || "",
+                amount: cols[5]?.value || cols[6]?.value || "",
+                balance: cols[7]?.value || cols[6]?.value || "",
+              });
+            }
+            // End of account section
+            if (row.Summary?.ColData) {
+              if (inAccount) { inAccount = false; }
+            }
+            if (row.Rows?.Row) walk(row.Rows.Row);
+          }
+        }
+        walk(data.Rows.Row);
+        setDrillEntries(entries);
+      })
+      .catch(() => {})
+      .finally(() => setDrillLoading(false));
+  }, [drill, realmParam]);
+
+  function handleCellClick(account: string, colIndex: number) {
+    if (!account || account.toLowerCase().startsWith("total") || account.toLowerCase().startsWith("net ")) return;
+    let startDate: string, endDate: string, period: string;
+    if (viewMode === "monthly") {
+      const month = colIndex; // 0-indexed
+      startDate = `${selectedYear}-${String(month + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(selectedYear, month + 1, 0).getDate();
+      endDate = `${selectedYear}-${String(month + 1).padStart(2, "0")}-${lastDay}`;
+      period = `${MONTHS_FULL[month]} ${selectedYear}`;
+    } else if (viewMode === "annual") {
+      startDate = `${selectedYear}-01-01`;
+      endDate = `${selectedYear}-12-31`;
+      period = `${selectedYear}`;
+    } else {
+      startDate = `${currentYear}-01-01`;
+      endDate = now.toISOString().split("T")[0];
+      period = `YTD ${currentYear}`;
+    }
+    setDrill({ account, period, startDate, endDate });
+  }
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
   const isMultiColumn = viewMode === "monthly" && report && report.columns.length > 1;
@@ -343,34 +429,44 @@ export default function ProfitLoss() {
                       </td>
                       {/* Value cells */}
                       {isMultiColumn ? (
-                        row.values.map((val, vi) => (
-                          <td
-                            key={vi}
-                            className={`py-1.5 px-3 text-right tabular-nums whitespace-nowrap ${
-                              isTotal
-                                ? `font-bold ${light ? "text-gray-900" : "text-white"}`
-                                : parseFloat(val) < 0
-                                  ? "text-red-500"
-                                  : light ? "text-gray-600" : "text-gray-400"
-                            }`}
-                            style={isNet ? { color: "#22c55e" } : {}}
-                          >
-                            {val ? formatCurrency(val) : ""}
-                          </td>
-                        ))
+                        row.values.map((val, vi) => {
+                          const clickable = !isTotal && !isSection && !row.bold && val && parseFloat(val) !== 0;
+                          return (
+                            <td
+                              key={vi}
+                              onClick={clickable ? () => handleCellClick(row.label, vi) : undefined}
+                              className={`py-1.5 px-3 text-right tabular-nums whitespace-nowrap ${
+                                isTotal
+                                  ? `font-bold ${light ? "text-gray-900" : "text-white"}`
+                                  : parseFloat(val) < 0
+                                    ? "text-red-500"
+                                    : light ? "text-gray-600" : "text-gray-400"
+                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""}`}
+                              style={isNet ? { color: "#22c55e" } : {}}
+                            >
+                              {val ? formatCurrency(val) : ""}
+                            </td>
+                          );
+                        })
                       ) : (
-                        <td
-                          className={`py-1.5 px-4 text-right tabular-nums ${
-                            isTotal
-                              ? `font-bold ${light ? "text-gray-900" : "text-white"}`
-                              : parseFloat(row.values[0]) < 0
-                                ? "text-red-500"
-                                : light ? "text-gray-600" : "text-gray-400"
-                          }`}
-                          style={isNet ? { color: "#22c55e" } : {}}
-                        >
-                          {row.values[0] ? formatCurrency(row.values[0]) : ""}
-                        </td>
+                        (() => {
+                          const clickable = !isTotal && !isSection && !row.bold && row.values[0] && parseFloat(row.values[0]) !== 0;
+                          return (
+                            <td
+                              onClick={clickable ? () => handleCellClick(row.label, 0) : undefined}
+                              className={`py-1.5 px-4 text-right tabular-nums ${
+                                isTotal
+                                  ? `font-bold ${light ? "text-gray-900" : "text-white"}`
+                                  : parseFloat(row.values[0]) < 0
+                                    ? "text-red-500"
+                                    : light ? "text-gray-600" : "text-gray-400"
+                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""}`}
+                              style={isNet ? { color: "#22c55e" } : {}}
+                            >
+                              {row.values[0] ? formatCurrency(row.values[0]) : ""}
+                            </td>
+                          );
+                        })()
                       )}
                     </tr>
                   );
@@ -384,6 +480,64 @@ export default function ProfitLoss() {
       {!loading && report && report.rows.length === 0 && (
         <div className={`${card} p-12 text-center`}>
           <p className={mutedText}>No data available for this period.</p>
+        </div>
+      )}
+
+      {/* Drill-down panel */}
+      {drill && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setDrill(null)} />
+          <div className={`relative w-full max-w-2xl h-full overflow-y-auto ${light ? "bg-white" : "bg-[#0d0d0d]"} border-l ${light ? "border-gray-200" : "border-white/10"} shadow-2xl`}>
+            <div className="sticky top-0 z-10 p-4 border-b flex items-center justify-between" style={{ borderColor: light ? "#e5e7eb" : "rgba(255,255,255,0.1)", background: light ? "#ffffff" : "#0d0d0d" }}>
+              <div>
+                <h3 className={`font-semibold text-sm ${headingText}`}>{drill.account}</h3>
+                <p className={`text-xs ${mutedText}`}>General Ledger &middot; {drill.period}</p>
+              </div>
+              <button onClick={() => setDrill(null)} className={`p-1.5 rounded-lg ${btnBorder}`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-4">
+              {drillLoading && (
+                <div className="flex items-center justify-center py-16">
+                  <div className={`animate-spin rounded-full h-6 w-6 border-2 ${light ? "border-gray-200 border-t-gray-600" : "border-white/20 border-t-white/80"}`} />
+                </div>
+              )}
+              {!drillLoading && drillEntries.length === 0 && (
+                <p className={`text-center py-16 text-sm ${mutedText}`}>No transactions found for this account in this period.</p>
+              )}
+              {!drillLoading && drillEntries.length > 0 && (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className={`${mutedText}`}>
+                      <th className="text-left py-2 px-2 font-medium">Date</th>
+                      <th className="text-left py-2 px-2 font-medium">Type</th>
+                      <th className="text-left py-2 px-2 font-medium">Name</th>
+                      <th className="text-left py-2 px-2 font-medium">Memo</th>
+                      <th className="text-right py-2 px-2 font-medium">Amount</th>
+                      <th className="text-right py-2 px-2 font-medium">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drillEntries.map((entry, ei) => (
+                      <tr key={ei} className={`border-t ${light ? "border-gray-100" : "border-white/5"}`}>
+                        <td className={`py-1.5 px-2 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.date}</td>
+                        <td className={`py-1.5 px-2 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.type}</td>
+                        <td className={`py-1.5 px-2 ${light ? "text-gray-800" : "text-gray-300"}`}>{entry.name}</td>
+                        <td className={`py-1.5 px-2 ${mutedText} max-w-[150px] truncate`}>{entry.memo}</td>
+                        <td className={`py-1.5 px-2 text-right tabular-nums whitespace-nowrap ${parseFloat(entry.amount) < 0 ? "text-red-500" : light ? "text-gray-800" : "text-gray-300"}`}>
+                          {entry.amount ? formatCurrency(entry.amount) : ""}
+                        </td>
+                        <td className={`py-1.5 px-2 text-right tabular-nums whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>
+                          {entry.balance ? formatCurrency(entry.balance) : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
