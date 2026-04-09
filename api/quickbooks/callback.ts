@@ -47,38 +47,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = getSupabase();
 
-    // Try update first, then insert if no row existed
-    const { error: updateError, count } = await supabase
+    // Delete existing row if any, then insert fresh
+    await supabase
       .from("quickbooks_tokens")
-      .update({
+      .delete()
+      .eq("realm_id", realmId as string);
+
+    const { error: insertError } = await supabase
+      .from("quickbooks_tokens")
+      .insert({
+        realm_id: realmId as string,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expires_at: expiresAt,
         updated_at: new Date().toISOString(),
-      }, { count: "exact" })
-      .eq("realm_id", realmId as string);
+      });
 
-    if (updateError) {
-      console.error("Supabase update error:", updateError);
-      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(updateError.message)}`);
-    }
-
-    // If no row was updated (new company), insert
-    if (!count || count === 0) {
-      const { error: insertError } = await supabase
-        .from("quickbooks_tokens")
-        .insert({
-          realm_id: realmId as string,
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          expires_at: expiresAt,
-          updated_at: new Date().toISOString(),
-        });
-
-      if (insertError) {
-        console.error("Supabase insert error:", insertError);
-        return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(insertError.message)}`);
-      }
+    if (insertError) {
+      console.error("Supabase insert error:", insertError);
+      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(insertError.message)}`);
     }
 
     res.redirect(302, `/tools/quickbooks?connected=true`);
