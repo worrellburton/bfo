@@ -137,12 +137,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
         break;
       }
+      case "profit-loss-monthly": {
+        const plYear = (req.query.year as string) || String(new Date().getFullYear());
+        const plStart = `${plYear}-01-01`;
+        const plEnd = `${plYear}-12-31`;
+        data = await qboFetch(
+          accessToken,
+          realmId,
+          `reports/ProfitAndLoss?start_date=${plStart}&end_date=${plEnd}&summarize_column_by=Month&minorversion=75`
+        );
+        break;
+      }
+      case "trial-balance": {
+        const tbDate = (req.query.as_of as string) || `${new Date().getFullYear()}-12-31`;
+        data = await qboFetch(
+          accessToken,
+          realmId,
+          `reports/TrialBalance?date_macro=&as_of=${tbDate}&minorversion=75`
+        );
+        break;
+      }
       case "balance-sheet-detail": {
         const asOf = (req.query.as_of as string) || new Date().toISOString().split("T")[0];
         data = await qboFetch(
           accessToken,
           realmId,
           `reports/BalanceSheet?date_macro=&as_of=${asOf}&minorversion=75`
+        );
+        break;
+      }
+      case "general-ledger": {
+        const glStart = (req.query.start_date as string) || `${new Date().getFullYear()}-01-01`;
+        const glEnd = (req.query.end_date as string) || new Date().toISOString().split("T")[0];
+        data = await qboFetch(
+          accessToken,
+          realmId,
+          `reports/GeneralLedger?start_date=${glStart}&end_date=${glEnd}&columns=tx_date,txn_type,doc_num,name,memo,account_name,subt_nat_amount,rbal_nat_amount&minorversion=75`
         );
         break;
       }

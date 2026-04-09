@@ -137,12 +137,21 @@ export default function QuickBooks() {
           <h1 className="text-2xl font-bold">QuickBooks</h1>
         </div>
         {status === "connected" && (
-          <button
-            onClick={handleDisconnect}
-            className="text-xs text-gray-500 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-red-400/30"
-          >
-            Disconnect
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href="/api/quickbooks/auth"
+              className="text-xs text-gray-500 hover:text-green-400 transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-green-400/30 flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Add Company
+            </a>
+            <button
+              onClick={handleDisconnect}
+              className="text-xs text-gray-500 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-red-400/30"
+            >
+              Disconnect
+            </button>
+          </div>
         )}
       </div>
       <div className="flex items-center gap-3 mb-8">
@@ -234,7 +243,7 @@ export default function QuickBooks() {
           )}
 
           {/* Report Navigation Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
             <Link
               to="/tools/quickbooks/profit-loss"
               className="group rounded-xl border border-white/10 bg-white/[0.02] p-6 hover:border-green-500/30 hover:bg-green-500/[0.03] transition-all"
@@ -283,6 +292,52 @@ export default function QuickBooks() {
               </div>
               <div className="flex items-center gap-1 mt-4 text-xs text-gray-500 group-hover:text-blue-400 transition-colors">
                 <span>View reports</span>
+                <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </Link>
+
+            <Link
+              to="/tools/quickbooks/trial-balance"
+              className="group rounded-xl border border-white/10 bg-white/[0.02] p-6 hover:border-amber-500/30 hover:bg-amber-500/[0.03] transition-all"
+            >
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-amber-500/10">
+                  <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm group-hover:text-amber-400 transition-colors">Trial Balance</h3>
+                  <p className="text-gray-500 text-xs">Debits, credits, and account balances</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 mt-2 text-xs text-gray-500 group-hover:text-amber-400 transition-colors">
+                <span>View report</span>
+                <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </Link>
+
+            <Link
+              to="/tools/quickbooks/general-ledger"
+              className="group rounded-xl border border-white/10 bg-white/[0.02] p-6 hover:border-cyan-500/30 hover:bg-cyan-500/[0.03] transition-all"
+            >
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-cyan-500/10">
+                  <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm group-hover:text-cyan-400 transition-colors">General Ledger</h3>
+                  <p className="text-gray-500 text-xs">Transaction-level detail by account</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 mt-2 text-xs text-gray-500 group-hover:text-cyan-400 transition-colors">
+                <span>View report</span>
                 <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
