@@ -91,6 +91,7 @@ export default function GeneralLedger() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [light, setLight] = useState(isPublic);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!realmId) return;
@@ -143,6 +144,24 @@ export default function GeneralLedger() {
   }, [selectedYear, selectedMonth, fetchGL, realmParam]);
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+
+  function handleExportCSV() {
+    if (!report) return;
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const header = ["Account / Transaction", ...report.columns].map(esc).join(",");
+    const rows = report.rows.map((row) =>
+      [row.label, ...row.values.map((v) => v || "")].map(esc).join(",")
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const period = selectedMonth !== null ? `${MONTHS_SHORT[selectedMonth]}-${selectedYear}` : `${selectedYear}`;
+    a.download = `general-ledger-${period}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   function handleGeneratePDF() {
     if (!report) return;
@@ -201,8 +220,8 @@ export default function GeneralLedger() {
             <div class="brand">
               <div class="brand-icon">BFO</div>
               <div class="brand-text">
-                <div class="brand-name">${companyName || "Burton Family Office"}</div>
-                <div class="brand-sub">Burton Family Office</div>
+                <div class="brand-name">Burton Family Office</div>
+                <div class="brand-sub">${companyName || ""}</div>
               </div>
             </div>
             <div class="header-meta">Generated ${generatedDate}<br/>QuickBooks Online</div>
@@ -264,6 +283,10 @@ export default function GeneralLedger() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             )}
           </button>
+          <button onClick={handleExportCSV} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            CSV
+          </button>
           <button onClick={handleGeneratePDF} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
             PDF
@@ -320,6 +343,15 @@ export default function GeneralLedger() {
         </div>
       )}
 
+      {!loading && report && report.rows.length > 0 && (
+        <div className="mb-4">
+          <div className="relative">
+            <svg className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${light ? "text-gray-400" : "text-gray-500"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input type="text" placeholder="Search accounts..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full pl-10 pr-4 py-2 text-sm rounded-lg transition-colors ${light ? "bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400" : "bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:border-white/20"} focus:outline-none`} />
+          </div>
+        </div>
+      )}
+
       {loading && (
         <div className="flex items-center justify-center py-24">
           <div className={`animate-spin rounded-full h-8 w-8 border-2 ${light ? "border-gray-200 border-t-gray-600" : "border-white/20 border-t-white/80"}`} />
@@ -345,7 +377,7 @@ export default function GeneralLedger() {
                 </tr>
               </thead>
               <tbody>
-                {report.rows.map((row, i) => {
+                {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
                   const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("balance");
                   const isSection = row.bold && row.values.every((v) => !v);
                   return (
@@ -379,6 +411,16 @@ export default function GeneralLedger() {
 
       {!loading && report && report.rows.length === 0 && (
         <div className={`${card} p-12 text-center`}><p className={mutedText}>No transactions for this period.</p></div>
+      )}
+
+      {isPublic && (
+        <footer className="border-t border-gray-200 mt-12 pt-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold tracking-tight text-gray-900">BFO</span>
+            <span className="text-[10px] text-gray-400">Burton Family Office</span>
+          </div>
+          <p className="text-[10px] text-gray-400">Confidential - For authorized recipients only</p>
+        </footer>
       )}
     </div>
   );

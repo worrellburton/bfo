@@ -111,6 +111,7 @@ export default function ProfitLoss() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [light, setLight] = useState(isPublic);
+  const [searchQuery, setSearchQuery] = useState("");
   const [drill, setDrill] = useState<DrillDown | null>(null);
   const [drillEntries, setDrillEntries] = useState<LedgerEntry[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
@@ -272,6 +273,24 @@ export default function ProfitLoss() {
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
   const isMultiColumn = viewMode === "monthly" && report && report.columns.length > 1;
 
+  function handleExportCSV() {
+    if (!report) return;
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const header = ["Account", ...(isMultiColumn ? report.columns : ["Amount"])].map(esc).join(",");
+    const rows = report.rows.map((row) => {
+      const vals = isMultiColumn ? row.values : [row.values[0] || ""];
+      return [row.label, ...vals.map((v) => v || "")].map(esc).join(",");
+    });
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `profit-loss-${selectedYear}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function handleGeneratePDF() {
     if (!report) return;
     const printWindow = window.open("", "_blank");
@@ -332,8 +351,8 @@ export default function ProfitLoss() {
             <div class="brand">
               <div class="brand-icon">BFO</div>
               <div class="brand-text">
-                <div class="brand-name">${companyName || "Burton Family Office"}</div>
-                <div class="brand-sub">Burton Family Office</div>
+                <div class="brand-name">Burton Family Office</div>
+                <div class="brand-sub">${companyName || ""}</div>
               </div>
             </div>
             <div class="header-meta">Generated ${generatedDate}<br/>QuickBooks Online</div>
@@ -400,6 +419,10 @@ export default function ProfitLoss() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             )}
           </button>
+          <button onClick={handleExportCSV} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            CSV
+          </button>
           <button onClick={handleGeneratePDF} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
             PDF
@@ -434,6 +457,15 @@ export default function ProfitLoss() {
         <div className="mb-6 p-4 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400 text-sm">
           {error}
           <button onClick={() => setError("")} className="ml-3 underline">Dismiss</button>
+        </div>
+      )}
+
+      {!loading && report && report.rows.length > 0 && (
+        <div className="mb-4">
+          <div className="relative">
+            <svg className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${light ? "text-gray-400" : "text-gray-500"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input type="text" placeholder="Search accounts..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full pl-10 pr-4 py-2 text-sm rounded-lg transition-colors ${light ? "bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400" : "bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:border-white/20"} focus:outline-none`} />
+          </div>
         </div>
       )}
 
@@ -472,7 +504,7 @@ export default function ProfitLoss() {
                 </thead>
               )}
               <tbody>
-                {report.rows.map((row, i) => {
+                {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
                   const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("net ");
                   const isSection = row.bold && row.values.every((v) => !v);
                   const isNet = isTotal && row.label.toLowerCase().includes("net");
@@ -557,12 +589,25 @@ export default function ProfitLoss() {
         </div>
       )}
 
-      {/* Drill-down panel */}
+      {isPublic && (
+        <footer className="border-t border-gray-200 mt-12 pt-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold tracking-tight text-gray-900">BFO</span>
+            <span className="text-[10px] text-gray-400">Burton Family Office</span>
+          </div>
+          <p className="text-[10px] text-gray-400">Confidential - For authorized recipients only</p>
+        </footer>
+      )}
+
+      {/* Drill-down modal */}
       {drill && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setDrill(null)} />
-          <div className={`relative w-full max-w-2xl h-full overflow-y-auto ${light ? "bg-white" : "bg-[#0d0d0d]"} border-l ${light ? "border-gray-200" : "border-white/10"} shadow-2xl`}>
-            <div className="sticky top-0 z-10 p-4 border-b flex items-center justify-between" style={{ borderColor: light ? "#e5e7eb" : "rgba(255,255,255,0.1)", background: light ? "#ffffff" : "#0d0d0d" }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setDrill(null)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`relative w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl shadow-2xl ${light ? "bg-white" : "bg-[#0d0d0d]"} border ${light ? "border-gray-200" : "border-white/10"}`}
+          >
+            <div className="sticky top-0 z-10 p-5 border-b flex items-center justify-between rounded-t-xl" style={{ borderColor: light ? "#e5e7eb" : "rgba(255,255,255,0.1)", background: light ? "#ffffff" : "#0d0d0d" }}>
               <div>
                 <h3 className={`font-semibold text-sm ${headingText}`}>{drill.account}</h3>
                 <p className={`text-xs ${mutedText}`}>General Ledger &middot; {drill.period}</p>
@@ -571,7 +616,7 @@ export default function ProfitLoss() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="p-4">
+            <div className="p-5">
               {drillLoading && (
                 <div className="flex items-center justify-center py-16">
                   <div className={`animate-spin rounded-full h-6 w-6 border-2 ${light ? "border-gray-200 border-t-gray-600" : "border-white/20 border-t-white/80"}`} />
@@ -598,7 +643,7 @@ export default function ProfitLoss() {
                         <td className={`py-1.5 px-2 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.date}</td>
                         <td className={`py-1.5 px-2 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.type}</td>
                         <td className={`py-1.5 px-2 ${light ? "text-gray-800" : "text-gray-300"}`}>{entry.name}</td>
-                        <td className={`py-1.5 px-2 ${mutedText} max-w-[150px] truncate`}>{entry.memo}</td>
+                        <td className={`py-1.5 px-2 ${mutedText} max-w-[200px] truncate`}>{entry.memo}</td>
                         <td className={`py-1.5 px-2 text-right tabular-nums whitespace-nowrap ${parseFloat(entry.amount) < 0 ? "text-red-500" : light ? "text-gray-800" : "text-gray-300"}`}>
                           {entry.amount ? formatCurrency(entry.amount) : ""}
                         </td>
