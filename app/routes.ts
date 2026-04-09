@@ -30,6 +30,8 @@ export default [
     route("tools/quickbooks", "./routes/quickbooks.tsx"),
     route("tools/quickbooks/profit-loss", "./routes/quickbooks-profit-loss.tsx"),
     route("tools/quickbooks/balance-sheet", "./routes/quickbooks-balance-sheet.tsx"),
+    route("tools/quickbooks/trial-balance", "./routes/quickbooks-trial-balance.tsx"),
+    route("tools/quickbooks/general-ledger", "./routes/quickbooks-general-ledger.tsx"),
     route("tools/ledger-louise", "./routes/ledger-louise.tsx"),
     route("tools/vq-balance-sheet", "./routes/vq-balance-sheet.tsx"),
   ]),
