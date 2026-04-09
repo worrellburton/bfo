@@ -365,14 +365,14 @@ function OverviewTab() {
             classB={70}
           />
           <div className="flex items-center gap-3 px-2">
-            <div className="flex-1 h-px bg-white/10" />
+            <div className={`flex-1 h-px ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
               </svg>
               <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Flip after 1x capital return</span>
             </div>
-            <div className="flex-1 h-px bg-white/10" />
+            <div className={`flex-1 h-px ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
           </div>
           <WaterfallBar
             phase="Phase 2: After Capital Return"
@@ -489,6 +489,8 @@ function WeaknessesTab() {
 // --- Email Draft Tab ---
 
 function EmailDraftTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -530,8 +532,8 @@ function EmailDraftTab() {
           )}
         </button>
       </div>
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-        <pre className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap font-mono">{emailContent}</pre>
+      <div className={`rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"} p-6`}>
+        <pre className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed whitespace-pre-wrap font-mono`}>{emailContent}</pre>
       </div>
     </div>
   );
@@ -540,17 +542,19 @@ function EmailDraftTab() {
 // --- Main Component ---
 
 export default function PenguinNYC() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   return (
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Penguin NYC Contract Review</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Penguin NYC Contract Review</span>
       </div>
 
       {/* Header */}
@@ -563,19 +567,19 @@ export default function PenguinNYC() {
       </div>
 
       {/* Sub-page Nav */}
-      <div className="flex gap-1 mb-4 border-b border-white/10 pb-px overflow-x-auto">
-        <span className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-cyan-400 bg-white/5 border-b-2 border-cyan-400">
+      <div className={`flex gap-1 mb-4 border-b ${isDark ? "border-white/10" : "border-gray-200"} pb-px overflow-x-auto`}>
+        <span className={`px-4 py-2.5 text-xs font-medium rounded-t-lg text-cyan-400 ${isDark ? "bg-white/5" : "bg-black/5"} border-b-2 border-cyan-400`}>
           Overview
         </span>
         <Link
           to="/tools/penguin-nyc/advisory"
-          className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-gray-500 hover:text-gray-300 hover:bg-white/[0.02] transition-all duration-200"
+          className={`px-4 py-2.5 text-xs font-medium rounded-t-lg text-gray-500 ${isDark ? "hover:text-gray-300 hover:bg-white/[0.02]" : "hover:text-gray-700 hover:bg-gray-100"} transition-all duration-200`}
         >
           Advisory
         </Link>
         <Link
           to="/tools/penguin-nyc/clauses"
-          className="px-4 py-2.5 text-xs font-medium rounded-t-lg text-gray-500 hover:text-gray-300 hover:bg-white/[0.02] transition-all duration-200"
+          className={`px-4 py-2.5 text-xs font-medium rounded-t-lg text-gray-500 ${isDark ? "hover:text-gray-300 hover:bg-white/[0.02]" : "hover:text-gray-700 hover:bg-gray-100"} transition-all duration-200`}
         >
           Clause Analysis
         </Link>
@@ -590,7 +594,7 @@ export default function PenguinNYC() {
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
               activeTab === tab.id
                 ? "text-cyan-400 bg-cyan-500/10"
-                : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
+                : `text-gray-500 ${isDark ? "hover:text-gray-300 hover:bg-white/[0.02]" : "hover:text-gray-700 hover:bg-gray-100"}`
             }`}
           >
             {tab.label}
