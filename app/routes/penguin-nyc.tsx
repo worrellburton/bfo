@@ -424,18 +424,20 @@ function OverviewTab() {
 // --- Strengths Tab ---
 
 function StrengthsTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div className="space-y-3">
       <div className="text-xs text-gray-500 mb-4">10 favorable terms identified in the subscription and operating agreements</div>
       {strengths.map((item, i) => (
-        <div key={i} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+        <div key={i} className={`rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"} p-4`}>
           <div className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0 mt-0.5">
               <span className="text-[10px] font-bold text-emerald-400">{i + 1}</span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-emerald-400 mb-1">{item.title}</div>
-              <div className="text-xs text-gray-400 leading-relaxed">{item.detail}</div>
+              <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"} leading-relaxed`}>{item.detail}</div>
             </div>
           </div>
         </div>
@@ -447,6 +449,8 @@ function StrengthsTab() {
 // --- Weaknesses Tab ---
 
 function WeaknessesTab() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const redCount = weaknesses.filter(w => w.severity === "red").length;
   const amberCount = weaknesses.filter(w => w.severity === "amber").length;
 
@@ -462,14 +466,14 @@ function WeaknessesTab() {
         const textColor = item.severity === "red" ? "text-red-400" : "text-amber-400";
         const badgeLabel = item.severity === "red" ? "CRITICAL" : "NOTABLE";
         return (
-          <div key={i} className={`rounded-xl border ${borderColor} bg-white/[0.02] p-4`}>
+          <div key={i} className={`rounded-xl border ${borderColor} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"} p-4`}>
             <div className="flex items-start gap-3">
               <div className={`w-6 h-6 rounded-full ${bgColor} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                 <span className={`text-[10px] font-bold ${textColor}`}>{i + 1}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className={`text-sm font-medium ${textColor} mb-1`}>{item.title}</div>
-                <div className="text-xs text-gray-400 leading-relaxed mb-2">{item.detail}</div>
+                <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"} leading-relaxed mb-2`}>{item.detail}</div>
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${bgColor} ${textColor}`}>
                   {badgeLabel}
                 </span>
