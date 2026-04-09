@@ -47,26 +47,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = getSupabase();
 
-    // Check if this realm already exists
-    const { data: existing } = await supabase
+    // Try update first, then insert if no row existed
+    const { error: updateError, count } = await supabase
       .from("quickbooks_tokens")
-      .select("realm_id")
-      .eq("realm_id", realmId as string)
-      .maybeSingle();
+      .update({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("realm_id", realmId as string);
 
-    let error;
-    if (existing) {
-      ({ error } = await supabase
-        .from("quickbooks_tokens")
-        .update({
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          expires_at: expiresAt,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("realm_id", realmId as string));
-    } else {
-      ({ error } = await supabase
+    if (updateError) {
+      console.error("Supabase update error:", updateError);
+      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(updateError.message)}`);
+    }
+
+    // If no row was updated, insert a new one
+    if (count === 0) {
+      const { error: insertError } = await supabase
         .from("quickbooks_tokens")
         .insert({
           realm_id: realmId as string,
@@ -74,12 +73,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           refresh_token: tokens.refresh_token,
           expires_at: expiresAt,
           updated_at: new Date().toISOString(),
-        }));
-    }
+        });
 
-    if (error) {
-      console.error("Supabase save error:", error);
-      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(error.message)}`);
+      if (insertError) {
+        console.error("Supabase insert error:", insertError);
+        return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(insertError.message)}`);
+      }
     }
 
     res.redirect(302, `/tools/quickbooks?connected=true`);
