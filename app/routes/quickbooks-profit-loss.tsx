@@ -272,61 +272,96 @@ export default function ProfitLoss() {
 
   function handleGeneratePDF() {
     if (!report) return;
-    const bgColor = light ? "#ffffff" : "#0a0a0a";
-    const textColor = light ? "#111827" : "#f9fafb";
-    const mutedColor = light ? "#6b7280" : "#9ca3af";
-    const borderColor = light ? "#e5e7eb" : "rgba(255,255,255,0.1)";
-
-    const periodLabel = viewMode === "monthly"
-      ? `Monthly ${selectedYear}`
-      : `Annual ${selectedYear}`;
-
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
+    const generatedDate = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const periodLabel = viewMode === "monthly" ? `Monthly ${selectedYear}` : `Annual ${selectedYear}`;
+
     const colHeaders = isMultiColumn
-      ? report.columns.map((c) => `<th style="text-align:right;padding:4px 8px;font-size:9px;color:${mutedColor};font-weight:500;white-space:nowrap">${c}</th>`).join("")
-      : `<th style="text-align:right;padding:4px 8px;font-size:9px;color:${mutedColor}">Amount</th>`;
+      ? report.columns.map((c) => `<th class="col-header">${c}</th>`).join("")
+      : `<th class="col-header">Amount</th>`;
 
     printWindow.document.write(`<!DOCTYPE html><html><head>
-      <title>Profit & Loss - ${periodLabel}</title>
+      <title>Profit & Loss - ${companyName || "BFO"} - ${periodLabel}</title>
       <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: ${bgColor}; color: ${textColor}; padding: 30px; font-size: 10px; }
-        .header { margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid ${borderColor}; }
-        .header h1 { font-size: 18px; margin-bottom: 2px; }
-        .header p { color: ${mutedColor}; font-size: 11px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 3px 6px; }
-        .label { text-align: left; }
-        .value { text-align: right; font-variant-numeric: tabular-nums; }
-        .bold td { font-weight: 600; color: ${textColor}; }
-        .total td { border-top: 1px solid ${borderColor}; font-weight: 700; }
-        .section td { padding-top: 10px; }
-        .muted { color: ${mutedColor}; }
-        .negative { color: #ef4444; }
-        .footer { margin-top: 24px; padding-top: 10px; border-top: 1px solid ${borderColor}; font-size: 9px; color: ${mutedColor}; text-align: center; }
-        @media print { body { padding: 15px; font-size: 8px; } }
+        body {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: #ffffff; color: #1a1a2e; padding: 0; font-size: 11px;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .page { max-width: 800px; margin: 0 auto; padding: 48px 40px; }
+        .header { margin-bottom: 32px; }
+        .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 16px; letter-spacing: -0.5px; }
+        .brand-text { display: flex; flex-direction: column; }
+        .brand-name { font-size: 18px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.3px; }
+        .brand-sub { font-size: 11px; color: #64748b; font-weight: 400; }
+        .header-meta { text-align: right; font-size: 10px; color: #94a3b8; line-height: 1.6; }
+        .divider { height: 3px; background: linear-gradient(90deg, #1a1a2e 0%, #3b82f6 50%, #1a1a2e 100%); border-radius: 2px; margin-bottom: 8px; }
+        .report-title-bar { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; }
+        .report-title { font-size: 22px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; }
+        .report-period { font-size: 12px; color: #64748b; font-weight: 500; background: #f1f5f9; padding: 4px 12px; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        thead th { padding: 10px 12px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+        thead th.account-col { text-align: left; }
+        thead th.col-header { text-align: right; white-space: nowrap; }
+        tbody td { padding: 6px 12px; font-size: 10.5px; font-variant-numeric: tabular-nums; border-bottom: 1px solid #f1f5f9; }
+        tbody td.label-cell { text-align: left; color: #475569; }
+        tbody td.value-cell { text-align: right; color: #475569; }
+        tr.section-row td { padding-top: 18px; padding-bottom: 6px; border-bottom: none; font-weight: 700; font-size: 11px; color: #1a1a2e; letter-spacing: -0.2px; }
+        tr.bold-row td { font-weight: 600; color: #1e293b; }
+        tr.total-row td { border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; font-weight: 700; color: #0f172a; font-size: 11px; padding-top: 8px; padding-bottom: 8px; background: #f8fafc; }
+        tr.grand-total td { border-top: 3px double #1a1a2e; border-bottom: none; font-weight: 700; color: #0f172a; font-size: 11.5px; padding-top: 10px; padding-bottom: 10px; }
+        tbody tr.stripe td { background: #fafbfc; }
+        .negative { color: #dc2626; }
+        .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+        .footer-left { font-size: 9px; color: #94a3b8; }
+        .footer-right { font-size: 9px; color: #94a3b8; }
+        .footer-right span { color: #64748b; font-weight: 500; }
+        @media print { body { padding: 0; } .page { padding: 24px 20px; } }
       </style></head><body>
-      <div class="header">
-        <h1>Profit & Loss</h1>
-        <p>${periodLabel} &middot; Generated ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
+      <div class="page">
+        <div class="header">
+          <div class="header-top">
+            <div class="brand">
+              <div class="brand-icon">BFO</div>
+              <div class="brand-text">
+                <div class="brand-name">${companyName || "Burton Family Office"}</div>
+                <div class="brand-sub">Burton Family Office</div>
+              </div>
+            </div>
+            <div class="header-meta">Generated ${generatedDate}<br/>QuickBooks Online</div>
+          </div>
+          <div class="divider"></div>
+          <div class="report-title-bar">
+            <div class="report-title">Profit & Loss</div>
+            <div class="report-period">${periodLabel}</div>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th class="account-col">Account</th>${colHeaders}</tr></thead>
+          <tbody>
+          ${report.rows.map((row, idx) => {
+            const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("net ");
+            const isGrandTotal = row.depth === 0 && isTotal;
+            const isSection = row.bold && row.values.every((v) => !v);
+            const cls = isGrandTotal ? "grand-total" : isTotal ? "total-row" : isSection ? "section-row" : row.bold ? "bold-row" : (idx % 2 === 0 ? "stripe" : "");
+            const vals = isMultiColumn
+              ? row.values.map((v) => `<td class="value-cell${parseFloat(v) < 0 ? " negative" : ""}">${v ? formatCurrency(v) : ""}</td>`).join("")
+              : `<td class="value-cell${parseFloat(row.values[0]) < 0 ? " negative" : ""}">${row.values[0] ? formatCurrency(row.values[0]) : ""}</td>`;
+            return `<tr class="${cls}"><td class="label-cell" style="padding-left:${row.depth * 18 + 12}px">${row.label}</td>${vals}</tr>`;
+          }).join("")}
+          </tbody>
+        </table>
+        <div class="footer">
+          <div class="footer-left">Burton Family Office &middot; Confidential</div>
+          <div class="footer-right">Page 1 &middot; <span>QuickBooks Online</span></div>
+        </div>
       </div>
-      <table>
-        <thead><tr><th class="label"></th>${colHeaders}</tr></thead>
-        <tbody>
-        ${report.rows.map((row) => {
-          const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("net ");
-          const isSection = row.bold && row.values.every((v) => !v);
-          const cls = isTotal ? "total" : isSection ? "section bold" : row.bold ? "bold" : "muted";
-          const vals = isMultiColumn
-            ? row.values.map((v) => `<td class="value${parseFloat(v) < 0 ? " negative" : ""}">${v ? formatCurrency(v) : ""}</td>`).join("")
-            : `<td class="value${parseFloat(row.values[0]) < 0 ? " negative" : ""}">${row.values[0] ? formatCurrency(row.values[0]) : ""}</td>`;
-          return `<tr class="${cls}"><td class="label" style="padding-left:${row.depth * 14 + 4}px">${row.label}</td>${vals}</tr>`;
-        }).join("")}
-        </tbody>
-      </table>
-      <div class="footer">Burton Family Office &middot; Generated from QuickBooks Online</div>
     </body></html>`);
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 500);
