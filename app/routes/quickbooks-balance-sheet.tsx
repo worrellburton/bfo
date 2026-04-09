@@ -96,6 +96,16 @@ export default function BalanceSheet() {
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [light, setLight] = useState(isPublic);
   const [searchQuery, setSearchQuery] = useState("");
+  const [focusMode, setFocusMode] = useState(true);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
+
+  function getCellHighlight(rowId: string, colIdx: number, isLabel?: boolean): string {
+    if (!focusMode || isLabel) return "";
+    if (hoveredRow === null || hoveredCol === null) return "";
+    if (rowId === hoveredRow || colIdx === hoveredCol) return "";
+    return "opacity-20";
+  }
 
   useEffect(() => {
     if (!realmId) return;
@@ -165,7 +175,9 @@ export default function BalanceSheet() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `balance-sheet-${selectedYear}.csv`;
+    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    a.download = `BFO${entity}BalanceSheet${today}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -278,7 +290,7 @@ export default function BalanceSheet() {
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500/50";
 
   return (
-    <div className={`${pageBg} min-h-screen transition-colors duration-200`}>
+    <div className={`${pageBg} min-h-screen flex flex-col transition-colors duration-200`}>
       {isPublic && (
         <header className="border-b border-gray-200 bg-white sticky top-0 z-10 mb-6">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -290,7 +302,7 @@ export default function BalanceSheet() {
           </div>
         </header>
       )}
-      <div className={isPublic ? "px-6 sm:px-10" : ""}>
+      <div className={isPublic ? "px-6 sm:px-10 flex-1 flex flex-col" : ""}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
@@ -309,6 +321,13 @@ export default function BalanceSheet() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             )}
           </button>
+          <button
+            onClick={() => { setFocusMode((v) => !v); setHoveredRow(null); setHoveredCol(null); }}
+            className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${focusMode ? "bg-blue-500/10 text-blue-600 border border-blue-500/20" : btnBorder}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" strokeWidth={2} /><line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" strokeWidth={2} /><line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" strokeWidth={2} /><line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth={2} /></svg>
+            Focus
+          </button>
           <button onClick={handleExportCSV} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             CSV
@@ -326,6 +345,10 @@ export default function BalanceSheet() {
 
       {/* View Mode Tabs */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
+          {years.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <div className={`h-4 w-px ${light ? "bg-gray-300" : "bg-gray-600"}`} />
         {(["current", "monthly", "annual"] as ViewMode[]).map((mode) => (
           <button
             key={mode}
@@ -338,35 +361,29 @@ export default function BalanceSheet() {
       </div>
 
       {/* Filters */}
-      {viewMode !== "current" && (
+      {viewMode === "monthly" && (
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className={selectStyle}>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-
-          {viewMode === "monthly" && (
-            <div className="flex flex-wrap gap-1">
-              {MONTHS.map((m, i) => {
-                const disabled = selectedYear === currentYear && i > currentMonth;
-                return (
-                  <button
-                    key={m}
-                    onClick={() => !disabled && setSelectedMonth(i)}
-                    disabled={disabled}
-                    className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-                      selectedMonth === i
-                        ? light ? "bg-blue-100 text-blue-700 font-medium" : "bg-blue-500/20 text-blue-400 font-medium"
-                        : disabled
-                          ? light ? "text-gray-300 cursor-not-allowed" : "text-gray-700 cursor-not-allowed"
-                          : light ? "text-gray-600 hover:bg-gray-100" : "text-gray-400 hover:bg-white/5"
-                    }`}
-                  >
-                    {m}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-1">
+            {MONTHS.map((m, i) => {
+              const disabled = selectedYear === currentYear && i > currentMonth;
+              return (
+                <button
+                  key={m}
+                  onClick={() => !disabled && setSelectedMonth(i)}
+                  disabled={disabled}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+                    selectedMonth === i
+                      ? light ? "bg-blue-100 text-blue-700 font-medium" : "bg-blue-500/20 text-blue-400 font-medium"
+                      : disabled
+                        ? light ? "text-gray-300 cursor-not-allowed" : "text-gray-700 cursor-not-allowed"
+                        : light ? "text-gray-600 hover:bg-gray-100" : "text-gray-400 hover:bg-white/5"
+                  }`}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -407,14 +424,16 @@ export default function BalanceSheet() {
             </h3>
             <p className={`text-xs ${mutedText}`}>{report.title}</p>
           </div>
-          <div className="space-y-0">
+          <div className="space-y-0" onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
             {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
               const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("net ");
               const isSection = row.bold && row.values.every((v) => !v);
               const val = row.values[0] || "";
+              const rowId = `${row.label}-${i}`;
               return (
                 <div
                   key={i}
+                  onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(0); }}
                   className={`flex items-center justify-between py-1.5 px-3 text-xs ${
                     isTotal
                       ? `border-t ${light ? "border-gray-200" : "border-white/10"} font-bold`
@@ -427,11 +446,11 @@ export default function BalanceSheet() {
                   <span className={row.bold ? `font-semibold ${light ? "text-gray-900" : "text-white"}` : ""}>{row.label}</span>
                   {val && (
                     <span
-                      className={`tabular-nums ${
+                      className={`tabular-nums transition-opacity duration-200 ${
                         isTotal
                           ? light ? "text-gray-900" : "text-white"
                           : parseFloat(val) < 0 ? "text-red-500" : ""
-                      }`}
+                      } ${getCellHighlight(rowId, 0)}`}
                       style={isTotal && row.label.toLowerCase().includes("equity") ? { color: "#a855f7" } : isTotal && row.label.toLowerCase().includes("assets") ? { color: "#3b82f6" } : {}}
                     >
                       {formatCurrency(val)}
@@ -451,7 +470,7 @@ export default function BalanceSheet() {
       )}
 
       {isPublic && (
-        <footer className="border-t border-gray-200 mt-12 pt-6 flex items-center justify-between">
+        <footer className="border-t border-gray-200 mt-auto pt-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold tracking-tight text-gray-900">BFO</span>
             <span className="text-[10px] text-gray-400">Burton Family Office</span>
