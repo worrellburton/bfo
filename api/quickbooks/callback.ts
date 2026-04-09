@@ -47,24 +47,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = getSupabase();
 
-    // Fetch company name from QBO
-    let companyName = "";
-    try {
-      const companyRes = await fetch(
-        `https://quickbooks.api.intuit.com/v3/company/${realmId}/companyinfo/${realmId}`,
-        { headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: "application/json" } }
-      );
-      if (companyRes.ok) {
-        const companyData = await companyRes.json();
-        companyName = companyData?.CompanyInfo?.CompanyName || "";
-      }
-    } catch {}
-
     const { error } = await supabase
       .from("quickbooks_tokens")
       .upsert({
         realm_id: realmId as string,
-        company_name: companyName,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expires_at: expiresAt,
@@ -73,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (error) {
       console.error("Supabase upsert error:", error);
-      return res.redirect(302, `/tools/quickbooks?error=db_error`);
+      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(error.message)}`);
     }
 
     res.redirect(302, `/tools/quickbooks?connected=true`);
