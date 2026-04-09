@@ -28,6 +28,8 @@ export default [
     route("tools/penguin-nyc/clauses", "./routes/penguin-nyc-clauses.tsx"),
     route("tools/ceo-agreement", "./routes/ceo-agreement.tsx"),
     route("tools/quickbooks", "./routes/quickbooks.tsx"),
+    route("tools/quickbooks/profit-loss", "./routes/quickbooks-profit-loss.tsx"),
+    route("tools/quickbooks/balance-sheet", "./routes/quickbooks-balance-sheet.tsx"),
     route("tools/ledger-louise", "./routes/ledger-louise.tsx"),
     route("tools/vq-balance-sheet", "./routes/vq-balance-sheet.tsx"),
   ]),
