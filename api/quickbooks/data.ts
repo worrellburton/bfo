@@ -8,6 +8,34 @@ function getSupabase() {
   );
 }
 
+// Raw REST upsert — bypasses Supabase JS client issues
+async function rawUpsertToken(row: {
+  realm_id: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  updated_at: string;
+}) {
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_KEY!;
+
+  const res = await fetch(`${url}/rest/v1/quickbooks_tokens`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(row),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upsert failed (${res.status}): ${text}`);
+  }
+}
+
 async function refreshAccessToken(supabase: ReturnType<typeof createClient>, refreshToken: string, realmId: string) {
   const clientId = process.env.QUICKBOOKS_CLIENT_ID!;
   const clientSecret = process.env.QUICKBOOKS_CLIENT_SECRET!;
@@ -33,18 +61,13 @@ async function refreshAccessToken(supabase: ReturnType<typeof createClient>, ref
   const tokens = await res.json();
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-  await supabase
-    .from("quickbooks_tokens")
-    .upsert(
-      {
-        realm_id: realmId,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: expiresAt,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "realm_id" }
-    );
+  await rawUpsertToken({
+    realm_id: realmId,
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  });
 
   return tokens.access_token;
 }
@@ -94,29 +117,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: schemaRows, error: schemaError } = await supabase
         .rpc("", {}).then(() => ({ data: null, error: null })).catch(() => ({ data: null, error: null }));
 
-      // Test write capability using upsert
+      // Test write capability using raw REST upsert
       let writeTest = "not_tested";
       try {
         const testId = "__debug_test__";
-        const { error: upsertErr } = await supabase
-          .from("quickbooks_tokens")
-          .upsert(
-            {
-              realm_id: testId,
-              access_token: "test",
-              refresh_token: "test",
-              expires_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "realm_id" }
-          );
-        if (upsertErr) {
-          writeTest = `upsert_failed: ${upsertErr.message}`;
-        } else {
-          // Clean up test row
-          await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
-          writeTest = "ok";
-        }
+        await rawUpsertToken({
+          realm_id: testId,
+          access_token: "test",
+          refresh_token: "test",
+          expires_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        // Clean up test row
+        await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
+        writeTest = "ok";
       } catch (e: any) {
         writeTest = `error: ${e.message}`;
       }

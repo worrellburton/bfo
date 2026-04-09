@@ -8,6 +8,34 @@ function getSupabase() {
   );
 }
 
+// Raw REST upsert — bypasses Supabase JS client issues
+async function rawUpsertToken(row: {
+  realm_id: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  updated_at: string;
+}) {
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_KEY!;
+
+  const res = await fetch(`${url}/rest/v1/quickbooks_tokens`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(row),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upsert failed (${res.status}): ${text}`);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { code, realmId } = req.query;
 
@@ -45,30 +73,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const tokens = await tokenRes.json();
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    const supabase = getSupabase();
-
-    // Upsert token — uses realm_id primary key for conflict resolution
-    const { error: upsertError } = await supabase
-      .from("quickbooks_tokens")
-      .upsert(
-        {
-          realm_id: realmId as string,
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          expires_at: expiresAt,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "realm_id" }
-      );
-
-    if (upsertError) {
-      console.error("Supabase upsert error:", upsertError);
-      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(upsertError.message)}&realm_id=${realmId}`);
-    }
+    await rawUpsertToken({
+      realm_id: realmId as string,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    });
 
     res.redirect(302, `/tools/quickbooks?connected=true&realm_id=${realmId}`);
-  } catch (err) {
+  } catch (err: any) {
     console.error("OAuth callback error:", err);
-    res.redirect(302, `/tools/quickbooks?error=callback_failed`);
+    res.redirect(302, `/tools/quickbooks?error=callback_failed&detail=${encodeURIComponent(err.message)}`);
   }
 }
