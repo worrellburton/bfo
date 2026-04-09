@@ -8,7 +8,7 @@ function getSupabase() {
   );
 }
 
-// Raw REST: check if row exists, then PATCH or INSERT
+// Upsert token row keyed by realm_id (primary key)
 async function saveToken(row: {
   realm_id: string;
   access_token: string;
@@ -18,49 +18,19 @@ async function saveToken(row: {
 }) {
   const url = process.env.SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_KEY!;
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-  };
-
-  // Check if this realm_id already exists
-  const checkRes = await fetch(
-    `${url}/rest/v1/quickbooks_tokens?realm_id=eq.${row.realm_id}&select=realm_id`,
-    { headers }
-  );
-  const existing = await checkRes.json();
-
-  if (existing && existing.length > 0) {
-    // Update existing row
-    const patchRes = await fetch(
-      `${url}/rest/v1/quickbooks_tokens?realm_id=eq.${row.realm_id}`,
-      {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({
-          access_token: row.access_token,
-          refresh_token: row.refresh_token,
-          expires_at: row.expires_at,
-          updated_at: row.updated_at,
-        }),
-      }
-    );
-    if (!patchRes.ok) {
-      const text = await patchRes.text();
-      throw new Error(`PATCH failed (${patchRes.status}): ${text}`);
-    }
-  } else {
-    // Insert new row
-    const postRes = await fetch(`${url}/rest/v1/quickbooks_tokens`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(row),
-    });
-    if (!postRes.ok) {
-      const text = await postRes.text();
-      throw new Error(`INSERT failed (${postRes.status}): ${text}`);
-    }
+  const res = await fetch(`${url}/rest/v1/quickbooks_tokens`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upsert failed (${res.status}): ${text}`);
   }
 }
 
