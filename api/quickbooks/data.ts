@@ -33,15 +33,13 @@ async function refreshAccessToken(supabase: ReturnType<typeof createClient>, ref
   const tokens = await res.json();
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-  await supabase
-    .from("quickbooks_tokens")
-    .update({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expires_at: expiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("realm_id", realmId);
+  // Use stored function to bypass client-side write issues
+  await supabase.rpc("upsert_qb_token", {
+    p_realm_id: realmId,
+    p_access_token: tokens.access_token,
+    p_refresh_token: tokens.refresh_token,
+    p_expires_at: expiresAt,
+  });
 
   return tokens.access_token;
 }
@@ -91,27 +89,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: schemaRows, error: schemaError } = await supabase
         .rpc("", {}).then(() => ({ data: null, error: null })).catch(() => ({ data: null, error: null }));
 
-      // Test insert/delete capability
+      // Test write capability using stored function
       let writeTest = "not_tested";
       try {
         const testId = "__debug_test__";
-        const { error: delErr } = await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
-        if (delErr) {
-          writeTest = `delete_failed: ${delErr.message}`;
+        const { error: rpcErr } = await supabase.rpc("upsert_qb_token", {
+          p_realm_id: testId,
+          p_access_token: "test",
+          p_refresh_token: "test",
+          p_expires_at: new Date().toISOString(),
+        });
+        if (rpcErr) {
+          writeTest = `rpc_failed: ${rpcErr.message}`;
         } else {
-          const { error: insErr } = await supabase.from("quickbooks_tokens").insert({
-            realm_id: testId,
-            access_token: "test",
-            refresh_token: "test",
-            expires_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-          if (insErr) {
-            writeTest = `insert_failed: ${insErr.message}`;
-          } else {
-            await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
-            writeTest = "ok";
-          }
+          // Clean up test row
+          await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
+          writeTest = "ok";
         }
       } catch (e: any) {
         writeTest = `error: ${e.message}`;
@@ -286,7 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
         break;
       case "status":
-        data = { connected: true, realmId, companyName: row.company_name };
+        data = { connected: true, realmId };
         break;
       default:
         return res.status(400).json({ error: "Unknown report type" });

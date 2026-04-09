@@ -47,25 +47,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = getSupabase();
 
-    // Delete existing row if any, then insert fresh
-    await supabase
-      .from("quickbooks_tokens")
-      .delete()
-      .eq("realm_id", realmId as string);
+    // Use stored function to bypass client-side write issues
+    const { error: rpcError } = await supabase.rpc("upsert_qb_token", {
+      p_realm_id: realmId as string,
+      p_access_token: tokens.access_token,
+      p_refresh_token: tokens.refresh_token,
+      p_expires_at: expiresAt,
+    });
 
-    const { error: insertError } = await supabase
-      .from("quickbooks_tokens")
-      .insert({
-        realm_id: realmId as string,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: expiresAt,
-        updated_at: new Date().toISOString(),
-      });
-
-    if (insertError) {
-      console.error("Supabase insert error:", insertError);
-      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(insertError.message)}&realm_id=${realmId}`);
+    if (rpcError) {
+      console.error("Supabase RPC error:", rpcError);
+      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(rpcError.message)}&realm_id=${realmId}`);
     }
 
     res.redirect(302, `/tools/quickbooks?connected=true&realm_id=${realmId}`);
