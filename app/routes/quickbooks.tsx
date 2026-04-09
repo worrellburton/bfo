@@ -67,12 +67,20 @@ export default function QuickBooks() {
   const [searchParams] = useSearchParams();
   const urlError = searchParams.get("error");
   const urlDetail = searchParams.get("detail");
+  const urlRealmId = searchParams.get("realm_id");
+  const urlConnected = searchParams.get("connected");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyData, setCompanyData] = useState<Record<string, CompanyData>>({});
   const [expandedRealm, setExpandedRealm] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "connected" | "disconnected">("loading");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(urlError ? `Connection failed: ${urlError}${urlDetail ? ` — ${urlDetail}` : ""}` : "");
+  const [error, setError] = useState(
+    urlError
+      ? `Connection failed: ${urlError}${urlDetail ? ` — ${urlDetail}` : ""}${urlRealmId ? ` (realm: ${urlRealmId})` : ""}`
+      : urlConnected && urlRealmId
+        ? ""
+        : ""
+  );
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
 

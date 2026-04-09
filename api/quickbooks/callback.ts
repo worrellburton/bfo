@@ -65,10 +65,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (insertError) {
       console.error("Supabase insert error:", insertError);
-      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(insertError.message)}`);
+      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(insertError.message)}&realm_id=${realmId}`);
     }
 
-    res.redirect(302, `/tools/quickbooks?connected=true`);
+    res.redirect(302, `/tools/quickbooks?connected=true&realm_id=${realmId}`);
   } catch (err) {
     console.error("OAuth callback error:", err);
     res.redirect(302, `/tools/quickbooks?error=callback_failed`);
