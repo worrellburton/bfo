@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 export function meta() {
-  return [{ title: "BFO - Profit & Loss | QuickBooks" }];
+  return [{ title: "BFO - Profit & Loss | Finance" }];
 }
 
 type ReportRow = {
@@ -80,7 +80,10 @@ function timeAgo(date: Date): string {
 export default function ProfitLoss() {
   const now = new Date();
   const currentYear = now.getFullYear();
+  const [searchParams] = useSearchParams();
+  const realmId = searchParams.get("realm_id") || "";
 
+  const [companyName, setCompanyName] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [report, setReport] = useState<{ title: string; columns: string[]; rows: ReportRow[] } | null>(null);
@@ -91,11 +94,21 @@ export default function ProfitLoss() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
+    if (!realmId) return;
+    fetch(`/api/quickbooks/data?report=company-info&realm_id=${realmId}`)
+      .then((r) => r.json())
+      .then((d) => setCompanyName(d?.CompanyInfo?.CompanyName || ""))
+      .catch(() => {});
+  }, [realmId]);
+
+  useEffect(() => {
     if (!lastUpdated) return;
     setLastUpdatedText(timeAgo(lastUpdated));
     const interval = setInterval(() => setLastUpdatedText(timeAgo(lastUpdated)), 30000);
     return () => clearInterval(interval);
   }, [lastUpdated]);
+
+  const realmParam = realmId ? `&realm_id=${realmId}` : "";
 
   const fetchPL = useCallback(async (url: string) => {
     setLoading(true);
@@ -119,15 +132,13 @@ export default function ProfitLoss() {
 
   useEffect(() => {
     if (viewMode === "monthly") {
-      // Fetch all months for the year in one request
-      fetchPL(`/api/quickbooks/data?report=profit-loss-monthly&year=${selectedYear}`);
+      fetchPL(`/api/quickbooks/data?report=profit-loss-monthly&year=${selectedYear}${realmParam}`);
     } else if (viewMode === "annual") {
-      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${selectedYear}-01-01&end_date=${selectedYear}-12-31`);
+      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${selectedYear}-01-01&end_date=${selectedYear}-12-31${realmParam}`);
     } else {
-      // YTD
-      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${currentYear}-01-01&end_date=${now.toISOString().split("T")[0]}`);
+      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${currentYear}-01-01&end_date=${now.toISOString().split("T")[0]}${realmParam}`);
     }
-  }, [viewMode, selectedYear, fetchPL]);
+  }, [viewMode, selectedYear, fetchPL, realmParam]);
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
   const isMultiColumn = viewMode === "monthly" && report && report.columns.length > 1;
@@ -234,7 +245,7 @@ export default function ProfitLoss() {
         </div>
       </div>
       <div className="flex items-center gap-3 mb-6">
-        <p className={`${mutedText} text-sm`}>Ledger Louise, LLC</p>
+        <p className={`${mutedText} text-sm`}>{companyName || "Loading..."}</p>
         {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdatedText}</span>}
       </div>
 
