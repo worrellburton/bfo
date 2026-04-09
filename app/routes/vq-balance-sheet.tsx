@@ -97,6 +97,8 @@ function Collapsible({ title, color, defaultOpen = true, children }: { title: st
 }
 
 export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolean }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [copied, setCopied] = useState(false);
 
   // Calculated metrics
@@ -351,11 +353,11 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <span className="font-mono tabular-nums text-sm font-bold text-green-400">$1,444,543.33</span>
           </div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What it is:</strong> The <em>par value</em> of all shares VQ has issued to shareholders. Par value is a nominal
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The <em>par value</em> of all shares VQ has issued to shareholders. Par value is a nominal
             amount (often $0.01 or $1) assigned to each share when the company was incorporated — it's an accounting legacy, not market value.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Why it matters:</strong> This represents the legal capital of the company — the minimum amount shareholders
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Why it matters:</strong> This represents the legal capital of the company — the minimum amount shareholders
             contributed. It doesn't change unless new shares are issued or retired.
           </p>
         </Card>
@@ -370,12 +372,12 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <span className="font-mono tabular-nums text-sm font-bold text-green-400">$160,014.69</span>
           </div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What it is:</strong> The amount shareholders paid <em>above</em> par value when buying stock directly from the company.
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The amount shareholders paid <em>above</em> par value when buying stock directly from the company.
             If par is $1 and shareholders paid $10, the extra $9 per share goes here.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Why it matters:</strong> APIC plus Common Stock = the total cash shareholders put into the business for their
-            ownership stake. For VQ: <strong className="text-gray-300">$1.44M + $160K = $1.60M</strong> total contributed capital.
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Why it matters:</strong> APIC plus Common Stock = the total cash shareholders put into the business for their
+            ownership stake. For VQ: <strong className={isDark ? "text-gray-300" : "text-gray-700"}>$1.44M + $160K = $1.60M</strong> total contributed capital.
           </p>
         </Card>
 
@@ -389,11 +391,11 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$466.42</span>
           </div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What it is:</strong> The cumulative net profits (or losses) the company has kept <em>from prior years</em>, after
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The cumulative net profits (or losses) the company has kept <em>from prior years</em>, after
             paying out any dividends. A negative number means accumulated losses exceed accumulated profits historically.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Why it matters:</strong> VQ's retained earnings are essentially zero (-$466) — meaning historically, profits and
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Why it matters:</strong> VQ's retained earnings are essentially zero (-$466) — meaning historically, profits and
             losses have roughly cancelled out. The current year's $1.64M loss will roll into this account at year-end, making it significantly negative.
           </p>
         </Card>
@@ -466,17 +468,17 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <span className="font-mono tabular-nums text-sm font-bold text-green-400">$936,472.43</span>
           </div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What it is:</strong> Compensation that has been earned by employees or executives but isn't paid until a future
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> Compensation that has been earned by employees or executives but isn't paid until a future
             date (retirement, vesting, or termination). It's a promise to pay later, recorded in equity because it's often tied to stock-based or
             ownership-linked arrangements.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">Why it's here and not in liabilities:</strong> When deferred comp is funded through a rabbi trust or tied to
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Why it's here and not in liabilities:</strong> When deferred comp is funded through a rabbi trust or tied to
             company stock, it appears in equity as an offsetting entry. There's also a "VQ Deferred Compensation" line of $66,666.67 in current liabilities —
             likely the portion due within the next 12 months.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Why it matters:</strong> $936K in future comp obligations is material. These will eventually be paid out in cash,
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Why it matters:</strong> $936K in future comp obligations is material. These will eventually be paid out in cash,
             reducing equity further when paid.
           </p>
         </Card>
@@ -493,17 +495,17 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <span className="font-mono tabular-nums text-sm font-bold text-green-400">$6,557,006.86</span>
           </div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What it is:</strong> A <em>QuickBooks-generated temporary account</em> that holds offsetting entries when
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> A <em>QuickBooks-generated temporary account</em> that holds offsetting entries when
             opening balances were entered during initial setup or migration. It should eventually be reclassified into Retained Earnings, Common Stock, or
             APIC — whichever is appropriate.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">Why a clean balance sheet shouldn't have this:</strong> An Opening Balance Equity balance of $6.56M means the
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Why a clean balance sheet shouldn't have this:</strong> An Opening Balance Equity balance of $6.56M means the
             QuickBooks file was set up with offsetting entries that were never properly reclassified. CPAs typically zero this account out by reclassifying
             it to the correct equity account during year-end close.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Action item:</strong> Work with the bookkeeper or CPA to identify what this balance represents (likely prior
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Action item:</strong> Work with the bookkeeper or CPA to identify what this balance represents (likely prior
             year retained earnings or capital contributions) and reclassify it. This is the single largest cleanup item on the balance sheet.
           </p>
         </Card>
@@ -517,15 +519,15 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$1,639,698.50</span>
           </div>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What it is:</strong> The profit or loss from the current accounting period (year-to-date or full year). This
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The profit or loss from the current accounting period (year-to-date or full year). This
             flows from the Income Statement and increases or decreases equity depending on whether the company made money.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed mb-2">
-            <strong className="text-gray-300">What $1.64M loss means:</strong> VQ spent $1.64M more than it brought in during the current period. At year-end
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What $1.64M loss means:</strong> VQ spent $1.64M more than it brought in during the current period. At year-end
             this loss will be closed out of Net Income and added to Retained Earnings, making retained earnings roughly -$1.64M going into next year.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Trajectory concern:</strong> With only $1.62M of total equity and a current-period loss of $1.64M, <em>another
+            <strong className={isDark ? "text-gray-300" : "text-gray-700"}>Trajectory concern:</strong> With only $1.62M of total equity and a current-period loss of $1.64M, <em>another
             year of similar losses would wipe out equity entirely</em>. Recovery requires either cutting expenses, growing revenue, or raising new capital.
           </p>
         </Card>
