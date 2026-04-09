@@ -47,18 +47,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = getSupabase();
 
-    const { error } = await supabase
+    // Check if this realm already exists
+    const { data: existing } = await supabase
       .from("quickbooks_tokens")
-      .upsert({
-        realm_id: realmId as string,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: expiresAt,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "realm_id" });
+      .select("realm_id")
+      .eq("realm_id", realmId as string)
+      .maybeSingle();
+
+    let error;
+    if (existing) {
+      ({ error } = await supabase
+        .from("quickbooks_tokens")
+        .update({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: expiresAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("realm_id", realmId as string));
+    } else {
+      ({ error } = await supabase
+        .from("quickbooks_tokens")
+        .insert({
+          realm_id: realmId as string,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: expiresAt,
+          updated_at: new Date().toISOString(),
+        }));
+    }
 
     if (error) {
-      console.error("Supabase upsert error:", error);
+      console.error("Supabase save error:", error);
       return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(error.message)}`);
     }
 

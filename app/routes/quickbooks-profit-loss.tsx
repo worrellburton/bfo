@@ -161,6 +161,16 @@ export default function ProfitLoss() {
   }, [viewMode, selectedYear, fetchPL, realmParam]);
 
   // Drill-down: fetch GL for a specific account + period
+  function matchesAccount(glName: string, plName: string): boolean {
+    const gl = glName.toLowerCase().trim();
+    const pl = plName.toLowerCase().trim();
+    if (gl === pl) return true;
+    // GL uses "Parent:Child" format, P&L shows just "Child"
+    if (gl.endsWith(":" + pl)) return true;
+    if (gl.includes(pl)) return true;
+    return false;
+  }
+
   useEffect(() => {
     if (!drill) return;
     setDrillLoading(true);
@@ -170,35 +180,72 @@ export default function ProfitLoss() {
       .then((data) => {
         if (!data?.Rows?.Row) { setDrillLoading(false); return; }
         const entries: LedgerEntry[] = [];
-        let inAccount = false;
-        function walk(rows: any[]) {
+
+        // Walk the GL tree and collect transactions for matching accounts
+        function walk(rows: any[], currentAccount: string) {
           for (const row of rows) {
-            // Account section header
+            // Account section with sub-rows
             if (row.Header?.ColData) {
               const headerName = row.Header.ColData[0]?.value || "";
-              inAccount = headerName.toLowerCase() === drill.account.toLowerCase();
+              const isMatch = matchesAccount(headerName, drill!.account);
+
+              // Walk sub-rows of this account section
+              if (row.Rows?.Row) {
+                for (const subRow of row.Rows.Row) {
+                  if (isMatch && subRow.ColData) {
+                    const cols = subRow.ColData;
+                    entries.push({
+                      date: cols[0]?.value || "",
+                      type: cols[1]?.value || "",
+                      docNum: cols[2]?.value || "",
+                      name: cols[3]?.value || "",
+                      memo: cols[4]?.value || "",
+                      amount: cols[5]?.value || cols[6]?.value || "",
+                      balance: cols[7]?.value || cols[6]?.value || "",
+                    });
+                  }
+                  // Nested sub-accounts
+                  if (subRow.Header?.ColData) {
+                    const subName = subRow.Header.ColData[0]?.value || "";
+                    const subMatch = matchesAccount(subName, drill!.account);
+                    if (subMatch && subRow.Rows?.Row) {
+                      for (const txn of subRow.Rows.Row) {
+                        if (txn.ColData) {
+                          const cols = txn.ColData;
+                          entries.push({
+                            date: cols[0]?.value || "",
+                            type: cols[1]?.value || "",
+                            docNum: cols[2]?.value || "",
+                            name: cols[3]?.value || "",
+                            memo: cols[4]?.value || "",
+                            amount: cols[5]?.value || cols[6]?.value || "",
+                            balance: cols[7]?.value || cols[6]?.value || "",
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
-            // Transaction rows within the matched account
-            if (inAccount && row.ColData && !row.Summary) {
-              const cols = row.ColData;
-              entries.push({
-                date: cols[0]?.value || "",
-                type: cols[1]?.value || "",
-                docNum: cols[2]?.value || "",
-                name: cols[3]?.value || "",
-                memo: cols[4]?.value || "",
-                amount: cols[5]?.value || cols[6]?.value || "",
-                balance: cols[7]?.value || cols[6]?.value || "",
-              });
+            // Top-level transaction row (shouldn't happen often in GL)
+            if (row.ColData && !row.Header && !row.Summary) {
+              if (currentAccount && matchesAccount(currentAccount, drill!.account)) {
+                const cols = row.ColData;
+                entries.push({
+                  date: cols[0]?.value || "",
+                  type: cols[1]?.value || "",
+                  docNum: cols[2]?.value || "",
+                  name: cols[3]?.value || "",
+                  memo: cols[4]?.value || "",
+                  amount: cols[5]?.value || cols[6]?.value || "",
+                  balance: cols[7]?.value || cols[6]?.value || "",
+                });
+              }
             }
-            // End of account section
-            if (row.Summary?.ColData) {
-              if (inAccount) { inAccount = false; }
-            }
-            if (row.Rows?.Row) walk(row.Rows.Row);
           }
         }
-        walk(data.Rows.Row);
+        walk(data.Rows.Row, "");
         setDrillEntries(entries);
       })
       .catch(() => {})
