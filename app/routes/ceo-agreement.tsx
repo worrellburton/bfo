@@ -1647,15 +1647,15 @@ export default function CEOAgreement() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px overflow-x-auto">
+      <div className={`flex gap-1 mb-6 border-b ${isDark ? "border-white/10" : "border-gray-200"} pb-px overflow-x-auto`}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2.5 text-xs font-medium rounded-t-lg transition-all duration-200 whitespace-nowrap ${
               activeTab === tab.id
-                ? "text-orange-400 bg-white/5 border-b-2 border-orange-400"
-                : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
+                ? `text-orange-400 ${isDark ? "bg-white/5" : "bg-black/5"} border-b-2 border-orange-400`
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"} hover:bg-white/[0.02]`
             }`}
           >
             {tab.label}
