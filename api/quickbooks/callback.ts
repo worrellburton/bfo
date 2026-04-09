@@ -47,17 +47,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = getSupabase();
 
-    // Use stored function to bypass client-side write issues
-    const { error: rpcError } = await supabase.rpc("upsert_qb_token", {
-      p_realm_id: realmId as string,
-      p_access_token: tokens.access_token,
-      p_refresh_token: tokens.refresh_token,
-      p_expires_at: expiresAt,
-    });
+    // Upsert token — uses realm_id primary key for conflict resolution
+    const { error: upsertError } = await supabase
+      .from("quickbooks_tokens")
+      .upsert(
+        {
+          realm_id: realmId as string,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: expiresAt,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "realm_id" }
+      );
 
-    if (rpcError) {
-      console.error("Supabase RPC error:", rpcError);
-      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(rpcError.message)}&realm_id=${realmId}`);
+    if (upsertError) {
+      console.error("Supabase upsert error:", upsertError);
+      return res.redirect(302, `/tools/quickbooks?error=db_error&detail=${encodeURIComponent(upsertError.message)}&realm_id=${realmId}`);
     }
 
     res.redirect(302, `/tools/quickbooks?connected=true&realm_id=${realmId}`);

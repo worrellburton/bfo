@@ -33,13 +33,18 @@ async function refreshAccessToken(supabase: ReturnType<typeof createClient>, ref
   const tokens = await res.json();
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-  // Use stored function to bypass client-side write issues
-  await supabase.rpc("upsert_qb_token", {
-    p_realm_id: realmId,
-    p_access_token: tokens.access_token,
-    p_refresh_token: tokens.refresh_token,
-    p_expires_at: expiresAt,
-  });
+  await supabase
+    .from("quickbooks_tokens")
+    .upsert(
+      {
+        realm_id: realmId,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "realm_id" }
+    );
 
   return tokens.access_token;
 }
@@ -89,18 +94,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: schemaRows, error: schemaError } = await supabase
         .rpc("", {}).then(() => ({ data: null, error: null })).catch(() => ({ data: null, error: null }));
 
-      // Test write capability using stored function
+      // Test write capability using upsert
       let writeTest = "not_tested";
       try {
         const testId = "__debug_test__";
-        const { error: rpcErr } = await supabase.rpc("upsert_qb_token", {
-          p_realm_id: testId,
-          p_access_token: "test",
-          p_refresh_token: "test",
-          p_expires_at: new Date().toISOString(),
-        });
-        if (rpcErr) {
-          writeTest = `rpc_failed: ${rpcErr.message}`;
+        const { error: upsertErr } = await supabase
+          .from("quickbooks_tokens")
+          .upsert(
+            {
+              realm_id: testId,
+              access_token: "test",
+              refresh_token: "test",
+              expires_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "realm_id" }
+          );
+        if (upsertErr) {
+          writeTest = `upsert_failed: ${upsertErr.message}`;
         } else {
           // Clean up test row
           await supabase.from("quickbooks_tokens").delete().eq("realm_id", testId);
