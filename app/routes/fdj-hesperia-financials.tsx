@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - FDJ Hesperia Financials" }];
@@ -15,8 +16,10 @@ function pctChange(actual: number, budget: number) {
 // --- Reusable Components ---
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+    <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5`}>
       <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{label}</div>
       <div className="text-xl font-bold tabular-nums" style={color ? { color } : undefined}>{value}</div>
       {sub && <div className="text-[10px] text-gray-500 mt-1">{sub}</div>}
@@ -89,6 +92,8 @@ const comfortSuites = {
 // --- Mini Bar ---
 
 function MiniBar({ value, max, color = "emerald" }: { value: number; max: number; color?: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const pct = Math.min((value / max) * 100, 100);
   const colorMap: Record<string, string> = {
     emerald: "from-emerald-500 to-emerald-600",
@@ -97,7 +102,7 @@ function MiniBar({ value, max, color = "emerald" }: { value: number; max: number
     red: "from-red-500 to-red-600",
   };
   return (
-    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mt-1">
+    <div className={`h-1.5 ${isDark ? "bg-white/5" : "bg-black/5"} rounded-full overflow-hidden mt-1`}>
       <div className={`h-full rounded-full bg-gradient-to-r ${colorMap[color]}`} style={{ width: `${pct}%` }} />
     </div>
   );
@@ -106,6 +111,8 @@ function MiniBar({ value, max, color = "emerald" }: { value: number; max: number
 // --- LTV Gauge ---
 
 function LTVGauge({ ltv, label }: { ltv: number; label: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const color = ltv < 40 ? "emerald" : ltv < 60 ? "amber" : "red";
   const colorClasses: Record<string, string> = {
     emerald: "from-emerald-500 to-emerald-600",
@@ -123,7 +130,7 @@ function LTVGauge({ ltv, label }: { ltv: number; label: string }) {
         <span className="text-gray-500">{label}</span>
         <span className={`tabular-nums font-semibold ${textColor[color]}`}>{ltv.toFixed(2)}%</span>
       </div>
-      <div className="h-3 bg-white/5 rounded-full overflow-hidden">
+      <div className={`h-3 ${isDark ? "bg-white/5" : "bg-black/5"} rounded-full overflow-hidden`}>
         <div className={`h-full rounded-full bg-gradient-to-r ${colorClasses[color]} transition-all duration-700`} style={{ width: `${ltv}%` }} />
       </div>
     </div>
@@ -133,6 +140,8 @@ function LTVGauge({ ltv, label }: { ltv: number; label: string }) {
 // --- Waterfall Chart ---
 
 function WaterfallChart() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const combined2020 = {
     grossIncome: elDorado.actual2020.grossIncome + comfortSuites.actual2020.grossIncome,
     expenses: elDorado.actual2020.expenses + comfortSuites.actual2020.expenses,
@@ -166,7 +175,7 @@ function WaterfallChart() {
 
         return (
           <div key={i} className="flex-1 flex flex-col items-center gap-1">
-            <div className="text-[10px] tabular-nums font-semibold text-gray-300">${fmt(item.value)}</div>
+            <div className={`text-[10px] tabular-nums font-semibold ${isDark ? "text-gray-300" : "text-gray-700"}`}>${fmt(item.value)}</div>
             <div className="w-full relative" style={{ height: barHeight }}>
               <div
                 className={`absolute bottom-0 left-1 right-1 rounded-t ${colors[item.type]} transition-all duration-700`}
@@ -187,6 +196,8 @@ function WaterfallChart() {
 // --- Donut Chart ---
 
 function DonutChart() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const cashReceived = 1577042;
   const equity = 8304404;
   const taxSavings = 3200000;
@@ -209,7 +220,7 @@ function DonutChart() {
   return (
     <div className="flex flex-col sm:flex-row items-center gap-6">
       <svg width="160" height="160" viewBox="0 0 160 160">
-        <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth={strokeWidth} />
+        <circle cx={cx} cy={cy} r={radius} fill="none" stroke={isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.05)"} strokeWidth={strokeWidth} />
         {segments.map((seg, i) => {
           const dashLength = (seg.pct / 100) * circumference;
           const dashArray = `${dashLength} ${circumference - dashLength}`;
@@ -231,7 +242,7 @@ function DonutChart() {
             />
           );
         })}
-        <text x={cx} y={cy - 6} textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">503%</text>
+        <text x={cx} y={cy - 6} textAnchor="middle" fill={isDark ? "white" : "#111827"} fontSize="16" fontWeight="bold">503%</text>
         <text x={cx} y={cy + 10} textAnchor="middle" fill="#6b7280" fontSize="9">TOTAL ROI</text>
       </svg>
       <div className="space-y-3 flex-1">
@@ -240,9 +251,9 @@ function DonutChart() {
             <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: seg.color }} />
             <div className="flex-1 min-w-0">
               <div className="text-[10px] text-gray-500">{seg.label}</div>
-              <div className="text-sm font-bold tabular-nums text-gray-200">${fmt(seg.value)}</div>
+              <div className={`text-sm font-bold tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"}`}>${fmt(seg.value)}</div>
             </div>
-            <div className="text-[10px] text-gray-400 tabular-nums">{seg.pct.toFixed(1)}%</div>
+            <div className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"} tabular-nums`}>{seg.pct.toFixed(1)}%</div>
           </div>
         ))}
       </div>
@@ -260,22 +271,24 @@ function OpRow({ label, budget, actual, maxVal, budgetColor = "indigo", actualCo
   budgetColor?: string;
   actualColor?: string;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const change = pctChange(actual, budget);
   return (
-    <div className="py-2.5 border-b border-white/5 last:border-b-0">
+    <div className={`py-2.5 border-b ${isDark ? "border-white/5" : "border-gray-100"} last:border-b-0`}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs text-gray-400">{label}</span>
+        <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{label}</span>
         <PctBadge value={change} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="text-[10px] text-gray-500 mb-0.5">2017 Budget</div>
-          <div className="text-xs font-semibold tabular-nums text-gray-300">${fmt(budget)}</div>
+          <div className={`text-xs font-semibold tabular-nums ${isDark ? "text-gray-300" : "text-gray-700"}`}>${fmt(budget)}</div>
           <MiniBar value={budget} max={maxVal} color={budgetColor} />
         </div>
         <div>
           <div className="text-[10px] text-gray-500 mb-0.5">2020 Actual</div>
-          <div className="text-xs font-semibold tabular-nums text-gray-200">${fmt(actual)}</div>
+          <div className={`text-xs font-semibold tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"}`}>${fmt(actual)}</div>
           <MiniBar value={actual} max={maxVal} color={actualColor} />
         </div>
       </div>
@@ -286,19 +299,21 @@ function OpRow({ label, budget, actual, maxVal, budgetColor = "indigo", actualCo
 // --- Main Component ---
 
 export default function FDJHesperiaFinancials() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div className="max-w-6xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <Link to="/tools/fdj-hesperia" className="hover:text-white transition-colors">FDJ Hesperia</Link>
+        <Link to="/tools/fdj-hesperia" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>FDJ Hesperia</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Financials</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Financials</span>
       </div>
 
       {/* Header */}
@@ -310,15 +325,15 @@ export default function FDJHesperiaFinancials() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-white/10 mb-8">
+      <div className={`flex gap-1 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-8`}>
         {tabs.map((tab) => (
           <Link
             key={tab.label}
             to={tab.href}
             className={`px-4 py-2 text-sm font-medium transition-colors relative ${
               tab.active
-                ? "text-white"
-                : "text-gray-500 hover:text-gray-300"
+                ? isDark ? "text-white" : "text-gray-900"
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`
             }`}
           >
             {tab.label}
@@ -338,12 +353,12 @@ export default function FDJHesperiaFinancials() {
       </div>
 
       {/* Section 2: Promissory Notes Table */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">BWL Promissory Notes</h3>
+      <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>BWL Promissory Notes</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10">
+              <tr className={`border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
                 <th className="text-left text-[9px] text-gray-500 uppercase tracking-wider pb-3 pr-4">Date</th>
                 <th className="text-right text-[9px] text-gray-500 uppercase tracking-wider pb-3 pr-4">Principal</th>
                 <th className="text-right text-[9px] text-gray-500 uppercase tracking-wider pb-3 pr-4">Rate</th>
@@ -354,23 +369,23 @@ export default function FDJHesperiaFinancials() {
             </thead>
             <tbody>
               {promissoryNotes.map((note, i) => (
-                <tr key={i} className="border-b border-white/5">
-                  <td className="py-3 pr-4 text-gray-300 tabular-nums">{note.date}</td>
-                  <td className="py-3 pr-4 text-right tabular-nums text-gray-200 font-semibold">${fmt(note.amount)}</td>
-                  <td className="py-3 pr-4 text-right tabular-nums text-gray-400">{note.rate.toFixed(1)}%</td>
+                <tr key={i} className={`border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                  <td className={`py-3 pr-4 ${isDark ? "text-gray-300" : "text-gray-700"} tabular-nums`}>{note.date}</td>
+                  <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"} font-semibold`}>${fmt(note.amount)}</td>
+                  <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"}`}>{note.rate.toFixed(1)}%</td>
                   <td className="py-3 pr-4 text-right tabular-nums text-amber-400">${fmt(note.monthlyAccrual)}</td>
-                  <td className="py-3 pr-4 text-right tabular-nums text-gray-300">${fmt(note.annualPayment)}</td>
+                  <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-gray-300" : "text-gray-700"}`}>${fmt(note.annualPayment)}</td>
                   <td className="py-3 text-right text-gray-500 text-xs">{note.due}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t border-white/10">
-                <td className="py-3 pr-4 text-gray-300 font-semibold">Total</td>
-                <td className="py-3 pr-4 text-right tabular-nums text-white font-bold">${fmt(4400000)}</td>
-                <td className="py-3 pr-4 text-right tabular-nums text-gray-400">3.0%</td>
+              <tr className={`border-t ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                <td className={`py-3 pr-4 ${isDark ? "text-gray-300" : "text-gray-700"} font-semibold`}>Total</td>
+                <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-white" : "text-gray-900"} font-bold`}>${fmt(4400000)}</td>
+                <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"}`}>3.0%</td>
                 <td className="py-3 pr-4 text-right tabular-nums text-amber-400 font-semibold">${fmt(14000)}</td>
-                <td className="py-3 pr-4 text-right tabular-nums text-white font-bold">${fmt(168000)}</td>
+                <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-white" : "text-gray-900"} font-bold`}>${fmt(168000)}</td>
                 <td className="py-3"></td>
               </tr>
             </tfoot>
@@ -379,16 +394,16 @@ export default function FDJHesperiaFinancials() {
       </div>
 
       {/* Section 3: Debt Structure */}
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Debt Structure</h2>
+      <h2 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>Debt Structure</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         {[elDorado, comfortSuites].map((prop) => (
-          <div key={prop.name} className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <div key={prop.name} className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5`}>
             <div className="flex items-start justify-between mb-4">
               <div>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider">{prop.type}</div>
-                <div className="text-base font-bold text-gray-100">{prop.name}</div>
+                <div className={`text-base font-bold ${isDark ? "text-gray-100" : "text-gray-900"}`}>{prop.name}</div>
               </div>
-              <div className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded">Interest Only</div>
+              <div className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"} ${isDark ? "bg-white/5" : "bg-black/5"} px-2 py-0.5 rounded`}>Interest Only</div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -398,19 +413,19 @@ export default function FDJHesperiaFinancials() {
               </div>
               <div>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Interest Rate</div>
-                <div className="text-sm font-semibold tabular-nums text-gray-200">{prop.rate.toFixed(2)}%</div>
+                <div className={`text-sm font-semibold tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"}`}>{prop.rate.toFixed(2)}%</div>
               </div>
               <div>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Annual Payment</div>
-                <div className="text-sm font-semibold tabular-nums text-gray-200">${fmt(prop.annualPayment)}</div>
+                <div className={`text-sm font-semibold tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"}`}>${fmt(prop.annualPayment)}</div>
               </div>
               <div>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Maturity</div>
-                <div className="text-sm font-semibold text-gray-200">{prop.maturity}</div>
+                <div className={`text-sm font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{prop.maturity}</div>
               </div>
               <div>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Actual Value (2020)</div>
-                <div className="text-sm font-semibold tabular-nums text-gray-200">${fmt(prop.actualValue)}</div>
+                <div className={`text-sm font-semibold tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"}`}>${fmt(prop.actualValue)}</div>
               </div>
               <div>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Equity</div>
@@ -424,15 +439,15 @@ export default function FDJHesperiaFinancials() {
       </div>
 
       {/* Section 4: Property Operating Performance */}
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Property Operating Performance</h2>
+      <h2 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>Property Operating Performance</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         {[elDorado, comfortSuites].map((prop) => {
           const maxVal = Math.max(prop.budget2017.grossIncome, prop.actual2020.grossIncome);
           return (
-            <div key={prop.name} className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div key={prop.name} className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5`}>
               <div className="mb-4">
                 <div className="text-[9px] text-gray-500 uppercase tracking-wider">{prop.type}</div>
-                <div className="text-base font-bold text-gray-100">{prop.name}</div>
+                <div className={`text-base font-bold ${isDark ? "text-gray-100" : "text-gray-900"}`}>{prop.name}</div>
               </div>
               <OpRow label="Gross Income" budget={prop.budget2017.grossIncome} actual={prop.actual2020.grossIncome} maxVal={maxVal} />
               <OpRow label="Total Expenses" budget={prop.budget2017.expenses} actual={prop.actual2020.expenses} maxVal={maxVal} budgetColor="red" actualColor="red" />
@@ -445,55 +460,55 @@ export default function FDJHesperiaFinancials() {
       </div>
 
       {/* Section 5: Cash Flow Waterfall */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Combined Cash Flow Waterfall</h3>
+      <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-2`}>Combined Cash Flow Waterfall</h3>
         <div className="text-[10px] text-gray-500 mb-4">2020 actuals, both properties combined</div>
         <WaterfallChart />
       </div>
 
       {/* Section 6: Investment Returns Dashboard */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">Investment Returns Dashboard</h3>
+      <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-5`}>Investment Returns Dashboard</h3>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left: Return breakdown */}
           <div>
             <div className="space-y-4 mb-6">
-              <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div className={`flex items-center justify-between py-2 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
                 <div>
-                  <div className="text-xs text-gray-400">Cash Invested</div>
+                  <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Cash Invested</div>
                   <div className="text-[10px] text-gray-500">Net after $4.4M loan-back</div>
                 </div>
-                <div className="text-sm font-bold tabular-nums text-gray-200">$2,600,000</div>
+                <div className={`text-sm font-bold tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"}`}>$2,600,000</div>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div className={`flex items-center justify-between py-2 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
                 <div>
-                  <div className="text-xs text-gray-400">Cash Received</div>
+                  <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Cash Received</div>
                   <div className="text-[10px] text-gray-500">Through April 2022</div>
                 </div>
                 <div className="text-sm font-bold tabular-nums text-emerald-400">$1,577,042</div>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div className={`flex items-center justify-between py-2 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
                 <div>
-                  <div className="text-xs text-gray-400">Total Equity</div>
+                  <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Total Equity</div>
                   <div className="text-[10px] text-gray-500">Combined property equity (2020)</div>
                 </div>
                 <div className="text-sm font-bold tabular-nums text-emerald-400">$8,304,404</div>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div className={`flex items-center justify-between py-2 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
                 <div>
-                  <div className="text-xs text-gray-400">Tax Savings</div>
+                  <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Tax Savings</div>
                   <div className="text-[10px] text-gray-500">1031 exchange benefit</div>
                 </div>
                 <div className="text-sm font-bold tabular-nums text-emerald-400">$3,200,000</div>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div className={`flex items-center justify-between py-2 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
                 <div>
-                  <div className="text-xs text-gray-400">Marriott Ownership</div>
+                  <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Marriott Ownership</div>
                   <div className="text-[10px] text-gray-500">30% of TownePlace Suites</div>
                 </div>
                 <div className="text-sm font-bold tabular-nums text-indigo-400">+ Upside</div>
@@ -503,7 +518,7 @@ export default function FDJHesperiaFinancials() {
             {/* ROI Calculation */}
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
               <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-2">Total Return Calculation</div>
-              <div className="text-xs text-gray-400 mb-1 font-mono tabular-nums">
+              <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"} mb-1 font-mono tabular-nums`}>
                 ($1,577,042 + $8,304,404 + $3,200,000) / $2,600,000
               </div>
               <div className="flex items-baseline gap-2">
@@ -525,13 +540,13 @@ export default function FDJHesperiaFinancials() {
       </div>
 
       {/* Section 7: Projected vs Actual */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Projected vs Actual</h3>
+      <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} ${isDark ? "bg-white/[0.02]" : "bg-white"} p-5 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-2`}>Projected vs Actual</h3>
         <div className="text-[10px] text-gray-500 mb-4">2017 budget projections compared to 2020 actual performance</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10">
+              <tr className={`border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
                 <th className="text-left text-[9px] text-gray-500 uppercase tracking-wider pb-3 pr-4">Metric</th>
                 <th className="text-right text-[9px] text-gray-500 uppercase tracking-wider pb-3 pr-4" colSpan={1}>
                   <span className="inline-block px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400">EDA Budget</span>
@@ -562,15 +577,15 @@ export default function FDJHesperiaFinancials() {
                 const isBold = row.label === "NOI" || row.label === "Cash Flow";
                 const isExpense = row.label === "Expenses";
                 return (
-                  <tr key={i} className={`border-b border-white/5 ${isBold ? "bg-white/[0.02]" : ""}`}>
-                    <td className={`py-2.5 pr-4 text-gray-300 ${isBold ? "font-semibold" : ""}`}>{row.label}</td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-gray-400">${fmt(row.edaBudget)}</td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-gray-200 font-semibold">${fmt(row.edaActual)}</td>
+                  <tr key={i} className={`border-b ${isDark ? "border-white/5" : "border-gray-100"} ${isBold ? (isDark ? "bg-white/[0.02]" : "bg-gray-50") : ""}`}>
+                    <td className={`py-2.5 pr-4 ${isDark ? "text-gray-300" : "text-gray-700"} ${isBold ? "font-semibold" : ""}`}>{row.label}</td>
+                    <td className={`py-2.5 pr-4 text-right tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"}`}>${fmt(row.edaBudget)}</td>
+                    <td className={`py-2.5 pr-4 text-right tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"} font-semibold`}>${fmt(row.edaActual)}</td>
                     <td className="py-2.5 pr-4 text-right">
                       <PctBadge value={isExpense ? -edaChange : edaChange} />
                     </td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-gray-400">${fmt(row.csBudget)}</td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-gray-200 font-semibold">${fmt(row.csActual)}</td>
+                    <td className={`py-2.5 pr-4 text-right tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"}`}>${fmt(row.csBudget)}</td>
+                    <td className={`py-2.5 pr-4 text-right tabular-nums ${isDark ? "text-gray-200" : "text-gray-700"} font-semibold`}>${fmt(row.csActual)}</td>
                     <td className="py-2.5 text-right">
                       <PctBadge value={isExpense ? -csChange : csChange} />
                     </td>
@@ -579,9 +594,9 @@ export default function FDJHesperiaFinancials() {
               })}
             </tbody>
             <tfoot>
-              <tr className="border-t border-white/10">
-                <td className="py-3 pr-4 text-gray-300 font-bold">Combined CF</td>
-                <td className="py-3 pr-4 text-right tabular-nums text-gray-400 font-semibold" colSpan={2}>
+              <tr className={`border-t ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                <td className={`py-3 pr-4 ${isDark ? "text-gray-300" : "text-gray-700"} font-bold`}>Combined CF</td>
+                <td className={`py-3 pr-4 text-right tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"} font-semibold`} colSpan={2}>
                   ${fmt(elDorado.budget2017.cashFlow + comfortSuites.budget2017.cashFlow)}/yr
                 </td>
                 <td className="py-3 pr-4"></td>

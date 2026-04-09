@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - FDJ Hesperia Tax Analysis" }];
@@ -92,6 +93,9 @@ const entityOptions = {
 };
 
 export default function FDJHesperiaTax() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   const [entity, setEntity] = useState<"fdj-hesperia" | "fdj-cfs">("fdj-hesperia");
   const [scenario, setScenario] = useState<"low" | "mid" | "high">("mid");
 
@@ -128,15 +132,15 @@ export default function FDJHesperiaTax() {
     <div className="max-w-6xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <Link to="/tools/fdj-hesperia" className="hover:text-white transition-colors">FDJ Hesperia</Link>
+        <Link to="/tools/fdj-hesperia" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>FDJ Hesperia</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Tax</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Tax</span>
       </div>
 
       {/* Header */}
@@ -149,13 +153,15 @@ export default function FDJHesperiaTax() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-white/10 mb-8 overflow-x-auto -mx-1 px-1">
+      <div className={`flex gap-1 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-8 overflow-x-auto -mx-1 px-1`}>
         {tabs.map((tab) => (
           <Link
             key={tab.label}
             to={tab.href}
             className={`px-4 py-2 text-sm font-medium transition-colors relative whitespace-nowrap shrink-0 ${
-              tab.active ? "text-white" : "text-gray-500 hover:text-gray-300"
+              tab.active
+                ? isDark ? "text-white" : "text-gray-900"
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`
             }`}
           >
             {tab.label}
@@ -165,7 +171,7 @@ export default function FDJHesperiaTax() {
       </div>
 
       {/* Tax Content */}
-      <div className="rounded-xl border border-white/10 bg-gradient-to-br from-amber-500/[0.03] to-purple-500/[0.03] p-5 mb-8">
+      <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} bg-gradient-to-br from-amber-500/[0.03] to-purple-500/[0.03] p-5 mb-8`}>
         <div className="flex items-start gap-3 mb-5">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 border border-amber-500/30 shrink-0">
             <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -173,7 +179,7 @@ export default function FDJHesperiaTax() {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-bold text-white">Tax Analysis — Sale to BWL Investments, LLC</h3>
+            <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Tax Analysis — Sale to BWL Investments, LLC</h3>
             <p className="text-[11px] text-gray-500 mt-0.5">Scenario: BWL Investments purchases 100% membership interest in {ent.label}</p>
           </div>
         </div>
@@ -190,7 +196,9 @@ export default function FDJHesperiaTax() {
                 className={`flex-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-all border ${
                   isActive
                     ? "bg-purple-500/15 text-purple-300 border-purple-500/40"
-                    : "bg-white/[0.02] text-gray-400 border-white/10 hover:bg-white/[0.04]"
+                    : isDark
+                      ? "bg-white/[0.02] text-gray-400 border-white/10 hover:bg-white/[0.04]"
+                      : "bg-black/[0.02] text-gray-500 border-gray-200 hover:bg-gray-100"
                 }`}
               >
                 <div className="font-bold">{e.label}</div>
@@ -212,7 +220,9 @@ export default function FDJHesperiaTax() {
                 className={`flex-1 min-w-[120px] px-3 py-2.5 rounded-lg text-xs font-medium transition-all border ${
                   isActive
                     ? "bg-amber-500/15 text-amber-300 border-amber-500/40"
-                    : "bg-white/[0.02] text-gray-400 border-white/10 hover:bg-white/[0.04]"
+                    : isDark
+                      ? "bg-white/[0.02] text-gray-400 border-white/10 hover:bg-white/[0.04]"
+                      : "bg-black/[0.02] text-gray-500 border-gray-200 hover:bg-gray-100"
                 }`}
               >
                 <div className="font-bold">{s.label}</div>
@@ -226,13 +236,13 @@ export default function FDJHesperiaTax() {
 
         {/* Key Numbers */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          <div className="p-3 rounded-lg bg-white/[0.02] border border-white/10">
+          <div className={`p-3 rounded-lg ${isDark ? "bg-white/[0.02] border border-white/10" : "bg-black/[0.02] border border-gray-200"}`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Sale Price</div>
-            <div className="text-sm font-bold text-white tabular-nums">{fmtTax(current.salePrice)}</div>
+            <div className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"} tabular-nums`}>{fmtTax(current.salePrice)}</div>
           </div>
-          <div className="p-3 rounded-lg bg-white/[0.02] border border-white/10">
+          <div className={`p-3 rounded-lg ${isDark ? "bg-white/[0.02] border border-white/10" : "bg-black/[0.02] border border-gray-200"}`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Adjusted Basis</div>
-            <div className="text-sm font-bold text-gray-300 tabular-nums">{fmtTax(adjustedBasis)}</div>
+            <div className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-700"} tabular-nums`}>{fmtTax(adjustedBasis)}</div>
             <div className="text-[9px] text-gray-500 mt-0.5">After {fmtDepr(accumulatedDepr)} depreciation</div>
           </div>
           <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
@@ -246,73 +256,73 @@ export default function FDJHesperiaTax() {
         </div>
 
         {/* Tax Breakdown */}
-        <div className="rounded-lg bg-black/30 border border-white/5 p-4 mb-5">
+        <div className={`rounded-lg ${isDark ? "bg-black/30 border border-white/5" : "bg-gray-50 border border-gray-200"} p-4 mb-5`}>
           <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">Federal & State Tax Breakdown</div>
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <div className="flex-1 min-w-0">
-                <span className="text-gray-300">Depreciation Recapture</span>
+                <span className={isDark ? "text-gray-300" : "text-gray-700"}>Depreciation Recapture</span>
                 <span className="text-[9px] text-gray-600 ml-2 hidden sm:inline">IRC §1250 · 25% rate</span>
               </div>
               <div className="text-right tabular-nums shrink-0">
-                <div className="text-gray-400 hidden sm:block">{fmtTax(depRecapture)} × 25%</div>
+                <div className={`${isDark ? "text-gray-400" : "text-gray-500"} hidden sm:block`}>{fmtTax(depRecapture)} × 25%</div>
                 <div className="text-red-400 font-semibold">{fmtTax(depRecaptureTax)}</div>
               </div>
             </div>
-            <div className="h-px bg-white/5" />
+            <div className={`h-px ${isDark ? "bg-white/5" : "bg-gray-200"}`} />
             <div className="flex items-center justify-between text-xs">
               <div className="flex-1 min-w-0">
-                <span className="text-gray-300">Long-Term Capital Gains</span>
+                <span className={isDark ? "text-gray-300" : "text-gray-700"}>Long-Term Capital Gains</span>
                 <span className="text-[9px] text-gray-600 ml-2 hidden sm:inline">IRC §1(h) · 20% top rate</span>
               </div>
               <div className="text-right tabular-nums shrink-0">
-                <div className="text-gray-400 hidden sm:block">{fmtTax(ltcgAmount)} × 20%</div>
+                <div className={`${isDark ? "text-gray-400" : "text-gray-500"} hidden sm:block`}>{fmtTax(ltcgAmount)} × 20%</div>
                 <div className="text-red-400 font-semibold">{fmtTax(ltcgTax)}</div>
               </div>
             </div>
-            <div className="h-px bg-white/5" />
+            <div className={`h-px ${isDark ? "bg-white/5" : "bg-gray-200"}`} />
             <div className="flex items-center justify-between text-xs">
               <div className="flex-1 min-w-0">
-                <span className="text-gray-300">Net Investment Income Tax</span>
+                <span className={isDark ? "text-gray-300" : "text-gray-700"}>Net Investment Income Tax</span>
                 <span className="text-[9px] text-gray-600 ml-2 hidden sm:inline">IRC §1411 · 3.8%</span>
               </div>
               <div className="text-right tabular-nums shrink-0">
-                <div className="text-gray-400 hidden sm:block">{fmtTax(totalGain)} × 3.8%</div>
+                <div className={`${isDark ? "text-gray-400" : "text-gray-500"} hidden sm:block`}>{fmtTax(totalGain)} × 3.8%</div>
                 <div className="text-red-400 font-semibold">{fmtTax(niit)}</div>
               </div>
             </div>
-            <div className="h-px bg-white/5" />
+            <div className={`h-px ${isDark ? "bg-white/5" : "bg-gray-200"}`} />
             <div className="flex items-center justify-between text-xs">
               <div className="flex-1 min-w-0">
-                <span className="text-gray-300">Arizona State Tax</span>
+                <span className={isDark ? "text-gray-300" : "text-gray-700"}>Arizona State Tax</span>
                 <span className="text-[9px] text-gray-600 ml-2 hidden sm:inline">2.5% flat</span>
               </div>
               <div className="text-right tabular-nums shrink-0">
-                <div className="text-gray-400 hidden sm:block">{fmtTax(totalGain)} × 2.5%</div>
+                <div className={`${isDark ? "text-gray-400" : "text-gray-500"} hidden sm:block`}>{fmtTax(totalGain)} × 2.5%</div>
                 <div className="text-red-400 font-semibold">{fmtTax(stateTax)}</div>
               </div>
             </div>
-            <div className="h-px bg-white/10 mt-1" />
+            <div className={`h-px ${isDark ? "bg-white/10" : "bg-gray-300"} mt-1`} />
             <div className="flex items-center justify-between pt-1">
-              <span className="text-xs font-bold text-white">Total Estimated Tax</span>
+              <span className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Total Estimated Tax</span>
               <span className="text-sm font-bold text-red-300 tabular-nums">{fmtTax(totalTax)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white">Net Proceeds (pre-debt payoff)</span>
+              <span className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Net Proceeds (pre-debt payoff)</span>
               <span className="text-sm font-bold text-emerald-400 tabular-nums">{fmtTax(netProceeds)}</span>
             </div>
           </div>
         </div>
 
         {/* How Entity Sale Works */}
-        <div className="rounded-lg bg-white/[0.02] border border-white/10 p-4 mb-4">
+        <div className={`rounded-lg ${isDark ? "bg-white/[0.02] border border-white/10" : "bg-black/[0.02] border border-gray-200"} p-4 mb-4`}>
           <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">How an Entity Sale Works</div>
-          <p className="text-xs text-gray-400 leading-relaxed mb-2">
+          <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"} leading-relaxed mb-2`}>
             {ent.entitySaleDesc} Under IRC §741, gain from selling a partnership/LLC interest is generally treated as capital gain — <em>except</em> for the
             portion attributable to "hot assets" under IRC §751 (depreciation recapture), which is taxed as ordinary income at the unrecaptured §1250 rate (25%).
           </p>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            For the buyer, an LLC interest purchase of a disregarded entity or partnership is <strong className="text-gray-300">treated as an asset purchase</strong> —
+          <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"} leading-relaxed`}>
+            For the buyer, an LLC interest purchase of a disregarded entity or partnership is <strong className={isDark ? "text-gray-300" : "text-gray-700"}>treated as an asset purchase</strong> —
             BWL gets a stepped-up basis in the underlying properties equal to the purchase price (IRC §743(b) if §754 election made, or automatic if the entity becomes disregarded).
           </p>
         </div>
@@ -326,11 +336,11 @@ export default function FDJHesperiaTax() {
               </svg>
               <span className="text-[11px] font-bold text-emerald-300">Tax Savings Options</span>
             </div>
-            <ul className="text-[10px] text-gray-400 space-y-1 list-disc pl-4">
-              <li><strong className="text-gray-300">1031 Exchange:</strong> Defer ALL tax by rolling proceeds into like-kind real estate (must identify in 45 days, close in 180)</li>
-              <li><strong className="text-gray-300">Installment Sale (§453):</strong> Spread gain across payment years, reducing marginal rate impact</li>
-              <li><strong className="text-gray-300">Opportunity Zones:</strong> Invest gains in QOZ fund for 10-year deferral and potential exclusion</li>
-              <li><strong className="text-gray-300">Charitable CRT:</strong> Gift to Charitable Remainder Trust for immediate deduction + lifetime income</li>
+            <ul className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"} space-y-1 list-disc pl-4`}>
+              <li><strong className={isDark ? "text-gray-300" : "text-gray-700"}>1031 Exchange:</strong> Defer ALL tax by rolling proceeds into like-kind real estate (must identify in 45 days, close in 180)</li>
+              <li><strong className={isDark ? "text-gray-300" : "text-gray-700"}>Installment Sale (§453):</strong> Spread gain across payment years, reducing marginal rate impact</li>
+              <li><strong className={isDark ? "text-gray-300" : "text-gray-700"}>Opportunity Zones:</strong> Invest gains in QOZ fund for 10-year deferral and potential exclusion</li>
+              <li><strong className={isDark ? "text-gray-300" : "text-gray-700"}>Charitable CRT:</strong> Gift to Charitable Remainder Trust for immediate deduction + lifetime income</li>
             </ul>
           </div>
           <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
@@ -340,16 +350,16 @@ export default function FDJHesperiaTax() {
               </svg>
               <span className="text-[11px] font-bold text-amber-300">Complications to Watch</span>
             </div>
-            <ul className="text-[10px] text-gray-400 space-y-1 list-disc pl-4">
+            <ul className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"} space-y-1 list-disc pl-4`}>
               {ent.complications.map((c, i) => (
-                <li key={i}><strong className="text-gray-300">{c.bold}</strong> {c.text}</li>
+                <li key={i}><strong className={isDark ? "text-gray-300" : "text-gray-700"}>{c.bold}</strong> {c.text}</li>
               ))}
             </ul>
           </div>
         </div>
 
         {/* Assumptions */}
-        <div className="rounded-lg bg-black/20 border border-white/5 p-3">
+        <div className={`rounded-lg ${isDark ? "bg-black/20 border border-white/5" : "bg-gray-50 border border-gray-200"} p-3`}>
           <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-2">Assumptions & Sources</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-gray-500 leading-relaxed">
             {ent.assumptions.map((a, i) => (

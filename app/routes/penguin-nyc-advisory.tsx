@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Penguin NYC Deal Advisory" }];
@@ -258,19 +259,21 @@ const recommendation = {
 // --- Component ---
 
 export default function PenguinNYCAdvisory() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <Link to="/tools/penguin-nyc" className="hover:text-white transition-colors">Penguin NYC</Link>
+        <Link to="/tools/penguin-nyc" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Penguin NYC</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Advisory</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Advisory</span>
       </div>
 
       {/* Header */}
@@ -283,15 +286,15 @@ export default function PenguinNYCAdvisory() {
       </div>
 
       {/* Sub-Nav Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-white/10 pb-px overflow-x-auto">
+      <div className={`flex gap-1 mb-6 border-b ${isDark ? "border-white/10" : "border-gray-200"} pb-px overflow-x-auto`}>
         {tabs.map((tab) => (
           <Link
             key={tab.href}
             to={tab.href}
             className={`px-4 py-2.5 text-xs font-medium rounded-t-lg transition-all duration-200 ${
               tab.active
-                ? "text-cyan-400 bg-white/5 border-b-2 border-cyan-400"
-                : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
+                ? `text-cyan-400 ${isDark ? "bg-white/5" : "bg-black/5"} border-b-2 border-cyan-400`
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"} hover:bg-white/[0.02]`
             }`}
           >
             {tab.label}
@@ -311,15 +314,15 @@ export default function PenguinNYCAdvisory() {
               <div className="text-[10px] text-gray-500">Overall Deal Score: {overallScore}/{overallMax} ({overallPct}%)</div>
             </div>
           </div>
-          <p className="text-sm text-gray-300 leading-relaxed mb-4">{recommendation.summary}</p>
+          <p className={`text-sm ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed mb-4`}>{recommendation.summary}</p>
           <div className="space-y-2">
             <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Recommended Next Steps</div>
             {recommendation.nextSteps.map((step, i) => (
               <div key={i} className="flex items-start gap-2">
-                <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-[10px] font-bold text-gray-400">{i + 1}</span>
+                <div className={`w-5 h-5 rounded-full ${isDark ? "bg-white/5" : "bg-black/5"} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                  <span className={`text-[10px] font-bold ${isDark ? "text-gray-400" : "text-gray-500"}`}>{i + 1}</span>
                 </div>
-                <span className="text-xs text-gray-400">{step}</span>
+                <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{step}</span>
               </div>
             ))}
           </div>
@@ -331,14 +334,14 @@ export default function PenguinNYCAdvisory() {
         <h2 className="text-lg font-bold mb-4">Risk Score Dashboard</h2>
 
         {/* Overall Score Bar */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-4">
+        <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} bg-white/[0.02] p-5 mb-4`}>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-400">Overall Deal Health</span>
+            <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Overall Deal Health</span>
             <span className="text-xs font-bold tabular-nums" style={{ color: recommendation.verdictColor }}>
               {overallScore}/{overallMax}
             </span>
           </div>
-          <div className="h-3 rounded-full bg-white/5 overflow-hidden">
+          <div className={`h-3 rounded-full ${isDark ? "bg-white/5" : "bg-black/5"} overflow-hidden`}>
             <div
               className="h-full rounded-full transition-all"
               style={{ width: `${overallPct}%`, backgroundColor: recommendation.verdictColor }}
@@ -351,7 +354,7 @@ export default function PenguinNYCAdvisory() {
           {riskCategories.map((cat) => {
             const pct = Math.round((cat.score / cat.maxScore) * 100);
             return (
-              <div key={cat.category} className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <div key={cat.category} className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} bg-white/[0.02] p-5`}>
                 <div className="flex items-center gap-3 mb-3">
                   <GradeBadge grade={cat.grade} color={cat.gradeColor} />
                   <div className="flex-1">
@@ -361,7 +364,7 @@ export default function PenguinNYCAdvisory() {
                         {cat.score}/{cat.maxScore}
                       </span>
                     </div>
-                    <div className="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                    <div className={`mt-1.5 h-1.5 rounded-full ${isDark ? "bg-white/5" : "bg-black/5"} overflow-hidden`}>
                       <div
                         className="h-full rounded-full"
                         style={{ width: `${pct}%`, backgroundColor: cat.gradeColor }}
@@ -373,7 +376,7 @@ export default function PenguinNYCAdvisory() {
                   {cat.factors.map((f, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="text-gray-600 mt-0.5">•</span>
-                      <span className="text-xs text-gray-400">{f}</span>
+                      <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{f}</span>
                     </li>
                   ))}
                 </ul>
@@ -391,10 +394,10 @@ export default function PenguinNYCAdvisory() {
         </p>
         <div className="space-y-3">
           {negotiationItems.map((item, i) => (
-            <div key={i} className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div key={i} className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} bg-white/[0.02] p-5`}>
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-gray-400">{i + 1}</span>
+                <div className={`w-6 h-6 rounded-full ${isDark ? "bg-white/5" : "bg-black/5"} flex items-center justify-center flex-shrink-0`}>
+                  <span className={`text-[10px] font-bold ${isDark ? "text-gray-400" : "text-gray-500"}`}>{i + 1}</span>
                 </div>
                 <div className="flex-1 flex items-center justify-between">
                   <span className="text-sm font-semibold text-gray-200">{item.title}</span>
@@ -405,11 +408,11 @@ export default function PenguinNYCAdvisory() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="rounded-lg bg-red-500/[0.03] border border-red-500/10 p-3">
                     <div className="text-[9px] text-red-400 uppercase tracking-wider font-semibold mb-1">Current Term</div>
-                    <div className="text-xs text-gray-400">{item.currentTerm}</div>
+                    <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{item.currentTerm}</div>
                   </div>
                   <div className="rounded-lg bg-emerald-500/[0.03] border border-emerald-500/10 p-3">
                     <div className="text-[9px] text-emerald-400 uppercase tracking-wider font-semibold mb-1">Proposed Counter</div>
-                    <div className="text-xs text-gray-400">{item.proposedTerm}</div>
+                    <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{item.proposedTerm}</div>
                   </div>
                 </div>
                 <div className="text-xs text-gray-500 italic">{item.rationale}</div>
@@ -420,7 +423,7 @@ export default function PenguinNYCAdvisory() {
       </section>
 
       {/* Bottom Disclaimer */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <div className={`rounded-xl border ${isDark ? "border-white/10" : "border-gray-200"} bg-white/[0.02] p-4`}>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Disclaimer</div>
         <div className="text-[10px] text-gray-600 leading-relaxed">
           This advisory analysis is for informational purposes only and does not constitute legal, financial, or investment advice.

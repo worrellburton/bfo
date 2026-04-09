@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Ledger Louise" }];
@@ -267,6 +268,8 @@ function InfoModal({ item, onClose }: { item: ItemInfo; onClose: () => void }) {
 }
 
 export default function LedgerLouise() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
   const [modalItem, setModalItem] = useState<ItemInfo | null>(null);
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Assets" }];
@@ -15,6 +16,8 @@ interface Asset {
 }
 
 export default function Assets() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -78,11 +81,11 @@ export default function Assets() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold">Assets</h1>
         <div className="flex items-center gap-3">
-          <div className="flex bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+          <div className={`flex ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg overflow-hidden`}>
             <button
               onClick={() => setView("list")}
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "list" ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"
+                view === "list" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
               title="Card view"
             >
@@ -93,7 +96,7 @@ export default function Assets() {
             <button
               onClick={() => setView("table")}
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "table" ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"
+                view === "table" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
               title="Table view"
             >
@@ -112,7 +115,7 @@ export default function Assets() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mb-8 p-6 bg-white/5 border border-white/10 rounded-xl max-w-lg space-y-4">
+        <form onSubmit={handleCreate} className={`mb-8 p-6 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-xl max-w-lg space-y-4`}>
           <div className="flex gap-3">
             <button
               type="button"
@@ -120,7 +123,7 @@ export default function Assets() {
               className={`flex-1 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
                 type === "LLC"
                   ? "bg-white text-black"
-                  : "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10"
+                  : `${isDark ? "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10" : "bg-black/5 text-gray-500 border-gray-200 hover:bg-gray-100"} border`
               }`}
             >
               LLC
@@ -131,7 +134,7 @@ export default function Assets() {
               className={`flex-1 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
                 type === "C-Corp"
                   ? "bg-white text-black"
-                  : "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10"
+                  : `${isDark ? "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10" : "bg-black/5 text-gray-500 border-gray-200 hover:bg-gray-100"} border`
               }`}
             >
               C-Corp
@@ -144,21 +147,21 @@ export default function Assets() {
             onChange={(e) => setName(e.target.value)}
             placeholder="Entity name"
             required
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`}
           />
           <input
             type="text"
             value={state}
             onChange={(e) => setState(e.target.value)}
             placeholder="State of formation (e.g. Delaware)"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`}
           />
           <input
             type="text"
             value={ein}
             onChange={(e) => setEin(e.target.value)}
             placeholder="EIN (optional)"
-            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+            className={`w-full px-4 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`}
           />
 
           <button
@@ -178,7 +181,7 @@ export default function Assets() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400 text-xs tracking-wider">
+              <tr className={`border-b ${isDark ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-500"} text-xs tracking-wider`}>
                 <th className="py-3 pr-4 font-medium">Name</th>
                 <th className="py-3 pr-4 font-medium">Type</th>
                 <th className="py-3 pr-4 font-medium">State</th>
@@ -188,19 +191,19 @@ export default function Assets() {
             </thead>
             <tbody>
               {assets.map((asset) => (
-                <tr key={asset.id} className="border-b border-white/5 hover:bg-white/5">
+                <tr key={asset.id} className={`border-b ${isDark ? "border-white/5 hover:bg-white/5" : "border-gray-100 hover:bg-gray-50"}`}>
                   <td className="py-3 pr-4">
                     <Link to={`/assets/${asset.id}`} className="text-blue-400 hover:text-blue-300">
                       {asset.name}
                     </Link>
                   </td>
                   <td className="py-3 pr-4">
-                    <span className="text-xs font-mono bg-white/10 px-2 py-0.5 rounded text-gray-300">
+                    <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-0.5 rounded`}>
                       {asset.type}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-gray-400">{asset.state || "—"}</td>
-                  <td className="py-3 pr-4 text-gray-400">{asset.ein || "—"}</td>
+                  <td className={`py-3 pr-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.state || "—"}</td>
+                  <td className={`py-3 pr-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.ein || "—"}</td>
                   <td className="py-3 text-gray-500">{new Date(asset.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}
@@ -218,7 +221,7 @@ export default function Assets() {
                   const info = [asset.name, asset.type, asset.state, asset.ein ? `EIN: ${asset.ein}` : ""].filter(Boolean).join("\n");
                   navigator.clipboard.writeText(info);
                 }}
-                className="absolute top-2 right-2 z-10 p-1.5 text-gray-500 hover:text-white transition-all cursor-pointer rounded-lg hover:bg-white/10 opacity-0 group-hover/card:opacity-100"
+                className={`absolute top-2 right-2 z-10 p-1.5 text-gray-500 ${isDark ? "hover:text-white hover:bg-white/10" : "hover:text-gray-900 hover:bg-gray-100"} transition-all cursor-pointer rounded-lg opacity-0 group-hover/card:opacity-100`}
                 title="Copy info"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -228,14 +231,14 @@ export default function Assets() {
               </button>
               <Link
                 to={`/assets/${asset.id}`}
-                className="p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors block"
+                className={`p-5 ${isDark ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-black/5 border-gray-200 hover:bg-gray-100"} border rounded-xl transition-colors block`}
               >
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-semibold text-lg">{asset.name}</h3>
-                    <p className="text-gray-400 text-sm mt-1">{asset.state || "No state"}</p>
+                    <p className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm mt-1`}>{asset.state || "No state"}</p>
                   </div>
-                  <span className="text-xs font-mono bg-white/10 px-2 py-1 rounded text-gray-300">
+                  <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-1 rounded`}>
                     {asset.type}
                   </span>
                 </div>

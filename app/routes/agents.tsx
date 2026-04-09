@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Agents" }];
@@ -52,6 +53,8 @@ const DOG_SYSTEM_PROMPT = `You are an office dog. You can ONLY respond with dog 
 Mix these up naturally. If someone talks to you, respond with enthusiasm. If another agent says something interesting, bark at them. Keep responses short (1-3 actions/sounds). You are a very good dog.`;
 
 export default function Agents() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);

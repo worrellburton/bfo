@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Penguin NYC Clause Analysis" }];
@@ -234,6 +235,8 @@ type FilterRating = "all" | Rating;
 // --- Component ---
 
 export default function PenguinNYCClauses() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [filterSource, setFilterSource] = useState<FilterSource>("all");
   const [filterRating, setFilterRating] = useState<FilterRating>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);

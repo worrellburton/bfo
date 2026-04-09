@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Penguin NYC Contract Review" }];
@@ -8,8 +9,10 @@ export function meta() {
 // --- Reusable Components ---
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <div className={`rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"} p-4`}>
       <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{label}</div>
       <div className="text-lg font-bold tabular-nums" style={color ? { color } : undefined}>{value}</div>
       {sub && <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>}
@@ -52,13 +55,15 @@ const tabs: { id: Tab; label: string }[] = [
 // --- Distribution Waterfall ---
 
 function WaterfallBar({ label, classA, classB, phase }: { label: string; classA: number; classB: number; phase: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-400">{phase}</span>
+        <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{phase}</span>
         <span className="text-[10px] text-gray-500">{label}</span>
       </div>
-      <div className="flex h-8 rounded-lg overflow-hidden border border-white/10">
+      <div className={`flex h-8 rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`}>
         <div
           className="flex items-center justify-center text-[10px] font-bold text-white"
           style={{ width: `${classA}%`, background: "rgba(239, 68, 68, 0.4)" }}
@@ -79,12 +84,14 @@ function WaterfallBar({ label, classA, classB, phase }: { label: string; classA:
 // --- Entity Map ---
 
 function EntityMap() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div className="flex flex-col items-center gap-3">
       {/* Investor */}
       <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3 text-center">
         <div className="text-xs font-bold text-cyan-400">Sundown Investments LLC</div>
-        <div className="text-[10px] text-gray-400">Robert Burton, Principal</div>
+        <div className={`text-[10px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Robert Burton, Principal</div>
         <div className="text-[10px] text-gray-500">Subscriber / Class B Investor</div>
       </div>
       {/* Arrow */}

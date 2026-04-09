@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
+import { WebGLBackground } from "../webgl-backgrounds";
 
 export function meta() {
   return [{ title: "BFO - BeachFleischman Access" }];
@@ -87,6 +89,7 @@ const METRIC_COLS = [
 ];
 
 export default function BFAccessPublic() {
+  const { backgroundId } = useTheme();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyData, setCompanyData] = useState<Record<string, CompanyData>>({});
   const [expandedRealm, setExpandedRealm] = useState<string | null>(null);
@@ -152,7 +155,8 @@ export default function BFAccessPublic() {
   }, [fetchReport]);
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+    <div className="min-h-screen bg-gray-50 text-gray-900 relative" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+      <WebGLBackground backgroundId={backgroundId} dark={false} />
       {/* Header */}
       <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">

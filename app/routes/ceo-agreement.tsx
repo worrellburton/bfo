@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import jsPDF from "jspdf";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - CEO Agreement Review" }];

@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams, useLocation } from "react-router";
+import { useTheme } from "../theme";
+import { WebGLBackground } from "../webgl-backgrounds";
 
 export function meta() {
   return [{ title: "BFO - Balance Sheet | Finance" }];
@@ -83,6 +85,7 @@ export default function BalanceSheet() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const isPublic = location.pathname.startsWith("/public/");
+  const { backgroundId } = useTheme();
   const realmId = searchParams.get("realm_id") || "";
 
   const [companyName, setCompanyName] = useState("");
@@ -290,7 +293,8 @@ export default function BalanceSheet() {
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500/50";
 
   return (
-    <div className={`${pageBg} min-h-screen flex flex-col transition-colors duration-200`}>
+    <div className={`${pageBg} min-h-screen flex flex-col transition-colors duration-200 relative`}>
+      {isPublic && <WebGLBackground backgroundId={backgroundId} dark={!light} />}
       {isPublic && (
         <header className="border-b border-gray-200 bg-white sticky top-0 z-10 mb-6">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -302,7 +306,7 @@ export default function BalanceSheet() {
           </div>
         </header>
       )}
-      <div className={isPublic ? "px-6 sm:px-10 flex-1 flex flex-col" : ""}>
+      <div className={isPublic ? "px-6 sm:px-10 flex-1 flex flex-col relative z-[1]" : ""}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">

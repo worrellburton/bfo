@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - FDJ Hesperia Deal Advisory" }];
@@ -69,31 +70,33 @@ function ConcernCard({
   title,
   severity,
   children,
+  isDark,
 }: {
   title: string;
   severity: "red" | "amber";
   children: React.ReactNode;
+  isDark: boolean;
 }) {
   const borderColor = severity === "red" ? "border-red-500/30" : "border-amber-500/30";
   const accentBg = severity === "red" ? "bg-red-500/5" : "bg-amber-500/5";
   return (
     <div className={`rounded-xl border ${borderColor} ${accentBg} p-5`}>
       <div className="flex items-start justify-between gap-3 mb-3">
-        <h4 className="text-sm font-bold text-gray-100">{title}</h4>
+        <h4 className={`text-sm font-bold ${isDark ? "text-gray-100" : "text-gray-900"}`}>{title}</h4>
         <StatusBadge status={severity} label={severity === "red" ? "Critical" : "Warning"} />
       </div>
-      <div className="space-y-2 text-xs text-gray-400 leading-relaxed">{children}</div>
+      <div className={`space-y-2 text-xs ${isDark ? "text-gray-400" : "text-gray-500"} leading-relaxed`}>{children}</div>
     </div>
   );
 }
 
 // --- Checklist Item ---
 
-function ChecklistItem({ text }: { text: string }) {
+function ChecklistItem({ text, isDark }: { text: string; isDark: boolean }) {
   return (
     <div className="flex items-start gap-3 py-2">
-      <div className="mt-0.5 w-4 h-4 rounded border border-white/20 bg-white/[0.03] flex-shrink-0" />
-      <span className="text-xs text-gray-300 leading-relaxed">{text}</span>
+      <div className={`mt-0.5 w-4 h-4 rounded border ${isDark ? "border-white/20 bg-white/[0.03]" : "border-gray-300 bg-gray-100"} flex-shrink-0`} />
+      <span className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>{text}</span>
     </div>
   );
 }
@@ -105,17 +108,19 @@ function ScorecardRow({
   grade,
   color,
   note,
+  isDark,
 }: {
   label: string;
   grade: string;
   color: string;
   note: string;
+  isDark: boolean;
 }) {
   return (
-    <div className="flex items-center gap-4 py-3 border-b border-white/5 last:border-0">
+    <div className={`flex items-center gap-4 py-3 border-b ${isDark ? "border-white/5" : "border-gray-200"} last:border-0`}>
       <GradeBadge grade={grade} color={color} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-gray-200">{label}</div>
+        <div className={`text-sm font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{label}</div>
         <div className="text-[11px] text-gray-500 mt-0.5">{note}</div>
       </div>
     </div>
@@ -125,19 +130,22 @@ function ScorecardRow({
 // --- Main Component ---
 
 export default function FDJHesperiaAdvisory() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   return (
     <div className="max-w-6xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <Link to="/tools/fdj-hesperia" className="hover:text-white transition-colors">FDJ Hesperia</Link>
+        <Link to="/tools/fdj-hesperia" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>FDJ Hesperia</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Advisory</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Advisory</span>
       </div>
 
       {/* Header */}
@@ -149,21 +157,21 @@ export default function FDJHesperiaAdvisory() {
         <div className="flex items-center gap-3">
           <StatusBadge status="amber" label="Action Needed" />
           <div className="text-[10px] text-gray-500">
-            As of <span className="text-gray-300 font-medium">March 2026</span>
+            As of <span className={`${isDark ? "text-gray-300" : "text-gray-700"} font-medium`}>March 2026</span>
           </div>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-white/10 mb-8">
+      <div className={`flex gap-1 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-8`}>
         {tabs.map((tab) => (
           <Link
             key={tab.label}
             to={tab.href}
             className={`px-4 py-2 text-sm font-medium transition-colors relative ${
               tab.label === "Advisory"
-                ? "text-white"
-                : "text-gray-500 hover:text-gray-300"
+                ? isDark ? "text-white" : "text-gray-900"
+                : `text-gray-500 ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`
             }`}
           >
             {tab.label}
@@ -179,7 +187,7 @@ export default function FDJHesperiaAdvisory() {
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Overall Assessment</div>
-            <h2 className="text-lg font-bold text-gray-100">
+            <h2 className={`text-lg font-bold ${isDark ? "text-gray-100" : "text-gray-900"}`}>
               This deal has been financially favorable, but requires immediate attention
             </h2>
           </div>
@@ -187,7 +195,7 @@ export default function FDJHesperiaAdvisory() {
             <GradeBadge grade="B+" color="#818cf8" />
           </div>
         </div>
-        <div className="space-y-2 text-sm text-gray-400 leading-relaxed">
+        <div className={`space-y-2 text-sm ${isDark ? "text-gray-400" : "text-gray-500"} leading-relaxed`}>
           <p>
             The 1031 exchange alone justified this transaction - you saved approximately $3.2M in taxes
             on a net cash investment of just $2.6M. Cash flow has been consistent and reasonable at
@@ -221,18 +229,18 @@ export default function FDJHesperiaAdvisory() {
               <svg className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              <span className="text-xs text-gray-300 leading-relaxed">{item}</span>
+              <span className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>{item}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* ========== 3. CRITICAL CONCERNS ========== */}
-      <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+      <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>
         Critical Concerns
       </h3>
       <div className="space-y-4 mb-8">
-        <ConcernCard title="El Dorado Debt Maturity - OVERDUE" severity="red">
+        <ConcernCard title="El Dorado Debt Maturity - OVERDUE" severity="red" isDark={isDark}>
           <p>
             The $2,500,000 loan at 4.86% matured in <span className="text-red-400 font-semibold">November 2025</span>.
             As of March 2026, this debt is past due. It is unclear whether it has been refinanced, extended, or what
@@ -244,7 +252,7 @@ export default function FDJHesperiaAdvisory() {
           </div>
         </ConcernCard>
 
-        <ConcernCard title="EDA Sale Status - UNCLEAR" severity="red">
+        <ConcernCard title="EDA Sale Status - UNCLEAR" severity="red" isDark={isDark}>
           <p>
             BWL agreed to purchase El Dorado Apartments for $5,475,000 via the July 2021 PSA. An amendment
             pushed the closing deadline to February 2022. It is now March 2026 - did this sale close?
@@ -256,7 +264,7 @@ export default function FDJHesperiaAdvisory() {
           </div>
         </ConcernCard>
 
-        <ConcernCard title="Comfort Suites Debt Maturity - APPROACHING" severity="amber">
+        <ConcernCard title="Comfort Suites Debt Maturity - APPROACHING" severity="amber" isDark={isDark}>
           <p>
             The $3,350,000 loan at 5.50% is due <span className="text-amber-400 font-semibold">May 2027</span> -
             just over one year away. A refinancing plan or payoff strategy is needed. The current interest rate
@@ -264,7 +272,7 @@ export default function FDJHesperiaAdvisory() {
           </p>
         </ConcernCard>
 
-        <ConcernCard title="Master Lease Expiration - APPROACHING" severity="amber">
+        <ConcernCard title="Master Lease Expiration - APPROACHING" severity="amber" isDark={isDark}>
           <p>
             Both master leases with BWL Investments expire <span className="text-amber-400 font-semibold">April 30, 2027</span>.
             What happens after expiration? Are renewal terms being discussed? Will a new operator be needed?
@@ -272,7 +280,7 @@ export default function FDJHesperiaAdvisory() {
           </p>
         </ConcernCard>
 
-        <ConcernCard title="Promissory Notes Status - UNKNOWN" severity="amber">
+        <ConcernCard title="Promissory Notes Status - UNKNOWN" severity="amber" isDark={isDark}>
           <p>
             BWL owes the Burton family $4.4M in promissory notes at 3% interest. What is the current
             outstanding balance? Have regular payments been made? These appear to be unsecured obligations -
@@ -280,7 +288,7 @@ export default function FDJHesperiaAdvisory() {
           </p>
         </ConcernCard>
 
-        <ConcernCard title="Comfort Suites Value Decline" severity="amber">
+        <ConcernCard title="Comfort Suites Value Decline" severity="amber" isDark={isDark}>
           <p>
             The Comfort Suites was purchased for $7,273,000 but was valued at only $6,572,145 in 2020 -
             a decline of 9.6%, likely driven by COVID's impact on the hospitality sector. Has the value
@@ -288,7 +296,7 @@ export default function FDJHesperiaAdvisory() {
           </p>
         </ConcernCard>
 
-        <ConcernCard title="Concentration Risk" severity="amber">
+        <ConcernCard title="Concentration Risk" severity="amber" isDark={isDark}>
           <p>
             The entire deal structure depends on a single counterparty: BWL Investments / Randal Dix.
             If BWL were to default on its lease obligations, the Burton family would need to step in
@@ -298,38 +306,38 @@ export default function FDJHesperiaAdvisory() {
       </div>
 
       {/* ========== 4. MISSING INFORMATION CHECKLIST ========== */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1">
+      <div className={`rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-black/[0.02]"} p-6 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-1`}>
           Missing Information Checklist
         </h3>
         <p className="text-[11px] text-gray-500 mb-4">
           Items the Burton family should obtain or confirm as soon as possible.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-          <div className="divide-y divide-white/5">
-            <ChecklistItem text="Current El Dorado loan status (refinanced? extended? paid off?)" />
-            <ChecklistItem text="EDA PSA closing confirmation (did the $5,475,000 sale close?)" />
-            <ChecklistItem text="Current Comfort Suites appraisal / valuation" />
-            <ChecklistItem text="Current El Dorado appraisal / valuation" />
-            <ChecklistItem text="Promissory note payment history and current balances" />
-            <ChecklistItem text="BWL Investments financial statements" />
-            <ChecklistItem text="Property insurance certificates (current)" />
+          <div className={`divide-y ${isDark ? "divide-white/5" : "divide-gray-200"}`}>
+            <ChecklistItem isDark={isDark} text="Current El Dorado loan status (refinanced? extended? paid off?)" />
+            <ChecklistItem isDark={isDark} text="EDA PSA closing confirmation (did the $5,475,000 sale close?)" />
+            <ChecklistItem isDark={isDark} text="Current Comfort Suites appraisal / valuation" />
+            <ChecklistItem isDark={isDark} text="Current El Dorado appraisal / valuation" />
+            <ChecklistItem isDark={isDark} text="Promissory note payment history and current balances" />
+            <ChecklistItem isDark={isDark} text="BWL Investments financial statements" />
+            <ChecklistItem isDark={isDark} text="Property insurance certificates (current)" />
           </div>
-          <div className="divide-y divide-white/5">
-            <ChecklistItem text="Property tax payment confirmations" />
-            <ChecklistItem text="Rent rolls for both properties" />
-            <ChecklistItem text="Capital expenditure history since 2017" />
-            <ChecklistItem text="Master lease renewal / extension discussions" />
-            <ChecklistItem text="Comfort Suites brand / franchise agreement status" />
-            <ChecklistItem text="Environmental reports (Phase I updates)" />
-            <ChecklistItem text="Title insurance policy updates" />
+          <div className={`divide-y ${isDark ? "divide-white/5" : "divide-gray-200"}`}>
+            <ChecklistItem isDark={isDark} text="Property tax payment confirmations" />
+            <ChecklistItem isDark={isDark} text="Rent rolls for both properties" />
+            <ChecklistItem isDark={isDark} text="Capital expenditure history since 2017" />
+            <ChecklistItem isDark={isDark} text="Master lease renewal / extension discussions" />
+            <ChecklistItem isDark={isDark} text="Comfort Suites brand / franchise agreement status" />
+            <ChecklistItem isDark={isDark} text="Environmental reports (Phase I updates)" />
+            <ChecklistItem isDark={isDark} text="Title insurance policy updates" />
           </div>
         </div>
       </div>
 
       {/* ========== 5. RECOMMENDATIONS ========== */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+      <div className={`rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-black/[0.02]"} p-6 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>
           Recommendations
         </h3>
         <div className="space-y-4">
@@ -344,14 +352,14 @@ export default function FDJHesperiaAdvisory() {
             { num: 8, priority: "LOW" as const, text: "Review Marriott TownePlace Suites investment performance and distribution history." },
           ].map((item) => (
             <div key={item.num} className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-xs font-bold text-gray-400 tabular-nums">
+              <div className={`flex-shrink-0 w-7 h-7 rounded-full ${isDark ? "bg-white/5" : "bg-black/5"} flex items-center justify-center text-xs font-bold ${isDark ? "text-gray-400" : "text-gray-500"} tabular-nums`}>
                 {item.num}
               </div>
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex items-center gap-2 mb-1">
                   <PriorityBadge level={item.priority} />
                 </div>
-                <p className="text-xs text-gray-300 leading-relaxed">{item.text}</p>
+                <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>{item.text}</p>
               </div>
             </div>
           ))}
@@ -359,25 +367,25 @@ export default function FDJHesperiaAdvisory() {
       </div>
 
       {/* ========== 6. DEAL SCORECARD ========== */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 mb-8">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+      <div className={`rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-black/[0.02]"} p-6 mb-8`}>
+        <h3 className={`text-sm font-semibold ${isDark ? "text-gray-400" : "text-gray-500"} uppercase tracking-wider mb-4`}>
           Deal Scorecard
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
           <div>
-            <ScorecardRow grade="A+" color="#10b981" label="Tax Efficiency" note="1031 exchange saved ~$3.2M" />
-            <ScorecardRow grade="A" color="#10b981" label="Cash Flow" note="Consistent $33K/mo since 2017" />
-            <ScorecardRow grade="B+" color="#818cf8" label="Asset Appreciation" note="El Dorado up 38%, CFS down 10%" />
-            <ScorecardRow grade="C" color="#f59e0b" label="Counterparty Risk" note="Single operator dependency (BWL/Dix)" />
+            <ScorecardRow isDark={isDark} grade="A+" color="#10b981" label="Tax Efficiency" note="1031 exchange saved ~$3.2M" />
+            <ScorecardRow isDark={isDark} grade="A" color="#10b981" label="Cash Flow" note="Consistent $33K/mo since 2017" />
+            <ScorecardRow isDark={isDark} grade="B+" color="#818cf8" label="Asset Appreciation" note="El Dorado up 38%, CFS down 10%" />
+            <ScorecardRow isDark={isDark} grade="C" color="#f59e0b" label="Counterparty Risk" note="Single operator dependency (BWL/Dix)" />
           </div>
           <div>
-            <ScorecardRow grade="B-" color="#818cf8" label="Documentation" note="Gaps in recent status updates" />
-            <ScorecardRow grade="C" color="#f59e0b" label="Debt Management" note="El Dorado maturity overdue" />
-            <ScorecardRow grade="C+" color="#f59e0b" label="Transparency" note="Limited ongoing reporting from operator" />
-            <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-4">
+            <ScorecardRow isDark={isDark} grade="B-" color="#818cf8" label="Documentation" note="Gaps in recent status updates" />
+            <ScorecardRow isDark={isDark} grade="C" color="#f59e0b" label="Debt Management" note="El Dorado maturity overdue" />
+            <ScorecardRow isDark={isDark} grade="C+" color="#f59e0b" label="Transparency" note="Limited ongoing reporting from operator" />
+            <div className={`mt-4 pt-4 border-t ${isDark ? "border-white/10" : "border-gray-200"} flex items-center gap-4`}>
               <GradeBadge grade="B" color="#818cf8" />
               <div>
-                <div className="text-sm font-bold text-gray-100">Overall Grade</div>
+                <div className={`text-sm font-bold ${isDark ? "text-gray-100" : "text-gray-900"}`}>Overall Grade</div>
                 <div className="text-[11px] text-gray-500">Good structure, emerging execution risks</div>
               </div>
             </div>
@@ -393,11 +401,11 @@ export default function FDJHesperiaAdvisory() {
           </svg>
           <h3 className="text-base font-bold text-emerald-300">Bottom Line for the Burton Family</h3>
         </div>
-        <div className="space-y-3 text-sm text-gray-300 leading-relaxed">
+        <div className={`space-y-3 text-sm ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
           <p>
             The FDJ Hesperia investment was well-structured and has performed reasonably well. The 1031
             exchange alone made it worthwhile - you saved more in taxes (<span className="text-emerald-400 font-semibold">$3.2M</span>)
-            than you have at risk (<span className="text-white font-semibold">$2.6M</span>). You've received{" "}
+            than you have at risk (<span className={`${isDark ? "text-white" : "text-gray-900"} font-semibold`}>$2.6M</span>). You've received{" "}
             <span className="text-emerald-400 font-semibold">$1.58M</span> in cash flow, your El Dorado
             property appreciated significantly, and you have a 30% stake in a Marriott property.
           </p>
