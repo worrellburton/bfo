@@ -314,7 +314,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">IPCO Rights</div>
+              <div className={`text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}`}>IPCO Rights</div>
               <div className="text-xs text-gray-500">Right to purchase Class A Units in a new IP entity (&ldquo;IPCO&rdquo;) for $50,000 (25% of the $200K subscription)</div>
             </div>
           </div>
@@ -325,7 +325,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">Additional Investment Option</div>
+              <div className={`text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}`}>Additional Investment Option</div>
               <div className="text-xs text-gray-500">Once company raises $8M total, option to buy additional $200K Class B + $50K IPCO units at same terms</div>
             </div>
           </div>
@@ -336,7 +336,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">30-Day Decision Window</div>
+              <div className={`text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}`}>30-Day Decision Window</div>
               <div className="text-xs text-gray-500">Must accept or reject additional investment option within 30 days of notification from Manager</div>
             </div>
           </div>
@@ -347,7 +347,7 @@ function OverviewTab() {
               </svg>
             </div>
             <div>
-              <div className="text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}">Rights Termination</div>
+              <div className={`text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-700"}`}>Rights Termination</div>
               <div className="text-xs text-gray-500">All side letter rights terminate if investor no longer owns the 8 Class B Units. Rights are not assignable without Manager consent.</div>
             </div>
           </div>
@@ -355,7 +355,7 @@ function OverviewTab() {
       </div>
 
       {/* Distribution Waterfall */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+      <div className={sectionCls}>
         <h3 className="text-sm font-semibold text-cyan-400 mb-4">Distribution Waterfall</h3>
         <div className="space-y-5">
           <WaterfallBar
@@ -402,7 +402,7 @@ function OverviewTab() {
               <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${item.status === "complete" ? "bg-emerald-400" : "bg-gray-600"}`} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-gray-200">{item.event}</span>
+                  <span className={`text-xs font-medium ${isDark ? "text-gray-200" : "text-gray-700"}`}>{item.event}</span>
                   <span className="text-[10px] text-gray-500 tabular-nums">{item.date}</span>
                 </div>
                 <div className="text-[10px] text-gray-500">{item.desc}</div>
