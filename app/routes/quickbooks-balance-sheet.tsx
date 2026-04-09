@@ -16,6 +16,23 @@ type ReportRow = {
 
 type ViewMode = "monthly" | "annual" | "current";
 
+type DrillDown = {
+  account: string;
+  period: string;
+  startDate: string;
+  endDate: string;
+};
+
+type LedgerEntry = {
+  date: string;
+  type: string;
+  docNum: string;
+  name: string;
+  memo: string;
+  amount: string;
+  balance: string;
+};
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const FULL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -99,6 +116,9 @@ export default function BalanceSheet() {
   const [lastUpdatedText, setLastUpdatedText] = useState("");
   const [light, setLight] = useState(isPublic);
   const [searchQuery, setSearchQuery] = useState("");
+  const [drill, setDrill] = useState<DrillDown | null>(null);
+  const [drillEntries, setDrillEntries] = useState<LedgerEntry[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
   const [focusMode, setFocusMode] = useState(true);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredCol, setHoveredCol] = useState<number | null>(null);
@@ -163,6 +183,110 @@ export default function BalanceSheet() {
 
     fetchBS(asOf);
   }, [viewMode, selectedYear, selectedMonth, fetchBS, realmParam]);
+
+  // Drill-down: fetch GL for a specific account + period
+  function matchesAccount(glName: string, bsName: string): boolean {
+    const gl = glName.toLowerCase().trim();
+    const bs = bsName.toLowerCase().trim();
+    if (gl === bs) return true;
+    if (gl.endsWith(":" + bs)) return true;
+    if (gl.includes(bs)) return true;
+    return false;
+  }
+
+  useEffect(() => {
+    if (!drill) return;
+    setDrillLoading(true);
+    setDrillEntries([]);
+    fetch(`/api/quickbooks/data?report=general-ledger&start_date=${drill.startDate}&end_date=${drill.endDate}${realmParam}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.Rows?.Row) { setDrillLoading(false); return; }
+        const entries: LedgerEntry[] = [];
+        function walk(rows: any[], currentAccount: string) {
+          for (const row of rows) {
+            if (row.Header?.ColData) {
+              const headerName = row.Header.ColData[0]?.value || "";
+              const isMatch = matchesAccount(headerName, drill!.account);
+              if (row.Rows?.Row) {
+                for (const subRow of row.Rows.Row) {
+                  if (isMatch && subRow.ColData) {
+                    const cols = subRow.ColData;
+                    entries.push({
+                      date: cols[0]?.value || "",
+                      type: cols[1]?.value || "",
+                      docNum: cols[2]?.value || "",
+                      name: cols[3]?.value || "",
+                      memo: cols[4]?.value || "",
+                      amount: cols[5]?.value || cols[6]?.value || "",
+                      balance: cols[7]?.value || cols[6]?.value || "",
+                    });
+                  }
+                  if (subRow.Header?.ColData) {
+                    const subName = subRow.Header.ColData[0]?.value || "";
+                    const subMatch = matchesAccount(subName, drill!.account);
+                    if (subMatch && subRow.Rows?.Row) {
+                      for (const txn of subRow.Rows.Row) {
+                        if (txn.ColData) {
+                          const cols = txn.ColData;
+                          entries.push({
+                            date: cols[0]?.value || "",
+                            type: cols[1]?.value || "",
+                            docNum: cols[2]?.value || "",
+                            name: cols[3]?.value || "",
+                            memo: cols[4]?.value || "",
+                            amount: cols[5]?.value || cols[6]?.value || "",
+                            balance: cols[7]?.value || cols[6]?.value || "",
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            if (row.ColData && !row.Header && !row.Summary) {
+              if (currentAccount && matchesAccount(currentAccount, drill!.account)) {
+                const cols = row.ColData;
+                entries.push({
+                  date: cols[0]?.value || "",
+                  type: cols[1]?.value || "",
+                  docNum: cols[2]?.value || "",
+                  name: cols[3]?.value || "",
+                  memo: cols[4]?.value || "",
+                  amount: cols[5]?.value || cols[6]?.value || "",
+                  balance: cols[7]?.value || cols[6]?.value || "",
+                });
+              }
+            }
+          }
+        }
+        walk(data.Rows.Row, "");
+        setDrillEntries(entries);
+      })
+      .catch(() => {})
+      .finally(() => setDrillLoading(false));
+  }, [drill, realmParam]);
+
+  function handleCellClick(account: string) {
+    if (!account || account.toLowerCase().startsWith("total") || account.toLowerCase().startsWith("net ")) return;
+    let startDate: string, endDate: string, period: string;
+    if (viewMode === "monthly") {
+      startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+      endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${lastDay}`;
+      period = `${FULL_MONTHS[selectedMonth]} ${selectedYear}`;
+    } else if (viewMode === "annual") {
+      startDate = `${selectedYear}-01-01`;
+      endDate = `${selectedYear}-12-31`;
+      period = `${selectedYear}`;
+    } else {
+      startDate = `${currentYear}-01-01`;
+      endDate = now.toISOString().split("T")[0];
+      period = `YTD ${currentYear}`;
+    }
+    setDrill({ account, period, startDate, endDate });
+  }
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
@@ -448,18 +572,22 @@ export default function BalanceSheet() {
                   style={{ paddingLeft: `${row.depth * 16 + 12}px` }}
                 >
                   <span className={row.bold ? `font-semibold ${light ? "text-gray-900" : "text-white"}` : ""}>{row.label}</span>
-                  {val && (
-                    <span
-                      className={`tabular-nums transition-opacity duration-200 ${
-                        isTotal
-                          ? light ? "text-gray-900" : "text-white"
-                          : parseFloat(val) < 0 ? "text-red-500" : ""
-                      } ${getCellHighlight(rowId, 0)}`}
-                      style={isTotal && row.label.toLowerCase().includes("equity") ? { color: "#a855f7" } : isTotal && row.label.toLowerCase().includes("assets") ? { color: "#3b82f6" } : {}}
-                    >
-                      {formatCurrency(val)}
-                    </span>
-                  )}
+                  {val && (() => {
+                    const clickable = !isTotal && !isSection && !row.bold && parseFloat(val) !== 0;
+                    return (
+                      <span
+                        onClick={clickable ? () => handleCellClick(row.label) : undefined}
+                        className={`tabular-nums transition-opacity duration-200 ${
+                          isTotal
+                            ? light ? "text-gray-900" : "text-white"
+                            : parseFloat(val) < 0 ? "text-red-500" : ""
+                        } ${clickable ? "cursor-pointer hover:underline hover:text-blue-400" : ""} ${getCellHighlight(rowId, 0)}`}
+                        style={isTotal && row.label.toLowerCase().includes("equity") ? { color: "#a855f7" } : isTotal && row.label.toLowerCase().includes("assets") ? { color: "#3b82f6" } : {}}
+                      >
+                        {formatCurrency(val)}
+                      </span>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -481,6 +609,125 @@ export default function BalanceSheet() {
           </div>
           <p className="text-[10px] text-gray-400">Confidential - For authorized recipients only</p>
         </footer>
+      )}
+
+      {/* Drill-down modal */}
+      {drill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setDrill(null)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`relative w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl ${light ? "bg-white" : "bg-[#0d0d0d]"} border ${light ? "border-gray-200" : "border-white/10"}`}
+          >
+            <div className="sticky top-0 z-10 p-5 border-b flex items-center justify-between rounded-t-xl" style={{ borderColor: light ? "#e5e7eb" : "rgba(255,255,255,0.1)", background: light ? "#ffffff" : "#0d0d0d" }}>
+              <div>
+                <h3 className={`font-semibold text-sm ${headingText}`}>{drill.account}</h3>
+                <p className={`text-xs ${mutedText}`}>General Ledger &middot; {drill.period}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (!drillEntries.length) return;
+                    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+                    const header = ["Date", "Type", "Name", "Memo", "Amount", "Balance"].map(esc).join(",");
+                    const rows = drillEntries.map((e) => [e.date, e.type, e.name, e.memo, e.amount, e.balance].map(esc).join(","));
+                    const csv = [header, ...rows].join("\n");
+                    const blob = new Blob([csv], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+                    const acct = drill.account.replace(/[^a-zA-Z0-9]/g, "");
+                    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+                    a.download = `BFO${entity}${acct}${today}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={drillEntries.length === 0}
+                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  CSV
+                </button>
+                <button
+                  onClick={() => {
+                    if (!drillEntries.length) return;
+                    const pw = window.open("", "_blank");
+                    if (!pw) return;
+                    const genDate = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+                    pw.document.write(`<!DOCTYPE html><html><head><title>${drill.account} - GL</title><style>
+                      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+                      *{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',sans-serif;font-size:11px;padding:40px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+                      .header{margin-bottom:24px}.brand{display:flex;align-items:center;gap:10px;margin-bottom:16px}.brand-icon{width:36px;height:36px;background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+                      .brand-name{font-size:16px;font-weight:700;color:#1a1a2e}.brand-sub{font-size:10px;color:#64748b}.divider{height:2px;background:linear-gradient(90deg,#1a1a2e,#3b82f6,#1a1a2e);border-radius:2px;margin-bottom:8px}
+                      .title{font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:4px}.period{font-size:11px;color:#64748b}
+                      table{width:100%;border-collapse:collapse;margin-top:16px}thead th{padding:8px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left}
+                      thead th.right{text-align:right}tbody td{padding:6px 8px;font-size:10px;border-bottom:1px solid #f1f5f9;color:#475569}td.right{text-align:right;font-variant-numeric:tabular-nums}
+                      .footer{margin-top:32px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:9px;color:#94a3b8}
+                      @media print{body{padding:20px}}
+                    </style></head><body>
+                      <div class="header"><div class="brand"><div class="brand-icon">BFO</div><div><div class="brand-name">Burton Family Office</div><div class="brand-sub">${companyName || ""}</div></div></div><div class="divider"></div>
+                      <div class="title">${drill.account}</div><div class="period">General Ledger &middot; ${drill.period} &middot; Generated ${genDate}</div></div>
+                      <table><thead><tr><th>Date</th><th>Type</th><th>Name</th><th>Memo</th><th class="right">Amount</th><th class="right">Balance</th></tr></thead><tbody>
+                      ${drillEntries.map((e) => `<tr><td>${e.date}</td><td>${e.type}</td><td>${e.name}</td><td>${e.memo}</td><td class="right">${e.amount ? formatCurrency(e.amount) : ""}</td><td class="right">${e.balance ? formatCurrency(e.balance) : ""}</td></tr>`).join("")}
+                      </tbody></table><div class="footer"><div>Burton Family Office &middot; Confidential</div><div>QuickBooks Online</div></div>
+                    </body></html>`);
+                    pw.document.close();
+                    setTimeout(() => pw.print(), 500);
+                  }}
+                  disabled={drillEntries.length === 0}
+                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                  PDF
+                </button>
+                <button onClick={() => setDrill(null)} className={`p-1.5 rounded-lg ${btnBorder}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {drillLoading && (
+                <div className="flex items-center justify-center py-16">
+                  <div className={`animate-spin rounded-full h-6 w-6 border-2 ${light ? "border-gray-200 border-t-gray-600" : "border-white/20 border-t-white/80"}`} />
+                </div>
+              )}
+              {!drillLoading && drillEntries.length === 0 && (
+                <p className={`text-center py-16 text-sm ${mutedText}`}>No transactions found for this account in this period.</p>
+              )}
+              {!drillLoading && drillEntries.length > 0 && (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className={`${mutedText}`}>
+                      <th className="text-left py-2 px-3 font-medium">Date</th>
+                      <th className="text-left py-2 px-3 font-medium">Type</th>
+                      <th className="text-left py-2 px-3 font-medium">Name</th>
+                      <th className="text-left py-2 px-3 font-medium">Memo</th>
+                      <th className="text-right py-2 px-3 font-medium">Amount</th>
+                      <th className="text-right py-2 px-3 font-medium">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drillEntries.map((entry, ei) => (
+                      <tr key={ei} className={`border-t ${light ? "border-gray-100" : "border-white/5"}`}>
+                        <td className={`py-2 px-3 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.date}</td>
+                        <td className={`py-2 px-3 whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>{entry.type}</td>
+                        <td className={`py-2 px-3 ${light ? "text-gray-800" : "text-gray-300"}`}>{entry.name}</td>
+                        <td className={`py-2 px-3 ${mutedText}`}>{entry.memo}</td>
+                        <td className={`py-2 px-3 text-right tabular-nums whitespace-nowrap ${parseFloat(entry.amount) < 0 ? "text-red-500" : light ? "text-gray-800" : "text-gray-300"}`}>
+                          {entry.amount ? formatCurrency(entry.amount) : ""}
+                        </td>
+                        <td className={`py-2 px-3 text-right tabular-nums whitespace-nowrap ${light ? "text-gray-600" : "text-gray-400"}`}>
+                          {entry.balance ? formatCurrency(entry.balance) : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </div>
