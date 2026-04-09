@@ -383,12 +383,12 @@ function OverviewTab() {
         </div>
         <div className="mt-4 p-3 rounded-lg bg-red-500/5 border border-red-500/20">
           <div className="text-[10px] text-red-400 font-semibold uppercase tracking-wider mb-1">Key Risk</div>
-          <div className="text-xs text-gray-400">Once investors receive their initial capital back (1x return only), the distribution split reverses dramatically. Long-term profits heavily favor Class A / Manager.</div>
+          <div className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Once investors receive their initial capital back (1x return only), the distribution split reverses dramatically. Long-term profits heavily favor Class A / Manager.</div>
         </div>
       </div>
 
       {/* Key Dates & Deadlines */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+      <div className={sectionCls}>
         <h3 className="text-sm font-semibold text-cyan-400 mb-4">Key Dates &amp; Deadlines</h3>
         <div className="space-y-3">
           {[
@@ -413,7 +413,7 @@ function OverviewTab() {
       </div>
 
       {/* Entity Map */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+      <div className={sectionCls}>
         <h3 className="text-sm font-semibold text-cyan-400 mb-6">Entity Map</h3>
         <EntityMap />
       </div>
