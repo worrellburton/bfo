@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -19,7 +19,7 @@ type Entity = {
 
 type QBCompany = { realm_id: string; company_name: string };
 
-const INITIAL_ENTITIES: Entity[] = [
+export const INITIAL_ENTITIES: Entity[] = [
   // Root
   { id: "bfrt", name: "Burton Family Revocable Trust", parentId: null, x: 600, y: 40, color: "#6366f1" },
   // Level 1
@@ -54,6 +54,7 @@ const NODE_H = 52;
 export default function EstateMap() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const navigate = useNavigate();
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const [entities, setEntities] = useState<Entity[]>(() => {
@@ -78,6 +79,9 @@ export default function EstateMap() {
   const [editName, setEditName] = useState("");
   const [qbCompanies, setQbCompanies] = useState<QBCompany[]>([]);
   const [attachingId, setAttachingId] = useState<string | null>(null);
+  const [assetIdByName, setAssetIdByName] = useState<Record<string, string>>({});
+  const [mouseDownScreen, setMouseDownScreen] = useState<{ x: number; y: number } | null>(null);
+  const [didDrag, setDidDrag] = useState(false);
 
   // Persist to localStorage
   useEffect(() => {
@@ -112,6 +116,60 @@ export default function EstateMap() {
     loadQB();
   }, []);
 
+  // Subscribe to Firebase assets and build a name -> id lookup.
+  // Seed any Estate Map entities that don't exist as assets yet.
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let seeded = false;
+    async function setup() {
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, onValue, push, get } = await import("firebase/database");
+
+      // One-time seed: create any missing entities as assets
+      if (!seeded && !localStorage.getItem("bfo-assets-seeded-v1")) {
+        seeded = true;
+        try {
+          const snap = await get(ref(db, "assets"));
+          const existing = snap.val() || {};
+          const existingNames = new Set<string>(
+            Object.values(existing).map((a: any) => (a?.name || "").toLowerCase())
+          );
+          for (const ent of INITIAL_ENTITIES) {
+            if (!existingNames.has(ent.name.toLowerCase())) {
+              const lower = ent.name.toLowerCase();
+              const type = lower.includes("inc") && !lower.includes("llc") ? "C-Corp" : "LLC";
+              await push(ref(db, "assets"), {
+                name: ent.name,
+                type,
+                state: "",
+                ein: "",
+                createdAt: Date.now(),
+              });
+            }
+          }
+          localStorage.setItem("bfo-assets-seeded-v1", "1");
+        } catch (err) {
+          console.error("Estate seed error:", err);
+        }
+      }
+
+      unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
+        const data = snapshot.val();
+        const map: Record<string, string> = {};
+        if (data) {
+          for (const [id, value] of Object.entries(data)) {
+            const name = (value as any)?.name;
+            if (name) map[name.toLowerCase()] = id;
+          }
+        }
+        setAssetIdByName(map);
+      });
+    }
+    setup();
+    return () => unsubscribe?.();
+  }, []);
+
   function handleAttachQB(entityId: string, realmId: string | null) {
     const company = realmId ? qbCompanies.find((c) => c.realm_id === realmId) : null;
     setEntities((prev) =>
@@ -138,6 +196,8 @@ export default function EstateMap() {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     setDragging(entityId);
+    setMouseDownScreen({ x: e.clientX, y: e.clientY });
+    setDidDrag(false);
     setDragOffset({
       x: (e.clientX - rect.left) / zoom - pan.x - entity.x,
       y: (e.clientY - rect.top) / zoom - pan.y - entity.y,
@@ -158,7 +218,14 @@ export default function EstateMap() {
     const my = (e.clientY - rect.top) / zoom - pan.y;
     setMousePos({ x: mx, y: my });
 
-    if (dragging) {
+    // Track whether a drag has occurred (>4px screen movement)
+    if (dragging && mouseDownScreen && !didDrag) {
+      const dx = e.clientX - mouseDownScreen.x;
+      const dy = e.clientY - mouseDownScreen.y;
+      if (dx * dx + dy * dy > 16) setDidDrag(true);
+    }
+
+    if (dragging && didDrag) {
       setEntities((prev) =>
         prev.map((ent) =>
           ent.id === dragging
@@ -193,9 +260,21 @@ export default function EstateMap() {
         );
       }
     }
+
+    // Click (not a drag) — navigate to the entity's asset detail page
+    if (dragging && !didDrag && !connecting) {
+      const entity = getEntityById(dragging);
+      if (entity) {
+        const assetId = assetIdByName[entity.name.toLowerCase()];
+        if (assetId) navigate(`/assets/${assetId}`);
+      }
+    }
+
     setDragging(null);
     setIsPanning(false);
     setConnecting(null);
+    setMouseDownScreen(null);
+    setDidDrag(false);
   }
 
   function handleConnectStart(e: React.MouseEvent, entityId: string) {
@@ -311,7 +390,7 @@ export default function EstateMap() {
         </div>
       </div>
       <p className={`text-sm mb-4 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-        Drag entities to reposition. Right-click for options. Double-click to rename.
+        Click to open entity page. Drag to reposition. Double-click to rename. Right-click to disconnect.
       </p>
 
       {/* Canvas */}
@@ -440,6 +519,7 @@ export default function EstateMap() {
                     className={`absolute -top-2 -right-2 w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center ${
                       isDark ? "bg-red-500/80 text-white hover:bg-red-500" : "bg-red-500 text-white hover:bg-red-600"
                     }`}
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); handleDeleteEntity(entity.id); }}
                     title="Delete entity"
                   >
@@ -454,6 +534,7 @@ export default function EstateMap() {
                       ? "bg-green-500 text-white hover:bg-green-600"
                       : isDark ? "bg-blue-500/80 text-white hover:bg-blue-500" : "bg-blue-500 text-white hover:bg-blue-600"
                   }`}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); setAttachingId(entity.id); }}
                   title={entity.quickBooksRealmId ? `QuickBooks: ${entity.quickBooksName}` : "Attach QuickBooks"}
                 >
@@ -485,7 +566,7 @@ export default function EstateMap() {
 
         {/* Instructions overlay */}
         <div className={`absolute bottom-3 left-3 text-[10px] px-2.5 py-1.5 rounded-lg ${isDark ? "bg-black/60 text-gray-400" : "bg-white/80 text-gray-500 border border-gray-200"}`}>
-          Scroll to zoom  |  Drag background to pan  |  Green dot to connect  |  Right-click to disconnect  |  QB button to attach QuickBooks
+          Click to open  |  Drag to move  |  Scroll to zoom  |  Green dot to connect  |  Right-click to disconnect
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useTheme } from "../theme";
+import { INITIAL_ENTITIES } from "./estate-map";
 
 export function meta() {
   return [{ title: "BFO - Assets" }];
@@ -33,7 +34,34 @@ export default function Assets() {
     async function setup() {
       const { db, authReady } = await import("../firebase");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue, push, get } = await import("firebase/database");
+
+      // One-time seed: create any Estate Map entities that don't exist yet
+      if (!localStorage.getItem("bfo-assets-seeded-v1")) {
+        try {
+          const snap = await get(ref(db, "assets"));
+          const existing = snap.val() || {};
+          const existingNames = new Set<string>(
+            Object.values(existing).map((a: any) => (a?.name || "").toLowerCase())
+          );
+          for (const ent of INITIAL_ENTITIES) {
+            if (!existingNames.has(ent.name.toLowerCase())) {
+              const lower = ent.name.toLowerCase();
+              const type = lower.includes("inc") && !lower.includes("llc") ? "C-Corp" : "LLC";
+              await push(ref(db, "assets"), {
+                name: ent.name,
+                type,
+                state: "",
+                ein: "",
+                createdAt: Date.now(),
+              });
+            }
+          }
+          localStorage.setItem("bfo-assets-seeded-v1", "1");
+        } catch (err) {
+          console.error("Estate seed error:", err);
+        }
+      }
 
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
         const data = snapshot.val();
