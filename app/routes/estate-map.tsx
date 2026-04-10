@@ -13,7 +13,11 @@ type Entity = {
   x: number;
   y: number;
   color?: string;
+  quickBooksRealmId?: string;
+  quickBooksName?: string;
 };
+
+type QBCompany = { realm_id: string; company_name: string };
 
 const INITIAL_ENTITIES: Entity[] = [
   // Root
@@ -72,11 +76,57 @@ export default function EstateMap() {
   const [zoom, setZoom] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [qbCompanies, setQbCompanies] = useState<QBCompany[]>([]);
+  const [attachingId, setAttachingId] = useState<string | null>(null);
 
   // Persist to localStorage
   useEffect(() => {
     localStorage.setItem("bfo-estate-map", JSON.stringify(entities));
   }, [entities]);
+
+  // Fetch connected QuickBooks companies
+  useEffect(() => {
+    async function loadQB() {
+      try {
+        const res = await fetch("/api/quickbooks/data?report=list");
+        const data = await res.json();
+        const list: { realm_id: string; company_name: string }[] = data?.companies || [];
+        // Resolve company names for each
+        const resolved = await Promise.all(
+          list.map(async (c) => {
+            if (c.company_name) return c;
+            try {
+              const infoRes = await fetch(`/api/quickbooks/data?report=company-info&realm_id=${c.realm_id}`);
+              const info = await infoRes.json();
+              return { realm_id: c.realm_id, company_name: info?.CompanyInfo?.CompanyName || c.realm_id };
+            } catch {
+              return { realm_id: c.realm_id, company_name: c.realm_id };
+            }
+          })
+        );
+        setQbCompanies(resolved);
+      } catch {
+        setQbCompanies([]);
+      }
+    }
+    loadQB();
+  }, []);
+
+  function handleAttachQB(entityId: string, realmId: string | null) {
+    const company = realmId ? qbCompanies.find((c) => c.realm_id === realmId) : null;
+    setEntities((prev) =>
+      prev.map((e) =>
+        e.id === entityId
+          ? {
+              ...e,
+              quickBooksRealmId: realmId || undefined,
+              quickBooksName: company?.company_name || undefined,
+            }
+          : e
+      )
+    );
+    setAttachingId(null);
+  }
 
   const getEntityById = useCallback((id: string) => entities.find((e) => e.id === id), [entities]);
 
@@ -397,8 +447,31 @@ export default function EstateMap() {
                   </button>
                 )}
 
+                {/* QuickBooks attach button (top-left) */}
+                <button
+                  className={`absolute -top-2 -left-2 w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center ${
+                    entity.quickBooksRealmId
+                      ? "bg-green-500 text-white hover:bg-green-600"
+                      : isDark ? "bg-blue-500/80 text-white hover:bg-blue-500" : "bg-blue-500 text-white hover:bg-blue-600"
+                  }`}
+                  onClick={(e) => { e.stopPropagation(); setAttachingId(entity.id); }}
+                  title={entity.quickBooksRealmId ? `QuickBooks: ${entity.quickBooksName}` : "Attach QuickBooks"}
+                >
+                  <span className="text-[8px] font-bold leading-none">QB</span>
+                </button>
+
+                {/* Persistent QuickBooks badge when attached */}
+                {entity.quickBooksRealmId && (
+                  <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] px-1.5 py-0.5 rounded whitespace-nowrap flex items-center gap-1 ${
+                    isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700"
+                  }`}>
+                    <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.2l7.5 3.8L12 11.8 4.5 8 12 4.2z"/></svg>
+                    {(entity.quickBooksName || "").slice(0, 18)}{(entity.quickBooksName || "").length > 18 ? "..." : ""}
+                  </div>
+                )}
+
                 {/* Disconnect indicator */}
-                {isUnconnected && (
+                {isUnconnected && !entity.quickBooksRealmId && (
                   <div className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] px-1.5 py-0.5 rounded whitespace-nowrap ${
                     isDark ? "bg-amber-500/20 text-amber-400" : "bg-amber-100 text-amber-600"
                   }`}>
@@ -412,9 +485,84 @@ export default function EstateMap() {
 
         {/* Instructions overlay */}
         <div className={`absolute bottom-3 left-3 text-[10px] px-2.5 py-1.5 rounded-lg ${isDark ? "bg-black/60 text-gray-400" : "bg-white/80 text-gray-500 border border-gray-200"}`}>
-          Scroll to zoom  |  Drag background to pan  |  Green dot to connect  |  Right-click to disconnect
+          Scroll to zoom  |  Drag background to pan  |  Green dot to connect  |  Right-click to disconnect  |  QB button to attach QuickBooks
         </div>
       </div>
+
+      {/* Attach QuickBooks modal */}
+      {attachingId && (() => {
+        const entity = getEntityById(attachingId);
+        if (!entity) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setAttachingId(null)}>
+            <div className="absolute inset-0 bg-black/60" />
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`relative w-full max-w-md rounded-xl shadow-2xl border ${
+                isDark ? "bg-[#141419] border-white/10" : "bg-white border-gray-200"
+              }`}
+            >
+              <div className={`p-5 border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                <h3 className={`font-semibold text-sm ${isDark ? "text-white" : "text-gray-900"}`}>Attach QuickBooks Account</h3>
+                <p className={`text-xs mt-1 ${isDark ? "text-gray-500" : "text-gray-500"}`}>{entity.name}</p>
+              </div>
+              <div className="p-5">
+                {qbCompanies.length === 0 ? (
+                  <div className={`text-center py-6 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+                    <p className="text-xs mb-3">No QuickBooks accounts connected.</p>
+                    <Link
+                      to="/tools/quickbooks"
+                      className={`text-xs underline ${isDark ? "text-blue-400" : "text-blue-600"}`}
+                    >
+                      Connect QuickBooks
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-1 max-h-80 overflow-y-auto">
+                    {qbCompanies.map((c) => {
+                      const isCurrent = entity.quickBooksRealmId === c.realm_id;
+                      return (
+                        <button
+                          key={c.realm_id}
+                          onClick={() => handleAttachQB(entity.id, c.realm_id)}
+                          className={`w-full text-left px-3 py-2.5 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                            isCurrent
+                              ? isDark ? "bg-green-500/15 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-300"
+                              : isDark ? "hover:bg-white/5 text-gray-300 border border-white/5" : "hover:bg-gray-50 text-gray-700 border border-gray-200"
+                          }`}
+                        >
+                          <span className="truncate">{c.company_name}</span>
+                          {isCurrent && (
+                            <svg className="w-4 h-4 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className={`p-4 border-t flex items-center justify-between ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                {entity.quickBooksRealmId ? (
+                  <button
+                    onClick={() => handleAttachQB(entity.id, null)}
+                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      isDark ? "text-red-400 hover:bg-red-500/10 border border-red-500/20" : "text-red-600 hover:bg-red-50 border border-red-200"
+                    }`}
+                  >
+                    Detach
+                  </button>
+                ) : <span />}
+                <button
+                  onClick={() => setAttachingId(null)}
+                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${btnClass}`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
