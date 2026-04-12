@@ -239,7 +239,7 @@ export default function Assets() {
           </table>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {assets.map((asset) => (
             <div key={asset.id} className="group/card relative">
               <button

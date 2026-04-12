@@ -49,6 +49,37 @@ interface AssetDoc {
   createdAt: number;
 }
 
+interface OperatingContract {
+  id: string;
+  counterparty: string;
+  role: "manager" | "managed";
+  services: string[];
+  fee: string;
+  frequency: string;
+  effectiveDate: string;
+  term: string;
+  status: "draft" | "active" | "terminated";
+  createdAt: number;
+}
+
+const MSA_SERVICES = [
+  "Financial Management & Oversight",
+  "AI & Technology Management",
+  "SEO & Digital Marketing",
+  "Bookkeeping & Accounting",
+  "Tax Coordination & Planning",
+  "Bank Account Management",
+  "Compliance & Regulatory Oversight",
+  "Strategic Planning & Advisory",
+];
+
+const LEDGER_LOUISE_SUBS = [
+  "Swisshelm Mountain Ventures, LLC",
+  "Sundown Investments, LLC",
+  "Ledger Burton, LLC",
+  "Worrell Burton, LLC",
+];
+
 interface Framework {
   id: string;
   title: string;
@@ -83,6 +114,10 @@ export default function AssetDetail() {
   const [offForm, setOffForm] = useState({ name: "", title: "", since: "" });
   const [shForm, setShForm] = useState({ name: "", shares: "", class: "Common", percentage: "" });
 
+  // Operating contracts
+  const [contracts, setContracts] = useState<OperatingContract[]>([]);
+  const [expandedContract, setExpandedContract] = useState<string | null>(null);
+
   // Doc form
   const [docName, setDocName] = useState("");
   const [docUrl, setDocUrl] = useState("");
@@ -93,6 +128,7 @@ export default function AssetDetail() {
     let unsub3: (() => void) | undefined;
     let unsub4: (() => void) | undefined;
     let unsub5: (() => void) | undefined;
+    let unsub6: (() => void) | undefined;
 
     async function setup() {
       const { db, authReady } = await import("../firebase");
@@ -151,6 +187,21 @@ export default function AssetDetail() {
         const data = snapshot.val();
         setCorpData(data ? (data as CorpData) : {});
       });
+
+      // Operating contracts
+      unsub6 = onValue(ref(db, `assets/${id}/contracts`), (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const arr = Object.entries(data).map(([cId, value]) => ({
+            id: cId,
+            ...(value as Omit<OperatingContract, "id">),
+          }));
+          arr.sort((a, b) => a.counterparty.localeCompare(b.counterparty));
+          setContracts(arr);
+        } else {
+          setContracts([]);
+        }
+      });
     }
 
     setup();
@@ -160,6 +211,7 @@ export default function AssetDetail() {
       unsub3?.();
       unsub4?.();
       unsub5?.();
+      unsub6?.();
     };
   }, [id]);
 
@@ -275,6 +327,39 @@ export default function AssetDetail() {
     const { db } = await import("../firebase");
     const { ref, remove } = await import("firebase/database");
     await remove(ref(db, `assets/${id}/corp/shareholders/${shId}`));
+  }
+
+  async function generateMSATemplates() {
+    if (!asset) return;
+    const { db } = await import("../firebase");
+    const { push, ref } = await import("firebase/database");
+    const existingCounterparties = new Set(contracts.map((c) => c.counterparty.toLowerCase()));
+    for (const sub of LEDGER_LOUISE_SUBS) {
+      if (existingCounterparties.has(sub.toLowerCase())) continue;
+      await push(ref(db, `assets/${id}/contracts`), {
+        counterparty: sub,
+        role: "manager",
+        services: MSA_SERVICES,
+        fee: "$500",
+        frequency: "Quarterly",
+        effectiveDate: "2025-01-01",
+        term: "Annual, auto-renewing",
+        status: "draft",
+        createdAt: Date.now(),
+      });
+    }
+  }
+
+  async function deleteContract(contractId: string) {
+    const { db } = await import("../firebase");
+    const { ref, remove } = await import("firebase/database");
+    await remove(ref(db, `assets/${id}/contracts/${contractId}`));
+  }
+
+  async function updateContractStatus(contractId: string, status: "draft" | "active" | "terminated") {
+    const { db } = await import("../firebase");
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}/contracts/${contractId}`), { status });
   }
 
   const directors = corpData.directors ? Object.entries(corpData.directors).map(([k, v]) => ({ id: k, ...v })) : [];
@@ -753,6 +838,146 @@ export default function AssetDetail() {
           </p>
         ) : null}
       </div>
+
+      {/* Operating Contracts */}
+      {asset.type === "LLC" && (
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Operating Contracts</h2>
+            {asset.name.toLowerCase().includes("ledger louise") && contracts.length < LEDGER_LOUISE_SUBS.length && (
+              <button
+                onClick={generateMSATemplates}
+                className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm"
+              >
+                Generate MSA Templates
+              </button>
+            )}
+          </div>
+
+          {contracts.length === 0 ? (
+            <div className={`p-6 ${cardCls} text-center`}>
+              <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>No operating contracts yet.</p>
+              {asset.name.toLowerCase().includes("ledger louise") && (
+                <button
+                  onClick={generateMSATemplates}
+                  className="mt-3 text-sm text-blue-400 hover:text-blue-300 cursor-pointer"
+                >
+                  Generate MSA templates for subsidiaries
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 max-w-3xl">
+              {contracts.map((contract) => (
+                <div key={contract.id} className={`${cardCls} overflow-hidden`}>
+                  {/* Contract header */}
+                  <button
+                    onClick={() => setExpandedContract(expandedContract === contract.id ? null : contract.id)}
+                    className={`w-full flex items-center justify-between p-4 text-left cursor-pointer transition-colors ${
+                      isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className={`w-4 h-4 transition-transform ${expandedContract === contract.id ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-semibold">
+                          MSA — {asset.name} &rarr; {contract.counterparty}
+                        </p>
+                        <p className={`text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                          {contract.fee}/{contract.frequency} &middot; {contract.term}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded font-medium ${
+                      contract.status === "active"
+                        ? "bg-green-500/20 text-green-400"
+                        : contract.status === "terminated"
+                        ? "bg-red-500/20 text-red-400"
+                        : isDark ? "bg-white/10 text-gray-400" : "bg-gray-200 text-gray-600"
+                    }`}>
+                      {contract.status}
+                    </span>
+                  </button>
+
+                  {/* Expanded details */}
+                  {expandedContract === contract.id && (
+                    <div className={`px-4 pb-4 border-t ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                      <div className="pt-4 space-y-4">
+                        {/* Template header */}
+                        <div className={`p-4 rounded-lg text-xs leading-relaxed font-mono ${
+                          isDark ? "bg-white/5 text-gray-300" : "bg-gray-50 text-gray-700"
+                        }`}>
+                          <p className="font-bold text-sm mb-3">MANAGEMENT SERVICES AGREEMENT</p>
+                          <p className="mb-2">
+                            This Management Services Agreement (&ldquo;Agreement&rdquo;) is entered into as of{" "}
+                            <span className="font-semibold">{contract.effectiveDate}</span> by and between:
+                          </p>
+                          <p className="mb-1"><span className="font-semibold">Manager:</span> {asset.name}</p>
+                          <p className="mb-3"><span className="font-semibold">Managed Entity:</span> {contract.counterparty}</p>
+
+                          <p className="font-bold mb-2">SCOPE OF SERVICES</p>
+                          <p className="mb-2">Manager shall provide the following services to the Managed Entity:</p>
+                          <ul className="list-disc pl-5 space-y-1 mb-3">
+                            {contract.services.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ul>
+
+                          <p className="font-bold mb-2">COMPENSATION</p>
+                          <p className="mb-3">
+                            Managed Entity shall pay Manager a fee of{" "}
+                            <span className="font-semibold">{contract.fee}</span> per{" "}
+                            <span className="font-semibold">{contract.frequency.toLowerCase()}</span> for services rendered.
+                          </p>
+
+                          <p className="font-bold mb-2">TERM</p>
+                          <p>{contract.term}. Either party may terminate with 30 days written notice.</p>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2">
+                          {contract.status === "draft" && (
+                            <button
+                              onClick={() => updateContractStatus(contract.id, "active")}
+                              className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors cursor-pointer"
+                            >
+                              Activate
+                            </button>
+                          )}
+                          {contract.status === "active" && (
+                            <button
+                              onClick={() => updateContractStatus(contract.id, "terminated")}
+                              className="px-3 py-1.5 text-xs bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors cursor-pointer"
+                            >
+                              Terminate
+                            </button>
+                          )}
+                          {contract.status === "terminated" && (
+                            <button
+                              onClick={() => updateContractStatus(contract.id, "active")}
+                              className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors cursor-pointer"
+                            >
+                              Reactivate
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteContract(contract.id)}
+                            className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Documents */}
       <div>

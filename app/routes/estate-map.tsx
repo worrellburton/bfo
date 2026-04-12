@@ -57,15 +57,9 @@ export default function EstateMap() {
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const [entities, setEntities] = useState<Entity[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("bfo-estate-map");
-      if (saved) {
-        try { return JSON.parse(saved); } catch {}
-      }
-    }
-    return INITIAL_ENTITIES;
-  });
+  const [entities, setEntities] = useState<Entity[]>(INITIAL_ENTITIES);
+  const loaded = useRef(false);
+  const skipNextSave = useRef(false);
 
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -82,11 +76,62 @@ export default function EstateMap() {
   const [assetIdByName, setAssetIdByName] = useState<Record<string, string>>({});
   const [mouseDownScreen, setMouseDownScreen] = useState<{ x: number; y: number } | null>(null);
   const [didDrag, setDidDrag] = useState(false);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
 
-  // Persist to localStorage
+  // Subscribe to Firebase for real-time shared estate map
   useEffect(() => {
-    localStorage.setItem("bfo-estate-map", JSON.stringify(entities));
-  }, [entities]);
+    let unsubscribe: (() => void) | undefined;
+    async function setup() {
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, onValue, get, set } = await import("firebase/database");
+
+      // Seed initial entities if nothing exists yet
+      try {
+        const snap = await get(ref(db, "estate-map/entities"));
+        if (!snap.exists()) {
+          await set(ref(db, "estate-map/entities"), INITIAL_ENTITIES);
+        }
+      } catch (err) {
+        console.error("Estate map seed error:", err);
+      }
+
+      unsubscribe = onValue(ref(db, "estate-map/entities"), (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          // Firebase may return an array or object — normalize to array
+          const arr: Entity[] = Array.isArray(data)
+            ? data.filter(Boolean)
+            : Object.values(data);
+          skipNextSave.current = true;
+          setEntities(arr);
+        }
+        loaded.current = true;
+      });
+    }
+    setup();
+    return () => unsubscribe?.();
+  }, []);
+
+  // Debounced save to Firebase — skip while dragging or when echoing a remote update
+  useEffect(() => {
+    if (!loaded.current) return;
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+    if (dragging) return;
+    const timer = setTimeout(async () => {
+      try {
+        const { db } = await import("../firebase");
+        const { ref, set } = await import("firebase/database");
+        await set(ref(db, "estate-map/entities"), entities);
+      } catch (err) {
+        console.error("Estate map save error:", err);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [entities, dragging]);
 
   // Fetch connected QuickBooks companies
   useEffect(() => {
@@ -207,6 +252,8 @@ export default function EstateMap() {
   function handleCanvasMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("[data-entity]")) return;
+    if ((e.target as HTMLElement).closest("[data-line]")) return;
+    setSelectedLineId(null);
     setIsPanning(true);
     setPanStart({ x: e.clientX - pan.x * zoom, y: e.clientY - pan.y * zoom });
   }
@@ -333,17 +380,35 @@ export default function EstateMap() {
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => Math.max(0.3, Math.min(2, z * delta)));
+    setZoom((z) => Math.max(0.6, Math.min(2, z * delta)));
   }
+
+  // Keyboard: Delete/Backspace removes selected connection, Escape clears selection
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA")) return;
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedLineId) {
+        e.preventDefault();
+        handleDisconnect(selectedLineId);
+        setSelectedLineId(null);
+      } else if (e.key === "Escape") {
+        setSelectedLineId(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedLineId]);
 
   // Draw connection lines
   function getLines() {
-    const lines: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    const lines: { childId: string; x1: number; y1: number; x2: number; y2: number }[] = [];
     for (const entity of entities) {
       if (entity.parentId) {
         const parent = getEntityById(entity.parentId);
         if (parent) {
           lines.push({
+            childId: entity.id,
             x1: parent.x + NODE_W / 2,
             y1: parent.y + NODE_H,
             x2: entity.x + NODE_W / 2,
@@ -363,6 +428,16 @@ export default function EstateMap() {
 
   return (
     <div>
+      <style>{`
+        @keyframes qb-pulse {
+          0%, 100% {
+            box-shadow: 0 0 6px rgba(34,197,94,0.8), 0 0 12px rgba(34,197,94,0.6), 0 0 20px rgba(34,197,94,0.4);
+          }
+          50% {
+            box-shadow: 0 0 10px rgba(34,197,94,1), 0 0 20px rgba(34,197,94,0.8), 0 0 30px rgba(34,197,94,0.6);
+          }
+        }
+      `}</style>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
@@ -383,14 +458,14 @@ export default function EstateMap() {
             Reset
           </button>
           <div className={`flex items-center gap-1 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-            <button onClick={() => setZoom((z) => Math.max(0.3, z - 0.1))} className={`px-2 py-1 rounded ${btnClass}`}>-</button>
+            <button onClick={() => setZoom((z) => Math.max(0.6, z - 0.1))} className={`px-2 py-1 rounded ${btnClass}`}>-</button>
             <span className="w-10 text-center">{Math.round(zoom * 100)}%</span>
             <button onClick={() => setZoom((z) => Math.min(2, z + 0.1))} className={`px-2 py-1 rounded ${btnClass}`}>+</button>
           </div>
         </div>
       </div>
       <p className={`text-sm mb-4 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-        Click to open entity page. Drag to reposition. Double-click to rename. Right-click to disconnect.
+        Click to open entity page. Drag to reposition. Double-click to rename. Click a line then press Delete to remove.
       </p>
 
       {/* Canvas */}
@@ -415,16 +490,37 @@ export default function EstateMap() {
         >
           {/* SVG Connection Lines */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ width: "3000px", height: "2000px" }}>
-            {lines.map((line, i) => {
+            {lines.map((line) => {
               const midY = (line.y1 + line.y2) / 2;
+              const d = `M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`;
+              const isSelected = selectedLineId === line.childId;
               return (
-                <path
-                  key={i}
-                  d={`M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`}
-                  fill="none"
-                  stroke={isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)"}
-                  strokeWidth={2}
-                />
+                <g key={line.childId} data-line style={{ pointerEvents: "auto" }}>
+                  {/* Wide invisible hit area */}
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={16}
+                    style={{ cursor: "pointer" }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setSelectedLineId(line.childId);
+                    }}
+                  />
+                  {/* Visible stroke */}
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={
+                      isSelected
+                        ? "#3b82f6"
+                        : isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)"
+                    }
+                    strokeWidth={isSelected ? 3 : 2}
+                    style={{ pointerEvents: "none" }}
+                  />
+                </g>
               );
             })}
             {/* Active connecting line */}
@@ -541,13 +637,23 @@ export default function EstateMap() {
                   <span className="text-[8px] font-bold leading-none">QB</span>
                 </button>
 
-                {/* Persistent QuickBooks badge when attached */}
+                {/* Persistent glowing QuickBooks logo when attached */}
                 {entity.quickBooksRealmId && (
-                  <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] px-1.5 py-0.5 rounded whitespace-nowrap flex items-center gap-1 ${
-                    isDark ? "bg-green-500/20 text-green-400" : "bg-green-100 text-green-700"
-                  }`}>
-                    <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.2l7.5 3.8L12 11.8 4.5 8 12 4.2z"/></svg>
-                    {(entity.quickBooksName || "").slice(0, 18)}{(entity.quickBooksName || "").length > 18 ? "..." : ""}
+                  <div
+                    className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full flex items-center justify-center bg-white"
+                    style={{
+                      boxShadow:
+                        "0 0 8px rgba(34,197,94,0.9), 0 0 16px rgba(34,197,94,0.7), 0 0 24px rgba(34,197,94,0.5)",
+                      animation: "qb-pulse 2s ease-in-out infinite",
+                    }}
+                    title={entity.quickBooksName || "QuickBooks"}
+                  >
+                    <img
+                      src="https://cdn.brandfetch.io/quickbooks.com?c=1id3n10pdBTarCHI0db"
+                      alt="QuickBooks"
+                      className="w-4 h-4 object-contain"
+                      draggable={false}
+                    />
                   </div>
                 )}
 
@@ -566,7 +672,7 @@ export default function EstateMap() {
 
         {/* Instructions overlay */}
         <div className={`absolute bottom-3 left-3 text-[10px] px-2.5 py-1.5 rounded-lg ${isDark ? "bg-black/60 text-gray-400" : "bg-white/80 text-gray-500 border border-gray-200"}`}>
-          Click to open  |  Drag to move  |  Scroll to zoom  |  Green dot to connect  |  Right-click to disconnect
+          Click to open  |  Drag to move  |  Scroll to zoom  |  Green dot to connect  |  Click line + Delete to remove
         </div>
       </div>
 
