@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -17,6 +17,11 @@ interface Asset {
   formationDate?: string;
   status?: string;
   notes?: string;
+  ownerId?: string;
+  llcType?: "Disregarded Entity" | "Partnership" | "C Corporation" | "";
+  stateLink?: string;
+  operatingAgreementDate?: string;
+  articlesOfOrgDate?: string;
 }
 
 interface CorpData {
@@ -62,19 +67,15 @@ interface OperatingContract {
   createdAt: number;
 }
 
-const AVAILABLE_SERVICES = [
+const MSA_SERVICES = [
   "Financial Management & Oversight",
+  "AI & Technology Management",
+  "SEO & Digital Marketing",
   "Bookkeeping & Accounting",
   "Tax Coordination & Planning",
   "Bank Account Management",
-  "AI & Technology Solutions",
-  "Software Development & IT",
-  "Digital Marketing & SEO",
-  "Strategic Planning & Advisory",
   "Compliance & Regulatory Oversight",
-  "HR & Payroll Administration",
-  "Legal Coordination",
-  "Insurance & Risk Management",
+  "Strategic Planning & Advisory",
 ];
 
 const LEDGER_LOUISE_SUBS = [
@@ -86,6 +87,7 @@ const LEDGER_LOUISE_SUBS = [
 
 export default function AssetDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const inputCls = `${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`;
@@ -109,12 +111,6 @@ export default function AssetDetail() {
   // Operating contracts
   const [contracts, setContracts] = useState<OperatingContract[]>([]);
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
-  const [showNewContract, setShowNewContract] = useState(false);
-  const [newCounterparty, setNewCounterparty] = useState("");
-  const [newFee, setNewFee] = useState("$500");
-  const [newFrequency, setNewFrequency] = useState<"Monthly" | "Quarterly" | "Annually">("Quarterly");
-  const [newServices, setNewServices] = useState<string[]>([]);
-  const [newEffectiveDate, setNewEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
 
   // Doc form
   const [docName, setDocName] = useState("");
@@ -198,6 +194,10 @@ export default function AssetDetail() {
       formationDate: form.formationDate || "",
       status: form.status || "Active",
       notes: form.notes || "",
+      llcType: form.llcType || "",
+      stateLink: form.stateLink || "",
+      operatingAgreementDate: form.operatingAgreementDate || "",
+      articlesOfOrgDate: form.articlesOfOrgDate || "",
     });
     setEditing(false);
   }
@@ -297,7 +297,7 @@ export default function AssetDetail() {
       await push(ref(db, `assets/${id}/contracts`), {
         counterparty: sub,
         role: "manager",
-        services: AVAILABLE_SERVICES,
+        services: MSA_SERVICES,
         fee: "$500",
         frequency: "Quarterly",
         effectiveDate: "2025-01-01",
@@ -318,177 +318,6 @@ export default function AssetDetail() {
     const { db } = await import("../firebase");
     const { ref, update } = await import("firebase/database");
     await update(ref(db, `assets/${id}/contracts/${contractId}`), { status });
-  }
-
-  async function createContract(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newCounterparty.trim() || newServices.length === 0) return;
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
-    await push(ref(db, `assets/${id}/contracts`), {
-      counterparty: newCounterparty.trim(),
-      role: "manager",
-      services: newServices,
-      fee: newFee.trim() || "$500",
-      frequency: newFrequency,
-      effectiveDate: newEffectiveDate,
-      term: newFrequency === "Monthly" ? "Month-to-month" : "Annual, auto-renewing",
-      status: "draft" as const,
-      createdAt: Date.now(),
-    });
-    setNewCounterparty("");
-    setNewFee("$500");
-    setNewFrequency("Quarterly");
-    setNewServices([]);
-    setNewEffectiveDate(new Date().toISOString().split("T")[0]);
-    setShowNewContract(false);
-  }
-
-  function toggleService(service: string) {
-    setNewServices((prev) =>
-      prev.includes(service) ? prev.filter((s) => s !== service) : [...prev, service]
-    );
-  }
-
-  async function generatePDF(contract: OperatingContract) {
-    if (!asset) return;
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF({ unit: "pt", format: "letter" });
-    const pw = doc.internal.pageSize.getWidth();
-    const ml = 72; // 1-inch margin
-    const mr = pw - 72;
-    const tw = mr - ml; // text width
-    let y = 72;
-
-    function addText(text: string, opts?: { bold?: boolean; size?: number; center?: boolean; indent?: number }) {
-      const size = opts?.size || 10;
-      doc.setFontSize(size);
-      doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
-      const x = opts?.center ? pw / 2 : ml + (opts?.indent || 0);
-      const align = opts?.center ? "center" : "left";
-      const maxW = tw - (opts?.indent || 0);
-      const lines = doc.splitTextToSize(text, maxW);
-      for (const line of lines) {
-        if (y > 700) { doc.addPage(); y = 72; }
-        doc.text(line, x, y, { align });
-        y += size * 1.4;
-      }
-    }
-
-    function gap(n = 10) { y += n; }
-
-    // Title
-    addText("MANAGEMENT SERVICES AGREEMENT", { bold: true, size: 16, center: true });
-    gap(20);
-
-    // Preamble
-    addText(`This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} ("Effective Date"),`);
-    gap();
-    addText("BY AND BETWEEN:", { bold: true });
-    gap(5);
-    addText(`${asset.name} ("Manager")`);
-    addText("11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", { indent: 20 });
-    gap(5);
-    addText("AND", { center: true });
-    gap(5);
-    addText(`${contract.counterparty} ("Client")`);
-    addText("11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", { indent: 20 });
-    gap(15);
-
-    // Recitals
-    addText("RECITALS", { bold: true, size: 12 });
-    gap(5);
-    addText(`WHEREAS, Manager is engaged in the business of providing management, administrative, and advisory services to affiliated entities; and`);
-    gap(5);
-    addText(`WHEREAS, Client desires to retain Manager to provide certain management services as described herein; and`);
-    gap(5);
-    addText(`NOW, THEREFORE, in consideration of the mutual covenants and agreements set forth herein, and for other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the parties agree as follows:`);
-    gap(15);
-
-    // Article I
-    addText("ARTICLE I — SCOPE OF SERVICES", { bold: true, size: 12 });
-    gap(5);
-    addText("1.1  Manager shall provide the following services to Client:");
-    gap(5);
-    contract.services.forEach((s, i) => {
-      addText(`     (${String.fromCharCode(97 + i)})  ${s}`, { indent: 20 });
-    });
-    gap(5);
-    addText("1.2  Manager shall perform the Services in a professional and workmanlike manner consistent with generally accepted industry standards.");
-    gap(15);
-
-    // Article II
-    addText("ARTICLE II — COMPENSATION", { bold: true, size: 12 });
-    gap(5);
-    addText(`2.1  Client shall pay Manager a management fee of ${contract.fee} per ${contract.frequency.toLowerCase()} ("Management Fee") for services rendered under this Agreement.`);
-    gap(5);
-    addText("2.2  Payment shall be due within thirty (30) days following the end of each billing period. Late payments shall accrue interest at the rate of 1.5% per month.");
-    gap(5);
-    addText("2.3  Manager shall be entitled to reimbursement for all reasonable out-of-pocket expenses incurred in connection with the performance of the Services, subject to prior written approval by Client for any single expense exceeding $500.");
-    gap(15);
-
-    // Article III
-    addText("ARTICLE III — TERM AND TERMINATION", { bold: true, size: 12 });
-    gap(5);
-    addText(`3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year ("Initial Term"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term.`);
-    gap(5);
-    addText("3.2  Either party may terminate this Agreement for cause upon thirty (30) days' written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.");
-    gap(5);
-    addText("3.3  Upon termination, Manager shall deliver to Client all documents, records, and materials relating to Client's business within fifteen (15) business days.");
-    gap(15);
-
-    // Article IV
-    addText("ARTICLE IV — CONFIDENTIALITY", { bold: true, size: 12 });
-    gap(5);
-    addText("4.1  Each party acknowledges that in the course of performing its obligations under this Agreement, it may receive or have access to confidential and proprietary information of the other party. Each party agrees to maintain the confidentiality of such information and not to disclose it to any third party without the prior written consent of the disclosing party.");
-    gap(15);
-
-    // Article V
-    addText("ARTICLE V — INDEMNIFICATION", { bold: true, size: 12 });
-    gap(5);
-    addText("5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.");
-    gap(15);
-
-    // Article VI
-    addText("ARTICLE VI — GOVERNING LAW", { bold: true, size: 12 });
-    gap(5);
-    const state = asset.state || "Arizona";
-    addText(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${state}, without regard to its conflict of law provisions.`);
-    gap(5);
-    addText(`6.2  Any dispute arising under this Agreement shall be resolved in the state or federal courts located in Maricopa County, ${state}.`);
-    gap(15);
-
-    // Article VII
-    addText("ARTICLE VII — MISCELLANEOUS", { bold: true, size: 12 });
-    gap(5);
-    addText("7.1  This Agreement constitutes the entire agreement between the parties and supersedes all prior agreements and understandings, whether written or oral.");
-    gap(5);
-    addText("7.2  This Agreement may not be amended or modified except by a written instrument signed by both parties.");
-    gap(5);
-    addText("7.3  Neither party may assign this Agreement without the prior written consent of the other party.");
-    gap(25);
-
-    // Signature block
-    addText("IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.", { bold: true });
-    gap(30);
-
-    const sigY = y;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    // Left signature
-    doc.line(ml, sigY, ml + 200, sigY);
-    doc.text(asset.name, ml, sigY + 14);
-    doc.text("Manager", ml, sigY + 28);
-    doc.text("Date: _______________", ml, sigY + 48);
-
-    // Right signature
-    doc.line(mr - 200, sigY, mr, sigY);
-    doc.text(contract.counterparty, mr - 200, sigY + 14);
-    doc.text("Client", mr - 200, sigY + 28);
-    doc.text("Date: _______________", mr - 200, sigY + 48);
-
-    const fileName = `MSA_${asset.name.replace(/[^a-zA-Z0-9]/g, "_")}_${contract.counterparty.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
-    doc.save(fileName);
   }
 
   const directors = corpData.directors ? Object.entries(corpData.directors).map(([k, v]) => ({ id: k, ...v })) : [];
@@ -524,10 +353,15 @@ export default function AssetDetail() {
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">{asset.name}</h1>
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
             <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-1 rounded`}>
               {asset.type}
             </span>
+            {asset.llcType && (
+              <span className={`text-xs ${isDark ? "bg-indigo-500/20 text-indigo-300" : "bg-indigo-50 text-indigo-700"} px-2 py-1 rounded`}>
+                {asset.llcType}
+              </span>
+            )}
             <span className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.state || "No state"}</span>
             {asset.status && (
               <span className={`text-xs px-2 py-1 rounded ${
@@ -619,6 +453,54 @@ export default function AssetDetail() {
             <option value="Dissolved">Dissolved</option>
             <option value="Pending">Pending</option>
           </select>
+
+          {/* New fields */}
+          <div className={`pt-3 border-t ${isDark ? "border-white/10" : "border-gray-200"}`}>
+            <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>Entity Classification</p>
+            <select
+              value={form.llcType || ""}
+              onChange={(e) => setForm({ ...form, llcType: e.target.value as Asset["llcType"] })}
+              className={`w-full px-4 py-2 ${inputCls}`}
+            >
+              <option value="">Select LLC Type...</option>
+              <option value="Disregarded Entity">Disregarded Entity</option>
+              <option value="Partnership">Partnership</option>
+              <option value="C Corporation">C Corporation</option>
+            </select>
+          </div>
+
+          <div>
+            <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>State Filing Link</p>
+            <input
+              value={form.stateLink || ""}
+              onChange={(e) => setForm({ ...form, stateLink: e.target.value })}
+              placeholder="https://..."
+              type="url"
+              className={`w-full px-4 py-2 ${inputCls}`}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>Operating Agreement</p>
+              <input
+                type="date"
+                value={form.operatingAgreementDate || ""}
+                onChange={(e) => setForm({ ...form, operatingAgreementDate: e.target.value })}
+                className={`w-full px-4 py-2 ${inputCls}`}
+              />
+            </div>
+            <div>
+              <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>Articles of Organization</p>
+              <input
+                type="date"
+                value={form.articlesOfOrgDate || ""}
+                onChange={(e) => setForm({ ...form, articlesOfOrgDate: e.target.value })}
+                className={`w-full px-4 py-2 ${inputCls}`}
+              />
+            </div>
+          </div>
+
           <textarea
             value={form.notes || ""}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -634,12 +516,15 @@ export default function AssetDetail() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 max-w-lg mb-10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl mb-10">
           {[
             ["EIN", asset.ein],
             ["Registered Agent", asset.registeredAgent],
             ["Address", asset.address],
             ["Formation Date", asset.formationDate],
+            ["LLC Type", asset.llcType],
+            ["Operating Agreement", asset.operatingAgreementDate],
+            ["Articles of Org", asset.articlesOfOrgDate],
           ].map(([label, value]) =>
             value ? (
               <div key={label} className={`p-3 ${cardCls}`}>
@@ -648,8 +533,16 @@ export default function AssetDetail() {
               </div>
             ) : null
           )}
+          {asset.stateLink && (
+            <div className={`p-3 ${cardCls}`}>
+              <p className="text-gray-500 text-xs tracking-wider">State Link</p>
+              <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className="text-sm mt-1 text-blue-400 hover:text-blue-300 block truncate">
+                View Filing
+              </a>
+            </div>
+          )}
           {asset.notes && (
-            <div className={`col-span-2 p-3 ${cardCls}`}>
+            <div className={`col-span-2 sm:col-span-3 p-3 ${cardCls}`}>
               <p className="text-gray-500 text-xs tracking-wider">Notes</p>
               <p className="text-sm mt-1 whitespace-pre-wrap">{asset.notes}</p>
             </div>
@@ -901,246 +794,160 @@ export default function AssetDetail() {
       )}
 
       {/* Operating Contracts */}
-      <div className="mb-10">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Operating Contracts</h2>
-          <div className="flex items-center gap-2">
+      {asset.type === "LLC" && (
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Operating Contracts</h2>
             {asset.name.toLowerCase().includes("ledger louise") && contracts.length < LEDGER_LOUISE_SUBS.length && (
               <button
                 onClick={generateMSATemplates}
-                className={`px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer ${isDark ? "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10" : "bg-black/5 border-gray-200 text-gray-700 hover:bg-gray-100"} border`}
+                className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm"
               >
-                Generate Templates
+                Generate MSA Templates
               </button>
             )}
-            <button
-              onClick={() => setShowNewContract(!showNewContract)}
-              className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm"
-            >
-              {showNewContract ? "Cancel" : "+ New Contract"}
-            </button>
           </div>
-        </div>
 
-        {/* New Contract Form */}
-        {showNewContract && (
-          <form onSubmit={createContract} className={`mb-6 p-5 ${cardCls} max-w-2xl space-y-4`}>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className={`text-xs font-medium block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Counterparty</label>
-                <input
-                  value={newCounterparty}
-                  onChange={(e) => setNewCounterparty(e.target.value)}
-                  placeholder="Entity name"
-                  required
-                  className={`w-full px-3 py-2 text-sm ${inputCls}`}
-                />
-              </div>
-              <div>
-                <label className={`text-xs font-medium block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Fee</label>
-                <input
-                  value={newFee}
-                  onChange={(e) => setNewFee(e.target.value)}
-                  placeholder="$500"
-                  className={`w-full px-3 py-2 text-sm ${inputCls}`}
-                />
-              </div>
-              <div>
-                <label className={`text-xs font-medium block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Frequency</label>
-                <select
-                  value={newFrequency}
-                  onChange={(e) => setNewFrequency(e.target.value as typeof newFrequency)}
-                  className={`w-full px-3 py-2 text-sm ${inputCls}`}
+          {contracts.length === 0 ? (
+            <div className={`p-6 ${cardCls} text-center`}>
+              <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>No operating contracts yet.</p>
+              {asset.name.toLowerCase().includes("ledger louise") && (
+                <button
+                  onClick={generateMSATemplates}
+                  className="mt-3 text-sm text-blue-400 hover:text-blue-300 cursor-pointer"
                 >
-                  <option value="Monthly">Monthly</option>
-                  <option value="Quarterly">Quarterly</option>
-                  <option value="Annually">Annually</option>
-                </select>
-              </div>
-              <div>
-                <label className={`text-xs font-medium block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Effective Date</label>
-                <input
-                  type="date"
-                  value={newEffectiveDate}
-                  onChange={(e) => setNewEffectiveDate(e.target.value)}
-                  className={`w-full px-3 py-2 text-sm ${inputCls}`}
-                />
-              </div>
+                  Generate MSA templates for subsidiaries
+                </button>
+              )}
             </div>
-
-            <div>
-              <label className={`text-xs font-medium block mb-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Services</label>
-              <div className="grid grid-cols-2 gap-2">
-                {AVAILABLE_SERVICES.map((service) => (
-                  <label
-                    key={service}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                      newServices.includes(service)
-                        ? isDark ? "bg-blue-500/15 text-blue-400 border border-blue-500/30" : "bg-blue-50 text-blue-700 border border-blue-300"
-                        : isDark ? "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10" : "bg-black/5 text-gray-600 border border-gray-200 hover:bg-gray-100"
+          ) : (
+            <div className="space-y-3 max-w-3xl">
+              {contracts.map((contract) => (
+                <div key={contract.id} className={`${cardCls} overflow-hidden`}>
+                  {/* Contract header */}
+                  <button
+                    onClick={() => setExpandedContract(expandedContract === contract.id ? null : contract.id)}
+                    className={`w-full flex items-center justify-between p-4 text-left cursor-pointer transition-colors ${
+                      isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={newServices.includes(service)}
-                      onChange={() => toggleService(service)}
-                      className="sr-only"
-                    />
-                    <svg className={`w-3.5 h-3.5 flex-shrink-0 ${newServices.includes(service) ? "" : "opacity-30"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      {newServices.includes(service) ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      ) : (
-                        <rect x="3" y="3" width="18" height="18" rx="3" strokeWidth={2} />
-                      )}
-                    </svg>
-                    {service}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={!newCounterparty.trim() || newServices.length === 0}
-                className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Create Contract
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewServices([...AVAILABLE_SERVICES]);
-                }}
-                className={`px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"}`}
-              >
-                Select All Services
-              </button>
-            </div>
-          </form>
-        )}
-
-        {contracts.length === 0 && !showNewContract ? (
-          <div className={`p-6 ${cardCls} text-center`}>
-            <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>No operating contracts yet.</p>
-            {asset.name.toLowerCase().includes("ledger louise") && (
-              <button
-                onClick={generateMSATemplates}
-                className="mt-3 text-sm text-blue-400 hover:text-blue-300 cursor-pointer"
-              >
-                Generate MSA templates for subsidiaries
-              </button>
-            )}
-          </div>
-        ) : contracts.length > 0 && (
-          <div className="space-y-3 max-w-3xl">
-            {contracts.map((contract) => (
-              <div key={contract.id} className={`${cardCls} overflow-hidden`}>
-                {/* Contract header */}
-                <button
-                  onClick={() => setExpandedContract(expandedContract === contract.id ? null : contract.id)}
-                  className={`w-full flex items-center justify-between p-4 text-left cursor-pointer transition-colors ${
-                    isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <svg className={`w-4 h-4 transition-transform ${expandedContract === contract.id ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-semibold">
-                        MSA — {asset.name} &rarr; {contract.counterparty}
-                      </p>
-                      <p className={`text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                        {contract.fee}/{contract.frequency} &middot; {contract.services.length} services &middot; {contract.term}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`text-xs px-2 py-1 rounded font-medium ${
-                    contract.status === "active"
-                      ? "bg-green-500/20 text-green-400"
-                      : contract.status === "terminated"
-                      ? "bg-red-500/20 text-red-400"
-                      : isDark ? "bg-white/10 text-gray-400" : "bg-gray-200 text-gray-600"
-                  }`}>
-                    {contract.status}
-                  </span>
-                </button>
-
-                {/* Expanded details */}
-                {expandedContract === contract.id && (
-                  <div className={`px-4 pb-4 border-t ${isDark ? "border-white/5" : "border-gray-100"}`}>
-                    <div className="pt-4 space-y-4">
-                      {/* Contract preview */}
-                      <div className={`p-4 rounded-lg text-xs leading-relaxed font-mono ${
-                        isDark ? "bg-white/5 text-gray-300" : "bg-gray-50 text-gray-700"
-                      }`}>
-                        <p className="font-bold text-sm mb-3">MANAGEMENT SERVICES AGREEMENT</p>
-                        <p className="mb-2">
-                          Effective {contract.effectiveDate} between <span className="font-semibold">{asset.name}</span> (Manager) and <span className="font-semibold">{contract.counterparty}</span> (Client).
+                    <div className="flex items-center gap-3">
+                      <svg className={`w-4 h-4 transition-transform ${expandedContract === contract.id ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-semibold">
+                          MSA — {asset.name} &rarr; {contract.counterparty}
                         </p>
-                        <p className="font-bold mb-1 mt-3">Services:</p>
-                        <ul className="list-disc pl-5 space-y-0.5 mb-3">
-                          {contract.services.map((s, i) => (
-                            <li key={i}>{s}</li>
-                          ))}
-                        </ul>
-                        <p><span className="font-semibold">Fee:</span> {contract.fee} / {contract.frequency}</p>
-                        <p><span className="font-semibold">Term:</span> {contract.term}</p>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          onClick={() => generatePDF(contract)}
-                          className={`px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                            isDark ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-blue-50 text-blue-700 hover:bg-blue-100"
-                          }`}
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          View as PDF
-                        </button>
-                        {contract.status === "draft" && (
-                          <button
-                            onClick={() => updateContractStatus(contract.id, "active")}
-                            className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors cursor-pointer"
-                          >
-                            Activate
-                          </button>
-                        )}
-                        {contract.status === "active" && (
-                          <button
-                            onClick={() => updateContractStatus(contract.id, "terminated")}
-                            className="px-3 py-1.5 text-xs bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors cursor-pointer"
-                          >
-                            Terminate
-                          </button>
-                        )}
-                        {contract.status === "terminated" && (
-                          <button
-                            onClick={() => updateContractStatus(contract.id, "active")}
-                            className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors cursor-pointer"
-                          >
-                            Reactivate
-                          </button>
-                        )}
-                        <button
-                          onClick={() => deleteContract(contract.id)}
-                          className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
-                        >
-                          Delete
-                        </button>
+                        <p className={`text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                          {contract.fee}/{contract.frequency} &middot; {contract.term}
+                        </p>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${
+                        contract.status === "active"
+                          ? "bg-green-500/20 text-green-400"
+                          : contract.status === "terminated"
+                          ? "bg-red-500/20 text-red-400"
+                          : isDark ? "bg-white/10 text-gray-400" : "bg-gray-200 text-gray-600"
+                      }`}>
+                        {contract.status}
+                      </span>
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/assets/${id}/contract/${contract.id}`);
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded font-medium cursor-pointer inline-flex items-center gap-1 ${
+                          isDark ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        } transition-colors`}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        View PDF
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Expanded details */}
+                  {expandedContract === contract.id && (
+                    <div className={`px-4 pb-4 border-t ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                      <div className="pt-4 space-y-4">
+                        {/* Template header */}
+                        <div className={`p-4 rounded-lg text-xs leading-relaxed font-mono ${
+                          isDark ? "bg-white/5 text-gray-300" : "bg-gray-50 text-gray-700"
+                        }`}>
+                          <p className="font-bold text-sm mb-3">MANAGEMENT SERVICES AGREEMENT</p>
+                          <p className="mb-2">
+                            This Management Services Agreement (&ldquo;Agreement&rdquo;) is entered into as of{" "}
+                            <span className="font-semibold">{contract.effectiveDate}</span> by and between:
+                          </p>
+                          <p className="mb-1"><span className="font-semibold">Manager:</span> {asset.name}</p>
+                          <p className="mb-3"><span className="font-semibold">Managed Entity:</span> {contract.counterparty}</p>
+
+                          <p className="font-bold mb-2">SCOPE OF SERVICES</p>
+                          <p className="mb-2">Manager shall provide the following services to the Managed Entity:</p>
+                          <ul className="list-disc pl-5 space-y-1 mb-3">
+                            {contract.services.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ul>
+
+                          <p className="font-bold mb-2">COMPENSATION</p>
+                          <p className="mb-3">
+                            Managed Entity shall pay Manager a fee of{" "}
+                            <span className="font-semibold">{contract.fee}</span> per{" "}
+                            <span className="font-semibold">{contract.frequency.toLowerCase()}</span> for services rendered.
+                          </p>
+
+                          <p className="font-bold mb-2">TERM</p>
+                          <p>{contract.term}. Either party may terminate with 30 days written notice.</p>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2">
+                          {contract.status === "draft" && (
+                            <button
+                              onClick={() => updateContractStatus(contract.id, "active")}
+                              className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors cursor-pointer"
+                            >
+                              Activate
+                            </button>
+                          )}
+                          {contract.status === "active" && (
+                            <button
+                              onClick={() => updateContractStatus(contract.id, "terminated")}
+                              className="px-3 py-1.5 text-xs bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors cursor-pointer"
+                            >
+                              Terminate
+                            </button>
+                          )}
+                          {contract.status === "terminated" && (
+                            <button
+                              onClick={() => updateContractStatus(contract.id, "active")}
+                              className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors cursor-pointer"
+                            >
+                              Reactivate
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteContract(contract.id)}
+                            className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Documents */}
       <div>

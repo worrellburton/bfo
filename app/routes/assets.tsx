@@ -14,9 +14,14 @@ interface Asset {
   state: string;
   ein: string;
   createdAt: number;
+  ownerId?: string;
+  llcType?: "Disregarded Entity" | "Partnership" | "C Corporation" | "";
+  stateLink?: string;
+  operatingAgreementDate?: string;
+  articlesOfOrgDate?: string;
 }
 
-type SortKey = "name" | "type" | "state" | "ein" | "createdAt";
+type SortKey = "name" | "type" | "state" | "ein" | "ownerId" | "llcType";
 type SortDir = "asc" | "desc";
 
 export default function Assets() {
@@ -29,10 +34,39 @@ export default function Assets() {
   const [type, setType] = useState<"LLC" | "C-Corp">("LLC");
   const [state, setState] = useState("");
   const [ein, setEin] = useState("");
-  const [view, setView] = useState<"list" | "grid">("list");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "table">("list");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Ownership hierarchy from estate map
+  const OWNERSHIP_MAP: Record<string, string> = {};
+  for (const ent of INITIAL_ENTITIES) {
+    if (ent.parentId) {
+      const parent = INITIAL_ENTITIES.find((e) => e.id === ent.parentId);
+      if (parent) {
+        OWNERSHIP_MAP[ent.name.toLowerCase()] = parent.name;
+      }
+    }
+  }
+
+  // LLC type mapping based on known entity data
+  const LLC_TYPE_MAP: Record<string, "Disregarded Entity" | "Partnership" | "C Corporation"> = {
+    "ledger louise, llc": "Disregarded Entity",
+    "swisshelm mountain ventures, llc": "Disregarded Entity",
+    "sundown investments, llc": "Disregarded Entity",
+    "ledger burton, llc": "Disregarded Entity",
+    "worrell burton, llc": "Disregarded Entity",
+    "fdj hesperia, llc (100%)": "Disregarded Entity",
+    "fdj cfs, llc (100%)": "Disregarded Entity",
+    "palomino ranch on the bend, llc (100%)": "Disregarded Entity",
+    "persons lodge llc (100%)": "Disregarded Entity",
+    "breezewood (100%)": "Disregarded Entity",
+    "arizona center for recovery - a new direction, llc": "Disregarded Entity",
+    "quail lakes apartments, llc": "Partnership",
+    "hsl tp hotel, llc": "Partnership",
+    "hsl placita west ltd partnership": "Partnership",
+  };
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -40,7 +74,7 @@ export default function Assets() {
     async function setup() {
       const { db, authReady } = await import("../firebase");
       await authReady;
-      const { ref, onValue, push, get, update } = await import("firebase/database");
+      const { ref, onValue, get, update, push } = await import("firebase/database");
 
       // One-time seed: create any Estate Map entities that don't exist yet
       if (!localStorage.getItem("bfo-assets-seeded-v1")) {
@@ -115,6 +149,41 @@ export default function Assets() {
         }
       }
 
+      // One-time seed: populate ownership and LLC type
+      if (!localStorage.getItem("bfo-ownership-seeded-v1")) {
+        try {
+          const snap3 = await get(ref(db, "assets"));
+          const all3 = snap3.val() || {};
+          // Build name-to-id lookup
+          const nameToId: Record<string, string> = {};
+          for (const [fbId, fbVal] of Object.entries(all3)) {
+            const name = ((fbVal as any)?.name || "").toLowerCase();
+            nameToId[name] = fbId;
+          }
+          for (const [fbId, fbVal] of Object.entries(all3)) {
+            const name = ((fbVal as any)?.name || "").toLowerCase();
+            const updates: Record<string, string> = {};
+            // Set ownerId from estate map hierarchy
+            const ownerName = OWNERSHIP_MAP[name];
+            if (ownerName && !(fbVal as any).ownerId) {
+              const ownerId = nameToId[ownerName.toLowerCase()];
+              if (ownerId) updates.ownerId = ownerId;
+            }
+            // Set llcType
+            const llcType = LLC_TYPE_MAP[name];
+            if (llcType && !(fbVal as any).llcType) {
+              updates.llcType = llcType;
+            }
+            if (Object.keys(updates).length > 0) {
+              await update(ref(db, `assets/${fbId}`), updates);
+            }
+          }
+          localStorage.setItem("bfo-ownership-seeded-v1", "1");
+        } catch (err) {
+          console.error("Ownership seed error:", err);
+        }
+      }
+
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
         const data = snapshot.val();
         if (data) {
@@ -133,33 +202,6 @@ export default function Assets() {
     setup();
     return () => unsubscribe?.();
   }, []);
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-  }
-
-  const sorted = [...assets].sort((a, b) => {
-    const dir = sortDir === "asc" ? 1 : -1;
-    switch (sortKey) {
-      case "name":
-        return dir * a.name.localeCompare(b.name);
-      case "type":
-        return dir * a.type.localeCompare(b.type);
-      case "state":
-        return dir * (a.state || "").localeCompare(b.state || "");
-      case "ein":
-        return dir * (a.ein || "").localeCompare(b.ein || "");
-      case "createdAt":
-        return dir * (a.createdAt - b.createdAt);
-      default:
-        return 0;
-    }
-  });
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -182,6 +224,71 @@ export default function Assets() {
     setShowForm(false);
   }
 
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  async function updateOwner(assetId: string, ownerId: string) {
+    const { db } = await import("../firebase");
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${assetId}`), { ownerId: ownerId || "" });
+  }
+
+  // Build ownership tree
+  function getOwnerName(ownerId: string | undefined) {
+    if (!ownerId) return "";
+    const owner = assets.find((a) => a.id === ownerId);
+    return owner?.name || "";
+  }
+
+  // Sort assets
+  const sorted = [...assets].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    switch (sortKey) {
+      case "name":
+        return dir * a.name.localeCompare(b.name);
+      case "type":
+        return dir * a.type.localeCompare(b.type);
+      case "state":
+        return dir * (a.state || "").localeCompare(b.state || "");
+      case "ein":
+        return dir * (a.ein || "").localeCompare(b.ein || "");
+      case "ownerId":
+        return dir * getOwnerName(a.ownerId).localeCompare(getOwnerName(b.ownerId));
+      case "llcType":
+        return dir * (a.llcType || "").localeCompare(b.llcType || "");
+      default:
+        return 0;
+    }
+  });
+
+  // Build tree structure: root entities first, then children nested under parents
+  function buildTree(items: Asset[]): { asset: Asset; depth: number }[] {
+    const result: { asset: Asset; depth: number }[] = [];
+    const roots = items.filter((a) => !a.ownerId || !items.find((p) => p.id === a.ownerId));
+    const children = (parentId: string, depth: number) => {
+      const kids = items.filter((a) => a.ownerId === parentId);
+      kids.sort((a, b) => a.name.localeCompare(b.name));
+      for (const kid of kids) {
+        result.push({ asset: kid, depth });
+        children(kid.id, depth + 1);
+      }
+    };
+    roots.sort((a, b) => a.name.localeCompare(b.name));
+    for (const root of roots) {
+      result.push({ asset: root, depth: 0 });
+      children(root.id, 1);
+    }
+    return result;
+  }
+
+  const treeRows = buildTree(sorted);
+
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) {
       return (
@@ -201,9 +308,22 @@ export default function Assets() {
     );
   }
 
+  const inputCls = `${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`;
+  const cellBorder = isDark ? "border-white/10" : "border-gray-200";
+  const hdrBg = isDark ? "bg-white/[0.03]" : "bg-gray-50";
+  const hoverBg = isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50";
+  const columns: { key: SortKey; label: string; w: string }[] = [
+    { key: "name", label: "Entity Name", w: "min-w-[220px]" },
+    { key: "type", label: "Type", w: "w-[80px]" },
+    { key: "llcType", label: "LLC Type", w: "w-[140px]" },
+    { key: "state", label: "State", w: "w-[100px]" },
+    { key: "ein", label: "EIN", w: "w-[120px]" },
+    { key: "ownerId", label: "Owned By", w: "w-[180px]" },
+  ];
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Entities</h1>
         <div className="flex items-center gap-3">
           <div className={`flex ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg overflow-hidden`}>
@@ -212,18 +332,18 @@ export default function Assets() {
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
                 view === "list" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
-              title="List view"
+              title="Spreadsheet view"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M10 3v18M14 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
               </svg>
             </button>
             <button
-              onClick={() => setView("grid")}
+              onClick={() => setView("table")}
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "grid" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
+                view === "table" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
-              title="Grid view"
+              title="Card view"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
@@ -240,7 +360,7 @@ export default function Assets() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className={`mb-8 p-6 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-xl max-w-lg space-y-4`}>
+        <form onSubmit={handleCreate} className={`mb-6 p-6 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-xl max-w-lg space-y-4`}>
           <div className="flex gap-3">
             <button
               type="button"
@@ -266,33 +386,11 @@ export default function Assets() {
             </button>
           </div>
 
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Entity name"
-            required
-            className={`w-full px-4 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`}
-          />
-          <input
-            type="text"
-            value={state}
-            onChange={(e) => setState(e.target.value)}
-            placeholder="State of formation (e.g. Delaware)"
-            className={`w-full px-4 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`}
-          />
-          <input
-            type="text"
-            value={ein}
-            onChange={(e) => setEin(e.target.value)}
-            placeholder="EIN (optional)"
-            className={`w-full px-4 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`}
-          />
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Entity name" required className={`w-full px-4 py-2 ${inputCls}`} />
+          <input type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="State of formation (e.g. Delaware)" className={`w-full px-4 py-2 ${inputCls}`} />
+          <input type="text" value={ein} onChange={(e) => setEin(e.target.value)} placeholder="EIN (optional)" className={`w-full px-4 py-2 ${inputCls}`} />
 
-          <button
-            type="submit"
-            className="w-full py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer"
-          >
+          <button type="submit" className="w-full py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
             Create {type}
           </button>
         </form>
@@ -303,101 +401,140 @@ export default function Assets() {
       ) : assets.length === 0 ? (
         <p className="text-gray-500">No entities yet. Create one to get started.</p>
       ) : view === "list" ? (
-        /* ── List view: sortable table with expandable rows ── */
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead>
-              <tr className={`border-b ${isDark ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-500"} text-xs tracking-wider`}>
-                {([
-                  ["name", "Name"],
-                  ["type", "Type"],
-                  ["state", "State"],
-                  ["ein", "EIN"],
-                  ["createdAt", "Created"],
-                ] as [SortKey, string][]).map(([key, label]) => (
-                  <th
-                    key={key}
-                    className="py-3 pr-4 font-medium cursor-pointer select-none hover:text-white transition-colors"
-                    onClick={() => handleSort(key)}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {label}
-                      <SortIcon col={key} />
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((asset) => {
-                const isExpanded = expandedId === asset.id;
-                return (
-                  <tr
-                    key={asset.id}
-                    className={`border-b cursor-pointer transition-colors ${
-                      isDark
-                        ? `border-white/5 ${isExpanded ? "bg-white/5" : "hover:bg-white/[0.03]"}`
-                        : `border-gray-100 ${isExpanded ? "bg-gray-50" : "hover:bg-gray-50/50"}`
-                    }`}
-                    onClick={() => setExpandedId(isExpanded ? null : asset.id)}
-                  >
-                    <td className="py-3 pr-4" colSpan={isExpanded ? 5 : undefined}>
-                      {isExpanded ? (
-                        /* ── Expanded row ── */
-                        <div className="py-2">
-                          <div className="flex items-start justify-between mb-4">
-                            <div>
-                              <h3 className="text-lg font-semibold">{asset.name}</h3>
-                              <div className="flex items-center gap-3 mt-1.5">
-                                <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-0.5 rounded`}>
-                                  {asset.type}
-                                </span>
-                                <span className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                                  {asset.state || "No state"}
-                                </span>
-                                {asset.ein && (
-                                  <span className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                                    EIN: {asset.ein}
-                                  </span>
-                                )}
-                                <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                                  Created {new Date(asset.createdAt).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </div>
-                            <Link
-                              to={`/assets/${asset.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors text-sm whitespace-nowrap"
+        /* ── Spreadsheet view with tree hierarchy ── */
+        <div className={`border rounded-lg overflow-hidden ${cellBorder}`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className={`${hdrBg} border-b ${cellBorder}`}>
+                  {columns.map((col) => (
+                    <th
+                      key={col.key}
+                      className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider cursor-pointer select-none ${col.w} border-r last:border-r-0 ${cellBorder} ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors`}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col.label}
+                        <SortIcon col={col.key} />
+                      </div>
+                    </th>
+                  ))}
+                  {/* Static columns */}
+                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[110px] border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>State Link</th>
+                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>Op. Agreement</th>
+                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Articles of Org</th>
+                </tr>
+              </thead>
+              <tbody>
+                {treeRows.map(({ asset, depth }) => {
+                  const hasChildren = assets.some((a) => a.ownerId === asset.id);
+                  const isExpanded = expandedId === asset.id;
+                  return (
+                    <tr
+                      key={asset.id}
+                      className={`border-b last:border-b-0 ${cellBorder} ${hoverBg} transition-colors group`}
+                    >
+                      {/* Name with tree indentation */}
+                      <td className={`px-3 py-2 border-r ${cellBorder} font-medium`}>
+                        <div className="flex items-center" style={{ paddingLeft: `${depth * 20}px` }}>
+                          {hasChildren && (
+                            <button
+                              onClick={() => setExpandedId(isExpanded ? null : asset.id)}
+                              className={`mr-1.5 p-0.5 rounded cursor-pointer ${isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"}`}
                             >
-                              Go to Entity Page &rarr;
-                            </Link>
-                          </div>
+                              <svg className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                          )}
+                          {depth > 0 && !hasChildren && (
+                            <span className={`mr-1.5 ${isDark ? "text-gray-600" : "text-gray-300"}`}>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </span>
+                          )}
+                          <Link
+                            to={`/assets/${asset.id}`}
+                            className={`${isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-600 hover:text-blue-500"} truncate`}
+                          >
+                            {asset.name}
+                          </Link>
                         </div>
-                      ) : (
-                        asset.name
-                      )}
-                    </td>
-                    {!isExpanded && (
-                      <>
-                        <td className="py-3 pr-4">
-                          <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-0.5 rounded`}>
-                            {asset.type}
-                          </span>
-                        </td>
-                        <td className={`py-3 pr-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.state || "—"}</td>
-                        <td className={`py-3 pr-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.ein || "—"}</td>
-                        <td className="py-3 text-gray-500">{new Date(asset.createdAt).toLocaleDateString()}</td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      {/* Type */}
+                      <td className={`px-3 py-2 border-r ${cellBorder}`}>
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                          asset.type === "C-Corp"
+                            ? isDark ? "bg-purple-500/20 text-purple-300" : "bg-purple-50 text-purple-700"
+                            : isDark ? "bg-blue-500/20 text-blue-300" : "bg-blue-50 text-blue-700"
+                        }`}>
+                          {asset.type}
+                        </span>
+                      </td>
+                      {/* LLC Type */}
+                      <td className={`px-3 py-2 border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.llcType || "—"}
+                      </td>
+                      {/* State */}
+                      <td className={`px-3 py-2 border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.state || "—"}
+                      </td>
+                      {/* EIN */}
+                      <td className={`px-3 py-2 border-r ${cellBorder} font-mono ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.ein || "—"}
+                      </td>
+                      {/* Owned By dropdown */}
+                      <td className={`px-3 py-2 border-r ${cellBorder}`}>
+                        <select
+                          value={asset.ownerId || ""}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            updateOwner(asset.id, e.target.value);
+                          }}
+                          className={`w-full text-xs py-1 px-1.5 rounded border ${isDark ? "bg-transparent border-white/10 text-gray-300 focus:border-white/30" : "bg-transparent border-gray-200 text-gray-600 focus:border-gray-400"} focus:outline-none cursor-pointer`}
+                        >
+                          <option value="">None</option>
+                          {assets
+                            .filter((a) => a.id !== asset.id)
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.name}
+                              </option>
+                            ))}
+                        </select>
+                      </td>
+                      {/* State Link */}
+                      <td className={`px-3 py-2 border-r ${cellBorder}`}>
+                        {asset.stateLink ? (
+                          <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                            View
+                          </a>
+                        ) : (
+                          <span className={`${isDark ? "text-yellow-500/60" : "text-yellow-600/60"} italic`}>Missing</span>
+                        )}
+                      </td>
+                      {/* Operating Agreement */}
+                      <td className={`px-3 py-2 border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.operatingAgreementDate || <span className={`${isDark ? "text-yellow-500/60" : "text-yellow-600/60"} italic`}>Missing</span>}
+                      </td>
+                      {/* Articles of Org */}
+                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.articlesOfOrgDate || <span className={`${isDark ? "text-yellow-500/60" : "text-yellow-600/60"} italic`}>Missing</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className={`px-3 py-2 text-xs ${isDark ? "text-gray-500 bg-white/[0.02]" : "text-gray-400 bg-gray-50"} border-t ${cellBorder}`}>
+            {assets.length} entities
+          </div>
         </div>
       ) : (
-        /* ── Grid view: cards ── */
+        /* ── Card view ── */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {sorted.map((asset) => (
             <Link
@@ -417,9 +554,11 @@ export default function Assets() {
               {asset.ein && (
                 <p className="text-gray-500 text-xs mt-3">EIN: {asset.ein}</p>
               )}
-              <p className={`text-xs mt-2 ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-                Created {new Date(asset.createdAt).toLocaleDateString()}
-              </p>
+              {asset.ownerId && (
+                <p className={`text-xs mt-1 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                  Owned by: {getOwnerName(asset.ownerId)}
+                </p>
+              )}
             </Link>
           ))}
         </div>
