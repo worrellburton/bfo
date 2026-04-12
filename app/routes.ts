@@ -13,8 +13,7 @@ export default [
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
-    route("frameworks", "routes/frameworks.tsx"),
-    route("assets", "routes/assets.tsx"),
+route("assets", "routes/assets.tsx"),
     route("assets/:id", "routes/asset-detail.tsx"),
     route("notes", "routes/notes.tsx"),
     route("agents", "routes/agents.tsx"),

@@ -6,8 +6,7 @@ import { ParticleCanvas } from "../particles";
 
 const navItems = [
   { to: "/", label: "Home", icon: null },
-  { to: "/frameworks", label: "Frameworks", icon: null },
-  { to: "/assets", label: "Assets", icon: null },
+  { to: "/assets", label: "Entities", icon: null },
   { to: "/notes", label: "Notes", icon: null },
   { to: "/office", label: "Office", icon: null },
   { to: "/tools", label: "Tools", icon: null },
