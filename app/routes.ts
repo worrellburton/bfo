@@ -16,6 +16,7 @@ export default [
     route("frameworks", "routes/frameworks.tsx"),
     route("assets", "routes/assets.tsx"),
     route("assets/:id", "routes/asset-detail.tsx"),
+    route("assets/:id/contract/:contractId", "routes/contract-pdf.tsx"),
     route("notes", "routes/notes.tsx"),
     route("agents", "routes/agents.tsx"),
     route("agents/:id", "routes/agent-chat.tsx"),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -17,6 +17,11 @@ interface Asset {
   formationDate?: string;
   status?: string;
   notes?: string;
+  ownerId?: string;
+  llcType?: "Disregarded Entity" | "Partnership" | "C Corporation" | "";
+  stateLink?: string;
+  operatingAgreementDate?: string;
+  articlesOfOrgDate?: string;
 }
 
 interface CorpData {
@@ -80,16 +85,9 @@ const LEDGER_LOUISE_SUBS = [
   "Worrell Burton, LLC",
 ];
 
-interface Framework {
-  id: string;
-  title: string;
-  url: string;
-  category: string;
-  subcategory: string;
-}
-
 export default function AssetDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const inputCls = `${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`;
@@ -99,10 +97,6 @@ export default function AssetDetail() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Asset>>({});
-
-  // Frameworks
-  const [allFrameworks, setAllFrameworks] = useState<Framework[]>([]);
-  const [assignedIds, setAssignedIds] = useState<string[]>([]);
 
   // Corp management
   const [corpData, setCorpData] = useState<CorpData>({});
@@ -125,8 +119,6 @@ export default function AssetDetail() {
   useEffect(() => {
     let unsub1: (() => void) | undefined;
     let unsub2: (() => void) | undefined;
-    let unsub3: (() => void) | undefined;
-    let unsub4: (() => void) | undefined;
     let unsub5: (() => void) | undefined;
     let unsub6: (() => void) | undefined;
 
@@ -158,30 +150,6 @@ export default function AssetDetail() {
         }
       });
 
-      // All frameworks
-      unsub3 = onValue(ref(db, "frameworks"), (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const arr = Object.entries(data).map(([fwId, value]) => ({
-            id: fwId,
-            ...(value as Omit<Framework, "id">),
-          }));
-          setAllFrameworks(arr);
-        } else {
-          setAllFrameworks([]);
-        }
-      });
-
-      // Assigned framework IDs
-      unsub4 = onValue(ref(db, `assets/${id}/frameworks`), (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          setAssignedIds(Object.keys(data));
-        } else {
-          setAssignedIds([]);
-        }
-      });
-
       // Corp data
       unsub5 = onValue(ref(db, `assets/${id}/corp`), (snapshot) => {
         const data = snapshot.val();
@@ -208,8 +176,6 @@ export default function AssetDetail() {
     return () => {
       unsub1?.();
       unsub2?.();
-      unsub3?.();
-      unsub4?.();
       unsub5?.();
       unsub6?.();
     };
@@ -228,6 +194,10 @@ export default function AssetDetail() {
       formationDate: form.formationDate || "",
       status: form.status || "Active",
       notes: form.notes || "",
+      llcType: form.llcType || "",
+      stateLink: form.stateLink || "",
+      operatingAgreementDate: form.operatingAgreementDate || "",
+      articlesOfOrgDate: form.articlesOfOrgDate || "",
     });
     setEditing(false);
   }
@@ -259,18 +229,6 @@ export default function AssetDetail() {
     const { ref, remove } = await import("firebase/database");
     await remove(ref(db, `assets/${id}`));
     window.location.href = "/bfo/assets";
-  }
-
-  async function handleAssignFramework(fwId: string) {
-    const { db } = await import("../firebase");
-    const { ref, set } = await import("firebase/database");
-    await set(ref(db, `assets/${id}/frameworks/${fwId}`), true);
-  }
-
-  async function handleUnassignFramework(fwId: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
-    await remove(ref(db, `assets/${id}/frameworks/${fwId}`));
   }
 
   async function updateCorpField(field: string, value: unknown) {
@@ -366,9 +324,6 @@ export default function AssetDetail() {
   const officers = corpData.officers ? Object.entries(corpData.officers).map(([k, v]) => ({ id: k, ...v })) : [];
   const shareholders = corpData.shareholders ? Object.entries(corpData.shareholders).map(([k, v]) => ({ id: k, ...v })) : [];
 
-  const assignedFrameworks = allFrameworks.filter((f) => assignedIds.includes(f.id));
-  const unassignedFrameworks = allFrameworks.filter((f) => !assignedIds.includes(f.id));
-
   if (loading) {
     return <p className="text-gray-500">Loading...</p>;
   }
@@ -398,10 +353,15 @@ export default function AssetDetail() {
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">{asset.name}</h1>
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
             <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-1 rounded`}>
               {asset.type}
             </span>
+            {asset.llcType && (
+              <span className={`text-xs ${isDark ? "bg-indigo-500/20 text-indigo-300" : "bg-indigo-50 text-indigo-700"} px-2 py-1 rounded`}>
+                {asset.llcType}
+              </span>
+            )}
             <span className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>{asset.state || "No state"}</span>
             {asset.status && (
               <span className={`text-xs px-2 py-1 rounded ${
@@ -493,6 +453,54 @@ export default function AssetDetail() {
             <option value="Dissolved">Dissolved</option>
             <option value="Pending">Pending</option>
           </select>
+
+          {/* New fields */}
+          <div className={`pt-3 border-t ${isDark ? "border-white/10" : "border-gray-200"}`}>
+            <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>Entity Classification</p>
+            <select
+              value={form.llcType || ""}
+              onChange={(e) => setForm({ ...form, llcType: e.target.value as Asset["llcType"] })}
+              className={`w-full px-4 py-2 ${inputCls}`}
+            >
+              <option value="">Select LLC Type...</option>
+              <option value="Disregarded Entity">Disregarded Entity</option>
+              <option value="Partnership">Partnership</option>
+              <option value="C Corporation">C Corporation</option>
+            </select>
+          </div>
+
+          <div>
+            <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>State Filing Link</p>
+            <input
+              value={form.stateLink || ""}
+              onChange={(e) => setForm({ ...form, stateLink: e.target.value })}
+              placeholder="https://..."
+              type="url"
+              className={`w-full px-4 py-2 ${inputCls}`}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>Operating Agreement</p>
+              <input
+                type="date"
+                value={form.operatingAgreementDate || ""}
+                onChange={(e) => setForm({ ...form, operatingAgreementDate: e.target.value })}
+                className={`w-full px-4 py-2 ${inputCls}`}
+              />
+            </div>
+            <div>
+              <p className={`text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>Articles of Organization</p>
+              <input
+                type="date"
+                value={form.articlesOfOrgDate || ""}
+                onChange={(e) => setForm({ ...form, articlesOfOrgDate: e.target.value })}
+                className={`w-full px-4 py-2 ${inputCls}`}
+              />
+            </div>
+          </div>
+
           <textarea
             value={form.notes || ""}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -508,12 +516,15 @@ export default function AssetDetail() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 max-w-lg mb-10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl mb-10">
           {[
             ["EIN", asset.ein],
             ["Registered Agent", asset.registeredAgent],
             ["Address", asset.address],
             ["Formation Date", asset.formationDate],
+            ["LLC Type", asset.llcType],
+            ["Operating Agreement", asset.operatingAgreementDate],
+            ["Articles of Org", asset.articlesOfOrgDate],
           ].map(([label, value]) =>
             value ? (
               <div key={label} className={`p-3 ${cardCls}`}>
@@ -522,8 +533,16 @@ export default function AssetDetail() {
               </div>
             ) : null
           )}
+          {asset.stateLink && (
+            <div className={`p-3 ${cardCls}`}>
+              <p className="text-gray-500 text-xs tracking-wider">State Link</p>
+              <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className="text-sm mt-1 text-blue-400 hover:text-blue-300 block truncate">
+                View Filing
+              </a>
+            </div>
+          )}
           {asset.notes && (
-            <div className={`col-span-2 p-3 ${cardCls}`}>
+            <div className={`col-span-2 sm:col-span-3 p-3 ${cardCls}`}>
               <p className="text-gray-500 text-xs tracking-wider">Notes</p>
               <p className="text-sm mt-1 whitespace-pre-wrap">{asset.notes}</p>
             </div>
@@ -774,71 +793,6 @@ export default function AssetDetail() {
         </div>
       )}
 
-      {/* Assigned Frameworks */}
-      <div className="mb-10">
-        <h2 className="text-xl font-bold mb-4">Frameworks</h2>
-
-        {assignedFrameworks.length > 0 && (
-          <div className="space-y-2 max-w-lg mb-4">
-            {assignedFrameworks.map((fw) => (
-              <div
-                key={fw.id}
-                className={`flex items-center justify-between p-3 ${cardCls} group`}
-              >
-                <div className="flex-1 min-w-0">
-                  <a
-                    href={fw.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 text-sm truncate block"
-                  >
-                    {fw.title}
-                  </a>
-                  <span className="text-gray-600 text-xs">
-                    {fw.category} / {fw.subcategory}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleUnassignFramework(fw.id)}
-                  className="text-gray-600 hover:text-red-400 text-xs ml-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {unassignedFrameworks.length > 0 ? (
-          <select
-            onChange={(e) => {
-              if (e.target.value) {
-                handleAssignFramework(e.target.value);
-                e.target.value = "";
-              }
-            }}
-            defaultValue=""
-            className={`px-4 py-2 ${inputCls} text-sm max-w-lg w-full`}
-          >
-            <option value="" disabled>
-              + Assign a framework...
-            </option>
-            {unassignedFrameworks.map((fw) => (
-              <option key={fw.id} value={fw.id}>
-                {fw.title} ({fw.category} / {fw.subcategory})
-              </option>
-            ))}
-          </select>
-        ) : assignedFrameworks.length === 0 ? (
-          <p className="text-gray-500 text-sm">
-            No frameworks available.{" "}
-            <Link to="/frameworks" className="text-blue-400 hover:text-blue-300">
-              Create one first.
-            </Link>
-          </p>
-        ) : null}
-      </div>
-
       {/* Operating Contracts */}
       {asset.type === "LLC" && (
         <div className="mb-10">
@@ -890,15 +844,31 @@ export default function AssetDetail() {
                         </p>
                       </div>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded font-medium ${
-                      contract.status === "active"
-                        ? "bg-green-500/20 text-green-400"
-                        : contract.status === "terminated"
-                        ? "bg-red-500/20 text-red-400"
-                        : isDark ? "bg-white/10 text-gray-400" : "bg-gray-200 text-gray-600"
-                    }`}>
-                      {contract.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${
+                        contract.status === "active"
+                          ? "bg-green-500/20 text-green-400"
+                          : contract.status === "terminated"
+                          ? "bg-red-500/20 text-red-400"
+                          : isDark ? "bg-white/10 text-gray-400" : "bg-gray-200 text-gray-600"
+                      }`}>
+                        {contract.status}
+                      </span>
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/assets/${id}/contract/${contract.id}`);
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded font-medium cursor-pointer inline-flex items-center gap-1 ${
+                          isDark ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        } transition-colors`}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        View PDF
+                      </span>
+                    </div>
                   </button>
 
                   {/* Expanded details */}
