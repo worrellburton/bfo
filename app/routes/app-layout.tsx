@@ -150,10 +150,7 @@ export default function AppLayout() {
                 : "bg-white border-gray-200"
             }`}>
               <button
-                onClick={() => {
-                  toggle();
-                  setMenuOpen(false);
-                }}
+                onClick={() => toggle()}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
                   isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
                 }`}
