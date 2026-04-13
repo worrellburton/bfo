@@ -119,7 +119,7 @@ export default function BalanceSheet() {
   const [drill, setDrill] = useState<DrillDown | null>(null);
   const [drillEntries, setDrillEntries] = useState<LedgerEntry[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
-  const [focusMode, setFocusMode] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredCol, setHoveredCol] = useState<number | null>(null);
 
@@ -171,7 +171,10 @@ export default function BalanceSheet() {
     let asOf: string;
 
     if (viewMode === "current") {
-      asOf = now.toISOString().split("T")[0];
+      // If user picked the current year, show as-of today; otherwise use end-of-year for the selected year
+      asOf = selectedYear === currentYear
+        ? now.toISOString().split("T")[0]
+        : `${selectedYear}-12-31`;
     } else if (viewMode === "monthly") {
       // End of selected month
       const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
@@ -316,7 +319,9 @@ export default function BalanceSheet() {
 
     const generatedDate = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     const periodLabel = viewMode === "current"
-      ? `As of ${now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`
+      ? selectedYear === currentYear
+        ? `As of ${now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`
+        : `As of December 31, ${selectedYear}`
       : viewMode === "monthly"
         ? `As of ${FULL_MONTHS[selectedMonth]} ${selectedYear}`
         : `As of December 31, ${selectedYear}`;
@@ -413,7 +418,7 @@ export default function BalanceSheet() {
   const btnBorder = light ? "border border-gray-200 hover:border-gray-400 text-gray-600 hover:text-gray-900" : "border border-white/10 hover:border-white/20 text-gray-500 hover:text-white";
   const btnActive = light ? "border border-blue-500 bg-blue-50 text-blue-700" : "border border-blue-500/40 bg-blue-500/10 text-blue-400";
   const selectStyle = light
-    ? "bg-white border border-gray-200 text-gray-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+    ? "bg-gray-100 border border-gray-300 text-gray-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500/50";
 
   return (
@@ -545,7 +550,9 @@ export default function BalanceSheet() {
           <div className="mb-4">
             <h3 className={`font-semibold text-sm ${headingText}`}>
               {viewMode === "current"
-                ? `As of ${now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`
+                ? selectedYear === currentYear
+                  ? `As of ${now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`
+                  : `As of December 31, ${selectedYear}`
                 : viewMode === "monthly"
                   ? `As of end of ${FULL_MONTHS[selectedMonth]} ${selectedYear}`
                   : `As of December 31, ${selectedYear}`}
