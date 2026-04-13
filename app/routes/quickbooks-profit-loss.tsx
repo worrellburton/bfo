@@ -118,7 +118,7 @@ export default function ProfitLoss() {
   const [drill, setDrill] = useState<DrillDown | null>(null);
   const [drillEntries, setDrillEntries] = useState<LedgerEntry[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
-  const [focusMode, setFocusMode] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredCol, setHoveredCol] = useState<number | null>(null);
 
@@ -411,7 +411,7 @@ export default function ProfitLoss() {
   const btnBorder = light ? "border border-gray-200 hover:border-gray-400 text-gray-600 hover:text-gray-900" : "border border-white/10 hover:border-white/20 text-gray-500 hover:text-white";
   const btnActive = light ? "border border-green-500 bg-green-50 text-green-700" : "border border-green-500/40 bg-green-500/10 text-green-400";
   const selectStyle = light
-    ? "bg-white border border-gray-200 text-gray-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500"
+    ? "bg-gray-100 border border-gray-300 text-gray-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500"
     : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500/50";
 
   return (
