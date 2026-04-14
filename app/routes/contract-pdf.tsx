@@ -100,30 +100,94 @@ export default function ContractPDF() {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "pt", format: "letter" });
       const pw = doc.internal.pageSize.getWidth();
+      const ph = doc.internal.pageSize.getHeight();
       const ml = 72;
       const mr = pw - 72;
       const tw = mr - ml;
-      let y = 72;
+      let y = 110; // leave room for branded header
 
-      function addText(text: string, opts?: { bold?: boolean; size?: number; center?: boolean; indent?: number }) {
+      // BFO brand colors
+      const brandNavy: [number, number, number] = [10, 23, 51];
+      const brandAccent: [number, number, number] = [59, 130, 246];
+      const brandMuted: [number, number, number] = [107, 114, 128];
+
+      function drawBrandHeader() {
+        // Navy band
+        doc.setFillColor(...brandNavy);
+        doc.rect(0, 0, pw, 56, "F");
+        // Accent stripe
+        doc.setFillColor(...brandAccent);
+        doc.rect(0, 56, pw, 3, "F");
+        // Wordmark
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(20);
+        doc.text("BFO", ml, 36);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.text("Burton Family Office", ml + 42, 36);
+        // Document tag (right)
+        doc.setFontSize(8);
+        doc.setTextColor(200, 215, 240);
+        doc.text("Management Services Agreement", mr, 30, { align: "right" });
+        doc.text(`Effective ${contract.effectiveDate}`, mr, 42, { align: "right" });
+        doc.setTextColor(0, 0, 0);
+      }
+
+      function drawBrandFooter(pageNum: number) {
+        const fy = ph - 36;
+        // Hairline rule
+        doc.setDrawColor(...brandAccent);
+        doc.setLineWidth(0.5);
+        doc.line(ml, fy - 12, mr, fy - 12);
+        doc.setDrawColor(0, 0, 0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(...brandMuted);
+        doc.text("BFO — Burton Family Office", ml, fy);
+        doc.text(`${asset.name} & ${contract.counterparty}`, pw / 2, fy, { align: "center" });
+        doc.text(`Page ${pageNum}`, mr, fy, { align: "right" });
+        doc.setTextColor(0, 0, 0);
+      }
+
+      drawBrandHeader();
+      let pageNum = 1;
+      drawBrandFooter(pageNum);
+
+      function addText(text: string, opts?: { bold?: boolean; size?: number; center?: boolean; indent?: number; color?: [number, number, number] }) {
         const size = opts?.size || 10;
         doc.setFontSize(size);
         doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
+        if (opts?.color) doc.setTextColor(...opts.color); else doc.setTextColor(0, 0, 0);
         const x = opts?.center ? pw / 2 : ml + (opts?.indent || 0);
         const align = opts?.center ? "center" : "left";
         const maxW = tw - (opts?.indent || 0);
         const lines = doc.splitTextToSize(text, maxW);
         for (const line of lines) {
-          if (y > 700) { doc.addPage(); y = 72; }
+          if (y > ph - 90) {
+            doc.addPage();
+            pageNum += 1;
+            drawBrandHeader();
+            drawBrandFooter(pageNum);
+            y = 110;
+          }
           doc.text(line, x, y, { align });
           y += size * 1.4;
         }
+        doc.setTextColor(0, 0, 0);
       }
 
       function gap(n = 10) { y += n; }
 
       // Title
-      addText("MANAGEMENT SERVICES AGREEMENT", { bold: true, size: 16, center: true });
+      addText("MANAGEMENT SERVICES AGREEMENT", { bold: true, size: 16, center: true, color: brandNavy });
+      gap(8);
+      // Brand-accent underline rule under title
+      doc.setDrawColor(...brandAccent);
+      doc.setLineWidth(1.2);
+      doc.line(pw / 2 - 80, y, pw / 2 + 80, y);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.2);
       gap(20);
 
       // Preamble
