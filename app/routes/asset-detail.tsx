@@ -200,7 +200,12 @@ export default function AssetDetail() {
             id: cId,
             ...(value as Omit<OperatingContract, "id">),
           }));
-          arr.sort((a, b) => a.counterparty.localeCompare(b.counterparty));
+          // Active first, then draft, then terminated; alpha within each group
+          const rank = (s: string) => (s === "active" ? 0 : s === "draft" ? 1 : 2);
+          arr.sort((a, b) => {
+            const r = rank(a.status) - rank(b.status);
+            return r !== 0 ? r : a.counterparty.localeCompare(b.counterparty);
+          });
           setContracts(arr);
         } else {
           setContracts([]);
