@@ -9,8 +9,8 @@ html,
 body {
   @apply bg-white dark:bg-gray-950;
   font-size: 14px;
-
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+  /* Let the browser pick sensible form-control / scrollbar defaults for both
+     schemes. Hard-coding color-scheme: dark (even via prefers-color-scheme)
+     causes light-mode text to inherit near-white defaults on dark-OS users. */
+  color-scheme: light dark;
 }
