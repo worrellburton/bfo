@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useTheme } from "../theme";
 
@@ -22,10 +22,11 @@ interface Asset {
   stateLink?: string;
   operatingAgreementDate?: string;
   articlesOfOrgDate?: string;
-  w9?: W9File;
+  w9?: UploadedFile;
+  articles?: UploadedFile;
 }
 
-interface W9File {
+interface UploadedFile {
   url: string;
   fileName: string;
   size: number;
@@ -135,11 +136,14 @@ export default function AssetDetail() {
   const [docName, setDocName] = useState("");
   const [docUrl, setDocUrl] = useState("");
 
-  // W9 upload
-  const [w9Uploading, setW9Uploading] = useState(false);
-  const [w9Progress, setW9Progress] = useState(0);
-  const [w9Error, setW9Error] = useState<string | null>(null);
-  const [w9DragOver, setW9DragOver] = useState(false);
+  // Entity file uploads (W-9, Articles of Organization)
+  type FileKind = "w9" | "articles";
+  const [uploadState, setUploadState] = useState<Record<FileKind, { uploading: boolean; progress: number; error: string | null; dragOver: boolean }>>({
+    w9: { uploading: false, progress: 0, error: null, dragOver: false },
+    articles: { uploading: false, progress: 0, error: null, dragOver: false },
+  });
+  const setSlot = (k: FileKind, patch: Partial<{ uploading: boolean; progress: number; error: string | null; dragOver: boolean }>) =>
+    setUploadState((s) => ({ ...s, [k]: { ...s[k], ...patch } }));
 
   // Contract editing
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
@@ -150,6 +154,7 @@ export default function AssetDetail() {
     effectiveDate: "",
     term: "",
     status: "draft" as "draft" | "active" | "terminated",
+    services: [...MSA_SERVICES] as string[],
   });
 
   useEffect(() => {
@@ -264,43 +269,39 @@ export default function AssetDetail() {
     await remove(ref(db, `assets/${id}/documents/${docId}`));
   }
 
-  async function handleUploadW9(file: File) {
+  async function handleUploadFile(kind: FileKind, file: File) {
     if (!file) return;
-    const maxBytes = 15 * 1024 * 1024; // 15 MB
+    const maxBytes = 25 * 1024 * 1024;
     if (file.size > maxBytes) {
-      setW9Error("File too large. Max 15 MB.");
+      setSlot(kind, { error: "File too large. Max 25 MB." });
       return;
     }
-    setW9Error(null);
-    setW9Uploading(true);
-    setW9Progress(0);
+    setSlot(kind, { error: null, uploading: true, progress: 0 });
     try {
       const { db, storage, authReady } = await import("../firebase");
       await authReady;
       const { ref: dbRef, update } = await import("firebase/database");
       const { ref: storageRef, uploadBytesResumable, getDownloadURL, deleteObject } = await import("firebase/storage");
 
-      // Delete prior W9 if any (best-effort)
-      if (asset?.w9?.storagePath) {
+      const prior = asset?.[kind];
+      if (prior?.storagePath) {
         try {
-          await deleteObject(storageRef(storage, asset.w9.storagePath));
+          await deleteObject(storageRef(storage, prior.storagePath));
         } catch {
-          // ignore — prior file may be missing
+          // ignore
         }
       }
 
       const ext = file.name.split(".").pop()?.toLowerCase() || "pdf";
-      const path = `assets/${id}/w9/w9-${Date.now()}.${ext}`;
+      const path = `assets/${id}/${kind}/${kind}-${Date.now()}.${ext}`;
       const sRef = storageRef(storage, path);
       const task = uploadBytesResumable(sRef, file, { contentType: file.type || "application/pdf" });
 
       await new Promise<void>((resolve, reject) => {
-        // Warn if the upload never starts (usually means Storage rules
-        // reject the write or the bucket isn't reachable from this origin)
         const stuckTimer = setTimeout(() => {
-          setW9Error(
-            "Upload is stuck. Check Firebase Storage rules for this bucket (authenticated writes to assets/<id>/w9/) and CORS.",
-          );
+          setSlot(kind, {
+            error: `Upload is stuck. Check Firebase Storage rules for this bucket (authenticated writes to assets/<id>/${kind}/) and CORS.`,
+          });
         }, 15000);
         task.on(
           "state_changed",
@@ -308,9 +309,9 @@ export default function AssetDetail() {
             const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
             if (pct > 0) {
               clearTimeout(stuckTimer);
-              setW9Error(null);
+              setSlot(kind, { error: null });
             }
-            setW9Progress(pct);
+            setSlot(kind, { progress: pct });
           },
           (err) => {
             clearTimeout(stuckTimer);
@@ -324,7 +325,7 @@ export default function AssetDetail() {
       });
 
       const url = await getDownloadURL(sRef);
-      const w9: W9File = {
+      const meta: UploadedFile = {
         url,
         fileName: file.name,
         size: file.size,
@@ -332,33 +333,33 @@ export default function AssetDetail() {
         uploadedAt: Date.now(),
         storagePath: path,
       };
-      await update(dbRef(db, `assets/${id}`), { w9 });
+      await update(dbRef(db, `assets/${id}`), { [kind]: meta });
     } catch (err) {
-      console.error("W9 upload failed:", err);
-      setW9Error(err instanceof Error ? err.message : "Upload failed");
+      console.error(`${kind} upload failed:`, err);
+      setSlot(kind, { error: err instanceof Error ? err.message : "Upload failed" });
     } finally {
-      setW9Uploading(false);
-      setW9Progress(0);
+      setSlot(kind, { uploading: false, progress: 0 });
     }
   }
 
-  async function handleDeleteW9() {
-    if (!asset?.w9) return;
-    if (!confirm("Remove the uploaded W-9?")) return;
+  async function handleDeleteFile(kind: FileKind) {
+    if (!asset?.[kind]) return;
+    const label = kind === "w9" ? "W-9" : "Articles of Organization";
+    if (!confirm(`Remove the uploaded ${label}?`)) return;
     try {
       const { db, storage, authReady } = await import("../firebase");
       await authReady;
       const { ref: dbRef, update } = await import("firebase/database");
       const { ref: storageRef, deleteObject } = await import("firebase/storage");
       try {
-        await deleteObject(storageRef(storage, asset.w9.storagePath));
+        await deleteObject(storageRef(storage, asset[kind]!.storagePath));
       } catch {
-        // ignore — file may already be gone
+        // ignore
       }
-      await update(dbRef(db, `assets/${id}`), { w9: null });
+      await update(dbRef(db, `assets/${id}`), { [kind]: null });
     } catch (err) {
-      console.error("W9 delete failed:", err);
-      setW9Error(err instanceof Error ? err.message : "Delete failed");
+      console.error(`${kind} delete failed:`, err);
+      setSlot(kind, { error: err instanceof Error ? err.message : "Delete failed" });
     }
   }
 
@@ -449,12 +450,13 @@ export default function AssetDetail() {
 
   async function addContract() {
     if (!contractForm.counterparty.trim()) return;
+    const services = contractForm.services.length > 0 ? contractForm.services : MSA_SERVICES;
     const { db } = await import("../firebase");
     const { push, ref } = await import("firebase/database");
     await push(ref(db, `assets/${id}/contracts`), {
       counterparty: contractForm.counterparty.trim(),
       role: "manager",
-      services: MSA_SERVICES,
+      services,
       fee: contractForm.fee.trim() || "$0",
       frequency: contractForm.frequency,
       effectiveDate: contractForm.effectiveDate,
@@ -469,6 +471,7 @@ export default function AssetDetail() {
       effectiveDate: new Date().toISOString().slice(0, 10),
       term: "Annual, auto-renewing",
       status: "draft",
+      services: [...MSA_SERVICES],
     });
     setAddingContract(false);
   }
@@ -494,6 +497,7 @@ export default function AssetDetail() {
       effectiveDate: c.effectiveDate,
       term: c.term,
       status: c.status,
+      services: Array.isArray(c.services) && c.services.length > 0 ? [...c.services] : [...MSA_SERVICES],
     });
     setAddingContract(false);
   }
@@ -501,6 +505,7 @@ export default function AssetDetail() {
   async function saveEditContract() {
     if (!editingContractId) return;
     if (!editContractForm.counterparty.trim()) return;
+    const services = editContractForm.services.length > 0 ? editContractForm.services : MSA_SERVICES;
     const { db } = await import("../firebase");
     const { ref, update } = await import("firebase/database");
     await update(ref(db, `assets/${id}/contracts/${editingContractId}`), {
@@ -510,8 +515,13 @@ export default function AssetDetail() {
       effectiveDate: editContractForm.effectiveDate,
       term: editContractForm.term.trim() || "Annual, auto-renewing",
       status: editContractForm.status,
+      services,
     });
     setEditingContractId(null);
+  }
+
+  function toggleService(list: string[], svc: string): string[] {
+    return list.includes(svc) ? list.filter((s) => s !== svc) : [...list, svc];
   }
 
   const directors = corpData.directors ? Object.entries(corpData.directors).map(([k, v]) => ({ id: k, ...v })) : [];
@@ -529,6 +539,97 @@ export default function AssetDetail() {
           &larr; Back to Assets
         </Link>
         <p className="text-gray-500">Entity not found.</p>
+      </div>
+    );
+  }
+
+  function renderFileSlot(kind: FileKind, title: string, description: string, accept: string, accepted: string[]) {
+    const file = asset?.[kind];
+    const slot = uploadState[kind];
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-bold">{title}</h3>
+            <p className={`text-[11px] mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>{description}</p>
+          </div>
+          {file && (
+            <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-500/20 text-green-400">
+              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              On file
+            </span>
+          )}
+        </div>
+        <div className={`p-3 ${cardCls}`}>
+          {file ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-50 text-blue-600"
+                }`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{file.fileName}</p>
+                  <p className={`text-[10px] mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                    {(file.size / 1024).toFixed(0)} KB &middot; {new Date(file.uploadedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <a href={file.url} target="_blank" rel="noopener noreferrer" className={`text-[10px] px-2 py-1 rounded font-medium inline-flex items-center gap-1 transition-colors ${isDark ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>View</a>
+                <a href={file.url} download={file.fileName} className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${isDark ? "bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10" : "bg-black/5 hover:bg-gray-100 text-gray-800 border border-gray-200"}`}>Download</a>
+                <label className={`text-[10px] px-2 py-1 rounded font-medium cursor-pointer transition-colors ${isDark ? "bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10" : "bg-black/5 hover:bg-gray-100 text-gray-800 border border-gray-200"} ${slot.uploading ? "opacity-50 pointer-events-none" : ""}`}>
+                  Replace
+                  <input type="file" accept={accept} className="hidden" disabled={slot.uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadFile(kind, f); e.target.value = ""; }} />
+                </label>
+                <button onClick={() => handleDeleteFile(kind)} disabled={slot.uploading} className="text-[10px] px-1.5 py-1 rounded font-medium text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50" title="Remove">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <label
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!slot.uploading) setSlot(kind, { dragOver: true }); }}
+              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (!slot.uploading) setSlot(kind, { dragOver: true }); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setSlot(kind, { dragOver: false }); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSlot(kind, { dragOver: false });
+                if (slot.uploading) return;
+                const f = e.dataTransfer.files?.[0];
+                if (!f) return;
+                if (!accepted.includes(f.type)) {
+                  setSlot(kind, { error: `Only ${accepted.map(t => t.split("/")[1].toUpperCase()).join(", ")} files accepted.` });
+                  return;
+                }
+                handleUploadFile(kind, f);
+              }}
+              className={`flex flex-col items-center justify-center gap-1 py-5 px-4 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
+                slot.dragOver
+                  ? isDark ? "border-blue-400/70 bg-blue-500/10" : "border-blue-500 bg-blue-50"
+                  : isDark ? "border-white/10 hover:border-white/30 hover:bg-white/[0.02]" : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+              } ${slot.uploading ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              <svg className={`w-6 h-6 ${slot.dragOver ? (isDark ? "text-blue-300" : "text-blue-500") : isDark ? "text-gray-500" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className={`text-xs font-medium ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                {slot.uploading ? `Uploading… ${slot.progress.toFixed(0)}%` : slot.dragOver ? "Drop to upload" : "Drag & drop, or click"}
+              </p>
+              <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{accepted.map(t => t.split("/")[1].toUpperCase()).join(", ")} &middot; up to 25 MB</p>
+              <input type="file" accept={accept} className="hidden" disabled={slot.uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadFile(kind, f); e.target.value = ""; }} />
+            </label>
+          )}
+          {slot.error && <p className="mt-2 text-[11px] text-red-400">{slot.error}</p>}
+        </div>
       </div>
     );
   }
@@ -743,6 +844,24 @@ export default function AssetDetail() {
           )}
         </div>
       )}
+
+      {/* Entity filings — W-9 & Articles of Organization */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 max-w-4xl">
+        {renderFileSlot(
+          "w9",
+          "Form W-9",
+          `IRS Form W-9 for ${asset.name}. Used for vendor onboarding & 1099 reporting.`,
+          "application/pdf,image/png,image/jpeg",
+          ["application/pdf", "image/png", "image/jpeg"],
+        )}
+        {renderFileSlot(
+          "articles",
+          "Articles of Organization",
+          `Filed Articles of Organization / Incorporation for ${asset.name}.`,
+          "application/pdf,image/png,image/jpeg",
+          ["application/pdf", "image/png", "image/jpeg"],
+        )}
+      </div>
 
       {/* C-Corp Management */}
       {asset.type === "C-Corp" && (
@@ -1046,7 +1165,8 @@ export default function AssetDetail() {
                     )}
                     {contracts.map((contract) => (
                       editingContractId === contract.id ? (
-                        <tr key={contract.id} className={`border-b last:border-b-0 ${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
+                      <Fragment key={contract.id}>
+                        <tr className={`${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
                           <td className="px-3 py-2">
                             <input
                               value={editContractForm.counterparty}
@@ -1118,6 +1238,31 @@ export default function AssetDetail() {
                             </div>
                           </td>
                         </tr>
+                        <tr className={`border-b ${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
+                          <td colSpan={7} className="px-3 pb-3 pt-1">
+                            <p className={`text-[10px] uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Services Included</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {MSA_SERVICES.map((svc) => {
+                                const on = editContractForm.services.includes(svc);
+                                return (
+                                  <button
+                                    key={svc}
+                                    type="button"
+                                    onClick={() => setEditContractForm({ ...editContractForm, services: toggleService(editContractForm.services, svc) })}
+                                    className={`text-[11px] px-2 py-1 rounded-full border transition-colors cursor-pointer ${
+                                      on
+                                        ? isDark ? "bg-blue-500/20 border-blue-400/50 text-blue-300" : "bg-blue-50 border-blue-400 text-blue-700"
+                                        : isDark ? "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200" : "bg-white border-gray-300 text-gray-500 hover:text-gray-800"
+                                    }`}
+                                  >
+                                    {on ? "✓ " : ""}{svc}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      </Fragment>
                       ) : (
                       <tr key={contract.id} className={`border-b last:border-b-0 ${rowBorder} ${rowHover} transition-colors`}>
                         <td className="px-3 py-2.5">
@@ -1189,6 +1334,7 @@ export default function AssetDetail() {
                       )
                     ))}
                     {addingContract && (
+                    <Fragment>
                       <tr className={`border-t ${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
                         <td className="px-3 py-2">
                           <input
@@ -1264,6 +1410,31 @@ export default function AssetDetail() {
                           </div>
                         </td>
                       </tr>
+                      <tr className={`${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
+                        <td colSpan={7} className="px-3 pb-3 pt-1">
+                          <p className={`text-[10px] uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Services Included</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {MSA_SERVICES.map((svc) => {
+                              const on = contractForm.services.includes(svc);
+                              return (
+                                <button
+                                  key={svc}
+                                  type="button"
+                                  onClick={() => setContractForm({ ...contractForm, services: toggleService(contractForm.services, svc) })}
+                                  className={`text-[11px] px-2 py-1 rounded-full border transition-colors cursor-pointer ${
+                                    on
+                                      ? isDark ? "bg-blue-500/20 border-blue-400/50 text-blue-300" : "bg-blue-50 border-blue-400 text-blue-700"
+                                      : isDark ? "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200" : "bg-white border-gray-300 text-gray-500 hover:text-gray-800"
+                                  }`}
+                                >
+                                  {on ? "✓ " : ""}{svc}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    </Fragment>
                     )}
                   </tbody>
                 </table>
@@ -1273,160 +1444,6 @@ export default function AssetDetail() {
         );
       })()}
 
-      {/* W-9 */}
-      <div className="mb-10">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-bold">Form W-9</h2>
-            <p className={`text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              Upload the IRS Form W-9 for {asset.name}. Used for vendor onboarding and 1099 reporting.
-            </p>
-          </div>
-          {asset.w9 && (
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded font-medium bg-green-500/20 text-green-400">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              On file
-            </span>
-          )}
-        </div>
-
-        <div className={`p-4 ${cardCls} max-w-3xl`}>
-          {asset.w9 ? (
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                  isDark ? "bg-blue-500/20 text-blue-400" : "bg-blue-50 text-blue-600"
-                }`}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate">{asset.w9.fileName}</p>
-                  <p className={`text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                    {(asset.w9.size / 1024).toFixed(0)} KB &middot; Uploaded {new Date(asset.w9.uploadedAt).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={asset.w9.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`text-xs px-2.5 py-1.5 rounded font-medium inline-flex items-center gap-1 transition-colors ${
-                    isDark ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
-                  }`}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                  View
-                </a>
-                <a
-                  href={asset.w9.url}
-                  download={asset.w9.fileName}
-                  className={`text-xs px-2.5 py-1.5 rounded font-medium inline-flex items-center gap-1 transition-colors ${
-                    isDark ? "bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10" : "bg-black/5 hover:bg-gray-100 text-gray-800 border border-gray-200"
-                  }`}
-                >
-                  Download
-                </a>
-                <label
-                  className={`text-xs px-2.5 py-1.5 rounded font-medium cursor-pointer transition-colors ${
-                    isDark ? "bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10" : "bg-black/5 hover:bg-gray-100 text-gray-800 border border-gray-200"
-                  } ${w9Uploading ? "opacity-50 pointer-events-none" : ""}`}
-                >
-                  Replace
-                  <input
-                    type="file"
-                    accept="application/pdf,image/png,image/jpeg"
-                    className="hidden"
-                    disabled={w9Uploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleUploadW9(file);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-                <button
-                  onClick={handleDeleteW9}
-                  disabled={w9Uploading}
-                  className="text-xs px-2 py-1.5 rounded font-medium text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50"
-                  title="Remove W-9"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <label
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!w9Uploading) setW9DragOver(true); }}
-              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (!w9Uploading) setW9DragOver(true); }}
-              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setW9DragOver(false); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setW9DragOver(false);
-                if (w9Uploading) return;
-                const file = e.dataTransfer.files?.[0];
-                if (!file) return;
-                const ok = ["application/pdf", "image/png", "image/jpeg"].includes(file.type);
-                if (!ok) {
-                  setW9Error("Only PDF, PNG, or JPG files are accepted.");
-                  return;
-                }
-                handleUploadW9(file);
-              }}
-              className={`flex flex-col items-center justify-center gap-2 py-8 px-4 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
-                w9DragOver
-                  ? isDark
-                    ? "border-blue-400/70 bg-blue-500/10"
-                    : "border-blue-500 bg-blue-50"
-                  : isDark
-                    ? "border-white/10 hover:border-white/30 hover:bg-white/[0.02]"
-                    : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-              } ${w9Uploading ? "opacity-50 pointer-events-none" : ""}`}
-            >
-              <svg className={`w-8 h-8 ${w9DragOver ? (isDark ? "text-blue-300" : "text-blue-500") : isDark ? "text-gray-500" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className={`text-sm font-medium ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                {w9Uploading
-                  ? `Uploading… ${w9Progress.toFixed(0)}%`
-                  : w9DragOver
-                    ? "Drop to upload"
-                    : "Drag & drop, or click to upload"}
-              </p>
-              <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>PDF, PNG, or JPG &middot; up to 15 MB</p>
-              <input
-                type="file"
-                accept="application/pdf,image/png,image/jpeg"
-                className="hidden"
-                disabled={w9Uploading}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleUploadW9(file);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-          )}
-
-          {w9Uploading && asset.w9 && (
-            <div className={`mt-3 h-1.5 w-full rounded-full overflow-hidden ${isDark ? "bg-white/5" : "bg-gray-200"}`}>
-              <div className="h-full bg-blue-400 transition-all" style={{ width: `${w9Progress}%` }} />
-            </div>
-          )}
-          {w9Error && (
-            <p className="mt-2 text-xs text-red-400">{w9Error}</p>
-          )}
-        </div>
-      </div>
 
       {/* Documents */}
       <div>
