@@ -291,26 +291,80 @@ export default function ContractPDF() {
       addText("7.3  Neither party may assign this Agreement without the prior written consent of the other party.");
       gap(25);
 
-      // Signature block
+      // Signature block — always keep on one page, well clear of footer
+      const sigBlockHeight = 180;
+      if (y + sigBlockHeight > ph - 90) {
+        doc.addPage();
+        pageNum += 1;
+        drawBrandHeader();
+        drawBrandFooter(pageNum);
+        y = 120;
+      }
+
       addText("IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.", { bold: true });
       gap(30);
 
-      const sigY = y;
+      // Two-column signature block — labels above, lines below, clean monochrome
+      const colW = 220;
+      const leftX = ml;
+      const rightX = mr - colW;
+      const rowY = y;
+
+      // Column headings — tracked uppercase tiny
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setCharSpace(1.4);
+      doc.setTextColor(...ink);
+      doc.text("MANAGER", leftX, rowY);
+      doc.text("CLIENT", rightX, rowY);
+      doc.setCharSpace(0);
+
+      // Entity names — larger, bold
+      doc.setFontSize(11);
+      doc.text(asset.name, leftX, rowY + 18);
+      doc.text(contract.counterparty, rightX, rowY + 18);
+
+      // Signature lines
+      const sigLineY = rowY + 64;
+      doc.setDrawColor(...ink);
+      doc.setLineWidth(0.4);
+      doc.line(leftX, sigLineY, leftX + colW - 20, sigLineY);
+      doc.line(rightX, sigLineY, rightX + colW - 20, sigLineY);
+
+      // Labels below the signature lines
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.line(ml, sigY, ml + 200, sigY);
-      doc.text("Authorized Signature — Manager", ml, sigY + 15);
-      doc.text(asset.name, ml, sigY + 30);
+      doc.setFontSize(7);
+      doc.setCharSpace(1.4);
+      doc.setTextColor(...muted);
+      doc.text("AUTHORIZED SIGNATURE", leftX, sigLineY + 10);
+      doc.text("AUTHORIZED SIGNATURE", rightX, sigLineY + 10);
+      doc.setCharSpace(0);
+      doc.setTextColor(...ink);
 
-      doc.line(mr - 200, sigY, mr, sigY);
-      doc.text("Authorized Signature — Client", mr - 200, sigY + 15);
-      doc.text(contract.counterparty, mr - 200, sigY + 30);
+      // Name print under
+      doc.setFontSize(8);
+      doc.text("Name:", leftX, sigLineY + 26);
+      doc.text("Name:", rightX, sigLineY + 26);
+      doc.setDrawColor(...muted);
+      doc.setLineWidth(0.25);
+      doc.line(leftX + 28, sigLineY + 27, leftX + colW - 20, sigLineY + 27);
+      doc.line(rightX + 28, sigLineY + 27, rightX + colW - 20, sigLineY + 27);
 
-      y = sigY + 50;
-      doc.line(ml, y, ml + 200, y);
-      doc.text("Date", ml, y + 15);
-      doc.line(mr - 200, y, mr, y);
-      doc.text("Date", mr - 200, y + 15);
+      doc.text("Title:", leftX, sigLineY + 40);
+      doc.text("Title:", rightX, sigLineY + 40);
+      doc.line(leftX + 28, sigLineY + 41, leftX + colW - 20, sigLineY + 41);
+      doc.line(rightX + 28, sigLineY + 41, rightX + colW - 20, sigLineY + 41);
+
+      doc.text("Date:", leftX, sigLineY + 54);
+      doc.text("Date:", rightX, sigLineY + 54);
+      doc.line(leftX + 28, sigLineY + 55, leftX + colW - 20, sigLineY + 55);
+      doc.line(rightX + 28, sigLineY + 55, rightX + colW - 20, sigLineY + 55);
+
+      // Reset styles
+      doc.setDrawColor(...ink);
+      doc.setLineWidth(0.2);
+      doc.setTextColor(...ink);
+      y = sigLineY + 70;
 
       // Convert to blob URL for embedding
       const blob = doc.output("blob");

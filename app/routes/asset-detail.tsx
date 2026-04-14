@@ -128,6 +128,7 @@ export default function AssetDetail() {
     effectiveDate: new Date().toISOString().slice(0, 10),
     term: "Annual, auto-renewing",
     status: "draft" as "draft" | "active" | "terminated",
+    services: [...MSA_SERVICES] as string[],
   });
 
   // Doc form
@@ -269,7 +270,8 @@ export default function AssetDetail() {
     setW9Uploading(true);
     setW9Progress(0);
     try {
-      const { db, storage } = await import("../firebase");
+      const { db, storage, authReady } = await import("../firebase");
+      await authReady;
       const { ref: dbRef, update } = await import("firebase/database");
       const { ref: storageRef, uploadBytesResumable, getDownloadURL, deleteObject } = await import("firebase/storage");
 
@@ -288,14 +290,31 @@ export default function AssetDetail() {
       const task = uploadBytesResumable(sRef, file, { contentType: file.type || "application/pdf" });
 
       await new Promise<void>((resolve, reject) => {
+        // Warn if the upload never starts (usually means Storage rules
+        // reject the write or the bucket isn't reachable from this origin)
+        const stuckTimer = setTimeout(() => {
+          setW9Error(
+            "Upload is stuck. Check Firebase Storage rules for this bucket (authenticated writes to assets/<id>/w9/) and CORS.",
+          );
+        }, 15000);
         task.on(
           "state_changed",
           (snap) => {
             const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
+            if (pct > 0) {
+              clearTimeout(stuckTimer);
+              setW9Error(null);
+            }
             setW9Progress(pct);
           },
-          (err) => reject(err),
-          () => resolve(),
+          (err) => {
+            clearTimeout(stuckTimer);
+            reject(err);
+          },
+          () => {
+            clearTimeout(stuckTimer);
+            resolve();
+          },
         );
       });
 
@@ -322,7 +341,8 @@ export default function AssetDetail() {
     if (!asset?.w9) return;
     if (!confirm("Remove the uploaded W-9?")) return;
     try {
-      const { db, storage } = await import("../firebase");
+      const { db, storage, authReady } = await import("../firebase");
+      await authReady;
       const { ref: dbRef, update } = await import("firebase/database");
       const { ref: storageRef, deleteObject } = await import("firebase/storage");
       try {
