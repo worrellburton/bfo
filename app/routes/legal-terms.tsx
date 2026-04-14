@@ -1,64 +1,76 @@
+import { useTheme } from "../theme";
+
 export function meta() {
   return [{ title: "BFO - Terms of Service" }];
 }
 
 export default function TermsOfService() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const bodyColor = isDark ? "#e5e7eb" : "#222";
+  const mutedColor = isDark ? "#9ca3af" : "#666";
+  const footerColor = isDark ? "#6b7280" : "#999";
+  const borderColor = isDark ? "#1f2937" : "#e5e5e5";
+  const bgColor = isDark ? "#0a0a0a" : "#ffffff";
+
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "48px 24px", fontFamily: "system-ui, sans-serif", color: "#222" }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Terms of Service</h1>
-      <p style={{ color: "#666", fontSize: 14, marginBottom: 32 }}>Last updated: March 31, 2026</p>
+    <div style={{ background: bgColor, minHeight: "100vh" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "48px 24px", fontFamily: "system-ui, sans-serif", color: bodyColor }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Terms of Service</h1>
+        <p style={{ color: mutedColor, fontSize: 14, marginBottom: 32 }}>Last updated: March 31, 2026</p>
 
-      <p style={{ fontSize: 15, lineHeight: 1.7, marginBottom: 20 }}>
-        Welcome to BFO Finance (&ldquo;Service&rdquo;). By accessing or using this application, you agree to be bound by the following terms and conditions.
-      </p>
+        <p style={{ fontSize: 15, lineHeight: 1.7, marginBottom: 20 }}>
+          Welcome to BFO Finance (&ldquo;Service&rdquo;). By accessing or using this application, you agree to be bound by the following terms and conditions.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>1. Acceptance of Terms</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        By using BFO Finance, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service. If you do not agree, do not use the Service.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>1. Acceptance of Terms</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          By using BFO Finance, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service. If you do not agree, do not use the Service.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>2. Description of Service</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        BFO Finance is a private financial management and analytics platform that integrates with third-party services including QuickBooks Online. The Service is intended solely for authorized users of the Burton Family Office.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>2. Description of Service</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          BFO Finance is a private financial management and analytics platform that integrates with third-party services including QuickBooks Online. The Service is intended solely for authorized users of the Burton Family Office.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>3. Account and Access</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        Access to the Service is restricted to authorized users. You are responsible for maintaining the confidentiality of your login credentials. You agree to notify us immediately of any unauthorized use of your account.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>3. Account and Access</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          Access to the Service is restricted to authorized users. You are responsible for maintaining the confidentiality of your login credentials. You agree to notify us immediately of any unauthorized use of your account.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>4. Third-Party Integrations</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        The Service may connect to third-party platforms such as Intuit QuickBooks. By authorizing these connections, you grant BFO Finance permission to access your financial data from these platforms in accordance with their respective terms of service. We do not store your third-party credentials.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>4. Third-Party Integrations</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          The Service may connect to third-party platforms such as Intuit QuickBooks. By authorizing these connections, you grant BFO Finance permission to access your financial data from these platforms in accordance with their respective terms of service. We do not store your third-party credentials.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>5. Data Use</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        Financial data retrieved from connected services is used solely for the purpose of providing analytics, reporting, and insights within the BFO Finance platform. We do not sell, share, or distribute your financial data to any third parties.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>5. Data Use</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          Financial data retrieved from connected services is used solely for the purpose of providing analytics, reporting, and insights within the BFO Finance platform. We do not sell, share, or distribute your financial data to any third parties.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>6. Disclaimer</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        The Service is provided &ldquo;as is&rdquo; without warranties of any kind, express or implied. BFO Finance does not provide legal, tax, or financial advice. Any analysis or reports generated by the platform are for informational purposes only.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>6. Disclaimer</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          The Service is provided &ldquo;as is&rdquo; without warranties of any kind, express or implied. BFO Finance does not provide legal, tax, or financial advice. Any analysis or reports generated by the platform are for informational purposes only.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>7. Limitation of Liability</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        To the maximum extent permitted by law, BFO Finance shall not be liable for any indirect, incidental, special, or consequential damages arising out of or related to your use of the Service.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>7. Limitation of Liability</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          To the maximum extent permitted by law, BFO Finance shall not be liable for any indirect, incidental, special, or consequential damages arising out of or related to your use of the Service.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>8. Modifications</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        We reserve the right to modify these Terms of Service at any time. Continued use of the Service following any changes constitutes acceptance of the revised terms.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>8. Modifications</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          We reserve the right to modify these Terms of Service at any time. Continued use of the Service following any changes constitutes acceptance of the revised terms.
+        </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>9. Contact</h2>
-      <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-        For questions regarding these Terms of Service, please contact the Burton Family Office.
-      </p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>9. Contact</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
+          For questions regarding these Terms of Service, please contact the Burton Family Office.
+        </p>
 
-      <div style={{ marginTop: 48, paddingTop: 24, borderTop: "1px solid #e5e5e5", fontSize: 12, color: "#999" }}>
-        BFO Finance &mdash; Burton Family Office
+        <div style={{ marginTop: 48, paddingTop: 24, borderTop: `1px solid ${borderColor}`, fontSize: 12, color: footerColor }}>
+          BFO Finance &mdash; Burton Family Office
+        </div>
       </div>
     </div>
   );

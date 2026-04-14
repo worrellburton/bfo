@@ -78,7 +78,7 @@ export default function TrialBalance() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const isPublic = location.pathname.startsWith("/public/");
-  const { backgroundId } = useTheme();
+  const { backgroundId, theme, toggle } = useTheme();
   const realmId = searchParams.get("realm_id") || "";
 
   const [companyName, setCompanyName] = useState("");
@@ -88,7 +88,8 @@ export default function TrialBalance() {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
-  const [light, setLight] = useState(isPublic);
+  // Public pages are always light; authenticated pages follow the global theme
+  const light = isPublic ? true : theme === "light";
   const [searchQuery, setSearchQuery] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
@@ -411,7 +412,7 @@ export default function TrialBalance() {
           <h1 className={`text-2xl font-bold ${headingText}`}>Trial Balance</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setLight((v) => !v)} className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${btnBorder}`}>
+          <button onClick={() => { if (!isPublic) toggle(); }} disabled={isPublic} className={`text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 ${btnBorder}`}>
             {light ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
             ) : (

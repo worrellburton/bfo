@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Property Analysis: 1344 Tydings Rd" }];
@@ -19,14 +20,16 @@ function pct(n: number) {
 
 // Horizontal gauge bar
 function GaugeBar({ label, value, max, color, suffix = "" }: { label: string; value: number; max: number; color: string; suffix?: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const p = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-[10px]">
-        <span className="text-gray-400">{label}</span>
-        <span className="text-gray-300 font-medium tabular-nums">{typeof value === "number" && !suffix ? `$${fmt(value)}` : `${fmt(value)}${suffix}`}</span>
+        <span className={isDark ? "text-gray-400" : "text-gray-600"}>{label}</span>
+        <span className={`font-medium tabular-nums ${isDark ? "text-gray-300" : "text-gray-800"}`}>{typeof value === "number" && !suffix ? `$${fmt(value)}` : `${fmt(value)}${suffix}`}</span>
       </div>
-      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+      <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-white/5" : "bg-gray-200"}`}>
         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${p}%`, background: color }} />
       </div>
     </div>
@@ -35,10 +38,15 @@ function GaugeBar({ label, value, max, color, suffix = "" }: { label: string; va
 
 // Stat card
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color?: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const cardClass = isDark
+    ? "rounded-xl border border-white/10 bg-white/[0.02]"
+    : "rounded-xl border border-gray-200 bg-white shadow-sm";
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <div className={`${cardClass} p-4`}>
       <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{label}</div>
-      <div className="text-lg font-bold tabular-nums" style={color ? { color } : undefined}>{value}</div>
+      <div className={`text-lg font-bold tabular-nums ${color ? "" : isDark ? "text-white" : "text-gray-900"}`} style={color ? { color } : undefined}>{value}</div>
       <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>
     </div>
   );
@@ -46,12 +54,14 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 
 // Mini SVG bar chart
 function ValueChart({ data, height = 120 }: { data: { label: string; value: number; color: string }[]; height?: number }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const max = Math.max(...data.map((d) => d.value));
   return (
     <div className="flex items-end gap-3" style={{ height }}>
       {data.map((d) => (
         <div key={d.label} className="flex-1 flex flex-col items-center gap-1">
-          <span className="text-[9px] text-gray-400 tabular-nums">${fmt(d.value)}</span>
+          <span className={`text-[9px] tabular-nums ${isDark ? "text-gray-400" : "text-gray-600"}`}>${fmt(d.value)}</span>
           <div
             className="w-full rounded-t transition-all duration-500"
             style={{
@@ -68,6 +78,8 @@ function ValueChart({ data, height = 120 }: { data: { label: string; value: numb
 
 // Donut chart
 function DonutChart({ slices, size = 140 }: { slices: { value: number; color: string; label: string }[]; size?: number }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const total = slices.reduce((s, sl) => s + sl.value, 0);
   const r = 40;
   const cx = 50;
@@ -100,7 +112,7 @@ function DonutChart({ slices, size = 140 }: { slices: { value: number; color: st
           </path>
         );
       })}
-      <circle cx={cx} cy={cy} r={22} fill="#0a0a0a" />
+      <circle cx={cx} cy={cy} r={22} fill={isDark ? "#0a0a0a" : "#ffffff"} />
     </svg>
   );
 }
@@ -144,6 +156,15 @@ const property = {
 };
 
 export default function PropertyAnalysis() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const cardClass = isDark
+    ? "rounded-xl border border-white/10 bg-white/[0.02]"
+    : "rounded-xl border border-gray-200 bg-white shadow-sm";
+  const insightBg = isDark ? "bg-white/[0.03]" : "bg-gray-50";
+  const titleText = isDark ? "text-white" : "text-gray-900";
+  const strongText = isDark ? "text-gray-300" : "text-gray-800";
+  const mutedText = isDark ? "text-gray-400" : "text-gray-600";
   const [purchasePrice, setPurchasePrice] = useState(property.estimatedValue);
   const [downPaymentPct, setDownPaymentPct] = useState(20);
   const [interestRate, setInterestRate] = useState(6.5);
@@ -187,11 +208,11 @@ export default function PropertyAnalysis() {
     <div className="max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Property Analysis</span>
+        <span className={strongText}>Property Analysis</span>
       </div>
 
       <h1 className="text-2xl font-bold mb-1">Property Analysis</h1>
@@ -209,7 +230,7 @@ export default function PropertyAnalysis() {
 
       {/* Property Details & Features */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Property Details</h3>
           <div className="space-y-2.5">
             {[
@@ -232,7 +253,7 @@ export default function PropertyAnalysis() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Key Features</h3>
           <div className="space-y-2">
             {[
@@ -258,7 +279,7 @@ export default function PropertyAnalysis() {
 
       {/* Sale History & Value */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Sale History</h3>
           <ValueChart
             data={[
@@ -279,7 +300,7 @@ export default function PropertyAnalysis() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Market Comparison</h3>
           <div className="space-y-4">
             <GaugeBar label="This Property" value={property.estimatedValue} max={2000000} color="#10b981" />
@@ -287,7 +308,7 @@ export default function PropertyAnalysis() {
             <GaugeBar label="Price/sqft (This)" value={property.pricePerSqft} max={500} color="#f59e0b" suffix="/sqft" />
             <GaugeBar label="Price/sqft (Area)" value={343} max={500} color="#8b5cf6" suffix="/sqft" />
           </div>
-          <div className="mt-4 bg-white/[0.03] rounded-lg p-3">
+          <div className={`mt-4 ${insightBg} rounded-lg p-3`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">vs Area Median</div>
             <div className="text-sm font-bold text-amber-400 tabular-nums">
               {fmt(Math.round(((property.estimatedValue - property.medianAreaPrice) / property.medianAreaPrice) * 100))}% above
@@ -298,7 +319,7 @@ export default function PropertyAnalysis() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Tax Assessment</h3>
           <DonutChart
             slices={[
@@ -326,7 +347,7 @@ export default function PropertyAnalysis() {
       </div>
 
       {/* Mortgage Calculator */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+      <div className={`${cardClass} p-5 mb-8`}>
         <h3 className="text-xs font-semibold text-gray-400 mb-5">Mortgage Calculator</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {/* Purchase Price */}
@@ -416,29 +437,29 @@ export default function PropertyAnalysis() {
 
         {/* Monthly Payment Breakdown */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="bg-white/[0.03] rounded-lg p-3">
+          <div className={`${insightBg} rounded-lg p-3`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">P&I</div>
             <div className="text-sm font-bold tabular-nums" style={{ color: "#10b981" }}>${fmt(Math.round(monthlyMortgage))}</div>
             <div className="text-[10px] text-gray-500">Principal & interest</div>
           </div>
-          <div className="bg-white/[0.03] rounded-lg p-3">
+          <div className={`${insightBg} rounded-lg p-3`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Property Tax</div>
             <div className="text-sm font-bold tabular-nums" style={{ color: "#6366f1" }}>${fmt(Math.round(monthlyTax))}</div>
             <div className="text-[10px] text-gray-500">{pct(annualTaxRate)} annual</div>
           </div>
-          <div className="bg-white/[0.03] rounded-lg p-3">
+          <div className={`${insightBg} rounded-lg p-3`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Insurance</div>
             <div className="text-sm font-bold tabular-nums" style={{ color: "#f59e0b" }}>${fmt(Math.round(monthlyInsurance))}</div>
             <div className="text-[10px] text-gray-500">Est. 0.35%</div>
           </div>
-          <div className="bg-white/[0.03] rounded-lg p-3">
+          <div className={`${insightBg} rounded-lg p-3`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Total Interest</div>
             <div className="text-sm font-bold tabular-nums" style={{ color: "#ef4444" }}>${fmt(Math.round(totalInterest))}</div>
             <div className="text-[10px] text-gray-500">Over loan life</div>
           </div>
-          <div className="bg-white/[0.03] rounded-lg p-3 border border-white/10">
+          <div className={`${insightBg} rounded-lg p-3 border ${isDark ? "border-white/10" : "border-gray-200"}`}>
             <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Total Monthly</div>
-            <div className="text-lg font-bold tabular-nums text-white">${fmt(Math.round(totalMonthly))}</div>
+            <div className={`text-lg font-bold tabular-nums ${titleText}`}>${fmt(Math.round(totalMonthly))}</div>
             <div className="text-[10px] text-gray-500">${fmt(Math.round(totalMonthly * 12))}/year</div>
           </div>
         </div>
@@ -446,7 +467,7 @@ export default function PropertyAnalysis() {
 
       {/* Appreciation Projections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Projected Value ({pct(annualAppreciation)}/yr)</h3>
           <ValueChart
             data={[
@@ -458,22 +479,22 @@ export default function PropertyAnalysis() {
             height={140}
           />
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="bg-white/[0.03] rounded-lg p-2 text-center">
+            <div className={`${insightBg} rounded-lg p-2 text-center`}>
               <div className="text-[8px] text-gray-500">5yr gain</div>
               <div className="text-xs font-bold text-emerald-400 tabular-nums">+${fmt(Math.round(appreciation5))}</div>
             </div>
-            <div className="bg-white/[0.03] rounded-lg p-2 text-center">
+            <div className={`${insightBg} rounded-lg p-2 text-center`}>
               <div className="text-[8px] text-gray-500">10yr gain</div>
               <div className="text-xs font-bold text-emerald-400 tabular-nums">+${fmt(Math.round(appreciation10))}</div>
             </div>
-            <div className="bg-white/[0.03] rounded-lg p-2 text-center">
+            <div className={`${insightBg} rounded-lg p-2 text-center`}>
               <div className="text-[8px] text-gray-500">20yr value</div>
               <div className="text-xs font-bold text-amber-400 tabular-nums">${fmt(Math.round(valueIn20))}</div>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Cost Breakdown (Monthly)</h3>
           <div className="flex items-center gap-6">
             <DonutChart
@@ -497,7 +518,7 @@ export default function PropertyAnalysis() {
                       <span className="text-gray-400">{item.label}</span>
                       <span className="text-gray-300 font-medium tabular-nums">${fmt(Math.round(item.value))}</span>
                     </div>
-                    <div className="h-1 bg-white/5 rounded-full mt-0.5 overflow-hidden">
+                    <div className={`h-1 rounded-full mt-0.5 overflow-hidden ${isDark ? "bg-white/5" : "bg-gray-200"}`}>
                       <div className="h-full rounded-full" style={{ width: `${item.pct}%`, background: item.color }} />
                     </div>
                   </div>
@@ -510,7 +531,7 @@ export default function PropertyAnalysis() {
 
       {/* Schools & Location */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Schools</h3>
           <div className="space-y-3">
             {[
@@ -531,7 +552,7 @@ export default function PropertyAnalysis() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Location Highlights</h3>
           <div className="space-y-2">
             {[
@@ -555,7 +576,7 @@ export default function PropertyAnalysis() {
       </div>
 
       {/* Quick Insights */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+      <div className={`${cardClass} p-5 mb-8`}>
         <h3 className="text-xs font-semibold text-gray-400 mb-4">Quick Insights</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {[
@@ -590,9 +611,9 @@ export default function PropertyAnalysis() {
               sub: `Median in 21409: $${fmt(property.medianAreaPrice)}`,
             },
           ].map((insight) => (
-            <div key={insight.label} className="bg-white/[0.03] rounded-lg p-3">
+            <div key={insight.label} className={`${insightBg} rounded-lg p-3`}>
               <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{insight.label}</div>
-              <div className="text-sm font-bold text-white tabular-nums">{insight.value}</div>
+              <div className={`text-sm font-bold tabular-nums ${titleText}`}>{insight.value}</div>
               <div className="text-[10px] text-gray-500 mt-0.5">{insight.sub}</div>
             </div>
           ))}
