@@ -811,7 +811,7 @@ export default function AssetDetail() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl mb-10">
+        <div className="flex flex-wrap items-stretch gap-4 mb-10">
           {[
             ["EIN", asset.ein],
             ["Registered Agent", asset.registeredAgent],
@@ -822,22 +822,40 @@ export default function AssetDetail() {
             ["Articles of Org", asset.articlesOfOrgDate],
           ].map(([label, value]) =>
             value ? (
-              <div key={label} className={`p-3 ${cardCls}`}>
+              <div key={label} className={`p-3 ${cardCls} w-44 shrink-0`}>
                 <p className="text-gray-500 text-xs tracking-wider">{label}</p>
-                <p className="text-sm mt-1">{value}</p>
+                <p className="text-sm mt-1 break-words">{value}</p>
               </div>
             ) : null
           )}
           {asset.stateLink && (
-            <div className={`p-3 ${cardCls}`}>
+            <div className={`p-3 ${cardCls} w-44 shrink-0`}>
               <p className="text-gray-500 text-xs tracking-wider">State Link</p>
               <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className="text-sm mt-1 text-blue-400 hover:text-blue-300 block truncate">
                 View Filing
               </a>
             </div>
           )}
+          <div className="w-72 shrink-0">
+            {renderFileSlot(
+              "w9",
+              "Form W-9",
+              `IRS Form W-9 for ${asset.name}.`,
+              "application/pdf,image/png,image/jpeg",
+              ["application/pdf", "image/png", "image/jpeg"],
+            )}
+          </div>
+          <div className="w-72 shrink-0">
+            {renderFileSlot(
+              "articles",
+              "Articles of Organization",
+              `Filed Articles of Organization.`,
+              "application/pdf,image/png,image/jpeg",
+              ["application/pdf", "image/png", "image/jpeg"],
+            )}
+          </div>
           {asset.notes && (
-            <div className={`col-span-2 sm:col-span-3 p-3 ${cardCls}`}>
+            <div className={`basis-full p-3 ${cardCls}`}>
               <p className="text-gray-500 text-xs tracking-wider">Notes</p>
               <p className="text-sm mt-1 whitespace-pre-wrap">{asset.notes}</p>
             </div>
@@ -845,23 +863,7 @@ export default function AssetDetail() {
         </div>
       )}
 
-      {/* Entity filings — W-9 & Articles of Organization */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 max-w-4xl">
-        {renderFileSlot(
-          "w9",
-          "Form W-9",
-          `IRS Form W-9 for ${asset.name}. Used for vendor onboarding & 1099 reporting.`,
-          "application/pdf,image/png,image/jpeg",
-          ["application/pdf", "image/png", "image/jpeg"],
-        )}
-        {renderFileSlot(
-          "articles",
-          "Articles of Organization",
-          `Filed Articles of Organization / Incorporation for ${asset.name}.`,
-          "application/pdf,image/png,image/jpeg",
-          ["application/pdf", "image/png", "image/jpeg"],
-        )}
-      </div>
+      {/* Entity filings moved inline above */}
 
       {/* C-Corp Management */}
       {asset.type === "C-Corp" && (
