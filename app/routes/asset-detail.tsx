@@ -138,6 +138,18 @@ export default function AssetDetail() {
   const [w9Uploading, setW9Uploading] = useState(false);
   const [w9Progress, setW9Progress] = useState(0);
   const [w9Error, setW9Error] = useState<string | null>(null);
+  const [w9DragOver, setW9DragOver] = useState(false);
+
+  // Contract editing
+  const [editingContractId, setEditingContractId] = useState<string | null>(null);
+  const [editContractForm, setEditContractForm] = useState({
+    counterparty: "",
+    fee: "",
+    frequency: "Quarterly",
+    effectiveDate: "",
+    term: "",
+    status: "draft" as "draft" | "active" | "terminated",
+  });
 
   useEffect(() => {
     let unsub1: (() => void) | undefined;
@@ -446,6 +458,35 @@ export default function AssetDetail() {
     const { db } = await import("../firebase");
     const { ref, update } = await import("firebase/database");
     await update(ref(db, `assets/${id}/contracts/${contractId}`), { status });
+  }
+
+  function startEditContract(c: OperatingContract) {
+    setEditingContractId(c.id);
+    setEditContractForm({
+      counterparty: c.counterparty,
+      fee: c.fee,
+      frequency: c.frequency,
+      effectiveDate: c.effectiveDate,
+      term: c.term,
+      status: c.status,
+    });
+    setAddingContract(false);
+  }
+
+  async function saveEditContract() {
+    if (!editingContractId) return;
+    if (!editContractForm.counterparty.trim()) return;
+    const { db } = await import("../firebase");
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}/contracts/${editingContractId}`), {
+      counterparty: editContractForm.counterparty.trim(),
+      fee: editContractForm.fee.trim() || "$0",
+      frequency: editContractForm.frequency,
+      effectiveDate: editContractForm.effectiveDate,
+      term: editContractForm.term.trim() || "Annual, auto-renewing",
+      status: editContractForm.status,
+    });
+    setEditingContractId(null);
   }
 
   const directors = corpData.directors ? Object.entries(corpData.directors).map(([k, v]) => ({ id: k, ...v })) : [];
@@ -979,6 +1020,80 @@ export default function AssetDetail() {
                       </tr>
                     )}
                     {contracts.map((contract) => (
+                      editingContractId === contract.id ? (
+                        <tr key={contract.id} className={`border-b last:border-b-0 ${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
+                          <td className="px-3 py-2">
+                            <input
+                              value={editContractForm.counterparty}
+                              onChange={(e) => setEditContractForm({ ...editContractForm, counterparty: e.target.value })}
+                              autoFocus
+                              className={cellInputCls}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              value={editContractForm.fee}
+                              onChange={(e) => setEditContractForm({ ...editContractForm, fee: e.target.value })}
+                              className={cellInputCls}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={editContractForm.frequency}
+                              onChange={(e) => setEditContractForm({ ...editContractForm, frequency: e.target.value })}
+                              className={cellInputCls}
+                            >
+                              <option value="Monthly">Monthly</option>
+                              <option value="Quarterly">Quarterly</option>
+                              <option value="Annually">Annually</option>
+                              <option value="One-time">One-time</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="date"
+                              value={editContractForm.effectiveDate}
+                              onChange={(e) => setEditContractForm({ ...editContractForm, effectiveDate: e.target.value })}
+                              className={cellInputCls}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              value={editContractForm.term}
+                              onChange={(e) => setEditContractForm({ ...editContractForm, term: e.target.value })}
+                              className={cellInputCls}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={editContractForm.status}
+                              onChange={(e) => setEditContractForm({ ...editContractForm, status: e.target.value as "draft" | "active" | "terminated" })}
+                              className={cellInputCls}
+                            >
+                              <option value="draft">draft</option>
+                              <option value="active">active</option>
+                              <option value="terminated">terminated</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={saveEditContract}
+                                disabled={!editContractForm.counterparty.trim()}
+                                className="text-xs px-2.5 py-1 rounded font-medium cursor-pointer bg-white text-black hover:bg-gray-200 transition-colors disabled:opacity-40"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingContractId(null)}
+                                className={`text-xs px-2 py-1 ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} cursor-pointer`}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
                       <tr key={contract.id} className={`border-b last:border-b-0 ${rowBorder} ${rowHover} transition-colors`}>
                         <td className="px-3 py-2.5">
                           <p className="font-medium leading-tight">{contract.counterparty}</p>
@@ -1010,6 +1125,18 @@ export default function AssetDetail() {
                         <td className="px-3 py-2.5 text-right">
                           <div className="inline-flex items-center gap-1">
                             <button
+                              onClick={() => startEditContract(contract)}
+                              className={`text-xs px-2 py-1 rounded font-medium cursor-pointer inline-flex items-center gap-1 ${
+                                isDark ? "bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10" : "bg-black/5 hover:bg-gray-100 text-gray-800 border border-gray-200"
+                              } transition-colors`}
+                              title="Edit"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Edit
+                            </button>
+                            <button
                               onClick={() => navigate(`/assets/${id}/contract/${contract.id}`)}
                               className={`text-xs px-2 py-1 rounded font-medium cursor-pointer inline-flex items-center gap-1 ${
                                 isDark ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
@@ -1034,6 +1161,7 @@ export default function AssetDetail() {
                           </div>
                         </td>
                       </tr>
+                      )
                     ))}
                     {addingContract && (
                       <tr className={`border-t ${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
@@ -1211,14 +1339,43 @@ export default function AssetDetail() {
               </div>
             </div>
           ) : (
-            <label className={`flex flex-col items-center justify-center gap-2 py-8 px-4 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
-              isDark ? "border-white/10 hover:border-white/30 hover:bg-white/[0.02]" : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-            } ${w9Uploading ? "opacity-50 pointer-events-none" : ""}`}>
-              <svg className={`w-8 h-8 ${isDark ? "text-gray-500" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <label
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!w9Uploading) setW9DragOver(true); }}
+              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (!w9Uploading) setW9DragOver(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setW9DragOver(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setW9DragOver(false);
+                if (w9Uploading) return;
+                const file = e.dataTransfer.files?.[0];
+                if (!file) return;
+                const ok = ["application/pdf", "image/png", "image/jpeg"].includes(file.type);
+                if (!ok) {
+                  setW9Error("Only PDF, PNG, or JPG files are accepted.");
+                  return;
+                }
+                handleUploadW9(file);
+              }}
+              className={`flex flex-col items-center justify-center gap-2 py-8 px-4 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
+                w9DragOver
+                  ? isDark
+                    ? "border-blue-400/70 bg-blue-500/10"
+                    : "border-blue-500 bg-blue-50"
+                  : isDark
+                    ? "border-white/10 hover:border-white/30 hover:bg-white/[0.02]"
+                    : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+              } ${w9Uploading ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              <svg className={`w-8 h-8 ${w9DragOver ? (isDark ? "text-blue-300" : "text-blue-500") : isDark ? "text-gray-500" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <p className={`text-sm font-medium ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                {w9Uploading ? `Uploading… ${w9Progress.toFixed(0)}%` : "Upload Form W-9"}
+                {w9Uploading
+                  ? `Uploading… ${w9Progress.toFixed(0)}%`
+                  : w9DragOver
+                    ? "Drop to upload"
+                    : "Drag & drop, or click to upload"}
               </p>
               <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>PDF, PNG, or JPG &middot; up to 15 MB</p>
               <input

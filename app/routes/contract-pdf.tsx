@@ -104,50 +104,61 @@ export default function ContractPDF() {
       const ml = 72;
       const mr = pw - 72;
       const tw = mr - ml;
-      let y = 110; // leave room for branded header
+      let y = 120; // leave room for minimal header
 
-      // BFO brand colors
-      const brandNavy: [number, number, number] = [10, 23, 51];
-      const brandAccent: [number, number, number] = [59, 130, 246];
-      const brandMuted: [number, number, number] = [107, 114, 128];
+      // Monochrome — Apple/Tesla style
+      const ink: [number, number, number] = [0, 0, 0];
+      const muted: [number, number, number] = [140, 140, 140];
 
       function drawBrandHeader() {
-        // Navy band
-        doc.setFillColor(...brandNavy);
-        doc.rect(0, 0, pw, 56, "F");
-        // Accent stripe
-        doc.setFillColor(...brandAccent);
-        doc.rect(0, 56, pw, 3, "F");
-        // Wordmark
-        doc.setTextColor(255, 255, 255);
+        // Clean white background — just a tracked wordmark + thin rule
+        doc.setTextColor(...ink);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(20);
-        doc.text("BFO", ml, 36);
+        doc.setFontSize(18);
+        doc.setCharSpace(6);
+        doc.text("B F O", ml, 54);
+        doc.setCharSpace(0);
+
+        // Tiny uppercase subtitle under the mark
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.text("Burton Family Office", ml + 42, 36);
-        // Document tag (right)
-        doc.setFontSize(8);
-        doc.setTextColor(200, 215, 240);
-        doc.text("Management Services Agreement", mr, 30, { align: "right" });
-        doc.text(`Effective ${contract.effectiveDate}`, mr, 42, { align: "right" });
-        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(6.5);
+        doc.setCharSpace(1.6);
+        doc.setTextColor(...muted);
+        doc.text("BURTON  FAMILY  OFFICE", ml, 66);
+        doc.setCharSpace(0);
+
+        // Right-aligned document meta (tiny uppercase)
+        doc.setFontSize(7);
+        doc.setCharSpace(1.2);
+        doc.text("MANAGEMENT SERVICES AGREEMENT", mr, 54, { align: "right" });
+        doc.setTextColor(...ink);
+        doc.text(`EFFECTIVE  ${String(contract.effectiveDate).toUpperCase()}`, mr, 66, { align: "right" });
+        doc.setCharSpace(0);
+
+        // Hairline rule
+        doc.setDrawColor(...ink);
+        doc.setLineWidth(0.25);
+        doc.line(ml, 80, mr, 80);
+
+        doc.setTextColor(...ink);
       }
 
       function drawBrandFooter(pageNum: number) {
-        const fy = ph - 36;
+        const fy = ph - 40;
         // Hairline rule
-        doc.setDrawColor(...brandAccent);
-        doc.setLineWidth(0.5);
-        doc.line(ml, fy - 12, mr, fy - 12);
-        doc.setDrawColor(0, 0, 0);
+        doc.setDrawColor(...ink);
+        doc.setLineWidth(0.25);
+        doc.line(ml, fy - 14, mr, fy - 14);
+
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.setTextColor(...brandMuted);
-        doc.text("BFO — Burton Family Office", ml, fy);
-        doc.text(`${asset.name} & ${contract.counterparty}`, pw / 2, fy, { align: "center" });
-        doc.text(`Page ${pageNum}`, mr, fy, { align: "right" });
-        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(6.5);
+        doc.setCharSpace(1.4);
+        doc.setTextColor(...muted);
+        doc.text("BFO   BURTON FAMILY OFFICE", ml, fy);
+        doc.text(`${String(asset.name).toUpperCase()}   /   ${String(contract.counterparty).toUpperCase()}`, pw / 2, fy, { align: "center" });
+        doc.text(`PAGE  ${String(pageNum).padStart(2, "0")}`, mr, fy, { align: "right" });
+        doc.setCharSpace(0);
+        doc.setTextColor(...ink);
       }
 
       drawBrandHeader();
@@ -169,7 +180,7 @@ export default function ContractPDF() {
             pageNum += 1;
             drawBrandHeader();
             drawBrandFooter(pageNum);
-            y = 110;
+            y = 120;
           }
           doc.text(line, x, y, { align });
           y += size * 1.4;
@@ -179,16 +190,20 @@ export default function ContractPDF() {
 
       function gap(n = 10) { y += n; }
 
-      // Title
-      addText("MANAGEMENT SERVICES AGREEMENT", { bold: true, size: 16, center: true, color: brandNavy });
-      gap(8);
-      // Brand-accent underline rule under title
-      doc.setDrawColor(...brandAccent);
-      doc.setLineWidth(1.2);
-      doc.line(pw / 2 - 80, y, pw / 2 + 80, y);
-      doc.setDrawColor(0, 0, 0);
+      // Title — tracked, monochrome
+      doc.setTextColor(...ink);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setCharSpace(3.5);
+      doc.text("MANAGEMENT SERVICES AGREEMENT", pw / 2, y, { align: "center" });
+      doc.setCharSpace(0);
+      y += 14;
+      // Thin hairline rule under title
+      doc.setDrawColor(...ink);
+      doc.setLineWidth(0.4);
+      doc.line(pw / 2 - 60, y, pw / 2 + 60, y);
       doc.setLineWidth(0.2);
-      gap(20);
+      gap(24);
 
       // Preamble
       addText(`This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} ("Effective Date"),`);
@@ -201,7 +216,6 @@ export default function ContractPDF() {
       addText("AND", { center: true });
       gap(5);
       addText(`${contract.counterparty} ("Client")`);
-      addText("11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", { indent: 20 });
       gap(15);
 
       // Recitals
