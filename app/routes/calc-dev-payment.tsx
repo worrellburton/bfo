@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { useTheme } from "../theme";
 
 export function meta() {
   return [{ title: "BFO - Developer Payment Calculator" }];
@@ -34,6 +35,8 @@ function AnimNum({ value, prefix = "$" }: { value: number; prefix?: string }) {
 
 // Mini donut chart SVG
 function DonutChart({ slices, size = 120 }: { slices: { value: number; color: string; label: string }[]; size?: number }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const total = slices.reduce((s, sl) => s + sl.value, 0);
   const r = 40;
   const cx = 50;
@@ -68,11 +71,11 @@ function DonutChart({ slices, size = 120 }: { slices: { value: number; color: st
           </path>
         );
       })}
-      <circle cx={cx} cy={cy} r={22} fill="#0a0a0a" />
-      <text x={cx} y={cy - 3} textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">
+      <circle cx={cx} cy={cy} r={22} fill={isDark ? "#0a0a0a" : "#ffffff"} />
+      <text x={cx} y={cy - 3} textAnchor="middle" fill={isDark ? "white" : "#111827"} fontSize="7" fontWeight="bold">
         ${fmtShort(total)}
       </text>
-      <text x={cx} y={cy + 6} textAnchor="middle" fill="#888" fontSize="4.5">
+      <text x={cx} y={cy + 6} textAnchor="middle" fill={isDark ? "#888" : "#6b7280"} fontSize="4.5">
         /year
       </text>
     </svg>
@@ -81,16 +84,18 @@ function DonutChart({ slices, size = 120 }: { slices: { value: number; color: st
 
 // Horizontal bar comparison
 function CompBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const pct = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[10px] text-gray-400 w-16 text-right shrink-0">{label}</span>
-      <div className="flex-1 h-5 bg-white/5 rounded-full overflow-hidden relative">
+      <span className={`text-[10px] w-16 text-right shrink-0 ${isDark ? "text-gray-400" : "text-gray-600"}`}>{label}</span>
+      <div className={`flex-1 h-5 rounded-full overflow-hidden relative ${isDark ? "bg-white/5" : "bg-gray-200"}`}>
         <div
           className="h-full rounded-full transition-all duration-700 ease-out"
           style={{ width: `${pct}%`, background: color }}
         />
-        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-white/70 font-medium">
+        <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-medium ${isDark ? "text-white/70" : "text-gray-800"}`}>
           ${fmt(value)}
         </span>
       </div>
@@ -100,12 +105,14 @@ function CompBar({ label, value, max, color }: { label: string; value: number; m
 
 // Sparkline-style bar chart for monthly
 function MonthlyBars({ monthly, color, name }: { monthly: number; color: string; name: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
         <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-        <span className="text-[10px] font-medium text-gray-300">{name}</span>
+        <span className={`text-[10px] font-medium ${isDark ? "text-gray-300" : "text-gray-800"}`}>{name}</span>
         <span className="text-[10px] text-gray-500">${fmt(monthly)}/mo</span>
       </div>
       <div className="flex items-end gap-[3px] h-14">
@@ -129,9 +136,11 @@ function MonthlyBars({ monthly, color, name }: { monthly: number; color: string;
 
 // Timeline dots for pay periods
 function PayTimeline({ weekly, biweekly, label, color }: { weekly: number; biweekly: number; label: string; color: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div className="space-y-2">
-      <div className="text-[10px] font-medium text-gray-300 flex items-center gap-2">
+      <div className={`text-[10px] font-medium flex items-center gap-2 ${isDark ? "text-gray-300" : "text-gray-800"}`}>
         <div className="w-2 h-2 rounded-full" style={{ background: color }} />
         {label}
       </div>
@@ -160,6 +169,18 @@ function PayTimeline({ weekly, biweekly, label, color }: { weekly: number; biwee
 }
 
 export default function DevPaymentCalculator() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const cardClass = isDark
+    ? "rounded-xl border border-white/10 bg-white/[0.02]"
+    : "rounded-xl border border-gray-200 bg-white shadow-sm";
+  const mutedText = isDark ? "text-gray-400" : "text-gray-600";
+  const strongText = isDark ? "text-gray-300" : "text-gray-800";
+  const bodyText = isDark ? "text-gray-200" : "text-gray-900";
+  const dimText = isDark ? "text-gray-500" : "text-gray-500";
+  const divideClass = isDark ? "divide-white/5" : "divide-gray-200";
+  const insightBg = isDark ? "bg-white/[0.03]" : "bg-gray-50";
+  const titleText = isDark ? "text-white" : "text-gray-900";
   const [samAnnual, setSamAnnual] = useState(30000);
   const [mercyPercent, setMercyPercent] = useState(15);
 
@@ -194,11 +215,11 @@ export default function DevPaymentCalculator() {
     <div className="max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Link to="/tools" className="hover:text-white transition-colors">Tools</Link>
+        <Link to="/tools" className={`transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>Tools</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="text-gray-300">Developer Payment Calculator</span>
+        <span className={isDark ? "text-gray-300" : "text-gray-700"}>Developer Payment Calculator</span>
       </div>
 
       <h1 className="text-2xl font-bold mb-1">Developer Payment Calculator</h1>
@@ -207,7 +228,7 @@ export default function DevPaymentCalculator() {
       {/* Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         {/* Sam's salary control */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold" style={{ background: "#6366f120", color: "#6366f1" }}>S</div>
             <div>
@@ -216,7 +237,7 @@ export default function DevPaymentCalculator() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-bold text-white tabular-nums">${samAnnual.toLocaleString()}</span>
+            <span className={`text-2xl font-bold tabular-nums ${titleText}`}>${samAnnual.toLocaleString()}</span>
             <span className="text-xs text-gray-500">/year</span>
           </div>
           <input
@@ -235,7 +256,7 @@ export default function DevPaymentCalculator() {
         </div>
 
         {/* Mercy's percentage control */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className={`${cardClass} p-5`}>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold" style={{ background: "#f59e0b20", color: "#f59e0b" }}>M</div>
             <div>
@@ -244,7 +265,7 @@ export default function DevPaymentCalculator() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-bold text-white tabular-nums">${mercyAnnual.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <span className={`text-2xl font-bold tabular-nums ${titleText}`}>${mercyAnnual.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
             <span className="text-xs text-gray-500">/year</span>
           </div>
           <input
@@ -271,7 +292,7 @@ export default function DevPaymentCalculator() {
           { label: "Weekly", value: totalBreakdown.weekly, icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
           { label: "Daily", value: totalBreakdown.daily, icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
         ].map((card) => (
-          <div key={card.label} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <div key={card.label} className={`${cardClass} p-4`}>
             <div className="flex items-center gap-2 mb-2">
               <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={card.icon} />
@@ -288,7 +309,7 @@ export default function DevPaymentCalculator() {
       {/* Main insights grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
         {/* Donut chart */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col items-center">
+        <div className={`${cardClass} p-5 flex flex-col items-center`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4 self-start">Annual Split</h3>
           <DonutChart
             slices={breakdowns.map((b) => ({
@@ -310,7 +331,7 @@ export default function DevPaymentCalculator() {
         </div>
 
         {/* Detailed breakdown table */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 lg:col-span-2">
+        <div className={`${cardClass} p-5 lg:col-span-2`}>
           <h3 className="text-xs font-semibold text-gray-400 mb-4">Pay Period Breakdown</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -323,7 +344,7 @@ export default function DevPaymentCalculator() {
                   <th className="text-right py-2 pl-2">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className={`divide-y ${divideClass}`}>
                 {[
                   { label: "Hourly (40h/wk)", key: "hourly" as const },
                   { label: "Daily", key: "daily" as const },
@@ -332,14 +353,14 @@ export default function DevPaymentCalculator() {
                   { label: "Monthly", key: "monthly" as const },
                   { label: "Annual", key: "annual" as const },
                 ].map((row) => (
-                  <tr key={row.key} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-2.5 pr-4 text-gray-400">{row.label}</td>
+                  <tr key={row.key} className={`transition-colors ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
+                    <td className={`py-2.5 pr-4 ${mutedText}`}>{row.label}</td>
                     {breakdowns.map((b) => (
-                      <td key={b.name} className="py-2.5 px-2 text-right font-medium tabular-nums text-gray-200">
+                      <td key={b.name} className={`py-2.5 px-2 text-right font-medium tabular-nums ${bodyText}`}>
                         ${fmt(b[row.key])}
                       </td>
                     ))}
-                    <td className="py-2.5 pl-2 text-right font-bold tabular-nums text-white">
+                    <td className={`py-2.5 pl-2 text-right font-bold tabular-nums ${titleText}`}>
                       ${fmt(totalBreakdown[row.key])}
                     </td>
                   </tr>
@@ -351,7 +372,7 @@ export default function DevPaymentCalculator() {
       </div>
 
       {/* Bar comparison */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+      <div className={`${cardClass} p-5 mb-8`}>
         <h3 className="text-xs font-semibold text-gray-400 mb-4">Weekly Comparison</h3>
         <div className="space-y-3">
           {breakdowns.map((b) => (
@@ -363,7 +384,7 @@ export default function DevPaymentCalculator() {
               color={b.color}
             />
           ))}
-          <div className="border-t border-white/5 pt-3">
+          <div className={`border-t pt-3 ${isDark ? "border-white/5" : "border-gray-200"}`}>
             <CompBar
               label="Combined"
               value={totalBreakdown.weekly}
@@ -377,14 +398,14 @@ export default function DevPaymentCalculator() {
       {/* Monthly visualization */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         {breakdowns.map((b) => (
-          <div key={b.name} className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <div key={b.name} className={`${cardClass} p-5`}>
             <MonthlyBars monthly={b.monthly} color={b.color} name={b.name} />
           </div>
         ))}
       </div>
 
       {/* 52-week timeline */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+      <div className={`${cardClass} p-5 mb-8`}>
         <h3 className="text-xs font-semibold text-gray-400 mb-4">52-Week Pay Timeline</h3>
         <div className="space-y-5">
           {breakdowns.map((b) => (
@@ -400,7 +421,7 @@ export default function DevPaymentCalculator() {
       </div>
 
       {/* Quick insights */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+      <div className={`${cardClass} p-5 mb-8`}>
         <h3 className="text-xs font-semibold text-gray-400 mb-4">Quick Insights</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {[
@@ -435,9 +456,9 @@ export default function DevPaymentCalculator() {
               sub: `Sam earns ${(samAnnual / mercyAnnual).toFixed(1)}x Mercy's pay`,
             },
           ].map((insight) => (
-            <div key={insight.label} className="bg-white/[0.03] rounded-lg p-3">
+            <div key={insight.label} className={`${insightBg} rounded-lg p-3`}>
               <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{insight.label}</div>
-              <div className="text-sm font-bold text-white tabular-nums">{insight.value}</div>
+              <div className={`text-sm font-bold tabular-nums ${titleText}`}>{insight.value}</div>
               <div className="text-[10px] text-gray-500 mt-0.5">{insight.sub}</div>
             </div>
           ))}
