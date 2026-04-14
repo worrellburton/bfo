@@ -565,33 +565,40 @@ export default function BalanceSheet() {
               const isSection = row.bold && row.values.every((v) => !v);
               const val = row.values[0] || "";
               const rowId = `${row.label}-${i}`;
-              // Explicit text color so bold section/total rows don't fall back to light/inherited gray
-              const rowTextColor = isTotal || isSection || row.bold
-                ? (light ? "text-gray-900" : "text-white")
-                : (light ? "text-gray-700" : "text-gray-400");
+              const isBold = isTotal || isSection || row.bold;
+              // Inline style guarantees the text color isn't overridden by Tailwind purging,
+              // CSS cascade quirks, or browser color-scheme defaults.
+              const rowColor = isBold
+                ? (light ? "#111827" : "#ffffff")
+                : (light ? "#374151" : "#9ca3af");
               return (
                 <div
                   key={i}
                   onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(0); }}
-                  className={`flex items-center justify-between py-1.5 px-3 text-xs ${rowTextColor} ${
+                  className={`flex items-center justify-between py-1.5 px-3 text-xs ${
                     isTotal
                       ? `border-t ${light ? "border-gray-200" : "border-white/10"} font-bold`
                       : isSection
                         ? "mt-3 mb-1"
                         : ""
                   }`}
-                  style={{ paddingLeft: `${row.depth * 16 + 12}px` }}
+                  style={{ paddingLeft: `${row.depth * 16 + 12}px`, color: rowColor }}
                 >
-                  <span className={row.bold ? "font-semibold" : ""}>{row.label}</span>
+                  <span style={{ color: rowColor }} className={row.bold ? "font-semibold" : ""}>{row.label}</span>
                   {val && (() => {
                     const clickable = !isTotal && !isSection && !row.bold && parseFloat(val) !== 0;
+                    const valueColorOverride = isTotal && row.label.toLowerCase().includes("equity")
+                      ? "#a855f7"
+                      : isTotal && row.label.toLowerCase().includes("assets")
+                        ? "#3b82f6"
+                        : parseFloat(val) < 0
+                          ? "#ef4444"
+                          : rowColor;
                     return (
                       <span
                         onClick={clickable ? () => handleCellClick(row.label) : undefined}
-                        className={`tabular-nums transition-opacity duration-200 ${
-                          parseFloat(val) < 0 ? "text-red-500" : ""
-                        } ${clickable ? "cursor-pointer hover:underline hover:text-blue-400" : ""} ${getCellHighlight(rowId, 0)}`}
-                        style={isTotal && row.label.toLowerCase().includes("equity") ? { color: "#a855f7" } : isTotal && row.label.toLowerCase().includes("assets") ? { color: "#3b82f6" } : {}}
+                        className={`tabular-nums transition-opacity duration-200 ${clickable ? "cursor-pointer hover:underline hover:text-blue-400" : ""} ${getCellHighlight(rowId, 0)}`}
+                        style={{ color: valueColorOverride }}
                       >
                         {formatCurrency(val)}
                       </span>
