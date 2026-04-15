@@ -11,6 +11,7 @@ const navItems = [
   { to: "/office", label: "Office", icon: null },
   { to: "/tools", label: "Tools", icon: null },
   { to: "/tools/quickbooks", label: "Finance", icon: null },
+  { to: "/tools/taxes", label: "Taxes", icon: null },
   { to: "/estate-map", label: "Estate Map", icon: null },
 ];
 
