@@ -17,14 +17,16 @@ type Entity = { realm_id: string; company_name: string };
 
 type ReportKind = "balance-sheet-detail" | "profit-loss-detail" | "trial-balance" | "general-ledger";
 
+type OutputFormat = "pdf" | "xlsx";
+
 const REPORT_META: Record<
   ReportKind,
-  { title: string; fileLabel: string; useDateRange: boolean }
+  { title: string; fileLabel: string; useDateRange: boolean; format: OutputFormat }
 > = {
-  "balance-sheet-detail": { title: "Balance Sheet", fileLabel: "BalanceSheet", useDateRange: false },
-  "profit-loss-detail": { title: "Profit & Loss", fileLabel: "ProfitLoss", useDateRange: true },
-  "trial-balance": { title: "Trial Balance", fileLabel: "TrialBalance", useDateRange: false },
-  "general-ledger": { title: "General Ledger", fileLabel: "GeneralLedger", useDateRange: true },
+  "balance-sheet-detail": { title: "Balance Sheet", fileLabel: "BalanceSheet", useDateRange: false, format: "pdf" },
+  "profit-loss-detail":   { title: "Profit & Loss",  fileLabel: "ProfitLoss",   useDateRange: true,  format: "pdf" },
+  "trial-balance":        { title: "Trial Balance",  fileLabel: "TrialBalance", useDateRange: false, format: "xlsx" },
+  "general-ledger":       { title: "General Ledger", fileLabel: "GeneralLedger",useDateRange: true,  format: "xlsx" },
 };
 
 const YEARS = [2024, 2025];
@@ -39,10 +41,17 @@ function safeFilename(s: string) {
   return s.replace(/[^a-zA-Z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
-function parseReport(data: any): { title: string; columns: string[]; rows: ReportRow[] } {
-  if (!data?.Header) return { title: "", columns: [], rows: [] };
+function parseReport(data: any): {
+  title: string;
+  columns: string[];
+  colTypes: string[];
+  rows: ReportRow[];
+} {
+  if (!data?.Header) return { title: "", columns: [], colTypes: [], rows: [] };
   const title = data.Header.ReportName || "";
-  const columns = (data.Columns?.Column || []).slice(1).map((c: any) => c.ColTitle || "");
+  const rawCols = (data.Columns?.Column || []).slice(1);
+  const columns = rawCols.map((c: any) => c.ColTitle || "");
+  const colTypes = rawCols.map((c: any) => c.ColType || "String");
   const rows: ReportRow[] = [];
 
   function walkRows(rowData: any[], depth: number) {
@@ -76,7 +85,7 @@ function parseReport(data: any): { title: string; columns: string[]; rows: Repor
   }
 
   walkRows(data.Rows?.Row || [], 0);
-  return { title, columns, rows };
+  return { title, columns, colTypes, rows };
 }
 
 async function fetchReport(kind: ReportKind, year: number, realmId: string) {
@@ -98,10 +107,13 @@ async function renderPdf(
   entity: Entity,
   kind: ReportKind,
   year: number,
-  report: { title: string; columns: string[]; rows: ReportRow[] },
+  report: { title: string; columns: string[]; colTypes: string[]; rows: ReportRow[] },
 ): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
+  // General Ledger has many columns (Date, Type, Num, Name, Memo, Split,
+  // Amount, Balance) — use landscape so they all fit.
+  const orientation = kind === "general-ledger" ? "landscape" : "portrait";
+  const doc = new jsPDF({ unit: "pt", format: "letter", orientation });
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
   const ml = 40;
@@ -179,24 +191,63 @@ async function renderPdf(
   y += 20;
   doc.setTextColor(0, 0, 0);
 
-  // Table layout
-  const labelWidth = Math.min(260, tw * 0.5);
+  // Table layout — weighted column widths by ColType
+  const isGL = kind === "general-ledger";
   const colCount = Math.max(1, report.columns.length);
-  const valueWidth = (tw - labelWidth) / colCount;
+
+  function weightFor(colTitle: string, colType: string) {
+    const t = (colTitle || "").toLowerCase();
+    const ty = (colType || "").toLowerCase();
+    if (ty === "amount" || t === "amount" || t === "balance" || t === "debit" || t === "credit") return 1.0;
+    if (ty === "date" || t === "date") return 0.9;
+    if (t === "num" || t === "#") return 0.7;
+    if (t.includes("memo") || t.includes("description")) return 2.0;
+    if (t.includes("name") || t.includes("customer") || t.includes("vendor")) return 1.6;
+    if (t.includes("split") || t.includes("account")) return 1.6;
+    if (t.includes("type") || t.includes("transaction")) return 1.3;
+    return 1.2;
+  }
+
+  const labelLabel = isGL ? "ACCOUNT / TRANSACTION" : "ACCOUNT";
+  // GL uses a smaller label column (accounts sit on header rows; transaction
+  // rows use their own Date column from QB).
+  const labelWidth = isGL
+    ? Math.min(160, tw * 0.18)
+    : Math.min(260, tw * 0.5);
+  const valuesTotalWidth = tw - labelWidth;
+  const weights = report.columns.map((c, i) => weightFor(c, report.colTypes?.[i] || ""));
+  const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
+  const colWidths = weights.map((w) => (w / weightSum) * valuesTotalWidth);
+  const colStarts: number[] = [];
+  {
+    let x = ml + labelWidth;
+    for (const w of colWidths) {
+      colStarts.push(x);
+      x += w;
+    }
+  }
+  function colEnd(i: number) {
+    return colStarts[i] + colWidths[i];
+  }
+  function isRightAligned(i: number) {
+    const title = (report.columns[i] || "").toLowerCase();
+    const ty = (report.colTypes?.[i] || "").toLowerCase();
+    return ty === "amount" || title === "amount" || title === "balance" || title === "debit" || title === "credit";
+  }
 
   // Column headers
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
-  doc.setCharSpace(1.0);
+  doc.setCharSpace(0.8);
   doc.setTextColor(0, 0, 0);
-  doc.text("ACCOUNT", ml, y);
+  doc.text(labelLabel, ml, y);
   report.columns.forEach((col, i) => {
-    doc.text(
-      (col || "").toUpperCase(),
-      ml + labelWidth + valueWidth * (i + 1) - 4,
-      y,
-      { align: "right" },
-    );
+    const label = (col || "").toUpperCase();
+    if (isRightAligned(i)) {
+      doc.text(label, colEnd(i) - 4, y, { align: "right" });
+    } else {
+      doc.text(label, colStarts[i] + 2, y);
+    }
   });
   doc.setCharSpace(0);
   y += 4;
@@ -206,9 +257,10 @@ async function renderPdf(
   y += 10;
 
   // Rows
+  const bodyFontSize = isGL ? 7 : 8;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  const rowH = 12;
+  doc.setFontSize(bodyFontSize);
+  const rowH = isGL ? 10 : 12;
 
   for (const row of report.rows) {
     if (y > ph - 60) {
@@ -219,26 +271,142 @@ async function renderPdf(
       y = 64;
     }
     doc.setFont("helvetica", row.bold ? "bold" : "normal");
-    const indent = Math.min(row.depth, 6) * 10;
+    const indent = Math.min(row.depth, 6) * (isGL ? 6 : 10);
     const label = row.label || "";
     const labelLines = doc.splitTextToSize(label, labelWidth - indent - 4);
     doc.text(labelLines[0] || "", ml + indent, y);
-    // Values
+    // Values — truncate to column width, right-align amounts
     row.values.forEach((v, i) => {
       if (i >= colCount) return;
       const text = v || "";
-      doc.text(text, ml + labelWidth + valueWidth * (i + 1) - 4, y, { align: "right" });
+      if (!text) return;
+      const maxW = colWidths[i] - 4;
+      const lines = doc.splitTextToSize(text, maxW);
+      const first = lines[0] || "";
+      if (isRightAligned(i)) {
+        doc.text(first, colEnd(i) - 4, y, { align: "right" });
+      } else {
+        doc.text(first, colStarts[i] + 2, y);
+      }
     });
     y += rowH;
     // Underline separator for bold summary rows
     if (row.bold && row.values.some((v) => v)) {
       doc.setDrawColor(160, 160, 160);
       doc.setLineWidth(0.25);
-      doc.line(ml + labelWidth, y - 10, mr, y - 10);
+      doc.line(ml + labelWidth, y - rowH + 2, mr, y - rowH + 2);
     }
   }
 
   return doc.output("blob");
+}
+
+async function renderXlsx(
+  entity: Entity,
+  kind: ReportKind,
+  year: number,
+  report: { title: string; columns: string[]; colTypes: string[]; rows: ReportRow[] },
+): Promise<Blob> {
+  const XLSX = await import("xlsx");
+  const meta = REPORT_META[kind];
+  const displayName = entity.company_name?.trim() || `Entity ${entity.realm_id}`;
+  const period = meta.useDateRange
+    ? `For the year ended December 31, ${year}`
+    : `As of December 31, ${year}`;
+
+  // Build AOA: 3 title rows, blank, header, data rows.
+  const labelHeader = kind === "general-ledger" ? "Account / Transaction" : "Account";
+  const aoa: (string | number | null)[][] = [
+    [report.title || meta.title],
+    [displayName],
+    [period],
+    [],
+    [labelHeader, ...report.columns],
+  ];
+
+  function toCell(v: string, colType: string): string | number {
+    if (!v) return "";
+    const ty = (colType || "").toLowerCase();
+    if (ty === "amount") {
+      // Remove commas, currency, and convert (x) to -x
+      const cleaned = v.replace(/,/g, "").replace(/\$/g, "").trim();
+      const neg = /^\(.*\)$/.test(cleaned);
+      const num = parseFloat(cleaned.replace(/[()]/g, ""));
+      if (Number.isFinite(num)) return neg ? -num : num;
+    }
+    return v;
+  }
+
+  for (const row of report.rows) {
+    const indent = "  ".repeat(Math.min(row.depth, 6));
+    const label = `${indent}${row.label || ""}`;
+    const vals = report.columns.map((_c, i) =>
+      toCell(row.values[i] || "", report.colTypes?.[i] || ""),
+    );
+    aoa.push([label, ...vals]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Column widths — weighted defaults
+  function widthFor(colTitle: string, colType: string): number {
+    const t = (colTitle || "").toLowerCase();
+    const ty = (colType || "").toLowerCase();
+    if (ty === "amount") return 14;
+    if (ty === "date") return 12;
+    if (t === "num" || t === "#") return 10;
+    if (t.includes("memo") || t.includes("description")) return 40;
+    if (t.includes("name") || t.includes("customer") || t.includes("vendor")) return 28;
+    if (t.includes("split") || t.includes("account")) return 28;
+    if (t.includes("type") || t.includes("transaction")) return 22;
+    return 18;
+  }
+  const labelWidth = kind === "general-ledger" ? 28 : 42;
+  (ws as any)["!cols"] = [
+    { wch: labelWidth },
+    ...report.columns.map((c, i) => ({ wch: widthFor(c, report.colTypes?.[i] || "") })),
+  ];
+
+  // Merge title/subtitle rows across the full width
+  const totalCols = 1 + report.columns.length;
+  (ws as any)["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: totalCols - 1 } },
+  ];
+
+  // Apply numeric formatting to amount columns
+  const amountCols: number[] = [];
+  report.columns.forEach((c, i) => {
+    const ty = (report.colTypes?.[i] || "").toLowerCase();
+    const t = (c || "").toLowerCase();
+    if (ty === "amount" || t === "amount" || t === "balance" || t === "debit" || t === "credit") {
+      amountCols.push(i + 1); // +1 for label col offset
+    }
+  });
+  const dataStartRow = 5; // rows 0..4 are titles/header
+  for (let r = dataStartRow; r < aoa.length; r++) {
+    for (const c of amountCols) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = (ws as any)[addr];
+      if (cell && typeof cell.v === "number") {
+        cell.t = "n";
+        cell.z = '#,##0.00;(#,##0.00);"–"';
+      }
+    }
+  }
+
+  // Freeze header row
+  (ws as any)["!freeze"] = { xSplit: 0, ySplit: 5 };
+
+  const wb = XLSX.utils.book_new();
+  const sheetName = `${meta.fileLabel}_FY${year}`.slice(0, 31);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  const arr: ArrayBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  return new Blob([arr], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
 }
 
 export default function Taxes() {
@@ -341,8 +509,11 @@ export default function Taxes() {
             });
             try {
               const report = await fetchReport(kind, year, entity.realm_id);
-              const blob = await renderPdf(entity, kind, year, report);
-              const filename = `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.pdf`;
+              const blob =
+                meta.format === "xlsx"
+                  ? await renderXlsx(entity, kind, year, report)
+                  : await renderPdf(entity, kind, year, report);
+              const filename = `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.${meta.format}`;
               yearFolder.file(filename, blob);
             } catch (err: any) {
               failures.push(
@@ -405,8 +576,8 @@ export default function Taxes() {
             </div>
             <h2 className="text-lg font-bold">Export for Bleich Fleishman</h2>
             <p className={`text-xs mt-1 ${subtleText}`}>
-              Bundles Balance Sheets, P&amp;L, Trial Balance and General Ledger for each entity and each
-              selected fiscal year into a single ZIP of branded PDFs.
+              Bundles Balance Sheets and P&amp;L as branded PDFs, and Trial Balance and General Ledger as
+              Excel spreadsheets — packaged per entity and fiscal year into a single ZIP.
             </p>
           </div>
           <button
@@ -431,7 +602,7 @@ export default function Taxes() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Export ZIP ({totalJobs} PDF{totalJobs === 1 ? "" : "s"})
+                Export ZIP ({totalJobs} file{totalJobs === 1 ? "" : "s"})
               </>
             )}
           </button>
@@ -593,7 +764,8 @@ export default function Taxes() {
           ))}
         </div>
         <p className={`text-[11px] mt-4 ${subtleText}`}>
-          Folder structure: <code>BFO-Tax-Package / &lt;Entity&gt; / FY&lt;Year&gt; / &lt;Report&gt;.pdf</code>
+          Folder structure: <code>BFO-Tax-Package / &lt;Entity&gt; / FY&lt;Year&gt; / &lt;Report&gt;.(pdf|xlsx)</code>
+          <span className="block mt-1">Balance Sheet and P&amp;L are PDFs; Trial Balance and General Ledger are Excel workbooks.</span>
         </p>
       </div>
     </div>
