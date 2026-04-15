@@ -64,6 +64,7 @@ interface AssetDoc {
   url: string;
   createdAt: number;
   storagePath?: string;
+  storageProvider?: "supabase" | "firebase";
   size?: number;
   contentType?: string;
 }
@@ -278,17 +279,32 @@ export default function AssetDetail() {
 
   async function handleDeleteDoc(docId: string) {
     const doc = docs.find((d) => d.id === docId);
-    const { db, storage, authReady } = await import("../firebase");
-    await authReady;
-    const { ref, remove } = await import("firebase/database");
     if (doc?.storagePath) {
-      const { ref: storageRef, deleteObject } = await import("firebase/storage");
-      try {
-        await deleteObject(storageRef(storage, doc.storagePath));
-      } catch {
-        // ignore — may already be gone
+      if (doc.storageProvider === "supabase") {
+        try {
+          await fetch("/api/documents/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: doc.storagePath }),
+          });
+        } catch {
+          // ignore
+        }
+      } else {
+        // Legacy Firebase-stored docs
+        try {
+          const { storage, authReady } = await import("../firebase");
+          await authReady;
+          const { ref: storageRef, deleteObject } = await import("firebase/storage");
+          await deleteObject(storageRef(storage, doc.storagePath));
+        } catch {
+          // ignore
+        }
       }
     }
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, remove } = await import("firebase/database");
     await remove(ref(db, `assets/${id}/documents/${docId}`));
   }
 
@@ -301,55 +317,67 @@ export default function AssetDetail() {
     }
     setDocDrop({ dragOver: false, uploading: file.name, progress: 0, error: null });
     try {
-      const { db, storage, authReady } = await import("../firebase");
-      await authReady;
-      const { ref: dbRef, push } = await import("firebase/database");
-      const { ref: storageRef, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
-
-      const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-      const safe = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-      const path = `assets/${id}/documents/${Date.now()}-${safe}`;
-      const sRef = storageRef(storage, path);
-      const task = uploadBytesResumable(sRef, file, {
-        contentType: file.type || "application/octet-stream",
+      // 1. Ask the server for a signed upload URL into the Supabase
+      //    "documents" bucket.
+      const urlRes = await fetch("/api/documents/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: id,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+        }),
       });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok || !urlData?.signedUrl) {
+        throw new Error(urlData?.message || "Could not get signed upload URL");
+      }
 
+      // 2. PUT the file straight to Supabase Storage via XHR so we can
+      //    track progress and time out if nothing streams.
       await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", urlData.signedUrl, true);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.setRequestHeader("x-upsert", "false");
         const stuckTimer = setTimeout(() => {
           setDocDrop((s) => ({
             ...s,
-            error: "Upload is stuck. Check Firebase Storage rules/CORS for assets/<id>/documents/.",
+            error: "Upload is stuck. Check your connection and try again.",
           }));
         }, 15000);
-        task.on(
-          "state_changed",
-          (snap) => {
-            const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
-            if (pct > 0) {
-              clearTimeout(stuckTimer);
-              setDocDrop((s) => ({ ...s, error: null }));
-            }
-            setDocDrop((s) => ({ ...s, progress: pct }));
-          },
-          (err) => {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.loaded > 0) {
             clearTimeout(stuckTimer);
-            reject(err);
-          },
-          () => {
-            clearTimeout(stuckTimer);
-            resolve();
-          },
-        );
+            const pct = (e.loaded / e.total) * 100;
+            setDocDrop((s) => ({ ...s, progress: pct, error: null }));
+          }
+        };
+        xhr.onerror = () => {
+          clearTimeout(stuckTimer);
+          reject(new Error("Network error during upload"));
+        };
+        xhr.onload = () => {
+          clearTimeout(stuckTimer);
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText}`));
+        };
+        xhr.send(file);
       });
 
-      const url = await getDownloadURL(sRef);
+      // 3. Record the document in the Firebase Realtime DB so it shows
+      //    up in the list (RTDB is still our metadata store).
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref: dbRef, push } = await import("firebase/database");
       const displayName = file.name.replace(/\.[^.]+$/, "");
       await push(dbRef(db, `assets/${id}/documents`), {
         name: displayName,
-        url,
-        storagePath: path,
+        url: urlData.publicUrl,
+        storagePath: urlData.path,
+        storageProvider: "supabase",
         size: file.size,
-        contentType: file.type || `application/${ext}`,
+        contentType: file.type || "application/octet-stream",
         createdAt: Date.now(),
       });
     } catch (err) {
