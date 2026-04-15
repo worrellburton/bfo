@@ -504,18 +504,15 @@ export default function Taxes() {
     try {
       const [{ default: JSZip }] = await Promise.all([import("jszip")]);
       const zip = new JSZip();
-      const root = zip.folder("BFO-Tax-Package") as any;
 
       let done = 0;
       const failures: string[] = [];
 
       for (const entity of selectedEntityList) {
         const displayName = entity.company_name?.trim() || `Entity_${entity.realm_id}`;
-        const folderSlug =
+        const entitySlug =
           safeFilename(entity.company_name) || `Entity_${entity.realm_id}`;
-        const entityFolder = root.folder(folderSlug) as any;
         for (const year of selectedYears) {
-          const yearFolder = entityFolder.folder(`FY${year}`) as any;
           for (const kind of selectedReports) {
             const meta = REPORT_META[kind];
             setProgress({
@@ -525,23 +522,15 @@ export default function Taxes() {
             });
             try {
               const report = await fetchReport(kind, year, entity.realm_id);
+              const base = `${entitySlug}_${meta.fileLabel}_FY${year}`;
               if (meta.format === "xlsx") {
                 const xlsxBlob = await renderXlsx(entity, kind, year, report);
-                yearFolder.file(
-                  `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.xlsx`,
-                  xlsxBlob,
-                );
+                zip.file(`${base}.xlsx`, xlsxBlob);
                 const csvText = renderCsv(kind, report);
-                yearFolder.file(
-                  `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.csv`,
-                  new Blob([csvText], { type: "text/csv" }),
-                );
+                zip.file(`${base}.csv`, new Blob([csvText], { type: "text/csv" }));
               } else {
                 const pdfBlob = await renderPdf(entity, kind, year, report);
-                yearFolder.file(
-                  `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.pdf`,
-                  pdfBlob,
-                );
+                zip.file(`${base}.pdf`, pdfBlob);
               }
             } catch (err: any) {
               failures.push(
@@ -792,7 +781,8 @@ export default function Taxes() {
           ))}
         </div>
         <p className={`text-[11px] mt-4 ${subtleText}`}>
-          Folder structure: <code>BFO-Tax-Package / &lt;Entity&gt; / FY&lt;Year&gt; / &lt;Report&gt;.(pdf|xlsx|csv)</code>
+          File naming: <code>&lt;Entity&gt;_&lt;Report&gt;_FY&lt;Year&gt;.(pdf|xlsx|csv)</code> — all files sit in the
+          ZIP root, no folders.
           <span className="block mt-1">
             Balance Sheet and P&amp;L are PDFs. Trial Balance and General Ledger are provided as both
             Excel workbooks (.xlsx) and CSV — never PDF, since they're working datasets.
