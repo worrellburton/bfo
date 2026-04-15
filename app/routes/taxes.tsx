@@ -144,8 +144,9 @@ async function renderPdf(
     doc.setFontSize(6.5);
     doc.setCharSpace(1.2);
     doc.setTextColor(120, 120, 120);
+    const displayName = entity.company_name?.trim() || `Entity ${entity.realm_id}`;
     doc.text(
-      `${entity.company_name.toUpperCase()}   /   ${REPORT_META[kind].title.toUpperCase()}   /   FY${year}`,
+      `${displayName.toUpperCase()}   /   ${REPORT_META[kind].title.toUpperCase()}   /   FY${year}`,
       pw / 2,
       fy,
       { align: "center" },
@@ -169,7 +170,7 @@ async function renderPdf(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(90, 90, 90);
-  doc.text(entity.company_name, ml, y);
+  doc.text(entity.company_name?.trim() || `Entity ${entity.realm_id}`, ml, y);
   y += 12;
   const period = REPORT_META[kind].useDateRange
     ? `For the year ended December 31, ${year}`
@@ -269,7 +270,9 @@ export default function Taxes() {
           );
           return;
         }
-        const list: Entity[] = data?.companies || [];
+        const list: Entity[] = (data?.companies || []).filter(
+          (e: Entity) => e.realm_id && !e.realm_id.startsWith("__"),
+        );
         setEntities(list);
         setSelectedEntities(new Set(list.map((e) => e.realm_id)));
       } catch (err: any) {
@@ -323,7 +326,10 @@ export default function Taxes() {
       const failures: string[] = [];
 
       for (const entity of selectedEntityList) {
-        const entityFolder = root.folder(safeFilename(entity.company_name)) as any;
+        const displayName = entity.company_name?.trim() || `Entity_${entity.realm_id}`;
+        const folderSlug =
+          safeFilename(entity.company_name) || `Entity_${entity.realm_id}`;
+        const entityFolder = root.folder(folderSlug) as any;
         for (const year of selectedYears) {
           const yearFolder = entityFolder.folder(`FY${year}`) as any;
           for (const kind of selectedReports) {
@@ -331,23 +337,23 @@ export default function Taxes() {
             setProgress({
               done,
               total: totalJobs,
-              message: `${entity.company_name} — ${meta.title} FY${year}`,
+              message: `${displayName} — ${meta.title} FY${year}`,
             });
             try {
               const report = await fetchReport(kind, year, entity.realm_id);
               const blob = await renderPdf(entity, kind, year, report);
-              const filename = `BFO_${safeFilename(entity.company_name)}_${meta.fileLabel}_FY${year}.pdf`;
+              const filename = `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.pdf`;
               yearFolder.file(filename, blob);
             } catch (err: any) {
               failures.push(
-                `${entity.company_name} — ${meta.title} FY${year}: ${err?.message || "failed"}`,
+                `${displayName} — ${meta.title} FY${year}: ${err?.message || "failed"}`,
               );
             } finally {
               done += 1;
               setProgress({
                 done,
                 total: totalJobs,
-                message: `${entity.company_name} — ${meta.title} FY${year}`,
+                message: `${displayName} — ${meta.title} FY${year}`,
               });
             }
           }
@@ -527,7 +533,7 @@ export default function Taxes() {
                           : isDark ? "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200" : "bg-white border-gray-300 text-gray-500 hover:text-gray-800"
                       } disabled:opacity-50`}
                     >
-                      {on ? "✓ " : ""}{e.company_name}
+                      {on ? "✓ " : ""}{e.company_name?.trim() || `Entity ${e.realm_id}`}
                     </button>
                   );
                 })}

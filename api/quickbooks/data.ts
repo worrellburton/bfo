@@ -201,11 +201,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "list") {
       const { data: rows, error: dbError } = await supabase
         .from("quickbooks_tokens")
-        .select("realm_id, updated_at");
+        .select("*");
       if (dbError) {
         return res.status(500).json({ error: "db_error", message: dbError.message });
       }
-      return res.json({ companies: (rows || []).map((r: any) => ({ realm_id: r.realm_id, company_name: "", updated_at: r.updated_at })) });
+      // Skip debug/internal rows, and enrich each with its real CompanyName
+      const realRows = (rows || []).filter(
+        (r: any) => r.realm_id && !String(r.realm_id).startsWith("__"),
+      );
+      const companies = await Promise.all(
+        realRows.map(async (r: any) => {
+          let companyName = "";
+          try {
+            let token = r.access_token;
+            const tokenExpired = new Date(r.expires_at).getTime() < Date.now();
+            if (tokenExpired) {
+              token = await refreshAccessToken(supabase, r.refresh_token, r.realm_id);
+            }
+            const info = await qboFetch(token, r.realm_id, `companyinfo/${r.realm_id}`);
+            companyName = info?.CompanyInfo?.CompanyName || "";
+          } catch {
+            // swallow — fall back to realm_id on the client
+          }
+          return {
+            realm_id: r.realm_id,
+            company_name: companyName,
+            updated_at: r.updated_at,
+          };
+        }),
+      );
+      return res.json({ companies });
     }
 
     // For all other reports, need a specific company
