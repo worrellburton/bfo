@@ -178,97 +178,77 @@ export default function GeneralLedger() {
     URL.revokeObjectURL(url);
   }
 
-  function handleGeneratePDF() {
+  async function handleExportXLSX() {
     if (!report) return;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    const generatedDate = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    const periodLabel = selectedMonth !== null ? `${MONTHS_SHORT[selectedMonth]} ${selectedYear}` : `${selectedYear} Full Year`;
-
-    const colHeaders = report.columns.map((c) => `<th class="col-header">${c}</th>`).join("");
-
-    printWindow.document.write(`<!DOCTYPE html><html><head>
-      <title>General Ledger - ${companyName || "BFO"} - ${periodLabel}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          background: #ffffff; color: #1a1a2e; padding: 0; font-size: 11px;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    const XLSX = await import("xlsx");
+    const periodLabel =
+      selectedMonth !== null
+        ? new Date(selectedYear, selectedMonth, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+        : `FY${selectedYear}`;
+    const aoa: (string | number)[][] = [
+      [report.title || "General Ledger"],
+      [companyName || ""],
+      [periodLabel],
+      [],
+      ["Account / Transaction", ...report.columns],
+    ];
+    for (const row of report.rows) {
+      const indent = "  ".repeat(Math.min(row.depth, 6));
+      const vals = row.values.map((v) => {
+        if (!v) return "";
+        const cleaned = String(v).replace(/,/g, "").replace(/\$/g, "").trim();
+        const neg = /^\(.*\)$/.test(cleaned);
+        const n = parseFloat(cleaned.replace(/[()]/g, ""));
+        return Number.isFinite(n) ? (neg ? -n : n) : v;
+      });
+      aoa.push([`${indent}${row.label || ""}`, ...vals]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const totalCols = 1 + report.columns.length;
+    (ws as any)["!cols"] = [
+      { wch: 28 },
+      ...report.columns.map((c) => {
+        const t = (c || "").toLowerCase();
+        if (t.includes("memo") || t.includes("description")) return { wch: 40 };
+        if (t.includes("name") || t.includes("split") || t.includes("account")) return { wch: 28 };
+        if (t.includes("type")) return { wch: 22 };
+        if (t === "amount" || t === "balance") return { wch: 14 };
+        if (t === "date") return { wch: 12 };
+        if (t === "num") return { wch: 10 };
+        return { wch: 18 };
+      }),
+    ];
+    (ws as any)["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: totalCols - 1 } },
+    ];
+    for (let r = 5; r < aoa.length; r++) {
+      for (let c = 1; c < totalCols; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = (ws as any)[addr];
+        if (cell && typeof cell.v === "number") {
+          cell.t = "n";
+          cell.z = '#,##0.00;(#,##0.00);"–"';
         }
-        .page { max-width: 800px; margin: 0 auto; padding: 48px 40px; }
-        .header { margin-bottom: 32px; }
-        .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-        .brand { display: flex; align-items: center; gap: 12px; }
-        .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 16px; letter-spacing: -0.5px; }
-        .brand-text { display: flex; flex-direction: column; }
-        .brand-name { font-size: 18px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.3px; }
-        .brand-sub { font-size: 11px; color: #64748b; font-weight: 400; }
-        .header-meta { text-align: right; font-size: 10px; color: #94a3b8; line-height: 1.6; }
-        .divider { height: 3px; background: linear-gradient(90deg, #1a1a2e 0%, #3b82f6 50%, #1a1a2e 100%); border-radius: 2px; margin-bottom: 8px; }
-        .report-title-bar { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; }
-        .report-title { font-size: 22px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; }
-        .report-period { font-size: 12px; color: #64748b; font-weight: 500; background: #f1f5f9; padding: 4px 12px; border-radius: 6px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-        thead th { padding: 10px 12px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; border-bottom: 2px solid #e2e8f0; }
-        thead th.account-col { text-align: left; }
-        thead th.col-header { text-align: right; white-space: nowrap; }
-        tbody td { padding: 5px 12px; font-size: 10px; font-variant-numeric: tabular-nums; border-bottom: 1px solid #f1f5f9; }
-        tbody td.label-cell { text-align: left; color: #475569; }
-        tbody td.value-cell { text-align: right; color: #475569; }
-        tr.section-row td { padding-top: 18px; padding-bottom: 6px; border-bottom: none; font-weight: 700; font-size: 11px; color: #1a1a2e; letter-spacing: -0.2px; }
-        tr.bold-row td { font-weight: 600; color: #1e293b; }
-        tr.total-row td { border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; font-weight: 700; color: #0f172a; font-size: 10.5px; padding-top: 8px; padding-bottom: 8px; background: #f8fafc; }
-        tr.grand-total td { border-top: 3px double #1a1a2e; border-bottom: none; font-weight: 700; color: #0f172a; font-size: 11px; padding-top: 10px; padding-bottom: 10px; }
-        tbody tr.stripe td { background: #fafbfc; }
-        .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
-        .footer-left { font-size: 9px; color: #94a3b8; }
-        .footer-right { font-size: 9px; color: #94a3b8; }
-        .footer-right span { color: #64748b; font-weight: 500; }
-        @media print { body { padding: 0; } .page { padding: 24px 20px; } }
-      </style></head><body>
-      <div class="page">
-        <div class="header">
-          <div class="header-top">
-            <div class="brand">
-              <div class="brand-icon">BFO</div>
-              <div class="brand-text">
-                <div class="brand-name">Burton Family Office</div>
-                <div class="brand-sub">${companyName || ""}</div>
-              </div>
-            </div>
-            <div class="header-meta">Generated ${generatedDate}<br/>QuickBooks Online</div>
-          </div>
-          <div class="divider"></div>
-          <div class="report-title-bar">
-            <div class="report-title">General Ledger</div>
-            <div class="report-period">${periodLabel}</div>
-          </div>
-        </div>
-        <table>
-          <thead><tr><th class="account-col">Account / Transaction</th>${colHeaders}</tr></thead>
-          <tbody>
-          ${report.rows.map((row, idx) => {
-            const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("balance");
-            const isGrandTotal = row.depth === 0 && isTotal;
-            const isSection = row.bold && row.values.every((v) => !v);
-            const cls = isGrandTotal ? "grand-total" : isTotal ? "total-row" : isSection ? "section-row" : row.bold ? "bold-row" : (idx % 2 === 0 ? "stripe" : "");
-            const vals = row.values.map((v) => `<td class="value-cell">${v ? formatCurrency(v) : v || ""}</td>`).join("");
-            return `<tr class="${cls}"><td class="label-cell" style="padding-left:${row.depth * 16 + 12}px">${row.label}</td>${vals}</tr>`;
-          }).join("")}
-          </tbody>
-        </table>
-        <div class="footer">
-          <div class="footer-left">Burton Family Office &middot; Confidential</div>
-          <div class="footer-right">Page 1 &middot; <span>QuickBooks Online</span></div>
-        </div>
-      </div>
-    </body></html>`);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
+      }
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `GL_${periodLabel}`.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 31));
+    const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+    const blob = new Blob([out], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    a.download = `BFO${entity}GeneralLedger${today}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
+
 
   const pageBg = light ? "bg-white text-gray-900" : "";
   const card = light ? "rounded-xl border border-gray-200 bg-gray-50" : "rounded-xl border border-white/10 bg-white/[0.02]";
@@ -322,9 +302,9 @@ export default function GeneralLedger() {
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             CSV
           </button>
-          <button onClick={handleGeneratePDF} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-            PDF
+          <button onClick={handleExportXLSX} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a2 2 0 012-2h2a2 2 0 012 2v2m-6 0h6m-6 0H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2" /></svg>
+            XLSX
           </button>
         </div>
       </div>

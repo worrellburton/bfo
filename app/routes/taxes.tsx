@@ -301,6 +301,22 @@ async function renderPdf(
   return doc.output("blob");
 }
 
+function renderCsv(
+  kind: ReportKind,
+  report: { title: string; columns: string[]; colTypes: string[]; rows: ReportRow[] },
+): string {
+  const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
+  const labelHeader = kind === "general-ledger" ? "Account / Transaction" : "Account";
+  const lines: string[] = [];
+  lines.push([labelHeader, ...report.columns].map(esc).join(","));
+  for (const row of report.rows) {
+    const indent = "  ".repeat(Math.min(row.depth, 6));
+    const label = `${indent}${row.label || ""}`;
+    lines.push([label, ...row.values.map((v) => v || "")].map(esc).join(","));
+  }
+  return lines.join("\n");
+}
+
 async function renderXlsx(
   entity: Entity,
   kind: ReportKind,
@@ -509,12 +525,24 @@ export default function Taxes() {
             });
             try {
               const report = await fetchReport(kind, year, entity.realm_id);
-              const blob =
-                meta.format === "xlsx"
-                  ? await renderXlsx(entity, kind, year, report)
-                  : await renderPdf(entity, kind, year, report);
-              const filename = `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.${meta.format}`;
-              yearFolder.file(filename, blob);
+              if (meta.format === "xlsx") {
+                const xlsxBlob = await renderXlsx(entity, kind, year, report);
+                yearFolder.file(
+                  `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.xlsx`,
+                  xlsxBlob,
+                );
+                const csvText = renderCsv(kind, report);
+                yearFolder.file(
+                  `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.csv`,
+                  new Blob([csvText], { type: "text/csv" }),
+                );
+              } else {
+                const pdfBlob = await renderPdf(entity, kind, year, report);
+                yearFolder.file(
+                  `BFO_${folderSlug}_${meta.fileLabel}_FY${year}.pdf`,
+                  pdfBlob,
+                );
+              }
             } catch (err: any) {
               failures.push(
                 `${displayName} — ${meta.title} FY${year}: ${err?.message || "failed"}`,
@@ -764,8 +792,11 @@ export default function Taxes() {
           ))}
         </div>
         <p className={`text-[11px] mt-4 ${subtleText}`}>
-          Folder structure: <code>BFO-Tax-Package / &lt;Entity&gt; / FY&lt;Year&gt; / &lt;Report&gt;.(pdf|xlsx)</code>
-          <span className="block mt-1">Balance Sheet and P&amp;L are PDFs; Trial Balance and General Ledger are Excel workbooks.</span>
+          Folder structure: <code>BFO-Tax-Package / &lt;Entity&gt; / FY&lt;Year&gt; / &lt;Report&gt;.(pdf|xlsx|csv)</code>
+          <span className="block mt-1">
+            Balance Sheet and P&amp;L are PDFs. Trial Balance and General Ledger are provided as both
+            Excel workbooks (.xlsx) and CSV — never PDF, since they're working datasets.
+          </span>
         </p>
       </div>
     </div>
