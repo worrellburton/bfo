@@ -63,6 +63,9 @@ interface AssetDoc {
   name: string;
   url: string;
   createdAt: number;
+  storagePath?: string;
+  size?: number;
+  contentType?: string;
 }
 
 interface OperatingContract {
@@ -144,6 +147,16 @@ export default function AssetDetail() {
   });
   const setSlot = (k: FileKind, patch: Partial<{ uploading: boolean; progress: number; error: string | null; dragOver: boolean }>) =>
     setUploadState((s) => ({ ...s, [k]: { ...s[k], ...patch } }));
+
+  // Documents drag-drop zone state
+  const [docDrop, setDocDrop] = useState<{
+    dragOver: boolean;
+    uploading: string | null; // current file name being uploaded
+    progress: number;
+    error: string | null;
+  }>({ dragOver: false, uploading: null, progress: 0, error: null });
+  const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
+  const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
 
   // Contract editing
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
@@ -264,9 +277,149 @@ export default function AssetDetail() {
   }
 
   async function handleDeleteDoc(docId: string) {
-    const { db } = await import("../firebase");
+    const doc = docs.find((d) => d.id === docId);
+    const { db, storage, authReady } = await import("../firebase");
+    await authReady;
     const { ref, remove } = await import("firebase/database");
+    if (doc?.storagePath) {
+      const { ref: storageRef, deleteObject } = await import("firebase/storage");
+      try {
+        await deleteObject(storageRef(storage, doc.storagePath));
+      } catch {
+        // ignore — may already be gone
+      }
+    }
     await remove(ref(db, `assets/${id}/documents/${docId}`));
+  }
+
+  async function handleUploadDoc(file: File) {
+    if (!file) return;
+    const maxBytes = 25 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setDocDrop((s) => ({ ...s, error: "File too large. Max 25 MB." }));
+      return;
+    }
+    setDocDrop({ dragOver: false, uploading: file.name, progress: 0, error: null });
+    try {
+      const { db, storage, authReady } = await import("../firebase");
+      await authReady;
+      const { ref: dbRef, push } = await import("firebase/database");
+      const { ref: storageRef, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+
+      const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+      const path = `assets/${id}/documents/${Date.now()}-${safe}`;
+      const sRef = storageRef(storage, path);
+      const task = uploadBytesResumable(sRef, file, {
+        contentType: file.type || "application/octet-stream",
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        const stuckTimer = setTimeout(() => {
+          setDocDrop((s) => ({
+            ...s,
+            error: "Upload is stuck. Check Firebase Storage rules/CORS for assets/<id>/documents/.",
+          }));
+        }, 15000);
+        task.on(
+          "state_changed",
+          (snap) => {
+            const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
+            if (pct > 0) {
+              clearTimeout(stuckTimer);
+              setDocDrop((s) => ({ ...s, error: null }));
+            }
+            setDocDrop((s) => ({ ...s, progress: pct }));
+          },
+          (err) => {
+            clearTimeout(stuckTimer);
+            reject(err);
+          },
+          () => {
+            clearTimeout(stuckTimer);
+            resolve();
+          },
+        );
+      });
+
+      const url = await getDownloadURL(sRef);
+      const displayName = file.name.replace(/\.[^.]+$/, "");
+      await push(dbRef(db, `assets/${id}/documents`), {
+        name: displayName,
+        url,
+        storagePath: path,
+        size: file.size,
+        contentType: file.type || `application/${ext}`,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      console.error("document upload failed:", err);
+      setDocDrop((s) => ({ ...s, error: err instanceof Error ? err.message : "Upload failed" }));
+    } finally {
+      setDocDrop((s) => ({ ...s, uploading: null, progress: 0 }));
+    }
+  }
+
+  async function handleCopyDocUrl(doc: AssetDoc) {
+    try {
+      await navigator.clipboard.writeText(doc.url);
+      setCopiedDocId(doc.id);
+      setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = doc.url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopiedDocId(doc.id);
+      setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
+    }
+  }
+
+  async function handleRenameDoc(doc: AssetDoc) {
+    setRenamingDocId(doc.id);
+    try {
+      const res = await fetch("/api/rename-doc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentName: doc.name,
+          contentType: doc.contentType || "",
+          url: doc.url,
+          context: `Entity: ${asset?.name || ""} (${asset?.type || ""})`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.name) {
+        alert(`Rename failed: ${data?.error || res.statusText}`);
+        return;
+      }
+      const suggested: string = String(data.name).trim();
+      if (!suggested || suggested === doc.name) return;
+      const confirmed = prompt(
+        `Claude suggests a new name for this document. Edit if you want, then press OK.`,
+        suggested,
+      );
+      if (!confirmed || !confirmed.trim() || confirmed.trim() === doc.name) return;
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, update } = await import("firebase/database");
+      await update(ref(db, `assets/${id}/documents/${doc.id}`), { name: confirmed.trim() });
+    } catch (err) {
+      console.error("rename failed:", err);
+      alert(`Rename failed: ${err instanceof Error ? err.message : "unknown"}`);
+    } finally {
+      setRenamingDocId(null);
+    }
+  }
+
+  function formatBytes(bytes?: number) {
+    if (!bytes) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }
 
   async function handleUploadFile(kind: FileKind, file: File) {
@@ -1451,55 +1604,168 @@ export default function AssetDetail() {
       <div>
         <h2 className="text-xl font-bold mb-4">Documents</h2>
 
-        <form onSubmit={handleAddDoc} className="flex gap-2 mb-4 max-w-lg">
+        {/* Drag-and-drop upload zone */}
+        <label
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!docDrop.dragOver) setDocDrop((s) => ({ ...s, dragOver: true }));
+          }}
+          onDragLeave={() => setDocDrop((s) => ({ ...s, dragOver: false }))}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDocDrop((s) => ({ ...s, dragOver: false }));
+            const f = e.dataTransfer.files?.[0];
+            if (f) handleUploadDoc(f);
+          }}
+          className={`block cursor-pointer border-2 border-dashed rounded-xl p-6 mb-4 max-w-2xl text-center transition-colors ${
+            docDrop.dragOver
+              ? isDark
+                ? "border-blue-400 bg-blue-500/10"
+                : "border-blue-500 bg-blue-50"
+              : isDark
+                ? "border-white/15 hover:border-white/25 bg-white/[0.02]"
+                : "border-gray-300 hover:border-gray-400 bg-gray-50"
+          } ${docDrop.uploading ? "opacity-70" : ""}`}
+        >
           <input
-            value={docName}
-            onChange={(e) => setDocName(e.target.value)}
-            placeholder="Document name"
-            required
-            className={`flex-1 px-4 py-2 ${inputCls} text-sm`}
+            type="file"
+            className="hidden"
+            disabled={!!docDrop.uploading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleUploadDoc(f);
+              e.target.value = "";
+            }}
           />
-          <input
-            value={docUrl}
-            onChange={(e) => setDocUrl(e.target.value)}
-            placeholder="URL"
-            type="url"
-            required
-            className={`flex-1 px-4 py-2 ${inputCls} text-sm`}
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm whitespace-nowrap"
-          >
-            Add
-          </button>
-        </form>
+          {docDrop.uploading ? (
+            <div>
+              <div className="text-sm font-medium mb-2">Uploading {docDrop.uploading}…</div>
+              <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/10" : "bg-gray-200"}`}>
+                <div
+                  className="h-full bg-blue-500 transition-all"
+                  style={{ width: `${docDrop.progress}%` }}
+                />
+              </div>
+              <div className="text-xs text-gray-500 mt-1">{Math.round(docDrop.progress)}%</div>
+            </div>
+          ) : (
+            <>
+              <div className="text-sm font-medium">Drag &amp; drop documents here, or click to browse</div>
+              <div className="text-xs text-gray-500 mt-1">PDF, images, Office docs · up to 25 MB each</div>
+            </>
+          )}
+          {docDrop.error && (
+            <div className="text-xs text-red-500 mt-2">{docDrop.error}</div>
+          )}
+        </label>
+
+        {/* Optional: add an external URL */}
+        <details className="mb-4 max-w-2xl">
+          <summary className="text-xs text-gray-500 cursor-pointer select-none">
+            Or add an external link instead
+          </summary>
+          <form onSubmit={handleAddDoc} className="flex gap-2 mt-2">
+            <input
+              value={docName}
+              onChange={(e) => setDocName(e.target.value)}
+              placeholder="Document name"
+              required
+              className={`flex-1 px-4 py-2 ${inputCls} text-sm`}
+            />
+            <input
+              value={docUrl}
+              onChange={(e) => setDocUrl(e.target.value)}
+              placeholder="https://…"
+              type="url"
+              required
+              className={`flex-1 px-4 py-2 ${inputCls} text-sm`}
+            />
+            <button
+              type="submit"
+              className={`px-4 py-2 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"} font-medium rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap`}
+            >
+              Add
+            </button>
+          </form>
+        </details>
 
         {docs.length === 0 ? (
           <p className="text-gray-500 text-sm">No documents yet.</p>
         ) : (
-          <div className="space-y-2 max-w-lg">
-            {docs.map((doc) => (
-              <div
-                key={doc.id}
-                className={`flex items-center justify-between p-3 ${cardCls} group`}
-              >
-                <a
-                  href={doc.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 text-sm truncate flex-1"
-                >
-                  {doc.name}
-                </a>
-                <button
-                  onClick={() => handleDeleteDoc(doc.id)}
-                  className="text-gray-600 hover:text-red-400 text-sm ml-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
+          <div className={`max-w-2xl rounded-lg border overflow-hidden ${isDark ? "border-white/10" : "border-gray-200"}`}>
+            <table className="w-full text-sm">
+              <thead className={`${isDark ? "bg-white/[0.03] text-gray-400" : "bg-gray-50 text-gray-500"}`}>
+                <tr>
+                  <th className="text-left font-medium px-3 py-2 text-[11px] uppercase tracking-wider">Name</th>
+                  <th className="text-left font-medium px-3 py-2 text-[11px] uppercase tracking-wider w-20">Size</th>
+                  <th className="text-right font-medium px-3 py-2 text-[11px] uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className={`${isDark ? "divide-white/10" : "divide-gray-200"} divide-y`}>
+                {docs.map((doc) => (
+                  <tr key={doc.id} className={isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}>
+                    <td className="px-3 py-2">
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`${isDark ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-800"} font-medium`}
+                      >
+                        {doc.name}
+                      </a>
+                      {doc.contentType && (
+                        <span className="ml-2 text-[10px] uppercase text-gray-500">
+                          {doc.contentType.split("/").pop()}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
+                      {formatBytes(doc.size)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleRenameDoc(doc)}
+                          disabled={renamingDocId === doc.id}
+                          title="Suggest a better name using Claude"
+                          className={`text-xs px-2 py-1 rounded border transition-colors cursor-pointer disabled:opacity-50 ${
+                            isDark
+                              ? "border-white/10 hover:bg-white/10 text-gray-300"
+                              : "border-gray-200 hover:bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {renamingDocId === doc.id ? "Renaming…" : "Rename"}
+                        </button>
+                        <button
+                          onClick={() => handleCopyDocUrl(doc)}
+                          className={`text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
+                            copiedDocId === doc.id
+                              ? isDark
+                                ? "border-green-500/40 bg-green-500/10 text-green-300"
+                                : "border-green-400 bg-green-50 text-green-700"
+                              : isDark
+                                ? "border-white/10 hover:bg-white/10 text-gray-300"
+                                : "border-gray-200 hover:bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {copiedDocId === doc.id ? "Copied ✓" : "Copy URL"}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteDoc(doc.id)}
+                          className={`text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
+                            isDark
+                              ? "border-white/10 hover:bg-red-500/10 hover:border-red-500/40 text-gray-400 hover:text-red-300"
+                              : "border-gray-200 hover:bg-red-50 hover:border-red-300 text-gray-500 hover:text-red-700"
+                          }`}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
