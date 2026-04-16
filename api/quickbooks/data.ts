@@ -70,9 +70,22 @@ async function refreshAccessToken(supabase: ReturnType<typeof createClient>, ref
   return tokens.access_token;
 }
 
+// Read-only by design: only GETs to QuickBooks are ever performed.
+// The app must never write to QuickBooks; these guards enforce that.
 async function qboFetch(accessToken: string, realmId: string, endpoint: string) {
   const baseUrl = `https://quickbooks.api.intuit.com/v3/company/${realmId}`;
+  const path = endpoint.split("?")[0].toLowerCase();
+  // Allowlist of read-only QBO paths this app is permitted to hit.
+  const allowed =
+    path.startsWith("companyinfo/") ||
+    path.startsWith("reports/") ||
+    path.startsWith("query") ||
+    path.startsWith("preferences");
+  if (!allowed) {
+    throw new Error(`QBO read-only: endpoint not permitted (${path})`);
+  }
   const res = await fetch(`${baseUrl}/${endpoint}`, {
+    method: "GET",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/json",
@@ -94,6 +107,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
+  }
+
+  // Read-only integration — reject any write-style HTTP method at the boundary.
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "method_not_allowed", message: "QuickBooks integration is read-only" });
   }
 
   const { report, realm_id } = req.query;
