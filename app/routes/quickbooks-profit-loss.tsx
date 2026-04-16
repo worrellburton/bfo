@@ -113,6 +113,8 @@ export default function ProfitLoss() {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastUpdatedText, setLastUpdatedText] = useState("");
+  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [selectedClass, setSelectedClass] = useState("");
   // Public pages are always light; authenticated pages follow the global theme
   const light = isPublic ? true : theme === "light";
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,6 +137,17 @@ export default function ProfitLoss() {
     fetch(`/api/quickbooks/data?report=company-info&realm_id=${realmId}`)
       .then((r) => r.json())
       .then((d) => setCompanyName(d?.CompanyInfo?.CompanyName || ""))
+      .catch(() => {});
+  }, [realmId]);
+
+  useEffect(() => {
+    if (!realmId) return;
+    fetch(`/api/quickbooks/data?report=classes&realm_id=${realmId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const items = d?.QueryResponse?.Class || [];
+        setClasses(items.map((c: any) => ({ id: c.Id, name: c.Name })));
+      })
       .catch(() => {});
   }, [realmId]);
 
@@ -167,13 +180,15 @@ export default function ProfitLoss() {
     }
   }, []);
 
+  const classParam = selectedClass ? `&class=${selectedClass}` : "";
+
   useEffect(() => {
     if (viewMode === "monthly") {
-      fetchPL(`/api/quickbooks/data?report=profit-loss-monthly&year=${selectedYear}${realmParam}`);
+      fetchPL(`/api/quickbooks/data?report=profit-loss-monthly&year=${selectedYear}${realmParam}${classParam}`);
     } else {
-      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${selectedYear}-01-01&end_date=${selectedYear}-12-31${realmParam}`);
+      fetchPL(`/api/quickbooks/data?report=profit-loss-detail&start_date=${selectedYear}-01-01&end_date=${selectedYear}-12-31${realmParam}${classParam}`);
     }
-  }, [viewMode, selectedYear, fetchPL, realmParam]);
+  }, [viewMode, selectedYear, fetchPL, realmParam, classParam]);
 
   // Drill-down: fetch GL for a specific account + period
   function matchesAccount(glName: string, plName: string): boolean {
@@ -550,6 +565,21 @@ export default function ProfitLoss() {
             </button>
           ))}
         </div>
+        {classes.length > 0 && (
+          <>
+            <div className={`h-4 w-px ${light ? "bg-gray-300" : "bg-gray-600"}`} />
+            <select
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              className={selectStyle}
+            >
+              <option value="">All Classes</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Error */}

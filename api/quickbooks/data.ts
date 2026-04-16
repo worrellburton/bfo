@@ -280,31 +280,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "company-info":
         data = await qboFetch(accessToken, realmId, "companyinfo/" + realmId);
         break;
-      case "profit-loss":
-        data = await qboFetch(accessToken, realmId, "reports/ProfitAndLoss?minorversion=75");
+      case "profit-loss": {
+        const plClass = req.query.class as string | undefined;
+        const plParams = new URLSearchParams({ minorversion: "75" });
+        if (plClass) plParams.set("class", plClass);
+        data = await qboFetch(accessToken, realmId, `reports/ProfitAndLoss?${plParams}`);
         break;
+      }
       case "balance-sheet":
         data = await qboFetch(accessToken, realmId, "reports/BalanceSheet?minorversion=75");
         break;
       case "profit-loss-detail": {
         const startDate = (req.query.start_date as string) || "2024-01-01";
         const endDate = (req.query.end_date as string) || new Date().toISOString().split("T")[0];
-        data = await qboFetch(
-          accessToken,
-          realmId,
-          `reports/ProfitAndLoss?start_date=${startDate}&end_date=${endDate}&minorversion=75`
-        );
+        const pldClass = req.query.class as string | undefined;
+        const pldParams = new URLSearchParams({ start_date: startDate, end_date: endDate, minorversion: "75" });
+        if (pldClass) pldParams.set("class", pldClass);
+        data = await qboFetch(accessToken, realmId, `reports/ProfitAndLoss?${pldParams}`);
         break;
       }
       case "profit-loss-monthly": {
         const plYear = (req.query.year as string) || String(new Date().getFullYear());
         const plStart = `${plYear}-01-01`;
         const plEnd = `${plYear}-12-31`;
-        data = await qboFetch(
-          accessToken,
-          realmId,
-          `reports/ProfitAndLoss?start_date=${plStart}&end_date=${plEnd}&summarize_column_by=Month&minorversion=75`
-        );
+        const plmClass = req.query.class as string | undefined;
+        const plmParams = new URLSearchParams({ start_date: plStart, end_date: plEnd, summarize_column_by: "Month", minorversion: "75" });
+        if (plmClass) plmParams.set("class", plmClass);
+        data = await qboFetch(accessToken, realmId, `reports/ProfitAndLoss?${plmParams}`);
         break;
       }
       case "trial-balance": {
@@ -341,6 +343,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           realmId,
           "query?query=" + encodeURIComponent("SELECT * FROM Account MAXRESULTS 1000")
         );
+        break;
+      case "classes":
+        data = await qboFetch(
+          accessToken,
+          realmId,
+          "query?query=" + encodeURIComponent("SELECT * FROM Class MAXRESULTS 1000")
+        );
+        break;
+      case "preferences":
+        data = await qboFetch(accessToken, realmId, "preferences");
         break;
       case "status":
         data = { connected: true, realmId };
