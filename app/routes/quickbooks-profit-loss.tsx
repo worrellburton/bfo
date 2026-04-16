@@ -307,6 +307,65 @@ export default function ProfitLoss() {
     URL.revokeObjectURL(url);
   }
 
+  async function handleExportXLSX() {
+    if (!report) return;
+    const XLSX = await import("xlsx");
+    const cols = isMultiColumn ? report.columns : ["Amount"];
+    const periodLabel = viewMode === "monthly" ? `Monthly ${selectedYear}` : `Annual ${selectedYear}`;
+    const aoa: (string | number)[][] = [
+      [report.title || "Profit & Loss"],
+      [companyName || ""],
+      [periodLabel],
+      [],
+      ["Account", ...cols],
+    ];
+    for (const row of report.rows) {
+      const indent = "  ".repeat(Math.min(row.depth, 6));
+      const rawVals = isMultiColumn ? row.values : [row.values[0] || ""];
+      const vals = rawVals.map((v) => {
+        if (!v) return "";
+        const cleaned = String(v).replace(/,/g, "").replace(/\$/g, "").trim();
+        const neg = /^\(.*\)$/.test(cleaned);
+        const n = parseFloat(cleaned.replace(/[()]/g, ""));
+        return Number.isFinite(n) ? (neg ? -n : n) : v;
+      });
+      aoa.push([`${indent}${row.label || ""}`, ...vals]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const totalCols = 1 + cols.length;
+    (ws as any)["!cols"] = [{ wch: 42 }, ...cols.map(() => ({ wch: 16 }))];
+    (ws as any)["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: totalCols - 1 } },
+    ];
+    for (let r = 5; r < aoa.length; r++) {
+      for (let c = 1; c < totalCols; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = (ws as any)[addr];
+        if (cell && typeof cell.v === "number") {
+          cell.t = "n";
+          cell.z = '#,##0.00;(#,##0.00);"–"';
+        }
+      }
+    }
+    const wb = XLSX.utils.book_new();
+    const sheetName = viewMode === "monthly" ? `PL_Monthly_${selectedYear}` : `PL_FY${selectedYear}`;
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+    const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+    const blob = new Blob([out], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const entity = (companyName || "Entity").replace(/[^a-zA-Z0-9]/g, "");
+    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    a.download = `BFO${entity}ProfitLoss${today}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function handleGeneratePDF() {
     if (!report) return;
     const printWindow = window.open("", "_blank");
@@ -458,6 +517,10 @@ export default function ProfitLoss() {
           <button onClick={handleExportCSV} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             CSV
+          </button>
+          <button onClick={handleExportXLSX} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6h6v6m-3-9V3m-7 9h14a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2z" /></svg>
+            XLSX
           </button>
           <button onClick={handleGeneratePDF} disabled={!report || loading} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${btnBorder}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
