@@ -57,7 +57,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!tokenRes.ok) {
       const err = await tokenRes.text();
       console.error("Token exchange failed:", err);
-      return res.redirect(302, `/tools/quickbooks?error=token_exchange_failed`);
+      return res.redirect(
+        302,
+        `/tools/quickbooks?error=token_exchange_failed&detail=${encodeURIComponent(err.slice(0, 500))}&realm_id=${encodeURIComponent(String(realmId))}`,
+      );
     }
 
     const tokens = await tokenRes.json();
