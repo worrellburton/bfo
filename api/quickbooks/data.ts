@@ -212,21 +212,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const companies = await Promise.all(
         realRows.map(async (r: any) => {
           let companyName = "";
+          let status: "ok" | "auth_expired" | "error" = "ok";
+          let errorMessage: string | undefined;
           try {
             let token = r.access_token;
             const tokenExpired = new Date(r.expires_at).getTime() < Date.now();
             if (tokenExpired) {
-              token = await refreshAccessToken(supabase, r.refresh_token, r.realm_id);
+              try {
+                token = await refreshAccessToken(supabase, r.refresh_token, r.realm_id);
+              } catch (e: any) {
+                status = "auth_expired";
+                errorMessage = e?.message || "Token refresh failed";
+                throw e;
+              }
             }
             const info = await qboFetch(token, r.realm_id, `companyinfo/${r.realm_id}`);
             companyName = info?.CompanyInfo?.CompanyName || "";
-          } catch {
-            // swallow — fall back to realm_id on the client
+          } catch (e: any) {
+            if (status === "ok") {
+              const msg = String(e?.message || "");
+              status = msg.includes("401") ? "auth_expired" : "error";
+              errorMessage = msg || "QuickBooks API error";
+            }
           }
           return {
             realm_id: r.realm_id,
             company_name: companyName,
             updated_at: r.updated_at,
+            status,
+            error: errorMessage,
           };
         }),
       );

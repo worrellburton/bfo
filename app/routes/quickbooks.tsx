@@ -52,8 +52,26 @@ function timeAgo(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-type Company = { realm_id: string; company_name: string; updated_at: string };
-type CompanyData = { companyInfo: any; companyName: string; metrics: Record<string, string> };
+type ConnectionStatus = "ok" | "auth_expired" | "error";
+type Company = {
+  realm_id: string;
+  company_name: string;
+  updated_at: string;
+  status?: ConnectionStatus;
+  error?: string;
+};
+type CompanyData = {
+  companyInfo: any;
+  companyName: string;
+  metrics: Record<string, string>;
+  status: ConnectionStatus;
+  error?: string;
+};
+
+function fallbackCompanyName(realmId: string): string {
+  const tail = realmId.length > 4 ? realmId.slice(-4) : realmId;
+  return `QuickBooks · …${tail}`;
+}
 
 const REPORTS = [
   { key: "profit-loss", label: "Profit & Loss", icon: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
@@ -155,6 +173,18 @@ export default function QuickBooks() {
       const dataMap: Record<string, CompanyData> = {};
       await Promise.all(
         companyList.map(async (c) => {
+          // Skip secondary calls if list endpoint already says auth is broken — they'll all 401.
+          const listStatus: ConnectionStatus = c.status ?? "ok";
+          if (listStatus !== "ok") {
+            dataMap[c.realm_id] = {
+              companyInfo: null,
+              companyName: c.company_name || fallbackCompanyName(c.realm_id),
+              metrics: {},
+              status: listStatus,
+              error: c.error,
+            };
+            return;
+          }
           const [company, pl, bs] = await Promise.all([
             fetchReport("company-info", c.realm_id),
             fetchReport("profit-loss", c.realm_id),
@@ -162,10 +192,15 @@ export default function QuickBooks() {
           ]);
           const plMetrics = pl ? parseMetrics(pl) : {};
           const bsMetrics = bs ? parseMetrics(bs) : {};
+          const fetchedName = company?.CompanyInfo?.CompanyName || c.company_name || "";
+          // If no company info AND no metrics came through, treat the connection as broken.
+          const status: ConnectionStatus =
+            !company && !pl && !bs ? "auth_expired" : "ok";
           dataMap[c.realm_id] = {
             companyInfo: company?.CompanyInfo || null,
-            companyName: company?.CompanyInfo?.CompanyName || c.company_name || "Unknown",
+            companyName: fetchedName || fallbackCompanyName(c.realm_id),
             metrics: { ...plMetrics, ...bsMetrics },
+            status,
           };
         })
       );
@@ -320,7 +355,22 @@ export default function QuickBooks() {
                     }`}
                   >
                     <td className="py-3.5 px-5">
-                      <div className={`font-medium ${light ? "text-gray-900" : "text-white"}`}>{data.companyName}</div>
+                      <div className="flex items-center gap-2">
+                        <div className={`font-medium ${light ? "text-gray-900" : "text-white"}`}>{data.companyName}</div>
+                        {data.status !== "ok" && (
+                          <span
+                            title={data.error || "QuickBooks API error"}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${
+                              light
+                                ? "bg-red-50 text-red-600 border border-red-200"
+                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                            }`}
+                          >
+                            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" /></svg>
+                            {data.status === "auth_expired" ? "Reconnect" : "Error"}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     {METRIC_COLS.map((col) => (
                       <td key={col.key} className={`py-3.5 px-4 text-right tabular-nums hidden lg:table-cell ${light ? "text-gray-700" : "text-gray-400"}`}>
@@ -350,6 +400,35 @@ export default function QuickBooks() {
                             ) : null
                           )}
                         </div>
+                        {data.status !== "ok" && (
+                          <div className={`mb-3 p-3 rounded-lg flex items-start gap-3 ${
+                            light ? "bg-red-50 border border-red-200" : "bg-red-500/5 border border-red-500/20"
+                          }`}>
+                            <svg className={`w-4 h-4 mt-0.5 flex-shrink-0 ${light ? "text-red-500" : "text-red-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-xs font-medium ${light ? "text-red-700" : "text-red-300"}`}>
+                                {data.status === "auth_expired" ? "QuickBooks reconnection required" : "QuickBooks API error"}
+                              </div>
+                              <div className={`text-[11px] mt-0.5 ${light ? "text-red-600/80" : "text-red-400/80"}`}>
+                                {data.status === "auth_expired"
+                                  ? "The refresh token has expired. Reconnect this company to restore live data."
+                                  : data.error || "Live data is temporarily unavailable."}
+                              </div>
+                            </div>
+                            <a
+                              href="/api/quickbooks/auth"
+                              className={`text-[11px] font-medium px-3 py-1.5 rounded-md transition-colors ${
+                                light
+                                  ? "bg-red-600 text-white hover:bg-red-700"
+                                  : "bg-red-500 text-white hover:bg-red-600"
+                              }`}
+                            >
+                              Reconnect
+                            </a>
+                          </div>
+                        )}
                         {/* Report links */}
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-xs text-gray-500 uppercase tracking-wider font-medium mr-1">Reports</span>
