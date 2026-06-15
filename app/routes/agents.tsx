@@ -17,10 +17,9 @@ interface Agent {
 }
 
 const MODELS = [
-  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "anthropic" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "anthropic" },
   { value: "claude-opus-4-20250514", label: "Claude Opus 4", provider: "anthropic" },
   { value: "claude-haiku-4-20250506", label: "Claude Haiku 4", provider: "anthropic" },
-  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet", provider: "anthropic" },
   { value: "gpt-4o", label: "GPT-4o", provider: "openai" },
   { value: "gpt-4o-mini", label: "GPT-4o Mini", provider: "openai" },
   { value: "gpt-4.1", label: "GPT-4.1", provider: "openai" },
