@@ -116,6 +116,19 @@ export default function ContractPDF() {
       let y = topY;
       let pageNum = 1;
 
+      // Manager (Ledger Louise) is a Nevada LLC d/b/a Burton Family Office;
+      // reconcile the party block, governing law, venue, and signatory to the
+      // Nevada operating agreement when Ledger Louise is the Manager.
+      const isLedgerLouise = String(asset.name).toLowerCase().includes("ledger louise");
+      const managerState = isLedgerLouise ? "Nevada" : asset.state || "Arizona";
+      const dba = isLedgerLouise ? " doing business as Burton Family Office" : "";
+      const officeSentence = isLedgerLouise
+        ? "Manager's principal office is 401 Ryland Street, Suite 200-A, Reno, NV 89502; its notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028."
+        : "Manager's notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028.";
+      const venue = isLedgerLouise
+        ? "the state or federal courts located in Washoe County, Nevada"
+        : `the state or federal courts located in ${managerState}`;
+
       function paintPage() {
         doc.setFillColor(...paper);
         doc.rect(0, 0, pw, ph, "F");
@@ -246,7 +259,7 @@ export default function ContractPDF() {
       y += 30;
 
       // Recitals — drop-cap opening paragraph
-      const recital = `This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} (the "Effective Date") by and between ${asset.name} ("Manager"), with offices at 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028, and ${contract.counterparty} ("Client"). Manager is engaged in the business of providing management, administrative, and advisory services to affiliated entities, and Client desires to retain Manager to provide the services described herein. In consideration of the mutual covenants set forth below, the parties agree as follows.`;
+      const recital = `This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} (the "Effective Date") by and between ${asset.name}, a ${managerState} limited liability company${dba} ("Manager"), and ${contract.counterparty} ("Client"). ${officeSentence} Manager is engaged in the business of providing management, administrative, and advisory services to affiliated entities, and Client desires to retain Manager to provide the services described herein. In consideration of the mutual covenants set forth below, the parties agree as follows.`;
 
       {
         ensure(90);
@@ -312,10 +325,9 @@ export default function ContractPDF() {
       body("5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.");
 
       kicker("Article VI · Governing Law");
-      const state = asset.state || "Arizona";
-      body(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${state}, without regard to its conflict of law provisions.`);
+      body(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${managerState}, without regard to its conflict of law provisions.`);
       gap(6);
-      body(`6.2  Any dispute arising under this Agreement shall be resolved in the state or federal courts located in Maricopa County, ${state}.`);
+      body(`6.2  Any dispute arising under this Agreement shall be resolved in ${venue}.`);
 
       kicker("Article VII · Miscellaneous");
       body("7.1  This Agreement constitutes the entire agreement between the parties and supersedes all prior agreements and understandings, whether written or oral.");
@@ -360,8 +372,15 @@ export default function ContractPDF() {
       doc.setTextColor(...ink);
       doc.text(asset.name, leftX, rowY + 18);
       doc.text(contract.counterparty, rightX, rowY + 18);
+      if (isLedgerLouise) {
+        doc.setFont("times", "italic");
+        doc.setFontSize(9);
+        doc.setTextColor(...muted);
+        doc.text("d/b/a Burton Family Office", leftX, rowY + 32);
+        doc.setTextColor(...ink);
+      }
 
-      const sigLineY = rowY + 60;
+      const sigLineY = rowY + 68;
       doc.setDrawColor(...ink);
       doc.setLineWidth(0.5);
       doc.line(leftX, sigLineY, leftX + colW - 20, sigLineY);
@@ -378,14 +397,23 @@ export default function ContractPDF() {
       doc.setFont("times", "normal");
       doc.setFontSize(9);
       doc.setTextColor(...ink);
+      // Manager side is pre-filled from the operating agreement (executed by
+      // Robert W. Burton, Manager). Client side stays blank for fill-in.
+      const managerFill = isLedgerLouise ? ["Robert W. Burton", "Manager", ""] : ["", "", ""];
       ["Name:", "Title:", "Date:"].forEach((f, i) => {
         const fyy = sigLineY + 30 + i * 16;
+        doc.setFont("times", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(...ink);
         doc.text(f, leftX, fyy);
         doc.text(f, rightX, fyy);
         doc.setDrawColor(...muted);
         doc.setLineWidth(0.4);
         doc.line(leftX + 30, fyy + 1, leftX + colW - 20, fyy + 1);
         doc.line(rightX + 30, fyy + 1, rightX + colW - 20, fyy + 1);
+        if (managerFill[i]) {
+          doc.text(managerFill[i], leftX + 34, fyy - 1);
+        }
       });
 
       doc.setTextColor(...ink);
