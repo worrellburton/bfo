@@ -446,10 +446,11 @@ export default function ProfitLoss() {
   const mutedText = light ? "text-gray-500" : "text-gray-500";
   const headingText = light ? "text-gray-900" : "";
   const btnBorder = light ? "border border-gray-200 hover:border-gray-400 text-gray-600 hover:text-gray-900" : "border border-white/10 hover:border-white/20 text-gray-500 hover:text-white";
-  const btnActive = light ? "border border-green-500 bg-green-50 text-green-700" : "border border-green-500/40 bg-green-500/10 text-green-400";
+  // Monochrome accents to match the ledger statement (guide: monochrome only)
+  const btnActive = light ? "border border-gray-900 bg-gray-900 text-white" : "border border-white/40 bg-white/15 text-white";
   const selectStyle = light
-    ? "bg-gray-100 border border-gray-300 text-gray-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500"
-    : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-500/50";
+    ? "bg-gray-100 border border-gray-300 text-gray-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-gray-900"
+    : "bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-white/40";
 
   return (
     <div className={`${pageBg} min-h-screen flex flex-col transition-colors duration-200 relative`}>
@@ -474,7 +475,7 @@ export default function ProfitLoss() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <h1 className={`text-2xl font-bold ${headingText}`}>Profit & Loss</h1>
+          <h1 className={`text-2xl font-bold ${headingText}`} style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Profit & Loss</h1>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => { if (!isPublic) toggle(); }} disabled={isPublic} className={`text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 ${btnBorder}`}>
@@ -486,7 +487,7 @@ export default function ProfitLoss() {
           </button>
           <button
             onClick={() => { setFocusMode((v) => !v); setHoveredRow(null); setHoveredCol(null); }}
-            className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${focusMode ? "bg-green-500/10 text-green-600 border border-green-500/20" : btnBorder}`}
+            className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${focusMode ? (light ? "bg-gray-900 text-white border border-gray-900" : "bg-white/15 text-white border border-white/30") : btnBorder}`}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" strokeWidth={2} /><line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" strokeWidth={2} /><line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" strokeWidth={2} /><line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth={2} /></svg>
             Focus
