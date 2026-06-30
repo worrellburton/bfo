@@ -95,6 +95,7 @@ const MSA_SERVICES = [
   "Custom Infrastructure Engineering",
   "AI Agent & Automation Development",
   "Data Engineering & Analytics",
+  "Solutions Engineering",
 ];
 
 const LEDGER_LOUISE_SUBS = [
@@ -116,20 +117,26 @@ function ServicesDropdown({
   isDark: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const unselected = MSA_SERVICES.filter((s) => !selected.includes(s));
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= selected.length) return;
+  const drop = (to: number) => {
+    if (dragIndex === null || dragIndex === to) {
+      setDragIndex(null);
+      setOverIndex(null);
+      return;
+    }
     const next = [...selected];
-    [next[i], next[j]] = [next[j], next[i]];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(to, 0, moved);
     onChange(next);
+    setDragIndex(null);
+    setOverIndex(null);
   };
   const sw = (on: boolean) =>
     `relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${on ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"}`;
   const knob = (on: boolean) =>
     `inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${on ? "translate-x-3.5" : "translate-x-0.5"}`;
-  const arrow = (disabled: boolean) =>
-    `p-0.5 rounded ${disabled ? (isDark ? "text-gray-700" : "text-gray-300") + " cursor-default" : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900") + " cursor-pointer"}`;
   return (
     <div>
       <p className={`text-[10px] uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Services Included</p>
@@ -146,15 +153,31 @@ function ServicesDropdown({
       {open && (
         <div className={`mt-2 w-full max-w-md rounded-lg border p-1 ${isDark ? "bg-white/[0.03] border-white/10" : "bg-white border-gray-200"}`}>
           {selected.map((svc, i) => (
-            <div key={svc} className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}>
-              <div className="flex flex-col leading-none">
-                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className={arrow(i === 0)} title="Move up">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                </button>
-                <button type="button" onClick={() => move(i, 1)} disabled={i === selected.length - 1} className={arrow(i === selected.length - 1)} title="Move down">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </button>
-              </div>
+            <div
+              key={svc}
+              draggable
+              onDragStart={() => setDragIndex(i)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (dragIndex !== null && overIndex !== i) setOverIndex(i);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                drop(i);
+              }}
+              onDragEnd={() => {
+                setDragIndex(null);
+                setOverIndex(null);
+              }}
+              className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab active:cursor-grabbing ${dragIndex === i ? "opacity-40" : ""} ${overIndex === i && dragIndex !== null && dragIndex !== i ? (isDark ? "bg-white/10" : "bg-blue-50") : isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
+            >
+              <span className={`shrink-0 ${isDark ? "text-gray-500" : "text-gray-400"}`} title="Drag to reorder">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" />
+                  <circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" />
+                  <circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" />
+                </svg>
+              </span>
               <span className="flex-1 text-xs">{svc}</span>
               <button type="button" onClick={() => onChange(selected.filter((s) => s !== svc))} className={sw(true)} title="Remove from contract">
                 <span className={knob(true)} />
