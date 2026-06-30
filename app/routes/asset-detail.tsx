@@ -79,6 +79,7 @@ interface OperatingContract {
   effectiveDate: string;
   term: string;
   status: "draft" | "active" | "terminated";
+  referralCredit?: boolean;
   createdAt: number;
 }
 
@@ -134,6 +135,7 @@ export default function AssetDetail() {
     term: "Annual, auto-renewing",
     status: "draft" as "draft" | "active" | "terminated",
     services: [...MSA_SERVICES] as string[],
+    referralCredit: false,
   });
 
   // Doc form
@@ -169,6 +171,7 @@ export default function AssetDetail() {
     term: "",
     status: "draft" as "draft" | "active" | "terminated",
     services: [...MSA_SERVICES] as string[],
+    referralCredit: false,
   });
 
   useEffect(() => {
@@ -643,6 +646,7 @@ export default function AssetDetail() {
       effectiveDate: contractForm.effectiveDate,
       term: contractForm.term.trim() || "Annual, auto-renewing",
       status: contractForm.status,
+      referralCredit: contractForm.referralCredit,
       createdAt: Date.now(),
     });
     setContractForm({
@@ -653,6 +657,7 @@ export default function AssetDetail() {
       term: "Annual, auto-renewing",
       status: "draft",
       services: [...MSA_SERVICES],
+      referralCredit: false,
     });
     setAddingContract(false);
   }
@@ -679,6 +684,7 @@ export default function AssetDetail() {
       term: c.term,
       status: c.status,
       services: Array.isArray(c.services) && c.services.length > 0 ? [...c.services] : [...MSA_SERVICES],
+      referralCredit: c.referralCredit ?? false,
     });
     setAddingContract(false);
   }
@@ -697,6 +703,7 @@ export default function AssetDetail() {
       term: editContractForm.term.trim() || "Annual, auto-renewing",
       status: editContractForm.status,
       services,
+      referralCredit: editContractForm.referralCredit,
     });
     setEditingContractId(null);
   }
@@ -1443,6 +1450,23 @@ export default function AssetDetail() {
                                 );
                               })}
                             </div>
+                            <div className="mt-3 flex items-start gap-2.5">
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={editContractForm.referralCredit}
+                                onClick={() => setEditContractForm({ ...editContractForm, referralCredit: !editContractForm.referralCredit })}
+                                className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                                  editContractForm.referralCredit ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"
+                                }`}
+                              >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${editContractForm.referralCredit ? "translate-x-4" : "translate-x-0.5"}`} />
+                              </button>
+                              <div>
+                                <p className="text-[11px] font-medium">Referral credit</p>
+                                <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>Credit referral fees against this client's retainer instead of paying cash. Adds a clause to the contract PDF.</p>
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       </Fragment>
@@ -1614,6 +1638,23 @@ export default function AssetDetail() {
                                 </button>
                               );
                             })}
+                          </div>
+                          <div className="mt-3 flex items-start gap-2.5">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={contractForm.referralCredit}
+                              onClick={() => setContractForm({ ...contractForm, referralCredit: !contractForm.referralCredit })}
+                              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                                contractForm.referralCredit ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"
+                              }`}
+                            >
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${contractForm.referralCredit ? "translate-x-4" : "translate-x-0.5"}`} />
+                            </button>
+                            <div>
+                              <p className="text-[11px] font-medium">Referral credit</p>
+                              <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>Credit referral fees against this client's retainer instead of paying cash. Adds a clause to the contract PDF.</p>
+                            </div>
                           </div>
                         </td>
                       </tr>

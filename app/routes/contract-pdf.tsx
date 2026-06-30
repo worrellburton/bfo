@@ -21,6 +21,7 @@ interface OperatingContract {
   effectiveDate: string;
   term: string;
   status: string;
+  referralCredit?: boolean;
 }
 
 interface SignatureRequest {
@@ -101,270 +102,295 @@ export default function ContractPDF() {
       const doc = new jsPDF({ unit: "pt", format: "letter" });
       const pw = doc.internal.pageSize.getWidth();
       const ph = doc.internal.pageSize.getHeight();
-      const ml = 72;
-      const mr = pw - 72;
+      const ml = 78;
+      const mr = pw - 78;
       const tw = mr - ml;
-      let y = 120; // leave room for minimal header
 
-      // Monochrome — Apple/Tesla style
-      const ink: [number, number, number] = [0, 0, 0];
-      const muted: [number, number, number] = [140, 140, 140];
+      // Editorial palette — warm ink on ivory
+      const ink: [number, number, number] = [34, 30, 26];
+      const muted: [number, number, number] = [148, 140, 128];
+      const paper: [number, number, number] = [250, 248, 242];
 
-      function drawBrandHeader() {
-        // Clean white background — just a tracked wordmark + thin rule
+      const topY = 116;
+      const bottomLimit = ph - 84;
+      let y = topY;
+      let pageNum = 1;
+
+      function paintPage() {
+        doc.setFillColor(...paper);
+        doc.rect(0, 0, pw, ph, "F");
+      }
+
+      function header() {
         doc.setTextColor(...ink);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(18);
-        doc.setCharSpace(6);
-        doc.text("B F O", ml, 54);
-        doc.setCharSpace(0);
-
-        // Tiny uppercase subtitle under the mark
+        doc.setFont("times", "bold");
+        doc.setFontSize(13);
+        doc.text("BFO", ml, 60);
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.5);
-        doc.setCharSpace(1.6);
-        doc.setTextColor(...muted);
-        doc.text("BURTON  FAMILY  OFFICE", ml, 66);
-        doc.setCharSpace(0);
-
-        // Right-aligned document meta (tiny uppercase)
         doc.setFontSize(7);
-        doc.setCharSpace(1.2);
-        doc.text("MANAGEMENT SERVICES AGREEMENT", mr, 54, { align: "right" });
-        doc.setTextColor(...ink);
-        doc.text(`EFFECTIVE  ${String(contract.effectiveDate).toUpperCase()}`, mr, 66, { align: "right" });
+        doc.setCharSpace(2);
+        doc.setTextColor(...muted);
+        doc.text("MANAGEMENT SERVICES AGREEMENT", ml + 32, 60);
+        doc.text(String(pageNum).padStart(2, "0"), mr, 60, { align: "right" });
         doc.setCharSpace(0);
-
-        // Hairline rule
         doc.setDrawColor(...ink);
-        doc.setLineWidth(0.25);
-        doc.line(ml, 80, mr, 80);
-
+        doc.setLineWidth(0.5);
+        doc.line(ml, 74, mr, 74);
         doc.setTextColor(...ink);
       }
 
-      function drawBrandFooter(pageNum: number) {
-        const fy = ph - 40;
-        // Hairline rule
+      function footer() {
+        const fy = ph - 50;
         doc.setDrawColor(...ink);
-        doc.setLineWidth(0.25);
-        doc.line(ml, fy - 14, mr, fy - 14);
-
+        doc.setLineWidth(0.5);
+        doc.line(ml, fy, mr, fy);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(6.5);
         doc.setCharSpace(1.4);
         doc.setTextColor(...muted);
-        doc.text("BFO   BURTON FAMILY OFFICE", ml, fy);
-        doc.text(`${String(asset.name).toUpperCase()}   /   ${String(contract.counterparty).toUpperCase()}`, pw / 2, fy, { align: "center" });
-        doc.text(`PAGE  ${String(pageNum).padStart(2, "0")}`, mr, fy, { align: "right" });
+        doc.text(`${String(asset.name).toUpperCase()}  →  ${String(contract.counterparty).toUpperCase()}`, ml, fy + 14);
+        doc.text("BURTON FAMILY OFFICE", mr, fy + 14, { align: "right" });
         doc.setCharSpace(0);
         doc.setTextColor(...ink);
       }
 
-      drawBrandHeader();
-      let pageNum = 1;
-      drawBrandFooter(pageNum);
+      function newPage() {
+        doc.addPage();
+        pageNum += 1;
+        paintPage();
+        header();
+        footer();
+        y = topY;
+      }
 
-      function addText(text: string, opts?: { bold?: boolean; size?: number; center?: boolean; indent?: number; color?: [number, number, number] }) {
-        const size = opts?.size || 10;
+      function ensure(space: number) {
+        if (y + space > bottomLimit) newPage();
+      }
+
+      // Tracked uppercase section kicker with a hairline rule beneath
+      function kicker(text: string) {
+        ensure(48);
+        y += 10;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setCharSpace(1.6);
+        doc.setTextColor(...ink);
+        doc.text(text.toUpperCase(), ml, y);
+        doc.setCharSpace(0);
+        y += 9;
+        doc.setDrawColor(...ink);
+        doc.setLineWidth(0.5);
+        doc.line(ml, y, mr, y);
+        y += 18;
+      }
+
+      // Serif body paragraph
+      function body(text: string, opts?: { indent?: number; size?: number }) {
+        const size = opts?.size ?? 10.5;
+        const indent = opts?.indent ?? 0;
+        const lead = size * 1.6;
+        doc.setFont("times", "normal");
         doc.setFontSize(size);
-        doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
-        if (opts?.color) doc.setTextColor(...opts.color); else doc.setTextColor(0, 0, 0);
-        const x = opts?.center ? pw / 2 : ml + (opts?.indent || 0);
-        const align = opts?.center ? "center" : "left";
-        const maxW = tw - (opts?.indent || 0);
-        const lines = doc.splitTextToSize(text, maxW);
+        doc.setTextColor(...ink);
+        const lines = doc.splitTextToSize(text, tw - indent);
         for (const line of lines) {
-          if (y > ph - 90) {
-            doc.addPage();
-            pageNum += 1;
-            drawBrandHeader();
-            drawBrandFooter(pageNum);
-            y = 120;
-          }
-          doc.text(line, x, y, { align });
-          y += size * 1.4;
+          ensure(lead);
+          doc.text(line, ml + indent, y);
+          y += lead;
         }
-        doc.setTextColor(0, 0, 0);
       }
 
       function gap(n = 10) { y += n; }
 
-      // Title — tracked, monochrome
-      doc.setTextColor(...ink);
+      // ── Page 1 ───────────────────────────────────────────────
+      paintPage();
+      header();
+      footer();
+
+      // Title block — tracked kicker + serif display title
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.setCharSpace(3.5);
-      doc.text("MANAGEMENT SERVICES AGREEMENT", pw / 2, y, { align: "center" });
+      doc.setFontSize(8);
+      doc.setCharSpace(2);
+      doc.setTextColor(...muted);
+      doc.text("SERVICE AGREEMENT", ml, y);
+      doc.setCharSpace(0);
+      y += 32;
+
+      doc.setFont("times", "bold");
+      doc.setFontSize(30);
+      doc.setTextColor(...ink);
+      doc.text("Management Services", ml, y);
+      y += 32;
+      doc.text("Agreement", ml, y);
+      y += 26;
+
+      doc.setFont("times", "italic");
+      doc.setFontSize(12);
+      doc.setTextColor(...muted);
+      doc.text(`${asset.name}  &  ${contract.counterparty}`, ml, y);
+      y += 16;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setCharSpace(1.3);
+      doc.text(
+        `EFFECTIVE ${String(contract.effectiveDate).toUpperCase()}     ${String(contract.fee).toUpperCase()} / ${String(contract.frequency).toUpperCase()}     ${String(contract.term).toUpperCase()}`,
+        ml, y
+      );
       doc.setCharSpace(0);
       y += 14;
-      // Thin hairline rule under title
       doc.setDrawColor(...ink);
-      doc.setLineWidth(0.4);
-      doc.line(pw / 2 - 60, y, pw / 2 + 60, y);
-      doc.setLineWidth(0.2);
-      gap(24);
+      doc.setLineWidth(1.4);
+      doc.line(ml, y, mr, y);
+      doc.setLineWidth(0.5);
+      y += 30;
 
-      // Preamble
-      addText(`This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} ("Effective Date"),`);
-      gap();
-      addText("BY AND BETWEEN:", { bold: true });
-      gap(5);
-      addText(`${asset.name} ("Manager")`);
-      addText("11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", { indent: 20 });
-      gap(5);
-      addText("AND", { center: true });
-      gap(5);
-      addText(`${contract.counterparty} ("Client")`);
-      gap(15);
+      // Recitals — drop-cap opening paragraph
+      const recital = `This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} (the "Effective Date") by and between ${asset.name} ("Manager"), with offices at 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028, and ${contract.counterparty} ("Client"). Manager is engaged in the business of providing management, administrative, and advisory services to affiliated entities, and Client desires to retain Manager to provide the services described herein. In consideration of the mutual covenants set forth below, the parties agree as follows.`;
 
-      // Recitals
-      addText("RECITALS", { bold: true, size: 12 });
-      gap(5);
-      addText("WHEREAS, Manager is engaged in the business of providing management, administrative, and advisory services to affiliated entities; and");
-      gap(5);
-      addText("WHEREAS, Client desires to retain Manager to provide certain management services as described herein; and");
-      gap(5);
-      addText("NOW, THEREFORE, in consideration of the mutual covenants and agreements set forth herein, and for other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the parties agree as follows:");
-      gap(15);
-
-      // Article I
-      addText("ARTICLE I — SCOPE OF SERVICES", { bold: true, size: 12 });
-      gap(5);
-      addText("1.1  Manager shall provide the following services to Client:");
-      gap(5);
-      contract.services.forEach((s: string, i: number) => {
-        addText(`     (${String.fromCharCode(97 + i)})  ${s}`, { indent: 20 });
-      });
-      gap(5);
-      addText("1.2  Manager shall perform the Services in a professional and workmanlike manner consistent with generally accepted industry standards.");
-      gap(15);
-
-      // Article II
-      addText("ARTICLE II — COMPENSATION", { bold: true, size: 12 });
-      gap(5);
-      addText(`2.1  Client shall pay Manager a management fee of ${contract.fee} per ${contract.frequency.toLowerCase()} ("Management Fee") for services rendered under this Agreement.`);
-      gap(5);
-      addText("2.2  Payment shall be due within thirty (30) days following the end of each billing period. Late payments shall accrue interest at the rate of 1.5% per month.");
-      gap(5);
-      addText("2.3  Manager shall be entitled to reimbursement for all reasonable out-of-pocket expenses incurred in connection with the performance of the Services, subject to prior written approval by Client for any single expense exceeding $500.");
-      gap(15);
-
-      // Article III
-      addText("ARTICLE III — TERM AND TERMINATION", { bold: true, size: 12 });
-      gap(5);
-      addText(`3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year ("Initial Term"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term.`);
-      gap(5);
-      addText("3.2  Either party may terminate this Agreement for cause upon thirty (30) days' written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.");
-      gap(5);
-      addText("3.3  Upon termination, Manager shall deliver to Client all documents, records, and materials relating to Client's business within fifteen (15) business days.");
-      gap(15);
-
-      // Article IV
-      addText("ARTICLE IV — CONFIDENTIALITY", { bold: true, size: 12 });
-      gap(5);
-      addText("4.1  Each party acknowledges that in the course of performing its obligations under this Agreement, it may receive or have access to confidential and proprietary information of the other party. Each party agrees to maintain the confidentiality of such information and not to disclose it to any third party without the prior written consent of the disclosing party.");
-      gap(15);
-
-      // Article V
-      addText("ARTICLE V — INDEMNIFICATION", { bold: true, size: 12 });
-      gap(5);
-      addText("5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.");
-      gap(15);
-
-      // Article VI
-      addText("ARTICLE VI — GOVERNING LAW", { bold: true, size: 12 });
-      gap(5);
-      const state = asset.state || "Arizona";
-      addText(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${state}, without regard to its conflict of law provisions.`);
-      gap(5);
-      addText(`6.2  Any dispute arising under this Agreement shall be resolved in the state or federal courts located in Maricopa County, ${state}.`);
-      gap(15);
-
-      // Article VII
-      addText("ARTICLE VII — MISCELLANEOUS", { bold: true, size: 12 });
-      gap(5);
-      addText("7.1  This Agreement constitutes the entire agreement between the parties and supersedes all prior agreements and understandings, whether written or oral.");
-      gap(5);
-      addText("7.2  This Agreement may not be amended or modified except by a written instrument signed by both parties.");
-      gap(5);
-      addText("7.3  Neither party may assign this Agreement without the prior written consent of the other party.");
-      gap(25);
-
-      // Signature block — always keep on one page, well clear of footer
-      const sigBlockHeight = 180;
-      if (y + sigBlockHeight > ph - 90) {
-        doc.addPage();
-        pageNum += 1;
-        drawBrandHeader();
-        drawBrandFooter(pageNum);
-        y = 120;
+      {
+        ensure(90);
+        const cap = recital.charAt(0);
+        const rest = recital.slice(1).replace(/^\s+/, "");
+        doc.setFont("times", "bold");
+        doc.setFontSize(38);
+        doc.setTextColor(...ink);
+        const capW = doc.getTextWidth(cap) + 8;
+        doc.text(cap, ml, y + 27);
+        doc.setFont("times", "normal");
+        doc.setFontSize(10.5);
+        const lead = 10.5 * 1.6;
+        const narrow = doc.splitTextToSize(rest, tw - capW);
+        const head = narrow.slice(0, 3);
+        for (let i = 0; i < head.length; i++) {
+          doc.text(head[i], ml + capW, y + (i + 1) * lead);
+        }
+        let yy = y + Math.max(head.length, 1) * lead;
+        const leftover = narrow.slice(3).join(" ");
+        if (leftover) {
+          const wide = doc.splitTextToSize(leftover, tw);
+          for (const line of wide) {
+            yy += lead;
+            doc.text(line, ml, yy);
+          }
+        }
+        y = yy + 16;
       }
 
-      addText("IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.", { bold: true });
-      gap(30);
+      // ── Articles ─────────────────────────────────────────────
+      kicker("Article I · Scope of Services");
+      body("1.1  Manager shall provide the following services to Client:");
+      gap(6);
+      contract.services.forEach((s: string) => {
+        body(`—   ${s}`, { indent: 16 });
+      });
+      gap(6);
+      body("1.2  Manager shall perform the Services in a professional and workmanlike manner consistent with generally accepted industry standards.");
 
-      // Two-column signature block — labels above, lines below, clean monochrome
+      kicker("Article II · Compensation");
+      body(`2.1  Client shall pay Manager a management fee of ${contract.fee} per ${contract.frequency.toLowerCase()} (the "Management Fee") for services rendered under this Agreement.`);
+      gap(6);
+      body("2.2  Payment shall be due within thirty (30) days following the end of each billing period. Late payments shall accrue interest at the rate of 1.5% per month.");
+      gap(6);
+      body("2.3  Manager shall be entitled to reimbursement for all reasonable out-of-pocket expenses incurred in connection with the performance of the Services, subject to prior written approval by Client for any single expense exceeding $500.");
+      if (contract.referralCredit) {
+        gap(6);
+        body("2.4  Referral Credit. If Client refers a prospective client to Manager and such referral results in an executed engagement between Manager and the referred party, Manager shall credit the referral fee otherwise payable in respect of that referral against Client’s Management Fee, in lieu of any cash payment. The credit shall be applied to successive Management Fee invoices until the full amount of the referral fee has been exhausted. By way of illustration, if Client’s Management Fee is $5,000 per month and a qualifying referral generates a $10,000 referral fee, Manager shall waive Client’s Management Fee for the period(s) necessary to apply the full $10,000 credit (e.g., two (2) months), after which the Management Fee shall resume.");
+      }
+
+      kicker("Article III · Term and Termination");
+      body("3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term.");
+      gap(6);
+      body("3.2  Either party may terminate this Agreement for cause upon thirty (30) days’ written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.");
+      gap(6);
+      body("3.3  Upon termination, Manager shall deliver to Client all documents, records, and materials relating to Client’s business within fifteen (15) business days.");
+
+      kicker("Article IV · Confidentiality");
+      body("4.1  Each party acknowledges that in the course of performing its obligations under this Agreement, it may receive or have access to confidential and proprietary information of the other party. Each party agrees to maintain the confidentiality of such information and not to disclose it to any third party without the prior written consent of the disclosing party.");
+
+      kicker("Article V · Indemnification");
+      body("5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.");
+
+      kicker("Article VI · Governing Law");
+      const state = asset.state || "Arizona";
+      body(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${state}, without regard to its conflict of law provisions.`);
+      gap(6);
+      body(`6.2  Any dispute arising under this Agreement shall be resolved in the state or federal courts located in Maricopa County, ${state}.`);
+
+      kicker("Article VII · Miscellaneous");
+      body("7.1  This Agreement constitutes the entire agreement between the parties and supersedes all prior agreements and understandings, whether written or oral.");
+      gap(6);
+      body("7.2  This Agreement may not be amended or modified except by a written instrument signed by both parties.");
+      gap(6);
+      body("7.3  Neither party may assign this Agreement without the prior written consent of the other party.");
+
+      // ── Signature block ──────────────────────────────────────
+      ensure(190);
+      gap(24);
+      doc.setFont("times", "italic");
+      doc.setFontSize(10.5);
+      doc.setTextColor(...ink);
+      {
+        const lines = doc.splitTextToSize(
+          "IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.",
+          tw
+        );
+        for (const line of lines) {
+          doc.text(line, ml, y);
+          y += 10.5 * 1.6;
+        }
+      }
+      gap(26);
+
       const colW = 220;
       const leftX = ml;
       const rightX = mr - colW;
       const rowY = y;
 
-      // Column headings — tracked uppercase tiny
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7);
       doc.setCharSpace(1.4);
-      doc.setTextColor(...ink);
+      doc.setTextColor(...muted);
       doc.text("MANAGER", leftX, rowY);
       doc.text("CLIENT", rightX, rowY);
       doc.setCharSpace(0);
 
-      // Entity names — larger, bold
-      doc.setFontSize(11);
+      doc.setFont("times", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(...ink);
       doc.text(asset.name, leftX, rowY + 18);
       doc.text(contract.counterparty, rightX, rowY + 18);
 
-      // Signature lines
-      const sigLineY = rowY + 64;
+      const sigLineY = rowY + 60;
       doc.setDrawColor(...ink);
-      doc.setLineWidth(0.4);
+      doc.setLineWidth(0.5);
       doc.line(leftX, sigLineY, leftX + colW - 20, sigLineY);
       doc.line(rightX, sigLineY, rightX + colW - 20, sigLineY);
 
-      // Labels below the signature lines
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7);
       doc.setCharSpace(1.4);
       doc.setTextColor(...muted);
-      doc.text("AUTHORIZED SIGNATURE", leftX, sigLineY + 10);
-      doc.text("AUTHORIZED SIGNATURE", rightX, sigLineY + 10);
+      doc.text("AUTHORIZED SIGNATURE", leftX, sigLineY + 11);
+      doc.text("AUTHORIZED SIGNATURE", rightX, sigLineY + 11);
       doc.setCharSpace(0);
+
+      doc.setFont("times", "normal");
+      doc.setFontSize(9);
       doc.setTextColor(...ink);
+      ["Name:", "Title:", "Date:"].forEach((f, i) => {
+        const fyy = sigLineY + 30 + i * 16;
+        doc.text(f, leftX, fyy);
+        doc.text(f, rightX, fyy);
+        doc.setDrawColor(...muted);
+        doc.setLineWidth(0.4);
+        doc.line(leftX + 30, fyy + 1, leftX + colW - 20, fyy + 1);
+        doc.line(rightX + 30, fyy + 1, rightX + colW - 20, fyy + 1);
+      });
 
-      // Name print under
-      doc.setFontSize(8);
-      doc.text("Name:", leftX, sigLineY + 26);
-      doc.text("Name:", rightX, sigLineY + 26);
-      doc.setDrawColor(...muted);
-      doc.setLineWidth(0.25);
-      doc.line(leftX + 28, sigLineY + 27, leftX + colW - 20, sigLineY + 27);
-      doc.line(rightX + 28, sigLineY + 27, rightX + colW - 20, sigLineY + 27);
-
-      doc.text("Title:", leftX, sigLineY + 40);
-      doc.text("Title:", rightX, sigLineY + 40);
-      doc.line(leftX + 28, sigLineY + 41, leftX + colW - 20, sigLineY + 41);
-      doc.line(rightX + 28, sigLineY + 41, rightX + colW - 20, sigLineY + 41);
-
-      doc.text("Date:", leftX, sigLineY + 54);
-      doc.text("Date:", rightX, sigLineY + 54);
-      doc.line(leftX + 28, sigLineY + 55, leftX + colW - 20, sigLineY + 55);
-      doc.line(rightX + 28, sigLineY + 55, rightX + colW - 20, sigLineY + 55);
-
-      // Reset styles
+      doc.setTextColor(...ink);
       doc.setDrawColor(...ink);
-      doc.setLineWidth(0.2);
-      doc.setTextColor(...ink);
-      y = sigLineY + 70;
+      doc.setLineWidth(0.5);
 
       // Convert to blob URL for embedding
       const blob = doc.output("blob");
