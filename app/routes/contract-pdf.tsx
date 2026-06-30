@@ -22,6 +22,7 @@ interface OperatingContract {
   term: string;
   status: string;
   referralCredit?: boolean;
+  letterhead?: "bfo" | "robert";
 }
 
 interface SignatureRequest {
@@ -91,6 +92,11 @@ export default function ContractPDF() {
       unsub3?.();
     };
   }, [id, contractId]);
+
+  // Seed the letterhead toggle from the contract's saved choice
+  useEffect(() => {
+    if (contract) setBrand(contract.letterhead ?? "bfo");
+  }, [contract?.letterhead]);
 
   // Generate PDF once data is loaded
   useEffect(() => {

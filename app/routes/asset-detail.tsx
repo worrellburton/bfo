@@ -80,6 +80,7 @@ interface OperatingContract {
   term: string;
   status: "draft" | "active" | "terminated";
   referralCredit?: boolean;
+  letterhead?: "bfo" | "robert";
   createdAt: number;
 }
 
@@ -237,6 +238,7 @@ export default function AssetDetail() {
     status: "draft" as "draft" | "active" | "terminated",
     services: [...MSA_SERVICES] as string[],
     referralCredit: false,
+    letterhead: "bfo" as "bfo" | "robert",
   });
 
   // Doc form
@@ -273,6 +275,7 @@ export default function AssetDetail() {
     status: "draft" as "draft" | "active" | "terminated",
     services: [...MSA_SERVICES] as string[],
     referralCredit: false,
+    letterhead: "bfo" as "bfo" | "robert",
   });
 
   useEffect(() => {
@@ -748,6 +751,7 @@ export default function AssetDetail() {
       term: contractForm.term.trim() || "Annual, auto-renewing",
       status: contractForm.status,
       referralCredit: contractForm.referralCredit,
+      letterhead: contractForm.letterhead,
       createdAt: Date.now(),
     });
     setContractForm({
@@ -759,6 +763,7 @@ export default function AssetDetail() {
       status: "draft",
       services: [...MSA_SERVICES],
       referralCredit: false,
+      letterhead: "bfo",
     });
     setAddingContract(false);
   }
@@ -786,6 +791,7 @@ export default function AssetDetail() {
       status: c.status,
       services: Array.isArray(c.services) && c.services.length > 0 ? [...c.services] : [...MSA_SERVICES],
       referralCredit: c.referralCredit ?? false,
+      letterhead: c.letterhead ?? "bfo",
     });
     setAddingContract(false);
   }
@@ -805,6 +811,7 @@ export default function AssetDetail() {
       status: editContractForm.status,
       services,
       referralCredit: editContractForm.referralCredit,
+      letterhead: editContractForm.letterhead,
     });
     setEditingContractId(null);
   }
@@ -1507,7 +1514,10 @@ export default function AssetDetail() {
                                   >
                                     <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isAuto ? "translate-x-3.5" : "translate-x-0.5"}`} />
                                   </button>
-                                  <span className="text-[11px] whitespace-nowrap">{isAuto ? "Auto-renew" : "Fixed term"}</span>
+                                  <div className="leading-tight">
+                                    <p className="text-[11px] font-medium">{isAuto ? "Annual, auto-renewing" : "Annual, fixed term"}</p>
+                                    <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{isAuto ? "Renews yearly unless either party cancels 30 days prior." : "Ends after one year; renewal requires both parties."}</p>
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -1563,6 +1573,23 @@ export default function AssetDetail() {
                               <div>
                                 <p className="text-[11px] font-medium">Referral credit</p>
                                 <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>Credit referral fees against this client's retainer instead of paying cash. Adds a clause to the contract PDF.</p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex items-start gap-2.5">
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={editContractForm.letterhead === "robert"}
+                                onClick={() => setEditContractForm({ ...editContractForm, letterhead: editContractForm.letterhead === "robert" ? "bfo" : "robert" })}
+                                className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                                  editContractForm.letterhead === "robert" ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"
+                                }`}
+                              >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${editContractForm.letterhead === "robert" ? "translate-x-4" : "translate-x-0.5"}`} />
+                              </button>
+                              <div>
+                                <p className="text-[11px] font-medium">Letterhead: {editContractForm.letterhead === "robert" ? "Robert Burton" : "BFO"}</p>
+                                <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>Switches the contract masthead between BFO and Robert Burton.</p>
                               </div>
                             </div>
                           </td>
@@ -1692,7 +1719,10 @@ export default function AssetDetail() {
                                 >
                                   <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isAuto ? "translate-x-3.5" : "translate-x-0.5"}`} />
                                 </button>
-                                <span className="text-[11px] whitespace-nowrap">{isAuto ? "Auto-renew" : "Fixed term"}</span>
+                                <div className="leading-tight">
+                                  <p className="text-[11px] font-medium">{isAuto ? "Annual, auto-renewing" : "Annual, fixed term"}</p>
+                                  <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{isAuto ? "Renews yearly unless either party cancels 30 days prior." : "Ends after one year; renewal requires both parties."}</p>
+                                </div>
                               </div>
                             );
                           })()}
@@ -1748,6 +1778,23 @@ export default function AssetDetail() {
                             <div>
                               <p className="text-[11px] font-medium">Referral credit</p>
                               <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>Credit referral fees against this client's retainer instead of paying cash. Adds a clause to the contract PDF.</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex items-start gap-2.5">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={contractForm.letterhead === "robert"}
+                              onClick={() => setContractForm({ ...contractForm, letterhead: contractForm.letterhead === "robert" ? "bfo" : "robert" })}
+                              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                                contractForm.letterhead === "robert" ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"
+                              }`}
+                            >
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${contractForm.letterhead === "robert" ? "translate-x-4" : "translate-x-0.5"}`} />
+                            </button>
+                            <div>
+                              <p className="text-[11px] font-medium">Letterhead: {contractForm.letterhead === "robert" ? "Robert Burton" : "BFO"}</p>
+                              <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>Switches the contract masthead between BFO and Robert Burton.</p>
                             </div>
                           </div>
                         </td>
