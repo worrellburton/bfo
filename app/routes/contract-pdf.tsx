@@ -105,6 +105,13 @@ export default function ContractPDF() {
     (async () => {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "pt", format: "letter" });
+      // Client-ready document title — shown in the PDF viewer and used by
+      // modern browsers as the suggested filename on save.
+      doc.setProperties({
+        title: `Management Services Agreement - ${contract.counterparty}`,
+        subject: "Management Services Agreement",
+        author: "Burton Family Office",
+      });
       const pw = doc.internal.pageSize.getWidth();
       const ph = doc.internal.pageSize.getHeight();
       const ml = 78;
@@ -312,7 +319,15 @@ export default function ContractPDF() {
       kicker("Article I · Scope of Services");
       body("1.1  Manager shall provide the following services to Client:");
       gap(6);
-      contract.services.forEach((s: string) => {
+      const SERVICE_ALIASES: Record<string, string> = {
+        "AI & Technology Management": "AI, Automation & Technology Management",
+        "AI Agent & Automation Development": "AI, Automation & Technology Management",
+      };
+      const seenSvc = new Set<string>();
+      const services = (contract.services || [])
+        .map((s) => SERVICE_ALIASES[s] || s)
+        .filter((s) => (seenSvc.has(s) ? false : (seenSvc.add(s), true)));
+      services.forEach((s: string) => {
         body(`—   ${s}`, { indent: 16 });
       });
       gap(6);
@@ -461,7 +476,10 @@ export default function ContractPDF() {
     if (!pdfUrl || !asset || !contract) return;
     const a = document.createElement("a");
     a.href = pdfUrl;
-    a.download = `MSA_${asset.name}_${contract.counterparty}.pdf`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    a.download = `Management Services Agreement - ${contract.counterparty}.pdf`
+      .replace(/[^a-zA-Z0-9 .\-&]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     a.click();
   }
 

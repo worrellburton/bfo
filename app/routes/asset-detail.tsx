@@ -86,7 +86,7 @@ interface OperatingContract {
 
 const MSA_SERVICES = [
   "Financial Management & Oversight",
-  "AI & Technology Management",
+  "AI, Automation & Technology Management",
   "SEO & Digital Marketing",
   "Bookkeeping & Accounting",
   "Tax Coordination & Planning",
@@ -94,7 +94,6 @@ const MSA_SERVICES = [
   "Compliance & Regulatory Oversight",
   "Strategic Planning & Advisory",
   "Custom Infrastructure Engineering",
-  "AI Agent & Automation Development",
   "Data Engineering & Analytics",
   "Solutions Engineering",
   "Fractional CFO",
@@ -107,6 +106,20 @@ const LEDGER_LOUISE_SUBS = [
   "Ledger Burton, LLC",
   "Worrell Burton, LLC",
 ];
+
+// Older contracts stored two separate AI services that are now one line.
+const SERVICE_ALIASES: Record<string, string> = {
+  "AI & Technology Management": "AI, Automation & Technology Management",
+  "AI Agent & Automation Development": "AI, Automation & Technology Management",
+};
+function normalizeServices(list: string[]): string[] {
+  const out: string[] = [];
+  for (const s of list) {
+    const mapped = SERVICE_ALIASES[s] || s;
+    if (!out.includes(mapped)) out.push(mapped);
+  }
+  return out;
+}
 
 // Services Included: dropdown with a per-service toggle, plus a reorderable
 // selected list — the order here is the order services appear in the contract PDF.
@@ -791,7 +804,7 @@ export default function AssetDetail() {
       effectiveDate: c.effectiveDate,
       term: c.term,
       status: c.status,
-      services: Array.isArray(c.services) && c.services.length > 0 ? [...c.services] : [...MSA_SERVICES],
+      services: normalizeServices(Array.isArray(c.services) && c.services.length > 0 ? c.services : MSA_SERVICES),
       referralCredit: c.referralCredit ?? false,
       letterhead: c.letterhead ?? "bfo",
     });
