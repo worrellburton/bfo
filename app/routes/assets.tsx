@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useTheme } from "../theme";
-import { INITIAL_ENTITIES } from "./estate-map";
+import EstateMap, { INITIAL_ENTITIES } from "./estate-map";
 
 export function meta() {
   return [{ title: "BFO - Assets" }];
@@ -34,10 +34,10 @@ export default function Assets() {
   const [type, setType] = useState<"LLC" | "C-Corp">("LLC");
   const [state, setState] = useState("");
   const [ein, setEin] = useState("");
-  const [view, setView] = useState<"list" | "table">("list");
+  const [view, setView] = useState<"list" | "table" | "map">("list");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // Ownership hierarchy from estate map
   const OWNERSHIP_MAP: Record<string, string> = {};
@@ -272,6 +272,7 @@ export default function Assets() {
     const result: { asset: Asset; depth: number }[] = [];
     const roots = items.filter((a) => !a.ownerId || !items.find((p) => p.id === a.ownerId));
     const children = (parentId: string, depth: number) => {
+      if (collapsed.has(parentId)) return;
       const kids = items.filter((a) => a.ownerId === parentId);
       kids.sort((a, b) => a.name.localeCompare(b.name));
       for (const kid of kids) {
@@ -349,6 +350,17 @@ export default function Assets() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
               </svg>
             </button>
+            <button
+              onClick={() => setView("map")}
+              className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
+                view === "map" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
+              }`}
+              title="Map view"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+            </button>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -396,7 +408,9 @@ export default function Assets() {
         </form>
       )}
 
-      {loading ? (
+      {view === "map" ? (
+        <EstateMap embedded />
+      ) : loading ? (
         <p className="text-gray-500">Loading...</p>
       ) : assets.length === 0 ? (
         <p className="text-gray-500">No entities yet. Create one to get started.</p>
@@ -428,7 +442,7 @@ export default function Assets() {
               <tbody>
                 {treeRows.map(({ asset, depth }) => {
                   const hasChildren = assets.some((a) => a.ownerId === asset.id);
-                  const isExpanded = expandedId === asset.id;
+                  const isExpanded = !collapsed.has(asset.id);
                   return (
                     <tr
                       key={asset.id}
@@ -439,7 +453,14 @@ export default function Assets() {
                         <div className="flex items-center" style={{ paddingLeft: `${depth * 20}px` }}>
                           {hasChildren && (
                             <button
-                              onClick={() => setExpandedId(isExpanded ? null : asset.id)}
+                              onClick={() =>
+                                setCollapsed((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(asset.id)) next.delete(asset.id);
+                                  else next.add(asset.id);
+                                  return next;
+                                })
+                              }
                               className={`mr-1.5 p-0.5 rounded cursor-pointer ${isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"}`}
                             >
                               <svg className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

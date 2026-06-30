@@ -51,7 +51,7 @@ export const INITIAL_ENTITIES: Entity[] = [
 const NODE_W = 240;
 const NODE_H = 52;
 
-export default function EstateMap() {
+export default function EstateMap({ embedded = false }: { embedded?: boolean } = {}) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const navigate = useNavigate();
@@ -440,14 +440,16 @@ export default function EstateMap() {
       `}</style>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
-        <div className="flex items-center gap-3">
-          <Link to="/" className={`${isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"} transition-colors`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Estate Map</h1>
-        </div>
+        {embedded ? <div /> : (
+          <div className="flex items-center gap-3">
+            <Link to="/" className={`${isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"} transition-colors`}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+            <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Estate Map</h1>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button onClick={handleAddEntity} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${btnClass}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -472,7 +474,7 @@ export default function EstateMap() {
       <div
         ref={canvasRef}
         className={`rounded-xl border overflow-hidden cursor-grab active:cursor-grabbing ${isDark ? "border-white/10 bg-[#0a0a0f]" : "border-gray-200 bg-gray-50"}`}
-        style={{ height: "calc(100vh - 160px)", position: "relative" }}
+        style={{ height: embedded ? "calc(100vh - 240px)" : "calc(100vh - 160px)", position: "relative" }}
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

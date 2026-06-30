@@ -7,12 +7,10 @@ import { ParticleCanvas } from "../particles";
 const navItems = [
   { to: "/", label: "Home", icon: null },
   { to: "/assets", label: "Entities", icon: null },
-  { to: "/notes", label: "Notes", icon: null },
-  { to: "/office", label: "Office", icon: null },
   { to: "/tools", label: "Tools", icon: null },
   { to: "/tools/quickbooks", label: "Finance", icon: null },
   { to: "/tools/taxes", label: "Taxes", icon: null },
-  { to: "/estate-map", label: "Estate Map", icon: null },
+  { to: "/estate-map", label: "Map", icon: null },
 ];
 
 export default function AppLayout() {
