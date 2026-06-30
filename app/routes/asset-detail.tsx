@@ -97,6 +97,8 @@ const MSA_SERVICES = [
   "AI Agent & Automation Development",
   "Data Engineering & Analytics",
   "Solutions Engineering",
+  "Fractional CFO",
+  "Fractional CTO",
 ];
 
 const LEDGER_LOUISE_SUBS = [
