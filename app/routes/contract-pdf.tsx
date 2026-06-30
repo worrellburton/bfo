@@ -355,21 +355,25 @@ export default function ContractPDF() {
       gap(6);
       body("7.3  Neither party may assign this Agreement without the prior written consent of the other party.");
 
-      // ── Signature block ──────────────────────────────────────
-      ensure(190);
-      gap(24);
+      // ── Signature block — always anchored to the bottom of the page ──
+      doc.setFont("times", "italic");
+      doc.setFontSize(10.5);
+      const witnessLines = doc.splitTextToSize(
+        "IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.",
+        tw
+      );
+      const witnessH = witnessLines.length * 10.5 * 1.6;
+      const sigBlockH = witnessH + 26 + 138; // witness + gap + columns/lines/fields
+      // Keep the whole block together; move to a fresh page only if it won't fit.
+      if (y + sigBlockH > bottomLimit) newPage();
+      // Push the block down so it sits at the bottom margin, above the footer.
+      y = bottomLimit - sigBlockH;
       doc.setFont("times", "italic");
       doc.setFontSize(10.5);
       doc.setTextColor(...ink);
-      {
-        const lines = doc.splitTextToSize(
-          "IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.",
-          tw
-        );
-        for (const line of lines) {
-          doc.text(line, ml, y);
-          y += 10.5 * 1.6;
-        }
+      for (const line of witnessLines) {
+        doc.text(line, ml, y);
+        y += 10.5 * 1.6;
       }
       gap(26);
 
