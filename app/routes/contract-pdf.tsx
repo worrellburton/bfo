@@ -255,7 +255,7 @@ export default function ContractPDF() {
       doc.setFontSize(7.5);
       doc.setCharSpace(1.3);
       doc.text(
-        `EFFECTIVE ${String(contract.effectiveDate).toUpperCase()}     ${String(contract.fee).toUpperCase()} / ${String(contract.frequency).toUpperCase()}     ${String(contract.term).toUpperCase()}`,
+        `EFFECTIVE ${String(contract.effectiveDate).toUpperCase()}     ${String(contract.fee).toUpperCase()} / ${String(contract.frequency).toUpperCase()}     TERM ${String(contract.term).toUpperCase()}`,
         ml, y
       );
       doc.setCharSpace(0);
@@ -311,16 +311,17 @@ export default function ContractPDF() {
       kicker("Article II · Compensation");
       body(`2.1  Client shall pay Manager a management fee of ${contract.fee} per ${contract.frequency.toLowerCase()} (the "Management Fee") for services rendered under this Agreement.`);
       gap(6);
-      body("2.2  Payment shall be due within thirty (30) days following the end of each billing period. Late payments shall accrue interest at the rate of 1.5% per month.");
-      gap(6);
-      body("2.3  Manager shall be entitled to reimbursement for all reasonable out-of-pocket expenses incurred in connection with the performance of the Services, subject to prior written approval by Client for any single expense exceeding $500.");
+      body("2.2  Payment shall be due within thirty (30) days following the end of each billing period.");
       if (contract.referralCredit) {
         gap(6);
-        body("2.4  Referral Credit. If Client refers a prospective client to Manager and such referral results in an executed engagement between Manager and the referred party, Manager shall credit the referral fee otherwise payable in respect of that referral against Client’s Management Fee, in lieu of any cash payment. The credit shall be applied to successive Management Fee invoices until the full amount of the referral fee has been exhausted. By way of illustration, if Client’s Management Fee is $5,000 per month and a qualifying referral generates a $10,000 referral fee, Manager shall waive Client’s Management Fee for the period(s) necessary to apply the full $10,000 credit (e.g., two (2) months), after which the Management Fee shall resume.");
+        body("2.3  Referral Credit. If Client refers a prospective client to Manager and such referral results in an executed engagement between Manager and the referred party, Manager shall credit the referral fee otherwise payable in respect of that referral against Client’s Management Fee, in lieu of any cash payment. The credit shall be applied to successive Management Fee invoices until the full amount of the referral fee has been exhausted. By way of illustration, if Client’s Management Fee is $5,000 per month and a qualifying referral generates a $10,000 referral fee, Manager shall waive Client’s Management Fee for the period(s) necessary to apply the full $10,000 credit (e.g., two (2) months), after which the Management Fee shall resume.");
       }
 
       kicker("Article III · Term and Termination");
-      body("3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term.");
+      const autoRenew = String(contract.term || "").toLowerCase().includes("auto-renew");
+      body(autoRenew
+        ? "3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term."
+        : "3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"). This Agreement shall not automatically renew; any renewal shall require the written agreement of both parties prior to the expiration of the Initial Term.");
       gap(6);
       body("3.2  Either party may terminate this Agreement for cause upon thirty (30) days’ written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.");
       gap(6);

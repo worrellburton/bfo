@@ -92,6 +92,9 @@ const MSA_SERVICES = [
   "Bank Account Management",
   "Compliance & Regulatory Oversight",
   "Strategic Planning & Advisory",
+  "Custom Infrastructure Engineering",
+  "AI Agent & Automation Development",
+  "Data Engineering & Analytics",
 ];
 
 const LEDGER_LOUISE_SUBS = [
@@ -100,6 +103,81 @@ const LEDGER_LOUISE_SUBS = [
   "Ledger Burton, LLC",
   "Worrell Burton, LLC",
 ];
+
+// Services Included: dropdown with a per-service toggle, plus a reorderable
+// selected list — the order here is the order services appear in the contract PDF.
+function ServicesDropdown({
+  selected,
+  onChange,
+  isDark,
+}: {
+  selected: string[];
+  onChange: (next: string[]) => void;
+  isDark: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const unselected = MSA_SERVICES.filter((s) => !selected.includes(s));
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= selected.length) return;
+    const next = [...selected];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const sw = (on: boolean) =>
+    `relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${on ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"}`;
+  const knob = (on: boolean) =>
+    `inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${on ? "translate-x-3.5" : "translate-x-0.5"}`;
+  const arrow = (disabled: boolean) =>
+    `p-0.5 rounded ${disabled ? (isDark ? "text-gray-700" : "text-gray-300") + " cursor-default" : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900") + " cursor-pointer"}`;
+  return (
+    <div>
+      <p className={`text-[10px] uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Services Included</p>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${isDark ? "bg-white/5 border-white/10 text-gray-200 hover:bg-white/10" : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+      >
+        <span>{selected.length} service{selected.length === 1 ? "" : "s"} selected</span>
+        <svg className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className={`mt-2 w-full max-w-md rounded-lg border p-1 ${isDark ? "bg-white/[0.03] border-white/10" : "bg-white border-gray-200"}`}>
+          {selected.map((svc, i) => (
+            <div key={svc} className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}>
+              <div className="flex flex-col leading-none">
+                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className={arrow(i === 0)} title="Move up">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                </button>
+                <button type="button" onClick={() => move(i, 1)} disabled={i === selected.length - 1} className={arrow(i === selected.length - 1)} title="Move down">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+              </div>
+              <span className="flex-1 text-xs">{svc}</span>
+              <button type="button" onClick={() => onChange(selected.filter((s) => s !== svc))} className={sw(true)} title="Remove from contract">
+                <span className={knob(true)} />
+              </button>
+            </div>
+          ))}
+          {unselected.length > 0 && (
+            <div className={`mt-1 pt-1 border-t ${isDark ? "border-white/10" : "border-gray-200"}`}>
+              {unselected.map((svc) => (
+                <div key={svc} className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}>
+                  <span className={`flex-1 text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>{svc}</span>
+                  <button type="button" onClick={() => onChange([...selected, svc])} className={sw(false)} title="Add to contract">
+                    <span className={knob(false)} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AssetDetail() {
   const { id } = useParams();
@@ -1393,11 +1471,23 @@ export default function AssetDetail() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              value={editContractForm.term}
-                              onChange={(e) => setEditContractForm({ ...editContractForm, term: e.target.value })}
-                              className={cellInputCls}
-                            />
+                            {(() => {
+                              const isAuto = editContractForm.term.toLowerCase().includes("auto-renew");
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={isAuto}
+                                    onClick={() => setEditContractForm({ ...editContractForm, term: isAuto ? "Annual, fixed term" : "Annual, auto-renewing" })}
+                                    className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${isAuto ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"}`}
+                                  >
+                                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isAuto ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                                  </button>
+                                  <span className="text-[11px] whitespace-nowrap">{isAuto ? "Auto-renew" : "Fixed term"}</span>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-3 py-2">
                             <select
@@ -1430,26 +1520,11 @@ export default function AssetDetail() {
                         </tr>
                         <tr className={`border-b ${rowBorder} ${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
                           <td colSpan={7} className="px-3 pb-3 pt-1">
-                            <p className={`text-[10px] uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Services Included</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {MSA_SERVICES.map((svc) => {
-                                const on = editContractForm.services.includes(svc);
-                                return (
-                                  <button
-                                    key={svc}
-                                    type="button"
-                                    onClick={() => setEditContractForm({ ...editContractForm, services: toggleService(editContractForm.services, svc) })}
-                                    className={`text-[11px] px-2 py-1 rounded-full border transition-colors cursor-pointer ${
-                                      on
-                                        ? isDark ? "bg-blue-500/20 border-blue-400/50 text-blue-300" : "bg-blue-50 border-blue-400 text-blue-700"
-                                        : isDark ? "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200" : "bg-white border-gray-300 text-gray-500 hover:text-gray-800"
-                                    }`}
-                                  >
-                                    {on ? "✓ " : ""}{svc}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            <ServicesDropdown
+                              selected={editContractForm.services}
+                              onChange={(next) => setEditContractForm({ ...editContractForm, services: next })}
+                              isDark={isDark}
+                            />
                             <div className="mt-3 flex items-start gap-2.5">
                               <button
                                 type="button"
@@ -1581,12 +1656,23 @@ export default function AssetDetail() {
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <input
-                            value={contractForm.term}
-                            onChange={(e) => setContractForm({ ...contractForm, term: e.target.value })}
-                            placeholder="Annual, auto-renewing"
-                            className={cellInputCls}
-                          />
+                          {(() => {
+                            const isAuto = contractForm.term.toLowerCase().includes("auto-renew");
+                            return (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={isAuto}
+                                  onClick={() => setContractForm({ ...contractForm, term: isAuto ? "Annual, fixed term" : "Annual, auto-renewing" })}
+                                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${isAuto ? "bg-blue-500" : isDark ? "bg-white/15" : "bg-gray-300"}`}
+                                >
+                                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isAuto ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                                </button>
+                                <span className="text-[11px] whitespace-nowrap">{isAuto ? "Auto-renew" : "Fixed term"}</span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2">
                           <select
@@ -1619,26 +1705,11 @@ export default function AssetDetail() {
                       </tr>
                       <tr className={`${isDark ? "bg-white/[0.02]" : "bg-blue-50/40"}`}>
                         <td colSpan={7} className="px-3 pb-3 pt-1">
-                          <p className={`text-[10px] uppercase tracking-wider mb-2 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Services Included</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {MSA_SERVICES.map((svc) => {
-                              const on = contractForm.services.includes(svc);
-                              return (
-                                <button
-                                  key={svc}
-                                  type="button"
-                                  onClick={() => setContractForm({ ...contractForm, services: toggleService(contractForm.services, svc) })}
-                                  className={`text-[11px] px-2 py-1 rounded-full border transition-colors cursor-pointer ${
-                                    on
-                                      ? isDark ? "bg-blue-500/20 border-blue-400/50 text-blue-300" : "bg-blue-50 border-blue-400 text-blue-700"
-                                      : isDark ? "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200" : "bg-white border-gray-300 text-gray-500 hover:text-gray-800"
-                                  }`}
-                                >
-                                  {on ? "✓ " : ""}{svc}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <ServicesDropdown
+                            selected={contractForm.services}
+                            onChange={(next) => setContractForm({ ...contractForm, services: next })}
+                            isDark={isDark}
+                          />
                           <div className="mt-3 flex items-start gap-2.5">
                             <button
                               type="button"
