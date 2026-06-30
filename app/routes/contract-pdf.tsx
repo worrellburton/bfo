@@ -215,10 +215,14 @@ export default function ContractPDF() {
         const lead = size * 1.6;
         doc.setFont("times", "normal");
         doc.setFontSize(size);
-        doc.setTextColor(...ink);
         const lines = doc.splitTextToSize(text, tw - indent);
         for (const line of lines) {
           ensure(lead);
+          // Re-apply the body style on every line — a page break runs the
+          // header/footer, which leave a different (small, sans) font active.
+          doc.setFont("times", "normal");
+          doc.setFontSize(size);
+          doc.setTextColor(...ink);
           doc.text(line, ml + indent, y);
           y += lead;
         }
