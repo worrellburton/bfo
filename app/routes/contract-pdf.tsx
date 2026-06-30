@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useTheme } from "../theme";
 
@@ -41,7 +41,7 @@ export default function ContractPDF() {
   const [contract, setContract] = useState<OperatingContract | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const pdfGenerated = useRef(false);
+  const [brand, setBrand] = useState<"bfo" | "robert">("bfo");
   const [sigRequests, setSigRequests] = useState<SignatureRequest[]>([]);
   const [showSigForm, setShowSigForm] = useState(false);
   const [sigEmail, setSigEmail] = useState("");
@@ -94,8 +94,7 @@ export default function ContractPDF() {
 
   // Generate PDF once data is loaded
   useEffect(() => {
-    if (!asset || !contract || pdfGenerated.current) return;
-    pdfGenerated.current = true;
+    if (!asset || !contract) return;
 
     (async () => {
       const { jsPDF } = await import("jspdf");
@@ -129,6 +128,11 @@ export default function ContractPDF() {
         ? "the state or federal courts located in Washoe County, Nevada"
         : `the state or federal courts located in ${managerState}`;
 
+      // Letterhead identity — toggled in the UI: present as BFO or Robert Burton
+      const isRobert = brand === "robert";
+      const wordmark = isRobert ? "Robert Burton" : "BFO";
+      const brandLine = isRobert ? "ROBERT BURTON" : "BURTON FAMILY OFFICE";
+
       function paintPage() {
         doc.setFillColor(...paper);
         doc.rect(0, 0, pw, ph, "F");
@@ -138,12 +142,13 @@ export default function ContractPDF() {
         doc.setTextColor(...ink);
         doc.setFont("times", "bold");
         doc.setFontSize(13);
-        doc.text("BFO", ml, 60);
+        doc.text(wordmark, ml, 60);
+        const wmW = doc.getTextWidth(wordmark);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7);
         doc.setCharSpace(2);
         doc.setTextColor(...muted);
-        doc.text("MANAGEMENT SERVICES AGREEMENT", ml + 32, 60);
+        doc.text("MANAGEMENT SERVICES AGREEMENT", ml + wmW + 10, 60);
         doc.text(String(pageNum).padStart(2, "0"), mr, 60, { align: "right" });
         doc.setCharSpace(0);
         doc.setDrawColor(...ink);
@@ -161,8 +166,8 @@ export default function ContractPDF() {
         doc.setFontSize(6.5);
         doc.setCharSpace(1.4);
         doc.setTextColor(...muted);
-        doc.text(`${String(asset.name).toUpperCase()}  →  ${String(contract.counterparty).toUpperCase()}`, ml, fy + 14);
-        doc.text("BURTON FAMILY OFFICE", mr, fy + 14, { align: "right" });
+        doc.text(`${String(asset.name).toUpperCase()}  ·  ${String(contract.counterparty).toUpperCase()}`, ml, fy + 14);
+        doc.text(brandLine, mr, fy + 14, { align: "right" });
         doc.setCharSpace(0);
         doc.setTextColor(...ink);
       }
@@ -230,12 +235,15 @@ export default function ContractPDF() {
       y += 32;
 
       doc.setFont("times", "bold");
-      doc.setFontSize(30);
       doc.setTextColor(...ink);
-      doc.text("Management Services", ml, y);
-      y += 32;
-      doc.text("Agreement", ml, y);
-      y += 26;
+      let titleSize = 30;
+      doc.setFontSize(titleSize);
+      while (titleSize > 16 && doc.getTextWidth("Management Services Agreement") > tw) {
+        titleSize -= 1;
+        doc.setFontSize(titleSize);
+      }
+      doc.text("Management Services Agreement", ml, y);
+      y += 28;
 
       doc.setFont("times", "italic");
       doc.setFontSize(12);
@@ -425,7 +433,7 @@ export default function ContractPDF() {
       const url = URL.createObjectURL(blob);
       setPdfUrl(url);
     })();
-  }, [asset, contract]);
+  }, [asset, contract, brand]);
 
   // Cleanup blob URL
   useEffect(() => {
@@ -516,6 +524,22 @@ export default function ContractPDF() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className={`flex rounded-lg overflow-hidden border mr-1 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+            <button
+              onClick={() => setBrand("bfo")}
+              title="Present the document as Burton Family Office"
+              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
+            >
+              BFO
+            </button>
+            <button
+              onClick={() => setBrand("robert")}
+              title="Present the document as Robert Burton"
+              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${brand === "robert" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
+            >
+              Robert Burton
+            </button>
+          </div>
           <button
             onClick={() => setShowSigForm(!showSigForm)}
             className={`px-4 py-2 font-medium rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2 ${
