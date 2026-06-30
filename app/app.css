@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
@@ -122,3 +123,70 @@ html.light {
 
   .hover\:border-white\/30:hover { border-color: rgb(156 163 175); }
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+   WADR Profit & Loss statement (Finance page) — monochrome "ledger" look.
+   All tokens/classes scoped under .pnl-statement; see WADR P&L Style Guide.
+   ────────────────────────────────────────────────────────────────────── */
+.pnl-statement {
+  --pnl-white:#ffffff; --pnl-black:#111111;
+  --pnl-gray-50:#fafafa; --pnl-gray-100:#f5f5f5; --pnl-gray-200:#e5e5e5;
+  --pnl-gray-300:#d4d4d4; --pnl-gray-400:#a3a3a3; --pnl-gray-500:#737373; --pnl-gray-900:#171717;
+  --pnl-text-primary:var(--pnl-gray-900); --pnl-text-secondary:var(--pnl-gray-500); --pnl-text-muted:var(--pnl-gray-400);
+  --pnl-amber:#f59e0b; --pnl-radius-xs:6px;
+  --pnl-font-heading:'Space Grotesk',-apple-system,BlinkMacSystemFont,sans-serif;
+  --pnl-font-body:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+  background:var(--pnl-white); color:var(--pnl-text-primary);
+  font-family:var(--pnl-font-body);
+  border:1px solid var(--pnl-gray-200); border-radius:12px; overflow:hidden;
+}
+.pnl-statement .finance-card-title { font-family:var(--pnl-font-heading); font-size:1.15rem; font-weight:700; color:var(--pnl-text-primary); margin:0; }
+
+.pnl-statement .pnl-row-header,
+.pnl-statement .pnl-child-row,
+.pnl-statement .pnl-subchild-row,
+.pnl-statement .pnl-row-section,
+.pnl-statement .pnl-row-subtotal,
+.pnl-statement .pnl-row-net { display:grid; grid-template-columns:1fr 160px 120px; align-items:center; }
+
+.pnl-statement .pnl-row-amount, .pnl-statement .pnl-row-pct { text-align:right; font-variant-numeric:tabular-nums; }
+
+.pnl-statement .pnl-row-header { padding:10px 20px; border-bottom:2px solid var(--pnl-gray-200); }
+.pnl-statement .pnl-row-header span { font-family:var(--pnl-font-body); font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--pnl-text-muted); }
+
+.pnl-statement .pnl-row-section { padding:18px 20px; border-bottom:1px solid var(--pnl-gray-200); }
+.pnl-statement .pnl-row-section .pnl-row-label, .pnl-statement .pnl-row-section .pnl-row-amount { font-family:var(--pnl-font-heading); font-weight:700; font-size:1.05rem; color:var(--pnl-text-primary); }
+.pnl-statement .pnl-row-section .pnl-row-pct { font-size:0.85rem; color:var(--pnl-text-secondary); }
+
+.pnl-statement .pnl-child-row { padding:12px 20px 12px 52px; border-bottom:1px solid var(--pnl-gray-50); }
+.pnl-statement .pnl-child-row .pnl-row-label { font-size:0.88rem; color:var(--pnl-text-primary); font-weight:400; }
+.pnl-statement .pnl-child-row .pnl-row-amount { font-size:0.88rem; font-weight:500; color:var(--pnl-text-primary); padding:4px 8px; border-radius:var(--pnl-radius-xs); }
+.pnl-statement .pnl-child-row .pnl-row-amount.pnl-clickable { cursor:pointer; }
+.pnl-statement .pnl-child-row .pnl-row-amount.pnl-clickable:hover { background:var(--pnl-gray-200); }
+.pnl-statement .pnl-child-row .pnl-row-pct { font-size:0.8rem; color:var(--pnl-text-muted); }
+
+.pnl-statement .pnl-subchild-row { padding:10px 20px 10px 76px; border-bottom:1px solid var(--pnl-gray-50); }
+.pnl-statement .pnl-subchild-row .pnl-row-label { font-size:0.82rem; color:var(--pnl-text-secondary); font-weight:400; padding-left:4px; border-left:2px solid var(--pnl-gray-200); }
+.pnl-statement .pnl-subchild-row .pnl-row-amount { font-size:0.82rem; font-weight:500; color:var(--pnl-text-primary); }
+.pnl-statement .pnl-subchild-row .pnl-row-pct { font-size:0.75rem; color:var(--pnl-text-muted); }
+
+.pnl-statement .pnl-row-subtotal { padding:14px 20px; background:var(--pnl-gray-50); border-bottom:1px solid var(--pnl-gray-200); }
+.pnl-statement .pnl-row-subtotal .pnl-row-label, .pnl-statement .pnl-row-subtotal .pnl-row-amount { font-family:var(--pnl-font-heading); font-weight:600; font-size:0.95rem; color:var(--pnl-text-primary); }
+.pnl-statement .pnl-row-subtotal .pnl-row-pct { font-size:0.85rem; color:var(--pnl-text-secondary); }
+
+.pnl-statement .pnl-row-net { padding:20px; background:var(--pnl-gray-50); border-top:2px solid var(--pnl-black); border-bottom:none; }
+.pnl-statement .pnl-row-net .pnl-row-label, .pnl-statement .pnl-row-net .pnl-row-amount { font-family:var(--pnl-font-heading); font-weight:700; font-size:1.15rem; color:var(--pnl-text-primary); }
+.pnl-statement .pnl-row-net .pnl-row-pct { font-weight:600; font-size:0.9rem; color:var(--pnl-text-secondary); }
+
+.pnl-statement .pnl-mtable { width:100%; border-collapse:collapse; }
+.pnl-statement .pnl-mhead { font-family:var(--pnl-font-body); font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--pnl-text-muted); padding:8px; border-bottom:2px solid var(--pnl-gray-200); }
+.pnl-statement .pnl-mcol-label { font-family:var(--pnl-font-body); font-size:0.85rem; color:var(--pnl-text-primary); white-space:nowrap; }
+.pnl-statement .pnl-mcol { text-align:right; font-size:0.78rem; font-variant-numeric:tabular-nums; color:var(--pnl-text-primary); padding:6px 8px; }
+.pnl-statement .pnl-mcol-total { text-align:right; font-size:0.82rem; font-weight:600; font-variant-numeric:tabular-nums; border-left:1px solid var(--pnl-gray-200); padding:6px 8px 6px 10px; font-family:var(--pnl-font-heading); color:var(--pnl-text-primary); }
+.pnl-statement .pnl-mrow-section td { font-family:var(--pnl-font-heading); font-weight:700; font-size:0.95rem; padding-top:14px; color:var(--pnl-text-primary); }
+.pnl-statement .pnl-mrow-subtotal td { background:var(--pnl-gray-50); font-family:var(--pnl-font-heading); font-weight:600; }
+.pnl-statement .pnl-mrow-net td { background:var(--pnl-gray-50); border-top:2px solid var(--pnl-black); font-family:var(--pnl-font-heading); font-weight:700; font-size:1rem; }
+.pnl-statement .pnl-mcol-current { animation:pnlCurrentPulse 2.5s ease-in-out infinite; border-radius:var(--pnl-radius-xs); }
+.pnl-statement .pnl-amber-dot { display:inline-block; width:4px; height:4px; border-radius:50%; background:var(--pnl-amber); margin-left:5px; vertical-align:middle; animation:pnlCurrentPulse 2.5s ease-in-out infinite; }
+.pnl-statement .pnl-divider { height:1px; background:var(--pnl-gray-300); margin:4px 20px; }
+@keyframes pnlCurrentPulse { 0%,100%{background:rgba(245,158,11,0.08);} 50%{background:rgba(245,158,11,0.22);} }

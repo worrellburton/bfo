@@ -45,6 +45,32 @@ function formatCurrency(val: string | number): string {
   return negative ? `(${formatted})` : formatted;
 }
 
+// Statement display money: always 2 decimals, $ prefix, accounting parentheses.
+function fmtMoney(val: string | number): string {
+  const num = typeof val === "string" ? parseFloat(val) : val;
+  if (isNaN(num)) return "";
+  const abs = Math.abs(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return num < 0 ? `($${abs})` : `$${abs}`;
+}
+
+// % of revenue — one decimal; em dash when the base is zero.
+function fmtPct(amount: string | number, base: number): string {
+  const amt = typeof amount === "string" ? parseFloat(amount) : amount;
+  if (!base || isNaN(amt)) return "—";
+  return ((Math.abs(amt) / base) * 100).toFixed(1) + "%";
+}
+
+// Map a generic QuickBooks report row to the style guide's type ramp.
+function classifyRow(row: ReportRow): "section" | "subtotal" | "net" | "subchild" | "child" {
+  const l = row.label.toLowerCase();
+  const hasVals = row.values.some((v) => v && v.trim());
+  if (l.includes("net income") || l.includes("net operating income")) return "net";
+  if (row.bold && !hasVals) return "section";
+  if (row.bold) return "subtotal";
+  if (row.depth >= 2) return "subchild";
+  return "child";
+}
+
 function parseReport(data: any): { title: string; columns: string[]; rows: ReportRow[] } {
   if (!data?.Header) return { title: "", columns: [], rows: [] };
   const title = data.Header.ReportName || "";
@@ -287,6 +313,16 @@ export default function ProfitLoss() {
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
   const isMultiColumn = viewMode === "monthly" && report && report.columns.length > 1;
 
+  // Revenue base for "% of revenue" (single-period view uses column 0).
+  const revenueBase = (() => {
+    if (!report) return 0;
+    const find = (re: RegExp) => report.rows.find((r) => re.test(r.label.trim()));
+    const r = find(/^total income$/i) || find(/^income$/i) || find(/^total revenue$/i) || find(/total income/i);
+    if (!r) return 0;
+    const v = parseFloat((r.values[0] || "0").toString().replace(/[^0-9.\-]/g, ""));
+    return isNaN(v) ? 0 : Math.abs(v);
+  })();
+
   function handleExportCSV() {
     if (!report) return;
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
@@ -515,111 +551,102 @@ export default function ProfitLoss() {
 
       {/* Report */}
       {!loading && report && report.rows.length > 0 && (
-        <div className={`${card} overflow-hidden`}>
-          <div className="p-5 sm:p-8 pb-3">
-            <h3 className={`font-semibold text-sm ${headingText}`}>
-              {viewMode === "monthly" ? `${selectedYear} Monthly Breakdown` : `Annual ${selectedYear}`}
-            </h3>
-            <p className={`text-xs ${mutedText}`}>{report.title}</p>
+        <div className="pnl-statement">
+          <div className="px-5 sm:px-8 pt-6 pb-2">
+            <h3 className="finance-card-title">Profit &amp; Loss Statement</h3>
+            <p style={{ fontSize: "0.8rem", color: "var(--pnl-text-secondary)", marginTop: "2px" }}>
+              {viewMode === "monthly" ? `Monthly · ${selectedYear}` : `Annual · ${selectedYear}`}
+              {report.title ? ` · ${report.title}` : ""}
+            </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              {/* Column Headers */}
-              {isMultiColumn && (
+          {isMultiColumn ? (
+            /* Monthly matrix */
+            <div className="overflow-x-auto px-2 pb-3">
+              <table className="pnl-mtable">
                 <thead>
                   <tr>
-                    <th className={`text-left py-3 px-6 ${mutedText} font-medium sticky left-0 ${light ? "bg-gray-50" : "bg-[#0d0d0d]"}`} style={{ minWidth: "200px" }}>
-                      Account
-                    </th>
-                    {report.columns.map((col, ci) => (
-                      <th key={ci} className={`text-right py-3 px-4 ${mutedText} font-medium whitespace-nowrap`} style={{ minWidth: "90px" }}>
-                        {col}
-                      </th>
-                    ))}
+                    <th className="pnl-mhead" style={{ textAlign: "left", position: "sticky", left: 0, background: "var(--pnl-white)", minWidth: "200px" }}>Account</th>
+                    {report.columns.map((col, ci) => {
+                      const isCurrent = selectedYear === currentYear && ci === now.getMonth();
+                      const isTotalCol = /total/i.test(col);
+                      return (
+                        <th key={ci} className="pnl-mhead" style={{ textAlign: "right", whiteSpace: "nowrap", borderLeft: isTotalCol ? "1px solid var(--pnl-gray-200)" : undefined }}>
+                          {col}{isCurrent && <span className="pnl-amber-dot" />}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
-              )}
-              <tbody onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
-                {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
-                  const isTotal = row.label.toLowerCase().startsWith("total") || row.label.toLowerCase().startsWith("net ");
-                  const isSection = row.bold && row.values.every((v) => !v);
-                  const isNet = isTotal && row.label.toLowerCase().includes("net");
-                  const rowId = `${row.label}-${i}`;
-
-                  return (
-                    <tr
-                      key={i}
-                      className={
-                        isTotal
-                          ? `border-t ${light ? "border-gray-200" : "border-white/10"}`
-                          : isSection
-                            ? ""
-                            : ""
-                      }
-                    >
-                      {/* Label cell — never dims */}
-                      <td
-                        className={`py-2 px-6 ${
-                          isSection ? "pt-4 pb-1" : ""
-                        } ${
-                          row.bold
-                            ? `font-semibold ${light ? "text-gray-900" : "text-white"}`
-                            : light ? "text-gray-600" : "text-gray-400"
-                        } ${isTotal ? "font-bold" : ""} sticky left-0 ${light ? "bg-gray-50" : "bg-[#0d0d0d]"}`}
-                        style={{ paddingLeft: `${row.depth * 16 + 16}px`, minWidth: "200px" }}
-                      >
-                        {row.label}
-                      </td>
-                      {/* Value cells */}
-                      {isMultiColumn ? (
-                        row.values.map((val, vi) => {
-                          const clickable = !isTotal && !isSection && !row.bold && val && parseFloat(val) !== 0;
+                <tbody onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
+                  {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
+                    const kind = classifyRow(row);
+                    const rowId = `${row.label}-${i}`;
+                    const rowCls = kind === "section" ? "pnl-mrow-section" : kind === "subtotal" ? "pnl-mrow-subtotal" : kind === "net" ? "pnl-mrow-net" : "";
+                    const stickyBg = kind === "subtotal" || kind === "net" ? "var(--pnl-gray-50)" : "var(--pnl-white)";
+                    return (
+                      <tr key={i} className={rowCls}>
+                        <td className="pnl-mcol-label" style={{ position: "sticky", left: 0, background: stickyBg, paddingLeft: `${row.depth * 14 + 10}px`, paddingRight: "12px" }}>{row.label}</td>
+                        {row.values.map((val, vi) => {
+                          const isTotalCol = /total/i.test(report.columns[vi] || "");
+                          const isCurrent = selectedYear === currentYear && vi === now.getMonth() && !isTotalCol;
+                          const clickable = (kind === "child" || kind === "subchild") && !!(val && parseFloat(val) !== 0 && !isTotalCol);
                           return (
                             <td
                               key={vi}
                               onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(vi); }}
                               onClick={clickable ? () => handleCellClick(row.label, vi) : undefined}
-                              className={`py-2 px-4 text-right tabular-nums whitespace-nowrap transition-opacity duration-200 ${
-                                isTotal
-                                  ? `font-bold ${light ? "text-gray-900" : "text-white"}`
-                                  : parseFloat(val) < 0
-                                    ? "text-red-500"
-                                    : light ? "text-gray-600" : "text-gray-400"
-                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""} ${getCellHighlight(rowId, vi)}`}
-                              style={isNet ? { color: "#22c55e" } : {}}
+                              className={`${isTotalCol ? "pnl-mcol-total" : "pnl-mcol"} ${getCellHighlight(rowId, vi)}`}
+                              style={{ cursor: clickable ? "pointer" : undefined }}
                             >
-                              {val ? formatCurrency(val) : ""}
+                              {isCurrent ? (
+                                <span className="pnl-mcol-current" style={{ padding: "2px 6px", display: "inline-block" }}>{val ? fmtMoney(val) : ""}</span>
+                              ) : (
+                                val ? fmtMoney(val) : ""
+                              )}
                             </td>
                           );
-                        })
-                      ) : (
-                        (() => {
-                          const clickable = !isTotal && !isSection && !row.bold && row.values[0] && parseFloat(row.values[0]) !== 0;
-                          return (
-                            <td
-                              onMouseEnter={() => { setHoveredRow(rowId); setHoveredCol(0); }}
-                              onClick={clickable ? () => handleCellClick(row.label, 0) : undefined}
-                              className={`py-1.5 px-4 text-right tabular-nums transition-opacity duration-200 ${
-                                isTotal
-                                  ? `font-bold ${light ? "text-gray-900" : "text-white"}`
-                                  : parseFloat(row.values[0]) < 0
-                                    ? "text-red-500"
-                                    : light ? "text-gray-600" : "text-gray-400"
-                              } ${clickable ? "cursor-pointer hover:underline hover:text-green-400" : ""} ${getCellHighlight(rowId, 0)}`}
-                              style={isNet ? { color: "#22c55e" } : {}}
-                            >
-                              {row.values[0] ? formatCurrency(row.values[0]) : ""}
-                            </td>
-                          );
-                        })()
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Single-period view — 3-column grid (Label | Amount | % of revenue) */
+            <div>
+              <div className="pnl-row-header">
+                <span className="pnl-row-label">Account</span>
+                <span className="pnl-row-amount">Amount</span>
+                <span className="pnl-row-pct">% of Revenue</span>
+              </div>
+              {report.rows.filter((row) => !searchQuery || row.label.toLowerCase().includes(searchQuery.toLowerCase())).map((row, i) => {
+                const kind = classifyRow(row);
+                const cls =
+                  kind === "section" ? "pnl-row-section"
+                  : kind === "subtotal" ? "pnl-row-subtotal"
+                  : kind === "net" ? "pnl-row-net"
+                  : kind === "subchild" ? "pnl-subchild-row"
+                  : "pnl-child-row";
+                const amt = row.values[0] || "";
+                const hasAmt = !!(amt && parseFloat(amt) !== 0);
+                const clickable = (kind === "child" || kind === "subchild") && hasAmt;
+                return (
+                  <div key={i} className={cls}>
+                    <div className="pnl-row-label">{row.label}</div>
+                    <div
+                      className={`pnl-row-amount${clickable ? " pnl-clickable" : ""}`}
+                      onClick={clickable ? () => handleCellClick(row.label, 0) : undefined}
+                    >
+                      {amt ? fmtMoney(amt) : ""}
+                    </div>
+                    <div className="pnl-row-pct">{hasAmt ? fmtPct(amt, revenueBase) : ""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
