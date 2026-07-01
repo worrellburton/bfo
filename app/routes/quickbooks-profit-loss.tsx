@@ -552,7 +552,7 @@ export default function ProfitLoss() {
 
       {/* Report */}
       {!loading && report && report.rows.length > 0 && (
-        <div className="pnl-statement">
+        <div className={`pnl-statement${light ? "" : " pnl-dark"}`}>
           <div className="px-5 sm:px-8 pt-6 pb-2">
             <h3 className="finance-card-title">Profit &amp; Loss Statement</h3>
             <p style={{ fontSize: "0.8rem", color: "var(--pnl-text-secondary)", marginTop: "2px" }}>
