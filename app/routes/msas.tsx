@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../theme";
 
 export function meta() {
-  return [{ title: "BFO - MFAs" }];
+  return [{ title: "BFO - MSAs" }];
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-type MFA = {
+type MSA = {
   id: string;
   manager: string;
   client: string;
@@ -40,14 +40,14 @@ function effYearMonth(effectiveDate: string): { y: number; m: number } | null {
   return null;
 }
 
-export default function MFAs() {
+export default function MSAs() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const now = new Date();
   const currentYear = now.getFullYear();
   const [year, setYear] = useState(currentYear);
   const [activeOnly, setActiveOnly] = useState(true);
-  const [mfas, setMfas] = useState<MFA[]>([]);
+  const [mfas, setMfas] = useState<MSA[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function MFAs() {
       const { ref, onValue } = await import("firebase/database");
       unsub = onValue(ref(db, "assets"), (snap) => {
         const data = snap.val() || {};
-        const list: MFA[] = [];
+        const list: MSA[] = [];
         for (const [assetId, asset] of Object.entries<any>(data)) {
           const contracts = asset?.contracts || {};
           for (const [cid, c] of Object.entries<any>(contracts)) {
@@ -74,7 +74,7 @@ export default function MFAs() {
             });
           }
         }
-        list.sort((a, b) => (a.manager + " " + a.client).localeCompare(b.manager + " " + b.client));
+        list.sort((a, b) => a.client.localeCompare(b.client));
         setMfas(list);
         setLoading(false);
       });
@@ -90,7 +90,7 @@ export default function MFAs() {
 
   // A month is active if it falls on/after the contract's effective month.
   // (No termination date is stored, so the fee runs through the selected year.)
-  function isActiveMonth(m: MFA, monthIdx: number): boolean {
+  function isActiveMonth(m: MSA, monthIdx: number): boolean {
     const ym = effYearMonth(m.effectiveDate);
     if (!ym) return true;
     if (year > ym.y) return true;
@@ -98,7 +98,7 @@ export default function MFAs() {
     return monthIdx >= ym.m;
   }
 
-  function cellAmount(m: MFA, monthIdx: number): number | null {
+  function cellAmount(m: MSA, monthIdx: number): number | null {
     if (!isActiveMonth(m, monthIdx)) return null;
     return m.fee; // full fee each active month
   }
@@ -111,13 +111,13 @@ export default function MFAs() {
 
   function handleExportCSV() {
     const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-    const header = ["MFA", "Fee", ...MONTHS, "Total"].map(esc).join(",");
+    const header = ["MSA", "Fee", ...MONTHS, "Total"].map(esc).join(",");
     const body = rows.map((m, ri) => {
       const cells = MONTHS.map((_, i) => {
         const a = cellAmount(m, i);
         return a == null ? "" : String(a);
       });
-      return [`${m.manager} -> ${m.client}`, m.feeRaw, ...cells, String(rowTotals[ri])].map(esc).join(",");
+      return [m.client, m.feeRaw, ...cells, String(rowTotals[ri])].map(esc).join(",");
     });
     const totalRow = ["Total", "", ...colTotals.map(String), String(grandTotal)].map(esc).join(",");
     const csv = [header, ...body, totalRow].join("\n");
@@ -125,7 +125,7 @@ export default function MFAs() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `BFO_MFAs_${year}.csv`;
+    a.download = `BFO_MSAs_${year}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -150,7 +150,7 @@ export default function MFAs() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
-        <h1 className="text-3xl font-bold">MFAs</h1>
+        <h1 className="text-3xl font-bold">MSAs</h1>
         <div className="flex items-center gap-2">
           <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
             {years.map((y) => (
@@ -169,7 +169,7 @@ export default function MFAs() {
         </div>
       </div>
       <p className={`${subText} text-sm mb-6`}>
-        Management fee agreements — the contracted fee shown in full for each active month of {year}.
+        Management services agreements — the contracted fee shown in full for each active month of {year}.
       </p>
 
       {loading ? (
@@ -179,7 +179,7 @@ export default function MFAs() {
       ) : rows.length === 0 ? (
         <div className={`border rounded-xl p-12 text-center ${cardBorder} ${cardBg}`}>
           <p className={subText}>
-            No {activeOnly ? "active " : ""}MFAs found. Add Operating Contracts on an entity, then they'll show here.
+            No {activeOnly ? "active " : ""}MSAs found. Add Operating Contracts on an entity, then they'll show here.
           </p>
         </div>
       ) : (
@@ -189,7 +189,7 @@ export default function MFAs() {
               <thead>
                 <tr className={`${headBg} border-b ${cardBorder}`}>
                   <th className={`text-left py-2.5 px-4 font-semibold uppercase tracking-wider text-[10px] ${subText} ${stickyCell} ${headBg}`} style={{ minWidth: "240px" }}>
-                    MFA
+                    MSA
                   </th>
                   {MONTHS.map((mo) => (
                     <th key={mo} className={th} style={{ minWidth: "72px" }}>{mo}</th>
@@ -201,7 +201,7 @@ export default function MFAs() {
                 {rows.map((m, ri) => (
                   <tr key={m.id} className={`border-b last:border-b-0 ${cardBorder} ${rowHover} transition-colors`}>
                     <td className={`py-2.5 px-4 ${stickyCell}`} style={{ minWidth: "240px" }}>
-                      <div className="font-medium leading-tight">{m.manager} <span className={subText}>→</span> {m.client}</div>
+                      <div className="font-medium leading-tight">{m.client}</div>
                       <div className={`text-[10px] mt-0.5 ${subText}`}>
                         {m.feeRaw || fmtMoney(m.fee)}{m.frequency ? ` / ${m.frequency}` : ""}
                         {activeOnly ? "" : ` · ${m.status}`}
@@ -233,7 +233,7 @@ export default function MFAs() {
             </table>
           </div>
           <div className={`px-4 py-2 text-xs ${subText} border-t ${cardBorder}`}>
-            {rows.length} MFA{rows.length === 1 ? "" : "s"} · {year} · annual total {fmtMoney(grandTotal)}
+            {rows.length} MSA{rows.length === 1 ? "" : "s"} · {year} · annual total {fmtMoney(grandTotal)}
           </div>
         </div>
       )}
