@@ -504,7 +504,7 @@ export default function ProfitLoss() {
       </div>
       <div className="flex items-center gap-3 mb-6">
         <p className={`${mutedText} text-sm`}>{companyName || "Loading..."}</p>
-        {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdatedText}</span>}
+        {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdated.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</span>}
       </div>
 
       {/* View Mode Tabs + Year */}

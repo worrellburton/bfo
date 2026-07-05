@@ -43,6 +43,15 @@ const navItems = [
     ),
   },
   {
+    to: "/mfas",
+    label: "MFAs",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M9 3v18M15 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
+      </svg>
+    ),
+  },
+  {
     to: "/tools/taxes",
     label: "Taxes",
     icon: (
@@ -139,7 +148,7 @@ export default function AppLayout() {
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
         ${isDark ? "border-white/10 bg-black" : "border-gray-200 bg-white"}
       `}>
-        <span className="text-2xl font-bold tracking-tight mb-10">BFO</span>
+        <span className="text-2xl font-bold tracking-tight mb-10 px-3">BFO</span>
         <nav className="flex flex-col gap-1 flex-1">
           {navItems.map((item) => (
             <NavLink

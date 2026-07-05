@@ -191,7 +191,7 @@ export default function QuickBooks() {
   const btnBorder = light ? "border border-gray-200 hover:border-gray-400 text-gray-600 hover:text-gray-900" : "border border-white/10 hover:border-white/20 text-gray-500 hover:text-white";
 
   return (
-    <div className={`${light ? "bg-white text-gray-900" : ""} min-h-screen transition-colors duration-200`}>
+    <div className={light ? "text-gray-900" : ""}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
@@ -233,7 +233,7 @@ export default function QuickBooks() {
       </div>
       <div className="flex items-center gap-3 mb-8">
         <p className="text-gray-500 text-sm">Financial Dashboard</p>
-        {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdatedText}</span>}
+        {lastUpdated && <span className="text-xs text-gray-600">&middot; Updated {lastUpdated.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</span>}
       </div>
 
       {error && (
