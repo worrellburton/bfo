@@ -10,6 +10,9 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/LedgerLouisePrivacyPolicy.pdf", "destination": "/policies/LedgerLouisePrivacyPolicy.pdf" },
+    { "source": "/LedgerLouiseDataRetentionAndDisposalPolicy.pdf", "destination": "/policies/LedgerLouiseDataRetentionAndDisposalPolicy.pdf" },
+    { "source": "/LedgerLouiseInformationSecurityPolicy.pdf", "destination": "/policies/LedgerLouiseInformationSecurityPolicy.pdf" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -10,7 +10,7 @@ export function meta() {
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden flex items-center justify-center">
+    <div className="min-h-dvh bg-black relative overflow-hidden flex items-center justify-center">
       {/* Drifting aurora orbs */}
       <div aria-hidden className="absolute inset-0">
         <div className="landing-orb landing-orb-1" />
@@ -30,14 +30,14 @@ export default function Landing() {
       />
 
       {/* Wordmark — quietly links to the password screen */}
-      <Link to="/login" className="relative z-10 text-center select-none outline-none">
+      <Link to="/login" className="relative z-10 text-center select-none outline-none px-6">
         <h1 className="landing-title font-bold tracking-tight leading-none">BFO</h1>
         <p className="landing-sub uppercase mt-4 sm:mt-6">Ledger Louise, LLC</p>
       </Link>
 
       <style>{`
         .landing-title {
-          font-size: clamp(6rem, 22vw, 14rem);
+          font-size: clamp(6.5rem, 28vw, 14rem);
           background: linear-gradient(
             115deg,
             #ffffff 25%,
@@ -53,7 +53,7 @@ export default function Landing() {
           animation: landing-shimmer 9s linear infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
         .landing-sub {
-          font-size: clamp(0.7rem, 2.2vw, 1rem);
+          font-size: clamp(0.75rem, 3vw, 1rem);
           letter-spacing: 0.45em;
           margin-right: -0.45em; /* recenter after tracking */
           color: rgba(255, 255, 255, 0.45);
@@ -103,6 +103,10 @@ export default function Landing() {
         @keyframes landing-drift-3 {
           from { transform: translate(-8vmax, 6vmax) scale(0.9); }
           to { transform: translate(10vmax, -8vmax) scale(1.2); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .landing-title, .landing-sub, .landing-orb { animation: none; }
+          .landing-title { background-position: 50% center; }
         }
       `}</style>
     </div>
