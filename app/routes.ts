@@ -1,6 +1,7 @@
 import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
+  index("routes/landing.tsx"),
   route("login", "routes/login.tsx"),
   route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),
   route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
@@ -12,7 +13,7 @@ export default [
   route("legal/terms", "./routes/legal-terms.tsx"),
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   layout("routes/app-layout.tsx", [
-    index("routes/home.tsx"),
+    route("home", "routes/home.tsx"),
     route("assets", "routes/assets.tsx"),
     route("assets/:id", "routes/asset-detail.tsx"),
     route("assets/:id/contract/:contractId", "routes/contract-pdf.tsx"),

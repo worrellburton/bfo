@@ -7,7 +7,7 @@ import { ParticleCanvas } from "../particles";
 const iconCls = "w-[18px] h-[18px] shrink-0";
 const navItems = [
   {
-    to: "/",
+    to: "/home",
     label: "Home",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -154,7 +154,7 @@ export default function AppLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/"}
+              end={item.to === "/home"}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${

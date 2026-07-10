@@ -11,7 +11,7 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate("/");
+      navigate("/home");
     }
   }, [navigate]);
 
@@ -19,7 +19,7 @@ export default function Login() {
     e.preventDefault();
 
     if (authenticate(password)) {
-      navigate("/");
+      navigate("/home");
     } else {
       setError("Incorrect password");
       setShake(true);
