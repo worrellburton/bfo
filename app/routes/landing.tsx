@@ -1,4 +1,3 @@
-import { Link } from "react-router";
 import { ParticleCanvas } from "../particles";
 
 export function meta() {
@@ -29,11 +28,11 @@ export default function Landing() {
         className="absolute inset-0 w-full h-full"
       />
 
-      {/* Wordmark — quietly links to the password screen */}
-      <Link to="/login" className="relative z-10 text-center select-none outline-none px-6">
+      {/* Wordmark */}
+      <div className="relative z-10 text-center select-none px-6">
         <h1 className="landing-title font-bold tracking-tight leading-none">BFO</h1>
         <p className="landing-sub uppercase mt-4 sm:mt-6">Ledger Louise, LLC</p>
-      </Link>
+      </div>
 
       <style>{`
         .landing-title {
