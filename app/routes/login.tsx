@@ -30,7 +30,7 @@ export default function Login() {
   const dots = password.length;
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
+    <div className="min-h-dvh bg-black flex items-center justify-center relative overflow-hidden">
       <ParticleCanvas
         count={60}
         speed={0.3}
@@ -43,10 +43,10 @@ export default function Login() {
 
       <div className={`w-full max-w-sm text-center px-6 relative z-10 ${shake ? "animate-shake" : ""}`}>
         <h1 className="text-5xl font-bold text-white tracking-tight mb-2">BFO</h1>
-        <p className="text-gray-500 text-sm mb-12">Enter password to continue</p>
+        <p className="text-gray-500 text-sm mb-8 sm:mb-12">Enter password to continue</p>
 
         <form onSubmit={handleSubmit}>
-          <div className="flex justify-center gap-3 mb-8 h-4">
+          <div className="flex justify-center gap-3 mb-6 sm:mb-8 h-4">
             {Array.from({ length: Math.max(dots, 0) }).map((_, i) => (
               <div
                 key={i}
@@ -67,7 +67,8 @@ export default function Login() {
             placeholder="Type password..."
             required
             autoFocus
-            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-white/20 text-center text-lg tracking-[0.3em] transition-colors"
+            autoComplete="current-password"
+            className="w-full px-4 py-3 bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.12)] rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-[rgba(255,255,255,0.25)] text-center text-[17px] tracking-[0.3em] transition-colors"
           />
 
           {error && (
