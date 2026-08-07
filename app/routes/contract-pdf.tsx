@@ -127,6 +127,7 @@ export default function ContractPDF() {
       const bottomLimit = ph - 84;
       let y = topY;
       let pageNum = 1;
+      const footerLeft = `${String(asset.name).toUpperCase()}  ·  ${String(contract.counterparty).toUpperCase()}`;
 
       // Manager (Ledger Louise) is a Nevada LLC d/b/a Burton Family Office;
       // reconcile the party block, governing law, venue, and signatory to the
@@ -179,7 +180,7 @@ export default function ContractPDF() {
         doc.setFontSize(6.5);
         doc.setCharSpace(1.4);
         doc.setTextColor(...muted);
-        doc.text(`${String(asset.name).toUpperCase()}  ·  ${String(contract.counterparty).toUpperCase()}`, ml, fy + 14);
+        doc.text(footerLeft, ml, fy + 14);
         doc.text(brandLine, mr, fy + 14, { align: "right" });
         doc.setCharSpace(0);
         doc.setTextColor(...ink);
