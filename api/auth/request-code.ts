@@ -70,8 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const code = generateCode();
-    await sb("login_codes", {
+    const inserted = await sb<Array<{ id: string }>>("login_codes", {
       method: "POST",
+      prefer: "return=representation",
       body: [
         {
           identifier: identifier.value,
@@ -81,7 +82,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ],
     });
 
-    await sendLoginCode(identifier, code);
+    try {
+      await sendLoginCode(identifier, code);
+    } catch (err) {
+      // Don't leave a pending code behind that would throttle the retry.
+      await sb(`login_codes?id=eq.${inserted[0].id}`, { method: "DELETE" }).catch(() => {});
+      throw err;
+    }
 
     return res.status(200).json({
       sent: true,

@@ -34,6 +34,33 @@ npm run dev
 
 Your application will be available at `http://localhost:5173`.
 
+Note that `npm run dev` serves the SPA only — the `/api/*` serverless functions
+(sign-in, Plaid, QuickBooks) need `vercel dev` or a deployment.
+
+## Environment
+
+Set these in the Vercel project:
+
+| Variable | Used for |
+| --- | --- |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | users, sessions, sign-in codes, Plaid + QuickBooks tokens |
+| `BIRD_ACCESS_KEY` | Bird API access key (sent as `Authorization: AccessKey …`) |
+| `BIRD_WORKSPACE_ID` | Bird workspace the channels live in |
+| `BIRD_SMS_CHANNEL_ID` | SMS channel that delivers sign-in codes |
+| `BIRD_EMAIL_CHANNEL_ID` | Email channel that delivers sign-in codes |
+| `AUTH_SECRET` | pepper mixed into the hash of each one-time code |
+| `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | brokerage connections on `/investments` |
+| `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET` | QuickBooks reports |
+| `ANTHROPIC_API_KEY` | agents and document renaming |
+
+### Sign-in
+
+`/login` takes a phone number or an email address, sends a 6-digit code through
+Bird, and exchanges it for a 30-day session stored in `app_sessions`. Anyone who
+verifies a code lands in `app_users` as `incoming` — an owner or admin approves
+them from `/users` before they can get in. Roles are `owner`, `admin`, `member`
+and `viewer`; owners and admins can manage users.
+
 ## Building for Production
 
 Create a production build:
