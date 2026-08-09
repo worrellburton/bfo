@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { currentUser } from "../../lib/auth";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 function getPlaidClient() {
@@ -44,6 +45,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const user = await currentUser(req);
+  if (!user) return res.status(401).json({ error: "unauthorized" });
 
   const { public_token, institution_name } = req.body || {};
   if (!public_token) return res.status(400).json({ error: "Missing public_token" });
