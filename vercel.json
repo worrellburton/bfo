@@ -8,6 +8,12 @@
       "maxDuration": 10
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/treasury-report",
+      "schedule": "0 12 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/LedgerLouisePrivacyPolicy.pdf", "destination": "/policies/LedgerLouisePrivacyPolicy.pdf" },

@@ -83,8 +83,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const user = await currentUser(req);
-  if (!user) return res.status(401).json({ error: "unauthorized" });
+  // The scheduled report runs without a session; it proves itself with the
+  // cron secret instead.
+  const cronSecret = process.env.CRON_SECRET;
+  const fromCron = !!cronSecret && req.headers["x-internal-cron"] === cronSecret;
+  if (!fromCron) {
+    const user = await currentUser(req);
+    if (!user) return res.status(401).json({ error: "unauthorized" });
+  }
 
   const { report, item_id } = req.query;
 

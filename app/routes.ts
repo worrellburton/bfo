@@ -41,6 +41,7 @@ export default [
     route("users", "./routes/users.tsx"),
     route("investments", "./routes/investments.tsx"),
     route("treasury", "./routes/treasury.tsx"),
+    route("notifications", "./routes/notifications.tsx"),
     route("estate-map", "./routes/estate-map.tsx"),
     route("tools/ledger-louise", "./routes/ledger-louise.tsx"),
     route("tools/vq-balance-sheet", "./routes/vq-balance-sheet.tsx"),
