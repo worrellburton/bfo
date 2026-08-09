@@ -11,6 +11,26 @@ const RESEND_SECONDS = 45;
 
 type Step = "identifier" | "code" | "pending";
 
+/**
+ * Format as a US phone number while the field still looks like one. Anything
+ * with a letter or an @ is left alone so an email address can be typed here too.
+ */
+function formatIdentifier(raw: string): string {
+  if (/[a-zA-Z@]/.test(raw)) return raw;
+  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+// The app's light-mode rescue layer rewrites bg-white/N utilities to near-white,
+// which would wash this screen out — it is always dark, so use literal rgba.
+const CARD = "border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.035)]";
+const FIELD =
+  "w-full px-4 py-3 rounded-xl bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.12)] " +
+  "text-white placeholder-[rgba(255,255,255,0.28)] transition-colors focus:outline-none " +
+  "focus:border-[rgba(255,255,255,0.30)] focus:bg-[rgba(255,255,255,0.09)]";
+
 export default function Login() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("identifier");
@@ -106,7 +126,7 @@ export default function Login() {
         </h1>
         <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
 
-        <div className="landing-fade-in mt-10 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6 text-left">
+        <div className={`landing-fade-in mt-10 rounded-2xl backdrop-blur-xl p-6 text-left ${CARD}`}>
           {step === "identifier" && (
             <form
               onSubmit={(e) => {
@@ -124,17 +144,17 @@ export default function Login() {
                 id="identifier"
                 name="identifier"
                 type="text"
-                inputMode="email"
-                autoComplete="tel email"
+                inputMode="tel"
+                autoComplete="tel"
                 autoFocus
                 required
                 value={identifier}
                 onChange={(e) => {
-                  setIdentifier(e.target.value);
+                  setIdentifier(formatIdentifier(e.target.value));
                   setError("");
                 }}
                 placeholder="(555) 123-4567"
-                className="w-full px-4 py-3 bg-white/[0.05] border border-white/12 rounded-xl text-white placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] text-[16px] transition-colors"
+                className={`${FIELD} text-[16px]`}
               />
               <button
                 type="submit"
@@ -181,7 +201,7 @@ export default function Login() {
                   if (next.length === 6) void submitCode(next);
                 }}
                 placeholder="······"
-                className="w-full px-4 py-3 bg-white/[0.05] border border-white/12 rounded-xl text-white placeholder-white/20 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)] transition-colors"
+                className={`${FIELD} text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)]`}
               />
               <button
                 type="submit"
