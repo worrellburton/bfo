@@ -120,12 +120,63 @@ export function safeEqual(a: string, b: string): boolean {
 
 // ── Bird (SMS + email delivery) ───────────────────────────────────────
 
-async function birdSend(channelId: string, payload: unknown): Promise<void> {
+type BirdChannel = { id: string; name: string; platformId: string; status: string };
+
+function birdConfig() {
   const accessKey = process.env.BIRD_ACCESS_KEY;
   const workspaceId = process.env.BIRD_WORKSPACE_ID;
   if (!accessKey || !workspaceId) {
     throw new ConfigError("BIRD_ACCESS_KEY and BIRD_WORKSPACE_ID must be set");
   }
+  return { accessKey, workspaceId };
+}
+
+// Discovered channels are cached for the life of the lambda instance so a
+// warm function doesn't re-list the workspace on every sign-in.
+let channelCache: BirdChannel[] | null = null;
+
+async function listChannels(): Promise<BirdChannel[]> {
+  if (channelCache) return channelCache;
+  const { accessKey, workspaceId } = birdConfig();
+  const res = await fetch(`https://api.bird.com/workspaces/${workspaceId}/channels?limit=100`, {
+    headers: { Authorization: `AccessKey ${accessKey}` },
+  });
+  if (!res.ok) {
+    throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${await res.text()}`);
+  }
+  const data = (await res.json()) as { results?: BirdChannel[] };
+  channelCache = data.results ?? [];
+  return channelCache;
+}
+
+/**
+ * Resolve the channel to send on. An explicit env var wins; otherwise pick the
+ * first matching channel in the workspace, preferring an active one.
+ */
+async function resolveChannel(kind: "sms" | "email"): Promise<string> {
+  const override =
+    kind === "sms" ? process.env.BIRD_SMS_CHANNEL_ID : process.env.BIRD_EMAIL_CHANNEL_ID;
+  if (override) return override;
+
+  const matches = kind === "sms" ? /sms/i : /e?mail/i;
+  const channels = await listChannels();
+  const candidates = channels.filter(
+    (c) => matches.test(c.platformId ?? "") || matches.test(c.name ?? "")
+  );
+  const chosen = candidates.find((c) => c.status === "active") ?? candidates[0];
+
+  if (!chosen) {
+    const seen = channels.map((c) => c.platformId).join(", ") || "none";
+    throw new ConfigError(
+      `No ${kind} channel in this Bird workspace (channels seen: ${seen}). ` +
+        `Set BIRD_${kind.toUpperCase()}_CHANNEL_ID to choose one explicitly.`
+    );
+  }
+  return chosen.id;
+}
+
+async function birdSend(channelId: string, payload: unknown): Promise<void> {
+  const { accessKey, workspaceId } = birdConfig();
 
   const res = await fetch(
     `https://api.bird.com/workspaces/${workspaceId}/channels/${channelId}/messages`,
@@ -146,8 +197,7 @@ async function birdSend(channelId: string, payload: unknown): Promise<void> {
 }
 
 export async function sendSms(to: string, text: string): Promise<void> {
-  const channelId = process.env.BIRD_SMS_CHANNEL_ID;
-  if (!channelId) throw new ConfigError("BIRD_SMS_CHANNEL_ID must be set");
+  const channelId = await resolveChannel("sms");
   await birdSend(channelId, {
     receiver: { contacts: [{ identifierValue: to }] },
     body: { type: "text", text: { text } },
@@ -160,8 +210,7 @@ export async function sendEmail(
   text: string,
   html: string
 ): Promise<void> {
-  const channelId = process.env.BIRD_EMAIL_CHANNEL_ID;
-  if (!channelId) throw new ConfigError("BIRD_EMAIL_CHANNEL_ID must be set");
+  const channelId = await resolveChannel("email");
   await birdSend(channelId, {
     receiver: {
       contacts: [{ identifierKey: "emailaddress", identifierValue: to }],

@@ -46,9 +46,9 @@ Set these in the Vercel project:
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | users, sessions, sign-in codes, Plaid + QuickBooks tokens |
 | `BIRD_ACCESS_KEY` | Bird API access key (sent as `Authorization: AccessKey …`) |
 | `BIRD_WORKSPACE_ID` | Bird workspace the channels live in |
-| `BIRD_SMS_CHANNEL_ID` | SMS channel that delivers sign-in codes |
-| `BIRD_EMAIL_CHANNEL_ID` | Email channel that delivers sign-in codes |
-| `AUTH_SECRET` | pepper mixed into the hash of each one-time code |
+| `BIRD_SMS_CHANNEL_ID` | *optional* — pins the SMS channel; otherwise the workspace's SMS channel is discovered automatically |
+| `BIRD_EMAIL_CHANNEL_ID` | *optional* — same, for email |
+| `AUTH_SECRET` | *optional* — pepper mixed into the hash of each one-time code |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | brokerage connections on `/investments` |
 | `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET` | QuickBooks reports |
 | `ANTHROPIC_API_KEY` | agents and document renaming |
