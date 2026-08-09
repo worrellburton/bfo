@@ -26,12 +26,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
 
+  // Brokerage connections ask for investments; Treasury asks for transactions
+  // so bank balances and history come back.
+  const kind = (req.body?.kind as string) === "bank" ? "bank" : "investments";
+  const products = kind === "bank" ? [Products.Transactions] : [Products.Investments];
+
   try {
     const client = getPlaidClient();
     const response = await client.linkTokenCreate({
       user: { client_user_id: "bfo-user" },
       client_name: "Burton Family Office",
-      products: [Products.Investments],
+      products,
       country_codes: [CountryCode.Us],
       language: "en",
     });

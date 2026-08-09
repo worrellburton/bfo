@@ -43,6 +43,15 @@ const navItems = [
     ),
   },
   {
+    to: "/treasury",
+    label: "Treasury",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM5.25 10.5v7.5m4.5-7.5v7.5m4.5-7.5v7.5m4.5-7.5v7.5M3 21h18" />
+      </svg>
+    ),
+  },
+  {
     to: "/investments",
     label: "Investments",
     icon: (

@@ -142,7 +142,28 @@ async function listChannels(): Promise<BirdChannel[]> {
     headers: { Authorization: `AccessKey ${accessKey}` },
   });
   if (!res.ok) {
-    throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${await res.text()}`);
+    const detail = await res.text();
+    console.error(`bird channels ${res.status} for workspace ${workspaceId}: ${detail}`);
+
+    // A 404 here almost always means the workspace id doesn't belong to this
+    // access key. Ask Bird which workspaces the key *can* see and log them, so
+    // the fix is a copy-paste rather than a guess.
+    if (res.status === 404 || res.status === 403) {
+      try {
+        const wsRes = await fetch("https://api.bird.com/workspaces", {
+          headers: { Authorization: `AccessKey ${accessKey}` },
+        });
+        const body = await wsRes.text();
+        console.error(`bird workspaces visible to this access key (${wsRes.status}): ${body}`);
+      } catch (err) {
+        console.error("bird workspace lookup failed:", err);
+      }
+      throw new ConfigError(
+        "Bird doesn't recognize this workspace for the access key in use. " +
+          "Check BIRD_WORKSPACE_ID, or set BIRD_SMS_CHANNEL_ID / BIRD_EMAIL_CHANNEL_ID directly."
+      );
+    }
+    throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${detail}`);
   }
   const data = (await res.json()) as { results?: BirdChannel[] };
   channelCache = data.results ?? [];

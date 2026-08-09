@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser } from "../../lib/auth.js";
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
+import { Configuration, CountryCode, PlaidApi, PlaidEnvironments } from "plaid";
 
 function getPlaidClient() {
   const config = new Configuration({
@@ -19,6 +19,10 @@ async function upsertItem(row: {
   item_id: string;
   access_token: string;
   institution_name: string;
+  kind: string;
+  institution_id: string | null;
+  institution_color: string | null;
+  institution_logo: string | null;
 }) {
   const url = process.env.SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_KEY!;
@@ -49,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
 
-  const { public_token, institution_name } = req.body || {};
+  const { public_token, institution_name, institution_id, kind } = req.body || {};
   if (!public_token) return res.status(400).json({ error: "Missing public_token" });
 
   try {
@@ -57,10 +61,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const exchangeRes = await client.itemPublicTokenExchange({ public_token });
     const { access_token, item_id } = exchangeRes.data;
 
+    // Pull the institution's brand colour and logo so the Treasury card can
+    // wear them. Optional — a failure here shouldn't block the connection.
+    let color: string | null = null;
+    let logo: string | null = null;
+    let name: string | undefined = institution_name;
+    if (institution_id) {
+      try {
+        const inst = await client.institutionsGetById({
+          institution_id,
+          country_codes: [CountryCode.Us],
+          options: { include_optional_metadata: true },
+        });
+        color = inst.data.institution.primary_color ?? null;
+        logo = inst.data.institution.logo ?? null;
+        name = name || inst.data.institution.name;
+      } catch (err: any) {
+        console.error("Plaid institution lookup failed:", err.response?.data || err.message);
+      }
+    }
+
     await upsertItem({
       item_id,
       access_token,
-      institution_name: institution_name || "Unknown",
+      institution_name: name || "Unknown",
+      kind: kind === "bank" ? "bank" : "investments",
+      institution_id: institution_id ?? null,
+      institution_color: color,
+      institution_logo: logo,
     });
 
     res.json({ success: true, item_id });

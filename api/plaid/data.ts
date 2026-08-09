@@ -15,17 +15,65 @@ function getPlaidClient() {
   return new PlaidApi(config);
 }
 
-async function getItems() {
+// A visit older than this counts as a new "login" for change-since purposes.
+const ROTATE_AFTER_MS = 30 * 60 * 1000;
+
+function db(path: string, init: RequestInit = {}) {
   const url = process.env.SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_KEY!;
-  const r = await fetch(`${url}/rest/v1/plaid_items?select=*`, {
+  return fetch(`${url}/rest/v1/${path}`, {
+    ...init,
     headers: {
       apikey: key,
       Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
     },
   });
+}
+
+async function getItems() {
+  const r = await db("plaid_items?select=*");
   if (!r.ok) throw new Error(`DB error: ${await r.text()}`);
   return r.json();
+}
+
+type AccountState = {
+  account_id: string;
+  balance: number | null;
+  seen_at: string;
+  prev_balance: number | null;
+  prev_seen_at: string | null;
+};
+
+async function getAccountStates(): Promise<Map<string, AccountState>> {
+  const r = await db("plaid_account_state?select=*");
+  if (!r.ok) return new Map();
+  const rows = (await r.json()) as AccountState[];
+  return new Map(rows.map((row) => [row.account_id, row]));
+}
+
+async function saveAccountState(
+  accountId: string,
+  itemId: string,
+  balance: number | null,
+  prior: AccountState | undefined,
+  rotate: boolean,
+  now: Date
+) {
+  const row = {
+    account_id: accountId,
+    item_id: itemId,
+    balance,
+    seen_at: now.toISOString(),
+    prev_balance: rotate ? prior?.balance ?? null : prior?.prev_balance ?? null,
+    prev_seen_at: rotate ? prior?.seen_at ?? null : prior?.prev_seen_at ?? null,
+  };
+  await db("plaid_account_state", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify(row),
+  }).catch(() => {});
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -46,13 +94,130 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // List all connected items
     if (report === "list") {
       const items = await getItems();
+      const kind = req.query.kind as string | undefined;
       return res.json({
-        items: (items || []).map((i: any) => ({
-          item_id: i.item_id,
-          institution_name: i.institution_name,
-          created_at: i.created_at,
-        })),
+        items: (items || [])
+          .filter((i: any) => !kind || (i.kind ?? "investments") === kind)
+          .map((i: any) => ({
+            item_id: i.item_id,
+            institution_name: i.institution_name,
+            institution_color: i.institution_color ?? null,
+            institution_logo: i.institution_logo ?? null,
+            kind: i.kind ?? "investments",
+            created_at: i.created_at,
+          })),
       });
+    }
+
+    // Treasury: every bank account across every bank connection, with the
+    // change since the previous visit and whether the link is still live.
+    if (report === "treasury") {
+      const items = (await getItems()).filter((i: any) => (i.kind ?? "investments") === "bank");
+      const states = await getAccountStates();
+      const now = new Date();
+      const accounts: any[] = [];
+      const connections: any[] = [];
+
+      for (const item of items) {
+        const base = {
+          item_id: item.item_id,
+          institution_name: item.institution_name,
+          institution_color: item.institution_color ?? null,
+          institution_logo: item.institution_logo ?? null,
+        };
+        try {
+          const balRes = await client.accountsGet({ access_token: item.access_token });
+          connections.push({ ...base, status: "online" });
+
+          for (const a of balRes.data.accounts) {
+            if (a.type !== "depository" && a.type !== "credit") continue;
+            const prior = states.get(a.account_id);
+            const current = a.balances.current ?? null;
+
+            // Rotate the snapshot once a visit has gone cold, so "since last
+            // login" doesn't collapse to zero on a page refresh.
+            const stale = !prior || now.getTime() - new Date(prior.seen_at).getTime() > ROTATE_AFTER_MS;
+            const baseline = stale ? prior?.balance ?? null : prior?.prev_balance ?? null;
+            const baselineAt = stale ? prior?.seen_at ?? null : prior?.prev_seen_at ?? null;
+
+            accounts.push({
+              ...base,
+              account_id: a.account_id,
+              name: a.name,
+              official_name: a.official_name,
+              mask: a.mask,
+              type: a.type,
+              subtype: a.subtype,
+              balance_current: current,
+              balance_available: a.balances.available,
+              currency: a.balances.iso_currency_code,
+              change: baseline == null || current == null ? null : current - Number(baseline),
+              change_since: baselineAt,
+            });
+
+            await saveAccountState(a.account_id, item.item_id, current, prior, stale, now);
+          }
+        } catch (err: any) {
+          const code = err.response?.data?.error_code;
+          connections.push({
+            ...base,
+            status: code === "ITEM_LOGIN_REQUIRED" ? "reconnect" : "offline",
+            message: err.response?.data?.error_message || err.message,
+          });
+        }
+      }
+
+      return res.json({ connections, accounts });
+    }
+
+    // Bank transaction history for the spreadsheet view.
+    if (report === "bank-transactions") {
+      const items = (await getItems()).filter((i: any) => (i.kind ?? "investments") === "bank");
+      const target = items.find((i: any) => i.item_id === item_id) ?? items[0];
+      if (!target) return res.status(404).json({ error: "not_connected" });
+
+      const now = new Date();
+      const start =
+        (req.query.start_date as string) ||
+        new Date(now.getTime() - 180 * 86_400_000).toISOString().split("T")[0];
+      const end = (req.query.end_date as string) || now.toISOString().split("T")[0];
+      const accountId = req.query.account_id as string | undefined;
+
+      try {
+        const txRes = await client.transactionsGet({
+          access_token: target.access_token,
+          start_date: start,
+          end_date: end,
+          options: {
+            count: 500,
+            offset: 0,
+            ...(accountId ? { account_ids: [accountId] } : {}),
+          },
+        });
+        return res.json({
+          transactions: txRes.data.transactions.map((t) => ({
+            date: t.date,
+            name: t.merchant_name || t.name,
+            description: t.name,
+            category: t.personal_finance_category?.primary || t.category?.[0] || null,
+            amount: t.amount,
+            pending: t.pending,
+            currency: t.iso_currency_code,
+            account_id: t.account_id,
+          })),
+          total: txRes.data.total_transactions,
+          start_date: start,
+          end_date: end,
+        });
+      } catch (err: any) {
+        if (err.response?.data?.error_code === "PRODUCT_NOT_READY") {
+          return res.status(202).json({
+            error: "product_not_ready",
+            message: "Plaid is still pulling this account's history. Try again in a minute.",
+          });
+        }
+        throw err;
+      }
     }
 
     // For specific reports, need an item
