@@ -1,109 +1,248 @@
 import { useNavigate } from "react-router";
-import { useState, useEffect } from "react";
-import { authenticate, isAuthenticated } from "../auth";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, isAuthenticated, requestCode, verifyCode } from "../auth";
 import { ParticleCanvas } from "../particles";
+
+export function meta() {
+  return [{ title: "Sign in — BFO" }];
+}
+
+const RESEND_SECONDS = 45;
+
+type Step = "identifier" | "code" | "pending";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [step, setStep] = useState<Step>("identifier");
+  const [identifier, setIdentifier] = useState("");
+  const [masked, setMasked] = useState("");
+  const [sentTo, setSentTo] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
-  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const codeInput = useRef<HTMLInputElement>(null);
+  const submittedCode = useRef("");
 
   useEffect(() => {
-    if (isAuthenticated()) {
-      navigate("/home");
-    }
+    if (isAuthenticated()) navigate("/home");
   }, [navigate]);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
 
-    if (authenticate(password)) {
-      navigate("/home");
-    } else {
-      setError("Incorrect password");
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
+  useEffect(() => {
+    if (step === "code") codeInput.current?.focus();
+  }, [step]);
+
+  function shakeOut(message: string) {
+    setError(message);
+    setShake(true);
+    setTimeout(() => setShake(false), 450);
+  }
+
+  async function send(value: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await requestCode(value);
+      setSentTo(res.identifier);
+      setMasked(res.masked);
+      setCode("");
+      submittedCode.current = "";
+      setCooldown(RESEND_SECONDS);
+      setStep("code");
+    } catch (err) {
+      shakeOut(err instanceof ApiError ? err.message : "Couldn't send a code. Try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  const dots = password.length;
+  async function submitCode(value: string) {
+    if (busy || value.length !== 6 || submittedCode.current === value) return;
+    submittedCode.current = value;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await verifyCode(sentTo, value);
+      if (res.token) navigate("/home");
+      else setStep("pending");
+    } catch (err) {
+      setCode("");
+      shakeOut(err instanceof ApiError ? err.message : "Couldn't verify that code.");
+      codeInput.current?.focus();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <div className="min-h-dvh bg-black flex items-center justify-center relative overflow-hidden">
+    <div className="min-h-dvh bg-black relative overflow-hidden flex items-center justify-center">
+      {/* Drifting aurora orbs — same atmosphere as the landing splash */}
+      <div aria-hidden className="absolute inset-0">
+        <div className="landing-orb landing-orb-1" />
+        <div className="landing-orb landing-orb-2" />
+        <div className="landing-orb landing-orb-3" />
+      </div>
+
       <ParticleCanvas
-        count={60}
-        speed={0.3}
-        maxRadius={1.5}
-        connectionDistance={120}
-        dotOpacity={0.2}
-        lineOpacity={0.03}
+        count={70}
+        speed={0.25}
+        maxRadius={1.6}
+        connectionDistance={130}
+        dotOpacity={0.25}
+        lineOpacity={0.04}
         className="absolute inset-0 w-full h-full"
       />
 
-      <div className={`w-full max-w-sm text-center px-6 relative z-10 ${shake ? "animate-shake" : ""}`}>
-        <h1 className="text-5xl font-bold text-white tracking-tight mb-2">BFO</h1>
-        <p className="text-gray-500 text-sm mb-8 sm:mb-12">Enter password to continue</p>
+      <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
+        <h1 className="landing-title landing-title-sm font-bold tracking-tight leading-none select-none">
+          BFO
+        </h1>
+        <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
 
-        <form onSubmit={handleSubmit}>
-          <div className="flex justify-center gap-3 mb-6 sm:mb-8 h-4">
-            {Array.from({ length: Math.max(dots, 0) }).map((_, i) => (
-              <div
-                key={i}
-                className="w-3 h-3 rounded-full bg-white animate-pop"
-                style={{ animationDelay: `${i * 30}ms` }}
+        <div className="landing-fade-in mt-10 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6 text-left">
+          {step === "identifier" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send(identifier);
+              }}
+            >
+              <label
+                htmlFor="identifier"
+                className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-3"
+              >
+                Phone or email
+              </label>
+              <input
+                id="identifier"
+                name="identifier"
+                type="text"
+                inputMode="email"
+                autoComplete="tel email"
+                autoFocus
+                required
+                value={identifier}
+                onChange={(e) => {
+                  setIdentifier(e.target.value);
+                  setError("");
+                }}
+                placeholder="(555) 123-4567"
+                className="w-full px-4 py-3 bg-white/[0.05] border border-white/12 rounded-xl text-white placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] text-[16px] transition-colors"
               />
-            ))}
-          </div>
-
-          <input
-            type="password"
-            name="password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setError("");
-            }}
-            placeholder="Type password..."
-            required
-            autoFocus
-            autoComplete="current-password"
-            className="w-full px-4 py-3 bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.12)] rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-[rgba(255,255,255,0.25)] text-center text-[17px] tracking-[0.3em] transition-colors"
-          />
-
-          {error && (
-            <p className="text-red-400 text-sm mt-3">{error}</p>
+              <button
+                type="submit"
+                disabled={busy || !identifier.trim()}
+                className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-white/85 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {busy ? "Sending…" : "Send code"}
+              </button>
+              <p className="text-white/30 text-xs mt-4 leading-relaxed">
+                We'll text or email you a one-time code. New numbers need an owner's approval before
+                they can get in.
+              </p>
+            </form>
           )}
 
-          <button
-            type="submit"
-            className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-gray-200 transition-all cursor-pointer active:scale-[0.98]"
-          >
-            Enter
-          </button>
-        </form>
-      </div>
+          {step === "code" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitCode(code);
+              }}
+            >
+              <label
+                htmlFor="code"
+                className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1"
+              >
+                Enter code
+              </label>
+              <p className="text-white/50 text-xs mb-3">Sent to {masked}</p>
+              <input
+                ref={codeInput}
+                id="code"
+                name="code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                value={code}
+                onChange={(e) => {
+                  const next = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setCode(next);
+                  setError("");
+                  if (next.length === 6) void submitCode(next);
+                }}
+                placeholder="······"
+                className="w-full px-4 py-3 bg-white/[0.05] border border-white/12 rounded-xl text-white placeholder-white/20 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)] transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={busy || code.length !== 6}
+                className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-white/85 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {busy ? "Verifying…" : "Continue"}
+              </button>
 
-      <style>{`
-        @keyframes pop {
-          0% { transform: scale(0); opacity: 0; }
-          50% { transform: scale(1.3); }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        .animate-pop {
-          animation: pop 0.2s ease-out forwards;
-        }
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-10px); }
-          40% { transform: translateX(10px); }
-          60% { transform: translateX(-6px); }
-          80% { transform: translateX(6px); }
-        }
-        .animate-shake {
-          animation: shake 0.4s ease-out;
-        }
-      `}</style>
+              <div className="flex items-center justify-between mt-4 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("identifier");
+                    setCode("");
+                    setError("");
+                  }}
+                  className="text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                >
+                  ← Change
+                </button>
+                <button
+                  type="button"
+                  disabled={cooldown > 0 || busy}
+                  onClick={() => void send(sentTo)}
+                  className="text-white/40 hover:text-white/70 transition-colors cursor-pointer disabled:hover:text-white/40 disabled:cursor-not-allowed"
+                >
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {step === "pending" && (
+            <div className="text-center py-2">
+              <div className="mx-auto w-10 h-10 rounded-full border border-white/15 bg-white/[0.06] flex items-center justify-center mb-4">
+                <svg className="w-5 h-5 text-white/70" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p className="text-white font-medium">You're verified</p>
+              <p className="text-white/45 text-sm mt-2 leading-relaxed">
+                An owner needs to approve access for {masked}. You'll be able to sign in once they do.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("identifier");
+                  setCode("");
+                  setError("");
+                }}
+                className="mt-5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+              >
+                ← Start over
+              </button>
+            </div>
+          )}
+
+          {error && <p className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
+        </div>
+      </div>
     </div>
   );
 }

@@ -206,3 +206,105 @@ html.light {
   background:var(--pnl-white);
   border-color:var(--pnl-gray-200);
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+   Landing / sign-in atmosphere.
+
+   Shared by the public splash at / and the sign-in screen at /login so the
+   two read as one surface: drifting aurora orbs behind a particle field,
+   with a shimmering wordmark.
+   ────────────────────────────────────────────────────────────────────── */
+.landing-title {
+  font-size: clamp(6.5rem, 28vw, 14rem);
+  background: linear-gradient(
+    115deg,
+    #ffffff 25%,
+    #93c5fd 42%,
+    #c4b5fd 52%,
+    #67e8f9 62%,
+    #ffffff 80%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: landing-shimmer 9s linear infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* Sign-in uses the same wordmark, sized to leave room for the form. */
+.landing-title-sm {
+  font-size: clamp(3.25rem, 13vw, 4.5rem);
+}
+.landing-sub {
+  font-size: clamp(0.75rem, 3vw, 1rem);
+  letter-spacing: 0.45em;
+  margin-right: -0.45em; /* recenter after tracking */
+  color: rgba(255, 255, 255, 0.45);
+  animation: landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+.landing-sub-sm {
+  font-size: clamp(0.6rem, 2.2vw, 0.7rem);
+  letter-spacing: 0.4em;
+  margin-right: -0.4em;
+}
+.landing-fade-in {
+  animation: landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.55s both;
+}
+@keyframes landing-shimmer {
+  to { background-position: -220% center; }
+}
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(24px); filter: blur(8px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+.landing-orb {
+  position: absolute;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 9999px;
+  filter: blur(90px);
+  will-change: transform;
+}
+.landing-orb-1 {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.28), transparent 65%);
+  top: -20vmax;
+  left: -15vmax;
+  animation: landing-drift-1 26s ease-in-out infinite alternate;
+}
+.landing-orb-2 {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.22), transparent 65%);
+  bottom: -25vmax;
+  right: -15vmax;
+  animation: landing-drift-2 32s ease-in-out infinite alternate;
+}
+.landing-orb-3 {
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.14), transparent 65%);
+  top: 30%;
+  left: 35%;
+  animation: landing-drift-3 38s ease-in-out infinite alternate;
+}
+@keyframes landing-drift-1 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(18vmax, 12vmax) scale(1.15); }
+}
+@keyframes landing-drift-2 {
+  from { transform: translate(0, 0) scale(1.1); }
+  to { transform: translate(-16vmax, -10vmax) scale(0.95); }
+}
+@keyframes landing-drift-3 {
+  from { transform: translate(-8vmax, 6vmax) scale(0.9); }
+  to { transform: translate(10vmax, -8vmax) scale(1.2); }
+}
+@keyframes landing-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-9px); }
+  40% { transform: translateX(9px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+.landing-shake {
+  animation: landing-shake 0.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-title, .landing-sub, .landing-orb, .landing-fade-in, .landing-shake { animation: none; }
+  .landing-title { background-position: 50% center; }
+}

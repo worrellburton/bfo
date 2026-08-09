@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { isAuthenticated, logout } from "../auth";
+import { displayName, getUser, initials, isAdmin, isAuthenticated, logout, revalidate } from "../auth";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
 
@@ -76,12 +76,20 @@ export default function AppLayout() {
   const { theme, toggle } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [user, setUser] = useState(() => getUser());
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) {
       navigate("/login");
+      return;
     }
+    // Confirm the session is still good server-side — an owner may have
+    // revoked access, or the role may have changed, since the last sign-in.
+    revalidate().then((ok) => {
+      if (!ok) navigate("/login");
+      else setUser(getUser());
+    });
   }, [navigate]);
 
   // Close menu on outside click
@@ -188,9 +196,9 @@ export default function AppLayout() {
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
               isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
             }`}>
-              W
+              {initials(user)}
             </div>
-            <span className="flex-1 text-left truncate font-medium">Worrell</span>
+            <span className="flex-1 text-left truncate font-medium">{displayName(user)}</span>
             {/* Settings gear */}
             <svg className={`w-4 h-4 shrink-0 ${isDark ? "text-gray-500" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -238,6 +246,24 @@ export default function AppLayout() {
                 </svg>
                 Manage Agents
               </button>
+
+              {isAdmin(user) && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSidebarOpen(false);
+                    navigate("/users");
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
+                    isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  Users
+                </button>
+              )}
 
               <button
                 onClick={() => {
