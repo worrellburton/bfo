@@ -1,24 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, fail, guard, handleError, isAdmin } from "../../lib/auth.js";
+import { birdChannels, birdWorkspace, currentUser, fail, guard, handleError, isAdmin } from "../../lib/auth.js";
 
 /**
- * Diagnostics for the Bird credentials. Admin-only, and it never returns the
- * key itself — just its shape and how each endpoint responds, so a failing
- * setup can be identified without pasting secrets around.
+ * Diagnostics for the Bird setup. Admin-only, and it never returns the access
+ * key — only its shape, plus what the API says when we use it.
  */
-
-type Probe = { name: string; status: number | string; body: string };
-
-async function probe(name: string, url: string, auth: string): Promise<Probe> {
-  try {
-    const res = await fetch(url, { headers: { Authorization: auth } });
-    const text = await res.text();
-    return { name, status: res.status, body: text.slice(0, 220) };
-  } catch (err) {
-    return { name, status: "network_error", body: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET"])) return;
 
@@ -28,75 +14,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!isAdmin(me)) return fail(res, 403, "forbidden");
 
     const rawKey = process.env.BIRD_ACCESS_KEY ?? "";
-    const rawWs = process.env.BIRD_WORKSPACE_ID ?? "";
     const key = rawKey.trim().replace(/^["']|["']$/g, "");
-    const ws = rawWs.trim().replace(/^["']|["']$/g, "");
+    const rawWs = (process.env.BIRD_WORKSPACE_ID ?? "").trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawWs);
 
-    if (!key || !ws) {
-      return res.status(200).json({
-        key: { present: !!key },
-        workspace: { present: !!ws },
-        probes: [],
-      });
+    const report: Record<string, unknown> = {
+      key: {
+        present: !!key,
+        length: key.length,
+        dashboardSuffix: key.slice(-6),
+        hadWhitespace: rawKey !== rawKey.trim(),
+      },
+      configuredWorkspace: {
+        value: rawWs || null,
+        // Bird's API takes a UUID; a ws_… value is the dashboard identifier
+        // and is ignored in favour of discovery.
+        isUuid,
+        used: isUuid,
+      },
+    };
+
+    try {
+      report.workspace = await birdWorkspace();
+    } catch (err) {
+      report.workspaceError = err instanceof Error ? err.message : String(err);
+      return res.status(200).json(report);
     }
 
-    // Bird keys are region-scoped (bk_us1_… → us1.platform.bird.com), so try
-    // every plausible host and path prefix rather than assuming one.
-    const region = /^bk_([a-z]{2}\d)_/i.exec(key)?.[1]?.toLowerCase();
-    const hosts = [
-      ...new Set(
-        [
-          region ? `https://${region}.platform.bird.com` : null,
-          "https://us1.platform.bird.com",
-          "https://api.bird.com",
-        ].filter(Boolean) as string[]
-      ),
-    ];
+    try {
+      const channels = await birdChannels();
+      report.channels = channels.map((c) => ({
+        id: c.id,
+        name: c.name,
+        platformId: c.platformId,
+        status: c.status,
+      }));
+    } catch (err) {
+      report.channelsError = err instanceof Error ? err.message : String(err);
+    }
 
-    // An access key is workspace-scoped, so the workspace segment may not be
-    // part of the path at all. Try both shapes, and a workspace listing.
-    const paths = [
-      `/workspaces/${ws}/channels?limit=100`,
-      `/channels?limit=100`,
-      `/workspaces`,
-      `/workspaces/${ws}`,
-    ];
-
-    const probes = await Promise.all([
-      ...hosts.flatMap((host) =>
-        ["", "/v1"].flatMap((prefix) =>
-          paths.map((path) =>
-            probe(`${host}${prefix}${path.split("?")[0]}`, `${host}${prefix}${path}`, `AccessKey ${key}`)
-          )
-        )
-      ),
-      // If this is the only 200, the key is a legacy MessageBird key and
-      // belongs on rest.messagebird.com rather than the Bird API.
-      probe("rest.messagebird.com /balance (legacy)", "https://rest.messagebird.com/balance", `AccessKey ${key}`),
-    ]);
-
-    return res.status(200).json({
-      key: {
-        present: true,
-        length: key.length,
-        prefix: key.slice(0, 4),
-        suffix: key.slice(-4),
-        // Bird's dashboard identifies each key by its last 6 characters, so
-        // this is directly comparable to the key list without exposing the key.
-        dashboardSuffix: key.slice(-6),
-        secretLength: key.replace(/^bk_[a-z]{2}\d_/i, "").length,
-        hadWhitespace: rawKey !== rawKey.trim(),
-        hadQuotes: /^["']|["']$/.test(rawKey.trim()),
-      },
-      workspace: {
-        present: true,
-        value: ws,
-        hadWhitespace: rawWs !== rawWs.trim(),
-        looksLikeBirdId: /^ws_[a-z0-9]+$/i.test(ws),
-      },
-      region: /^bk_([a-z]{2}\d)_/i.exec(key)?.[1]?.toLowerCase() ?? null,
-      probes,
-    });
+    return res.status(200).json(report);
   } catch (err) {
     return handleError(res, err);
   }

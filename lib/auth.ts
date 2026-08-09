@@ -118,124 +118,119 @@ export function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-// ── Bird (SMS + email delivery) ───────────────────────────────────────
+// ── Bird ──────────────────────────────────────────────────────────────
+//
+// Built to https://docs.bird.com/api/quickstarts/send-an-sms-message:
+//
+//   POST https://api.bird.com/workspaces/{workspaceId}/channels/{channelId}/messages
+//   Authorization: AccessKey <token>
+//
+// Two things the docs are emphatic about and are easy to get wrong:
+//   1. The access key needs the "Application Developer" role (Settings →
+//      Security → Access Keys). Scopes alone are not enough — a key without
+//      it authenticates as nothing and every call 401s.
+//   2. workspaceId is a UUID, not the ws_… identifier shown in dashboard URLs.
+//
+// So rather than trusting configuration, discover both the workspace and the
+// channels from the API and cache the result for the life of the instance.
+
+const BIRD_API = "https://api.bird.com";
 
 type BirdChannel = { id: string; name: string; platformId: string; status: string };
+type BirdWorkspace = { id: string; name?: string };
 
-function birdConfig() {
-  // Pasted secrets routinely arrive with quotes or trailing whitespace.
-  const accessKey = process.env.BIRD_ACCESS_KEY?.trim().replace(/^["']|["']$/g, "");
-  const workspaceId = process.env.BIRD_WORKSPACE_ID?.trim().replace(/^["']|["']$/g, "");
-  if (!accessKey || !workspaceId) {
-    throw new ConfigError("BIRD_ACCESS_KEY and BIRD_WORKSPACE_ID must be set");
-  }
-  return { accessKey, workspaceId };
+function birdKey(): string {
+  const key = process.env.BIRD_ACCESS_KEY?.trim().replace(/^["']|["']$/g, "");
+  if (!key) throw new ConfigError("BIRD_ACCESS_KEY is not set");
+  return key;
 }
 
-/**
- * Bird documents `Authorization: AccessKey <token>`, but keys minted for some
- * workspaces authenticate as bearer tokens. Try both rather than guessing.
- */
-async function birdFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const { accessKey } = birdConfig();
-  let last: Response | null = null;
-  for (const scheme of ["AccessKey", "Bearer"]) {
-    const res = await fetch(url, {
-      ...init,
-      headers: { ...(init.headers ?? {}), Authorization: `${scheme} ${accessKey}` },
-    });
-    if (res.status !== 401 && res.status !== 403) return res;
-    last = res;
-  }
-  return last!;
+/** Only a UUID is a usable workspace id; ws_… is a dashboard identifier. */
+function configuredWorkspace(): string | null {
+  const raw = process.env.BIRD_WORKSPACE_ID?.trim().replace(/^["']|["']$/g, "");
+  if (!raw) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw) ? raw : null;
 }
 
-/**
- * Bird keys are region-scoped and only work against their own host:
- * bk_us1_… → us1.platform.bird.com, bk_eu1_… → eu1.platform.bird.com.
- * Older keys still live on api.bird.com, so fall back to it.
- */
-export function birdBaseCandidates(): string[] {
-  const { accessKey } = birdConfig();
-  const region = /^bk_([a-z]{2}\d)_/i.exec(accessKey)?.[1]?.toLowerCase();
-  // api.bird.com is the proven host — it answers 401 (auth) rather than 404
-  // (no such route) — so try it first and keep the regional host as a fallback
-  // in case Bird moves the data plane there.
-  const bases = [
-    process.env.BIRD_API_BASE?.trim().replace(/\/$/, ""),
-    "https://api.bird.com",
-    region ? `https://${region}.platform.bird.com` : undefined,
-  ].filter(Boolean) as string[];
-  return [...new Set(bases)];
+async function birdFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${BIRD_API}${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: `AccessKey ${birdKey()}`,
+    },
+  });
 }
 
-/** Path prefixes to try — regional hosts serve the data plane under /v1. */
-const BIRD_PATH_PREFIXES = ["", "/v1"];
-
-export function birdRoutes(workspaceId: string, path: string): string[] {
-  return birdBaseCandidates().flatMap((base) =>
-    BIRD_PATH_PREFIXES.map((prefix) => `${base}${prefix}/workspaces/${workspaceId}${path}`)
-  );
-}
-
-// Discovered channels — and the route that reached them — are cached for the
-// life of the lambda instance so a warm function doesn't re-probe every time.
+let workspaceCache: string | null = null;
 let channelCache: BirdChannel[] | null = null;
-let routeCache: { base: string; prefix: string } | null = null;
 
-function messagesUrl(workspaceId: string, channelId: string): string[] {
-  const path = `/channels/${channelId}/messages`;
-  if (routeCache) {
-    return [`${routeCache.base}${routeCache.prefix}/workspaces/${workspaceId}${path}`];
+/** The configured UUID if there is one, otherwise the first workspace the key can see. */
+export async function birdWorkspace(): Promise<string> {
+  if (workspaceCache) return workspaceCache;
+
+  const configured = configuredWorkspace();
+  if (configured) {
+    workspaceCache = configured;
+    return configured;
   }
-  return birdRoutes(workspaceId, path);
+
+  const res = await birdFetch("/workspaces");
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 200);
+    if (res.status === 401) {
+      throw new ConfigError(
+        "Bird rejected the access key (401). Create the key under Settings → Security → " +
+          "Access Keys with the \"Application Developer\" role, then redeploy."
+      );
+    }
+    throw new ConfigError(`Couldn't list Bird workspaces (${res.status}): ${detail}`);
+  }
+
+  const data = (await res.json()) as { results?: BirdWorkspace[]; workspaces?: BirdWorkspace[] };
+  const found = (data.results ?? data.workspaces ?? [])[0];
+  if (!found?.id) {
+    throw new ConfigError("This Bird access key can't see any workspace.");
+  }
+  workspaceCache = found.id;
+  return found.id;
 }
 
 async function listChannels(): Promise<BirdChannel[]> {
   if (channelCache) return channelCache;
-  const { workspaceId } = birdConfig();
 
-  // Walk the candidate hosts until one actually answers for this workspace.
-  let res: Response | null = null;
-  for (const base of birdBaseCandidates()) {
-    for (const prefix of BIRD_PATH_PREFIXES) {
-      const attempt = await birdFetch(
-        `${base}${prefix}/workspaces/${workspaceId}/channels?limit=100`
-      );
-      if (attempt.ok) {
-        routeCache = { base, prefix };
-        res = attempt;
-        break;
-      }
-      res = res ?? attempt;
-    }
-    if (routeCache) break;
-  }
-  if (!res) throw new ConfigError("Couldn't reach the Bird API.");
+  const workspaceId = await birdWorkspace();
+  const res = await birdFetch(`/workspaces/${workspaceId}/channels?limit=100`);
   if (!res.ok) {
-    const detail = await res.text();
-    console.error(`bird channels ${res.status} for workspace ${workspaceId}: ${detail}`);
-
-    if (res.status === 404 || res.status === 403 || res.status === 401) {
+    const detail = (await res.text()).slice(0, 200);
+    console.error(`bird channels ${res.status} (workspace ${workspaceId}): ${detail}`);
+    if (res.status === 401) {
       throw new ConfigError(
-        `Bird rejected this workspace on every regional host (last status ${res.status}). ` +
-          "Check that BIRD_ACCESS_KEY and BIRD_WORKSPACE_ID belong to the same workspace."
+        "Bird rejected the access key (401). It needs the \"Application Developer\" role."
+      );
+    }
+    if (res.status === 404) {
+      throw new ConfigError(
+        `Bird has no workspace ${workspaceId}. BIRD_WORKSPACE_ID must be the workspace UUID, ` +
+          "not the ws_… id from the dashboard URL — or leave it unset and it will be discovered."
       );
     }
     throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${detail}`);
   }
+
   const data = (await res.json()) as { results?: BirdChannel[] };
   channelCache = data.results ?? [];
   return channelCache;
 }
 
-/**
- * Resolve the channel to send on. An explicit env var wins; otherwise pick the
- * first matching channel in the workspace, preferring an active one.
- */
+export async function birdChannels(): Promise<BirdChannel[]> {
+  return listChannels();
+}
+
+/** Pick the channel to send on: an explicit id wins, else the workspace's own. */
 async function resolveChannel(kind: "sms" | "email"): Promise<string> {
   const override =
-    kind === "sms" ? process.env.BIRD_SMS_CHANNEL_ID : process.env.BIRD_EMAIL_CHANNEL_ID;
+    kind === "sms" ? process.env.BIRD_SMS_CHANNEL_ID?.trim() : process.env.BIRD_EMAIL_CHANNEL_ID?.trim();
   if (override) return override;
 
   const matches = kind === "sms" ? /sms/i : /e?mail/i;
@@ -246,88 +241,28 @@ async function resolveChannel(kind: "sms" | "email"): Promise<string> {
   const chosen = candidates.find((c) => c.status === "active") ?? candidates[0];
 
   if (!chosen) {
-    const seen = channels.map((c) => c.platformId).join(", ") || "none";
+    const seen = channels.map((c) => `${c.platformId}(${c.status})`).join(", ") || "none";
     throw new ConfigError(
-      `No ${kind} channel in this Bird workspace (channels seen: ${seen}). ` +
-        `Set BIRD_${kind.toUpperCase()}_CHANNEL_ID to choose one explicitly.`
+      `No ${kind} channel in this Bird workspace. Channels seen: ${seen}. ` +
+        `Install one in Bird, or set BIRD_${kind.toUpperCase()}_CHANNEL_ID.`
     );
   }
   return chosen.id;
 }
 
 async function birdSend(channelId: string, payload: unknown): Promise<void> {
-  const { workspaceId } = birdConfig();
-
-  const init = {
+  const workspaceId = await birdWorkspace();
+  const res = await birdFetch(`/workspaces/${workspaceId}/channels/${channelId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  };
-
-  let last: { status: number; detail: string } | null = null;
-  for (const url of messagesUrl(workspaceId, channelId)) {
-    const res = await birdFetch(url, init);
-    if (res.ok) return;
-    last = { status: res.status, detail: (await res.text()).slice(0, 300) };
-    // A 4xx that isn't routing (a bad payload, say) won't improve on another host.
-    if (res.status !== 401 && res.status !== 403 && res.status !== 404) break;
+  });
+  if (!res.ok) {
+    throw new Error(`bird ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
-  throw new Error(`bird ${last?.status}: ${last?.detail}`);
-}
-
-// ── Alternative providers ─────────────────────────────────────────────
-//
-// Bird is the default, but a one-time code that can't be delivered is a
-// locked door. If a Twilio or Resend credential is present it takes
-// precedence, so sign-in never depends on a single vendor.
-
-async function twilioSms(to: string, text: string): Promise<boolean> {
-  const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
-  const token = process.env.TWILIO_AUTH_TOKEN?.trim();
-  const from = process.env.TWILIO_FROM?.trim();
-  if (!sid || !token || !from) return false;
-
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ To: to, From: from, Body: text }).toString(),
-  });
-  if (!res.ok) throw new Error(`twilio ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return true;
-}
-
-async function resendEmail(
-  to: string,
-  subject: string,
-  text: string,
-  html: string
-): Promise<boolean> {
-  const key = process.env.RESEND_API_KEY?.trim();
-  if (!key) return false;
-  const from = process.env.RESEND_FROM?.trim() || "BFO <onboarding@resend.dev>";
-
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, text, html }),
-  });
-  if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return true;
-}
-
-export function configuredProviders() {
-  return {
-    twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM),
-    resend: !!process.env.RESEND_API_KEY,
-    bird: !!(process.env.BIRD_ACCESS_KEY && process.env.BIRD_WORKSPACE_ID),
-  };
 }
 
 export async function sendSms(to: string, text: string): Promise<void> {
-  if (await twilioSms(to, text)) return;
   const channelId = await resolveChannel("sms");
   await birdSend(channelId, {
     receiver: { contacts: [{ identifierValue: to }] },
@@ -341,7 +276,6 @@ export async function sendEmail(
   text: string,
   html: string
 ): Promise<void> {
-  if (await resendEmail(to, subject, text, html)) return;
   const channelId = await resolveChannel("email");
   await birdSend(channelId, {
     receiver: {
