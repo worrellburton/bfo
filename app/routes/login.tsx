@@ -17,7 +17,17 @@ type Step = "identifier" | "code" | "pending";
  */
 function formatIdentifier(raw: string): string {
   if (/[a-zA-Z@]/.test(raw)) return raw;
-  const digits = raw.replace(/\D/g, "").slice(0, 10);
+
+  // An explicit + means the caller is giving a country code — leave it be
+  // rather than forcing it into a US shape.
+  if (raw.trim().startsWith("+")) return `+${raw.replace(/\D/g, "")}`;
+
+  let digits = raw.replace(/\D/g, "");
+  // Autofill and habit both supply a leading US country code. Drop it instead
+  // of consuming it as the first digit of the area code.
+  if (digits.length > 10 && digits.startsWith("1")) digits = digits.slice(1);
+  digits = digits.slice(0, 10);
+
   if (digits.length <= 3) return digits;
   if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
