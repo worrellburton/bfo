@@ -11,7 +11,7 @@ import {
   sb,
   sendLoginCode,
   type AppUser,
-} from "../../lib/auth";
+} from "../../lib/auth.js";
 
 const MAX_CODES_PER_HOUR = 5;
 

@@ -11,7 +11,7 @@ import {
   safeEqual,
   sb,
   type AppUser,
-} from "../../lib/auth";
+} from "../../lib/auth.js";
 
 type CodeRow = {
   id: string;

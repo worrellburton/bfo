@@ -12,7 +12,7 @@ import {
   type AppUser,
   type Role,
   type Status,
-} from "../../lib/auth";
+} from "../../lib/auth.js";
 
 const ROLES: Role[] = ["owner", "admin", "member", "viewer"];
 const STATUSES: Status[] = ["incoming", "approved", "denied"];

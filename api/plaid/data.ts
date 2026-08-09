@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth";
+import { currentUser } from "../../lib/auth.js";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 function getPlaidClient() {

@@ -7,7 +7,7 @@ import {
   handleError,
   publicUser,
   sb,
-} from "../../lib/auth";
+} from "../../lib/auth.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "DELETE"])) return;
