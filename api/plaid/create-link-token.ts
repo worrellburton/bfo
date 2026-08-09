@@ -31,6 +31,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const kind = (req.body?.kind as string) === "bank" ? "bank" : "investments";
   const products = kind === "bank" ? [Products.Transactions] : [Products.Investments];
 
+  // Production OAuth banks (Chase, Wells Fargo, BoA…) bounce through a
+  // redirect that has to be registered in the Plaid dashboard as well.
+  const redirectUri = process.env.PLAID_REDIRECT_URI?.trim();
+
   try {
     const client = getPlaidClient();
     const response = await client.linkTokenCreate({
@@ -39,6 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       products,
       country_codes: [CountryCode.Us],
       language: "en",
+      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
     });
 
     res.json({ link_token: response.data.link_token });

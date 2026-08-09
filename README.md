@@ -49,7 +49,8 @@ Set these in the Vercel project:
 | `BIRD_SMS_CHANNEL_ID` | *optional* — pins the SMS channel; otherwise the workspace's SMS channel is discovered automatically |
 | `BIRD_EMAIL_CHANNEL_ID` | *optional* — same, for email |
 | `AUTH_SECRET` | *optional* — pepper mixed into the hash of each one-time code |
-| `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | brokerage connections on `/investments` |
+| `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | bank links on `/treasury`, brokerage links on `/investments` |
+| `PLAID_REDIRECT_URI` | *optional* — required for Production OAuth banks; must match an Allowed redirect URI in the Plaid dashboard |
 | `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET` | QuickBooks reports |
 | `ANTHROPIC_API_KEY` | agents and document renaming |
 
