@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, isAuthenticated, requestCode, verifyCode } from "../auth";
+import { ApiError, adoptToken, isAuthenticated, requestCode, verifyCode } from "../auth";
 import { ParticleCanvas } from "../particles";
 
 export function meta() {
@@ -45,8 +45,24 @@ export default function Login() {
   const codeInput = useRef<HTMLInputElement>(null);
   const submittedCode = useRef("");
 
+  const [params] = useSearchParams();
+
   useEffect(() => {
-    if (isAuthenticated()) navigate("/home");
+    if (isAuthenticated()) {
+      navigate("/home");
+      return;
+    }
+    // A one-time sign-in link carries a session token; adopt it and go.
+    const handoff = params.get("t");
+    if (handoff) {
+      setBusy(true);
+      adoptToken(handoff).then((ok) => {
+        setBusy(false);
+        if (ok) navigate("/home");
+        else shakeOut("That sign-in link is no longer valid.");
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   useEffect(() => {

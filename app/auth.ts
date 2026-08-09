@@ -166,6 +166,28 @@ export async function verifyCode(identifier: string, code: string) {
   return data;
 }
 
+/**
+ * Take a session token handed over out-of-band (a one-time sign-in link) and
+ * adopt it as this browser's session, if the server still honours it.
+ */
+export async function adoptToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/auth/session", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { user: User; expiresAt: string | null };
+    write({
+      token,
+      expiresAt: data.expiresAt ?? new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      user: data.user,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Re-check the session against the server; returns false once it's dead. */
 export async function revalidate(): Promise<boolean> {
   const session = read();

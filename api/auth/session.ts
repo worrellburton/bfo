@@ -23,7 +23,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const user = await currentUser(req);
     if (!user) return fail(res, 401, "unauthorized");
-    return res.status(200).json({ user: publicUser(user) });
+
+    const token = bearerToken(req)!;
+    const rows = await sb<Array<{ expires_at: string }>>(
+      `app_sessions?token=eq.${encodeURIComponent(token)}&select=expires_at&limit=1`
+    );
+    return res
+      .status(200)
+      .json({ user: publicUser(user), expiresAt: rows?.[0]?.expires_at ?? null });
   } catch (err) {
     return handleError(res, err);
   }

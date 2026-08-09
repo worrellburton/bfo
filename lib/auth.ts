@@ -123,12 +123,31 @@ export function safeEqual(a: string, b: string): boolean {
 type BirdChannel = { id: string; name: string; platformId: string; status: string };
 
 function birdConfig() {
-  const accessKey = process.env.BIRD_ACCESS_KEY;
-  const workspaceId = process.env.BIRD_WORKSPACE_ID;
+  // Pasted secrets routinely arrive with quotes or trailing whitespace.
+  const accessKey = process.env.BIRD_ACCESS_KEY?.trim().replace(/^["']|["']$/g, "");
+  const workspaceId = process.env.BIRD_WORKSPACE_ID?.trim().replace(/^["']|["']$/g, "");
   if (!accessKey || !workspaceId) {
     throw new ConfigError("BIRD_ACCESS_KEY and BIRD_WORKSPACE_ID must be set");
   }
   return { accessKey, workspaceId };
+}
+
+/**
+ * Bird documents `Authorization: AccessKey <token>`, but keys minted for some
+ * workspaces authenticate as bearer tokens. Try both rather than guessing.
+ */
+async function birdFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const { accessKey } = birdConfig();
+  let last: Response | null = null;
+  for (const scheme of ["AccessKey", "Bearer"]) {
+    const res = await fetch(url, {
+      ...init,
+      headers: { ...(init.headers ?? {}), Authorization: `${scheme} ${accessKey}` },
+    });
+    if (res.status !== 401 && res.status !== 403) return res;
+    last = res;
+  }
+  return last!;
 }
 
 // Discovered channels are cached for the life of the lambda instance so a
@@ -137,10 +156,8 @@ let channelCache: BirdChannel[] | null = null;
 
 async function listChannels(): Promise<BirdChannel[]> {
   if (channelCache) return channelCache;
-  const { accessKey, workspaceId } = birdConfig();
-  const res = await fetch(`https://api.bird.com/workspaces/${workspaceId}/channels?limit=100`, {
-    headers: { Authorization: `AccessKey ${accessKey}` },
-  });
+  const { workspaceId } = birdConfig();
+  const res = await birdFetch(`https://api.bird.com/workspaces/${workspaceId}/channels?limit=100`);
   if (!res.ok) {
     const detail = await res.text();
     console.error(`bird channels ${res.status} for workspace ${workspaceId}: ${detail}`);
@@ -150,9 +167,7 @@ async function listChannels(): Promise<BirdChannel[]> {
     // the fix is a copy-paste rather than a guess.
     if (res.status === 404 || res.status === 403) {
       try {
-        const wsRes = await fetch("https://api.bird.com/workspaces", {
-          headers: { Authorization: `AccessKey ${accessKey}` },
-        });
+        const wsRes = await birdFetch("https://api.bird.com/workspaces");
         const body = await wsRes.text();
         console.error(`bird workspaces visible to this access key (${wsRes.status}): ${body}`);
       } catch (err) {
@@ -197,16 +212,13 @@ async function resolveChannel(kind: "sms" | "email"): Promise<string> {
 }
 
 async function birdSend(channelId: string, payload: unknown): Promise<void> {
-  const { accessKey, workspaceId } = birdConfig();
+  const { workspaceId } = birdConfig();
 
-  const res = await fetch(
+  const res = await birdFetch(
     `https://api.bird.com/workspaces/${workspaceId}/channels/${channelId}/messages`,
     {
       method: "POST",
-      headers: {
-        Authorization: `AccessKey ${accessKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }
   );
