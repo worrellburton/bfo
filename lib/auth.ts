@@ -158,11 +158,13 @@ async function birdFetch(url: string, init: RequestInit = {}): Promise<Response>
 export function birdBaseCandidates(): string[] {
   const { accessKey } = birdConfig();
   const region = /^bk_([a-z]{2}\d)_/i.exec(accessKey)?.[1]?.toLowerCase();
+  // api.bird.com is the proven host — it answers 401 (auth) rather than 404
+  // (no such route) — so try it first and keep the regional host as a fallback
+  // in case Bird moves the data plane there.
   const bases = [
     process.env.BIRD_API_BASE?.trim().replace(/\/$/, ""),
-    region ? `https://${region}.platform.bird.com` : undefined,
-    "https://us1.platform.bird.com",
     "https://api.bird.com",
+    region ? `https://${region}.platform.bird.com` : undefined,
   ].filter(Boolean) as string[];
   return [...new Set(bases)];
 }
