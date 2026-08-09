@@ -40,20 +40,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // Bird keys are region-scoped (bk_us1_… → us1.platform.bird.com), so try
+    // every plausible host and path prefix rather than assuming one.
+    const region = /^bk_([a-z]{2}\d)_/i.exec(key)?.[1]?.toLowerCase();
+    const hosts = [
+      ...new Set(
+        [
+          region ? `https://${region}.platform.bird.com` : null,
+          "https://us1.platform.bird.com",
+          "https://eu1.platform.bird.com",
+          "https://api.bird.com",
+        ].filter(Boolean) as string[]
+      ),
+    ];
+
     const probes = await Promise.all([
-      probe("api.bird.com /workspaces (AccessKey)", "https://api.bird.com/workspaces", `AccessKey ${key}`),
-      probe("api.bird.com /workspaces (Bearer)", "https://api.bird.com/workspaces", `Bearer ${key}`),
-      probe(
-        "api.bird.com /channels (AccessKey)",
-        `https://api.bird.com/workspaces/${ws}/channels?limit=100`,
-        `AccessKey ${key}`
+      ...hosts.flatMap((host) =>
+        ["", "/v1"].map((prefix) =>
+          probe(
+            `${host}${prefix} /channels`,
+            `${host}${prefix}/workspaces/${ws}/channels?limit=100`,
+            `AccessKey ${key}`
+          )
+        )
       ),
-      probe(
-        "api.bird.com /channels (Bearer)",
-        `https://api.bird.com/workspaces/${ws}/channels?limit=100`,
-        `Bearer ${key}`
-      ),
-      // If this one is the only 200, the key is a legacy MessageBird key and
+      // If this is the only 200, the key is a legacy MessageBird key and
       // belongs on rest.messagebird.com rather than the Bird API.
       probe("rest.messagebird.com /balance (legacy)", "https://rest.messagebird.com/balance", `AccessKey ${key}`),
     ]);
@@ -73,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         hadWhitespace: rawWs !== rawWs.trim(),
         looksLikeBirdId: /^ws_[a-z0-9]+$/i.test(ws),
       },
+      region: /^bk_([a-z]{2}\d)_/i.exec(key)?.[1]?.toLowerCase() ?? null,
       probes,
     });
   } catch (err) {

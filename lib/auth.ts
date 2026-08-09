@@ -150,32 +150,74 @@ async function birdFetch(url: string, init: RequestInit = {}): Promise<Response>
   return last!;
 }
 
-// Discovered channels are cached for the life of the lambda instance so a
-// warm function doesn't re-list the workspace on every sign-in.
+/**
+ * Bird keys are region-scoped and only work against their own host:
+ * bk_us1_… → us1.platform.bird.com, bk_eu1_… → eu1.platform.bird.com.
+ * Older keys still live on api.bird.com, so fall back to it.
+ */
+export function birdBaseCandidates(): string[] {
+  const { accessKey } = birdConfig();
+  const region = /^bk_([a-z]{2}\d)_/i.exec(accessKey)?.[1]?.toLowerCase();
+  const bases = [
+    process.env.BIRD_API_BASE?.trim().replace(/\/$/, ""),
+    region ? `https://${region}.platform.bird.com` : undefined,
+    "https://us1.platform.bird.com",
+    "https://api.bird.com",
+  ].filter(Boolean) as string[];
+  return [...new Set(bases)];
+}
+
+/** Path prefixes to try — regional hosts serve the data plane under /v1. */
+const BIRD_PATH_PREFIXES = ["", "/v1"];
+
+export function birdRoutes(workspaceId: string, path: string): string[] {
+  return birdBaseCandidates().flatMap((base) =>
+    BIRD_PATH_PREFIXES.map((prefix) => `${base}${prefix}/workspaces/${workspaceId}${path}`)
+  );
+}
+
+// Discovered channels — and the route that reached them — are cached for the
+// life of the lambda instance so a warm function doesn't re-probe every time.
 let channelCache: BirdChannel[] | null = null;
+let routeCache: { base: string; prefix: string } | null = null;
+
+function messagesUrl(workspaceId: string, channelId: string): string[] {
+  const path = `/channels/${channelId}/messages`;
+  if (routeCache) {
+    return [`${routeCache.base}${routeCache.prefix}/workspaces/${workspaceId}${path}`];
+  }
+  return birdRoutes(workspaceId, path);
+}
 
 async function listChannels(): Promise<BirdChannel[]> {
   if (channelCache) return channelCache;
   const { workspaceId } = birdConfig();
-  const res = await birdFetch(`https://api.bird.com/workspaces/${workspaceId}/channels?limit=100`);
+
+  // Walk the candidate hosts until one actually answers for this workspace.
+  let res: Response | null = null;
+  for (const base of birdBaseCandidates()) {
+    for (const prefix of BIRD_PATH_PREFIXES) {
+      const attempt = await birdFetch(
+        `${base}${prefix}/workspaces/${workspaceId}/channels?limit=100`
+      );
+      if (attempt.ok) {
+        routeCache = { base, prefix };
+        res = attempt;
+        break;
+      }
+      res = res ?? attempt;
+    }
+    if (routeCache) break;
+  }
+  if (!res) throw new ConfigError("Couldn't reach the Bird API.");
   if (!res.ok) {
     const detail = await res.text();
     console.error(`bird channels ${res.status} for workspace ${workspaceId}: ${detail}`);
 
-    // A 404 here almost always means the workspace id doesn't belong to this
-    // access key. Ask Bird which workspaces the key *can* see and log them, so
-    // the fix is a copy-paste rather than a guess.
-    if (res.status === 404 || res.status === 403) {
-      try {
-        const wsRes = await birdFetch("https://api.bird.com/workspaces");
-        const body = await wsRes.text();
-        console.error(`bird workspaces visible to this access key (${wsRes.status}): ${body}`);
-      } catch (err) {
-        console.error("bird workspace lookup failed:", err);
-      }
+    if (res.status === 404 || res.status === 403 || res.status === 401) {
       throw new ConfigError(
-        "Bird doesn't recognize this workspace for the access key in use. " +
-          "Check BIRD_WORKSPACE_ID, or set BIRD_SMS_CHANNEL_ID / BIRD_EMAIL_CHANNEL_ID directly."
+        `Bird rejected this workspace on every regional host (last status ${res.status}). ` +
+          "Check that BIRD_ACCESS_KEY and BIRD_WORKSPACE_ID belong to the same workspace."
       );
     }
     throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${detail}`);
@@ -214,19 +256,21 @@ async function resolveChannel(kind: "sms" | "email"): Promise<string> {
 async function birdSend(channelId: string, payload: unknown): Promise<void> {
   const { workspaceId } = birdConfig();
 
-  const res = await birdFetch(
-    `https://api.bird.com/workspaces/${workspaceId}/channels/${channelId}/messages`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
+  const init = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  };
 
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`bird ${res.status}: ${detail}`);
+  let last: { status: number; detail: string } | null = null;
+  for (const url of messagesUrl(workspaceId, channelId)) {
+    const res = await birdFetch(url, init);
+    if (res.ok) return;
+    last = { status: res.status, detail: (await res.text()).slice(0, 300) };
+    // A 4xx that isn't routing (a bad payload, say) won't improve on another host.
+    if (res.status !== 401 && res.status !== 403 && res.status !== 404) break;
   }
+  throw new Error(`bird ${last?.status}: ${last?.detail}`);
 }
 
 export async function sendSms(to: string, text: string): Promise<void> {
