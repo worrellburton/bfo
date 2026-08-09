@@ -48,19 +48,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         [
           region ? `https://${region}.platform.bird.com` : null,
           "https://us1.platform.bird.com",
-          "https://eu1.platform.bird.com",
           "https://api.bird.com",
         ].filter(Boolean) as string[]
       ),
     ];
 
+    // An access key is workspace-scoped, so the workspace segment may not be
+    // part of the path at all. Try both shapes, and a workspace listing.
+    const paths = [
+      `/workspaces/${ws}/channels?limit=100`,
+      `/channels?limit=100`,
+      `/workspaces`,
+      `/workspaces/${ws}`,
+    ];
+
     const probes = await Promise.all([
       ...hosts.flatMap((host) =>
-        ["", "/v1"].map((prefix) =>
-          probe(
-            `${host}${prefix} /channels`,
-            `${host}${prefix}/workspaces/${ws}/channels?limit=100`,
-            `AccessKey ${key}`
+        ["", "/v1"].flatMap((prefix) =>
+          paths.map((path) =>
+            probe(`${host}${prefix}${path.split("?")[0]}`, `${host}${prefix}${path}`, `AccessKey ${key}`)
           )
         )
       ),
