@@ -275,7 +275,59 @@ async function birdSend(channelId: string, payload: unknown): Promise<void> {
   throw new Error(`bird ${last?.status}: ${last?.detail}`);
 }
 
+// ── Alternative providers ─────────────────────────────────────────────
+//
+// Bird is the default, but a one-time code that can't be delivered is a
+// locked door. If a Twilio or Resend credential is present it takes
+// precedence, so sign-in never depends on a single vendor.
+
+async function twilioSms(to: string, text: string): Promise<boolean> {
+  const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
+  const token = process.env.TWILIO_AUTH_TOKEN?.trim();
+  const from = process.env.TWILIO_FROM?.trim();
+  if (!sid || !token || !from) return false;
+
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ To: to, From: from, Body: text }).toString(),
+  });
+  if (!res.ok) throw new Error(`twilio ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return true;
+}
+
+async function resendEmail(
+  to: string,
+  subject: string,
+  text: string,
+  html: string
+): Promise<boolean> {
+  const key = process.env.RESEND_API_KEY?.trim();
+  if (!key) return false;
+  const from = process.env.RESEND_FROM?.trim() || "BFO <onboarding@resend.dev>";
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to, subject, text, html }),
+  });
+  if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return true;
+}
+
+export function configuredProviders() {
+  return {
+    twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM),
+    resend: !!process.env.RESEND_API_KEY,
+    bird: !!(process.env.BIRD_ACCESS_KEY && process.env.BIRD_WORKSPACE_ID),
+  };
+}
+
 export async function sendSms(to: string, text: string): Promise<void> {
+  if (await twilioSms(to, text)) return;
   const channelId = await resolveChannel("sms");
   await birdSend(channelId, {
     receiver: { contacts: [{ identifierValue: to }] },
@@ -289,6 +341,7 @@ export async function sendEmail(
   text: string,
   html: string
 ): Promise<void> {
+  if (await resendEmail(to, subject, text, html)) return;
   const channelId = await resolveChannel("email");
   await birdSend(channelId, {
     receiver: {

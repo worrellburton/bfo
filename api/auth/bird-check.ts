@@ -81,6 +81,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         length: key.length,
         prefix: key.slice(0, 4),
         suffix: key.slice(-4),
+        // Bird's dashboard identifies each key by its last 6 characters, so
+        // this is directly comparable to the key list without exposing the key.
+        dashboardSuffix: key.slice(-6),
+        secretLength: key.replace(/^bk_[a-z]{2}\d_/i, "").length,
         hadWhitespace: rawKey !== rawKey.trim(),
         hadQuotes: /^["']|["']$/.test(rawKey.trim()),
       },
