@@ -3,13 +3,11 @@ import {
   CODE_RESEND_MS,
   CODE_TTL_MS,
   fail,
-  generateCode,
   guard,
   handleError,
-  hashCode,
   normalizeIdentifier,
   sb,
-  sendLoginCode,
+  verifyStart,
   type AppUser,
 } from "../../lib/auth.js";
 
@@ -69,26 +67,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return fail(res, 429, "rate_limited", "Too many codes requested. Try again in an hour.");
     }
 
-    const code = generateCode();
-    const inserted = await sb<Array<{ id: string }>>("login_codes", {
+    // Bird Verify generates, delivers and checks the code; we keep only its
+    // verification id, namespaced so verify-code knows which path to take.
+    const verificationId = await verifyStart(identifier);
+    await sb("login_codes", {
       method: "POST",
-      prefer: "return=representation",
       body: [
         {
           identifier: identifier.value,
-          code_hash: hashCode(identifier.value, code),
+          code_hash: `bird:${verificationId}`,
           expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
         },
       ],
     });
-
-    try {
-      await sendLoginCode(identifier, code);
-    } catch (err) {
-      // Don't leave a pending code behind that would throttle the retry.
-      await sb(`login_codes?id=eq.${inserted[0].id}`, { method: "DELETE" }).catch(() => {});
-      throw err;
-    }
 
     return res.status(200).json({
       sent: true,

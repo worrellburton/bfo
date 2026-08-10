@@ -10,6 +10,7 @@ import {
   publicUser,
   safeEqual,
   sb,
+  verifyCheck,
   type AppUser,
 } from "../../lib/auth.js";
 
@@ -50,7 +51,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return fail(res, 429, "too_many_attempts", "Too many attempts. Request a new code.");
     }
 
-    if (!safeEqual(row.code_hash, hashCode(identifier.value, code))) {
+    if (row.code_hash.startsWith("bird:")) {
+      // Bird Verify holds the code; ask it whether this one matches.
+      const outcome = await verifyCheck(row.code_hash.slice(5), code);
+      if (outcome !== "verified") {
+        await sb(`login_codes?id=eq.${row.id}`, {
+          method: "PATCH",
+          body: {
+            attempts: row.attempts + 1,
+            ...(outcome === "expired" || outcome === "spent" ? { consumed: true } : {}),
+          },
+        });
+        if (outcome === "expired") {
+          return fail(res, 400, "code_expired", "That code expired. Request a new one.");
+        }
+        if (outcome === "spent") {
+          return fail(res, 429, "too_many_attempts", "Too many attempts. Request a new code.");
+        }
+        return fail(res, 401, "wrong_code", "That code isn't right.");
+      }
+    } else if (!safeEqual(row.code_hash, hashCode(identifier.value, code))) {
       await sb(`login_codes?id=eq.${row.id}`, {
         method: "PATCH",
         body: { attempts: row.attempts + 1 },

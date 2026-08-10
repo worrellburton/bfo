@@ -284,6 +284,82 @@ export async function sendEmail(
   });
 }
 
+// ── Bird Verify ───────────────────────────────────────────────────────
+//
+// Verify generates, delivers and checks the one-time code itself:
+//   POST /workspaces/{ws}/verify        → { id, status: "pending", … }
+//   POST /workspaces/{ws}/verify/{id}   → 200 verified / 400 failed
+// It needs only the `verify` scope this key already carries. steps[] is
+// omitted unless a channel id is configured — the workspace's default
+// Verify configuration supplies the route in that case.
+
+export async function verifyStart(identifier: Identifier): Promise<string> {
+  const workspaceId = await birdWorkspace();
+  const field = identifier.kind === "phone" ? "phonenumber" : "emailaddress";
+  const channelId =
+    identifier.kind === "phone"
+      ? process.env.BIRD_SMS_CHANNEL_ID?.trim()
+      : process.env.BIRD_EMAIL_CHANNEL_ID?.trim();
+
+  const res = await birdFetch(`/workspaces/${workspaceId}/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      identifier: { [field]: identifier.value },
+      codeLength: 6,
+      timeout: Math.round(CODE_TTL_MS / 1000),
+      maxAttempts: MAX_CODE_ATTEMPTS,
+      ...(channelId ? { steps: [{ channelId }] } : {}),
+    }),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    console.error(`bird verify start ${res.status}: ${text.slice(0, 300)}`);
+    throw new ConfigError(
+      res.status === 422 && !channelId
+        ? "Bird Verify needs a default channel — finish the Verify → Configure step in Bird, " +
+            "or set BIRD_SMS_CHANNEL_ID / BIRD_EMAIL_CHANNEL_ID."
+        : `Bird Verify rejected the request (${res.status}): ${text.slice(0, 160)}`
+    );
+  }
+
+  const data = JSON.parse(text) as { id?: string };
+  if (!data.id) throw new Error("Bird Verify returned no verification id");
+  return data.id;
+}
+
+export type VerifyOutcome = "verified" | "failed" | "expired" | "spent";
+
+export async function verifyCheck(verificationId: string, code: string): Promise<VerifyOutcome> {
+  const workspaceId = await birdWorkspace();
+  const res = await birdFetch(
+    `/workspaces/${workspaceId}/verify/${encodeURIComponent(verificationId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    }
+  );
+
+  const text = await res.text();
+  let status = "";
+  try {
+    status = (JSON.parse(text) as { status?: string }).status ?? "";
+  } catch {
+    // fall through to HTTP-status handling
+  }
+
+  if (res.ok && (status === "verified" || status === "")) return "verified";
+  if (status === "expired" || status === "canceled") return "expired";
+  if (res.status === 404) return "expired";
+  // A used-up verification can't be retried; the caller should mint a new one.
+  if (status === "failed" && text.includes("attempts")) return "spent";
+  if (res.status === 400) return "failed";
+  console.error(`bird verify check ${res.status}: ${text.slice(0, 300)}`);
+  return "failed";
+}
+
 /** Deliver a sign-in code over whichever channel the identifier implies. */
 export async function sendLoginCode(identifier: Identifier, code: string): Promise<void> {
   const minutes = Math.round(CODE_TTL_MS / 60000);
