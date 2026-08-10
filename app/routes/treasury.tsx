@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 
@@ -33,16 +34,8 @@ type Account = {
   currency: string | null;
   change: number | null;
   change_since: string | null;
-};
-
-type Txn = {
-  date: string;
-  name: string;
-  description: string;
-  category: string | null;
-  amount: number;
-  pending: boolean;
-  currency: string | null;
+  nickname: string | null;
+  hidden: boolean;
 };
 
 declare global {
@@ -106,6 +99,7 @@ function tint(hex: string | null): string {
 }
 
 export default function Treasury() {
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -113,21 +107,26 @@ export default function Treasury() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
+  const [view, setViewState] = useState<"grid" | "list">(() => {
+    try {
+      return localStorage.getItem("bfo-treasury-view") === "list" ? "list" : "grid";
+    } catch {
+      return "grid";
+    }
+  });
+  function setView(next: "grid" | "list") {
+    setViewState(next);
+    try {
+      localStorage.setItem("bfo-treasury-view", next);
+    } catch {}
+  }
   const [error, setError] = useState("");
 
-  const [open, setOpen] = useState<Account | null>(null);
-  const [txns, setTxns] = useState<Txn[]>([]);
-  const [txnState, setTxnState] = useState<"idle" | "loading" | "error">("idle");
-  const [txnError, setTxnError] = useState("");
-  const [search, setSearch] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     void load();
   }, []);
-
-  useEffect(() => {
-    if (open) void loadTxns(open);
-  }, [open]);
 
   async function call(path: string, init?: RequestInit) {
     const res = await authFetch(path, init);
@@ -147,24 +146,6 @@ export default function Treasury() {
       setError(err instanceof Error ? err.message : "Couldn't load accounts.");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadTxns(account: Account) {
-    setTxnState("loading");
-    setTxnError("");
-    setTxns([]);
-    setSearch("");
-    try {
-      const data = await call(
-        `/api/plaid/data?report=bank-transactions&item_id=${account.item_id}&account_id=${account.account_id}`
-      );
-      if (data.error) throw new Error(data.message ?? data.error);
-      setTxns(data.transactions ?? []);
-      setTxnState("idle");
-    } catch (err) {
-      setTxnError(err instanceof Error ? err.message : "Couldn't load transactions.");
-      setTxnState("error");
     }
   }
 
@@ -222,27 +203,22 @@ export default function Treasury() {
     }
   }
 
-  const cash = accounts
+  const hiddenCount = accounts.filter((a) => a.hidden).length;
+  const visible = accounts.filter((a) => showHidden || !a.hidden);
+
+  const cash = visible
     .filter((a) => a.type === "depository")
     .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
-  const credit = accounts
+  const credit = visible
     .filter((a) => a.type === "credit")
     .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
-  const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
+  const invested = visible
+    .filter((a) => a.type === "investment")
+    .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
+  const movement = visible.reduce((sum, a) => sum + (a.change ?? 0), 0);
 
   const statusFor = (itemId: string) =>
     connections.find((c) => c.item_id === itemId)?.status ?? "offline";
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return txns;
-    return txns.filter(
-      (t) =>
-        t.name?.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q) ||
-        t.category?.toLowerCase().includes(q)
-    );
-  }, [txns, search]);
 
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
@@ -254,15 +230,39 @@ export default function Treasury() {
           <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Treasury</h1>
           <p className={`text-sm mt-1 ${subtle}`}>Bank accounts, balances and history</p>
         </div>
-        <button
-          onClick={() => void connect()}
-          disabled={linking}
-          className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-            isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
-          }`}
-        >
-          {linking ? "Connecting…" : "Connect bank"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className={`flex rounded-lg border p-0.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+            {([
+              ["grid", "M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"],
+              ["list", "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"],
+            ] as const).map(([value, d]) => (
+              <button
+                key={value}
+                onClick={() => setView(value)}
+                title={value === "grid" ? "Grid view" : "List view"}
+                aria-pressed={view === value}
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  view === value
+                    ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
+                    : isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-black"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+                </svg>
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => void connect()}
+            disabled={linking}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+              isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
+            }`}
+          >
+            {linking ? "Connecting…" : "Connect bank"}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -282,9 +282,10 @@ export default function Treasury() {
       )}
 
       {!loading && accounts.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-3 mb-8">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-8">
           {[
             { label: "Cash", value: money(cash) },
+            { label: "Invested", value: invested > 0 ? money(invested) : "—" },
             { label: "Credit balances", value: money(credit) },
             {
               label: "Change since last visit",
@@ -316,14 +317,15 @@ export default function Treasury() {
         </div>
       )}
 
+      {view === "grid" && (
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {accounts.map((account) => {
+        {visible.map((account) => {
           const rgb = tint(account.institution_color);
           const online = statusFor(account.item_id) === "online";
           return (
             <button
               key={account.account_id}
-              onClick={() => setOpen(account)}
+              onClick={() => navigate(`/treasury/${account.account_id}`)}
               className="treasury-card group text-left"
               style={{ ["--bank" as any]: rgb }}
             >
@@ -357,7 +359,7 @@ export default function Treasury() {
 
               <div className="relative mt-6">
                 <p className="text-white/55 text-xs truncate">
-                  {account.official_name || account.name}
+                  {account.nickname || account.official_name || account.name}
                   {account.mask ? ` ····${account.mask}` : ""}
                 </p>
                 <p className="text-white text-[27px] font-semibold tracking-tight mt-1">
@@ -394,9 +396,103 @@ export default function Treasury() {
           );
         })}
       </div>
+      )}
 
-      {connections.length > 0 && (
+      {view === "list" && !loading && accounts.length > 0 && (
+        <div className={`rounded-xl border overflow-hidden ${card}`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse min-w-[760px]">
+              <thead>
+                <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>
+                  {["Institution", "Account", "Type", "Status", "Change", "Balance"].map((h, i) => (
+                    <th
+                      key={h}
+                      className={`text-[11px] uppercase tracking-wider font-medium px-4 py-3 ${
+                        i >= 4 ? "text-right" : "text-left"
+                      } ${isDark ? "text-gray-400" : "text-gray-500"}`}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((account) => {
+                  const online = statusFor(account.item_id) === "online";
+                  const rgb = tint(account.institution_color);
+                  return (
+                    <tr
+                      key={account.account_id}
+                      onClick={() => navigate(`/treasury/${account.account_id}`)}
+                      className={`cursor-pointer transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
+                    >
+                      <td className={`px-4 py-3 border-t whitespace-nowrap ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                        <span className="flex items-center gap-2.5">
+                          {account.institution_logo ? (
+                            <img
+                              src={`data:image/png;base64,${account.institution_logo}`}
+                              alt=""
+                              className="w-6 h-6 rounded object-contain bg-white/90 p-0.5 shrink-0"
+                            />
+                          ) : (
+                            <span
+                              className="w-6 h-6 rounded shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+                              style={{ background: `rgba(${rgb}, 0.55)` }}
+                            >
+                              {account.institution_name.slice(0, 1)}
+                            </span>
+                          )}
+                          <span className="font-medium">{account.institution_name}</span>
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 border-t whitespace-nowrap ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                        {account.nickname || account.official_name || account.name}
+                        {account.mask ? ` ····${account.mask}` : ""}
+                      </td>
+                      <td className={`px-4 py-3 border-t whitespace-nowrap capitalize ${subtle} ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                        {account.subtype || account.type}
+                      </td>
+                      <td className={`px-4 py-3 border-t whitespace-nowrap ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={online ? "treasury-dot treasury-dot-live" : "treasury-dot treasury-dot-down"} />
+                          <span className={`text-xs ${subtle}`}>{online ? "Online" : "Offline"}</span>
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 border-t whitespace-nowrap text-right tabular-nums ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                        {account.change != null && account.change !== 0 ? (
+                          <span className={account.change > 0 ? "text-emerald-400" : "text-rose-400"}>
+                            {signed(account.change, account.currency ?? "USD")}
+                          </span>
+                        ) : (
+                          <span className={subtle}>—</span>
+                        )}
+                      </td>
+                      <td className={`px-4 py-3 border-t whitespace-nowrap text-right tabular-nums font-semibold ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                        {money(account.balance_current, account.currency ?? "USD")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {(connections.length > 0 || hiddenCount > 0) && (
         <div className="flex flex-wrap gap-2 mt-6">
+          {hiddenCount > 0 && (
+            <button
+              onClick={() => setShowHidden((v) => !v)}
+              className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                isDark
+                  ? "border-white/10 text-gray-500 hover:text-white hover:border-white/25"
+                  : "border-gray-200 text-gray-500 hover:text-black hover:border-gray-400"
+              }`}
+            >
+              {showHidden ? "Hide hidden accounts" : `Show ${hiddenCount} hidden`}
+            </button>
+          )}
           {connections.map((conn) => (
             <button
               key={conn.item_id}
@@ -413,110 +509,6 @@ export default function Treasury() {
         </div>
       )}
 
-      {/* Spreadsheet drawer */}
-      {open && (
-        <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(null)} />
-          <div
-            className={`relative ml-auto h-full w-full max-w-4xl shadow-2xl flex flex-col ${
-              isDark ? "bg-[#0b0b0b] border-l border-white/10" : "bg-white border-l border-gray-200"
-            }`}
-          >
-            <div className={`flex items-center justify-between gap-4 px-6 py-4 border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold truncate">
-                  {open.official_name || open.name}
-                  {open.mask ? ` ····${open.mask}` : ""}
-                </h2>
-                <p className={`text-xs ${subtle}`}>
-                  {open.institution_name} · {money(open.balance_current, open.currency ?? "USD")}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Filter…"
-                  className={`px-3 py-1.5 rounded-lg text-xs border focus:outline-none ${
-                    isDark
-                      ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
-                      : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
-                  }`}
-                />
-                <button
-                  onClick={() => setOpen(null)}
-                  className={`p-1.5 rounded-lg cursor-pointer ${isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto">
-              {txnState === "loading" && <p className={`text-sm p-6 ${subtle}`}>Loading transactions…</p>}
-              {txnState === "error" && (
-                <p className={`text-sm p-6 ${isDark ? "text-red-400" : "text-red-600"}`}>{txnError}</p>
-              )}
-              {txnState === "idle" && filtered.length === 0 && (
-                <p className={`text-sm p-6 ${subtle}`}>No transactions in the last 180 days.</p>
-              )}
-              {txnState === "idle" && filtered.length > 0 && (
-                <table className="w-full text-sm border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className={isDark ? "bg-[#141414]" : "bg-gray-50"}>
-                      {["Date", "Description", "Category", "Amount"].map((h, i) => (
-                        <th
-                          key={h}
-                          className={`text-[11px] uppercase tracking-wider font-medium px-4 py-2.5 border-b ${
-                            i === 3 ? "text-right" : "text-left"
-                          } ${isDark ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-500"}`}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((t, i) => (
-                      <tr
-                        key={`${t.date}-${t.description}-${i}`}
-                        className={
-                          i % 2
-                            ? isDark ? "bg-white/[0.015]" : "bg-gray-50/60"
-                            : ""
-                        }
-                      >
-                        <td className={`px-4 py-2 tabular-nums whitespace-nowrap border-b ${isDark ? "border-white/5 text-gray-400" : "border-gray-100 text-gray-500"}`}>
-                          {t.date}
-                        </td>
-                        <td className={`px-4 py-2 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
-                          {t.name}
-                          {t.pending && (
-                            <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>
-                          )}
-                        </td>
-                        <td className={`px-4 py-2 border-b ${isDark ? "border-white/5 text-gray-400" : "border-gray-100 text-gray-500"}`}>
-                          {t.category ?? "—"}
-                        </td>
-                        {/* Plaid signs outflows positive; flip so money out reads negative. */}
-                        <td
-                          className={`px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium border-b ${
-                            isDark ? "border-white/5" : "border-gray-100"
-                          } ${t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"}`}
-                        >
-                          {signed(-t.amount, t.currency ?? "USD")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

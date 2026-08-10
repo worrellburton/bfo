@@ -46,6 +46,15 @@ type AccountState = {
   prev_seen_at: string | null;
 };
 
+type AccountPrefs = { account_id: string; nickname: string | null; hidden: boolean };
+
+async function getAccountPrefs(): Promise<Map<string, AccountPrefs>> {
+  const r = await db("plaid_account_prefs?select=*");
+  if (!r.ok) return new Map();
+  const rows = (await r.json()) as AccountPrefs[];
+  return new Map(rows.map((row) => [row.account_id, row]));
+}
+
 async function getAccountStates(): Promise<Map<string, AccountState>> {
   const r = await db("plaid_account_state?select=*");
   if (!r.ok) return new Map();
@@ -120,6 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "treasury") {
       const items = (await getItems()).filter((i: any) => (i.kind ?? "investments") === "bank");
       const states = await getAccountStates();
+      const prefs = await getAccountPrefs();
       const now = new Date();
       const accounts: any[] = [];
       const connections: any[] = [];
@@ -136,7 +146,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           connections.push({ ...base, status: "online" });
 
           for (const a of balRes.data.accounts) {
-            if (a.type !== "depository" && a.type !== "credit") continue;
+            // Show every account the connection exposes — a brokerage linked
+            // here (Vanguard) has type "investment" and was silently hidden.
             const prior = states.get(a.account_id);
             const current = a.balances.current ?? null;
 
@@ -159,6 +170,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               currency: a.balances.iso_currency_code,
               change: baseline == null || current == null ? null : current - Number(baseline),
               change_since: baselineAt,
+              nickname: prefs.get(a.account_id)?.nickname ?? null,
+              hidden: prefs.get(a.account_id)?.hidden ?? false,
             });
 
             await saveAccountState(a.account_id, item.item_id, current, prior, stale, now);

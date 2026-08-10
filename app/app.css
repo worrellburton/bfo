@@ -542,3 +542,40 @@ html.light {
 @media (prefers-reduced-motion: reduce) {
   .sidebar-brand { transition: none; }
 }
+
+/* Aurora backdrop for the app shell — quieter than the landing page. */
+.app-aurora { opacity: 0.55; }
+:root:not(.dark) .app-aurora, html[data-theme="light"] .app-aurora { opacity: 0.25; }
+
+/* Floating glass dock (mobile) */
+.mobile-dock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 12, 16, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+.mobile-dock-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s, color 0.2s;
+}
+.mobile-dock-item-active {
+  background: #fff;
+  color: #000 !important;
+  transform: scale(1.16) translateY(-4px);
+  box-shadow: 0 10px 24px -8px rgba(255, 255, 255, 0.45);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-dock-item { transition: none; }
+  .mobile-dock-item-active { transform: none; }
+}

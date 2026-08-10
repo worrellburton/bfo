@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   authFetch,
@@ -108,6 +108,7 @@ const usersIcon = (
 
 export default function AppLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggle } = useTheme();
   const hoverCapable = useHoverCapable();
 
@@ -201,6 +202,13 @@ export default function AppLayout() {
       className={`min-h-screen relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
       style={{ ["--rail" as any]: `${railWidth}px`, ["--inset" as any]: `${contentInset}px` }}
     >
+      {/* Drifting aurora — the app shell shares the landing atmosphere and the
+          glass surfaces let it show through. */}
+      <div aria-hidden className="app-aurora fixed inset-0 pointer-events-none">
+        <div className="landing-orb landing-orb-1" />
+        <div className="landing-orb landing-orb-2" />
+        <div className="landing-orb landing-orb-3" />
+      </div>
       <ParticleCanvas themeAware className="absolute inset-0 w-full h-full pointer-events-none" />
 
       {/* Mobile header — below the breakpoint the width setting is irrelevant */}
@@ -237,7 +245,7 @@ export default function AppLayout() {
           sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r
           w-[260px] lg:w-[var(--rail)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
-          ${isDark ? "border-white/10 bg-black" : "border-gray-200 bg-white"}
+          ${isDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
         `}
       >
         {/* Top: width control, then the wordmark */}
@@ -380,9 +388,38 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="sidebar-content relative z-10 p-4 pt-16 sm:p-6 sm:pt-16 lg:p-8 lg:pt-8 lg:ml-[var(--inset)]">
+      <main className="sidebar-content relative z-10 p-4 pt-16 pb-28 sm:p-6 sm:pt-16 sm:pb-28 lg:p-8 lg:pt-8 lg:pb-8 lg:ml-[var(--inset)]">
         <Outlet />
       </main>
+
+      {/* Mobile dock — floating glass pill, primary destinations only */}
+      <nav
+        aria-label="Quick navigation"
+        className="mobile-dock fixed bottom-4 left-1/2 -translate-x-1/2 z-40 lg:hidden"
+      >
+        {["Entities", "Finance", "Home", "Treasury", "Tools"].map((label) => {
+          const item = navItems.find((n) => n.label === label);
+          if (!item) return null;
+          const active =
+            item.to === "/home"
+              ? location.pathname === "/home"
+              : location.pathname.startsWith(item.to);
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              aria-label={item.label}
+              aria-current={active ? "page" : undefined}
+              className={`mobile-dock-item ${active ? "mobile-dock-item-active" : ""} ${
+                isDark ? "text-gray-300" : "text-gray-600"
+              }`}
+            >
+              {item.icon}
+            </NavLink>
+          );
+        })}
+      </nav>
+
     </div>
   );
 }
