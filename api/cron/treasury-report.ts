@@ -19,6 +19,7 @@ type DailyTotal = { day: string; cash: number; invested: number; credit: number 
 
 type Account = {
   institution_name: string;
+  institution_color: string | null;
   name: string;
   official_name: string | null;
   nickname: string | null;
@@ -30,13 +31,33 @@ type Account = {
   hidden?: boolean;
 };
 
+type Connection = { institution_name: string; status: string };
+
 const APP_URL = "https://www.burtonfamilyoffice.com";
 
+/** Cents only under $1,000 — big balances read faster without them. */
 const money = (n: number | null | undefined, currency = "USD") =>
-  n == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
+  n == null
+    ? "—"
+    : new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        maximumFractionDigits: Math.abs(n) >= 1000 ? 0 : 2,
+        minimumFractionDigits: Math.abs(n) >= 1000 ? 0 : 2,
+      }).format(n);
 
 const signed = (n: number, currency = "USD") =>
   `${n >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Math.abs(n))}`;
+
+/** Plaid's brand hex → "r, g, b", with an indigo fallback. */
+function tint(hex: string | null): string {
+  const fallback = "99, 102, 241";
+  if (!hex) return fallback;
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return fallback;
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
 
 async function loadHistory(): Promise<DailyTotal[]> {
   try {
@@ -66,6 +87,10 @@ function sumBy(list: Account[], type: string): number {
   return list.filter((a) => a.type === type).reduce((s, a) => s + (a.balance_current ?? 0), 0);
 }
 
+function moveBy(list: Account[], type: string): number {
+  return list.filter((a) => a.type === type).reduce((s, a) => s + (a.change ?? 0), 0);
+}
+
 /** Preferred display name, without repeating a mask the name already carries. */
 function accountLabel(a: Account): string {
   const base = a.nickname || a.official_name || a.name || "Account";
@@ -85,6 +110,8 @@ type Shaped = {
   cash: number;
   invested: number;
   credit: number;
+  cashMove: number;
+  investMove: number;
   totalValue: number;
 };
 
@@ -109,6 +136,8 @@ function shape(accounts: Account[]): Shaped {
     cash,
     invested,
     credit,
+    cashMove: moveBy(accounts, "depository"),
+    investMove: moveBy(accounts, "investment"),
     totalValue: cash + invested - credit,
   };
 }
@@ -118,6 +147,14 @@ function reportDate(now: Date): string {
     weekday: "long",
     month: "long",
     day: "numeric",
+    timeZone: "America/New_York",
+  });
+}
+
+function reportTime(now: Date): string {
+  return now.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
     timeZone: "America/New_York",
   });
 }
@@ -132,10 +169,10 @@ function subjectLine(s: Shaped, movement: number, sample: boolean): string {
 function renderText(s: Shaped, movement: number, now: Date): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
-    return `  ${a.institution_name} ${accountLabel(a)}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
+    return `  [${a.institution_name}] ${accountLabel(a)}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
   };
   const out = [
-    `BFO Treasury — ${reportDate(now)}`,
+    `BFO Treasury — ${reportDate(now)}, ${reportTime(now)} ET`,
     `Total value ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}${
       s.credit ? ` · Credit −${money(s.credit)}` : ""
     }`,
@@ -157,7 +194,10 @@ function renderGraph(history: DailyTotal[]): string {
   if (history.length < 2) return "";
   const totals = history.map((d) => Number(d.cash) + Number(d.invested));
   const max = Math.max(...totals);
+  const min = Math.min(...totals);
   if (max <= 0) return "";
+  const windowChange = totals[totals.length - 1] - totals[0];
+  const pct = totals[0] > 0 ? (windowChange / totals[0]) * 100 : 0;
   const H = 54;
   const cols = history
     .map((d, i) => {
@@ -171,45 +211,76 @@ function renderGraph(history: DailyTotal[]): string {
   const first = history[0].day.slice(5).replace("-", "/");
   const last = history[history.length - 1].day.slice(5).replace("-", "/");
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-    <tr>${cols}</tr>
-    <tr><td colspan="${history.length}" style="padding-top:6px;">
+    <tr>
+      <td style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);padding-bottom:6px;">Trend</td>
+      <td align="right" style="font-size:11px;padding-bottom:6px;color:${windowChange >= 0 ? "#34d399" : "#fb7185"};">
+        ${signed(windowChange)} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)
+      </td>
+    </tr>
+    <tr><td colspan="2">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cols}</tr></table>
+    </td></tr>
+    <tr><td colspan="2" style="padding-top:6px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
         <td style="font-size:10px;color:rgba(255,255,255,0.35);">${first}</td>
+        <td align="center" style="font-size:10px;color:rgba(255,255,255,0.3);">low ${money(min)} · high ${money(max)}</td>
         <td align="right" style="font-size:10px;color:rgba(255,255,255,0.35);">${last}</td>
       </tr></table>
     </td></tr>
   </table>`;
 }
 
-function renderHtml(s: Shaped, movement: number, history: DailyTotal[], now: Date): string {
-  const statCard = (label: string, value: string) => `
+function renderHtml(
+  s: Shaped,
+  movement: number,
+  history: DailyTotal[],
+  now: Date,
+  connections: Connection[] = []
+): string {
+  const statCard = (label: string, value: string, move: number) => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
       style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.10);border-radius:14px;">
-      <tr><td style="padding:12px 14px;">
+      <tr><td style="padding:13px 15px;">
         <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">${label}</div>
-        <div style="margin-top:4px;font-size:18px;font-weight:600;color:#fff;">${value}</div>
+        <div style="margin-top:4px;font-size:20px;font-weight:600;color:#fff;">${value}</div>
+        <div style="margin-top:3px;font-size:11px;min-height:13px;color:${
+          move === 0 ? "rgba(255,255,255,0.3)" : move > 0 ? "#34d399" : "#fb7185"
+        };">${move === 0 ? "no change" : signed(move)}</div>
       </td></tr>
     </table>`;
 
-  const row = (a: Account, liability = false) => {
+  /** The bank chip, tinted with the institution's own brand colour. */
+  const chip = (a: Account) => {
+    const rgb = tint(a.institution_color);
+    return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:0.02em;color:#fff;background:rgba(${rgb},0.28);border:1px solid rgba(${rgb},0.55);">${a.institution_name}</span>`;
+  };
+
+  const row = (a: Account, sectionMax: number, liability = false) => {
+    const rgb = tint(a.institution_color);
+    const share = sectionMax > 0 ? Math.max(2, Math.round(((a.balance_current ?? 0) / sectionMax) * 100)) : 0;
     const delta = a.change
       ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>`
       : "";
     return `<tr>
-      <td style="padding:9px 0;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.85);font-size:13px;">
-        ${accountLabel(a)}<br/>
-        <span style="color:rgba(255,255,255,0.4);font-size:11px;">${a.institution_name}</span>
+      <td style="padding:10px 0 0;color:rgba(255,255,255,0.88);font-size:13px;font-weight:500;">
+        ${accountLabel(a)}
+        <div style="margin-top:4px;">${chip(a)}</div>
       </td>
-      <td align="right" valign="middle" style="padding:9px 0;border-top:1px solid rgba(255,255,255,0.08);color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
+      <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
         ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}
       </td>
-    </tr>`;
+    </tr>
+    <tr><td colspan="2" style="padding:8px 0 10px;border-bottom:1px solid rgba(255,255,255,0.07);">
+      <div style="height:3px;border-radius:999px;background:rgba(255,255,255,0.06);font-size:0;line-height:0;">
+        <div style="height:3px;width:${liability ? 0 : share}%;border-radius:999px;background:rgba(${rgb},0.65);font-size:0;line-height:0;">&nbsp;</div>
+      </div>
+    </td></tr>`;
   };
 
   const zeroRow = (n: number) =>
     n === 0
       ? ""
-      : `<tr><td colspan="2" style="padding:8px 0;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.35);font-size:12px;">
+      : `<tr><td colspan="2" style="padding:9px 0;color:rgba(255,255,255,0.35);font-size:12px;">
           + ${n} zero-balance account${n === 1 ? "" : "s"}
         </td></tr>`;
 
@@ -217,18 +288,49 @@ function renderHtml(s: Shaped, movement: number, history: DailyTotal[], now: Dat
     title: string,
     list: Account[],
     subtotal: string,
+    move: number,
     opts: { zeros?: number; liability?: boolean } = {}
-  ) =>
-    list.length === 0 && !opts.zeros
-      ? ""
-      : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+  ) => {
+    if (list.length === 0 && !opts.zeros) return "";
+    const sectionMax = Math.max(...list.map((a) => Math.abs(a.balance_current ?? 0)), 0);
+    const count = list.length + (opts.zeros ?? 0);
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+      style="margin-top:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
+      <tr><td style="padding:14px 16px 6px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);padding-bottom:7px;">${title}</td>
-            <td align="right" style="font-size:11px;color:rgba(255,255,255,0.55);padding-bottom:7px;">${subtotal}</td>
+            <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);">
+              ${title} <span style="color:rgba(255,255,255,0.28);letter-spacing:0;">· ${count}</span>
+            </td>
+            <td align="right" style="font-size:11px;color:rgba(255,255,255,0.6);">
+              ${subtotal}${move !== 0 ? ` <span style="color:${move > 0 ? "#34d399" : "#fb7185"};">${signed(move)}</span>` : ""}
+            </td>
           </tr>
-          ${list.map((a) => row(a, opts.liability)).join("")}
+          ${list.map((a) => row(a, sectionMax, opts.liability)).join("")}
           ${zeroRow(opts.zeros ?? 0)}
+        </table>
+      </td></tr>
+    </table>`;
+  };
+
+  const offline = connections.filter((c) => c.status !== "online");
+  const alertBanner =
+    offline.length === 0
+      ? ""
+      : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+          style="margin-top:16px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:12px;">
+          <tr><td style="padding:10px 14px;font-size:12px;color:#fbbf24;">
+            ⚠ ${offline.map((c) => c.institution_name).join(", ")} need${offline.length === 1 ? "s" : ""} reconnecting —
+            balances shown may be stale. <a href="${APP_URL}/treasury" style="color:#fde68a;">Reconnect</a>
+          </td></tr>
         </table>`;
+
+  const empty =
+    s.cashAccounts.length + s.investAccounts.length + s.creditAccounts.length === 0 && !s.zeroCounts.cash
+      ? `<div style="margin-top:24px;padding:24px;text-align:center;border:1px dashed rgba(255,255,255,0.15);border-radius:14px;color:rgba(255,255,255,0.45);font-size:13px;">
+          No accounts connected yet — <a href="${APP_URL}/treasury" style="color:#fff;">connect a bank</a> and the next report will have the numbers.
+        </div>`
+      : "";
 
   const preheader = `Total ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}${
     movement === 0 ? "" : ` · ${signed(movement)} since last report`
@@ -237,45 +339,50 @@ function renderHtml(s: Shaped, movement: number, history: DailyTotal[], now: Dat
   return `<!doctype html><html><head>
   <meta name="color-scheme" content="dark" />
   <meta name="supported-color-schemes" content="dark" />
-</head><body style="margin:0;background:#000;padding:28px 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;" bgcolor="#000000">
+</head><body style="margin:0;background:#000;padding:24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;" bgcolor="#000000">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${preheader}</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
-    <table role="presentation" width="100%" style="max-width:520px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0" bgcolor="#0b0b0b">
-      <tr><td style="padding:28px;">
+    <table role="presentation" width="100%" style="max-width:500px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0" bgcolor="#0b0b0b">
+      <tr><td style="padding:26px 24px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td>
             <div style="font-size:24px;font-weight:700;color:#fff;letter-spacing:-0.02em;">BFO</div>
             <div style="margin-top:3px;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Treasury report</div>
           </td>
-          <td align="right" valign="top" style="font-size:11px;color:rgba(255,255,255,0.4);">${reportDate(now)}</td>
+          <td align="right" valign="top" style="font-size:11px;color:rgba(255,255,255,0.4);">
+            ${reportDate(now)}<br/>
+            <span style="color:rgba(255,255,255,0.3);">as of ${reportTime(now)} ET</span>
+          </td>
         </tr></table>
 
         <div style="margin-top:22px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Total value</div>
-        <div style="margin-top:3px;font-size:30px;font-weight:600;color:#fff;">${money(s.totalValue)}</div>
+        <div style="margin-top:3px;font-size:32px;font-weight:600;color:#fff;">${money(s.totalValue)}</div>
         <div style="margin-top:3px;font-size:12px;color:${movement === 0 ? "rgba(255,255,255,0.45)" : movement > 0 ? "#34d399" : "#fb7185"};">
-          ${movement === 0 ? "No movement since the last report" : `${signed(movement)} since the last report`}
+          ${movement === 0 ? "No movement since the last report" : `${movement > 0 ? "▲" : "▼"} ${signed(movement)} since the last report`}
         </div>
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>
-          <td width="${s.credit ? "32%" : "49%"}" valign="top">${statCard("Cash", money(s.cash))}</td>
+          <td width="49%" valign="top">${statCard("Cash", money(s.cash), s.cashMove)}</td>
           <td width="2%"></td>
-          <td width="${s.credit ? "32%" : "49%"}" valign="top">${statCard("Investments", money(s.invested))}</td>
-          ${s.credit ? `<td width="2%"></td><td width="32%" valign="top">${statCard("Credit", `−${money(s.credit)}`)}</td>` : ""}
+          <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove)}</td>
         </tr></table>
 
+        ${alertBanner}
         ${renderGraph(history)}
-        ${section("Cash", s.cashAccounts, money(s.cash), { zeros: s.zeroCounts.cash })}
-        ${section("Investments", s.investAccounts, money(s.invested), { zeros: s.zeroCounts.invest })}
-        ${section("Credit cards", s.creditAccounts, `−${money(s.credit)}`, { liability: true })}
+        ${empty}
+        ${section("Cash", s.cashAccounts, money(s.cash), s.cashMove, { zeros: s.zeroCounts.cash })}
+        ${section("Investments", s.investAccounts, money(s.invested), s.investMove, { zeros: s.zeroCounts.invest })}
+        ${section("Credit cards", s.creditAccounts, `−${money(s.credit)}`, 0, { liability: true })}
 
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:26px;border-top:1px solid rgba(255,255,255,0.10);">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.10);">
           <tr><td style="padding-top:16px;" align="center">
             <a href="${APP_URL}/treasury"
               style="display:inline-block;background:#ffffff;color:#000000;font-size:13px;font-weight:600;text-decoration:none;padding:10px 22px;border-radius:10px;">
               Open Treasury
             </a>
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
-              Sent by BFO · <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage report schedule</a>
+              Balances via Plaid · generated automatically ·
+              <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
             </div>
           </td></tr>
         </table>
@@ -287,11 +394,17 @@ function renderHtml(s: Shaped, movement: number, history: DailyTotal[], now: Dat
 
 // ── Handler ───────────────────────────────────────────────────────────
 
-async function fetchTreasury(origin: string, headers: Record<string, string>): Promise<Account[]> {
+async function fetchTreasury(
+  origin: string,
+  headers: Record<string, string>
+): Promise<{ accounts: Account[]; connections: Connection[] }> {
   const res = await fetch(`${origin}/api/plaid/data?report=treasury`, { headers });
   if (!res.ok) throw new Error(`treasury fetch failed (${res.status})`);
-  const data = (await res.json()) as { accounts: Account[] };
-  return data.accounts.filter((a) => !a.hidden);
+  const data = (await res.json()) as { accounts: Account[]; connections: Connection[] };
+  return {
+    accounts: data.accounts.filter((a) => !a.hidden),
+    connections: data.connections ?? [],
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -305,7 +418,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!me) return res.status(401).json({ error: "unauthorized" });
       if (!me.email) return res.status(400).json({ error: "no_email", message: "Your account has no email on file." });
 
-      const accounts = await fetchTreasury(origin, {
+      const { accounts, connections } = await fetchTreasury(origin, {
         Authorization: req.headers.authorization ?? "",
       });
       const s = shape(accounts);
@@ -316,7 +429,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         me.email,
         subjectLine(s, movement, true),
         renderText(s, movement, now),
-        renderHtml(s, movement, history, now)
+        renderHtml(s, movement, history, now, connections)
       );
       return res.status(200).json({ sent: true, to: me.email });
     } catch (err) {
@@ -340,7 +453,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (due.length === 0) return res.status(200).json({ sent: 0, considered: users.length });
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.
-    const accounts = await fetchTreasury(origin, { "x-internal-cron": secret ?? "" });
+    const { accounts, connections } = await fetchTreasury(origin, { "x-internal-cron": secret ?? "" });
     const s = shape(accounts);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
     const history = await loadHistory();
@@ -353,7 +466,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           user.email,
           subjectLine(s, movement, false),
           renderText(s, movement, now),
-          renderHtml(s, movement, history, now)
+          renderHtml(s, movement, history, now, connections)
         );
         await sb("report_deliveries", {
           method: "POST",
