@@ -330,6 +330,9 @@ async function birdVerifyFetch(path: string, body: unknown): Promise<Response> {
 export async function verifyStart(identifier: Identifier): Promise<string> {
   const res = await birdVerifyFetch("/v1/verify/verifications", {
     to: verifyRecipient(identifier),
+    // Phone codes go to the phone as a text. Without this, the workspace's
+    // configured channel order applies — which had WhatsApp ahead of SMS.
+    ...(identifier.kind === "phone" ? { options: { channels: ["sms"] } } : {}),
   });
   const text = await res.text();
   if (!res.ok) {
