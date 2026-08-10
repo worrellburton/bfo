@@ -1,8 +1,25 @@
 import { NavLink, Outlet, useNavigate } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { displayName, getUser, initials, isAdmin, isAuthenticated, logout, revalidate } from "../auth";
+import {
+  authFetch,
+  displayName,
+  getUser,
+  initials,
+  isAdmin,
+  isAuthenticated,
+  logout,
+  revalidate,
+} from "../auth";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
+import {
+  SIDEBAR_MODES,
+  SIDEBAR_OPEN_W,
+  SIDEBAR_RAIL_W,
+  useHoverCapable,
+  useSidebarMode,
+  type SidebarMode,
+} from "../sidebar";
 
 const iconCls = "w-[18px] h-[18px] shrink-0";
 const navItems = [
@@ -89,13 +106,42 @@ const navItems = [
   },
 ];
 
+
+const usersIcon = (
+  <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+  </svg>
+);
+
+/** Miniature previews of what each width setting does. */
+function ModeGlyph({ mode, active }: { mode: SidebarMode; active: boolean }) {
+  const body = active ? "currentColor" : "none";
+  return (
+    <svg className="w-5 h-5 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.4}>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" />
+      {mode === "open" && <rect x="2.5" y="3.5" width="6.5" height="13" rx="2.5" fill={body} opacity={0.35} />}
+      {mode !== "open" && <rect x="2.5" y="3.5" width="3.5" height="13" rx="1.75" fill={body} opacity={0.35} />}
+      {mode === "auto" && <path d="M7.5 10h4m0 0-1.5-1.5M11.5 10 10 11.5" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  );
+}
+
 export default function AppLayout() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { mode, setMode } = useSidebarMode();
+  const hoverCapable = useHoverCapable();
+
   const [user, setUser] = useState(() => getUser());
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const [pending, setPending] = useState(0);
+
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const modeMenuRef = useRef<HTMLDivElement>(null);
+  const modeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -110,80 +156,203 @@ export default function AppLayout() {
     });
   }, [navigate]);
 
-  // Close menu on outside click
+  // The Users badge is the count waiting on approval — the number that is
+  // usually the reason someone opens the nav at all.
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+    if (!isAdmin(user)) return;
+    void (async () => {
+      try {
+        const res = await authFetch("/api/auth/users");
+        if (!res.ok) return;
+        const data = await res.json();
+        setPending((data.users ?? []).filter((u: any) => u.status === "incoming").length);
+      } catch {
+        // A missing badge is not worth surfacing.
+      }
+    })();
+  }, [user]);
+
+  // Both popovers close on an outside click, and on Escape — the mode popover
+  // hands focus back to the button that opened it.
+  useEffect(() => {
+    if (!userMenuOpen && !modeMenuOpen) return;
+
+    function onPointerDown(e: MouseEvent) {
+      const target = e.target as Node;
+      if (userMenuOpen && userMenuRef.current && !userMenuRef.current.contains(target)) {
+        setUserMenuOpen(false);
+      }
+      if (modeMenuOpen && modeMenuRef.current && !modeMenuRef.current.contains(target)) {
+        setModeMenuOpen(false);
       }
     }
-    if (menuOpen) {
-      document.addEventListener("mousedown", handleClick);
-      return () => document.removeEventListener("mousedown", handleClick);
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (modeMenuOpen) {
+        setModeMenuOpen(false);
+        modeButtonRef.current?.focus();
+      }
+      setUserMenuOpen(false);
     }
-  }, [menuOpen]);
 
-  // Close sidebar on route change (mobile)
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [navigate]);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [userMenuOpen, modeMenuOpen]);
 
   if (!isAuthenticated()) return null;
 
   const isDark = theme === "dark";
 
-  function handleLogout() {
-    logout();
-    navigate("/login");
+  // Deliberate changes push, transient ones overlay: the rail's own width
+  // follows the hover, but the content inset only follows the saved mode.
+  const expanded = mode === "open" || (mode === "auto" && hovering && hoverCapable);
+  const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
+  const contentInset = mode === "open" ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
+  const showLabels = expanded;
+  const items = isAdmin(user)
+    ? [...navItems, { to: "/users", label: "Users", icon: usersIcon, badge: pending }]
+    : navItems;
+
+  function go(to: string) {
+    setUserMenuOpen(false);
+    setDrawerOpen(false);
+    navigate(to);
   }
 
+  const menuItemCls = `w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
+    isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
+  }`;
+
   return (
-    <div className={`min-h-screen flex relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}>
-      {/* Particle canvas */}
+    <div
+      className={`min-h-screen relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
+      style={{ ["--rail" as any]: `${railWidth}px`, ["--inset" as any]: `${contentInset}px` }}
+    >
       <ParticleCanvas themeAware className="absolute inset-0 w-full h-full pointer-events-none" />
 
-      {/* Mobile header bar */}
-      <div className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden ${isDark ? "bg-black/90 backdrop-blur-md border-b border-white/10" : "bg-white/90 backdrop-blur-md border-b border-gray-200"}`}>
+      {/* Mobile header — below the breakpoint the width setting is irrelevant */}
+      <div
+        className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden ${
+          isDark ? "bg-black/90 backdrop-blur-md border-b border-white/10" : "bg-white/90 backdrop-blur-md border-b border-gray-200"
+        }`}
+      >
         <span className="text-xl font-bold tracking-tight">BFO</span>
         <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
+          onClick={() => setDrawerOpen(!drawerOpen)}
+          aria-label={drawerOpen ? "Close menu" : "Open menu"}
+          aria-expanded={drawerOpen}
           className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-white/10 text-gray-300" : "hover:bg-gray-100 text-gray-600"}`}
         >
-          {sidebarOpen ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-            </svg>
-          )}
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d={drawerOpen ? "M6 18L18 6M6 6l12 12" : "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"}
+            />
+          </svg>
         </button>
       </div>
 
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      {drawerOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setDrawerOpen(false)} />
       )}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed top-0 left-0 h-full z-50 w-64 border-r flex flex-col p-6 shrink-0 relative
-        transition-transform duration-200 ease-in-out
-        lg:sticky lg:top-0 lg:translate-x-0 lg:w-56 lg:z-10 lg:h-screen
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        ${isDark ? "border-white/10 bg-black" : "border-gray-200 bg-white"}
-      `}>
-        <span className="text-2xl font-bold tracking-tight mb-10 px-3">BFO</span>
-        <nav className="flex flex-col gap-1 flex-1">
-          {navItems.map((item) => (
+      <aside
+        onMouseEnter={() => mode === "auto" && hoverCapable && setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        className={`
+          sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r
+          w-[260px] lg:w-[var(--rail)]
+          ${drawerOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
+          ${isDark ? "border-white/10 bg-black" : "border-gray-200 bg-white"}
+        `}
+      >
+        {/* Top: width control, then the wordmark */}
+        <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
+          <div className="relative hidden lg:block" ref={modeMenuRef}>
+            <button
+              ref={modeButtonRef}
+              type="button"
+              onClick={() => setModeMenuOpen((v) => !v)}
+              aria-expanded={modeMenuOpen}
+              aria-haspopup="menu"
+              aria-label="Sidebar width"
+              title="Sidebar width"
+              className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-black/5 text-gray-500"
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+                <path d="M9.5 4.5v15" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {modeMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Sidebar width"
+                className={`absolute top-full left-0 mt-2 w-[268px] rounded-xl border shadow-xl overflow-hidden z-50 ${
+                  isDark ? "bg-[#141414] border-white/10" : "bg-white border-gray-200"
+                }`}
+              >
+                {SIDEBAR_MODES.map((option) => {
+                  const active = option.value === mode;
+                  return (
+                    <button
+                      key={option.value}
+                      role="menuitemradio"
+                      aria-checked={active}
+                      onClick={() => {
+                        setMode(option.value);
+                        setModeMenuOpen(false);
+                        modeButtonRef.current?.focus();
+                      }}
+                      className={`w-full flex items-start gap-3 px-3.5 py-3 text-left transition-colors cursor-pointer ${
+                        isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
+                      }`}
+                    >
+                      <span className={`mt-0.5 ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                        <ModeGlyph mode={option.value} active={active} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">{option.title}</span>
+                        <span className={`block text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+                          {option.description}
+                        </span>
+                      </span>
+                      {active && (
+                        <svg className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <span className={`text-2xl font-bold tracking-tight ${showLabels ? "" : "lg:hidden"}`}>BFO</span>
+        </div>
+
+        <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
+          {items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.to === "/home"}
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => setDrawerOpen(false)}
+              title={showLabels ? undefined : item.label}
+              aria-label={showLabels ? undefined : item.label}
               className={({ isActive }) =>
-                `flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${
+                  showLabels ? "" : "lg:justify-center lg:px-0"
+                } ${
                   isActive
                     ? isDark
                       ? "bg-white/10 text-white"
@@ -194,124 +363,90 @@ export default function AppLayout() {
                 }`
               }
             >
-              {item.icon && <span className="inline-flex mr-2">{item.icon}</span>}
-              {item.label}
+              <span className="relative inline-flex shrink-0">
+                {item.icon}
+                {/* The badge survives collapse — it is often the whole point */}
+                {"badge" in item && (item as any).badge > 0 && !showLabels && (
+                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
+                    {(item as any).badge}
+                  </span>
+                )}
+              </span>
+              <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
+              {"badge" in item && (item as any).badge > 0 && showLabels && (
+                <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
+                  {(item as any).badge}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
 
-        {/* User + Settings — bottom of sidebar */}
-        <div className="relative mt-auto" ref={menuRef}>
+        {/* Bottom: the signed-in user, as the menu trigger */}
+        <div className="relative mt-auto p-3" ref={userMenuRef}>
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
-              isDark
-                ? "hover:bg-white/5 text-gray-300"
-                : "hover:bg-black/5 text-gray-600"
-            }`}
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            aria-expanded={userMenuOpen}
+            aria-haspopup="menu"
+            title={showLabels ? undefined : displayName(user)}
+            aria-label={showLabels ? undefined : displayName(user)}
+            className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
+              showLabels ? "" : "lg:justify-center lg:px-0"
+            } ${isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
           >
-            {/* Avatar */}
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-              isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
-            }`}>
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
+              }`}
+            >
               {initials(user)}
             </div>
-            <span className="flex-1 text-left truncate font-medium">{displayName(user)}</span>
-            {/* Settings gear */}
-            <svg className={`w-4 h-4 shrink-0 ${isDark ? "text-gray-500" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+            <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "lg:hidden"}`}>
+              <span className="block truncate font-medium">{displayName(user)}</span>
+              <span className={`block truncate text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+                {user?.email || user?.phoneFormatted || "Signed in"}
+              </span>
+            </span>
           </button>
 
-          {/* Popup menu */}
-          {menuOpen && (
-            <div className={`absolute bottom-full left-0 w-full mb-2 rounded-xl border shadow-lg overflow-hidden ${
-              isDark
-                ? "bg-[#1a1a1a] border-white/10"
-                : "bg-white border-gray-200"
-            }`}>
-              <button
-                onClick={() => toggle()}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
-                  isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
-                }`}
-              >
+          {userMenuOpen && (
+            <div
+              role="menu"
+              className={`absolute bottom-full left-3 right-3 mb-2 rounded-xl border shadow-lg overflow-hidden z-50 ${
+                isDark ? "bg-[#1a1a1a] border-white/10" : "bg-white border-gray-200"
+              }`}
+            >
+              <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
                 {isDark ? (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                   </svg>
                 )}
                 {isDark ? "Light mode" : "Dark mode"}
               </button>
 
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSidebarOpen(false);
-                  navigate("/agents");
-                }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
-                  isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              <button onClick={() => go("/agents")} className={menuItemCls} role="menuitem">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 Manage Agents
               </button>
 
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSidebarOpen(false);
-                  navigate("/notifications");
-                }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
-                  isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z" />
+              <button onClick={() => go("/notifications")} className={menuItemCls} role="menuitem">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z" />
                 </svg>
                 Notifications
               </button>
 
-              {isAdmin(user) && (
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setSidebarOpen(false);
-                    navigate("/users");
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
-                    isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
-                  }`}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  Users
-                </button>
-              )}
-
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSidebarOpen(false);
-                  navigate("/settings");
-                }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
-                  isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <button onClick={() => go("/settings")} className={menuItemCls} role="menuitem">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 Settings
               </button>
@@ -320,16 +455,18 @@ export default function AppLayout() {
 
               <button
                 onClick={() => {
-                  setMenuOpen(false);
-                  setSidebarOpen(false);
-                  handleLogout();
+                  setUserMenuOpen(false);
+                  setDrawerOpen(false);
+                  logout();
+                  navigate("/login");
                 }}
+                role="menuitem"
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
                   isDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
                 }`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
                 Log out
               </button>
@@ -338,8 +475,7 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 p-4 pt-16 sm:p-6 sm:pt-16 lg:p-8 lg:pt-8 relative z-10">
+      <main className="sidebar-content relative z-10 p-4 pt-16 sm:p-6 sm:pt-16 lg:p-8 lg:pt-8 lg:ml-[var(--inset)]">
         <Outlet />
       </main>
     </div>

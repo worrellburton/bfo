@@ -377,3 +377,21 @@ html.light {
 @media (prefers-reduced-motion: reduce) {
   .treasury-card, .treasury-dot-live { transition: none; animation: none; }
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+   Collapsible sidebar.
+
+   Two widths drive everything — 260px open, 76px rail — via --sidebar-w
+   (saved mode, set before first paint by the boot script in root.tsx) and
+   the layout's --rail/--inset pair. Mode changes reflow content; the
+   auto-collapse hover overlays it.
+   ────────────────────────────────────────────────────────────────────── */
+.sidebar-rail {
+  transition: width 180ms ease, transform 200ms ease-in-out;
+}
+.sidebar-content {
+  transition: margin-left 180ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-rail, .sidebar-content { transition: none; }
+}
