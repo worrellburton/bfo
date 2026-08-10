@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, formatPhone, sb, sendEmail, type AppUser, type EmailAttachment } from "../../lib/auth.js";
+import { currentUser, formatPhone, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 
 /**
  * The Treasury report email. GET = the daily Vercel cron (sends to whoever's
@@ -341,27 +341,6 @@ function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date): s
   return `${sample ? "[Sample] " : ""}${arrow}BFO Treasury — ${money(s.totalValue)}${move} · ${day}`;
 }
 
-/** CSV of every account, attached so the numbers can leave the inbox. */
-function balancesCsv(accounts: Account[], now: Date): EmailAttachment {
-  const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-  const rows = [
-    ["Institution", "Account", "Type", "Mask", "Balance", "Currency", "Change since last report"],
-    ...accounts.map((a) => [
-      a.institution_name,
-      a.nickname || a.official_name || a.name,
-      a.type,
-      a.mask ?? "",
-      String(a.balance_current ?? ""),
-      a.currency ?? "USD",
-      a.change != null ? String(a.change) : "",
-    ]),
-  ];
-  const csv = rows.map((r) => r.map(esc).join(",")).join("\n");
-  return {
-    filename: `bfo-treasury-${now.toISOString().slice(0, 10)}.csv`,
-    content: Buffer.from(csv, "utf8").toString("base64"),
-  };
-}
 
 // ── Plain-text body ───────────────────────────────────────────────────
 
@@ -905,7 +884,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             preparedFor: me.name ?? me.email,
           }),
           { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-          [balancesCsv(accounts, now)],
+          undefined,
           { replyTo: me.email }
         );
       }
@@ -1002,7 +981,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               preparedFor: user.name ?? "the Burton Family Office",
             }),
             { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-            [balancesCsv(accounts, now)],
+            undefined,
             { idempotencyKey: `treasury-report/${user.id}/${to}/${now.toISOString().slice(0, 10)}` }
           );
         }
