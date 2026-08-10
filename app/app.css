@@ -584,3 +584,90 @@ html.light {
 @media (min-width: 1024px) {
   .mobile-dock { display: none; }
 }
+
+/* ── Sign-in micro-interactions ──────────────────────────────────────── */
+
+/* The input's own glyphs go invisible; the animated layer renders them so
+   each typed character can pop in. The caret stays. */
+.auth-field-ghost {
+  color: transparent !important;
+  caret-color: #fff;
+}
+.auth-anim-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  pointer-events: none;
+  font-size: 16px;
+  color: #fff;
+  white-space: pre;
+  overflow: hidden;
+}
+.auth-char {
+  display: inline-block;
+  animation: auth-char-in 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes auth-char-in {
+  from { opacity: 0; transform: translateY(9px) scale(0.6); filter: blur(3px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* Six-cell one-time-code entry */
+.auth-otp-cell {
+  flex: 1;
+  height: 52px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  transition: border-color 0.2s, box-shadow 0.25s, background 0.2s;
+}
+.auth-otp-filled {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.auth-otp-active {
+  border-color: rgba(147, 197, 253, 0.6);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16), 0 0 20px -6px rgba(99, 102, 241, 0.55);
+  animation: auth-otp-breathe 1.6s ease-in-out infinite;
+}
+@keyframes auth-otp-breathe {
+  50% { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.10), 0 0 24px -6px rgba(99, 102, 241, 0.4); }
+}
+.auth-otp-success {
+  border-color: rgba(52, 211, 153, 0.8) !important;
+  background: rgba(52, 211, 153, 0.12) !important;
+  color: #6ee7b7;
+  box-shadow: 0 0 22px -6px rgba(52, 211, 153, 0.65);
+}
+.auth-otp-error {
+  border-color: rgba(248, 113, 113, 0.55) !important;
+  box-shadow: 0 0 18px -8px rgba(248, 113, 113, 0.5);
+}
+
+/* Inline button spinner */
+.auth-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 7px;
+  vertical-align: -2px;
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-top-color: #000;
+  animation: auth-spin 0.7s linear infinite;
+}
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-char, .auth-otp-active, .auth-spinner { animation: none; }
+}
