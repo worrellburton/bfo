@@ -299,6 +299,9 @@ export async function sendEmail(
       subject,
       text,
       html,
+      // Operational mail: transactional sends deliver through unsubscribe
+      // suppression and let us set List-Unsubscribe ourselves.
+      category: "transactional",
       ...(replyTo ? { reply_to: [replyTo] } : {}),
       ...(headers ? { headers } : {}),
       ...(attachments?.length ? { attachments } : {}),
