@@ -77,6 +77,27 @@ export default function Notifications() {
   const frequency: string = report.frequency ?? "off";
   const recipients: string[] = report.recipients ?? [];
   const [sampleState, setSampleState] = useState<"idle" | "sending" | "sent">("idle");
+  const [broadcastState, setBroadcastState] = useState<"idle" | "sending" | "sent">("idle");
+
+  async function sendNow() {
+    const count = 1 + recipients.length;
+    if (!confirm(`Send the report now to ${count} recipient${count === 1 ? "" : "s"}?`)) return;
+    setBroadcastState("sending");
+    setError("");
+    try {
+      const res = await authFetch("/api/cron/treasury-report", {
+        method: "POST",
+        body: JSON.stringify({ broadcast: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message ?? "Couldn't send the report.");
+      setBroadcastState("sent");
+      setTimeout(() => setBroadcastState("idle"), 4000);
+    } catch (err) {
+      setBroadcastState("idle");
+      setError(err instanceof Error ? err.message : "Couldn't send the report.");
+    }
+  }
   const [team, setTeam] = useState<User[]>([]);
   const [manualEmail, setManualEmail] = useState("");
 
@@ -316,6 +337,19 @@ export default function Notifications() {
                 }`}
               >
                 {sampleState === "sending" ? "Sending…" : "Send me a sample"}
+              </button>
+              <button
+                onClick={() => void sendNow()}
+                disabled={broadcastState === "sending"}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                  isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
+                }`}
+              >
+                {broadcastState === "sending"
+                  ? "Sending…"
+                  : broadcastState === "sent"
+                    ? "Sent to everyone"
+                    : `Send now${recipients.length ? ` (${recipients.length + 1})` : ""}`}
               </button>
               {sampleState === "sent" && (
                 <span className="text-xs text-emerald-400">

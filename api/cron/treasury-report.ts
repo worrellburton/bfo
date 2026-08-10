@@ -30,6 +30,7 @@ type Account = {
   mask: string | null;
   type: string;
   balance_current: number | null;
+  balance_available: number | null;
   balance_limit: number | null;
   currency: string | null;
   change: number | null;
@@ -153,6 +154,7 @@ type Shaped = {
 
 function shape(accounts: Account[]): Shaped {
   const nonzero = (a: Account) => Math.abs(a.balance_current ?? 0) >= 0.005;
+  // Credit cards stay out of the report entirely (they remain in the CSV).
   const cashAll = accounts.filter((a) => a.type === "depository");
   const investAll = accounts.filter((a) => a.type === "investment");
   const creditAccounts = accounts.filter((a) => a.type === "credit").sort(byBalanceDesc);
@@ -174,7 +176,7 @@ function shape(accounts: Account[]): Shaped {
     credit,
     cashMove: moveBy(accounts, "depository"),
     investMove: moveBy(accounts, "investment"),
-    totalValue: cash + invested - credit,
+    totalValue: cash + invested,
   };
 }
 
@@ -272,6 +274,41 @@ function nextReportLabel(prefs: Prefs, now: Date): string | null {
   return next.toLocaleDateString("en-US", { month: "long", day: "numeric" });
 }
 
+/**
+ * If cash has been draining over the recorded month, how long the current
+ * balance lasts at that pace. Only speaks up when the answer is sobering.
+ */
+function cashRunway(history: DailyTotal[], cash: number): string | null {
+  const window = history.slice(-30);
+  if (window.length < 7 || cash <= 0) return null;
+  const days =
+    (new Date(`${window[window.length - 1].day}T00:00:00Z`).getTime() -
+      new Date(`${window[0].day}T00:00:00Z`).getTime()) /
+    86_400_000;
+  if (days < 6) return null;
+  const drain = (Number(window[0].cash) - Number(window[window.length - 1].cash)) / days;
+  if (drain <= 0) return null; // cash is flat or growing — say nothing
+  const months = cash / (drain * 30.4);
+  if (months > 24) return null;
+  return `At this month's pace, cash covers about ${months < 1.5 ? `${Math.round(months * 30)} days` : `${Math.round(months)} months`}.`;
+}
+
+/** Tiny in-card sparkline from the last 14 recorded days of one series. */
+function sparkline(history: DailyTotal[], pick: (d: DailyTotal) => number, color: string): string {
+  const values = history.slice(-14).map(pick);
+  if (values.length < 2) return "";
+  const max = Math.max(...values);
+  if (max <= 0) return "";
+  const H = 16;
+  const cells = values
+    .map((v) => {
+      const h = Math.max(2, Math.round((v / max) * H));
+      return `<td valign="bottom" style="padding:0 1px;"><div style="height:${h}px;width:100%;min-width:4px;border-radius:1px;background:${color};opacity:0.75;font-size:0;line-height:0;">&nbsp;</div></td>`;
+    })
+    .join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;" aria-hidden="true"><tr>${cells}</tr></table>`;
+}
+
 /** Record high across everything we've ever logged. */
 function isAllTimeHigh(history: DailyTotal[]): boolean {
   if (history.length < 5) return false;
@@ -297,10 +334,11 @@ function reportTime(now: Date): string {
   });
 }
 
-function subjectLine(s: Shaped, movement: number, sample: boolean): string {
+function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date): string {
   const arrow = movement === 0 ? "" : movement > 0 ? "▲ " : "▼ ";
   const move = movement === 0 ? "" : ` · ${signed(movement)}`;
-  return `${sample ? "[Sample] " : ""}${arrow}BFO Treasury — ${money(s.totalValue)}${move}`;
+  const day = now.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
+  return `${sample ? "[Sample] " : ""}${arrow}BFO Treasury — ${money(s.totalValue)}${move} · ${day}`;
 }
 
 /** CSV of every account, attached so the numbers can leave the inbox. */
@@ -339,16 +377,13 @@ function renderText(
   };
   const out = [
     `BFO Treasury — ${reportDate(now)}, ${reportTime(now)} ET`,
-    `Total value ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}${
-      s.credit ? ` · Credit −${money(s.credit)}` : ""
-    }`,
+    `Total value ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}`,
     movement === 0 ? "No movement since the last report." : `${signed(movement)} since the last report.`,
     "",
   ];
   if (s.cashAccounts.length) out.push("CASH", ...s.cashAccounts.map(line));
   if (s.zeroCounts.cash) out.push(`  (+ ${s.zeroCounts.cash} zero-balance account${s.zeroCounts.cash === 1 ? "" : "s"})`);
   if (s.investAccounts.length) out.push("", "INVESTMENTS", ...s.investAccounts.map(line));
-  if (s.creditAccounts.length) out.push("", "CREDIT CARDS", ...s.creditAccounts.map(line));
   if (activity) {
     out.push("", `RECENT ACTIVITY — ${accountLabel(activity.account)}`);
     for (const t of activity.txns) {
@@ -392,7 +427,8 @@ function renderGraph(fullHistory: DailyTotal[]): string {
     .join("");
   const first = history[0].day.slice(5).replace("-", "/");
   const last = history[history.length - 1].day.slice(5).replace("-", "/");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+  return `<div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Trend: ${money(totals[0])} to ${money(totals[totals.length - 1])} over ${history.length} days.</div>
+  <table role="img" aria-label="Balance trend, ${money(totals[0])} to ${money(totals[totals.length - 1])}" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
     <tr>
       <td style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);padding-bottom:6px;">Trend</td>
       <td align="right" style="font-size:11px;padding-bottom:6px;color:${windowChange >= 0 ? "#34d399" : "#fb7185"};">
@@ -454,6 +490,9 @@ function renderActivity(activity: { account: Account; txns: Txn[] } | null): str
           </td>
         </tr>
         ${rows}
+        <tr><td colspan="3" align="right" style="padding:8px 0 2px;">
+          <a href="${APP_URL}/treasury/${account.account_id}" style="font-size:11px;color:rgba(255,255,255,0.45);text-decoration:underline;">See all transactions →</a>
+        </td></tr>
       </table>
     </td></tr>
   </table>`;
@@ -526,9 +565,9 @@ function renderHtml(
   now: Date,
   connections: Connection[] = [],
   activity: { account: Account; txns: Txn[] } | null = null,
-  extras: { lastReportDate?: string | null; footerNote?: string | null } = {}
+  extras: { lastReportDate?: string | null; footerNote?: string | null; preparedFor?: string | null } = {}
 ): string {
-  const statCard = (label: string, value: string, move: number) => `
+  const statCard = (label: string, value: string, move: number, spark = "") => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
       style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.10);border-radius:14px;">
       <tr><td style="padding:13px 15px;">
@@ -537,6 +576,7 @@ function renderHtml(
         <div style="margin-top:3px;font-size:11px;min-height:13px;color:${
           move === 0 ? "rgba(255,255,255,0.3)" : move > 0 ? "#34d399" : "#fb7185"
         };">${move === 0 ? "no change" : signed(move)}</div>
+        ${spark}
       </td></tr>
     </table>`;
 
@@ -566,13 +606,20 @@ function renderHtml(
     const delta = a.change
       ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>`
       : "";
+    const avail =
+      a.type === "depository" &&
+      a.balance_available != null &&
+      a.balance_current != null &&
+      Math.abs(a.balance_available - a.balance_current) >= 1
+        ? `<div style="font-size:11px;margin-top:1px;color:rgba(255,255,255,0.35);">${money(a.balance_available, a.currency ?? "USD")} available</div>`
+        : "";
     return `<tr>
       <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
         <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>${stale}${swing}
         <div style="margin-top:4px;">${chip(a)}</div>
       </td>
       <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
-        ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}${util}
+        ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}${util}${avail}
       </td>
     </tr>
     <tr><td colspan="2" style="padding:8px 0 10px;border-bottom:1px solid rgba(255,255,255,0.07);">
@@ -668,6 +715,10 @@ function renderHtml(
           ${money(s.totalValue)}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
         </div>
         <div style="margin-top:5px;font-size:12px;color:rgba(255,255,255,0.6);">${narrative(s)}</div>
+        ${(() => {
+          const runway = cashRunway(history, s.cash);
+          return runway ? `<div style="margin-top:3px;font-size:11px;color:#fbbf24;">${runway}</div>` : "";
+        })()}
         <div style="margin-top:3px;font-size:12px;color:${movement === 0 ? "rgba(255,255,255,0.45)" : movement > 0 ? "#34d399" : "#fb7185"};">
           ${(() => {
             const since = extras.lastReportDate ? ` (${extras.lastReportDate})` : "";
@@ -688,9 +739,9 @@ function renderHtml(
         })()}
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>
-          <td width="49%" valign="top">${statCard("Cash", money(s.cash), s.cashMove)}</td>
+          <td width="49%" valign="top">${statCard("Cash", money(s.cash), s.cashMove, sparkline(history, (d) => Number(d.cash), "#38bdf8"))}</td>
           <td width="2%"></td>
-          <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove)}</td>
+          <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove, sparkline(history, (d) => Number(d.invested), "#34d399"))}</td>
         </tr></table>
         ${allocationBar(s)}
         ${(() => {
@@ -698,7 +749,7 @@ function renderHtml(
           if (drift == null) return "";
           return `<div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,0.4);">Allocation shifted ${Math.abs(drift).toFixed(1)}pts toward ${drift > 0 ? "investments" : "cash"} over the last month.</div>`;
         })()}
-        ${bankStrip([...s.cashAccounts, ...s.investAccounts, ...s.creditAccounts])}
+        ${bankStrip([...s.cashAccounts, ...s.investAccounts])}
         ${(() => {
           const closes = monthlyCloses(history);
           if (!closes.length) return "";
@@ -728,7 +779,6 @@ function renderHtml(
           s.investMove,
           { zeros: s.zeroCounts.invest }
         )}
-        ${section("Credit cards", s.creditAccounts, `−${money(s.credit)}`, 0, { liability: true })}
         ${renderActivity(activity)}
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.10);">
@@ -743,7 +793,7 @@ function renderHtml(
               Open Treasury
             </a><!--<![endif]-->
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
-              ${extras.footerNote ? `${extras.footerNote} · ` : ""}Balances via Plaid · generated automatically ·
+              ${extras.preparedFor ? `Prepared for ${extras.preparedFor} · ` : ""}${extras.footerNote ? `${extras.footerNote} · ` : ""}Balances via Plaid · generated automatically ·
               <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
             </div>
           </td></tr>
@@ -751,7 +801,22 @@ function renderHtml(
       </td></tr>
     </table>
   </td></tr></table>
-</body></html>`;
+</body></html>`
+    // Gmail clips messages past ~102KB; collapsing template whitespace keeps
+    // this report far under it as sections accumulate.
+    .replace(/\n\s*/g, "");
+}
+
+/** One retry on a transient Bird 5xx; validation errors fail straight out. */
+async function sendEmailWithRetry(...args: Parameters<typeof sendEmail>): Promise<void> {
+  try {
+    await sendEmail(...args);
+  } catch (err) {
+    const status = /bird email (5\d\d)/.exec(err instanceof Error ? err.message : "")?.[1];
+    if (!status) throw err;
+    await new Promise((r) => setTimeout(r, 1500));
+    await sendEmail(...args);
+  }
 }
 
 // ── Handler ───────────────────────────────────────────────────────────
@@ -802,6 +867,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!me) return res.status(401).json({ error: "unauthorized" });
       if (!me.email) return res.status(400).json({ error: "no_email", message: "Your account has no email on file." });
 
+      // broadcast:true sends the real report to the whole Send-to list now;
+      // otherwise it's a sample to the requester alone.
+      const broadcast = req.body?.broadcast === true;
+
       const authHeaders = { Authorization: req.headers.authorization ?? "" };
       const { accounts, connections } = await fetchTreasury(origin, authHeaders);
       const s = shape(accounts);
@@ -812,19 +881,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         lastDeliveryDate(),
       ]);
 
-      await sendEmail(
-        me.email,
-        subjectLine(s, movement, true),
-        renderText(s, movement, now, activity),
-        renderHtml(s, movement, history, now, connections, activity, {
-          lastReportDate,
-          footerNote: "This was a sample — it doesn't affect your schedule",
-        }),
-        { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-        [balancesCsv(accounts, now)],
-        { replyTo: me.email }
-      );
-      return res.status(200).json({ sent: true, to: me.email });
+      let recipients = [me.email];
+      if (broadcast) {
+        const rows = await sb<Array<{ notification_prefs: Prefs }>>(
+          `app_users?id=eq.${me.id}&select=notification_prefs&limit=1`
+        );
+        const extra = (rows?.[0]?.notification_prefs?.treasuryReport?.recipients ?? [])
+          .map((e) => String(e).trim().toLowerCase())
+          .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
+        recipients = [...new Set([me.email, ...extra])];
+      }
+
+      for (const to of recipients) {
+        await sendEmailWithRetry(
+          to,
+          subjectLine(s, movement, !broadcast, now),
+          renderText(s, movement, now, activity),
+          renderHtml(s, movement, history, now, connections, activity, {
+            lastReportDate,
+            footerNote: broadcast
+              ? `Sent manually by ${me.name ?? me.email}`
+              : "This was a sample — it doesn't affect your schedule",
+            preparedFor: me.name ?? me.email,
+          }),
+          { "List-Unsubscribe": `<${APP_URL}/notifications>` },
+          [balancesCsv(accounts, now)],
+          { replyTo: me.email }
+        );
+      }
+      return res.status(200).json({ sent: true, to: recipients.join(", "), count: recipients.length });
     } catch (err) {
       console.error("sample treasury report failed:", err);
       return res
@@ -861,7 +946,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.
     const cronHeaders = { "x-internal-cron": secret ?? "" };
-    const { accounts, connections } = await fetchTreasury(origin, cronHeaders);
+    let pulled: { accounts: Account[]; connections: Connection[] };
+    try {
+      pulled = await fetchTreasury(origin, cronHeaders);
+    } catch (err) {
+      // Silence is the worst failure mode for a scheduled report — tell the
+      // subscribers their numbers couldn't be refreshed today.
+      const reason = err instanceof Error ? err.message : String(err);
+      let notices = 0;
+      for (const user of due) {
+        if (!user.email) continue;
+        try {
+          await sendEmailWithRetry(
+            user.email,
+            `BFO Treasury — balances unavailable today`,
+            `We couldn't refresh balances for today's report (${reason}). We'll try again on the next scheduled run.\n\nOpen Treasury: ${APP_URL}/treasury`,
+            `<!doctype html><html lang="en"><body style="margin:0;background:#000;padding:28px 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="100%" style="max-width:500px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0"><tr><td style="padding:26px 24px;"><div style="font-size:24px;font-weight:700;color:#fff;">BFO</div><div style="margin-top:3px;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Treasury report</div><div style="margin-top:20px;padding:12px 14px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:12px;font-size:13px;color:#fbbf24;">We couldn't refresh balances for today's report. We'll try again on the next scheduled run.</div><div style="margin-top:16px;text-align:center;"><a href="${APP_URL}/treasury" style="display:inline-block;background:#fff;color:#000;font-size:13px;font-weight:600;text-decoration:none;padding:10px 22px;border-radius:10px;">Open Treasury</a></div></td></tr></table></td></tr></table></body></html>`,
+            undefined,
+            undefined,
+            { idempotencyKey: `treasury-failure/${user.id}/${now.toISOString().slice(0, 10)}` }
+          );
+          notices++;
+        } catch (e) {
+          console.error("failure notice failed:", e);
+        }
+      }
+      return res.status(200).json({ sent: 0, failureNotices: notices, reason });
+    }
+    const { accounts, connections } = pulled;
     const s = shape(accounts);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
     const [history, activity, lastReportDate] = await Promise.all([
@@ -880,13 +992,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (recipients.length === 0) throw new Error("no email on file");
         const nextLabel = nextReportLabel(user.notification_prefs ?? {}, now);
         for (const to of recipients) {
-          await sendEmail(
+          await sendEmailWithRetry(
             to,
-            subjectLine(s, movement, false),
+            subjectLine(s, movement, false, now),
             renderText(s, movement, now, activity),
             renderHtml(s, movement, history, now, connections, activity, {
               lastReportDate,
               footerNote: nextLabel ? `Next report ${nextLabel}` : null,
+              preparedFor: user.name ?? "the Burton Family Office",
             }),
             { "List-Unsubscribe": `<${APP_URL}/notifications>` },
             [balancesCsv(accounts, now)],
