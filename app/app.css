@@ -579,3 +579,8 @@ html.light {
   .mobile-dock-item { transition: none; }
   .mobile-dock-item-active { transform: none; }
 }
+/* This rule outranks the lg:hidden utility (it comes later in the bundle),
+   so the desktop hide has to live here too: the dock is mobile-only. */
+@media (min-width: 1024px) {
+  .mobile-dock { display: none; }
+}
