@@ -18,6 +18,8 @@ type Prefs = {
 type DailyTotal = { day: string; cash: number; invested: number; credit: number };
 
 type Account = {
+  item_id: string;
+  account_id: string;
   institution_name: string;
   institution_color: string | null;
   name: string;
@@ -32,6 +34,20 @@ type Account = {
 };
 
 type Connection = { institution_name: string; status: string };
+
+type Txn = {
+  date: string;
+  name: string;
+  category: string | null;
+  amount: number;
+  pending: boolean;
+  currency: string | null;
+};
+
+// The account whose recent activity rides at the bottom of the report,
+// picked by its mask. Override with REPORT_ACTIVITY_MASK.
+const ACTIVITY_MASK = process.env.REPORT_ACTIVITY_MASK?.trim() || "1886";
+const ACTIVITY_COUNT = 5;
 
 const APP_URL = "https://www.burtonfamilyoffice.com";
 
@@ -230,12 +246,57 @@ function renderGraph(history: DailyTotal[]): string {
   </table>`;
 }
 
+function renderActivity(activity: { account: Account; txns: Txn[] } | null): string {
+  if (!activity) return "";
+  const { account, txns } = activity;
+  const rows = txns
+    .map((t, i) => {
+      const date = new Date(`${t.date}T12:00:00Z`).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      // Plaid signs outflows positive; flip so money out reads negative.
+      const amount = -t.amount;
+      return `<tr>
+        <td width="52" style="padding:8px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}color:rgba(255,255,255,0.4);font-size:11px;white-space:nowrap;">${date}</td>
+        <td style="padding:8px 8px 8px 10px;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}color:rgba(255,255,255,0.85);font-size:13px;">
+          ${t.name}${t.pending ? ` <span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);">pending</span>` : ""}
+          ${t.category ? `<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:1px;">${t.category.replace(/_/g, " ").toLowerCase()}</div>` : ""}
+        </td>
+        <td align="right" style="padding:8px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;font-weight:600;white-space:nowrap;color:${amount > 0 ? "#34d399" : "#fff"};">
+          ${signed(amount, t.currency ?? "USD")}
+        </td>
+      </tr>`;
+    })
+    .join("");
+  const rgb = tint(account.institution_color);
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+    style="margin-top:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
+    <tr><td style="padding:14px 16px 8px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);padding-bottom:8px;">
+            Recent activity
+          </td>
+          <td align="right" style="padding-bottom:8px;">
+            <span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:600;color:#fff;background:rgba(${rgb},0.28);border:1px solid rgba(${rgb},0.55);">
+              ${accountLabel(account)}
+            </span>
+          </td>
+        </tr>
+        ${rows}
+      </table>
+    </td></tr>
+  </table>`;
+}
+
 function renderHtml(
   s: Shaped,
   movement: number,
   history: DailyTotal[],
   now: Date,
-  connections: Connection[] = []
+  connections: Connection[] = [],
+  activity: { account: Account; txns: Txn[] } | null = null
 ): string {
   const statCard = (label: string, value: string, move: number) => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -373,6 +434,7 @@ function renderHtml(
         ${section("Cash", s.cashAccounts, money(s.cash), s.cashMove, { zeros: s.zeroCounts.cash })}
         ${section("Investments", s.investAccounts, money(s.invested), s.investMove, { zeros: s.zeroCounts.invest })}
         ${section("Credit cards", s.creditAccounts, `−${money(s.credit)}`, 0, { liability: true })}
+        ${renderActivity(activity)}
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.10);">
           <tr><td style="padding-top:16px;" align="center">
@@ -393,6 +455,28 @@ function renderHtml(
 }
 
 // ── Handler ───────────────────────────────────────────────────────────
+
+async function fetchRecentTxns(
+  origin: string,
+  headers: Record<string, string>,
+  account: Account | undefined
+): Promise<{ account: Account; txns: Txn[] } | null> {
+  if (!account) return null;
+  try {
+    const res = await fetch(
+      `${origin}/api/plaid/data?report=bank-transactions&item_id=${account.item_id}&account_id=${account.account_id}`,
+      { headers }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { transactions?: Txn[] };
+    const txns = (data.transactions ?? [])
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, ACTIVITY_COUNT);
+    return txns.length ? { account, txns } : null;
+  } catch {
+    return null;
+  }
+}
 
 async function fetchTreasury(
   origin: string,
@@ -418,18 +502,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!me) return res.status(401).json({ error: "unauthorized" });
       if (!me.email) return res.status(400).json({ error: "no_email", message: "Your account has no email on file." });
 
-      const { accounts, connections } = await fetchTreasury(origin, {
-        Authorization: req.headers.authorization ?? "",
-      });
+      const authHeaders = { Authorization: req.headers.authorization ?? "" };
+      const { accounts, connections } = await fetchTreasury(origin, authHeaders);
       const s = shape(accounts);
       const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-      const history = await loadHistory();
+      const [history, activity] = await Promise.all([
+        loadHistory(),
+        fetchRecentTxns(origin, authHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
+      ]);
 
       await sendEmail(
         me.email,
         subjectLine(s, movement, true),
         renderText(s, movement, now),
-        renderHtml(s, movement, history, now, connections)
+        renderHtml(s, movement, history, now, connections, activity)
       );
       return res.status(200).json({ sent: true, to: me.email });
     } catch (err) {
@@ -453,10 +539,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (due.length === 0) return res.status(200).json({ sent: 0, considered: users.length });
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.
-    const { accounts, connections } = await fetchTreasury(origin, { "x-internal-cron": secret ?? "" });
+    const cronHeaders = { "x-internal-cron": secret ?? "" };
+    const { accounts, connections } = await fetchTreasury(origin, cronHeaders);
     const s = shape(accounts);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-    const history = await loadHistory();
+    const [history, activity] = await Promise.all([
+      loadHistory(),
+      fetchRecentTxns(origin, cronHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
+    ]);
 
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
     for (const user of due) {
@@ -466,7 +556,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           user.email,
           subjectLine(s, movement, false),
           renderText(s, movement, now),
-          renderHtml(s, movement, history, now, connections)
+          renderHtml(s, movement, history, now, connections, activity)
         );
         await sb("report_deliveries", {
           method: "POST",
