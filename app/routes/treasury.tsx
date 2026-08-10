@@ -193,6 +193,20 @@ export default function Treasury() {
     }
   }
 
+  async function setHidden(account: Account, hidden: boolean) {
+    try {
+      await call("/api/plaid/account-prefs", {
+        method: "POST",
+        body: JSON.stringify({ account_id: account.account_id, hidden }),
+      });
+      setAccounts((prev) =>
+        prev.map((a) => (a.account_id === account.account_id ? { ...a, hidden } : a))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update that account.");
+    }
+  }
+
   async function disconnect(conn: Connection) {
     if (!confirm(`Disconnect ${conn.institution_name}?`)) return;
     try {
@@ -204,7 +218,13 @@ export default function Treasury() {
   }
 
   const hiddenCount = accounts.filter((a) => a.hidden).length;
-  const visible = accounts.filter((a) => showHidden || !a.hidden);
+  const visible = accounts
+    .filter((a) => showHidden || !a.hidden)
+    .sort(
+      (a, b) =>
+        a.institution_name.localeCompare(b.institution_name) ||
+        (b.balance_current ?? 0) - (a.balance_current ?? 0)
+    );
 
   const cash = visible
     .filter((a) => a.type === "depository")
@@ -357,12 +377,12 @@ export default function Treasury() {
                 </span>
               </div>
 
-              <div className="relative mt-6">
+              <div className="relative mt-3">
                 <p className="text-white/55 text-xs truncate">
                   {account.nickname || account.official_name || account.name}
                   {account.mask ? ` ····${account.mask}` : ""}
                 </p>
-                <p className="text-white text-[27px] font-semibold tracking-tight mt-1">
+                <p className="text-white text-[21px] font-semibold tracking-tight mt-0.5">
                   {money(account.balance_current, account.currency ?? "USD")}
                 </p>
 
@@ -384,12 +404,38 @@ export default function Treasury() {
                 </div>
               </div>
 
-              <div className="relative mt-5 flex items-center justify-between">
+              <div className="relative mt-3 flex items-center justify-between">
                 <span className="text-[11px] uppercase tracking-wider text-white/35">
                   {account.subtype || account.type}
+                  {account.hidden && <span className="ml-2 text-amber-300/70 normal-case tracking-normal">hidden</span>}
                 </span>
-                <span className="text-[11px] text-white/45 opacity-0 group-hover:opacity-100 transition-opacity">
-                  View transactions →
+                <span className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title={account.hidden ? "Unhide account" : "Hide account"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void setHidden(account, !account.hidden);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void setHidden(account, !account.hidden);
+                      }
+                    }}
+                    className="p-1 rounded text-white/45 hover:text-white cursor-pointer"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                      {account.hidden ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                      )}
+                    </svg>
+                  </span>
+                  <span className="text-[11px] text-white/45">View →</span>
                 </span>
               </div>
             </button>
@@ -468,7 +514,21 @@ export default function Treasury() {
                         )}
                       </td>
                       <td className={`px-4 py-3 border-t whitespace-nowrap text-right tabular-nums font-semibold ${isDark ? "border-white/5" : "border-gray-100"}`}>
-                        {money(account.balance_current, account.currency ?? "USD")}
+                        <span className="inline-flex items-center gap-2">
+                          {money(account.balance_current, account.currency ?? "USD")}
+                          <button
+                            title={account.hidden ? "Unhide account" : "Hide account"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void setHidden(account, !account.hidden);
+                            }}
+                            className={`p-1 rounded cursor-pointer ${isDark ? "text-gray-600 hover:text-white" : "text-gray-400 hover:text-black"}`}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                            </svg>
+                          </button>
+                        </span>
                       </td>
                     </tr>
                   );

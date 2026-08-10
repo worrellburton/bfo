@@ -262,11 +262,18 @@ async function birdSend(channelId: string, payload: unknown): Promise<void> {
 }
 
 export async function sendSms(to: string, text: string): Promise<void> {
-  const channelId = await resolveChannel("sms");
-  await birdSend(channelId, {
-    receiver: { contacts: [{ identifierValue: to }] },
-    body: { type: "text", text: { text } },
+  // Platform SMS product endpoint (matches the key's sms scope). A free-text
+  // send needs a sender the workspace owns; set BIRD_SMS_FROM to that number.
+  const from = process.env.BIRD_SMS_FROM?.trim();
+  const res = await birdVerifyFetch("/v1/sms/messages", {
+    to,
+    text,
+    category: "transactional",
+    ...(from ? { from } : {}),
   });
+  if (!res.ok) {
+    throw new Error(`bird sms ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
 }
 
 export async function sendEmail(
@@ -275,13 +282,19 @@ export async function sendEmail(
   text: string,
   html: string
 ): Promise<void> {
-  const channelId = await resolveChannel("email");
-  await birdSend(channelId, {
-    receiver: {
-      contacts: [{ identifierKey: "emailaddress", identifierValue: to }],
-    },
-    body: { type: "html", html: { text, html, metadata: { subject } } },
+  // Platform email product endpoint (matches the key's emails scope). The
+  // sender must be on a domain verified in the Bird workspace.
+  const from = process.env.BIRD_EMAIL_FROM?.trim() || "BFO <reports@burtonfamilyoffice.com>";
+  const res = await birdVerifyFetch("/v1/email/messages", {
+    from,
+    to: [to],
+    subject,
+    text,
+    html,
   });
+  if (!res.ok) {
+    throw new Error(`bird email ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
 }
 
 // ── Bird Verify ───────────────────────────────────────────────────────
