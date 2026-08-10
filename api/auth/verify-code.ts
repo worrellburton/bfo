@@ -52,8 +52,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (row.code_hash.startsWith("bird:")) {
-      // Bird Verify holds the code; ask it whether this one matches.
-      const outcome = await verifyCheck(row.code_hash.slice(5), code);
+      // Bird Verify holds the code; it identifies the verification by recipient.
+      const outcome = await verifyCheck(identifier, code);
       if (outcome !== "verified") {
         await sb(`login_codes?id=eq.${row.id}`, {
           method: "PATCH",

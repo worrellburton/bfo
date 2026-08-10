@@ -286,77 +286,86 @@ export async function sendEmail(
 
 // ── Bird Verify ───────────────────────────────────────────────────────
 //
-// Verify generates, delivers and checks the one-time code itself:
-//   POST /workspaces/{ws}/verify        → { id, status: "pending", … }
-//   POST /workspaces/{ws}/verify/{id}   → 200 verified / 400 failed
-// It needs only the `verify` scope this key already carries. steps[] is
-// omitted unless a channel id is configured — the workspace's default
-// Verify configuration supplies the route in that case.
+// Matches the official SDK (@messagebird/sdk), which is the ground truth the
+// dashboard onboarding generates:
+//
+//   base   https://{region}.platform.bird.com   (region from the bk_{region}_ key prefix)
+//   auth   Authorization: Bearer <api key>
+//   create POST /v1/verify/verifications        { to: { phone_number | email_address } }
+//   check  POST /v1/verify/verifications/check  { to, code } → { success, reason }
+//
+// Verify generates, delivers and checks the passcode itself — no workspace id,
+// no channels, no templates. Re-creating for the same recipient resumes the
+// pending verification (Bird enforces its own resend cooldown), and a wrong or
+// expired code comes back as success:false with a reason, not an error.
+
+function birdVerifyBase(): string {
+  const key = birdKey();
+  const region = /^bk_([a-z0-9]+)_/i.exec(key)?.[1]?.toLowerCase();
+  if (!region) {
+    throw new ConfigError(
+      "BIRD_ACCESS_KEY is not in the bk_{region}_{token} format Verify expects."
+    );
+  }
+  return `https://${region}.platform.bird.com`;
+}
+
+function verifyRecipient(identifier: Identifier) {
+  return identifier.kind === "phone"
+    ? { phone_number: identifier.value }
+    : { email_address: identifier.value };
+}
+
+async function birdVerifyFetch(path: string, body: unknown): Promise<Response> {
+  return fetch(`${birdVerifyBase()}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${birdKey()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
 
 export async function verifyStart(identifier: Identifier): Promise<string> {
-  const workspaceId = await birdWorkspace();
-  const field = identifier.kind === "phone" ? "phonenumber" : "emailaddress";
-  const channelId =
-    identifier.kind === "phone"
-      ? process.env.BIRD_SMS_CHANNEL_ID?.trim()
-      : process.env.BIRD_EMAIL_CHANNEL_ID?.trim();
-
-  const res = await birdFetch(`/workspaces/${workspaceId}/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      identifier: { [field]: identifier.value },
-      codeLength: 6,
-      timeout: Math.round(CODE_TTL_MS / 1000),
-      maxAttempts: MAX_CODE_ATTEMPTS,
-      ...(channelId ? { steps: [{ channelId }] } : {}),
-    }),
+  const res = await birdVerifyFetch("/v1/verify/verifications", {
+    to: verifyRecipient(identifier),
   });
-
   const text = await res.text();
   if (!res.ok) {
     console.error(`bird verify start ${res.status}: ${text.slice(0, 300)}`);
-    throw new ConfigError(
-      res.status === 422 && !channelId
-        ? "Bird Verify needs a default channel — finish the Verify → Configure step in Bird, " +
-            "or set BIRD_SMS_CHANNEL_ID / BIRD_EMAIL_CHANNEL_ID."
-        : `Bird Verify rejected the request (${res.status}): ${text.slice(0, 160)}`
-    );
+    if (res.status === 429) {
+      throw new ConfigError("Too many codes requested for this address. Wait a minute and try again.");
+    }
+    if (res.status === 422) {
+      throw new ConfigError("Bird Verify didn't accept that address or number.");
+    }
+    throw new ConfigError(`Bird Verify rejected the request (${res.status}): ${text.slice(0, 160)}`);
   }
-
   const data = JSON.parse(text) as { id?: string };
-  if (!data.id) throw new Error("Bird Verify returned no verification id");
-  return data.id;
+  return data.id ?? "pending";
 }
 
 export type VerifyOutcome = "verified" | "failed" | "expired" | "spent";
 
-export async function verifyCheck(verificationId: string, code: string): Promise<VerifyOutcome> {
-  const workspaceId = await birdWorkspace();
-  const res = await birdFetch(
-    `/workspaces/${workspaceId}/verify/${encodeURIComponent(verificationId)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    }
-  );
-
+export async function verifyCheck(identifier: Identifier, code: string): Promise<VerifyOutcome> {
+  const res = await birdVerifyFetch("/v1/verify/verifications/check", {
+    to: verifyRecipient(identifier),
+    code,
+  });
   const text = await res.text();
-  let status = "";
-  try {
-    status = (JSON.parse(text) as { status?: string }).status ?? "";
-  } catch {
-    // fall through to HTTP-status handling
+
+  // A finished (or never-started) verification is a 404 — nothing left to check.
+  if (res.status === 404) return "expired";
+  if (!res.ok) {
+    console.error(`bird verify check ${res.status}: ${text.slice(0, 300)}`);
+    return "failed";
   }
 
-  if (res.ok && (status === "verified" || status === "")) return "verified";
-  if (status === "expired" || status === "canceled") return "expired";
-  if (res.status === 404) return "expired";
-  // A used-up verification can't be retried; the caller should mint a new one.
-  if (status === "failed" && text.includes("attempts")) return "spent";
-  if (res.status === 400) return "failed";
-  console.error(`bird verify check ${res.status}: ${text.slice(0, 300)}`);
+  const data = JSON.parse(text) as { success?: boolean; reason?: string };
+  if (data.success) return "verified";
+  if (data.reason === "expired") return "expired";
+  if (data.reason && /attempt/i.test(data.reason)) return "spent";
   return "failed";
 }
 

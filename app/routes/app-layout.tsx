@@ -12,14 +12,7 @@ import {
 } from "../auth";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
-import {
-  SIDEBAR_MODES,
-  SIDEBAR_OPEN_W,
-  SIDEBAR_RAIL_W,
-  useHoverCapable,
-  useSidebarMode,
-  type SidebarMode,
-} from "../sidebar";
+import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
 
 const iconCls = "w-[18px] h-[18px] shrink-0";
 const navItems = [
@@ -113,35 +106,18 @@ const usersIcon = (
   </svg>
 );
 
-/** Miniature previews of what each width setting does. */
-function ModeGlyph({ mode, active }: { mode: SidebarMode; active: boolean }) {
-  const body = active ? "currentColor" : "none";
-  return (
-    <svg className="w-5 h-5 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.4}>
-      <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" />
-      {mode === "open" && <rect x="2.5" y="3.5" width="6.5" height="13" rx="2.5" fill={body} opacity={0.35} />}
-      {mode !== "open" && <rect x="2.5" y="3.5" width="3.5" height="13" rx="1.75" fill={body} opacity={0.35} />}
-      {mode === "auto" && <path d="M7.5 10h4m0 0-1.5-1.5M11.5 10 10 11.5" strokeLinecap="round" strokeLinejoin="round" />}
-    </svg>
-  );
-}
-
 export default function AppLayout() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
-  const { mode, setMode } = useSidebarMode();
   const hoverCapable = useHoverCapable();
 
   const [user, setUser] = useState(() => getUser());
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [pending, setPending] = useState(0);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const modeMenuRef = useRef<HTMLDivElement>(null);
-  const modeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -172,46 +148,33 @@ export default function AppLayout() {
     })();
   }, [user]);
 
-  // Both popovers close on an outside click, and on Escape — the mode popover
-  // hands focus back to the button that opened it.
+  // The user menu closes on an outside click and on Escape.
   useEffect(() => {
-    if (!userMenuOpen && !modeMenuOpen) return;
-
+    if (!userMenuOpen) return;
     function onPointerDown(e: MouseEvent) {
-      const target = e.target as Node;
-      if (userMenuOpen && userMenuRef.current && !userMenuRef.current.contains(target)) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false);
-      }
-      if (modeMenuOpen && modeMenuRef.current && !modeMenuRef.current.contains(target)) {
-        setModeMenuOpen(false);
       }
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      if (modeMenuOpen) {
-        setModeMenuOpen(false);
-        modeButtonRef.current?.focus();
-      }
-      setUserMenuOpen(false);
+      if (e.key === "Escape") setUserMenuOpen(false);
     }
-
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [userMenuOpen, modeMenuOpen]);
+  }, [userMenuOpen]);
 
   if (!isAuthenticated()) return null;
 
   const isDark = theme === "dark";
 
-  // Deliberate changes push, transient ones overlay: the rail's own width
-  // follows the hover, but the content inset only follows the saved mode.
-  const expanded = mode === "open" || (mode === "auto" && hovering && hoverCapable);
+  // The rail expands over the content while hovered; the content never moves.
+  const expanded = hovering && hoverCapable;
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
-  const contentInset = mode === "open" ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
+  const contentInset = SIDEBAR_RAIL_W;
   const showLabels = expanded;
   const items = isAdmin(user)
     ? [...navItems, { to: "/users", label: "Users", icon: usersIcon, badge: pending }]
@@ -262,7 +225,7 @@ export default function AppLayout() {
       )}
 
       <aside
-        onMouseEnter={() => mode === "auto" && hoverCapable && setHovering(true)}
+        onMouseEnter={() => hoverCapable && setHovering(true)}
         onMouseLeave={() => setHovering(false)}
         className={`
           sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r
@@ -273,70 +236,6 @@ export default function AppLayout() {
       >
         {/* Top: width control, then the wordmark */}
         <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
-          <div className="relative hidden lg:block" ref={modeMenuRef}>
-            <button
-              ref={modeButtonRef}
-              type="button"
-              onClick={() => setModeMenuOpen((v) => !v)}
-              aria-expanded={modeMenuOpen}
-              aria-haspopup="menu"
-              aria-label="Sidebar width"
-              title="Sidebar width"
-              className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-black/5 text-gray-500"
-              }`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
-                <path d="M9.5 4.5v15" strokeLinecap="round" />
-              </svg>
-            </button>
-
-            {modeMenuOpen && (
-              <div
-                role="menu"
-                aria-label="Sidebar width"
-                className={`absolute top-full left-0 mt-2 w-[268px] rounded-xl border shadow-xl overflow-hidden z-50 ${
-                  isDark ? "bg-[#141414] border-white/10" : "bg-white border-gray-200"
-                }`}
-              >
-                {SIDEBAR_MODES.map((option) => {
-                  const active = option.value === mode;
-                  return (
-                    <button
-                      key={option.value}
-                      role="menuitemradio"
-                      aria-checked={active}
-                      onClick={() => {
-                        setMode(option.value);
-                        setModeMenuOpen(false);
-                        modeButtonRef.current?.focus();
-                      }}
-                      className={`w-full flex items-start gap-3 px-3.5 py-3 text-left transition-colors cursor-pointer ${
-                        isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <span className={`mt-0.5 ${isDark ? "text-gray-300" : "text-gray-600"}`}>
-                        <ModeGlyph mode={option.value} active={active} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">{option.title}</span>
-                        <span className={`block text-xs mt-0.5 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-                          {option.description}
-                        </span>
-                      </span>
-                      {active && (
-                        <svg className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                        </svg>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           <span className={`text-2xl font-bold tracking-tight ${showLabels ? "" : "lg:hidden"}`}>BFO</span>
         </div>
 
