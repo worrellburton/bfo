@@ -158,6 +158,25 @@ function shape(accounts: Account[]): Shaped {
   };
 }
 
+/** Delta of today's total vs the recorded total closest to N days back. */
+function deltaOver(history: DailyTotal[], days: number): number | null {
+  if (history.length < 2) return null;
+  const latest = history[history.length - 1];
+  const latestTotal = Number(latest.cash) + Number(latest.invested);
+  const target = new Date(`${latest.day}T00:00:00Z`).getTime() - days * 86_400_000;
+  let best: DailyTotal | null = null;
+  let bestGap = Infinity;
+  for (const d of history.slice(0, -1)) {
+    const gap = Math.abs(new Date(`${d.day}T00:00:00Z`).getTime() - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = d;
+    }
+  }
+  if (!best || best.day === latest.day) return null;
+  return latestTotal - (Number(best.cash) + Number(best.invested));
+}
+
 function reportDate(now: Date): string {
   return now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -182,7 +201,12 @@ function subjectLine(s: Shaped, movement: number, sample: boolean): string {
 
 // ── Plain-text body ───────────────────────────────────────────────────
 
-function renderText(s: Shaped, movement: number, now: Date): string {
+function renderText(
+  s: Shaped,
+  movement: number,
+  now: Date,
+  activity: { account: Account; txns: Txn[] } | null = null
+): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
     return `  [${a.institution_name}] ${accountLabel(a)}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
@@ -199,6 +223,12 @@ function renderText(s: Shaped, movement: number, now: Date): string {
   if (s.zeroCounts.cash) out.push(`  (+ ${s.zeroCounts.cash} zero-balance account${s.zeroCounts.cash === 1 ? "" : "s"})`);
   if (s.investAccounts.length) out.push("", "INVESTMENTS", ...s.investAccounts.map(line));
   if (s.creditAccounts.length) out.push("", "CREDIT CARDS", ...s.creditAccounts.map(line));
+  if (activity) {
+    out.push("", `RECENT ACTIVITY — ${accountLabel(activity.account)}`);
+    for (const t of activity.txns) {
+      out.push(`  ${t.date}  ${t.name}: ${signed(-t.amount, t.currency ?? "USD")}${t.pending ? " (pending)" : ""}`);
+    }
+  }
   out.push("", `Open Treasury: ${APP_URL}/treasury`);
   return out.join("\n");
 }
@@ -207,20 +237,28 @@ function renderText(s: Shaped, movement: number, now: Date): string {
 
 /** Email-safe trend graph: fixed-height table cells, no SVG, no script. */
 function renderGraph(history: DailyTotal[]): string {
-  if (history.length < 2) return "";
+  if (history.length < 2) {
+    return `<div style="margin-top:20px;padding:12px 14px;border:1px dashed rgba(255,255,255,0.12);border-radius:12px;font-size:11px;color:rgba(255,255,255,0.35);">
+      The 30-day trend appears here after a few days of balance history.
+    </div>`;
+  }
   const totals = history.map((d) => Number(d.cash) + Number(d.invested));
   const max = Math.max(...totals);
   const min = Math.min(...totals);
   if (max <= 0) return "";
   const windowChange = totals[totals.length - 1] - totals[0];
   const pct = totals[0] > 0 ? (windowChange / totals[0]) * 100 : 0;
+  // Bars wear the window's direction: emerald on the way up, rose down.
+  const barGradient = windowChange >= 0
+    ? "linear-gradient(180deg,#34d399,#0d9488)"
+    : "linear-gradient(180deg,#fb7185,#be123c)";
   const H = 54;
   const cols = history
     .map((d, i) => {
       const h = Math.max(3, Math.round((totals[i] / max) * H));
       return `<td align="center" valign="bottom" style="padding:0 1px;">
         <div style="height:${H - h}px;font-size:0;line-height:0;">&nbsp;</div>
-        <div style="height:${h}px;border-radius:2px 2px 0 0;background:linear-gradient(180deg,#34d399,#0d9488);font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:${h}px;border-radius:2px 2px 0 0;background:${barGradient};font-size:0;line-height:0;">&nbsp;</div>
       </td>`;
     })
     .join("");
@@ -249,6 +287,8 @@ function renderGraph(history: DailyTotal[]): string {
 function renderActivity(activity: { account: Account; txns: Txn[] } | null): string {
   if (!activity) return "";
   const { account, txns } = activity;
+  const inflow = txns.filter((t) => -t.amount > 0).reduce((s, t) => s + -t.amount, 0);
+  const outflow = txns.filter((t) => -t.amount < 0).reduce((s, t) => s + t.amount, 0);
   const rows = txns
     .map((t, i) => {
       const date = new Date(`${t.date}T12:00:00Z`).toLocaleDateString("en-US", {
@@ -277,6 +317,7 @@ function renderActivity(activity: { account: Account; txns: Txn[] } | null): str
         <tr>
           <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);padding-bottom:8px;">
             Recent activity
+            <span style="letter-spacing:0;text-transform:none;color:rgba(255,255,255,0.3);"> · in <span style="color:#34d399;">${money(inflow)}</span> / out ${money(outflow)}</span>
           </td>
           <td align="right" style="padding-bottom:8px;">
             <span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:600;color:#fff;background:rgba(${rgb},0.28);border:1px solid rgba(${rgb},0.55);">
@@ -286,6 +327,44 @@ function renderActivity(activity: { account: Account; txns: Txn[] } | null): str
         </tr>
         ${rows}
       </table>
+    </td></tr>
+  </table>`;
+}
+
+/** One stacked bar: how the total splits between cash and investments. */
+function allocationBar(s: Shaped): string {
+  const base = s.cash + s.invested;
+  if (base <= 0) return "";
+  const cashPct = Math.round((s.cash / base) * 100);
+  const investPct = 100 - cashPct;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
+    <tr><td>
+      <div style="height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.06);font-size:0;line-height:0;">
+        <!--[if !mso]><!--><div style="display:inline-block;height:8px;width:${Math.max(cashPct, 1)}%;background:#38bdf8;">&nbsp;</div><div style="display:inline-block;height:8px;width:${Math.max(investPct, 1)}%;background:#34d399;">&nbsp;</div><!--<![endif]-->
+      </div>
+    </td></tr>
+    <tr><td style="padding-top:5px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:10px;color:rgba(255,255,255,0.45);">■ <span style="color:#38bdf8;">Cash ${cashPct}%</span></td>
+        <td align="right" style="font-size:10px;color:rgba(255,255,255,0.45);"><span style="color:#34d399;">Investments ${investPct}%</span> ■</td>
+      </tr></table>
+    </td></tr>
+  </table>`;
+}
+
+/** Call out the account that moved the most since the last report. */
+function biggestMover(s: Shaped): string {
+  const all = [...s.cashAccounts, ...s.investAccounts, ...s.creditAccounts];
+  const top = all.reduce<Account | null>(
+    (best, a) => (Math.abs(a.change ?? 0) > Math.abs(best?.change ?? 0) ? a : best),
+    null
+  );
+  if (!top || !top.change) return "";
+  const rgb = tint(top.institution_color);
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
+    <tr><td style="padding:9px 12px;background:rgba(${rgb},0.10);border:1px solid rgba(${rgb},0.3);border-radius:10px;font-size:12px;color:rgba(255,255,255,0.75);">
+      Biggest mover: <strong style="color:#fff;">${accountLabel(top)}</strong>
+      <span style="color:${top.change > 0 ? "#34d399" : "#fb7185"};font-weight:600;">${signed(top.change, top.currency ?? "USD")}</span>
     </td></tr>
   </table>`;
 }
@@ -323,8 +402,8 @@ function renderHtml(
       ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>`
       : "";
     return `<tr>
-      <td style="padding:10px 0 0;color:rgba(255,255,255,0.88);font-size:13px;font-weight:500;">
-        ${accountLabel(a)}
+      <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
+        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>
         <div style="margin-top:4px;">${chip(a)}</div>
       </td>
       <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
@@ -345,6 +424,7 @@ function renderHtml(
           + ${n} zero-balance account${n === 1 ? "" : "s"}
         </td></tr>`;
 
+  const s_totalForShare = s.cash + s.invested;
   const section = (
     title: string,
     list: Account[],
@@ -355,13 +435,16 @@ function renderHtml(
     if (list.length === 0 && !opts.zeros) return "";
     const sectionMax = Math.max(...list.map((a) => Math.abs(a.balance_current ?? 0)), 0);
     const count = list.length + (opts.zeros ?? 0);
+    const sectionSum = list.reduce((t, a) => t + Math.abs(a.balance_current ?? 0), 0);
+    const share =
+      opts.liability || s_totalForShare <= 0 ? null : Math.round((sectionSum / s_totalForShare) * 100);
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
       style="margin-top:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
       <tr><td style="padding:14px 16px 6px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);">
-              ${title} <span style="color:rgba(255,255,255,0.28);letter-spacing:0;">· ${count}</span>
+              ${title} <span style="color:rgba(255,255,255,0.28);letter-spacing:0;">· ${count}${share != null ? ` · ${share}%` : ""}</span>
             </td>
             <td align="right" style="font-size:11px;color:rgba(255,255,255,0.6);">
               ${subtotal}${move !== 0 ? ` <span style="color:${move > 0 ? "#34d399" : "#fb7185"};">${signed(move)}</span>` : ""}
@@ -421,12 +504,22 @@ function renderHtml(
         <div style="margin-top:3px;font-size:12px;color:${movement === 0 ? "rgba(255,255,255,0.45)" : movement > 0 ? "#34d399" : "#fb7185"};">
           ${movement === 0 ? "No movement since the last report" : `${movement > 0 ? "▲" : "▼"} ${signed(movement)} since the last report`}
         </div>
+        ${(() => {
+          const d7 = deltaOver(history, 7);
+          const d30 = deltaOver(history, 30);
+          if (d7 == null && d30 == null) return "";
+          const chunk = (label: string, v: number | null) =>
+            v == null ? "" : `${label} <span style="color:${v >= 0 ? "#34d399" : "#fb7185"};">${signed(v)}</span>`;
+          return `<div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.35);">${[chunk("7d", d7), chunk("30d", d30)].filter(Boolean).join(" · ")}</div>`;
+        })()}
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>
           <td width="49%" valign="top">${statCard("Cash", money(s.cash), s.cashMove)}</td>
           <td width="2%"></td>
           <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove)}</td>
         </tr></table>
+        ${allocationBar(s)}
+        ${biggestMover(s)}
 
         ${alertBanner}
         ${renderGraph(history)}
@@ -514,8 +607,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sendEmail(
         me.email,
         subjectLine(s, movement, true),
-        renderText(s, movement, now),
-        renderHtml(s, movement, history, now, connections, activity)
+        renderText(s, movement, now, activity),
+        renderHtml(s, movement, history, now, connections, activity),
+        { "List-Unsubscribe": `<${APP_URL}/notifications>` }
       );
       return res.status(200).json({ sent: true, to: me.email });
     } catch (err) {
@@ -535,8 +629,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const users = await sb<Array<AppUser & { notification_prefs: Prefs }>>(
       "app_users?status=eq.approved&select=id,name,email,phone,role,status,notification_prefs"
     );
-    const due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
+    let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
     if (due.length === 0) return res.status(200).json({ sent: 0, considered: users.length });
+
+    // A retried cron must not email anyone twice: skip users whose delivery
+    // is already recorded today.
+    try {
+      const today = now.toISOString().slice(0, 10);
+      const delivered = await sb<Array<{ user_id: string; sent_at: string }>>(
+        `report_deliveries?report=eq.treasury&sent_at=gte.${today}T00:00:00Z&select=user_id,sent_at`
+      );
+      const done = new Set((delivered ?? []).map((d) => d.user_id));
+      due = due.filter((u) => !done.has(u.id));
+      if (due.length === 0) return res.status(200).json({ sent: 0, alreadyDelivered: done.size });
+    } catch {
+      // If the guard can't be read, sending is the safer failure.
+    }
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.
     const cronHeaders = { "x-internal-cron": secret ?? "" };
@@ -555,8 +663,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendEmail(
           user.email,
           subjectLine(s, movement, false),
-          renderText(s, movement, now),
-          renderHtml(s, movement, history, now, connections, activity)
+          renderText(s, movement, now, activity),
+          renderHtml(s, movement, history, now, connections, activity),
+          { "List-Unsubscribe": `<${APP_URL}/notifications>` }
         );
         await sb("report_deliveries", {
           method: "POST",
