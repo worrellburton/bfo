@@ -284,20 +284,27 @@ export async function sendEmail(
   text: string,
   html: string,
   headers?: Record<string, string>,
-  attachments?: EmailAttachment[]
+  attachments?: EmailAttachment[],
+  opts?: { idempotencyKey?: string; replyTo?: string }
 ): Promise<void> {
   // Platform email product endpoint (matches the key's emails scope). The
   // sender must be on a domain verified in the Bird workspace.
   const from = process.env.BIRD_EMAIL_FROM?.trim() || "BFO <reports@burtonfamilyoffice.com>";
-  const res = await birdVerifyFetch("/v1/email/messages", {
-    from,
-    to: [to],
-    subject,
-    text,
-    html,
-    ...(headers ? { headers } : {}),
-    ...(attachments?.length ? { attachments } : {}),
-  });
+  const replyTo = opts?.replyTo ?? process.env.BIRD_EMAIL_REPLY_TO?.trim();
+  const res = await birdVerifyFetch(
+    "/v1/email/messages",
+    {
+      from,
+      to: [to],
+      subject,
+      text,
+      html,
+      ...(replyTo ? { reply_to: [replyTo] } : {}),
+      ...(headers ? { headers } : {}),
+      ...(attachments?.length ? { attachments } : {}),
+    },
+    opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}
+  );
   if (!res.ok) {
     throw new Error(`bird email ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
@@ -335,12 +342,17 @@ function verifyRecipient(identifier: Identifier) {
     : { email_address: identifier.value };
 }
 
-async function birdVerifyFetch(path: string, body: unknown): Promise<Response> {
+async function birdVerifyFetch(
+  path: string,
+  body: unknown,
+  requestHeaders: Record<string, string> = {}
+): Promise<Response> {
   return fetch(`${birdVerifyBase()}${path}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${birdKey()}`,
       "Content-Type": "application/json",
+      ...requestHeaders,
     },
     body: JSON.stringify(body),
   });

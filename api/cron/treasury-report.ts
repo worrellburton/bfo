@@ -76,6 +76,23 @@ function tint(hex: string | null): string {
   return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
 }
 
+/** The date of the most recent delivered report, for the "since" line. */
+async function lastDeliveryDate(): Promise<string | null> {
+  try {
+    const rows = await sb<Array<{ sent_at: string }>>(
+      "report_deliveries?report=eq.treasury&select=sent_at&order=sent_at.desc&limit=1"
+    );
+    if (!rows?.[0]) return null;
+    return new Date(rows[0].sent_at).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "America/New_York",
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function loadHistory(): Promise<DailyTotal[]> {
   try {
     const rows = await sb<DailyTotal[]>(
@@ -190,6 +207,67 @@ function narrative(s: Shaped): string {
   if (c === 0 && i !== 0) return `Investments ${word(i)} while cash held steady.`;
   if (Math.sign(c) === Math.sign(i)) return `Cash ${word(c)} and investments ${word(i)}.`;
   return `Cash ${word(c)}, but investments ${word(i)}.`;
+}
+
+/** Last recorded total of each month, most recent six. */
+function monthlyCloses(history: DailyTotal[]): Array<{ label: string; total: number }> {
+  const byMonth = new Map<string, DailyTotal>();
+  for (const d of history) byMonth.set(d.day.slice(0, 7), d); // history is ascending
+  const entries = [...byMonth.entries()].slice(-6);
+  if (entries.length < 2) return [];
+  return entries.map(([key, d]) => ({
+    label: new Date(`${key}-01T12:00:00Z`).toLocaleDateString("en-US", { month: "short" }),
+    total: Number(d.cash) + Number(d.invested),
+  }));
+}
+
+/** Percentage-point shift of the cash/invest split vs ~30 days ago. */
+function allocationDrift(history: DailyTotal[]): number | null {
+  if (history.length < 2) return null;
+  const pct = (d: DailyTotal) => {
+    const total = Number(d.cash) + Number(d.invested);
+    return total > 0 ? (Number(d.invested) / total) * 100 : null;
+  };
+  const nowPct = pct(history[history.length - 1]);
+  const target = new Date(`${history[history.length - 1].day}T00:00:00Z`).getTime() - 30 * 86_400_000;
+  let best: DailyTotal | null = null;
+  let bestGap = Infinity;
+  for (const d of history.slice(0, -1)) {
+    const gap = Math.abs(new Date(`${d.day}T00:00:00Z`).getTime() - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = d;
+    }
+  }
+  const thenPct = best ? pct(best) : null;
+  if (nowPct == null || thenPct == null) return null;
+  const drift = nowPct - thenPct;
+  return Math.abs(drift) >= 1 ? drift : null;
+}
+
+/** Saturday or Sunday in New York — investment prices are Friday's close. */
+function isMarketClosed(now: Date): boolean {
+  const day = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
+  return day === 0 || day === 6;
+}
+
+/** When this user's next scheduled report lands, in words. */
+function nextReportLabel(prefs: Prefs, now: Date): string | null {
+  const r = prefs.treasuryReport;
+  if (!r || (r.frequency ?? "off") === "off") return null;
+  if (r.frequency === "daily") return "tomorrow morning";
+  const eastern = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  if (r.frequency === "weekly") {
+    const target = r.dayOfWeek ?? 1;
+    const days = (target - eastern.getDay() + 7) % 7 || 7;
+    const next = new Date(eastern.getTime() + days * 86_400_000);
+    return next.toLocaleDateString("en-US", { weekday: "long" });
+  }
+  const target = r.dayOfMonth ?? 1;
+  const next = new Date(eastern);
+  if (eastern.getDate() >= target) next.setMonth(next.getMonth() + 1);
+  next.setDate(target);
+  return next.toLocaleDateString("en-US", { month: "long", day: "numeric" });
 }
 
 /** Record high across everything we've ever logged. */
@@ -445,7 +523,8 @@ function renderHtml(
   history: DailyTotal[],
   now: Date,
   connections: Connection[] = [],
-  activity: { account: Account; txns: Txn[] } | null = null
+  activity: { account: Account; txns: Txn[] } | null = null,
+  extras: { lastReportDate?: string | null; footerNote?: string | null } = {}
 ): string {
   const statCard = (label: string, value: string, move: number) => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -473,6 +552,11 @@ function renderHtml(
     const stale = offlineBanks.has(a.institution_name)
       ? ` <span style="font-size:10px;color:#fbbf24;" title="Connection needs attention">⚠ stale</span>`
       : "";
+    const bal = Math.abs(a.balance_current ?? 0);
+    const swing =
+      a.change && bal > 0 && Math.abs(a.change) >= 500 && Math.abs(a.change) / bal >= 0.1
+        ? ` <span style="font-size:10px;color:${a.change > 0 ? "#34d399" : "#fb7185"};border:1px solid ${a.change > 0 ? "rgba(52,211,153,0.4)" : "rgba(251,113,133,0.4)"};border-radius:999px;padding:1px 6px;">big swing</span>`
+        : "";
     const util =
       liability && a.balance_limit && a.balance_limit > 0
         ? `<div style="font-size:11px;margin-top:1px;color:rgba(255,255,255,0.35);">${Math.round(((a.balance_current ?? 0) / a.balance_limit) * 100)}% of ${money(a.balance_limit)} limit</div>`
@@ -482,7 +566,7 @@ function renderHtml(
       : "";
     return `<tr>
       <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
-        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>${stale}
+        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>${stale}${swing}
         <div style="margin-top:4px;">${chip(a)}</div>
       </td>
       <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
@@ -555,11 +639,10 @@ function renderHtml(
         </div>`
       : "";
 
-  const preheader = `Total ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}${
-    movement === 0 ? "" : ` · ${signed(movement)} since last report`
-  }`;
+  const preheader = `${narrative(s)} Total ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}`;
 
-  return `<!doctype html><html><head>
+  return `<!doctype html><html lang="en"><head>
+  <title>BFO Treasury report</title>
   <meta name="color-scheme" content="dark" />
   <meta name="supported-color-schemes" content="dark" />
 </head><body style="margin:0;background:#000;padding:24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;" bgcolor="#000000">
@@ -584,7 +667,12 @@ function renderHtml(
         </div>
         <div style="margin-top:5px;font-size:12px;color:rgba(255,255,255,0.6);">${narrative(s)}</div>
         <div style="margin-top:3px;font-size:12px;color:${movement === 0 ? "rgba(255,255,255,0.45)" : movement > 0 ? "#34d399" : "#fb7185"};">
-          ${movement === 0 ? "No movement since the last report" : `${movement > 0 ? "▲" : "▼"} ${signed(movement)} since the last report`}
+          ${(() => {
+            const since = extras.lastReportDate ? ` (${extras.lastReportDate})` : "";
+            return movement === 0
+              ? `No movement since the last report${since}`
+              : `${movement > 0 ? "▲" : "▼"} ${signed(movement)} since the last report${since}`;
+          })()}
         </div>
         ${(() => {
           const d7 = deltaOver(history, 7);
@@ -603,14 +691,41 @@ function renderHtml(
           <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove)}</td>
         </tr></table>
         ${allocationBar(s)}
+        ${(() => {
+          const drift = allocationDrift(history);
+          if (drift == null) return "";
+          return `<div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,0.4);">Allocation shifted ${Math.abs(drift).toFixed(1)}pts toward ${drift > 0 ? "investments" : "cash"} over the last month.</div>`;
+        })()}
         ${bankStrip([...s.cashAccounts, ...s.investAccounts, ...s.creditAccounts])}
+        ${(() => {
+          const closes = monthlyCloses(history);
+          if (!closes.length) return "";
+          const cells = closes
+            .map(
+              (c) => `<td align="center" style="padding:6px 4px;">
+                <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">${c.label}</div>
+                <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.8);margin-top:2px;">${money(c.total)}</div>
+              </td>`
+            )
+            .join("");
+          return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;"><tr><td style="padding:6px 8px;">
+            <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);padding:4px 4px 0;">Monthly closes</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+          </td></tr></table>`;
+        })()}
         ${biggestMover(s)}
 
         ${alertBanner}
         ${renderGraph(history)}
         ${empty}
         ${section("Cash", s.cashAccounts, money(s.cash), s.cashMove, { zeros: s.zeroCounts.cash })}
-        ${section("Investments", s.investAccounts, money(s.invested), s.investMove, { zeros: s.zeroCounts.invest })}
+        ${section(
+          isMarketClosed(now) ? "Investments · Friday's close" : "Investments",
+          s.investAccounts,
+          money(s.invested),
+          s.investMove,
+          { zeros: s.zeroCounts.invest }
+        )}
         ${section("Credit cards", s.creditAccounts, `−${money(s.credit)}`, 0, { liability: true })}
         ${renderActivity(activity)}
 
@@ -626,7 +741,7 @@ function renderHtml(
               Open Treasury
             </a><!--<![endif]-->
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
-              Balances via Plaid · generated automatically ·
+              ${extras.footerNote ? `${extras.footerNote} · ` : ""}Balances via Plaid · generated automatically ·
               <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
             </div>
           </td></tr>
@@ -689,18 +804,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { accounts, connections } = await fetchTreasury(origin, authHeaders);
       const s = shape(accounts);
       const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-      const [history, activity] = await Promise.all([
+      const [history, activity, lastReportDate] = await Promise.all([
         loadHistory(),
         fetchRecentTxns(origin, authHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
+        lastDeliveryDate(),
       ]);
 
       await sendEmail(
         me.email,
         subjectLine(s, movement, true),
         renderText(s, movement, now, activity),
-        renderHtml(s, movement, history, now, connections, activity),
+        renderHtml(s, movement, history, now, connections, activity, {
+          lastReportDate,
+          footerNote: "This was a sample — it doesn't affect your schedule",
+        }),
         { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-        [balancesCsv(accounts, now)]
+        [balancesCsv(accounts, now)],
+        { replyTo: me.email }
       );
       return res.status(200).json({ sent: true, to: me.email });
     } catch (err) {
@@ -742,22 +862,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { accounts, connections } = await fetchTreasury(origin, cronHeaders);
     const s = shape(accounts);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-    const [history, activity] = await Promise.all([
+    const [history, activity, lastReportDate] = await Promise.all([
       loadHistory(),
       fetchRecentTxns(origin, cronHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
+      lastDeliveryDate(),
     ]);
 
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
     for (const user of due) {
       try {
         if (!user.email) throw new Error("no email on file");
+        const nextLabel = nextReportLabel(user.notification_prefs ?? {}, now);
         await sendEmail(
           user.email,
           subjectLine(s, movement, false),
           renderText(s, movement, now, activity),
-          renderHtml(s, movement, history, now, connections, activity),
+          renderHtml(s, movement, history, now, connections, activity, {
+            lastReportDate,
+            footerNote: nextLabel ? `Next report ${nextLabel}` : null,
+          }),
           { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-          [balancesCsv(accounts, now)]
+          [balancesCsv(accounts, now)],
+          { idempotencyKey: `treasury-report/${user.id}/${now.toISOString().slice(0, 10)}` }
         );
         await sb("report_deliveries", {
           method: "POST",
