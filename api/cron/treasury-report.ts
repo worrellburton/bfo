@@ -12,6 +12,8 @@ type Prefs = {
     frequency?: "off" | "daily" | "weekly" | "monthly";
     dayOfWeek?: number;
     dayOfMonth?: number;
+    /** Extra inboxes this user's scheduled report also goes to. */
+    recipients?: string[];
   };
 };
 
@@ -871,26 +873,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
     for (const user of due) {
       try {
-        if (!user.email) throw new Error("no email on file");
+        const extra = (user.notification_prefs?.treasuryReport?.recipients ?? [])
+          .map((e) => String(e).trim().toLowerCase())
+          .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
+        const recipients = [...new Set([user.email, ...extra].filter(Boolean))] as string[];
+        if (recipients.length === 0) throw new Error("no email on file");
         const nextLabel = nextReportLabel(user.notification_prefs ?? {}, now);
-        await sendEmail(
-          user.email,
-          subjectLine(s, movement, false),
-          renderText(s, movement, now, activity),
-          renderHtml(s, movement, history, now, connections, activity, {
-            lastReportDate,
-            footerNote: nextLabel ? `Next report ${nextLabel}` : null,
-          }),
-          { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-          [balancesCsv(accounts, now)],
-          { idempotencyKey: `treasury-report/${user.id}/${now.toISOString().slice(0, 10)}` }
-        );
+        for (const to of recipients) {
+          await sendEmail(
+            to,
+            subjectLine(s, movement, false),
+            renderText(s, movement, now, activity),
+            renderHtml(s, movement, history, now, connections, activity, {
+              lastReportDate,
+              footerNote: nextLabel ? `Next report ${nextLabel}` : null,
+            }),
+            { "List-Unsubscribe": `<${APP_URL}/notifications>` },
+            [balancesCsv(accounts, now)],
+            { idempotencyKey: `treasury-report/${user.id}/${to}/${now.toISOString().slice(0, 10)}` }
+          );
+        }
         await sb("report_deliveries", {
           method: "POST",
           prefer: "resolution=merge-duplicates",
           body: [{ user_id: user.id, report: "treasury", sent_at: now.toISOString() }],
         });
-        results.push({ user: user.email, ok: true });
+        results.push({ user: user.email ?? user.id, ok: true });
       } catch (err) {
         console.error(`treasury report failed for ${user.id}:`, err);
         results.push({

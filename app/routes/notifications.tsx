@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { authFetch, getUser } from "../auth";
+import { authFetch, getUser, type User } from "../auth";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -75,7 +75,46 @@ export default function Notifications() {
 
   const report = prefs.treasuryReport ?? {};
   const frequency: string = report.frequency ?? "off";
+  const recipients: string[] = report.recipients ?? [];
   const [sampleState, setSampleState] = useState<"idle" | "sending" | "sent">("idle");
+  const [team, setTeam] = useState<User[]>([]);
+  const [manualEmail, setManualEmail] = useState("");
+
+  // The user dropdown needs the roster; non-admins just get the manual field.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await authFetch("/api/auth/users");
+        if (!res.ok) return;
+        const data = await res.json();
+        setTeam((data.users ?? []).filter((u: User) => u.email));
+      } catch {}
+    })();
+  }, []);
+
+  function addRecipient(raw: string) {
+    const email = raw.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    if (email === getUser()?.email || recipients.includes(email)) {
+      setManualEmail("");
+      return;
+    }
+    setManualEmail("");
+    void save(set(prefs, "treasuryReport.recipients", [...recipients, email]));
+  }
+
+  function removeRecipient(email: string) {
+    void save(
+      set(
+        prefs,
+        "treasuryReport.recipients",
+        recipients.filter((r) => r !== email)
+      )
+    );
+  }
 
   async function sendSample() {
     setSampleState("sending");
@@ -182,10 +221,88 @@ export default function Notifications() {
             </div>
 
             {frequency !== "off" && (
-              <p className={`text-xs mt-4 ${subtle}`}>
-                Reports go out each morning around 8am Eastern to{" "}
-                {getUser()?.email || "your email address"}.
-              </p>
+              <div className="mt-5">
+                <span className={`text-xs font-medium uppercase tracking-wider block mb-2 ${subtle}`}>
+                  Send to
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* You always get your own report */}
+                  <span className={`px-3 py-1.5 rounded-full text-xs ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"}`}>
+                    {getUser()?.email} <span className={subtle}>(you)</span>
+                  </span>
+                  {recipients.map((email) => (
+                    <span
+                      key={email}
+                      className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs border ${
+                        isDark ? "border-white/15 text-gray-300" : "border-gray-300 text-gray-700"
+                      }`}
+                    >
+                      {email}
+                      <button
+                        onClick={() => removeRecipient(email)}
+                        title="Remove"
+                        className={`p-0.5 rounded-full cursor-pointer ${isDark ? "hover:bg-white/10 text-gray-500 hover:text-white" : "hover:bg-black/10 text-gray-400 hover:text-black"}`}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  {team.filter((u) => u.email !== getUser()?.email && !recipients.includes(u.email!)).length > 0 && (
+                    <select
+                      className={field}
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) addRecipient(e.target.value);
+                      }}
+                    >
+                      <option value="">Add a user…</option>
+                      {team
+                        .filter((u) => u.email !== getUser()?.email && !recipients.includes(u.email!))
+                        .map((u) => (
+                          <option key={u.id} value={u.email!}>
+                            {u.name ? `${u.name} — ${u.email}` : u.email}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      addRecipient(manualEmail);
+                    }}
+                  >
+                    <input
+                      type="email"
+                      value={manualEmail}
+                      onChange={(e) => {
+                        setManualEmail(e.target.value);
+                        setError("");
+                      }}
+                      placeholder="or add any email…"
+                      className={`${field} cursor-text w-56`}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!manualEmail.trim()}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 ${
+                        isDark ? "bg-white/10 text-white hover:bg-white/15" : "bg-black/5 text-gray-800 hover:bg-black/10"
+                      }`}
+                    >
+                      Add
+                    </button>
+                  </form>
+                </div>
+
+                <p className={`text-xs mt-3 ${subtle}`}>
+                  Reports go out each morning around 8am Eastern to everyone above.
+                </p>
+              </div>
             )}
 
             <div className={`mt-5 pt-4 border-t ${divider} flex items-center gap-3`}>
