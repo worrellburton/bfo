@@ -209,8 +209,9 @@ async function listChannels(): Promise<BirdChannel[]> {
     }
     if (res.status === 404) {
       throw new ConfigError(
-        `Bird has no workspace ${workspaceId}. BIRD_WORKSPACE_ID must be the workspace UUID, ` +
-          "not the ws_… id from the dashboard URL — or leave it unset and it will be discovered."
+        "This Bird key can send but can't list channels — its scopes cover the sms/emails " +
+          "products, not channel management. Set BIRD_SMS_CHANNEL_ID and BIRD_EMAIL_CHANNEL_ID " +
+          "(from the channel's URL in the Bird dashboard) and discovery is skipped entirely."
       );
     }
     throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${detail}`);
