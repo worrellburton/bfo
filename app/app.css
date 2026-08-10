@@ -395,3 +395,150 @@ html.light {
 @media (prefers-reduced-motion: reduce) {
   .sidebar-rail, .sidebar-content { transition: none; }
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+   Auth surfaces (/login, /complete-profile).
+
+   Elevated glass: gradient hairline ring, deep blur, ambient indigo glow,
+   fields that rise in staggered, and a green success glow on the code
+   field when the right key lands.
+   ────────────────────────────────────────────────────────────────────── */
+.auth-card {
+  position: relative;
+  isolation: isolate;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018) 55%, rgba(120, 140, 255, 0.045));
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.09) inset,
+    0 24px 64px -28px rgba(0, 0, 0, 0.9),
+    0 0 90px -32px rgba(99, 102, 241, 0.4);
+  animation: landing-rise 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.45s both;
+}
+/* Gradient hairline ring that catches the light top-left. */
+.auth-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(140deg, rgba(147, 197, 253, 0.4), rgba(196, 181, 253, 0.18) 40%, transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* Specular sheen across the top of the glass. */
+.auth-card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 55%;
+  border-radius: inherit;
+  background: radial-gradient(80% 60% at 30% 0%, rgba(255, 255, 255, 0.10), transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.auth-field {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  transition: border-color 0.2s, box-shadow 0.3s, background 0.2s;
+  animation: auth-field-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-field::placeholder { color: rgba(255, 255, 255, 0.28); }
+.auth-field:focus {
+  outline: none;
+  border-color: rgba(147, 197, 253, 0.55);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 0 0 4px rgba(99, 102, 241, 0.16),
+    0 0 28px -6px rgba(99, 102, 241, 0.55);
+}
+/* Autofill was painting the field opaque white — keep the glass. */
+.auth-field:-webkit-autofill,
+.auth-field:-webkit-autofill:hover,
+.auth-field:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff;
+  -webkit-box-shadow: 0 0 0 1000px #12151c inset;
+  caret-color: #fff;
+  transition: background-color 999999s ease-out;
+}
+
+/* Staggered entrance for the pieces inside a step. */
+@keyframes auth-field-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.auth-in { animation: auth-field-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.auth-delay-1 { animation-delay: 0.07s; }
+.auth-delay-2 { animation-delay: 0.15s; }
+.auth-delay-3 { animation-delay: 0.23s; }
+
+/* The correct key glows green. */
+.auth-field-success {
+  border-color: rgba(52, 211, 153, 0.8) !important;
+  background: rgba(52, 211, 153, 0.10) !important;
+  color: #6ee7b7 !important;
+  box-shadow:
+    0 0 0 4px rgba(52, 211, 153, 0.18),
+    0 0 36px -4px rgba(52, 211, 153, 0.7) !important;
+  animation: auth-success-pulse 0.9s ease-out;
+}
+@keyframes auth-success-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55), 0 0 20px -6px rgba(52, 211, 153, 0.6); }
+  100% { box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.18), 0 0 36px -4px rgba(52, 211, 153, 0.7); }
+}
+.auth-field-error {
+  border-color: rgba(248, 113, 113, 0.6) !important;
+  box-shadow: 0 0 28px -6px rgba(248, 113, 113, 0.55) !important;
+}
+
+.auth-btn {
+  width: 100%;
+  padding: 12px 0;
+  border-radius: 12px;
+  background: #fff;
+  color: #000;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.25s, opacity 0.15s;
+  box-shadow: 0 10px 34px -14px rgba(255, 255, 255, 0.55);
+}
+.auth-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 40px -14px rgba(255, 255, 255, 0.7);
+}
+.auth-btn:active:not(:disabled) { transform: scale(0.98); }
+.auth-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-card, .auth-field, .auth-in, .auth-field-success { animation: none; }
+  .auth-btn { transition: none; }
+}
+
+/* The wordmark shrinks with the rail rather than vanishing. */
+.sidebar-brand {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 24px;
+  line-height: 1;
+  transition: font-size 180ms ease, letter-spacing 180ms ease;
+  white-space: nowrap;
+}
+@media (min-width: 1024px) {
+  .sidebar-brand-sm {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-brand { transition: none; }
+}

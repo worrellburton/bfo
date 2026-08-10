@@ -242,7 +242,7 @@ export default function AppLayout() {
       >
         {/* Top: width control, then the wordmark */}
         <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
-          <span className={`text-2xl font-bold tracking-tight ${showLabels ? "" : "lg:hidden"}`}>BFO</span>
+          <span className={`sidebar-brand ${showLabels ? "" : "sidebar-brand-sm"}`}>BFO</span>
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">

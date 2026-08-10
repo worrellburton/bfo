@@ -9,11 +9,8 @@ export function meta() {
 
 // Same always-dark styling as /login (literal rgba so the light-mode rescue
 // layer can't wash it out).
-const CARD = "border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.035)]";
-const FIELD =
-  "w-full px-4 py-3 rounded-xl bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.12)] " +
-  "text-white placeholder-[rgba(255,255,255,0.28)] transition-colors focus:outline-none " +
-  "focus:border-[rgba(255,255,255,0.30)] focus:bg-[rgba(255,255,255,0.09)]";
+const CARD = "auth-card";
+const FIELD = "auth-field";
 
 function formatPhoneInput(raw: string): string {
   if (raw.trim().startsWith("+")) return `+${raw.replace(/\D/g, "")}`;
@@ -35,6 +32,7 @@ export default function CompleteProfile() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
+  const [success, setSuccess] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -90,8 +88,9 @@ export default function CompleteProfile() {
     setError("");
     try {
       await call({ identifier: sentTo, code: submitted });
+      setSuccess(true);
       await revalidate(); // pull the updated user into the stored session
-      navigate("/home");
+      setTimeout(() => navigate("/home"), 700);
     } catch (err) {
       setCode("");
       shakeOut(err instanceof Error ? err.message : "Couldn't verify that code.");
@@ -125,7 +124,7 @@ export default function CompleteProfile() {
         <h1 className="landing-title landing-title-sm font-bold tracking-tight leading-none select-none">BFO</h1>
         <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
 
-        <div className={`landing-fade-in mt-10 rounded-2xl backdrop-blur-xl p-6 text-left ${CARD}`}>
+        <div className={`mt-10 p-6 text-left ${CARD}`}>
           {step === "collect" ? (
             <form
               onSubmit={(e) => {
@@ -155,12 +154,12 @@ export default function CompleteProfile() {
                   setError("");
                 }}
                 placeholder={isEmail ? "you@example.com" : "(555) 123-4567"}
-                className={`${FIELD} text-[16px]`}
+                className={`${FIELD} auth-delay-1 text-[16px]`}
               />
               <button
                 type="submit"
                 disabled={busy || !value.trim()}
-                className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-white/85 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="auth-btn auth-in auth-delay-2 mt-4"
               >
                 {busy ? "Sending…" : "Send code"}
               </button>
@@ -192,14 +191,14 @@ export default function CompleteProfile() {
                   if (next.length === 6) void check(next);
                 }}
                 placeholder="······"
-                className={`${FIELD} text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)]`}
+                className={`${FIELD} auth-delay-1 text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)] ${success ? "auth-field-success" : error ? "auth-field-error" : ""}`}
               />
               <button
                 type="submit"
                 disabled={busy || code.length !== 6}
-                className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-white/85 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="auth-btn auth-in auth-delay-2 mt-4"
               >
-                {busy ? "Verifying…" : "Finish"}
+                {success ? "All set" : busy ? "Verifying…" : "Finish"}
               </button>
               <button
                 type="button"

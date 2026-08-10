@@ -35,11 +35,8 @@ function formatIdentifier(raw: string): string {
 
 // The app's light-mode rescue layer rewrites bg-white/N utilities to near-white,
 // which would wash this screen out — it is always dark, so use literal rgba.
-const CARD = "border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.035)]";
-const FIELD =
-  "w-full px-4 py-3 rounded-xl bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.12)] " +
-  "text-white placeholder-[rgba(255,255,255,0.28)] transition-colors focus:outline-none " +
-  "focus:border-[rgba(255,255,255,0.30)] focus:bg-[rgba(255,255,255,0.09)]";
+const CARD = "auth-card";
+const FIELD = "auth-field";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -51,6 +48,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const codeInput = useRef<HTMLInputElement>(null);
   const submittedCode = useRef("");
@@ -117,9 +115,10 @@ export default function Login() {
     try {
       const res = await verifyCode(sentTo, value);
       if (res.token) {
-        // Both identifiers are mandatory; collect the missing one first.
+        // Let the correct key glow green for a beat before moving on.
+        setSuccess(true);
         const complete = res.user?.email && res.user?.phone;
-        navigate(complete ? "/home" : "/complete-profile");
+        setTimeout(() => navigate(complete ? "/home" : "/complete-profile"), 700);
       } else setStep("pending");
     } catch (err) {
       setCode("");
@@ -155,7 +154,7 @@ export default function Login() {
         </h1>
         <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
 
-        <div className={`landing-fade-in mt-10 rounded-2xl backdrop-blur-xl p-6 text-left ${CARD}`}>
+        <div className={`mt-10 p-6 text-left ${CARD}`}>
           {step === "identifier" && (
             <form
               onSubmit={(e) => {
@@ -165,7 +164,7 @@ export default function Login() {
             >
               <label
                 htmlFor="identifier"
-                className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-3"
+                className="auth-in block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-3"
               >
                 Phone or email
               </label>
@@ -183,12 +182,12 @@ export default function Login() {
                   setError("");
                 }}
                 placeholder="(555) 123-4567"
-                className={`${FIELD} text-[16px]`}
+                className={`${FIELD} auth-delay-1 text-[16px]`}
               />
               <button
                 type="submit"
                 disabled={busy || !identifier.trim()}
-                className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-white/85 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="auth-btn auth-in auth-delay-2 mt-4"
               >
                 {busy ? "Sending…" : "Send code"}
               </button>
@@ -230,14 +229,14 @@ export default function Login() {
                   if (next.length === 6) void submitCode(next);
                 }}
                 placeholder="······"
-                className={`${FIELD} text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)]`}
+                className={`${FIELD} auth-delay-1 text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)] ${success ? "auth-field-success" : error ? "auth-field-error" : ""}`}
               />
               <button
                 type="submit"
                 disabled={busy || code.length !== 6}
-                className="w-full mt-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-white/85 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="auth-btn auth-in auth-delay-2 mt-4"
               >
-                {busy ? "Verifying…" : "Continue"}
+                {success ? "Welcome back" : busy ? "Verifying…" : "Continue"}
               </button>
 
               <div className="flex items-center justify-between mt-4 text-xs">
