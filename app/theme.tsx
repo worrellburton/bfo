@@ -13,9 +13,9 @@ const ThemeContext = createContext<{
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
-      return (localStorage.getItem("bfo-theme") as Theme) || "light";
+      return (localStorage.getItem("bfo-theme") as Theme) || "dark";
     }
-    return "light";
+    return "dark";
   });
 
   const [backgroundId, setBackgroundIdState] = useState<BackgroundId>(() => {

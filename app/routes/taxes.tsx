@@ -700,11 +700,7 @@ export default function Taxes() {
               <p className="text-xs text-red-500">{entitiesError}</p>
             ) : entities.length === 0 ? (
               <p className={`text-xs ${subtleText}`}>
-                No connected QuickBooks companies.{" "}
-                <Link to="/tools/quickbooks" className={isDark ? "text-blue-400" : "text-blue-600"}>
-                  Connect one
-                </Link>
-                .
+                No connected QuickBooks companies.
               </p>
             ) : (
               <div className="flex flex-wrap gap-1.5">

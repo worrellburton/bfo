@@ -44,29 +44,11 @@ const navItems = [
     ),
   },
   {
-    to: "/tools/quickbooks",
-    label: "Finance",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-      </svg>
-    ),
-  },
-  {
     to: "/treasury",
     label: "Treasury",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM5.25 10.5v7.5m4.5-7.5v7.5m4.5-7.5v7.5m4.5-7.5v7.5M3 21h18" />
-      </svg>
-    ),
-  },
-  {
-    to: "/investments",
-    label: "Investments",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
       </svg>
     ),
   },
@@ -85,15 +67,6 @@ const navItems = [
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185zM9.75 9h.008v.008H9.75V9zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 4.5h.008v.008h-.008V13.5zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-      </svg>
-    ),
-  },
-  {
-    to: "/estate-map",
-    label: "Map",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
       </svg>
     ),
   },
@@ -211,29 +184,6 @@ export default function AppLayout() {
       </div>
       <ParticleCanvas themeAware className="absolute inset-0 w-full h-full pointer-events-none" />
 
-      {/* Mobile header — below the breakpoint the width setting is irrelevant */}
-      <div
-        className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden ${
-          isDark ? "bg-black/90 backdrop-blur-md border-b border-white/10" : "bg-white/90 backdrop-blur-md border-b border-gray-200"
-        }`}
-      >
-        <span className="text-xl font-bold tracking-tight">BFO</span>
-        <button
-          onClick={() => setDrawerOpen(!drawerOpen)}
-          aria-label={drawerOpen ? "Close menu" : "Open menu"}
-          aria-expanded={drawerOpen}
-          className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-white/10 text-gray-300" : "hover:bg-gray-100 text-gray-600"}`}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d={drawerOpen ? "M6 18L18 6M6 6l12 12" : "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"}
-            />
-          </svg>
-        </button>
-      </div>
-
       {drawerOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setDrawerOpen(false)} />
       )}
@@ -342,13 +292,6 @@ export default function AppLayout() {
                 {isDark ? "Light mode" : "Dark mode"}
               </button>
 
-              <button onClick={() => go("/agents")} className={menuItemCls} role="menuitem">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Manage Agents
-              </button>
-
               <button onClick={() => go("/notifications")} className={menuItemCls} role="menuitem">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z" />
@@ -388,7 +331,7 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="sidebar-content relative z-10 p-4 pt-16 pb-28 sm:p-6 sm:pt-16 sm:pb-28 lg:p-8 lg:pt-8 lg:pb-8 lg:ml-[var(--inset)]">
+      <main className="sidebar-content relative z-10 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-8 lg:pb-8 lg:ml-[var(--inset)]">
         <Outlet />
       </main>
 
@@ -397,7 +340,7 @@ export default function AppLayout() {
         aria-label="Quick navigation"
         className="mobile-dock fixed bottom-4 left-1/2 -translate-x-1/2 z-40 lg:hidden"
       >
-        {["Entities", "Finance", "Home", "Treasury", "Tools"].map((label) => {
+        {["Entities", "Treasury", "Home", "MSAs", "Tools"].map((label) => {
           const item = navItems.find((n) => n.label === label);
           if (!item) return null;
           const active =
@@ -418,6 +361,13 @@ export default function AppLayout() {
             </NavLink>
           );
         })}
+        <button
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open menu"
+          className={`mobile-dock-item text-[11px] font-bold ${isDark ? "text-gray-300" : "text-gray-600"}`}
+        >
+          {initials(user)}
+        </button>
       </nav>
 
     </div>
