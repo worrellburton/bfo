@@ -279,7 +279,7 @@ export async function sendSms(to: string, text: string): Promise<void> {
 export type EmailAttachment = { filename: string; content: string };
 
 export async function sendEmail(
-  to: string,
+  to: string | string[],
   subject: string,
   text: string,
   html: string,
@@ -295,7 +295,7 @@ export async function sendEmail(
     "/v1/email/messages",
     {
       from,
-      to: [to],
+      to: Array.isArray(to) ? to : [to],
       subject,
       text,
       html,

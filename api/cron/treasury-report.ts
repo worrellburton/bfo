@@ -879,9 +879,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         recipients = [...new Set([me.email, ...extra])];
       }
 
-      for (const to of recipients) {
+      // One message with every recipient visible on the To line, so any of
+      // them can Reply All to the whole group.
+      {
         await sendEmailWithRetry(
-          to,
+          recipients,
           subjectLine(s, movement, !broadcast, now),
           renderText(s, movement, now, activity),
           renderHtml(s, movement, history, now, connections, activity, {
@@ -978,21 +980,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const recipients = [...new Set([user.email, ...extra].filter(Boolean))] as string[];
         if (recipients.length === 0) throw new Error("no email on file");
         const nextLabel = nextReportLabel(user.notification_prefs ?? {}, now);
-        for (const to of recipients) {
-          await sendEmailWithRetry(
-            to,
-            subjectLine(s, movement, false, now),
-            renderText(s, movement, now, activity),
-            renderHtml(s, movement, history, now, connections, activity, {
-              lastReportDate,
-              footerNote: nextLabel ? `Next report ${nextLabel}` : null,
-              preparedFor: user.name ?? "the Burton Family Office",
-            }),
-            { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-            undefined,
-            { idempotencyKey: `treasury-report/${user.id}/${to}/${now.toISOString().slice(0, 10)}` }
-          );
-        }
+        // Everyone on one To line so the group can Reply All to each other.
+        await sendEmailWithRetry(
+          recipients,
+          subjectLine(s, movement, false, now),
+          renderText(s, movement, now, activity),
+          renderHtml(s, movement, history, now, connections, activity, {
+            lastReportDate,
+            footerNote: nextLabel ? `Next report ${nextLabel}` : null,
+            preparedFor: user.name ?? "the Burton Family Office",
+          }),
+          { "List-Unsubscribe": `<${APP_URL}/notifications>` },
+          undefined,
+          {
+            idempotencyKey: `treasury-report/${user.id}/${now.toISOString().slice(0, 10)}`,
+            replyTo: user.email ?? undefined,
+          }
+        );
         await sb("report_deliveries", {
           method: "POST",
           prefer: "resolution=merge-duplicates",
