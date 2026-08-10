@@ -335,10 +335,16 @@ function reportTime(now: Date): string {
 }
 
 function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date): string {
-  const arrow = movement === 0 ? "" : movement > 0 ? "▲ " : "▼ ";
-  const move = movement === 0 ? "" : ` · ${signed(movement)}`;
-  const day = now.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
-  return `${sample ? "[Sample] " : ""}${arrow}BFO Treasury — ${money(s.totalValue)}${move} · ${day}`;
+  // No dollar amounts in the subject — inbox lists and lock screens are
+  // public in a way the opened email is not. Direction only.
+  const arrow = movement === 0 ? "" : movement > 0 ? " ▲" : " ▼";
+  const day = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "America/New_York",
+  });
+  return `${sample ? "[Sample] " : ""}BFO Treasury — ${day}${arrow}`;
 }
 
 
@@ -667,7 +673,9 @@ function renderHtml(
         </div>`
       : "";
 
-  const preheader = `${narrative(s)} Total ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}`;
+  // The preview line sits right next to the subject in the inbox, so it stays
+  // amount-free as well; the numbers wait until the email is opened.
+  const preheader = "Your balances, movement and recent activity are inside.";
 
   return `<!doctype html><html lang="en"><head>
   <title>BFO Treasury report</title>
