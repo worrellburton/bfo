@@ -127,8 +127,14 @@ export default function AppLayout() {
     // Confirm the session is still good server-side — an owner may have
     // revoked access, or the role may have changed, since the last sign-in.
     revalidate().then((ok) => {
-      if (!ok) navigate("/login");
-      else setUser(getUser());
+      if (!ok) {
+        navigate("/login");
+        return;
+      }
+      const fresh = getUser();
+      setUser(fresh);
+      // Both identifiers are mandatory — collect whichever is missing.
+      if (fresh && (!fresh.email || !fresh.phone)) navigate("/complete-profile");
     });
   }, [navigate]);
 

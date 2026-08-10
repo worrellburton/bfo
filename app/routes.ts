@@ -3,6 +3,7 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 export default [
   index("routes/landing.tsx"),
   route("login", "routes/login.tsx"),
+  route("complete-profile", "routes/complete-profile.tsx"),
   route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),
   route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
   route("public/bf-access", "./routes/bf-access-public.tsx"),

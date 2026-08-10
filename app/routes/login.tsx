@@ -116,8 +116,11 @@ export default function Login() {
     setError("");
     try {
       const res = await verifyCode(sentTo, value);
-      if (res.token) navigate("/home");
-      else setStep("pending");
+      if (res.token) {
+        // Both identifiers are mandatory; collect the missing one first.
+        const complete = res.user?.email && res.user?.phone;
+        navigate(complete ? "/home" : "/complete-profile");
+      } else setStep("pending");
     } catch (err) {
       setCode("");
       shakeOut(err instanceof ApiError ? err.message : "Couldn't verify that code.");
