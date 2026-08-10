@@ -98,21 +98,25 @@ function renderGraph(history: DailyTotal[]): string {
 }
 
 function renderText(accounts: Account[], total: number, movement: number): string {
-  const lines = accounts.map((a) => {
+  const line = (a: Account) => {
     const where = `${a.institution_name} ${a.official_name || a.name}${a.mask ? ` ····${a.mask}` : ""}`;
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
-    return `${where}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
-  });
+    return `  ${where}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
+  };
+  const cash = accounts.filter((a) => a.type === "depository" || a.type === "credit");
+  const inv = accounts.filter((a) => a.type === "investment");
+  const other = accounts.filter((a) => !cash.includes(a) && !inv.includes(a));
   const invested = investedOf(accounts);
-  return [
-    `BFO Treasury — ${money(total)} cash across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`,
-    invested > 0 ? `Investments: ${money(invested)}` : null,
+
+  const out = [
+    `BFO Treasury — Cash ${money(total)}${invested > 0 ? ` · Investments ${money(invested)}` : ""}`,
     movement === 0 ? "No movement since the last report." : `${signed(movement)} since the last report.`,
     "",
-    ...lines,
-  ]
-    .filter((l): l is string => l != null)
-    .join("\n");
+  ];
+  if (cash.length) out.push("CASH", ...cash.map(line), "");
+  if (inv.length) out.push("INVESTMENTS", ...inv.map(line), "");
+  if (other.length) out.push("OTHER", ...other.map(line));
+  return out.join("\n").trimEnd();
 }
 
 function renderHtml(
@@ -122,23 +126,47 @@ function renderHtml(
   history: DailyTotal[] = []
 ): string {
   const invested = investedOf(accounts);
-  const rows = accounts
-    .map((a) => {
-      const delta = a.change
-        ? `<span style="color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</span>`
-        : `<span style="color:rgba(255,255,255,0.3);">—</span>`;
-      return `<tr>
-        <td style="padding:10px 0;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.8);font-size:13px;">
-          ${a.institution_name}<br/>
-          <span style="color:rgba(255,255,255,0.4);font-size:12px;">${a.official_name || a.name}${a.mask ? ` ····${a.mask}` : ""}</span>
-        </td>
-        <td align="right" style="padding:10px 0;border-top:1px solid rgba(255,255,255,0.08);color:#fff;font-size:14px;font-weight:600;">
-          ${money(a.balance_current, a.currency ?? "USD")}<br/>
-          <span style="font-size:12px;font-weight:400;">${delta}</span>
-        </td>
-      </tr>`;
-    })
-    .join("");
+
+  const statCard = (label: string, value: string, sub = "") => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+      style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.10);border-radius:14px;">
+      <tr><td style="padding:14px 16px;">
+        <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.4);">${label}</div>
+        <div style="margin-top:5px;font-size:22px;font-weight:600;color:#fff;white-space:nowrap;">${value}</div>
+        ${sub ? `<div style="margin-top:3px;font-size:11px;color:rgba(255,255,255,0.45);">${sub}</div>` : ""}
+      </td></tr>
+    </table>`;
+
+  const row = (a: Account) => {
+    const delta = a.change
+      ? `<span style="color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</span>`
+      : `<span style="color:rgba(255,255,255,0.3);">—</span>`;
+    return `<tr>
+      <td style="padding:9px 0;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.8);font-size:13px;">
+        ${a.institution_name}<br/>
+        <span style="color:rgba(255,255,255,0.4);font-size:12px;">${a.official_name || a.name}${a.mask ? ` ····${a.mask}` : ""}</span>
+      </td>
+      <td align="right" style="padding:9px 0;border-top:1px solid rgba(255,255,255,0.08);color:#fff;font-size:14px;font-weight:600;">
+        ${money(a.balance_current, a.currency ?? "USD")}<br/>
+        <span style="font-size:12px;font-weight:400;">${delta}</span>
+      </td>
+    </tr>`;
+  };
+
+  const section = (title: string, list: Account[], subtotal: string) =>
+    list.length === 0
+      ? ""
+      : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:26px;">
+          <tr>
+            <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.4);padding-bottom:8px;">${title}</td>
+            <td align="right" style="font-size:11px;color:rgba(255,255,255,0.55);padding-bottom:8px;">${subtotal}</td>
+          </tr>
+          ${list.map(row).join("")}
+        </table>`;
+
+  const cashAccounts = accounts.filter((a) => a.type === "depository" || a.type === "credit");
+  const invAccounts = accounts.filter((a) => a.type === "investment");
+  const otherAccounts = accounts.filter((a) => !cashAccounts.includes(a) && !invAccounts.includes(a));
 
   return `<!doctype html><html><body style="margin:0;background:#000;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
@@ -146,21 +174,21 @@ function renderHtml(
       <tr><td style="padding:32px;">
         <div style="font-size:26px;font-weight:700;color:#fff;letter-spacing:-0.02em;">BFO</div>
         <div style="margin-top:4px;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Treasury report</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:26px;"><tr>
-          <td>
-            <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Cash</div>
-            <div style="margin-top:3px;font-size:28px;font-weight:600;color:#fff;">${money(total)}</div>
-          </td>
-          <td align="right" valign="bottom">
-            <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Investments</div>
-            <div style="margin-top:3px;font-size:20px;font-weight:600;color:#fff;">${money(invested)}</div>
-          </td>
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;"><tr>
+          <td width="49%" valign="top">${statCard(
+            "Cash",
+            money(total),
+            movement === 0 ? "No movement" : `${signed(movement)} since last report`
+          )}</td>
+          <td width="2%"></td>
+          <td width="49%" valign="top">${statCard("Investments", money(invested))}</td>
         </tr></table>
-        <div style="margin-top:6px;font-size:13px;color:rgba(255,255,255,0.5);">
-          ${movement === 0 ? "No movement since the last report" : `${signed(movement)} since the last report`}
-        </div>
+
         ${renderGraph(history)}
-        <table role="presentation" width="100%" style="margin-top:24px;" cellpadding="0" cellspacing="0">${rows}</table>
+        ${section("Cash", cashAccounts, money(total))}
+        ${section("Investments", invAccounts, money(invested))}
+        ${section("Other", otherAccounts, "")}
       </td></tr>
     </table>
   </td></tr></table>
