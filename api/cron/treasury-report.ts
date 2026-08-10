@@ -15,6 +15,8 @@ type Prefs = {
   };
 };
 
+type DailyTotal = { day: string; cash: number; invested: number; credit: number };
+
 type Account = {
   institution_name: string;
   name: string;
@@ -25,6 +27,17 @@ type Account = {
   currency: string | null;
   change: number | null;
 };
+
+async function loadHistory(): Promise<DailyTotal[]> {
+  try {
+    const rows = await sb<DailyTotal[]>(
+      "treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=30"
+    );
+    return (rows ?? []).reverse();
+  } catch {
+    return [];
+  }
+}
 
 const money = (n: number | null | undefined, currency = "USD") =>
   n == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
@@ -44,21 +57,71 @@ function isDue(prefs: Prefs, now: Date): boolean {
   return eastern.getDate() === (report?.dayOfMonth ?? 1);
 }
 
+function investedOf(accounts: Account[]): number {
+  return accounts
+    .filter((a) => a.type === "investment")
+    .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
+}
+
+/**
+ * Email-safe trend graph: a table of fixed-height cells, no SVG, no JS.
+ * Each column is one recorded day of cash + investments.
+ */
+function renderGraph(history: DailyTotal[]): string {
+  if (history.length < 2) return "";
+  const totals = history.map((d) => Number(d.cash) + Number(d.invested));
+  const max = Math.max(...totals);
+  if (max <= 0) return "";
+  const H = 56;
+  const cols = history
+    .map((d, i) => {
+      const h = Math.max(3, Math.round((totals[i] / max) * H));
+      return `<td align="center" valign="bottom" style="padding:0 1px;">
+        <div style="height:${H - h}px;font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:${h}px;border-radius:2px 2px 0 0;background:linear-gradient(180deg,#34d399,#0d9488);font-size:0;line-height:0;">&nbsp;</div>
+      </td>`;
+    })
+    .join("");
+  const first = history[0].day.slice(5).replace("-", "/");
+  const last = history[history.length - 1].day.slice(5).replace("-", "/");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;">
+    <tr>${cols}</tr>
+    <tr>
+      <td colspan="${history.length}" style="padding-top:6px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td style="font-size:10px;color:rgba(255,255,255,0.35);">${first}</td>
+          <td align="right" style="font-size:10px;color:rgba(255,255,255,0.35);">${last}</td>
+        </tr></table>
+      </td>
+    </tr>
+  </table>`;
+}
+
 function renderText(accounts: Account[], total: number, movement: number): string {
   const lines = accounts.map((a) => {
     const where = `${a.institution_name} ${a.official_name || a.name}${a.mask ? ` ····${a.mask}` : ""}`;
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
     return `${where}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
   });
+  const invested = investedOf(accounts);
   return [
-    `BFO Treasury — ${money(total)} across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`,
+    `BFO Treasury — ${money(total)} cash across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`,
+    invested > 0 ? `Investments: ${money(invested)}` : null,
     movement === 0 ? "No movement since the last report." : `${signed(movement)} since the last report.`,
     "",
     ...lines,
-  ].join("\n");
+  ]
+    .filter((l): l is string => l != null)
+    .join("\n");
 }
 
-function renderHtml(accounts: Account[], total: number, movement: number): string {
+function renderHtml(
+  accounts: Account[],
+  total: number,
+  movement: number,
+  history: DailyTotal[] = []
+): string {
+  const invested = investedOf(accounts);
   const rows = accounts
     .map((a) => {
       const delta = a.change
@@ -83,10 +146,20 @@ function renderHtml(accounts: Account[], total: number, movement: number): strin
       <tr><td style="padding:32px;">
         <div style="font-size:26px;font-weight:700;color:#fff;letter-spacing:-0.02em;">BFO</div>
         <div style="margin-top:4px;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Treasury report</div>
-        <div style="margin-top:26px;font-size:32px;font-weight:600;color:#fff;">${money(total)}</div>
-        <div style="margin-top:4px;font-size:13px;color:rgba(255,255,255,0.5);">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:26px;"><tr>
+          <td>
+            <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Cash</div>
+            <div style="margin-top:3px;font-size:28px;font-weight:600;color:#fff;">${money(total)}</div>
+          </td>
+          <td align="right" valign="bottom">
+            <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Investments</div>
+            <div style="margin-top:3px;font-size:20px;font-weight:600;color:#fff;">${money(invested)}</div>
+          </td>
+        </tr></table>
+        <div style="margin-top:6px;font-size:13px;color:rgba(255,255,255,0.5);">
           ${movement === 0 ? "No movement since the last report" : `${signed(movement)} since the last report`}
         </div>
+        ${renderGraph(history)}
         <table role="presentation" width="100%" style="margin-top:24px;" cellpadding="0" cellspacing="0">${rows}</table>
       </td></tr>
     </table>
@@ -120,11 +193,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
       const movement = shown.reduce((sum, a) => sum + (a.change ?? 0), 0);
 
+      const history = await loadHistory();
       await sendEmail(
         me.email,
         `BFO Treasury (sample) — ${money(total)}`,
         renderText(shown, total, movement),
-        renderHtml(shown, total, movement)
+        renderHtml(shown, total, movement, history)
       );
       return res.status(200).json({ sent: true, to: me.email });
     } catch (err) {
@@ -164,6 +238,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .filter((a) => a.type === "depository")
       .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
+    const history = await loadHistory();
 
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
     for (const user of due) {
@@ -176,7 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             user.email,
             `BFO Treasury — ${money(total)}`,
             renderText(accounts, total, movement),
-            renderHtml(accounts, total, movement)
+            renderHtml(accounts, total, movement, history)
           );
         } else {
           throw new Error(`no ${channel} address on file`);

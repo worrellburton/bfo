@@ -186,6 +186,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      // Record today's headline totals (visible accounts only) so the emailed
+      // report can draw a trend line.
+      const shown = accounts.filter((a: any) => !a.hidden);
+      const totals = {
+        day: now.toISOString().slice(0, 10),
+        cash: shown.filter((a) => a.type === "depository").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
+        invested: shown.filter((a) => a.type === "investment").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
+        credit: shown.filter((a) => a.type === "credit").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
+        updated_at: now.toISOString(),
+      };
+      await db("treasury_daily", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify(totals),
+      }).catch(() => {});
+
       return res.json({ connections, accounts });
     }
 
