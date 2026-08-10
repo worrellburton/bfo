@@ -167,6 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               subtype: a.subtype,
               balance_current: current,
               balance_available: a.balances.available,
+              balance_limit: a.balances.limit ?? null,
               currency: a.balances.iso_currency_code,
               change: baseline == null || current == null ? null : current - Number(baseline),
               change_since: baselineAt,

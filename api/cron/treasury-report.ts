@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, formatPhone, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { currentUser, formatPhone, sb, sendEmail, type AppUser, type EmailAttachment } from "../../lib/auth.js";
 
 /**
  * The Treasury report email. GET = the daily Vercel cron (sends to whoever's
@@ -28,6 +28,7 @@ type Account = {
   mask: string | null;
   type: string;
   balance_current: number | null;
+  balance_limit: number | null;
   currency: string | null;
   change: number | null;
   hidden?: boolean;
@@ -78,7 +79,7 @@ function tint(hex: string | null): string {
 async function loadHistory(): Promise<DailyTotal[]> {
   try {
     const rows = await sb<DailyTotal[]>(
-      "treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=30"
+      "treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=365"
     );
     return (rows ?? []).reverse();
   } catch {
@@ -159,7 +160,7 @@ function shape(accounts: Account[]): Shaped {
 }
 
 /** Delta of today's total vs the recorded total closest to N days back. */
-function deltaOver(history: DailyTotal[], days: number): number | null {
+function deltaOver(history: DailyTotal[], days: number): { delta: number; pct: number } | null {
   if (history.length < 2) return null;
   const latest = history[history.length - 1];
   const latestTotal = Number(latest.cash) + Number(latest.invested);
@@ -174,7 +175,29 @@ function deltaOver(history: DailyTotal[], days: number): number | null {
     }
   }
   if (!best || best.day === latest.day) return null;
-  return latestTotal - (Number(best.cash) + Number(best.invested));
+  const base = Number(best.cash) + Number(best.invested);
+  const delta = latestTotal - base;
+  return { delta, pct: base > 0 ? (delta / base) * 100 : 0 };
+}
+
+/** Rule-based one-liner: what actually happened since last time. */
+function narrative(s: Shaped): string {
+  const c = s.cashMove;
+  const i = s.investMove;
+  const word = (n: number) => `${n > 0 ? "rose" : "fell"} ${money(Math.abs(n))}`;
+  if (c === 0 && i === 0) return "Everything held steady since the last report.";
+  if (c !== 0 && i === 0) return `Cash ${word(c)} while investments held steady.`;
+  if (c === 0 && i !== 0) return `Investments ${word(i)} while cash held steady.`;
+  if (Math.sign(c) === Math.sign(i)) return `Cash ${word(c)} and investments ${word(i)}.`;
+  return `Cash ${word(c)}, but investments ${word(i)}.`;
+}
+
+/** Record high across everything we've ever logged. */
+function isAllTimeHigh(history: DailyTotal[]): boolean {
+  if (history.length < 5) return false;
+  const totals = history.map((d) => Number(d.cash) + Number(d.invested));
+  const latest = totals[totals.length - 1];
+  return latest >= Math.max(...totals) && latest > 0;
 }
 
 function reportDate(now: Date): string {
@@ -195,8 +218,31 @@ function reportTime(now: Date): string {
 }
 
 function subjectLine(s: Shaped, movement: number, sample: boolean): string {
+  const arrow = movement === 0 ? "" : movement > 0 ? "▲ " : "▼ ";
   const move = movement === 0 ? "" : ` · ${signed(movement)}`;
-  return `${sample ? "[Sample] " : ""}BFO Treasury — ${money(s.totalValue)}${move}`;
+  return `${sample ? "[Sample] " : ""}${arrow}BFO Treasury — ${money(s.totalValue)}${move}`;
+}
+
+/** CSV of every account, attached so the numbers can leave the inbox. */
+function balancesCsv(accounts: Account[], now: Date): EmailAttachment {
+  const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+  const rows = [
+    ["Institution", "Account", "Type", "Mask", "Balance", "Currency", "Change since last report"],
+    ...accounts.map((a) => [
+      a.institution_name,
+      a.nickname || a.official_name || a.name,
+      a.type,
+      a.mask ?? "",
+      String(a.balance_current ?? ""),
+      a.currency ?? "USD",
+      a.change != null ? String(a.change) : "",
+    ]),
+  ];
+  const csv = rows.map((r) => r.map(esc).join(",")).join("\n");
+  return {
+    filename: `bfo-treasury-${now.toISOString().slice(0, 10)}.csv`,
+    content: Buffer.from(csv, "utf8").toString("base64"),
+  };
 }
 
 // ── Plain-text body ───────────────────────────────────────────────────
@@ -236,7 +282,8 @@ function renderText(
 // ── HTML body ─────────────────────────────────────────────────────────
 
 /** Email-safe trend graph: fixed-height table cells, no SVG, no script. */
-function renderGraph(history: DailyTotal[]): string {
+function renderGraph(fullHistory: DailyTotal[]): string {
+  const history = fullHistory.slice(-30);
   if (history.length < 2) {
     return `<div style="margin-top:20px;padding:12px 14px;border:1px dashed rgba(255,255,255,0.12);border-radius:12px;font-size:11px;color:rgba(255,255,255,0.35);">
       The 30-day trend appears here after a few days of balance history.
@@ -248,17 +295,18 @@ function renderGraph(history: DailyTotal[]): string {
   if (max <= 0) return "";
   const windowChange = totals[totals.length - 1] - totals[0];
   const pct = totals[0] > 0 ? (windowChange / totals[0]) * 100 : 0;
-  // Bars wear the window's direction: emerald on the way up, rose down.
-  const barGradient = windowChange >= 0
-    ? "linear-gradient(180deg,#34d399,#0d9488)"
-    : "linear-gradient(180deg,#fb7185,#be123c)";
   const H = 54;
+  // Two-tone stacked bars: cash (sky) under investments (emerald), matching
+  // the allocation legend, so composition over time is visible per day.
   const cols = history
     .map((d, i) => {
       const h = Math.max(3, Math.round((totals[i] / max) * H));
+      const cashH = totals[i] > 0 ? Math.round((Number(d.cash) / totals[i]) * h) : 0;
+      const investH = Math.max(h - cashH, 0);
       return `<td align="center" valign="bottom" style="padding:0 1px;">
         <div style="height:${H - h}px;font-size:0;line-height:0;">&nbsp;</div>
-        <div style="height:${h}px;border-radius:2px 2px 0 0;background:${barGradient};font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:${investH}px;border-radius:2px 2px 0 0;background:#34d399;font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:${cashH}px;background:#38bdf8;font-size:0;line-height:0;">&nbsp;</div>
       </td>`;
     })
     .join("");
@@ -369,6 +417,28 @@ function biggestMover(s: Shaped): string {
   </table>`;
 }
 
+/** One chip per institution with its net total, in the bank's colours. */
+function bankStrip(accounts: Account[]): string {
+  const byBank = new Map<string, { color: string | null; total: number }>();
+  for (const a of accounts) {
+    const cur = byBank.get(a.institution_name) ?? { color: a.institution_color, total: 0 };
+    const sign = a.type === "credit" ? -1 : 1;
+    cur.total += sign * (a.balance_current ?? 0);
+    byBank.set(a.institution_name, cur);
+  }
+  if (byBank.size < 2) return "";
+  const chips = [...byBank.entries()]
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([bank, v]) => {
+      const rgb = tint(v.color);
+      return `<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:999px;font-size:11px;color:#fff;background:rgba(${rgb},0.22);border:1px solid rgba(${rgb},0.5);">
+        ${bank} <strong>${money(v.total)}</strong>
+      </span>`;
+    })
+    .join("");
+  return `<div style="margin-top:14px;">${chips}</div>`;
+}
+
 function renderHtml(
   s: Shaped,
   movement: number,
@@ -395,19 +465,28 @@ function renderHtml(
     return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:0.02em;color:#fff;background:rgba(${rgb},0.28);border:1px solid rgba(${rgb},0.55);">${a.institution_name}</span>`;
   };
 
+  const offlineBanks = new Set(connections.filter((c) => c.status !== "online").map((c) => c.institution_name));
+
   const row = (a: Account, sectionMax: number, liability = false) => {
     const rgb = tint(a.institution_color);
     const share = sectionMax > 0 ? Math.max(2, Math.round(((a.balance_current ?? 0) / sectionMax) * 100)) : 0;
+    const stale = offlineBanks.has(a.institution_name)
+      ? ` <span style="font-size:10px;color:#fbbf24;" title="Connection needs attention">⚠ stale</span>`
+      : "";
+    const util =
+      liability && a.balance_limit && a.balance_limit > 0
+        ? `<div style="font-size:11px;margin-top:1px;color:rgba(255,255,255,0.35);">${Math.round(((a.balance_current ?? 0) / a.balance_limit) * 100)}% of ${money(a.balance_limit)} limit</div>`
+        : "";
     const delta = a.change
       ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>`
       : "";
     return `<tr>
       <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
-        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>
+        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>${stale}
         <div style="margin-top:4px;">${chip(a)}</div>
       </td>
       <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
-        ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}
+        ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}${util}
       </td>
     </tr>
     <tr><td colspan="2" style="padding:8px 0 10px;border-bottom:1px solid rgba(255,255,255,0.07);">
@@ -500,7 +579,10 @@ function renderHtml(
         </tr></table>
 
         <div style="margin-top:22px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Total value</div>
-        <div style="margin-top:3px;font-size:32px;font-weight:600;color:#fff;">${money(s.totalValue)}</div>
+        <div style="margin-top:3px;font-size:32px;font-weight:600;color:#fff;">
+          ${money(s.totalValue)}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
+        </div>
+        <div style="margin-top:5px;font-size:12px;color:rgba(255,255,255,0.6);">${narrative(s)}</div>
         <div style="margin-top:3px;font-size:12px;color:${movement === 0 ? "rgba(255,255,255,0.45)" : movement > 0 ? "#34d399" : "#fb7185"};">
           ${movement === 0 ? "No movement since the last report" : `${movement > 0 ? "▲" : "▼"} ${signed(movement)} since the last report`}
         </div>
@@ -508,8 +590,10 @@ function renderHtml(
           const d7 = deltaOver(history, 7);
           const d30 = deltaOver(history, 30);
           if (d7 == null && d30 == null) return "";
-          const chunk = (label: string, v: number | null) =>
-            v == null ? "" : `${label} <span style="color:${v >= 0 ? "#34d399" : "#fb7185"};">${signed(v)}</span>`;
+          const chunk = (label: string, v: { delta: number; pct: number } | null) =>
+            v == null
+              ? ""
+              : `${label} <span style="color:${v.delta >= 0 ? "#34d399" : "#fb7185"};">${signed(v.delta)} (${v.pct >= 0 ? "+" : ""}${v.pct.toFixed(1)}%)</span>`;
           return `<div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.35);">${[chunk("7d", d7), chunk("30d", d30)].filter(Boolean).join(" · ")}</div>`;
         })()}
 
@@ -519,6 +603,7 @@ function renderHtml(
           <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove)}</td>
         </tr></table>
         ${allocationBar(s)}
+        ${bankStrip([...s.cashAccounts, ...s.investAccounts, ...s.creditAccounts])}
         ${biggestMover(s)}
 
         ${alertBanner}
@@ -531,10 +616,15 @@ function renderHtml(
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.10);">
           <tr><td style="padding-top:16px;" align="center">
-            <a href="${APP_URL}/treasury"
+            <!--[if mso]>
+            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="${APP_URL}/treasury" arcsize="24%" fillcolor="#ffffff" strokecolor="#ffffff" style="height:38px;v-text-anchor:middle;width:160px;">
+              <center style="color:#000000;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;">Open Treasury</center>
+            </v:roundrect>
+            <![endif]-->
+            <!--[if !mso]><!--><a href="${APP_URL}/treasury"
               style="display:inline-block;background:#ffffff;color:#000000;font-size:13px;font-weight:600;text-decoration:none;padding:10px 22px;border-radius:10px;">
               Open Treasury
-            </a>
+            </a><!--<![endif]-->
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
               Balances via Plaid · generated automatically ·
               <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
@@ -609,7 +699,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         subjectLine(s, movement, true),
         renderText(s, movement, now, activity),
         renderHtml(s, movement, history, now, connections, activity),
-        { "List-Unsubscribe": `<${APP_URL}/notifications>` }
+        { "List-Unsubscribe": `<${APP_URL}/notifications>` },
+        [balancesCsv(accounts, now)]
       );
       return res.status(200).json({ sent: true, to: me.email });
     } catch (err) {
@@ -665,7 +756,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           subjectLine(s, movement, false),
           renderText(s, movement, now, activity),
           renderHtml(s, movement, history, now, connections, activity),
-          { "List-Unsubscribe": `<${APP_URL}/notifications>` }
+          { "List-Unsubscribe": `<${APP_URL}/notifications>` },
+          [balancesCsv(accounts, now)]
         );
         await sb("report_deliveries", {
           method: "POST",

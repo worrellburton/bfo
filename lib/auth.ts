@@ -276,12 +276,15 @@ export async function sendSms(to: string, text: string): Promise<void> {
   }
 }
 
+export type EmailAttachment = { filename: string; content: string };
+
 export async function sendEmail(
   to: string,
   subject: string,
   text: string,
   html: string,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  attachments?: EmailAttachment[]
 ): Promise<void> {
   // Platform email product endpoint (matches the key's emails scope). The
   // sender must be on a domain verified in the Bird workspace.
@@ -293,6 +296,7 @@ export async function sendEmail(
     text,
     html,
     ...(headers ? { headers } : {}),
+    ...(attachments?.length ? { attachments } : {}),
   });
   if (!res.ok) {
     throw new Error(`bird email ${res.status}: ${(await res.text()).slice(0, 300)}`);
