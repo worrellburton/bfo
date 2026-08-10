@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { formatPhone, sb, sendEmail, sendSms, type AppUser } from "../../lib/auth.js";
+import { currentUser, formatPhone, sb, sendEmail, sendSms, type AppUser } from "../../lib/auth.js";
 
 /**
  * Fires once a day (see vercel.json) and sends the Treasury report to whoever
@@ -95,8 +95,46 @@ function renderHtml(accounts: Account[], total: number, movement: number): strin
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Vercel sends Authorization: Bearer $CRON_SECRET when that env var is set.
   const secret = process.env.CRON_SECRET;
+
+  // POST = a signed-in user asking for a sample, sent immediately to them
+  // alone. GET stays the scheduled cron (Vercel sends Bearer $CRON_SECRET).
+  if (req.method === "POST") {
+    try {
+      const me = await currentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+      if (!me.email) return res.status(400).json({ error: "no_email", message: "Your account has no email on file." });
+
+      const origin = `https://${req.headers.host}`;
+      const treasuryRes = await fetch(`${origin}/api/plaid/data?report=treasury`, {
+        // Reuse the caller's session for the internal pull — no cron secret needed.
+        headers: { Authorization: req.headers.authorization ?? "" },
+      });
+      if (!treasuryRes.ok) throw new Error(`treasury fetch failed (${treasuryRes.status})`);
+      const raw = (await treasuryRes.json()) as { accounts: Account[] };
+    const accounts = raw.accounts.filter((a: any) => !a.hidden);
+      const shown = accounts.filter((a: any) => !a.hidden);
+
+      const total = shown
+        .filter((a) => a.type === "depository")
+        .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
+      const movement = shown.reduce((sum, a) => sum + (a.change ?? 0), 0);
+
+      await sendEmail(
+        me.email,
+        `BFO Treasury (sample) — ${money(total)}`,
+        renderText(shown, total, movement),
+        renderHtml(shown, total, movement)
+      );
+      return res.status(200).json({ sent: true, to: me.email });
+    } catch (err) {
+      console.error("sample treasury report failed:", err);
+      return res
+        .status(500)
+        .json({ error: "send_failed", message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   if (secret && req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ error: "unauthorized" });
   }
@@ -119,7 +157,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!treasuryRes.ok) {
       throw new Error(`treasury fetch failed (${treasuryRes.status})`);
     }
-    const { accounts } = (await treasuryRes.json()) as { accounts: Account[] };
+    const raw = (await treasuryRes.json()) as { accounts: Account[] };
+    const accounts = raw.accounts.filter((a: any) => !a.hidden);
 
     const total = accounts
       .filter((a) => a.type === "depository")

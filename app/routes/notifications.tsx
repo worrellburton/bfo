@@ -75,6 +75,22 @@ export default function Notifications() {
 
   const report = prefs.treasuryReport ?? {};
   const frequency: string = report.frequency ?? "off";
+  const [sampleState, setSampleState] = useState<"idle" | "sending" | "sent">("idle");
+
+  async function sendSample() {
+    setSampleState("sending");
+    setError("");
+    try {
+      const res = await authFetch("/api/cron/treasury-report", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message ?? "Couldn't send the sample.");
+      setSampleState("sent");
+      setTimeout(() => setSampleState("idle"), 4000);
+    } catch (err) {
+      setSampleState("idle");
+      setError(err instanceof Error ? err.message : "Couldn't send the sample.");
+    }
+  }
 
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
@@ -171,6 +187,25 @@ export default function Notifications() {
                 {getUser()?.email || "your email address"}.
               </p>
             )}
+
+            <div className={`mt-5 pt-4 border-t ${divider} flex items-center gap-3`}>
+              <button
+                onClick={() => void sendSample()}
+                disabled={sampleState === "sending"}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                  isDark
+                    ? "border border-white/15 text-gray-200 hover:bg-white/10"
+                    : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {sampleState === "sending" ? "Sending…" : "Send me a sample"}
+              </button>
+              {sampleState === "sent" && (
+                <span className="text-xs text-emerald-400">
+                  Sent to {getUser()?.email} — check your inbox
+                </span>
+              )}
+            </div>
           </section>
 
         </>
