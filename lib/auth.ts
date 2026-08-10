@@ -145,11 +145,9 @@ function birdKey(): string {
   return key;
 }
 
-/** Only a UUID is a usable workspace id; ws_… is a dashboard identifier. */
 function configuredWorkspace(): string | null {
   const raw = process.env.BIRD_WORKSPACE_ID?.trim().replace(/^["']|["']$/g, "");
-  if (!raw) return null;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw) ? raw : null;
+  return raw || null;
 }
 
 async function birdFetch(path: string, init: RequestInit = {}): Promise<Response> {

@@ -34,6 +34,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     };
 
+    // Raw probes first — these say what Bird actually replies, independent of
+    // how the client chooses to interpret it.
+    const probe = async (path: string) => {
+      const r = await fetch(`https://api.bird.com${path}`, {
+        headers: { Authorization: `AccessKey ${key}` },
+      });
+      return { path, status: r.status, body: (await r.text()).slice(0, 200) };
+    };
+    report.probes = rawWs
+      ? await Promise.all([probe(`/workspaces/${rawWs}/channels?limit=100`), probe("/workspaces")])
+      : await Promise.all([probe("/workspaces")]);
+
     try {
       report.workspace = await birdWorkspace();
     } catch (err) {
