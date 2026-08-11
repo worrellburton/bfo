@@ -29,6 +29,8 @@ type Account = {
   nickname: string | null;
   mask: string | null;
   type: string;
+  subtype: string | null;
+  entity_name: string | null;
   balance_current: number | null;
   balance_available: number | null;
   balance_limit: number | null;
@@ -128,11 +130,25 @@ function moveBy(list: Account[], type: string): number {
   return list.filter((a) => a.type === type).reduce((s, a) => s + (a.change ?? 0), 0);
 }
 
+/** The account's display name — the mapped entity when there is one. */
+function accountName(a: Account): string {
+  return a.entity_name || a.nickname || a.official_name || a.name || "Account";
+}
+
 /** Preferred display name, without repeating a mask the name already carries. */
 function accountLabel(a: Account): string {
-  const base = a.nickname || a.official_name || a.name || "Account";
+  const base = accountName(a);
   if (!a.mask) return base;
   return base.includes(a.mask) ? base : `${base} ····${a.mask}`;
+}
+
+/** "····1886 · Checking" — last four plus what kind of account it is. */
+function accountDetail(a: Account): string {
+  const parts: string[] = [];
+  if (a.mask && !accountName(a).includes(a.mask)) parts.push(`····${a.mask}`);
+  const kind = (a.subtype || a.type || "").replace(/_/g, " ");
+  if (kind) parts.push(kind.charAt(0).toUpperCase() + kind.slice(1));
+  return parts.join(" · ");
 }
 
 function byBalanceDesc(a: Account, b: Account): number {
@@ -365,7 +381,8 @@ function renderText(
 ): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
-    return `  [${a.institution_name}] ${accountLabel(a)}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
+    const detail = accountDetail(a);
+    return `  [${a.institution_name}] ${accountName(a)}${detail ? ` ${detail}` : ""}: ${money(a.balance_current, a.currency ?? "USD")}${delta}`;
   };
   const out = [
     `BFO Treasury — ${reportDate(now)}, ${reportTime(now)} ET`,
@@ -606,8 +623,11 @@ function renderHtml(
         : "";
     return `<tr>
       <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
-        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountLabel(a)}</a>${stale}${swing}
-        <div style="margin-top:4px;">${chip(a)}</div>
+        <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountName(a)}</a>${stale}${swing}
+        <div style="margin-top:4px;">${chip(a)}${(() => {
+          const detail = accountDetail(a);
+          return detail ? `<span style="margin-left:7px;font-size:10px;color:rgba(255,255,255,0.45);">${detail}</span>` : "";
+        })()}</div>
       </td>
       <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
         ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}${util}${avail}
