@@ -91,6 +91,13 @@ function sinceLabel(iso: string | null): string {
   return days === 1 ? "since yesterday" : `since ${days}d ago`;
 }
 
+/** Account name plus its mask — without repeating a mask the name carries. */
+function accountLabel(a: Account): string {
+  const base = a.nickname || a.official_name || a.name || "Account";
+  if (!a.mask) return base;
+  return base.includes(a.mask) ? base : `${base} ····${a.mask}`;
+}
+
 /** Parse Plaid's brand hex into an rgb triplet we can tint a glass card with. */
 function tint(hex: string | null): string {
   const fallback = "99, 102, 241"; // indigo, for banks with no brand colour
@@ -126,6 +133,26 @@ export default function Treasury() {
   const [error, setError] = useState("");
 
   const [showHidden, setShowHidden] = useState(false);
+
+  // Which entity sections are folded away, remembered between visits.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("bfo-treasury-collapsed") ?? "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+
+  function toggleGroup(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      try {
+        localStorage.setItem("bfo-treasury-collapsed", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  }
 
   useEffect(() => {
     void load();
@@ -300,24 +327,37 @@ export default function Treasury() {
     });
   })();
 
+  const Chevron = ({ open }: { open: boolean }) => (
+    <svg
+      className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+      aria-hidden
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+    </svg>
+  );
+
   const GroupHeader = ({ group }: { group: (typeof entityGroups)[number] }) => {
     const unmapped = group.key === "__unmapped__";
+    const open = !collapsed.has(group.key);
     return (
-      <div className="flex items-baseline justify-between gap-4 mb-3">
-        <h2 className={`text-sm font-semibold ${unmapped ? "text-amber-500" : isDark ? "text-white" : "text-gray-900"}`}>
-          {group.name}
-          <span className={`ml-2 text-xs font-normal ${subtle}`}>
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <button
+          onClick={() => toggleGroup(group.key)}
+          aria-expanded={open}
+          className={`flex items-center gap-2 min-w-0 text-sm font-semibold cursor-pointer transition-colors ${
+            unmapped ? "text-amber-500" : isDark ? "text-white hover:text-white/70" : "text-gray-900 hover:text-gray-600"
+          }`}
+        >
+          <Chevron open={open} />
+          <span className="truncate">{group.name}</span>
+          <span className={`text-xs font-normal shrink-0 ${subtle}`}>
             {group.accounts.length} account{group.accounts.length === 1 ? "" : "s"}
           </span>
-          {unmapped && (
-            <button
-              onClick={() => navigate("/treasury/mappings")}
-              className="ml-2 text-xs font-normal underline cursor-pointer hover:no-underline"
-            >
-              map these
-            </button>
-          )}
-        </h2>
+        </button>
         <span className="text-sm font-semibold tabular-nums shrink-0">{money(group.total)}</span>
       </div>
     );
@@ -454,25 +494,120 @@ export default function Treasury() {
         </div>
       )}
 
-      {!loading && accounts.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-8">
-          {[
-            { label: "Cash", value: money(cash) },
-            { label: "Invested", value: invested > 0 ? money(invested) : "—" },
-            { label: "Credit balances", value: money(credit) },
-            {
-              label: "Change since last visit",
-              value: movement === 0 ? "—" : signed(movement),
-              tone: movement === 0 ? "" : movement > 0 ? "text-emerald-400" : "text-red-400",
-            },
-          ].map((stat) => (
-            <div key={stat.label} className={`rounded-xl border p-5 ${card}`}>
-              <p className={`text-xs uppercase tracking-wider ${subtle}`}>{stat.label}</p>
-              <p className={`text-2xl font-semibold mt-2 ${stat.tone ?? ""}`}>{stat.value}</p>
+      {!loading && accounts.length > 0 && (() => {
+        const total = cash + invested;
+        const cashPct = total > 0 ? Math.round((cash / total) * 100) : 0;
+        const investPct = total > 0 ? 100 - cashPct : 0;
+        const entityCount = entityGroups.filter((g) => g.key !== "__unmapped__").length;
+        const stat = (label: string, value: string, dot?: string, pct?: number) => (
+          <div className="min-w-0">
+            <p className={`text-[11px] uppercase tracking-wider flex items-center gap-1.5 ${subtle}`}>
+              {dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />}
+              {label}
+            </p>
+            <p className="text-lg font-semibold mt-1 tabular-nums truncate">
+              {value}
+              {pct != null && total > 0 && (
+                <span className={`ml-1.5 text-xs font-normal ${subtle}`}>{pct}%</span>
+              )}
+            </p>
+          </div>
+        );
+
+        return (
+          <div className={`rounded-2xl border mb-8 overflow-hidden ${card}`}>
+            <div className="p-6 sm:p-7">
+              <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+                <div className="min-w-0">
+                  <p className={`text-[11px] uppercase tracking-[0.16em] ${subtle}`}>Total value</p>
+                  <p className="text-3xl sm:text-4xl font-semibold tracking-tight mt-1.5 tabular-nums">
+                    {money(total)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 pt-1">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                      movement === 0
+                        ? isDark
+                          ? "bg-white/[0.06] text-gray-400"
+                          : "bg-gray-100 text-gray-600"
+                        : movement > 0
+                          ? isDark
+                            ? "bg-emerald-500/12 text-emerald-400"
+                            : "bg-emerald-50 text-emerald-700"
+                          : isDark
+                            ? "bg-rose-500/12 text-rose-400"
+                            : "bg-rose-50 text-rose-700"
+                    }`}
+                  >
+                    {movement !== 0 && <span>{movement > 0 ? "▲" : "▼"}</span>}
+                    {movement === 0 ? "No change" : signed(movement)}
+                    <span className="opacity-60 font-normal">since last visit</span>
+                  </span>
+                </div>
+              </div>
+
+              {total > 0 && (
+                <div
+                  className={`flex h-2 rounded-full overflow-hidden mt-5 ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`}
+                  role="img"
+                  aria-label={`Cash ${cashPct}%, invested ${investPct}%`}
+                >
+                  <div style={{ width: `${cashPct}%`, background: "#38bdf8" }} />
+                  <div style={{ width: `${investPct}%`, background: "#34d399" }} />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 mt-5">
+                {stat("Cash", money(cash), "#38bdf8", cashPct)}
+                {stat("Invested", invested > 0 ? money(invested) : "—", "#34d399", investPct)}
+                {stat("Credit owed", credit > 0 ? money(credit) : "—")}
+                {stat(
+                  "Accounts",
+                  `${visible.length}`,
+                  undefined
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+
+            <div
+              className={`px-6 sm:px-7 py-3 text-xs flex flex-wrap items-center gap-x-4 gap-y-1 border-t ${
+                isDark ? "border-white/[0.07] bg-white/[0.02] text-gray-500" : "border-gray-100 bg-gray-50/60 text-gray-500"
+              }`}
+            >
+              <span>
+                {entityCount} {entityCount === 1 ? "entity" : "entities"}
+              </span>
+              <span className={isDark ? "text-white/15" : "text-gray-300"}>·</span>
+              <span>
+                {connections.length} bank {connections.length === 1 ? "connection" : "connections"}
+              </span>
+              {dormant.length > 0 && (
+                <>
+                  <span className={isDark ? "text-white/15" : "text-gray-300"}>·</span>
+                  <button
+                    onClick={() => void hideDormant()}
+                    className="text-amber-500 hover:underline cursor-pointer"
+                  >
+                    {dormant.length} dormant
+                  </button>
+                </>
+              )}
+              {entityGroups.some((g) => g.key === "__unmapped__") && (
+                <>
+                  <span className={isDark ? "text-white/15" : "text-gray-300"}>·</span>
+                  <button
+                    onClick={() => navigate("/treasury/mappings")}
+                    className="text-amber-500 hover:underline cursor-pointer"
+                  >
+                    {entityGroups.find((g) => g.key === "__unmapped__")!.accounts.length} unmapped
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {loading && <p className={`text-sm ${subtle}`}>Loading…</p>}
 
@@ -493,6 +628,7 @@ export default function Treasury() {
       {view === "grid" && entityGroups.map((group) => (
       <section key={group.key} className="mb-8 last:mb-0">
         <GroupHeader group={group} />
+        {!collapsed.has(group.key) && (
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {group.accounts.map((account) => {
           const rgb = tint(account.institution_color);
@@ -549,13 +685,7 @@ export default function Treasury() {
               </div>
 
               <div className="relative mt-3">
-                <p className="text-white/55 text-xs truncate">
-                  {account.nickname || account.official_name || account.name}
-                  {account.mask ? ` ····${account.mask}` : ""}
-                  {account.entity_name && (
-                    <span className="text-white/35"> · {account.entity_name}</span>
-                  )}
-                </p>
+                <p className="text-white/55 text-xs truncate">{accountLabel(account)}</p>
                 <p className="text-white text-[21px] font-semibold tracking-tight mt-0.5">
                   {money(account.balance_current, account.currency ?? "USD")}
                 </p>
@@ -616,6 +746,7 @@ export default function Treasury() {
           );
         })}
         </div>
+        )}
       </section>
       ))}
 
@@ -639,17 +770,23 @@ export default function Treasury() {
               </thead>
               {entityGroups.map((group) => (
               <tbody key={group.key}>
-                <tr>
+                <tr
+                  onClick={() => toggleGroup(group.key)}
+                  className={`cursor-pointer transition-colors ${
+                    isDark ? "bg-white/[0.04] hover:bg-white/[0.07]" : "bg-gray-50 hover:bg-gray-100"
+                  }`}
+                >
                   <th
                     colSpan={6}
                     scope="colgroup"
+                    aria-expanded={!collapsed.has(group.key)}
                     className={`text-left px-4 py-2.5 border-t ${
-                      isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"
+                      isDark ? "border-white/10" : "border-gray-200"
                     }`}
                   >
-                    <span className="flex items-baseline justify-between gap-4">
+                    <span className="flex items-center justify-between gap-4">
                       <span
-                        className={`text-xs font-semibold ${
+                        className={`flex items-center gap-2 text-xs font-semibold ${
                           group.key === "__unmapped__"
                             ? "text-amber-500"
                             : isDark
@@ -657,8 +794,9 @@ export default function Treasury() {
                               : "text-gray-900"
                         }`}
                       >
+                        <Chevron open={!collapsed.has(group.key)} />
                         {group.name}
-                        <span className={`ml-2 font-normal ${subtle}`}>
+                        <span className={`font-normal ${subtle}`}>
                           {group.accounts.length} account{group.accounts.length === 1 ? "" : "s"}
                         </span>
                       </span>
@@ -666,7 +804,7 @@ export default function Treasury() {
                     </span>
                   </th>
                 </tr>
-                {group.accounts.map((account) => {
+                {!collapsed.has(group.key) && group.accounts.map((account) => {
                   const state = accountState(account);
                   const rgb = tint(account.institution_color);
                   return (
@@ -695,8 +833,7 @@ export default function Treasury() {
                         </span>
                       </td>
                       <td className={`px-4 py-3 border-t whitespace-nowrap ${isDark ? "border-white/5" : "border-gray-100"}`}>
-                        {account.nickname || account.official_name || account.name}
-                        {account.mask ? ` ····${account.mask}` : ""}
+                        {accountLabel(account)}
                       </td>
                       <td className={`px-4 py-3 border-t whitespace-nowrap capitalize ${subtle} ${isDark ? "border-white/5" : "border-gray-100"}`}>
                         {account.subtype || account.type}
