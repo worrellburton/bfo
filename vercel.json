@@ -6,12 +6,20 @@
     "api/**/*.ts": {
       "memory": 256,
       "maxDuration": 10
+    },
+    "api/cron/*.ts": {
+      "memory": 512,
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron/treasury-report",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/books-sync",
+      "schedule": "0 8 * * *"
     }
   ],
   "rewrites": [

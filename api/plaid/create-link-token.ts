@@ -43,6 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       products,
       country_codes: [CountryCode.Us],
       language: "en",
+      // Books wants 24 months of history from newly linked banks.
+      ...(kind === "bank" ? { transactions: { days_requested: 730 } } : {}),
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
     });
 

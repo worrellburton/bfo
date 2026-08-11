@@ -53,6 +53,20 @@ const navItems = [
     ),
   },
   {
+    to: "/books/transactions",
+    label: "Books",
+    children: [
+      { to: "/books/transactions", label: "Transactions" },
+      { to: "/books/reports", label: "Reports" },
+      { to: "/books/vendors", label: "Vendors" },
+    ],
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+      </svg>
+    ),
+  },
+  {
     to: "/msas",
     label: "MSAs",
     icon: (
@@ -204,45 +218,77 @@ export default function AppLayout() {
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/home"}
-              onClick={() => setDrawerOpen(false)}
-              title={showLabels ? undefined : item.label}
-              aria-label={showLabels ? undefined : item.label}
-              className={({ isActive }) =>
-                `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${
-                  showLabels ? "" : "lg:justify-center lg:px-0"
-                } ${
-                  isActive
-                    ? isDark
-                      ? "bg-white/10 text-white"
-                      : "bg-black/5 text-black"
-                    : isDark
-                      ? "text-gray-400 hover:text-white hover:bg-white/5"
-                      : "text-gray-500 hover:text-black hover:bg-black/5"
-                }`
-              }
-            >
-              <span className="relative inline-flex shrink-0">
-                {item.icon}
-                {/* The badge survives collapse — it is often the whole point */}
-                {"badge" in item && (item as any).badge > 0 && !showLabels && (
-                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
-                    {(item as any).badge}
+          {items.map((item) => {
+            const children = ("children" in item ? (item as any).children : null) as
+              | Array<{ to: string; label: string }>
+              | null;
+            const groupActive = !!children && children.some((c) => location.pathname.startsWith(c.to));
+            return (
+              <div key={item.to} className="flex flex-col gap-0.5">
+                <NavLink
+                  to={item.to}
+                  end={item.to === "/home"}
+                  onClick={() => setDrawerOpen(false)}
+                  title={showLabels ? undefined : item.label}
+                  aria-label={showLabels ? undefined : item.label}
+                  className={({ isActive }) =>
+                    `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${
+                      showLabels ? "" : "lg:justify-center lg:px-0"
+                    } ${
+                      isActive || groupActive
+                        ? isDark
+                          ? "bg-white/10 text-white"
+                          : "bg-black/5 text-black"
+                        : isDark
+                          ? "text-gray-400 hover:text-white hover:bg-white/5"
+                          : "text-gray-500 hover:text-black hover:bg-black/5"
+                    }`
+                  }
+                >
+                  <span className="relative inline-flex shrink-0">
+                    {item.icon}
+                    {/* The badge survives collapse — it is often the whole point */}
+                    {"badge" in item && (item as any).badge > 0 && !showLabels && (
+                      <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
+                        {(item as any).badge}
+                      </span>
+                    )}
                   </span>
+                  <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
+                  {"badge" in item && (item as any).badge > 0 && showLabels && (
+                    <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
+                      {(item as any).badge}
+                    </span>
+                  )}
+                </NavLink>
+                {/* Subpages drop down while the group is where you are */}
+                {children && groupActive && (
+                  <div className={`flex flex-col gap-0.5 ${showLabels ? "" : "lg:hidden"}`}>
+                    {children.map((c) => (
+                      <NavLink
+                        key={c.to}
+                        to={c.to}
+                        onClick={() => setDrawerOpen(false)}
+                        className={({ isActive }) =>
+                          `rounded-lg pl-[38px] pr-3 py-1.5 text-[13px] transition-colors ${
+                            isActive
+                              ? isDark
+                                ? "text-white bg-white/5"
+                                : "text-black bg-black/5"
+                              : isDark
+                                ? "text-gray-500 hover:text-white hover:bg-white/5"
+                                : "text-gray-500 hover:text-black hover:bg-black/5"
+                          }`
+                        }
+                      >
+                        {c.label}
+                      </NavLink>
+                    ))}
+                  </div>
                 )}
-              </span>
-              <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
-              {"badge" in item && (item as any).badge > 0 && showLabels && (
-                <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
-                  {(item as any).badge}
-                </span>
-              )}
-            </NavLink>
-          ))}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Bottom: the signed-in user, as the menu trigger */}
