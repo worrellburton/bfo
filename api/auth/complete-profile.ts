@@ -20,6 +20,7 @@ import {
  *
  * POST { identifier }        → sends a code to the new address/number
  * POST { identifier, code }  → checks it and writes the column
+ * POST { name }              → saves the user's name (no code — it's not a sign-in credential)
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["POST"])) return;
@@ -27,6 +28,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const me = await currentUser(req);
     if (!me) return fail(res, 401, "unauthorized");
+
+    if (req.body?.name !== undefined && req.body?.identifier === undefined) {
+      const name = String(req.body.name).trim().replace(/\s+/g, " ").slice(0, 80);
+      if (name.length < 2) return fail(res, 400, "invalid_name", "Enter your full name.");
+      const updated = await sb<AppUser[]>(`app_users?id=eq.${me.id}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: { name },
+      });
+      return res.status(200).json({ user: publicUser(updated[0]) });
+    }
 
     const identifier = normalizeIdentifier(String(req.body?.identifier ?? ""));
     if (!identifier) {

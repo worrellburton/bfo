@@ -25,10 +25,11 @@ function formatPhoneInput(raw: string): string {
 export default function CompleteProfile() {
   const navigate = useNavigate();
   const [missing, setMissing] = useState<"email" | "phone" | null>(null);
+  const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [code, setCode] = useState("");
-  const [step, setStep] = useState<"collect" | "code">("collect");
+  const [step, setStep] = useState<"name" | "collect" | "code">("collect");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
@@ -42,9 +43,11 @@ export default function CompleteProfile() {
     }
     const user = getUser();
     if (!user) return;
+    // Name comes first, then whichever identifier is missing.
     if (!user.email) setMissing("email");
     else if (!user.phone) setMissing("phone");
-    else navigate("/home"); // nothing to collect
+    if (!user.name) setStep("name");
+    else if (user.email && user.phone) navigate("/home"); // nothing to collect
   }, [navigate]);
 
   useEffect(() => {
@@ -65,6 +68,29 @@ export default function CompleteProfile() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.message ?? "That didn't work. Try again.");
     return data;
+  }
+
+  async function saveName() {
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      shakeOut("Enter your full name.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await call({ name: trimmed });
+      await revalidate();
+      if (missing) setStep("collect");
+      else {
+        setSuccess(true);
+        setTimeout(() => navigate("/home"), 700);
+      }
+    } catch (err) {
+      shakeOut(err instanceof Error ? err.message : "Couldn't save your name.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function send() {
@@ -100,7 +126,7 @@ export default function CompleteProfile() {
     }
   }
 
-  if (!missing) return null;
+  if (!missing && step !== "name") return null;
   const isEmail = missing === "email";
 
   return (
@@ -125,7 +151,45 @@ export default function CompleteProfile() {
         <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
 
         <div className={`mt-10 p-6 text-left ${CARD}`}>
-          {step === "collect" ? (
+          {step === "name" ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveName();
+              }}
+            >
+              <label
+                htmlFor="name"
+                className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1"
+              >
+                Your name
+              </label>
+              <p className="text-white/50 text-xs mb-3">
+                So everyone knows who's who — this is how you'll appear across BFO.
+              </p>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                autoFocus
+                required
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setError("");
+                }}
+                placeholder="First and last name"
+                className={`${FIELD} auth-delay-1 text-[16px] ${success ? "auth-field-success" : ""}`}
+              />
+              <button
+                type="submit"
+                disabled={busy || name.trim().length < 2}
+                className="auth-btn auth-in auth-delay-2 mt-4"
+              >
+                {success ? "All set" : busy ? "Saving…" : missing ? "Continue" : "Finish"}
+              </button>
+            </form>
+          ) : step === "collect" ? (
             <form
               onSubmit={(e) => {
                 e.preventDefault();

@@ -156,7 +156,7 @@ export default function Login() {
       const res = await verifyCode(sentTo, value);
       if (res.token) {
         setSuccess(true);
-        const complete = res.user?.email && res.user?.phone;
+        const complete = res.user?.name && res.user?.email && res.user?.phone;
         setTimeout(() => navigate(complete ? "/home" : "/complete-profile"), 700);
       } else setStep("pending");
     } catch (err) {

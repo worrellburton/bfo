@@ -107,8 +107,8 @@ export default function AppLayout() {
       }
       const fresh = getUser();
       setUser(fresh);
-      // Both identifiers are mandatory — collect whichever is missing.
-      if (fresh && (!fresh.email || !fresh.phone)) navigate("/complete-profile");
+      // Name plus both identifiers are mandatory — collect whatever is missing.
+      if (fresh && (!fresh.name || !fresh.email || !fresh.phone)) navigate("/complete-profile");
     });
   }, [navigate]);
 
