@@ -334,9 +334,15 @@ function reportTime(now: Date): string {
   });
 }
 
-function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date): string {
+function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date, withTime = false): string {
   // No dollar amounts in the subject — inbox lists and lock screens are
   // public in a way the opened email is not. Direction only.
+  //
+  // Manual sends carry the time: a second same-day email with an identical
+  // subject lands in the same Gmail conversation, and Gmail then hides
+  // everything that matches the earlier message behind a near-invisible
+  // "trimmed content" ellipsis — which on this dark design reads as a huge
+  // empty black block. A distinct subject keeps each send its own thread.
   const arrow = movement === 0 ? "" : movement > 0 ? " ▲" : " ▼";
   const day = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -344,7 +350,8 @@ function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date): s
     day: "numeric",
     timeZone: "America/New_York",
   });
-  return `${sample ? "[Sample] " : ""}BFO Treasury — ${day}${arrow}`;
+  const time = withTime ? `, ${reportTime(now)} ET` : "";
+  return `${sample ? "[Sample] " : ""}BFO Treasury — ${day}${time}${arrow}`;
 }
 
 
@@ -412,8 +419,7 @@ function renderGraph(fullHistory: DailyTotal[]): string {
     .join("");
   const first = history[0].day.slice(5).replace("-", "/");
   const last = history[history.length - 1].day.slice(5).replace("-", "/");
-  return `<div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Trend: ${money(totals[0])} to ${money(totals[totals.length - 1])} over ${history.length} days.</div>
-  <table role="img" aria-label="Balance trend, ${money(totals[0])} to ${money(totals[totals.length - 1])}" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+  return `<table role="img" aria-label="Balance trend, ${money(totals[0])} to ${money(totals[totals.length - 1])}" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
     <tr>
       <td style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);padding-bottom:6px;">Trend</td>
       <td align="right" style="font-size:11px;padding-bottom:6px;color:${windowChange >= 0 ? "#34d399" : "#fb7185"};">
@@ -780,7 +786,7 @@ function renderHtml(
               Open Treasury
             </a><!--<![endif]-->
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
-              ${extras.preparedFor ? `Prepared for ${extras.preparedFor} · ` : ""}${extras.footerNote ? `${extras.footerNote} · ` : ""}Balances via Plaid · generated automatically ·
+              ${extras.preparedFor ? `Prepared for ${extras.preparedFor} · ` : ""}${extras.footerNote ? `${extras.footerNote} · ` : ""}Balances via Plaid · generated ${reportTime(now)} ET ·
               <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
             </div>
           </td></tr>
@@ -884,7 +890,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       {
         await sendEmailWithRetry(
           recipients,
-          subjectLine(s, movement, !broadcast, now),
+          subjectLine(s, movement, !broadcast, now, true),
           renderText(s, movement, now, activity),
           renderHtml(s, movement, history, now, connections, activity, {
             lastReportDate,
