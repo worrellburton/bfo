@@ -9,7 +9,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
 
-  const { account_id, nickname, hidden } = req.body ?? {};
+  const { account_id, nickname, hidden, entity_id, entity_name } = req.body ?? {};
   if (!account_id || typeof account_id !== "string") {
     return res.status(400).json({ error: "missing_account_id" });
   }
@@ -20,6 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
   if (nickname !== undefined) row.nickname = String(nickname).trim().slice(0, 60) || null;
   if (hidden !== undefined) row.hidden = !!hidden;
+  if (entity_id !== undefined) row.entity_id = String(entity_id).trim() || null;
+  if (entity_name !== undefined) row.entity_name = String(entity_name).trim().slice(0, 120) || null;
 
   const url = process.env.SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_KEY!;

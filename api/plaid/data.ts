@@ -46,7 +46,13 @@ type AccountState = {
   prev_seen_at: string | null;
 };
 
-type AccountPrefs = { account_id: string; nickname: string | null; hidden: boolean };
+type AccountPrefs = {
+  account_id: string;
+  nickname: string | null;
+  hidden: boolean;
+  entity_id: string | null;
+  entity_name: string | null;
+};
 
 async function getAccountPrefs(): Promise<Map<string, AccountPrefs>> {
   const r = await db("plaid_account_prefs?select=*");
@@ -173,6 +179,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               change_since: baselineAt,
               nickname: prefs.get(a.account_id)?.nickname ?? null,
               hidden: prefs.get(a.account_id)?.hidden ?? false,
+              entity_id: prefs.get(a.account_id)?.entity_id ?? null,
+              entity_name: prefs.get(a.account_id)?.entity_name ?? null,
             });
 
             await saveAccountState(a.account_id, item.item_id, current, prior, stale, now);

@@ -34,6 +34,7 @@ export default [
     route("settings", "./routes/settings.tsx"),
     route("users", "./routes/users.tsx"),
     route("treasury", "./routes/treasury.tsx"),
+    route("treasury/mappings", "./routes/treasury-mappings.tsx"),
     route("treasury/:accountId", "./routes/treasury-account.tsx"),
     route("notifications", "./routes/notifications.tsx"),
     route("estate-map", "./routes/estate-map.tsx"),
