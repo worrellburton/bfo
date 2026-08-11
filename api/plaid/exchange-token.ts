@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth.js";
+import { currentUser, sb } from "../../lib/auth.js";
 import { Configuration, CountryCode, PlaidApi, PlaidEnvironments } from "plaid";
 
 function getPlaidClient() {
@@ -39,6 +39,96 @@ async function upsertItem(row: {
   if (!r.ok) {
     const text = await r.text();
     throw new Error(`Upsert failed (${r.status}): ${text}`);
+  }
+}
+
+/**
+ * Plaid mints fresh account_ids for every new connection, so reconnecting a
+ * bank would otherwise orphan its nicknames and entity mappings. Each account
+ * on the new connection looks for an existing mapping with the same identity
+ * — same bank, last four and account kind — and takes it over.
+ *
+ * An identity matching more than one saved mapping is left alone: better an
+ * account arrives unmapped than mapped to the wrong entity.
+ */
+async function adoptPrefs(
+  client: PlaidApi,
+  accessToken: string,
+  institutionName: string
+): Promise<number> {
+  try {
+    const live = await client.accountsGet({ access_token: accessToken });
+    const saved = await sb<
+      Array<{
+        account_id: string;
+        institution_name: string | null;
+        mask: string | null;
+        subtype: string | null;
+        nickname: string | null;
+        hidden: boolean;
+        entity_id: string | null;
+        entity_name: string | null;
+      }>
+    >(`plaid_account_prefs?institution_name=eq.${encodeURIComponent(institutionName)}&select=*`);
+    if (!saved?.length) return 0;
+
+    const liveIds = new Set(live.data.accounts.map((a) => a.account_id));
+    let adopted = 0;
+
+    for (const account of live.data.accounts) {
+      // Already carries its own row — nothing to adopt.
+      if (saved.some((s) => s.account_id === account.account_id)) continue;
+
+      const candidates = saved.filter(
+        (s) =>
+          s.mask === account.mask &&
+          s.subtype === (account.subtype ?? null) &&
+          !liveIds.has(s.account_id) && // its old account_id is gone
+          (s.entity_id || s.nickname || s.hidden)
+      );
+      if (candidates.length !== 1) continue;
+
+      const from = candidates[0];
+      await sb("plaid_account_prefs", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates",
+        body: {
+          account_id: account.account_id,
+          nickname: from.nickname,
+          hidden: from.hidden,
+          entity_id: from.entity_id,
+          entity_name: from.entity_name,
+          institution_name: institutionName,
+          mask: account.mask,
+          subtype: account.subtype ?? null,
+          account_name: account.name,
+          archived_at: null,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      adopted += 1;
+    }
+
+    // Stamp identity on any remaining new accounts so they survive the *next*
+    // reconnect too.
+    for (const account of live.data.accounts) {
+      await sb("plaid_account_prefs", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        body: {
+          account_id: account.account_id,
+          institution_name: institutionName,
+          mask: account.mask,
+          subtype: account.subtype ?? null,
+          account_name: account.name,
+        },
+      }).catch(() => {});
+    }
+
+    return adopted;
+  } catch (err: any) {
+    console.error("adoptPrefs failed:", err.response?.data || err.message);
+    return 0;
   }
 }
 
@@ -90,7 +180,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       institution_logo: logo,
     });
 
-    res.json({ success: true, item_id });
+    const adopted = await adoptPrefs(client, access_token, name || "Unknown");
+
+    res.json({ success: true, item_id, adopted_mappings: adopted });
   } catch (err: any) {
     console.error("Plaid exchange error:", err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data?.error_message || err.message });

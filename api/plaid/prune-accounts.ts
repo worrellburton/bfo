@@ -58,8 +58,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(503).json({ error: "no_connections_reachable", banks: unreachable });
     }
 
+    // Only mappings worth keeping count as stale — bare identity rows carry
+    // nothing to preserve.
     const prefs = await sb<Array<{ account_id: string; nickname: string | null; entity_name: string | null }>>(
-      "plaid_account_prefs?select=account_id,nickname,entity_name"
+      "plaid_account_prefs?select=account_id,nickname,entity_name&archived_at=is.null" +
+        "&or=(entity_id.not.is.null,nickname.not.is.null,hidden.is.true)"
     );
     const states = await sb<Array<{ account_id: string }>>("plaid_account_state?select=account_id");
 
@@ -93,7 +96,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const inList = (ids: Set<string>) => [...ids].map((id) => `"${id}"`).join(",");
     let removedTxns = 0;
     if (stale.size) {
-      await sbFetch(`plaid_account_prefs?account_id=in.(${inList(stale)})`, { method: "DELETE" });
+      // Mappings are archived rather than deleted: an account that comes back
+      // under a new connection gets its entity and nickname handed back. The
+      // archived row is invisible everywhere, since every view is built from
+      // the accounts Plaid currently reports.
+      await sbFetch(`plaid_account_prefs?account_id=in.(${inList(stale)})`, {
+        method: "PATCH",
+        body: JSON.stringify({ archived_at: new Date().toISOString() }),
+      });
       await sbFetch(`plaid_account_state?account_id=in.(${inList(stale)})`, { method: "DELETE" });
     }
     if (staleBooks.size) {
