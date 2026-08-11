@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sb, sbFetch } from "../../lib/auth.js";
+import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 /**
@@ -45,11 +46,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Ask every live connection which accounts it still has. A connection we
     // can't reach is skipped rather than treated as "everything is gone".
     const live = new Set<string>();
+    const liveAccounts: LiveAccount[] = [];
     const unreachable: string[] = [];
     for (const item of items ?? []) {
       try {
         const r = await client.accountsGet({ access_token: item.access_token });
-        for (const a of r.data.accounts) live.add(a.account_id);
+        for (const a of r.data.accounts) {
+          live.add(a.account_id);
+          liveAccounts.push({
+            account_id: a.account_id,
+            institution_name: item.institution_name,
+            mask: a.mask ?? null,
+            subtype: a.subtype ?? null,
+            name: a.name ?? null,
+          });
+        }
       } catch {
         unreachable.push(item.institution_name);
       }
@@ -115,11 +126,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sbFetch(`book_transactions?account_id=in.(${inList(staleBooks)})`, { method: "DELETE" });
     }
 
+    // Archiving happens first, so a mapping freed by a removed duplicate can
+    // be picked up by the surviving copy of the same account.
+    await stampIdentity(liveAccounts);
+    const adopted = await adoptMappings(liveAccounts);
+
     return res.json({
       pruned: true,
       live_accounts: live.size,
       removed_accounts: removed.length,
       removed_transactions: removedTxns,
+      adopted_mappings: adopted,
       removed,
       unreachable,
     });
