@@ -38,6 +38,7 @@ type Account = {
   hidden: boolean;
   entity_id: string | null;
   entity_name: string | null;
+  last_activity: string | null;
 };
 
 declare global {
@@ -336,6 +337,51 @@ export default function Treasury() {
   const statusFor = (itemId: string) =>
     connections.find((c) => c.item_id === itemId)?.status ?? "offline";
 
+  const DORMANT_DAYS = 90;
+
+  /**
+   * A live bank connection says nothing about whether one of its accounts is
+   * still open — a closed account keeps being shared until it's deselected at
+   * the bank. So an empty account with no recent movement reads as dormant,
+   * not "online".
+   */
+  function accountState(account: Account): { label: string; tone: "live" | "dormant" | "down" } {
+    if (statusFor(account.item_id) !== "online") return { label: "Offline", tone: "down" };
+    const empty = Math.abs(account.balance_current ?? 0) < 0.005;
+    if (!empty) return { label: "Online", tone: "live" };
+    const days = account.last_activity
+      ? (Date.now() - new Date(`${account.last_activity}T12:00:00Z`).getTime()) / 86_400_000
+      : Infinity;
+    if (days > DORMANT_DAYS) {
+      return { label: account.last_activity ? "Dormant" : "No activity", tone: "dormant" };
+    }
+    return { label: "Online", tone: "live" };
+  }
+
+  const dormant = visible.filter((a) => accountState(a).tone === "dormant" && !a.hidden);
+
+  async function hideDormant() {
+    if (
+      !confirm(
+        `Hide ${dormant.length} empty account${dormant.length === 1 ? "" : "s"} with no activity in ${DORMANT_DAYS} days?\n\n` +
+          "They stay out of Treasury totals and the report. To remove them for good, use Refresh and deselect them at the bank."
+      )
+    ) {
+      return;
+    }
+    try {
+      for (const account of dormant) {
+        await call("/api/plaid/account-prefs", {
+          method: "POST",
+          body: JSON.stringify({ account_id: account.account_id, hidden: true }),
+        });
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't hide those accounts.");
+    }
+  }
+
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
 
@@ -450,7 +496,7 @@ export default function Treasury() {
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {group.accounts.map((account) => {
           const rgb = tint(account.institution_color);
-          const online = statusFor(account.item_id) === "online";
+          const state = accountState(account);
           return (
             <button
               key={account.account_id}
@@ -478,11 +524,27 @@ export default function Treasury() {
                   </span>
                 </div>
 
-                <span className="flex items-center gap-1.5 shrink-0" title={online ? "Live" : "Needs reconnecting"}>
-                  <span className={online ? "treasury-dot treasury-dot-live" : "treasury-dot treasury-dot-down"} />
-                  <span className="text-[10px] uppercase tracking-wider text-white/45">
-                    {online ? "Online" : "Offline"}
-                  </span>
+                <span
+                  className="flex items-center gap-1.5 shrink-0"
+                  title={
+                    state.tone === "live"
+                      ? "Live"
+                      : state.tone === "down"
+                        ? "Needs reconnecting"
+                        : `Empty, no activity in over ${DORMANT_DAYS} days — likely closed at the bank`
+                  }
+                >
+                  <span
+                    className={
+                      state.tone === "live"
+                        ? "treasury-dot treasury-dot-live"
+                        : state.tone === "down"
+                          ? "treasury-dot treasury-dot-down"
+                          : "treasury-dot"
+                    }
+                    style={state.tone === "dormant" ? { background: "rgba(255,255,255,0.3)" } : undefined}
+                  />
+                  <span className="text-[10px] uppercase tracking-wider text-white/45">{state.label}</span>
                 </span>
               </div>
 
@@ -605,7 +667,7 @@ export default function Treasury() {
                   </th>
                 </tr>
                 {group.accounts.map((account) => {
-                  const online = statusFor(account.item_id) === "online";
+                  const state = accountState(account);
                   const rgb = tint(account.institution_color);
                   return (
                     <tr
@@ -640,9 +702,29 @@ export default function Treasury() {
                         {account.subtype || account.type}
                       </td>
                       <td className={`px-4 py-3 border-t whitespace-nowrap ${isDark ? "border-white/5" : "border-gray-100"}`}>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className={online ? "treasury-dot treasury-dot-live" : "treasury-dot treasury-dot-down"} />
-                          <span className={`text-xs ${subtle}`}>{online ? "Online" : "Offline"}</span>
+                        <span
+                          className="inline-flex items-center gap-1.5"
+                          title={
+                            state.tone === "dormant"
+                              ? `Empty, no activity in over ${DORMANT_DAYS} days — likely closed at the bank`
+                              : undefined
+                          }
+                        >
+                          <span
+                            className={
+                              state.tone === "live"
+                                ? "treasury-dot treasury-dot-live"
+                                : state.tone === "down"
+                                  ? "treasury-dot treasury-dot-down"
+                                  : "treasury-dot"
+                            }
+                            style={
+                              state.tone === "dormant"
+                                ? { background: isDark ? "rgba(255,255,255,0.25)" : "rgb(203,213,225)" }
+                                : undefined
+                            }
+                          />
+                          <span className={`text-xs ${subtle}`}>{state.label}</span>
                         </span>
                       </td>
                       <td className={`px-4 py-3 border-t whitespace-nowrap text-right tabular-nums ${isDark ? "border-white/5" : "border-gray-100"}`}>
@@ -683,6 +765,19 @@ export default function Treasury() {
 
       {(connections.length > 0 || hiddenCount > 0) && (
         <div className="flex flex-wrap gap-2 mt-6">
+          {dormant.length > 0 && (
+            <button
+              onClick={() => void hideDormant()}
+              title={`Hide ${dormant.length} empty accounts with no activity in ${DORMANT_DAYS} days`}
+              className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                isDark
+                  ? "border-amber-400/25 text-amber-400/80 hover:text-amber-300 hover:border-amber-400/50"
+                  : "border-amber-300 text-amber-700 hover:border-amber-500"
+              }`}
+            >
+              Hide {dormant.length} dormant
+            </button>
+          )}
           {hiddenCount > 0 && (
             <button
               onClick={() => setShowHidden((v) => !v)}

@@ -61,6 +61,14 @@ async function getAccountPrefs(): Promise<Map<string, AccountPrefs>> {
   return new Map(rows.map((row) => [row.account_id, row]));
 }
 
+/** When each account last moved money, from the synced Books history. */
+async function getAccountActivity(): Promise<Map<string, string>> {
+  const r = await db("book_account_activity?select=account_id,last_activity");
+  if (!r.ok) return new Map();
+  const rows = (await r.json()) as Array<{ account_id: string; last_activity: string | null }>;
+  return new Map(rows.filter((x) => x.last_activity).map((x) => [x.account_id, x.last_activity!]));
+}
+
 async function getAccountStates(): Promise<Map<string, AccountState>> {
   const r = await db("plaid_account_state?select=*");
   if (!r.ok) return new Map();
@@ -135,6 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const items = (await getItems()).filter((i: any) => (i.kind ?? "investments") === "bank");
       const states = await getAccountStates();
       const prefs = await getAccountPrefs();
+      const activity = await getAccountActivity();
       const now = new Date();
       const accounts: any[] = [];
       const connections: any[] = [];
@@ -180,6 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               hidden: prefs.get(a.account_id)?.hidden ?? false,
               entity_id: prefs.get(a.account_id)?.entity_id ?? null,
               entity_name: prefs.get(a.account_id)?.entity_name ?? null,
+              last_activity: activity.get(a.account_id) ?? null,
             });
 
             await saveAccountState(a.account_id, item.item_id, current, prior, stale, now);
