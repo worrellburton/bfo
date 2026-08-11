@@ -207,10 +207,54 @@ export default function Treasury() {
     }
   }
 
+  /**
+   * Reopen the bank's own account picker for an existing connection. Accounts
+   * closed at the bank (or simply deselected here) stop being shared, and the
+   * data they left behind is pruned afterwards.
+   */
+  async function refreshConnection(conn: Connection) {
+    setLinking(true);
+    setError("");
+    try {
+      const [{ link_token }] = await Promise.all([
+        call("/api/plaid/create-link-token", {
+          method: "POST",
+          body: JSON.stringify({ kind: "bank", item_id: conn.item_id }),
+        }),
+        loadPlaid(),
+      ]);
+      if (!window.Plaid) throw new Error("Couldn't load Plaid.");
+
+      window.Plaid.create({
+        token: link_token,
+        // Update mode returns no new public token to exchange — the existing
+        // connection is simply re-scoped to the accounts still selected.
+        onSuccess: async () => {
+          try {
+            await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" });
+            await load();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Refreshed, but couldn't tidy up old accounts.");
+          } finally {
+            setLinking(false);
+          }
+        },
+        onExit: (err) => {
+          setLinking(false);
+          if (err) setError(err.display_message || err.error_message || "Refresh cancelled.");
+        },
+      }).open();
+    } catch (err) {
+      setLinking(false);
+      setError(err instanceof Error ? err.message : "Couldn't start Plaid.");
+    }
+  }
+
   async function disconnect(conn: Connection) {
     if (!confirm(`Disconnect ${conn.institution_name}?`)) return;
     try {
       await call(`/api/plaid/disconnect?item_id=${conn.item_id}`, { method: "POST" });
+      await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" }).catch(() => {});
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't disconnect.");
@@ -565,17 +609,36 @@ export default function Treasury() {
             </button>
           )}
           {connections.map((conn) => (
-            <button
+            <span
               key={conn.item_id}
-              onClick={() => void disconnect(conn)}
-              className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
-                isDark
-                  ? "border-white/10 text-gray-500 hover:text-red-400 hover:border-red-400/30"
-                  : "border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300"
-              }`}
+              className="inline-flex rounded-lg overflow-hidden border"
+              style={{ borderColor: isDark ? "rgba(255,255,255,0.10)" : "rgb(229,231,235)" }}
             >
-              Disconnect {conn.institution_name}
-            </button>
+              <button
+                onClick={() => void refreshConnection(conn)}
+                disabled={linking}
+                title={`Re-pick which ${conn.institution_name} accounts are shared — closed ones drop off`}
+                className={`px-3 py-1.5 text-xs transition-colors cursor-pointer disabled:opacity-50 ${
+                  isDark
+                    ? "text-gray-400 hover:text-white hover:bg-white/5"
+                    : "text-gray-600 hover:text-black hover:bg-black/5"
+                }`}
+              >
+                Refresh {conn.institution_name}
+              </button>
+              <button
+                onClick={() => void disconnect(conn)}
+                title={`Disconnect ${conn.institution_name}`}
+                aria-label={`Disconnect ${conn.institution_name}`}
+                className={`px-2.5 py-1.5 text-xs border-l transition-colors cursor-pointer ${
+                  isDark
+                    ? "border-white/10 text-gray-500 hover:text-red-400 hover:bg-red-500/10"
+                    : "border-gray-200 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                }`}
+              >
+                ✕
+              </button>
+            </span>
           ))}
         </div>
       )}

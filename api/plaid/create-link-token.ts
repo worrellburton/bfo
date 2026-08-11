@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth.js";
+import { currentUser, sb } from "../../lib/auth.js";
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
 
 function getPlaidClient() {
@@ -30,20 +30,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const kind = (req.body?.kind as string) === "bank" ? "bank" : "investments";
   const products = kind === "bank" ? [Products.Transactions] : [Products.Investments];
 
+  // Update mode: relink an existing connection instead of adding a new one.
+  // With account selection on, the bank's own picker reopens so accounts that
+  // were closed (or shouldn't be shared) can be deselected — after which Plaid
+  // stops returning them entirely.
+  const updateItemId = typeof req.body?.item_id === "string" ? req.body.item_id.trim() : "";
+
   // Production OAuth banks (Chase, Wells Fargo, BoA…) bounce through a
   // redirect that has to be registered in the Plaid dashboard as well.
   const redirectUri = process.env.PLAID_REDIRECT_URI?.trim();
 
   try {
     const client = getPlaidClient();
+
+    let accessToken: string | undefined;
+    if (updateItemId) {
+      const rows = await sb<Array<{ access_token: string }>>(
+        `plaid_items?item_id=eq.${encodeURIComponent(updateItemId)}&select=access_token&limit=1`
+      );
+      if (!rows?.[0]) return res.status(404).json({ error: "unknown_item" });
+      accessToken = rows[0].access_token;
+    }
+
     const response = await client.linkTokenCreate({
       user: { client_user_id: user.id },
       client_name: "Burton Family Office",
-      products,
+      // Update mode takes no products — the Item already has them.
+      ...(accessToken
+        ? { access_token: accessToken, update: { account_selection_enabled: true } }
+        : { products }),
       country_codes: [CountryCode.Us],
       language: "en",
       // Books wants 24 months of history from newly linked banks.
-      ...(kind === "bank" ? { transactions: { days_requested: 730 } } : {}),
+      ...(kind === "bank" && !accessToken ? { transactions: { days_requested: 730 } } : {}),
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
     });
 
