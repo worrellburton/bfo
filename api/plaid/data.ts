@@ -154,6 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           institution_name: item.institution_name,
           institution_color: item.institution_color ?? null,
           institution_logo: item.institution_logo ?? null,
+          created_at: item.created_at ?? null,
         };
         try {
           const balRes = await client.accountsGet({ access_token: item.access_token });

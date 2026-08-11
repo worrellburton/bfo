@@ -15,6 +15,7 @@ type Connection = {
   institution_color: string | null;
   institution_logo: string | null;
   status: "online" | "reconnect" | "offline";
+  created_at?: string | null;
   message?: string;
 };
 
@@ -927,39 +928,114 @@ export default function Treasury() {
               {showHidden ? "Hide hidden accounts" : `Show ${hiddenCount} hidden`}
             </button>
           )}
-          {connections.map((conn) => (
-            <span
-              key={conn.item_id}
-              className="inline-flex rounded-lg overflow-hidden border"
-              style={{ borderColor: isDark ? "rgba(255,255,255,0.10)" : "rgb(229,231,235)" }}
-            >
-              <button
-                onClick={() => void refreshConnection(conn)}
-                disabled={linking}
-                title={`Re-pick which ${conn.institution_name} accounts are shared — closed ones drop off`}
-                className={`px-3 py-1.5 text-xs transition-colors cursor-pointer disabled:opacity-50 ${
-                  isDark
-                    ? "text-gray-400 hover:text-white hover:bg-white/5"
-                    : "text-gray-600 hover:text-black hover:bg-black/5"
-                }`}
-              >
-                Refresh {conn.institution_name}
-              </button>
-              <button
-                onClick={() => void disconnect(conn)}
-                title={`Disconnect ${conn.institution_name}`}
-                aria-label={`Disconnect ${conn.institution_name}`}
-                className={`px-2.5 py-1.5 text-xs border-l transition-colors cursor-pointer ${
-                  isDark
-                    ? "border-white/10 text-gray-500 hover:text-red-400 hover:bg-red-500/10"
-                    : "border-gray-200 text-gray-500 hover:text-red-600 hover:bg-red-50"
-                }`}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
         </div>
+      )}
+
+      {connections.length > 0 && (
+        <section className="mt-8">
+          <h2 className={`text-xs uppercase tracking-wider mb-3 ${subtle}`}>Bank connections</h2>
+          <div className={`rounded-xl border overflow-hidden ${card}`}>
+            {connections.map((conn, i) => {
+              const mine = accounts.filter((a) => a.item_id === conn.item_id);
+              const total = mine.reduce(
+                (sum, a) => sum + (a.type === "credit" ? -1 : 1) * (a.balance_current ?? 0),
+                0
+              );
+              const mapped = mine.filter((a) => a.entity_id).length;
+              const empties = mine.filter((a) => Math.abs(a.balance_current ?? 0) < 0.005).length;
+              // Same bank connected twice — the detail below is how you tell
+              // them apart before removing one.
+              const duplicate = connections.filter(
+                (c) => c.institution_name === conn.institution_name
+              ).length > 1;
+              const rgb = tint(conn.institution_color);
+              return (
+                <div
+                  key={conn.item_id}
+                  className={`flex flex-wrap items-center gap-x-5 gap-y-3 px-4 py-3.5 ${
+                    i ? `border-t ${isDark ? "border-white/5" : "border-gray-100"}` : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {conn.institution_logo ? (
+                      <img
+                        src={`data:image/png;base64,${conn.institution_logo}`}
+                        alt=""
+                        className="w-8 h-8 rounded-md object-contain bg-white/90 p-0.5 shrink-0"
+                      />
+                    ) : (
+                      <span
+                        className="w-8 h-8 rounded-md shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                        style={{ background: `rgba(${rgb}, 0.55)` }}
+                      >
+                        {conn.institution_name.slice(0, 1)}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        {conn.institution_name}
+                        {duplicate && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider ${
+                              isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            duplicate
+                          </span>
+                        )}
+                        {conn.status !== "online" && (
+                          <span className="text-[10px] uppercase tracking-wider text-rose-400">
+                            {conn.status}
+                          </span>
+                        )}
+                      </p>
+                      <p className={`text-xs mt-0.5 ${subtle}`}>
+                        {mine.length} account{mine.length === 1 ? "" : "s"}
+                        {" · "}
+                        {mapped} mapped
+                        {empties > 0 && ` · ${empties} empty`}
+                        {conn.created_at &&
+                          ` · added ${new Date(conn.created_at).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="text-sm font-semibold tabular-nums shrink-0">{money(total)}</span>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => void refreshConnection(conn)}
+                      disabled={linking}
+                      title="Re-pick which accounts this connection shares — closed ones drop off"
+                      className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
+                        isDark
+                          ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
+                          : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
+                      }`}
+                    >
+                      Refresh
+                    </button>
+                    <button
+                      onClick={() => void disconnect(conn)}
+                      title="Disconnect this connection"
+                      className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                        isDark
+                          ? "border-white/10 text-gray-500 hover:text-red-400 hover:border-red-400/30"
+                          : "border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300"
+                      }`}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
     </div>
