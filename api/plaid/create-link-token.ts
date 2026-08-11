@@ -16,7 +16,6 @@ function getPlaidClient() {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "https://bfoffice.vercel.app");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
@@ -38,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const client = getPlaidClient();
     const response = await client.linkTokenCreate({
-      user: { client_user_id: "bfo-user" },
+      user: { client_user_id: user.id },
       client_name: "Burton Family Office",
       products,
       country_codes: [CountryCode.Us],

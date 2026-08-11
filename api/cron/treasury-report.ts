@@ -913,8 +913,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Scheduled cron path. Vercel sends Authorization: Bearer $CRON_SECRET.
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+  // Scheduled cron path. With CRON_SECRET configured Vercel sends
+  // Authorization: Bearer $CRON_SECRET; without it we still require the
+  // x-vercel-cron header, which Vercel stamps on real cron invocations and
+  // strips from outside traffic — so this endpoint is never open to the
+  // public internet.
+  const authorized = secret
+    ? req.headers.authorization === `Bearer ${secret}`
+    : !!req.headers["x-vercel-cron"];
+  if (!authorized) {
     return res.status(401).json({ error: "unauthorized" });
   }
 

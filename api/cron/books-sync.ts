@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth.js";
+import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 /**
@@ -25,20 +25,6 @@ function getPlaidClient() {
     },
   });
   return new PlaidApi(config);
-}
-
-function db(path: string, init: RequestInit = {}) {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_KEY!;
-  return fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
 }
 
 const HISTORY_MONTHS = 24;
@@ -154,12 +140,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  // Cron proves itself with the secret; a person proves themselves with a session.
+  // Cron proves itself with the secret — or, when none is configured, with
+  // the x-vercel-cron header Vercel stamps on real cron invocations and
+  // strips from outside traffic. A person proves themselves with a session.
   const cronSecret = process.env.CRON_SECRET;
   const fromCron =
-    req.method === "GET" && !!cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const openCron = req.method === "GET" && !cronSecret; // until CRON_SECRET is set
-  if (!fromCron && !openCron) {
+    req.method === "GET" &&
+    (cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !!req.headers["x-vercel-cron"]);
+  if (!fromCron) {
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: "unauthorized" });
   }

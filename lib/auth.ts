@@ -34,19 +34,31 @@ function supabaseConfig() {
 
 export class ConfigError extends Error {}
 
-export async function sb<T = any>(
-  path: string,
-  init: { method?: string; body?: unknown; prefer?: string } = {}
-): Promise<T> {
+/**
+ * Low-level Supabase REST call with service-role auth — returns the raw
+ * Response so callers can read pagination headers. Every server-side
+ * Supabase request in the repo goes through here.
+ */
+export function sbFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const { url, key } = supabaseConfig();
-  const res = await fetch(`${url}/rest/v1/${path}`, {
-    method: init.method ?? "GET",
+  return fetch(`${url}/rest/v1/${path}`, {
+    ...init,
     headers: {
       apikey: key,
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
-      ...(init.prefer ? { Prefer: init.prefer } : {}),
+      ...(init.headers ?? {}),
     },
+  });
+}
+
+export async function sb<T = any>(
+  path: string,
+  init: { method?: string; body?: unknown; prefer?: string } = {}
+): Promise<T> {
+  const res = await sbFetch(path, {
+    method: init.method ?? "GET",
+    ...(init.prefer ? { headers: { Prefer: init.prefer } } : {}),
     ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
   });
   const text = await res.text();

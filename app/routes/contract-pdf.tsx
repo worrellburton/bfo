@@ -101,6 +101,9 @@ export default function ContractPDF() {
   // Generate PDF once data is loaded
   useEffect(() => {
     if (!asset || !contract) return;
+    // Non-null locals: narrowing doesn't survive into the nested helpers below.
+    const assetNN = asset;
+    const contractNN = contract;
 
     (async () => {
       const { jsPDF } = await import("jspdf");
@@ -179,7 +182,7 @@ export default function ContractPDF() {
         doc.setFontSize(6.5);
         doc.setCharSpace(1.4);
         doc.setTextColor(...muted);
-        doc.text(`${String(asset.name).toUpperCase()}  ·  ${String(contract.counterparty).toUpperCase()}`, ml, fy + 14);
+        doc.text(`${String(assetNN.name).toUpperCase()}  ·  ${String(contractNN.counterparty).toUpperCase()}`, ml, fy + 14);
         doc.text(brandLine, mr, fy + 14, { align: "right" });
         doc.setCharSpace(0);
         doc.setTextColor(...ink);

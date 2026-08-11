@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth.js";
+import { currentUser, sbFetch as db } from "../../lib/auth.js";
 
 /**
  * Books reads. Everything here is served from book_transactions — the nightly
@@ -12,20 +12,6 @@ import { currentUser } from "../../lib/auth.js";
  *
  * Books is open to everyone with a login.
  */
-
-function db(path: string, init: RequestInit = {}) {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_KEY!;
-  return fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-}
 
 /** Page through PostgREST's 1000-row window until the query is exhausted. */
 async function fetchAll<T>(pathWithFilters: string): Promise<T[]> {
@@ -266,6 +252,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "unknown_report", message: "Use: meta, transactions, pnl, vendors" });
   } catch (err: any) {
     console.error("books data error:", err.message);
-    return res.status(500).json({ error: "books_data_failed", message: err.message });
+    return res.status(500).json({ error: "books_data_failed", message: "Couldn't load that report." });
   }
 }

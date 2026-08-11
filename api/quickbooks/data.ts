@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { currentUser, isAdmin } from "../../lib/auth.js";
 
 function getSupabase() {
   return createClient(
@@ -34,7 +35,7 @@ async function saveToken(row: {
   }
 }
 
-async function refreshAccessToken(supabase: ReturnType<typeof createClient>, refreshToken: string, realmId: string) {
+async function refreshAccessToken(refreshToken: string, realmId: string) {
   const clientId = process.env.QUICKBOOKS_CLIENT_ID!;
   const clientSecret = process.env.QUICKBOOKS_CLIENT_SECRET!;
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
@@ -88,7 +89,6 @@ async function qboFetch(accessToken: string, realmId: string, endpoint: string) 
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "https://bfoffice.vercel.app");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
@@ -105,15 +105,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = getSupabase();
 
-    // Debug endpoint
+    // Debug endpoint — spills env/token previews, so admins only. The other
+    // reports stay open because the public BF Access pages depend on them.
     if (report === "debug") {
+      const me = await currentUser(req);
+      if (!me || !isAdmin(me)) return res.status(401).json({ error: "unauthorized" });
       const { data: rows, error: dbError, count } = await supabase
         .from("quickbooks_tokens")
         .select("*", { count: "exact" });
-
-      // Check table schema
-      const { data: schemaRows, error: schemaError } = await supabase
-        .rpc("", {}).then(() => ({ data: null, error: null })).catch(() => ({ data: null, error: null }));
 
       // Test write capability using raw REST upsert
       // Note: uses a dedicated test row that persists (JS client delete is unsafe)
@@ -142,7 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let token = r.access_token;
             if (tokenExpired) {
               try {
-                token = await refreshAccessToken(supabase, r.refresh_token, r.realm_id);
+                token = await refreshAccessToken(r.refresh_token, r.realm_id);
                 apiTest = "token_refreshed";
               } catch (e: any) {
                 apiTest = `refresh_failed: ${e.message}`;
@@ -216,7 +215,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let token = r.access_token;
             const tokenExpired = new Date(r.expires_at).getTime() < Date.now();
             if (tokenExpired) {
-              token = await refreshAccessToken(supabase, r.refresh_token, r.realm_id);
+              token = await refreshAccessToken(r.refresh_token, r.realm_id);
             }
             const info = await qboFetch(token, r.realm_id, `companyinfo/${r.realm_id}`);
             companyName = info?.CompanyInfo?.CompanyName || "";
@@ -254,7 +253,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Refresh if token expires within 5 minutes
     if (Date.now() > expiresAt - 5 * 60 * 1000) {
-      accessToken = await refreshAccessToken(supabase, refreshToken, realmId);
+      accessToken = await refreshAccessToken(refreshToken, realmId);
     }
 
     let data;

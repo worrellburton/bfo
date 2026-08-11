@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth.js";
+import { currentUser, sbFetch } from "../../lib/auth.js";
 
 /** Set a bank account's nickname and/or hidden flag. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -23,20 +23,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (entity_id !== undefined) row.entity_id = String(entity_id).trim() || null;
   if (entity_name !== undefined) row.entity_name = String(entity_name).trim().slice(0, 120) || null;
 
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_KEY!;
-  const r = await fetch(`${url}/rest/v1/plaid_account_prefs`, {
+  const r = await sbFetch("plaid_account_prefs", {
     method: "POST",
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=representation",
-    },
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
     body: JSON.stringify(row),
   });
   if (!r.ok) {
-    return res.status(500).json({ error: "save_failed", message: (await r.text()).slice(0, 200) });
+    console.error("account-prefs save failed:", (await r.text()).slice(0, 500));
+    return res.status(500).json({ error: "save_failed", message: "Couldn't save that preference." });
   }
   const saved = (await r.json()) as any[];
   return res.status(200).json({ prefs: saved[0] });
