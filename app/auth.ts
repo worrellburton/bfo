@@ -12,6 +12,7 @@ export type User = {
   createdAt: string;
   approvedAt: string | null;
   lastLoginAt: string | null;
+  lastSeenAt?: string | null;
 };
 
 type Session = {

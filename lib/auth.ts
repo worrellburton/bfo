@@ -15,7 +15,11 @@ export type AppUser = {
   approved_at: string | null;
   verified_at: string | null;
   last_login_at: string | null;
+  last_seen_at: string | null;
 };
+
+/** Don't rewrite the last-seen stamp more than once per this window. */
+const SEEN_THROTTLE_MS = 5 * 60 * 1000;
 
 export const CODE_TTL_MS = 10 * 60 * 1000; // code is good for 10 minutes
 export const CODE_RESEND_MS = 45 * 1000; // don't let a number re-request faster than this
@@ -472,6 +476,18 @@ export async function currentUser(req: VercelRequest): Promise<AppUser | null> {
   const users = await sb<AppUser[]>(`app_users?id=eq.${session.user_id}&select=*&limit=1`);
   const user = users?.[0];
   if (!user || user.status !== "approved") return null;
+
+  // Sessions last 30 days, so last_login_at (written only when a code is
+  // entered) goes stale while someone is actively using the app. Touch a
+  // separate last-seen stamp, throttled so it isn't a write per request.
+  const seenAt = user.last_seen_at ? new Date(user.last_seen_at).getTime() : 0;
+  if (Date.now() - seenAt > SEEN_THROTTLE_MS) {
+    const now = new Date().toISOString();
+    user.last_seen_at = now;
+    void sb(`app_users?id=eq.${user.id}`, { method: "PATCH", body: { last_seen_at: now } }).catch(
+      () => {}
+    );
+  }
   return user;
 }
 
@@ -493,6 +509,7 @@ export function publicUser(user: AppUser) {
     createdAt: user.created_at,
     approvedAt: user.approved_at,
     lastLoginAt: user.last_login_at,
+    lastSeenAt: user.last_seen_at,
   };
 }
 

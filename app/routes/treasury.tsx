@@ -36,6 +36,8 @@ type Account = {
   change_since: string | null;
   nickname: string | null;
   hidden: boolean;
+  entity_id: string | null;
+  entity_name: string | null;
 };
 
 declare global {
@@ -270,6 +272,56 @@ export default function Treasury() {
         (b.balance_current ?? 0) - (a.balance_current ?? 0)
     );
 
+  // Accounts belong to entities — group them that way. Entities sort by what
+  // they hold; anything still unmapped collects at the bottom.
+  const entityGroups = (() => {
+    const map = new Map<string, { key: string; name: string; accounts: Account[]; total: number }>();
+    for (const a of visible) {
+      const key = a.entity_id ?? "__unmapped__";
+      const group = map.get(key) ?? {
+        key,
+        name: a.entity_name ?? "Unmapped",
+        accounts: [] as Account[],
+        total: 0,
+      };
+      group.accounts.push(a);
+      // Cards are a liability, so they pull the entity's total down.
+      group.total += (a.type === "credit" ? -1 : 1) * (a.balance_current ?? 0);
+      map.set(key, group);
+    }
+    for (const group of map.values()) {
+      group.accounts.sort((a, b) => (b.balance_current ?? 0) - (a.balance_current ?? 0));
+    }
+    return [...map.values()].sort((a, b) => {
+      if (a.key === "__unmapped__") return 1;
+      if (b.key === "__unmapped__") return -1;
+      return b.total - a.total;
+    });
+  })();
+
+  const GroupHeader = ({ group }: { group: (typeof entityGroups)[number] }) => {
+    const unmapped = group.key === "__unmapped__";
+    return (
+      <div className="flex items-baseline justify-between gap-4 mb-3">
+        <h2 className={`text-sm font-semibold ${unmapped ? "text-amber-500" : isDark ? "text-white" : "text-gray-900"}`}>
+          {group.name}
+          <span className={`ml-2 text-xs font-normal ${subtle}`}>
+            {group.accounts.length} account{group.accounts.length === 1 ? "" : "s"}
+          </span>
+          {unmapped && (
+            <button
+              onClick={() => navigate("/treasury/mappings")}
+              className="ml-2 text-xs font-normal underline cursor-pointer hover:no-underline"
+            >
+              map these
+            </button>
+          )}
+        </h2>
+        <span className="text-sm font-semibold tabular-nums shrink-0">{money(group.total)}</span>
+      </div>
+    );
+  };
+
   const cash = visible
     .filter((a) => a.type === "depository")
     .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
@@ -392,9 +444,11 @@ export default function Treasury() {
         </div>
       )}
 
-      {view === "grid" && (
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {visible.map((account) => {
+      {view === "grid" && entityGroups.map((group) => (
+      <section key={group.key} className="mb-8 last:mb-0">
+        <GroupHeader group={group} />
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        {group.accounts.map((account) => {
           const rgb = tint(account.institution_color);
           const online = statusFor(account.item_id) === "online";
           return (
@@ -436,6 +490,9 @@ export default function Treasury() {
                 <p className="text-white/55 text-xs truncate">
                   {account.nickname || account.official_name || account.name}
                   {account.mask ? ` ····${account.mask}` : ""}
+                  {account.entity_name && (
+                    <span className="text-white/35"> · {account.entity_name}</span>
+                  )}
                 </p>
                 <p className="text-white text-[21px] font-semibold tracking-tight mt-0.5">
                   {money(account.balance_current, account.currency ?? "USD")}
@@ -496,8 +553,9 @@ export default function Treasury() {
             </button>
           );
         })}
-      </div>
-      )}
+        </div>
+      </section>
+      ))}
 
       {view === "list" && !loading && accounts.length > 0 && (
         <div className={`rounded-xl border overflow-hidden ${card}`}>
@@ -517,8 +575,36 @@ export default function Treasury() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {visible.map((account) => {
+              {entityGroups.map((group) => (
+              <tbody key={group.key}>
+                <tr>
+                  <th
+                    colSpan={6}
+                    scope="colgroup"
+                    className={`text-left px-4 py-2.5 border-t ${
+                      isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <span className="flex items-baseline justify-between gap-4">
+                      <span
+                        className={`text-xs font-semibold ${
+                          group.key === "__unmapped__"
+                            ? "text-amber-500"
+                            : isDark
+                              ? "text-white"
+                              : "text-gray-900"
+                        }`}
+                      >
+                        {group.name}
+                        <span className={`ml-2 font-normal ${subtle}`}>
+                          {group.accounts.length} account{group.accounts.length === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                      <span className="text-xs font-semibold tabular-nums">{money(group.total)}</span>
+                    </span>
+                  </th>
+                </tr>
+                {group.accounts.map((account) => {
                   const online = statusFor(account.item_id) === "online";
                   const rgb = tint(account.institution_color);
                   return (
@@ -589,6 +675,7 @@ export default function Treasury() {
                   );
                 })}
               </tbody>
+              ))}
             </table>
           </div>
         </div>

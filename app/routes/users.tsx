@@ -268,7 +268,7 @@ export default function Users() {
                 <th className={th}>Phone</th>
                 <th className={th}>Role</th>
                 <th className={th}>Status</th>
-                <th className={th}>Last sign-in</th>
+                <th className={th}>Last active</th>
                 <th className={th}>Added</th>
                 <th className={`${th} text-right`}>Actions</th>
               </tr>
@@ -323,7 +323,7 @@ export default function Users() {
                         {user.status === "approved" ? "Active" : user.status === "denied" ? "Denied" : "Incoming"}
                       </span>
                     </td>
-                    <td className={`${td} whitespace-nowrap tabular-nums ${subtle}`}>{when(user.lastLoginAt)}</td>
+                    <td className={`${td} whitespace-nowrap tabular-nums ${subtle}`}>{when(user.lastSeenAt ?? user.lastLoginAt)}</td>
                     <td className={`${td} whitespace-nowrap tabular-nums ${subtle}`}>{when(user.createdAt)}</td>
                     <td className={`${td} whitespace-nowrap text-right`}>
                       <span className="inline-flex items-center gap-1.5">
