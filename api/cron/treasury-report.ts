@@ -408,7 +408,12 @@ function renderText(
   const owedLoans = loans.filter((l) => Math.abs(l.outstanding) >= 0.005);
   if (owedLoans.length) {
     out.push("", "LOANS RECEIVABLE");
-    for (const l of owedLoans) out.push(`  ${l.name}: ${money(l.outstanding)}`);
+    for (const l of owedLoans) {
+      out.push(`  ${l.name}: ${money(l.outstanding)}`);
+      for (const t of l.transactions.slice(0, 6)) {
+        out.push(`    ${t.date}  ${t.amount < 0 ? "+" : "−"}${money(Math.abs(t.amount))}`);
+      }
+    }
     const owed = owedLoans.reduce((sum, l) => sum + l.outstanding, 0);
     out.push(`  Total owed: ${money(owed)}`);
   }
@@ -759,10 +764,23 @@ function renderHtml(
                     <div style="height:3px;width:${repaidPct}%;border-radius:999px;background:#34d399;font-size:0;line-height:0;">&nbsp;</div>
                   </div>
                 </td>
-                <td align="right" style="padding:9px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;font-weight:600;color:#fbbf24;white-space:nowrap;">
+                <td align="right" valign="top" style="padding:9px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;font-weight:600;color:#fbbf24;white-space:nowrap;">
                   ${money(l.outstanding)}
                 </td>
-              </tr>`;
+              </tr>
+              ${l.transactions
+                .slice(0, 6)
+                .map((t) => {
+                  const day = new Date(`${t.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  const inflow = t.amount < 0;
+                  return `<tr>
+                    <td style="padding:2px 0 2px 12px;font-size:11px;color:rgba(255,255,255,0.35);">${day}</td>
+                    <td align="right" style="padding:2px 0;font-size:11px;white-space:nowrap;color:${inflow ? "#34d399" : "rgba(255,255,255,0.6)"};">
+                      ${inflow ? "+" : "−"}${money(Math.abs(t.amount))}
+                    </td>
+                  </tr>`;
+                })
+                .join("")}`;
               }
             )
             .join("");
