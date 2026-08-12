@@ -52,10 +52,55 @@ const TXN_COLS =
   "transaction_id,account_id,item_id,date,name,merchant_name,amount,pending," +
   "plaid_category,txn_type,intercompany,intercompany_class,entity_id,entity_name";
 
-function entityFilter(entity: string | undefined): string {
-  if (!entity || entity === "all") return "";
-  if (entity === "unmapped") return "&entity_id=is.null";
-  return `&entity_id=eq.${encodeURIComponent(entity)}`;
+type Pref = {
+  account_id: string;
+  entity_id: string | null;
+  entity_name: string | null;
+  hidden: boolean;
+};
+
+/**
+ * Mappings are read live rather than trusted from the copy stamped onto each
+ * transaction at sync time — remapping an account has to take effect at once,
+ * not at the next nightly sync.
+ */
+async function getPrefs(): Promise<Map<string, Pref>> {
+  const rows = await fetchAll<Pref>(
+    "plaid_account_prefs?select=account_id,entity_id,entity_name,hidden&archived_at=is.null"
+  );
+  return new Map(rows.map((p) => [p.account_id, p]));
+}
+
+const idList = (ids: string[]) => ids.map((id) => `"${id}"`).join(",");
+
+/**
+ * Turn an entity choice into account-level PostgREST filters, so paging and
+ * counts stay server-side.
+ */
+function scopeFilter(prefs: Map<string, Pref>, entity: string | undefined): string {
+  const hidden = [...prefs.values()].filter((p) => p.hidden).map((p) => p.account_id);
+  let filter = hidden.length ? `&account_id=not.in.(${idList(hidden)})` : "";
+
+  if (!entity || entity === "all") return filter;
+
+  if (entity === "unmapped") {
+    const mapped = [...prefs.values()].filter((p) => p.entity_id).map((p) => p.account_id);
+    return filter + (mapped.length ? `&account_id=not.in.(${idList(mapped)})` : "");
+  }
+
+  const wanted = [...prefs.values()]
+    .filter((p) => p.entity_id === entity)
+    .map((p) => p.account_id);
+  // No accounts map to it, so nothing can match.
+  return filter + `&account_id=in.(${wanted.length ? idList(wanted) : '"none"'})`;
+}
+
+/** Overlay each row with the entity its account is mapped to right now. */
+function withLiveEntity<T extends { account_id: string }>(rows: T[], prefs: Map<string, Pref>) {
+  return rows.map((row) => {
+    const pref = prefs.get(row.account_id);
+    return { ...row, entity_id: pref?.entity_id ?? null, entity_name: pref?.entity_name ?? null };
+  });
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -92,7 +137,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const limit = Math.min(Number(req.query.limit ?? 100) || 100, 500);
       const offset = Number(req.query.offset ?? 0) || 0;
 
-      let path = `book_transactions?select=${TXN_COLS}&hidden=eq.false${entityFilter(entity)}`;
+      const prefs = await getPrefs();
+      let path = `book_transactions?select=${TXN_COLS}${scopeFilter(prefs, entity)}`;
       if (year && /^\d{4}$/.test(year)) {
         path += `&date=gte.${year}-01-01&date=lte.${year}-12-31`;
       }
@@ -110,7 +156,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
       const rows = (await r.json()) as BookTxn[];
       const total = Number(r.headers.get("content-range")?.split("/")[1] ?? rows.length);
-      return res.json({ transactions: rows, total, offset, limit });
+      return res.json({ transactions: withLiveEntity(rows, prefs), total, offset, limit });
     }
 
     if (report === "pnl") {
@@ -119,10 +165,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rollup = entity === "all";
 
       // Cash basis: posted transactions only, hidden accounts excluded.
-      const rows = await fetchAll<BookTxn>(
-        `book_transactions?select=${TXN_COLS}&hidden=eq.false&pending=eq.false` +
-          `&date=gte.${year}-01-01&date=lte.${year}-12-31${entityFilter(rollup ? "all" : entity)}` +
-          "&order=date.asc"
+      const prefs = await getPrefs();
+      const rows = withLiveEntity(
+        await fetchAll<BookTxn>(
+          `book_transactions?select=${TXN_COLS}&pending=eq.false` +
+            `&date=gte.${year}-01-01&date=lte.${year}-12-31` +
+            scopeFilter(prefs, rollup ? "all" : entity) +
+            "&order=date.asc"
+        ),
+        prefs
       );
 
       const monthOf = (d: string) => Number(d.slice(5, 7)) - 1;
@@ -209,9 +260,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { entity } = req.query as Record<string, string | undefined>;
       const cutoff = new Date();
       cutoff.setMonth(cutoff.getMonth() - 24);
-      const rows = await fetchAll<BookTxn>(
-        `book_transactions?select=${TXN_COLS}&hidden=eq.false&pending=eq.false&txn_type=eq.normal` +
-          `&intercompany=is.false&date=gte.${cutoff.toISOString().slice(0, 10)}${entityFilter(entity)}`
+      const prefs = await getPrefs();
+      const rows = withLiveEntity(
+        await fetchAll<BookTxn>(
+          `book_transactions?select=${TXN_COLS}&pending=eq.false&txn_type=eq.normal` +
+            `&intercompany=is.false&date=gte.${cutoff.toISOString().slice(0, 10)}` +
+            scopeFilter(prefs, entity)
+        ),
+        prefs
       );
 
       type Vendor = {
