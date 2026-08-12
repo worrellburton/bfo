@@ -388,7 +388,7 @@ function renderText(
   };
   const out = [
     `BFO Treasury — ${reportDate(now)}, ${reportTime(now)} ET`,
-    `Total value ${money(s.totalValue)} · Cash ${money(s.cash)} · Investments ${money(s.invested)}`,
+    `Total value ${money(s.totalValue + loans.reduce((sum, l) => sum + l.outstanding, 0))} · Cash ${money(s.cash)} · Investments ${money(s.invested)} · Loans ${money(loans.reduce((sum, l) => sum + l.outstanding, 0))}`,
     movement === 0 ? "No movement since the last report." : `${signed(movement)} since the last report.`,
     "",
   ];
@@ -406,7 +406,7 @@ function renderText(
     out.push("", "LOANS RECEIVABLE");
     for (const l of owedLoans) out.push(`  ${l.name}: ${money(l.outstanding)}`);
     const owed = owedLoans.reduce((sum, l) => sum + l.outstanding, 0);
-    out.push(`  Total owed: ${money(owed)} — with loans: ${money(s.totalValue + owed)}`);
+    out.push(`  Total owed: ${money(owed)}`);
   }
   out.push("", `Open Treasury: ${APP_URL}/treasury`);
   return out.join("\n");
@@ -739,15 +739,17 @@ function renderHtml(
 
         <div style="margin-top:22px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Total value</div>
         <div style="margin-top:3px;font-size:32px;font-weight:600;color:#fff;">
-          ${money(s.totalValue)}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
+          ${(() => {
+            const owed = (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0);
+            return money(s.totalValue + owed);
+          })()}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
         </div>
         ${(() => {
           const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
           if (!loans.length) return "";
           const owed = loans.reduce((sum, l) => sum + l.outstanding, 0);
-          return `<div style="margin-top:4px;font-size:13px;color:rgba(255,255,255,0.55);">
-            With loans receivable: <span style="color:#fff;font-weight:600;">${money(s.totalValue + owed)}</span>
-            <span style="color:rgba(255,255,255,0.35);">(+${money(owed)} owed to the family)</span>
+          return `<div style="margin-top:4px;font-size:12px;color:rgba(255,255,255,0.45);">
+            Accounts ${money(s.totalValue)} · Loans receivable <span style="color:#fbbf24;">${money(owed)}</span>
           </div>`;
         })()}
         <div style="margin-top:5px;font-size:12px;color:rgba(255,255,255,0.6);">${narrative(s)}</div>
@@ -992,7 +994,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { replyTo: me.email }
         );
       }
-      return res.status(200).json({ sent: true, to: recipients.join(", "), count: recipients.length });
+      return res.status(200).json({ sent: true, to: recipients.join(", "), count: recipients.length, loans: loans.length });
     } catch (err) {
       console.error("sample treasury report failed:", err);
       return res
