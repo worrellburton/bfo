@@ -20,6 +20,122 @@ type Loan = {
 };
 
 /**
+ * Search-and-attach: find any synced transaction and connect it to a loan.
+ * Results come from the same transactions report the Transactions page uses.
+ */
+function TxnFinder({
+  loanId,
+  attached,
+  isDark,
+  onAttached,
+  onError,
+}: {
+  loanId: string;
+  attached: Set<string>;
+  isDark: boolean;
+  onAttached: () => void;
+  onError: (message: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<Txn[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [attaching, setAttaching] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!q.trim()) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void (async () => {
+        setSearching(true);
+        try {
+          const res = await authFetch(
+            `/api/books/data?report=transactions&limit=25&q=${encodeURIComponent(q.trim())}`
+          );
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attached.has(r.transaction_id)));
+        } finally {
+          setSearching(false);
+        }
+      })();
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, attached]);
+
+  async function attach(t: Txn) {
+    setAttaching(t.transaction_id);
+    try {
+      const res = await authFetch("/api/books/data", {
+        method: "POST",
+        body: JSON.stringify({ transaction_id: t.transaction_id, loan_id: loanId }),
+      });
+      if (!res.ok) throw new Error("Couldn't attach that transaction.");
+      setResults((prev) => prev.filter((r) => r.transaction_id !== t.transaction_id));
+      onAttached();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Couldn't attach that transaction.");
+    } finally {
+      setAttaching(null);
+    }
+  }
+
+  const subtle = "text-gray-500";
+  return (
+    <div className="min-w-0 flex-1">
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Find transactions to attach — search any description…"
+        className={`w-full max-w-md px-3 py-2 rounded-lg text-sm border ${
+          isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
+        }`}
+      />
+      {q.trim() && (
+        <div className={`mt-2 rounded-lg border overflow-hidden ${isDark ? "border-white/10" : "border-gray-200"}`}>
+          {searching && results.length === 0 ? (
+            <p className={`px-3 py-2.5 text-xs ${subtle}`}>Searching…</p>
+          ) : results.length === 0 ? (
+            <p className={`px-3 py-2.5 text-xs ${subtle}`}>No matches (already-attached rows are hidden).</p>
+          ) : (
+            results.map((t) => (
+              <div
+                key={t.transaction_id}
+                className={`flex items-center gap-3 px-3 py-2 border-t first:border-t-0 text-sm ${
+                  isDark ? "border-white/5" : "border-gray-100"
+                }`}
+              >
+                <span className={`tabular-nums text-xs whitespace-nowrap ${subtle}`}>{t.date}</span>
+                <span className="truncate flex-1 min-w-0">
+                  {t.merchant_name || t.name || "—"}
+                  {t.loan_id && (
+                    <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>on another loan</span>
+                  )}
+                </span>
+                <span className={`text-xs whitespace-nowrap ${subtle}`}>{t.entity_name ?? "Unmapped"}</span>
+                <span className={`tabular-nums whitespace-nowrap font-medium ${t.amount < 0 ? "text-emerald-500" : ""}`}>
+                  {t.amount < 0 ? `+${money(-t.amount)}` : money(t.amount)}
+                </span>
+                <button
+                  onClick={() => void attach(t)}
+                  disabled={attaching === t.transaction_id}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer disabled:opacity-50 ${
+                    isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
+                  }`}
+                >
+                  {attaching === t.transaction_id ? "…" : "Attach"}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Money the family is owed: each loan with its starting balance, tracked
  * advances and repayments, and the transactions behind it.
  */
@@ -267,6 +383,17 @@ export default function BooksLoans() {
 
               {isOpen && (
                 <div className={`border-t ${rowBorder}`}>
+                  {loan.id && (
+                    <div className="px-5 pt-3">
+                      <TxnFinder
+                        loanId={loan.id}
+                        attached={new Set(loan.transactions.map((t) => t.transaction_id))}
+                        isDark={isDark}
+                        onAttached={() => void load()}
+                        onError={setError}
+                      />
+                    </div>
+                  )}
                   <div className="px-5 py-3 flex flex-wrap items-center gap-3">
                     {editingBalance === key ? (
                       <>
