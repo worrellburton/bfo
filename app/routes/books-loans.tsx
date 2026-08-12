@@ -441,6 +441,7 @@ export default function BooksLoans() {
                       isDark={isDark}
                       onRowChange={() => void load()}
                       onError={setError}
+                      onReload={() => void load()}
                     />
                   </div>
                 </div>

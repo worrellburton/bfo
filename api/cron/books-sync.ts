@@ -30,6 +30,24 @@ function getPlaidClient() {
 
 const HISTORY_MONTHS = 24;
 
+type UserRule = { match: string; book_category: string };
+
+/** Rules the user taught via the category popup — they beat the built-ins. */
+async function loadUserRules(): Promise<UserRule[]> {
+  const r = await db("book_rules?select=match,book_category");
+  if (!r.ok) return [];
+  return ((await r.json()) as UserRule[]).map((rule) => ({
+    match: rule.match.toLowerCase(),
+    book_category: rule.book_category,
+  }));
+}
+
+function userCategory(rules: UserRule[], name: string | null, merchant: string | null): string | null {
+  const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
+  for (const rule of rules) if (text.includes(rule.match)) return rule.book_category;
+  return null;
+}
+
 type TxnRow = {
   transaction_id: string;
   account_id: string;
@@ -159,6 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // used after the rules change, so history reflects the current chart.
   if (req.method === "POST" && req.body?.recategorize) {
     try {
+      const userRules = await loadUserRules();
       const groups = new Map<string, string[]>();
       for (let from = 0; ; from += 1000) {
         const r = await db(
@@ -169,7 +188,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const rows = (await r.json()) as any[];
         for (const t of rows) {
           const rule = categorize(t.name, t.merchant_name, t.plaid_category);
-          const key = JSON.stringify([rule.category, rule.type]);
+          const taught = userCategory(userRules, t.name, t.merchant_name);
+          const key = JSON.stringify([taught ?? rule.category, rule.type]);
           (groups.get(key) ?? groups.set(key, []).get(key)!).push(t.transaction_id);
         }
         if (rows.length < 1000) break;
@@ -205,6 +225,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const itemsRes = await db("plaid_items?select=*");
     if (!itemsRes.ok) throw new Error(`DB error: ${await itemsRes.text()}`);
     const items = ((await itemsRes.json()) as any[]).filter((i) => (i.kind ?? "investments") === "bank");
+
+    const userRules = await loadUserRules();
 
     const prefsRes = await db("plaid_account_prefs?select=*");
     const prefs = new Map<string, any>(
@@ -255,13 +277,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 ...(() => {
                   // The chart-of-accounts rules classify each transaction; a
                   // rule that forces a type beats the Plaid heuristic. A
-                  // user's type_override (not written here) beats both.
+                  // user's type_override (not written here) beats both, and a
+                  // user-taught category rule beats the built-in chart.
                   const rule = categorize(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null);
+                  const taught = userCategory(userRules, t.name ?? null, t.merchant_name ?? null);
                   const heuristic = isTransfer(t) ? "transfer" : "normal";
                   return {
                     txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? heuristic) as "normal" | "transfer",
                     intercompany: rule.type === "intercompany",
-                    book_category: rule.category,
+                    book_category: taught ?? rule.category,
                   };
                 })(),
                 entity_id: pref?.entity_id ?? null,

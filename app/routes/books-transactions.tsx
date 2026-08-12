@@ -199,6 +199,7 @@ export default function BooksTransactions() {
               setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
             }
             onError={setError}
+            onReload={() => void load()}
           />
         )}
       </div>

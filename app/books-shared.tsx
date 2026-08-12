@@ -73,6 +73,7 @@ export function TxnTable({
   isDark,
   onRowChange,
   onError,
+  onReload,
 }: {
   rows: Txn[];
   categories: string[];
@@ -80,6 +81,7 @@ export function TxnTable({
   isDark: boolean;
   onRowChange: (t: Txn) => void;
   onError: (message: string) => void;
+  onReload?: () => void;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -107,6 +109,42 @@ export function TxnTable({
       onRowChange({ ...saved, entity_id: t.entity_id, entity_name: t.entity_name });
     } catch (err) {
       onError(err instanceof Error ? err.message : "Couldn't save that change.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * A category change offers to teach the books: apply the same category to
+   * every transaction carrying this description, and keep applying it to new
+   * ones via a stored rule. Declining changes just the one row.
+   */
+  async function changeCategory(t: Txn, category: string) {
+    const match = (t.merchant_name || t.name || "").trim();
+    const teach =
+      !!match &&
+      confirm(
+        `Categorize ALL "${match}" transactions as "${category}" — and automatically categorize new ones the same way?
+
+` +
+          "Cancel applies it to just this transaction."
+      );
+    if (!teach) {
+      await update(t, { book_category: category });
+      return;
+    }
+    setBusy(t.transaction_id);
+    try {
+      const res = await authFetch("/api/books/data", {
+        method: "POST",
+        body: JSON.stringify({ action: "categorize_vendor", match, book_category: category }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Couldn't apply that everywhere.");
+      if (onReload) onReload();
+      else onRowChange({ ...t, book_category: category });
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Couldn't apply that everywhere.");
     } finally {
       setBusy(null);
     }
@@ -186,6 +224,11 @@ export function TxnTable({
                   ) : (
                     <span className="font-medium">—</span>
                   )}
+                  {t.merchant_name && t.name && t.name !== t.merchant_name && (
+                    <span className={`block text-[11px] truncate ${subtle}`} title={t.name}>
+                      {t.name}
+                    </span>
+                  )}
                   {t.pending && (
                     <span className={`text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>
                   )}
@@ -197,7 +240,7 @@ export function TxnTable({
                   <select
                     value={t.book_category ?? ""}
                     disabled={busy === t.transaction_id}
-                    onChange={(e) => void update(t, { book_category: e.target.value })}
+                    onChange={(e) => void changeCategory(t, e.target.value)}
                     className={select}
                   >
                     {!t.book_category && <option value="">{pretty(t.plaid_category)} (auto)</option>}

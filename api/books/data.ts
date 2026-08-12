@@ -199,6 +199,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ loan: rows[0] });
     }
 
+    // ── "All of these, and from now on": bulk categorize + store a rule ──
+    if (req.method === "POST" && req.body?.action === "categorize_vendor") {
+      const match = String(req.body.match ?? "").trim().slice(0, 120);
+      const category = String(req.body.book_category ?? "").trim().slice(0, 60);
+      if (!match || !category) return res.status(400).json({ error: "missing_fields" });
+
+      // Remember the rule (replacing any earlier rule for the same text) so
+      // the nightly sync categorizes future arrivals the same way.
+      await db(`book_rules?match=ilike."${encodeURIComponent(match.replace(/["*%]/g, " "))}"`, {
+        method: "DELETE",
+      }).catch(() => {});
+      const ruleRes = await db("book_rules", {
+        method: "POST",
+        body: JSON.stringify({ match, book_category: category }),
+      });
+      if (!ruleRes.ok) console.error("rule save failed:", (await ruleRes.text()).slice(0, 200));
+
+      // Apply to everything already synced that carries the same text.
+      const safe = match.replace(/["*%,()]/g, " ").trim();
+      const pattern = encodeURIComponent(`*${safe}*`);
+      const r = await db(
+        `book_transactions?or=(merchant_name.ilike."${pattern}",name.ilike."${pattern}")`,
+        {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({ book_category: category }),
+        }
+      );
+      if (!r.ok) {
+        console.error("bulk categorize failed:", (await r.text()).slice(0, 300));
+        return res.status(500).json({ error: "bulk_failed", message: "Couldn't apply that to the rest." });
+      }
+      const updated = ((await r.json()) as any[]).length;
+      return res.json({ applied: updated, rule: { match, book_category: category } });
+    }
+
     // ── Edits: a person reclassifying a transaction ─────────────────────
     if (req.method === "POST") {
       const { transaction_id, type_override, book_category, loan_id } = req.body ?? {};

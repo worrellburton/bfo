@@ -120,6 +120,7 @@ export default function BooksCell() {
             isDark={isDark}
             onRowChange={() => void load()}
             onError={setError}
+            onReload={() => void load()}
           />
         )}
       </div>
