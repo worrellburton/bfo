@@ -44,7 +44,9 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
 
   const txns = await sb<LoanTxn[]>(
     "book_transactions?select=*&pending=eq.false" +
-      "&or=(loan_id.not.is.null,book_category.ilike.*(loan)*,intercompany_class.eq.loan)" +
+      // The ilike pattern is quoted — bare parentheses inside an or=() group
+      // break PostgREST's parser and the filter silently matches nothing.
+      '&or=(loan_id.not.is.null,book_category.ilike."*(loan)*",intercompany_class.eq.loan)' +
       "&order=date.desc&limit=2000"
   );
 
