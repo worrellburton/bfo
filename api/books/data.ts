@@ -58,6 +58,7 @@ type BookTxn = {
   counterparty_account_id: string | null;
   type_override: string | null;
   book_category: string | null;
+  loan_id: string | null;
   entity_id: string | null;
   entity_name: string | null;
   updated_at?: string;
@@ -119,9 +120,12 @@ function withLiveEntity(rows: BookTxn[], prefs: Map<string, Pref>): BookTxn[] {
   });
 }
 
-type EffType = "normal" | "transfer" | "intercompany";
+type EffType = "normal" | "transfer" | "intercompany" | "loan";
 
 function effType(t: BookTxn): EffType {
+  // A transaction attached to a loan is a balance-sheet movement — that
+  // attachment is the user's most explicit signal, so it wins outright.
+  if (t.loan_id) return "loan";
   if (t.type_override === "normal" || t.type_override === "transfer" || t.type_override === "intercompany") {
     return t.type_override;
   }
@@ -400,6 +404,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
 
       const monthOf = (d: string) => Number(d.slice(5, 7)) - 1;
+      const loanNames = new Map(
+        (await fetchAll<{ id: string; name: string }>("book_loans?select=id,name")).map((l) => [l.id, l.name])
+      );
+      const rowLabel = (t: BookTxn) =>
+        t.loan_id ? `${loanNames.get(t.loan_id) ?? "Loan"} (loan)` : label(t);
 
       // ── One P&L cell: the transactions behind it ──────────────────────
       if (report === "cell") {
@@ -419,7 +428,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
             if (section === "net") return eff === "normal";
             if (section === "transfers") {
-              return eff === "transfer" && (!wantLabel || label(t) === wantLabel);
+              return (eff === "transfer" || eff === "loan") && (!wantLabel || rowLabel(t) === wantLabel);
             }
             if (section === "intercompany") {
               return eff === "intercompany" && !eliminated(t, selection, prefs);
@@ -454,12 +463,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           else interOut[m] += t.amount;
           continue;
         }
-        if (eff === "transfer") {
+        if (eff === "transfer" || eff === "loan") {
           if (t.amount < 0) transfersIn[m] += -t.amount;
           else transfersOut[m] += t.amount;
-          const row = transferCats.get(label(t)) ?? zeros();
+          const row = transferCats.get(rowLabel(t)) ?? zeros();
           row[m] += -t.amount; // net: in positive, out negative
-          transferCats.set(label(t), row);
+          transferCats.set(rowLabel(t), row);
           continue;
         }
 
@@ -519,6 +528,93 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "book_rules?loan_id=not.is.null&select=id,match,loan_id"
       );
       return res.json({ loans, rules, total_outstanding: totalOutstanding });
+    }
+
+    // ── Balance sheet: what the family owns and owes, as of the last
+    //    balance snapshot. Cash and investments from the connected accounts,
+    //    loans receivable from the ledger, credit cards as liabilities. ──────
+    if (report === "balance-sheet") {
+      const selection = parseEntities(String(req.query.entity ?? "all"));
+      const prefs = await getPrefs();
+
+      const identities = await fetchAll<{
+        account_id: string;
+        institution_name: string | null;
+        mask: string | null;
+        subtype: string | null;
+        account_name: string | null;
+        nickname: string | null;
+        entity_id: string | null;
+        entity_name: string | null;
+        hidden: boolean;
+        archived_at: string | null;
+      }>("plaid_account_prefs?select=*&archived_at=is.null");
+      const states = await fetchAll<{ account_id: string; balance: number | null; seen_at: string }>(
+        "plaid_account_state?select=account_id,balance,seen_at"
+      );
+      const stateBy = new Map(states.map((st) => [st.account_id, st]));
+
+      const INVESTISH = /ira|brokerage|trust|401|403|roth|529|pension|annuity|mutual/i;
+      type Row = { label: string; detail: string; balance: number };
+      const cash: Row[] = [];
+      const investments: Row[] = [];
+      const credit: Row[] = [];
+      let asOf: string | null = null;
+
+      for (const id of identities) {
+        if (id.hidden) continue;
+        if (selection && (!id.entity_id || !selection.includes(id.entity_id))) continue;
+        const st = stateBy.get(id.account_id);
+        if (!st || st.balance == null) continue; // no snapshot = not on the sheet
+        if (Math.abs(Number(st.balance)) < 0.005) continue;
+        if (!asOf || st.seen_at > asOf) asOf = st.seen_at;
+
+        const subtype = (id.subtype ?? "").toLowerCase();
+        const label = id.entity_name || id.nickname || id.account_name || "Account";
+        const detailBits = [id.institution_name, id.mask ? `····${id.mask}` : null, id.subtype]
+          .filter(Boolean)
+          .join(" · ");
+        const row: Row = { label, detail: detailBits, balance: Number(st.balance) };
+
+        if (subtype.includes("credit")) credit.push(row);
+        else if (INVESTISH.test(subtype)) investments.push(row);
+        else cash.push(row);
+      }
+
+      const byBalance = (a: Row, b: Row) => b.balance - a.balance;
+      cash.sort(byBalance);
+      investments.sort(byBalance);
+      credit.sort(byBalance);
+
+      // Loans receivable are family-level; they appear regardless of the
+      // entity selection so the sheet never hides money the family is owed.
+      const { loans } = await computeLoans();
+      const loanRows = loans
+        .filter((l) => Math.abs(l.outstanding) >= 0.005)
+        .map((l) => ({ label: l.name, detail: l.id ? "loan receivable" : "from categories", balance: l.outstanding }));
+
+      const sum = (rows: Row[]) => rows.reduce((total, r) => total + r.balance, 0);
+      const totals = {
+        cash: sum(cash),
+        investments: sum(investments),
+        loans: sum(loanRows),
+        credit: sum(credit),
+      };
+      const totalAssets = totals.cash + totals.investments + totals.loans;
+
+      return res.json({
+        as_of: asOf,
+        entity: selection ? selection.join(",") : "all",
+        sections: {
+          cash: { rows: cash, total: totals.cash },
+          investments: { rows: investments, total: totals.investments },
+          loans: { rows: loanRows, total: totals.loans },
+          credit: { rows: credit, total: totals.credit },
+        },
+        total_assets: totalAssets,
+        total_liabilities: totals.credit,
+        net_worth: totalAssets - totals.credit,
+      });
     }
 
     if (report === "vendors") {

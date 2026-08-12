@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
@@ -25,6 +25,24 @@ type Pnl = {
 
 type Entity = { id: string; name: string };
 
+type BsRow = { label: string; detail: string; balance: number };
+type BalanceSheet = {
+  as_of: string | null;
+  sections: {
+    cash: { rows: BsRow[]; total: number };
+    investments: { rows: BsRow[]; total: number };
+    loans: { rows: BsRow[]; total: number };
+    credit: { rows: BsRow[]; total: number };
+  };
+  total_assets: number;
+  total_liabilities: number;
+  net_worth: number;
+};
+
+function moneyFull(n: number): string {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function money(n: number): string {
@@ -45,6 +63,8 @@ export default function BooksReports() {
   const pickerRef = useRef<HTMLDivElement>(null);
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [pnl, setPnl] = useState<Pnl | null>(null);
+  const [view, setView] = useState<"pnl" | "balance">("pnl");
+  const [sheet, setSheet] = useState<BalanceSheet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -75,19 +95,28 @@ export default function BooksReports() {
     setError("");
     void (async () => {
       try {
-        const res = await authFetch(
-          `/api/books/data?report=pnl&entity=${encodeURIComponent(entityParam)}&year=${year}`
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || "Couldn't build the P&L.");
-        setPnl(data);
+        if (view === "pnl") {
+          const res = await authFetch(
+            `/api/books/data?report=pnl&entity=${encodeURIComponent(entityParam)}&year=${year}`
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data?.message || "Couldn't build the P&L.");
+          setPnl(data);
+        } else {
+          const res = await authFetch(
+            `/api/books/data?report=balance-sheet&entity=${encodeURIComponent(entityParam)}`
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data?.message || "Couldn't build the balance sheet.");
+          setSheet(data);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn't build the P&L.");
+        setError(err instanceof Error ? err.message : "Couldn't build that report.");
       } finally {
         setLoading(false);
       }
     })();
-  }, [entityParam, year]);
+  }, [entityParam, year, view]);
 
   const subtle = "text-gray-500";
   const border = isDark ? "border-white/10" : "border-gray-200";
@@ -155,11 +184,34 @@ export default function BooksReports() {
     <div className="max-w-6xl">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
         <div>
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Profit &amp; loss</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>
-            Cash basis · click any number for its transactions · movements between selected
-            entities are eliminated{pnl && pnl.eliminated_count > 0 ? ` (${pnl.eliminated_count} eliminated)` : ""}.
-          </p>
+          <div className={`inline-flex rounded-lg border p-0.5 mb-3 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+            {([["pnl", "Profit & loss"], ["balance", "Balance sheet"]] as const).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setView(value)}
+                aria-pressed={view === value}
+                className={`px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                  view === value
+                    ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
+                    : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "pnl" ? (
+            <p className={`text-sm ${subtle}`}>
+              Cash basis · click any number for its transactions · movements between selected
+              entities are eliminated{pnl && pnl.eliminated_count > 0 ? ` (${pnl.eliminated_count} eliminated)` : ""}.
+            </p>
+          ) : (
+            <p className={`text-sm ${subtle}`}>
+              What the family owns and owes
+              {sheet?.as_of ? ` · as of ${new Date(sheet.as_of).toLocaleString()}` : ""} · loans stay
+              on the sheet regardless of entity selection.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {/* Entity multi-select */}
@@ -219,17 +271,19 @@ export default function BooksReports() {
             )}
           </div>
 
-          <select
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            className={`px-3 py-2 rounded-lg text-sm border cursor-pointer ${
-              isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-            }`}
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          {view === "pnl" && (
+            <select
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              className={`px-3 py-2 rounded-lg text-sm border cursor-pointer ${
+                isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
+              }`}
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -239,7 +293,83 @@ export default function BooksReports() {
         </div>
       )}
 
-      {loading ? (
+      {view === "balance" ? (
+        loading ? (
+          <p className={`text-sm ${subtle}`}>Building the balance sheet…</p>
+        ) : !sheet ? null : (
+          <div className={`rounded-xl border overflow-hidden max-w-3xl ${card}`}>
+            <table className="w-full text-sm">
+              <tbody>
+                {(
+                  [
+                    ["Cash & banks", sheet.sections.cash],
+                    ["Investments", sheet.sections.investments],
+                    ["Loans receivable", sheet.sections.loans],
+                  ] as const
+                ).map(([title, section]) =>
+                  section.rows.length === 0 ? null : (
+                    <Fragment key={title}>
+                      <tr className={`border-t first:border-t-0 ${border}`}>
+                        <td colSpan={2} className={sectionHead}>{title}</td>
+                      </tr>
+                      {section.rows.map((r, i) => (
+                        <tr key={`${title}-${i}`} className={`border-t ${rowBorder}`}>
+                          <td className="px-4 py-2">
+                            {r.label}
+                            {r.detail && <span className={`ml-2 text-xs ${subtle}`}>{r.detail}</span>}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums">{moneyFull(r.balance)}</td>
+                        </tr>
+                      ))}
+                      <tr className={`border-t font-semibold ${rowBorder}`}>
+                        <td className="px-4 py-2">Total {title.toLowerCase()}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{moneyFull(section.total)}</td>
+                      </tr>
+                    </Fragment>
+                  )
+                )}
+
+                <tr className={`border-t font-semibold ${border}`}>
+                  <td className="px-4 py-2.5">Total assets</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-emerald-500">
+                    {moneyFull(sheet.total_assets)}
+                  </td>
+                </tr>
+
+                {sheet.sections.credit.rows.length > 0 && (
+                  <>
+                    <tr className={`border-t ${border}`}>
+                      <td colSpan={2} className={sectionHead}>Liabilities</td>
+                    </tr>
+                    {sheet.sections.credit.rows.map((r, i) => (
+                      <tr key={`credit-${i}`} className={`border-t ${rowBorder}`}>
+                        <td className="px-4 py-2">
+                          {r.label}
+                          {r.detail && <span className={`ml-2 text-xs ${subtle}`}>{r.detail}</span>}
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-rose-400">
+                          ({moneyFull(r.balance)})
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className={`border-t font-semibold ${rowBorder}`}>
+                      <td className="px-4 py-2">Total liabilities</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-rose-400">
+                        ({moneyFull(sheet.total_liabilities)})
+                      </td>
+                    </tr>
+                  </>
+                )}
+
+                <tr className={`border-t-2 font-bold ${border}`}>
+                  <td className="px-4 py-3">Net worth</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-lg">{moneyFull(sheet.net_worth)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : loading ? (
         <p className={`text-sm ${subtle}`}>Building the P&amp;L…</p>
       ) : !pnl ? null : pnl.transaction_count === 0 ? (
         <p className={`text-sm ${subtle}`}>

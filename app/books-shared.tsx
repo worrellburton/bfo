@@ -38,7 +38,8 @@ export function pretty(cat: string | null): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function effType(t: Txn): "normal" | "transfer" | "intercompany" {
+export function effType(t: Txn): "normal" | "transfer" | "intercompany" | "loan" {
+  if (t.loan_id) return "loan";
   if (t.type_override === "normal" || t.type_override === "transfer" || t.type_override === "intercompany") {
     return t.type_override;
   }
@@ -236,6 +237,27 @@ export function TxnTable({
                 <td className={`px-2 py-2.5 whitespace-nowrap ${t.entity_name ? "" : "text-amber-500"}`}>
                   {t.entity_name || "Unmapped"}
                 </td>
+                {t.loan_id ? (
+                  <>
+                    {/* On a loan, the movement posts to the loan account —
+                        category and type give way to the balance sheet. */}
+                    <td className="px-2 py-2.5">
+                      <span className={`inline-block px-2 py-1 rounded-md text-xs ${
+                        isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800"
+                      }`}>
+                        {loans.find((l) => l.id === t.loan_id)?.name ?? "Loan"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <span className={`inline-block px-2 py-1 rounded-md text-xs font-medium ${
+                        isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"
+                      }`}>
+                        {inflow ? "Loan payback" : "Loan advance"}
+                      </span>
+                    </td>
+                  </>
+                ) : (
+                  <>
                 <td className="px-2 py-2.5">
                   <select
                     value={t.book_category ?? ""}
@@ -261,6 +283,8 @@ export function TxnTable({
                     <option value="intercompany">Roll-up</option>
                   </select>
                 </td>
+                  </>
+                )}
                 <td className={`px-2 py-2.5 text-right whitespace-nowrap tabular-nums font-medium ${inflow ? "text-emerald-500" : ""}`}>
                   {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
                 </td>
