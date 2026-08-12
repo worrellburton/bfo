@@ -26,6 +26,7 @@ export type LoanTxn = {
 export type Loan = {
   id: string | null; // null = implicit (category-only, not yet registered)
   name: string;
+  show_on_report: boolean;
   starting_balance: number;
   advanced: number;
   repaid: number;
@@ -39,8 +40,8 @@ const cleanName = (category: string) => category.replace(/\s*\(loan\)\s*$/i, "")
 
 export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding: number }> {
   const registry = await sb<
-    Array<{ id: string; name: string; starting_balance: number; archived_at: string | null }>
-  >("book_loans?archived_at=is.null&select=id,name,starting_balance,archived_at&order=created_at.asc");
+    Array<{ id: string; name: string; starting_balance: number; show_on_report: boolean; archived_at: string | null }>
+  >("book_loans?archived_at=is.null&select=id,name,starting_balance,show_on_report,archived_at&order=created_at.asc");
 
   const txns = await sb<LoanTxn[]>(
     "book_transactions?select=*&pending=eq.false" +
@@ -55,6 +56,7 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
     loans.set(row.name.toLowerCase(), {
       id: row.id,
       name: row.name,
+      show_on_report: row.show_on_report !== false,
       starting_balance: Number(row.starting_balance) || 0,
       advanced: 0,
       repaid: 0,
@@ -79,6 +81,7 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
         loan = {
           id: null,
           name: name || "Loan",
+          show_on_report: true,
           starting_balance: 0,
           advanced: 0,
           repaid: 0,

@@ -334,6 +334,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
     const intercompanyMarked = await markIntercompany(pairSince);
 
+    // Auto-attach rules: descriptions the user tied to a loan. Only unset
+    // rows are filled, so a manual detach isn't fought over — but a new
+    // arrival matching the rule always lands on its loan.
+    try {
+      const loanRules = await db("book_rules?loan_id=not.is.null&select=match,loan_id");
+      if (loanRules.ok) {
+        for (const rule of (await loanRules.json()) as Array<{ match: string; loan_id: string }>) {
+          const safe = rule.match.replace(/["*%,()]/g, " ").trim();
+          if (safe.length < 3) continue;
+          const pattern = encodeURIComponent(`*${safe}*`);
+          await db(
+            `book_transactions?loan_id=is.null&or=(merchant_name.ilike."${pattern}",name.ilike."${pattern}")`,
+            { method: "PATCH", body: JSON.stringify({ loan_id: rule.loan_id }) }
+          ).catch(() => {});
+        }
+      }
+    } catch {
+      // loan attachment is retried next sync
+    }
+
     // Keep entity stamps in step with the mappings page — remapping an account
     // moves its whole history to the new entity.
     for (const [accountId, pref] of prefs) {

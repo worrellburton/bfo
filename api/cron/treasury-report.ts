@@ -933,7 +933,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const loadLoans = async (): Promise<Loan[]> => {
     try {
-      return (await computeLoans()).loans;
+      // Each loan carries its own "show on Treasury report" toggle.
+      return (await computeLoans()).loans.filter((l) => l.show_on_report);
     } catch {
       return []; // the report still sends if the loan ledger hiccups
     }

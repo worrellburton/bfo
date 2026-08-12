@@ -186,6 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!Number.isFinite(n)) return res.status(400).json({ error: "invalid_balance" });
         patch.starting_balance = n;
       }
+      if (req.body.show_on_report !== undefined) patch.show_on_report = !!req.body.show_on_report;
       if (req.body.archived !== undefined) patch.archived_at = req.body.archived ? new Date().toISOString() : null;
       if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
       const r = await db(`book_loans?id=eq.${loanId}`, {
@@ -197,6 +198,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rows = (await r.json()) as any[];
       if (!rows.length) return res.status(404).json({ error: "not_found" });
       return res.json({ loan: rows[0] });
+    }
+
+    // ── Auto-attach rule: descriptions containing X belong to this loan ──
+    if (req.method === "POST" && req.body?.action === "loan_rule") {
+      const match = String(req.body.match ?? "").trim().slice(0, 120);
+      const loanId = String(req.body.loan_id ?? "");
+      if (!match || match.length < 3) {
+        return res.status(400).json({ error: "match_too_short", message: "Use at least 3 characters." });
+      }
+      if (!/^[0-9a-f-]{36}$/i.test(loanId)) return res.status(400).json({ error: "missing_loan_id" });
+
+      const ruleRes = await db("book_rules", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ match, loan_id: loanId }),
+      });
+      if (!ruleRes.ok) {
+        console.error("loan rule save failed:", (await ruleRes.text()).slice(0, 200));
+        return res.status(500).json({ error: "rule_failed", message: "Couldn't save that rule." });
+      }
+      const rule = ((await ruleRes.json()) as any[])[0];
+
+      // Attach everything already synced that matches and isn't on a loan yet.
+      const safe = match.replace(/["*%,()]/g, " ").trim();
+      const pattern = encodeURIComponent(`*${safe}*`);
+      const r = await db(
+        `book_transactions?loan_id=is.null&or=(merchant_name.ilike."${pattern}",name.ilike."${pattern}")`,
+        {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({ loan_id: loanId }),
+        }
+      );
+      const attached = r.ok ? ((await r.json()) as any[]).length : 0;
+      return res.json({ rule, attached });
+    }
+
+    if (req.method === "POST" && req.body?.action === "delete_rule") {
+      const ruleId = String(req.body.rule_id ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(ruleId)) return res.status(400).json({ error: "missing_rule_id" });
+      await db(`book_rules?id=eq.${ruleId}`, { method: "DELETE" });
+      return res.json({ deleted: true });
     }
 
     // ── "All of these, and from now on": bulk categorize + store a rule ──
@@ -472,7 +515,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (report === "loans") {
       const { loans, totalOutstanding } = await computeLoans();
-      return res.json({ loans, total_outstanding: totalOutstanding });
+      const rules = await fetchAll<{ id: string; match: string; loan_id: string | null }>(
+        "book_rules?loan_id=not.is.null&select=id,match,loan_id"
+      );
+      return res.json({ loans, rules, total_outstanding: totalOutstanding });
     }
 
     if (report === "vendors") {

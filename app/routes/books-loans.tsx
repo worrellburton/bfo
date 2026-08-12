@@ -10,6 +10,7 @@ export function meta() {
 type Loan = {
   id: string | null;
   name: string;
+  show_on_report: boolean;
   starting_balance: number;
   advanced: number;
   repaid: number;
@@ -144,6 +145,8 @@ export default function BooksLoans() {
   const isDark = theme === "dark";
 
   const [loans, setLoans] = useState<Loan[]>([]);
+  const [rules, setRules] = useState<Array<{ id: string; match: string; loan_id: string | null }>>([]);
+  const [ruleDraft, setRuleDraft] = useState<Record<string, string>>({});
   const [registry, setRegistry] = useState<Array<{ id: string; name: string }>>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,6 +170,7 @@ export default function BooksLoans() {
       const loansData = await loansRes.json().catch(() => ({}));
       if (!loansRes.ok) throw new Error(loansData?.message || "Couldn't load loans.");
       setLoans(loansData.loans ?? []);
+      setRules(loansData.rules ?? []);
       if (metaRes.ok) {
         const meta = await metaRes.json();
         setRegistry(meta.loans ?? []);
@@ -318,8 +322,7 @@ export default function BooksLoans() {
             <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
           </div>
           <div className={`text-sm ${subtle}`}>
-            Advanced {money(loans.reduce((s, l) => s + l.advanced, 0))} · Repaid{" "}
-            {money(loans.reduce((s, l) => s + l.repaid, 0))} · Starting{" "}
+            Advanced {money(loans.reduce((s, l) => s + l.advanced, 0))} · Starting{" "}
             {money(loans.reduce((s, l) => s + l.starting_balance, 0))}
           </div>
         </div>
@@ -376,7 +379,6 @@ export default function BooksLoans() {
                 <div className={`flex gap-6 text-sm tabular-nums ${subtle}`}>
                   <span>Start {money(loan.starting_balance)}</span>
                   <span>Advanced {money(loan.advanced)}</span>
-                  <span className={loan.repaid ? "text-emerald-500" : ""}>Repaid {money(loan.repaid)}</span>
                 </div>
                 <span className="text-lg font-semibold tabular-nums shrink-0">{money(loan.outstanding)}</span>
               </button>
@@ -392,6 +394,93 @@ export default function BooksLoans() {
                         onAttached={() => void load()}
                         onError={setError}
                       />
+                    </div>
+                  )}
+                  {loan.id && (
+                    <div className="px-5 pt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+                      <label className={`flex items-center gap-2 text-xs cursor-pointer ${subtle}`}>
+                        <input
+                          type="checkbox"
+                          checked={loan.show_on_report}
+                          onChange={async (e) => {
+                            try {
+                              await post({ action: "update_loan", loan_id: loan.id, show_on_report: e.target.checked });
+                              await load();
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "Couldn't save that.");
+                            }
+                          }}
+                        />
+                        Show on Treasury report
+                      </label>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const draft = (ruleDraft[key] ?? "").trim();
+                          if (draft.length < 3) {
+                            setError("Rule text needs at least 3 characters.");
+                            return;
+                          }
+                          void (async () => {
+                            try {
+                              const out = await post({ action: "loan_rule", loan_id: loan.id, match: draft });
+                              setRuleDraft((prev) => ({ ...prev, [key]: "" }));
+                              await load();
+                              if (out.attached) setError("");
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "Couldn't save that rule.");
+                            }
+                          })();
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <span className={`text-xs ${subtle}`}>Auto-attach descriptions containing</span>
+                        <input
+                          value={ruleDraft[key] ?? ""}
+                          onChange={(e) => setRuleDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder="VISIONQUEST"
+                          className={`${field} w-44 py-1.5 text-xs`}
+                        />
+                        <button
+                          type="submit"
+                          disabled={saving || (ruleDraft[key] ?? "").trim().length < 3}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
+                            isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
+                          }`}
+                        >
+                          Save rule
+                        </button>
+                      </form>
+
+                      {rules
+                        .filter((r) => r.loan_id === loan.id)
+                        .map((r) => (
+                          <span
+                            key={r.id}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
+                              isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            “{r.match}”
+                            <button
+                              onClick={() => {
+                                void (async () => {
+                                  try {
+                                    await post({ action: "delete_rule", rule_id: r.id });
+                                    await load();
+                                  } catch (err) {
+                                    setError(err instanceof Error ? err.message : "Couldn't remove that rule.");
+                                  }
+                                })();
+                              }}
+                              title="Remove rule"
+                              className={`cursor-pointer ${subtle} hover:text-red-400`}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
                     </div>
                   )}
                   <div className="px-5 py-3 flex flex-wrap items-center gap-3">
