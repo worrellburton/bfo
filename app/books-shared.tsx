@@ -22,6 +22,7 @@ export type Txn = {
   counterparty_account_id: string | null;
   type_override: string | null;
   book_category: string | null;
+  loan_id: string | null;
   entity_id: string | null;
   entity_name: string | null;
   updated_at?: string;
@@ -49,7 +50,12 @@ export function catLabel(t: Txn): string {
   return t.book_category || pretty(t.plaid_category);
 }
 
-async function saveTxn(patch: { transaction_id: string; type_override?: string; book_category?: string }) {
+async function saveTxn(patch: {
+  transaction_id: string;
+  type_override?: string;
+  book_category?: string;
+  loan_id?: string | null;
+}) {
   const res = await authFetch("/api/books/data", { method: "POST", body: JSON.stringify(patch) });
   if (!res.ok) throw new Error("Couldn't save that change.");
   return (await res.json()).transaction as Txn;
@@ -63,12 +69,14 @@ async function saveTxn(patch: { transaction_id: string; type_override?: string; 
 export function TxnTable({
   rows,
   categories,
+  loans = [],
   isDark,
   onRowChange,
   onError,
 }: {
   rows: Txn[];
   categories: string[];
+  loans?: Array<{ id: string; name: string }>;
   isDark: boolean;
   onRowChange: (t: Txn) => void;
   onError: (message: string) => void;
@@ -91,7 +99,7 @@ export function TxnTable({
     });
   }
 
-  async function update(t: Txn, patch: { type_override?: string; book_category?: string }) {
+  async function update(t: Txn, patch: { type_override?: string; book_category?: string; loan_id?: string | null }) {
     setBusy(t.transaction_id);
     try {
       const saved = await saveTxn({ transaction_id: t.transaction_id, ...patch });
@@ -227,6 +235,22 @@ export function TxnTable({
                           <span className="text-xs break-all">{v}</span>
                         </div>
                       ))}
+                      {loans.length > 0 && (
+                        <div className="min-w-0">
+                          <span className={`text-[10px] uppercase tracking-wider block ${subtle}`}>Loan</span>
+                          <select
+                            value={t.loan_id ?? ""}
+                            disabled={busy === t.transaction_id}
+                            onChange={(e) => void update(t, { loan_id: e.target.value || null })}
+                            className={select}
+                          >
+                            <option value="">Not a loan</option>
+                            {loans.map((l) => (
+                              <option key={l.id} value={l.id}>{l.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>

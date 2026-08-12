@@ -59,6 +59,7 @@ const navItems = [
       { to: "/books/transactions", label: "Transactions" },
       { to: "/books/reports", label: "Reports" },
       { to: "/books/vendors", label: "Vendors" },
+      { to: "/books/loans", label: "Loans" },
     ],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">

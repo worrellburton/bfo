@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { computeLoans, type Loan } from "../../lib/books-loans.js";
 import { currentUser, formatPhone, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 
 /**
@@ -377,7 +378,8 @@ function renderText(
   s: Shaped,
   movement: number,
   now: Date,
-  activity: { account: Account; txns: Txn[] } | null = null
+  activity: { account: Account; txns: Txn[] } | null = null,
+  loans: Loan[] = []
 ): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
@@ -398,6 +400,13 @@ function renderText(
     for (const t of activity.txns) {
       out.push(`  ${t.date}  ${t.name}: ${signed(-t.amount, t.currency ?? "USD")}${t.pending ? " (pending)" : ""}`);
     }
+  }
+  const owedLoans = loans.filter((l) => Math.abs(l.outstanding) >= 0.005);
+  if (owedLoans.length) {
+    out.push("", "LOANS RECEIVABLE");
+    for (const l of owedLoans) out.push(`  ${l.name}: ${money(l.outstanding)}`);
+    const owed = owedLoans.reduce((sum, l) => sum + l.outstanding, 0);
+    out.push(`  Total owed: ${money(owed)} — with loans: ${money(s.totalValue + owed)}`);
   }
   out.push("", `Open Treasury: ${APP_URL}/treasury`);
   return out.join("\n");
@@ -573,7 +582,12 @@ function renderHtml(
   now: Date,
   connections: Connection[] = [],
   activity: { account: Account; txns: Txn[] } | null = null,
-  extras: { lastReportDate?: string | null; footerNote?: string | null; preparedFor?: string | null } = {}
+  extras: {
+    lastReportDate?: string | null;
+    footerNote?: string | null;
+    preparedFor?: string | null;
+    loans?: Loan[];
+  } = {}
 ): string {
   const statCard = (label: string, value: string, move: number, spark = "") => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -727,6 +741,15 @@ function renderHtml(
         <div style="margin-top:3px;font-size:32px;font-weight:600;color:#fff;">
           ${money(s.totalValue)}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
         </div>
+        ${(() => {
+          const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
+          if (!loans.length) return "";
+          const owed = loans.reduce((sum, l) => sum + l.outstanding, 0);
+          return `<div style="margin-top:4px;font-size:13px;color:rgba(255,255,255,0.55);">
+            With loans receivable: <span style="color:#fff;font-weight:600;">${money(s.totalValue + owed)}</span>
+            <span style="color:rgba(255,255,255,0.35);">(+${money(owed)} owed to the family)</span>
+          </div>`;
+        })()}
         <div style="margin-top:5px;font-size:12px;color:rgba(255,255,255,0.6);">${narrative(s)}</div>
         ${(() => {
           const runway = cashRunway(history, s.cash);
@@ -792,6 +815,40 @@ function renderHtml(
           s.investMove,
           { zeros: s.zeroCounts.invest }
         )}
+        ${(() => {
+          const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
+          if (!loans.length) return "";
+          const owed = loans.reduce((sum, l) => sum + l.outstanding, 0);
+          const rows = loans
+            .map(
+              (l, i) => `<tr>
+                <td style="padding:9px 0 ${i === loans.length - 1 ? "2px" : "0"};${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;color:rgba(255,255,255,0.85);">
+                  ${l.name}
+                  <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:1px;">
+                    ${l.repaid > 0 ? `repaid ${money(l.repaid)} of ${money(l.starting_balance + l.advanced)}` : l.last_date ? `advanced through ${l.last_date}` : "starting balance"}
+                  </div>
+                </td>
+                <td align="right" style="padding:9px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;font-weight:600;color:#fbbf24;white-space:nowrap;">
+                  ${money(l.outstanding)}
+                </td>
+              </tr>`
+            )
+            .join("");
+          return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+            style="margin-top:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
+            <tr><td style="padding:14px 16px 8px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);padding-bottom:6px;">
+                    Loans receivable
+                  </td>
+                  <td align="right" style="font-size:12px;font-weight:600;color:#fbbf24;padding-bottom:6px;">${money(owed)}</td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+            </td></tr>
+          </table>`;
+        })()}
         ${renderActivity(activity)}
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.10);">
@@ -874,6 +931,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = `https://${req.headers.host}`;
   const now = new Date();
 
+  const loadLoans = async (): Promise<Loan[]> => {
+    try {
+      return (await computeLoans()).loans;
+    } catch {
+      return []; // the report still sends if the loan ledger hiccups
+    }
+  };
+
   if (req.method === "POST") {
     try {
       const me = await currentUser(req);
@@ -888,10 +953,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { accounts, connections } = await fetchTreasury(origin, authHeaders);
       const s = shape(accounts);
       const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-      const [history, activity, lastReportDate] = await Promise.all([
+      const [history, activity, lastReportDate, loans] = await Promise.all([
         loadHistory(),
         fetchRecentTxns(origin, authHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
         lastDeliveryDate(),
+        loadLoans(),
       ]);
 
       let recipients = [me.email];
@@ -911,8 +977,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendEmailWithRetry(
           recipients,
           subjectLine(s, movement, !broadcast, now, true),
-          renderText(s, movement, now, activity),
+          renderText(s, movement, now, activity, loans),
           renderHtml(s, movement, history, now, connections, activity, {
+            loans,
             lastReportDate,
             footerNote: broadcast
               ? `Sent manually by ${me.name ?? me.email}`
@@ -998,10 +1065,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { accounts, connections } = pulled;
     const s = shape(accounts);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-    const [history, activity, lastReportDate] = await Promise.all([
+    const [history, activity, lastReportDate, loans] = await Promise.all([
       loadHistory(),
       fetchRecentTxns(origin, cronHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
       lastDeliveryDate(),
+      loadLoans(),
     ]);
 
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
@@ -1017,8 +1085,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendEmailWithRetry(
           recipients,
           subjectLine(s, movement, false, now),
-          renderText(s, movement, now, activity),
+          renderText(s, movement, now, activity, loans),
           renderHtml(s, movement, history, now, connections, activity, {
+            loans,
             lastReportDate,
             footerNote: nextLabel ? `Next report ${nextLabel}` : null,
             preparedFor: user.name ?? "the Burton Family Office",

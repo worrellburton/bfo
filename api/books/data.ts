@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
+import { computeLoans } from "../../lib/books-loans.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -154,9 +155,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!user) return res.status(401).json({ error: "unauthorized" });
 
   try {
+    // ── Loan registry actions ───────────────────────────────────────────
+    if (req.method === "POST" && req.body?.action === "create_loan") {
+      const name = String(req.body.name ?? "").trim().slice(0, 80);
+      if (!name) return res.status(400).json({ error: "missing_name", message: "Give the loan a name." });
+      const starting = Number(req.body.starting_balance ?? 0);
+      const r = await db("book_loans", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ name, starting_balance: Number.isFinite(starting) ? starting : 0 }),
+      });
+      if (!r.ok) {
+        console.error("create loan failed:", (await r.text()).slice(0, 300));
+        return res.status(500).json({ error: "create_failed", message: "Couldn't create that loan." });
+      }
+      return res.json({ loan: ((await r.json()) as any[])[0] });
+    }
+
+    if (req.method === "POST" && req.body?.action === "update_loan") {
+      const loanId = String(req.body.loan_id ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(loanId)) return res.status(400).json({ error: "missing_loan_id" });
+      const patch: Record<string, unknown> = {};
+      if (req.body.name !== undefined) {
+        const name = String(req.body.name).trim().slice(0, 80);
+        if (!name) return res.status(400).json({ error: "missing_name" });
+        patch.name = name;
+      }
+      if (req.body.starting_balance !== undefined) {
+        const n = Number(req.body.starting_balance);
+        if (!Number.isFinite(n)) return res.status(400).json({ error: "invalid_balance" });
+        patch.starting_balance = n;
+      }
+      if (req.body.archived !== undefined) patch.archived_at = req.body.archived ? new Date().toISOString() : null;
+      if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
+      const r = await db(`book_loans?id=eq.${loanId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) return res.status(500).json({ error: "update_failed", message: "Couldn't save that loan." });
+      const rows = (await r.json()) as any[];
+      if (!rows.length) return res.status(404).json({ error: "not_found" });
+      return res.json({ loan: rows[0] });
+    }
+
     // ── Edits: a person reclassifying a transaction ─────────────────────
     if (req.method === "POST") {
-      const { transaction_id, type_override, book_category } = req.body ?? {};
+      const { transaction_id, type_override, book_category, loan_id } = req.body ?? {};
       if (!transaction_id || typeof transaction_id !== "string") {
         return res.status(400).json({ error: "missing_transaction_id" });
       }
@@ -170,6 +215,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (book_category !== undefined) {
         const trimmed = book_category === null ? null : String(book_category).trim().slice(0, 60);
         patch.book_category = trimmed || null;
+      }
+      if (loan_id !== undefined) {
+        if (loan_id !== null && !/^[0-9a-f-]{36}$/i.test(String(loan_id))) {
+          return res.status(400).json({ error: "invalid_loan_id" });
+        }
+        patch.loan_id = loan_id;
       }
       if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
 
@@ -212,7 +263,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
       const categories = [...new Set(cats.map((c) => c.book_category!))].sort();
 
-      return res.json({ entities, categories, total_transactions: total, last_synced_at: last });
+      const loanRows = await fetchAll<{ id: string; name: string }>(
+        "book_loans?archived_at=is.null&select=id,name&order=name.asc"
+      );
+
+      return res.json({ entities, categories, loans: loanRows, total_transactions: total, last_synced_at: last });
     }
 
     if (report === "transactions") {
@@ -377,6 +432,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           total: interIn.reduce((s, v) => s + v, 0) - interOut.reduce((s, v) => s + v, 0),
         },
       });
+    }
+
+    if (report === "loans") {
+      const { loans, totalOutstanding } = await computeLoans();
+      return res.json({ loans, total_outstanding: totalOutstanding });
     }
 
     if (report === "vendors") {
