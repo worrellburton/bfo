@@ -31,30 +31,31 @@ const RULES: Rule[] = [
   // ── Taxes first — several arrive mislabelled as transfers ─────────────
   { match: /internal revenue|gcrevenu|gc<>revenu|cochise county treasurer/i, category: "Taxes & government", type: "normal" },
 
-  // ── Entity-to-entity movements ────────────────────────────────────────
-  { match: ENTITY_NAMES, plaid: MOVEMENT, category: "Intercompany", type: "intercompany" },
-
-  // ── Family-internal movements (between the family's own accounts) ─────
-  { match: /^Burton$/i, plaid: MOVEMENT, category: "Internal moves", type: "transfer" },
-  { match: /transfer from mercury to another bank account|auto-routing transfer/i, category: "Internal moves", type: "transfer" },
-  { match: /io autopay|citi autopay|wf credit card|auto pay/i, category: "Credit card payments", type: "transfer" },
-  { match: /mobile deposit/i, category: "Deposits", type: "transfer" },
-  { match: /atm withdrawal|withdrawal authorized/i, category: "Cash withdrawals", type: "normal" },
-  { match: /^check$/i, category: "Checks written", type: "normal" },
-
-  // ── Income ────────────────────────────────────────────────────────────
+  // ── Real income and bills whose text often carries a family name — they
+  //    must win before the broad internal-move rules below ───────────────
+  { match: /social security|ssa treas/i, category: "Social Security", type: "normal" },
   { match: /focus hospitalit/i, category: "Property income", type: "normal" },
-  { match: /social security/i, category: "Social Security", type: "normal" },
   { match: /interest payment|cashback|cash bonus for referring/i, category: "Interest & rewards", type: "normal" },
+  { match: /tep corporate|tucson electric/i, category: "Utilities", type: "normal" },
+  { match: /payment escrow/i, category: "Mortgage & escrow", type: "normal" },
+  { match: /io autopay|citi autopay|wf credit card|auto pay/i, category: "Credit card payments", type: "transfer" },
 
   // ── Loans the family expects back — reviewed in Transfers, not the P&L ─
   { match: /7a recovery|seven arrows/i, category: "Seven Arrows Recovery (loan)", type: "transfer" },
 
+  // ── Entity-to-entity movements ────────────────────────────────────────
+  { match: ENTITY_NAMES, plaid: MOVEMENT, category: "Intercompany", type: "intercompany" },
+
+  // ── Family-internal movements (between the family's own accounts) ─────
+  { match: /\bburton\b/i, plaid: MOVEMENT, category: "Internal moves", type: "transfer" },
+  { match: /transfer from mercury to another bank account|auto-routing transfer/i, category: "Internal moves", type: "transfer" },
+  { match: /mobile deposit/i, category: "Deposits", type: "transfer" },
+  { match: /atm withdrawal|withdrawal authorized/i, category: "Cash withdrawals", type: "normal" },
+  { match: /^check$/i, category: "Checks written", type: "normal" },
+
   { match: /catalog digital/i, category: "Outside services", type: "normal" },
 
   // ── Recurring operating expenses ──────────────────────────────────────
-  { match: /payment escrow/i, category: "Mortgage & escrow" },
-  { match: /tep corporate|tucson electric/i, category: "Utilities" },
   { match: /liberty mutual/i, category: "Insurance" },
   { match: /nest payroll|gusto/i, category: "Payroll & HR" },
   { match: /legalzoom|ecm a legalzoom|\bafp\b/i, category: "Legal & professional" },
@@ -81,6 +82,7 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
   [/^MEDICAL$/, "Medical"],
   [/^PERSONAL_CARE$/, "Personal care"],
   [/^INCOME$/, "Other income"],
+  [/^TRANSFER_(IN|OUT)$/, "Other transfers"],
   [/^LOAN_DISBURSEMENTS$/, "Loan proceeds"],
   [/^LOAN_PAYMENTS$/, "Loan payments"],
 ];
