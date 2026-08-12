@@ -47,8 +47,9 @@ const RULES: Rule[] = [
   { match: /social security/i, category: "Social Security", type: "normal" },
   { match: /interest payment|cashback|cash bonus for referring/i, category: "Interest & rewards", type: "normal" },
 
-  // ── Major outflows that deserve their own line ────────────────────────
-  { match: /7a recovery|seven arrows/i, category: "Seven Arrows Recovery", type: "normal" },
+  // ── Loans the family expects back — reviewed in Transfers, not the P&L ─
+  { match: /7a recovery|seven arrows/i, category: "Seven Arrows Recovery (loan)", type: "transfer" },
+
   { match: /catalog digital/i, category: "Outside services", type: "normal" },
 
   // ── Recurring operating expenses ──────────────────────────────────────

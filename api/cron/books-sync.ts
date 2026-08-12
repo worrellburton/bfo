@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
+import { categorize } from "../../lib/books-rules.js";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 /**
@@ -43,6 +44,8 @@ type TxnRow = {
   plaid_category_detailed: string | null;
   payment_channel: string | null;
   txn_type: "normal" | "transfer";
+  intercompany: boolean;
+  book_category: string;
   entity_id: string | null;
   entity_name: string | null;
   hidden: boolean;
@@ -152,6 +155,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!user) return res.status(401).json({ error: "unauthorized" });
   }
 
+  // Re-run the chart-of-accounts rules over everything already synced —
+  // used after the rules change, so history reflects the current chart.
+  if (req.method === "POST" && req.body?.recategorize) {
+    try {
+      const groups = new Map<string, string[]>();
+      for (let from = 0; ; from += 1000) {
+        const r = await db(
+          "book_transactions?select=transaction_id,name,merchant_name,plaid_category",
+          { headers: { Range: `${from}-${from + 999}` } }
+        );
+        if (!r.ok) throw new Error(await r.text());
+        const rows = (await r.json()) as any[];
+        for (const t of rows) {
+          const rule = categorize(t.name, t.merchant_name, t.plaid_category);
+          const key = JSON.stringify([rule.category, rule.type]);
+          (groups.get(key) ?? groups.set(key, []).get(key)!).push(t.transaction_id);
+        }
+        if (rows.length < 1000) break;
+      }
+      let updated = 0;
+      for (const [key, ids] of groups) {
+        const [category, type] = JSON.parse(key) as [string, string | null];
+        const patch: Record<string, unknown> = { book_category: category };
+        if (type === "intercompany") patch.intercompany = true;
+        else if (type) {
+          patch.txn_type = type;
+          patch.intercompany = false;
+        }
+        for (let i = 0; i < ids.length; i += 200) {
+          const list = ids.slice(i, i + 200).map((id: string) => `"${id}"`).join(",");
+          const r = await db(`book_transactions?transaction_id=in.(${list})`, {
+            method: "PATCH",
+            body: JSON.stringify(patch),
+          });
+          if (r.ok) updated += Math.min(200, ids.length - i);
+        }
+      }
+      return res.status(200).json({ recategorized: true, updated, rules_groups: groups.size });
+    } catch (err: any) {
+      console.error("recategorize error:", err.message);
+      return res.status(500).json({ error: "recategorize_failed" });
+    }
+  }
+
   try {
     const client = getPlaidClient();
 
@@ -205,7 +252,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 plaid_category: t.personal_finance_category?.primary ?? null,
                 plaid_category_detailed: t.personal_finance_category?.detailed ?? null,
                 payment_channel: t.payment_channel ?? null,
-                txn_type: isTransfer(t) ? "transfer" : "normal",
+                ...(() => {
+                  // The chart-of-accounts rules classify each transaction; a
+                  // rule that forces a type beats the Plaid heuristic. A
+                  // user's type_override (not written here) beats both.
+                  const rule = categorize(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null);
+                  const heuristic = isTransfer(t) ? "transfer" : "normal";
+                  return {
+                    txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? heuristic) as "normal" | "transfer",
+                    intercompany: rule.type === "intercompany",
+                    book_category: rule.category,
+                  };
+                })(),
                 entity_id: pref?.entity_id ?? null,
                 entity_name: pref?.entity_name ?? null,
                 hidden: pref?.hidden ?? false,
