@@ -51,9 +51,13 @@ type Txn = {
   currency: string | null;
 };
 
-// The account whose recent activity rides at the bottom of the report,
-// picked by its mask. Override with REPORT_ACTIVITY_MASK.
-const ACTIVITY_MASK = process.env.REPORT_ACTIVITY_MASK?.trim() || "1886";
+// The accounts whose recent activity rides at the bottom of the report —
+// one card each, picked by mask. Override with REPORT_ACTIVITY_MASK (comma-
+// separated).
+const ACTIVITY_MASKS = (process.env.REPORT_ACTIVITY_MASK?.trim() || "1886,1116")
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
 const ACTIVITY_COUNT = 5;
 
 const APP_URL = "https://www.burtonfamilyoffice.com";
@@ -378,7 +382,7 @@ function renderText(
   s: Shaped,
   movement: number,
   now: Date,
-  activity: { account: Account; txns: Txn[] } | null = null,
+  activity: Array<{ account: Account; txns: Txn[] }> = [],
   loans: Loan[] = []
 ): string {
   const line = (a: Account) => {
@@ -395,9 +399,9 @@ function renderText(
   if (s.cashAccounts.length) out.push("CASH", ...s.cashAccounts.map(line));
   if (s.zeroCounts.cash) out.push(`  (+ ${s.zeroCounts.cash} zero-balance account${s.zeroCounts.cash === 1 ? "" : "s"})`);
   if (s.investAccounts.length) out.push("", "INVESTMENTS", ...s.investAccounts.map(line));
-  if (activity) {
-    out.push("", `RECENT ACTIVITY — ${accountLabel(activity.account)}`);
-    for (const t of activity.txns) {
+  for (const entry of activity) {
+    out.push("", `RECENT ACTIVITY — ${accountLabel(entry.account)}`);
+    for (const t of entry.txns) {
       out.push(`  ${t.date}  ${t.name}: ${signed(-t.amount, t.currency ?? "USD")}${t.pending ? " (pending)" : ""}`);
     }
   }
@@ -465,8 +469,7 @@ function renderGraph(fullHistory: DailyTotal[]): string {
   </table>`;
 }
 
-function renderActivity(activity: { account: Account; txns: Txn[] } | null): string {
-  if (!activity) return "";
+function renderActivity(activity: { account: Account; txns: Txn[] }): string {
   const { account, txns } = activity;
   const inflow = txns.filter((t) => -t.amount > 0).reduce((s, t) => s + -t.amount, 0);
   const outflow = txns.filter((t) => -t.amount < 0).reduce((s, t) => s + t.amount, 0);
@@ -581,7 +584,7 @@ function renderHtml(
   history: DailyTotal[],
   now: Date,
   connections: Connection[] = [],
-  activity: { account: Account; txns: Txn[] } | null = null,
+  activity: Array<{ account: Account; txns: Txn[] }> = [],
   extras: {
     lastReportDate?: string | null;
     footerNote?: string | null;
@@ -589,17 +592,16 @@ function renderHtml(
     loans?: Loan[];
   } = {}
 ): string {
-  const statCard = (label: string, value: string, move: number, spark = "") => `
+  const statCard = (label: string, value: string, spark = "", accent = "#fff") => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-      style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.10);border-radius:14px;">
-      <tr><td style="padding:13px 15px;">
-        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">${label}</div>
-        <div style="margin-top:4px;font-size:20px;font-weight:600;color:#fff;">${value}</div>
-        <div style="margin-top:3px;font-size:11px;min-height:13px;color:${
-          move === 0 ? "rgba(255,255,255,0.3)" : move > 0 ? "#34d399" : "#fb7185"
-        };">${move === 0 ? "no change" : signed(move)}</div>
-        ${spark}
-      </td></tr>
+      style="margin-top:8px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.10);border-radius:14px;">
+      <tr>
+        <td style="padding:13px 15px;">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">${label}</div>
+          <div style="margin-top:4px;font-size:20px;font-weight:600;color:${accent};">${value}</div>
+        </td>
+        <td align="right" valign="middle" style="padding:13px 15px;width:40%;">${spark}</td>
+      </tr>
     </table>`;
 
   /** The bank chip, tinted with the institution's own brand colour. */
@@ -752,41 +754,14 @@ function renderHtml(
             Accounts ${money(s.totalValue)} · Loans receivable <span style="color:#fbbf24;">${money(owed)}</span>
           </div>`;
         })()}
-        <div style="margin-top:5px;font-size:12px;color:rgba(255,255,255,0.6);">${narrative(s)}</div>
+        <div style="margin-top:8px;"></div>
+        ${statCard("Cash", money(s.cash), sparkline(history, (d) => Number(d.cash), "#38bdf8"))}
+        ${statCard("Investments", money(s.invested), sparkline(history, (d) => Number(d.invested), "#34d399"))}
         ${(() => {
-          const runway = cashRunway(history, s.cash);
-          return runway ? `<div style="margin-top:3px;font-size:11px;color:#fbbf24;">${runway}</div>` : "";
+          const owed = (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0);
+          return Math.abs(owed) < 0.005 ? "" : statCard("Loans receivable", money(owed), "", "#fbbf24");
         })()}
-        <div style="margin-top:3px;font-size:12px;color:${movement === 0 ? "rgba(255,255,255,0.45)" : movement > 0 ? "#34d399" : "#fb7185"};">
-          ${(() => {
-            const since = extras.lastReportDate ? ` (${extras.lastReportDate})` : "";
-            return movement === 0
-              ? `No movement since the last report${since}`
-              : `${movement > 0 ? "▲" : "▼"} ${signed(movement)} since the last report${since}`;
-          })()}
-        </div>
-        ${(() => {
-          const d7 = deltaOver(history, 7);
-          const d30 = deltaOver(history, 30);
-          if (d7 == null && d30 == null) return "";
-          const chunk = (label: string, v: { delta: number; pct: number } | null) =>
-            v == null
-              ? ""
-              : `${label} <span style="color:${v.delta >= 0 ? "#34d399" : "#fb7185"};">${signed(v.delta)} (${v.pct >= 0 ? "+" : ""}${v.pct.toFixed(1)}%)</span>`;
-          return `<div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.35);">${[chunk("7d", d7), chunk("30d", d30)].filter(Boolean).join(" · ")}</div>`;
-        })()}
-
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>
-          <td width="49%" valign="top">${statCard("Cash", money(s.cash), s.cashMove, sparkline(history, (d) => Number(d.cash), "#38bdf8"))}</td>
-          <td width="2%"></td>
-          <td width="49%" valign="top">${statCard("Investments", money(s.invested), s.investMove, sparkline(history, (d) => Number(d.invested), "#34d399"))}</td>
-        </tr></table>
         ${allocationBar(s)}
-        ${(() => {
-          const drift = allocationDrift(history);
-          if (drift == null) return "";
-          return `<div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,0.4);">Allocation shifted ${Math.abs(drift).toFixed(1)}pts toward ${drift > 0 ? "investments" : "cash"} over the last month.</div>`;
-        })()}
         ${bankStrip([...s.cashAccounts, ...s.investAccounts])}
         ${(() => {
           const closes = monthlyCloses(history);
@@ -851,7 +826,7 @@ function renderHtml(
             </td></tr>
           </table>`;
         })()}
-        ${renderActivity(activity)}
+        ${activity.map((entry) => renderActivity(entry)).join("")}
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.10);">
           <tr><td style="padding-top:16px;" align="center">
@@ -915,6 +890,19 @@ async function fetchRecentTxns(
   }
 }
 
+/** One activity card per spotlight mask, in the configured order. */
+async function fetchRecentActivity(
+  origin: string,
+  headers: Record<string, string>,
+  accounts: Account[]
+): Promise<Array<{ account: Account; txns: Txn[] }>> {
+  const picked = ACTIVITY_MASKS
+    .map((mask) => accounts.find((a) => a.mask === mask))
+    .filter((a): a is Account => !!a);
+  const results = await Promise.all(picked.map((a) => fetchRecentTxns(origin, headers, a)));
+  return results.filter((r): r is { account: Account; txns: Txn[] } => !!r);
+}
+
 async function fetchTreasury(
   origin: string,
   headers: Record<string, string>
@@ -958,7 +946,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
       const [history, activity, lastReportDate, loans] = await Promise.all([
         loadHistory(),
-        fetchRecentTxns(origin, authHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
+        fetchRecentActivity(origin, authHeaders, accounts),
         lastDeliveryDate(),
         loadLoans(),
       ]);
@@ -1070,7 +1058,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
     const [history, activity, lastReportDate, loans] = await Promise.all([
       loadHistory(),
-      fetchRecentTxns(origin, cronHeaders, accounts.find((a) => a.mask === ACTIVITY_MASK)),
+      fetchRecentActivity(origin, cronHeaders, accounts),
       lastDeliveryDate(),
       loadLoans(),
     ]);
