@@ -440,10 +440,13 @@ function renderGraph(fullHistory: DailyTotal[]): string {
       const h = Math.max(3, Math.round((totals[i] / max) * H));
       const cashH = totals[i] > 0 ? Math.round((Number(d.cash) / totals[i]) * h) : 0;
       const investH = Math.max(h - cashH, 0);
+      const latest = i === history.length - 1;
+      const green = latest ? "#34d399" : "rgba(52,211,153,0.45)";
+      const blue = latest ? "#38bdf8" : "rgba(56,189,248,0.45)";
       return `<td align="center" valign="bottom" style="padding:0 1px;">
         <div style="height:${H - h}px;font-size:0;line-height:0;">&nbsp;</div>
-        <div style="height:${investH}px;border-radius:2px 2px 0 0;background:#34d399;font-size:0;line-height:0;">&nbsp;</div>
-        <div style="height:${cashH}px;background:#38bdf8;font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:${investH}px;border-radius:2px 2px 0 0;background:${green};font-size:0;line-height:0;">&nbsp;</div>
+        <div style="height:${cashH}px;background:${blue};font-size:0;line-height:0;">&nbsp;</div>
       </td>`;
     })
     .join("");
@@ -462,7 +465,6 @@ function renderGraph(fullHistory: DailyTotal[]): string {
     <tr><td colspan="2" style="padding-top:6px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
         <td style="font-size:10px;color:rgba(255,255,255,0.35);">${first}</td>
-        <td align="center" style="font-size:10px;color:rgba(255,255,255,0.3);">low ${money(min)} · high ${money(max)}</td>
         <td align="right" style="font-size:10px;color:rgba(255,255,255,0.35);">${last}</td>
       </tr></table>
     </td></tr>
@@ -484,8 +486,7 @@ function renderActivity(activity: { account: Account; txns: Txn[] }): string {
       return `<tr>
         <td width="52" style="padding:8px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}color:rgba(255,255,255,0.4);font-size:11px;white-space:nowrap;">${date}</td>
         <td style="padding:8px 8px 8px 10px;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}color:rgba(255,255,255,0.85);font-size:13px;">
-          ${t.name}${t.pending ? ` <span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);">pending</span>` : ""}
-          ${t.category ? `<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:1px;">${t.category.replace(/_/g, " ").toLowerCase()}</div>` : ""}
+          ${t.name}${t.pending ? ` <span style="display:inline-block;width:5px;height:5px;border-radius:999px;background:#fbbf24;vertical-align:middle;" title="pending"></span>` : ""}
         </td>
         <td align="right" style="padding:8px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;font-weight:600;white-space:nowrap;color:${amount > 0 ? "#34d399" : "#fff"};">
           ${signed(amount, t.currency ?? "USD")}
@@ -501,7 +502,6 @@ function renderActivity(activity: { account: Account; txns: Txn[] }): string {
         <tr>
           <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);padding-bottom:8px;">
             Recent activity
-            <span style="letter-spacing:0;text-transform:none;color:rgba(255,255,255,0.3);"> · in <span style="color:#34d399;">${money(inflow)}</span> / out ${money(outflow)}</span>
           </td>
           <td align="right" style="padding-bottom:8px;">
             <span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:600;color:#fff;background:rgba(${rgb},0.28);border:1px solid rgba(${rgb},0.55);">
@@ -518,22 +518,26 @@ function renderActivity(activity: { account: Account; txns: Txn[] }): string {
   </table>`;
 }
 
-/** One stacked bar: how the total splits between cash and investments. */
-function allocationBar(s: Shaped): string {
-  const base = s.cash + s.invested;
+/** One stacked bar: cash, investments and loans as shares of total value. */
+function allocationBar(s: Shaped, loansTotal = 0): string {
+  const base = s.cash + s.invested + loansTotal;
   if (base <= 0) return "";
   const cashPct = Math.round((s.cash / base) * 100);
-  const investPct = 100 - cashPct;
+  const loanPct = loansTotal > 0 ? Math.round((loansTotal / base) * 100) : 0;
+  const investPct = 100 - cashPct - loanPct;
+  const seg = (pct: number, color: string) =>
+    pct <= 0 ? "" : `<div style="display:inline-block;height:8px;width:${Math.max(pct, 1)}%;background:${color};">&nbsp;</div>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
     <tr><td>
       <div style="height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.06);font-size:0;line-height:0;">
-        <!--[if !mso]><!--><div style="display:inline-block;height:8px;width:${Math.max(cashPct, 1)}%;background:#38bdf8;">&nbsp;</div><div style="display:inline-block;height:8px;width:${Math.max(investPct, 1)}%;background:#34d399;">&nbsp;</div><!--<![endif]-->
+        <!--[if !mso]><!-->${seg(cashPct, "#38bdf8")}${seg(investPct, "#34d399")}${seg(loanPct, "#fbbf24")}<!--<![endif]-->
       </div>
     </td></tr>
     <tr><td style="padding-top:5px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td style="font-size:10px;color:rgba(255,255,255,0.45);">■ <span style="color:#38bdf8;">Cash ${cashPct}%</span></td>
-        <td align="right" style="font-size:10px;color:rgba(255,255,255,0.45);"><span style="color:#34d399;">Investments ${investPct}%</span> ■</td>
+        <td style="font-size:10px;color:#38bdf8;">${cashPct}%</td>
+        <td align="center" style="font-size:10px;color:#34d399;">${investPct}%</td>
+        <td align="right" style="font-size:10px;color:${loanPct > 0 ? "#fbbf24" : "rgba(255,255,255,0.2)"};">${loanPct > 0 ? `${loanPct}%` : ""}</td>
       </tr></table>
     </td></tr>
   </table>`;
@@ -592,12 +596,16 @@ function renderHtml(
     loans?: Loan[];
   } = {}
 ): string {
-  const statCard = (label: string, value: string, spark = "", accent = "#fff") => `
+  const statCard = (label: string, value: string, spark = "", accent = "#fff", move: number | null = null) => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
       style="margin-top:8px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.10);border-radius:14px;">
       <tr>
         <td style="padding:13px 15px;">
-          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">${label}</div>
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">${label}${
+            move == null || move === 0
+              ? ""
+              : ` <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:${move > 0 ? "#34d399" : "#fb7185"};vertical-align:middle;"></span>`
+          }</div>
           <div style="margin-top:4px;font-size:20px;font-weight:600;color:${accent};">${value}</div>
         </td>
         <td align="right" valign="middle" style="padding:13px 15px;width:40%;">${spark}</td>
@@ -616,13 +624,10 @@ function renderHtml(
     const rgb = tint(a.institution_color);
     const share = sectionMax > 0 ? Math.max(2, Math.round(((a.balance_current ?? 0) / sectionMax) * 100)) : 0;
     const stale = offlineBanks.has(a.institution_name)
-      ? ` <span style="font-size:10px;color:#fbbf24;" title="Connection needs attention">⚠ stale</span>`
+      ? ` <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:#fbbf24;vertical-align:middle;" title="Connection needs attention"></span>`
       : "";
     const bal = Math.abs(a.balance_current ?? 0);
-    const swing =
-      a.change && bal > 0 && Math.abs(a.change) >= 500 && Math.abs(a.change) / bal >= 0.1
-        ? ` <span style="font-size:10px;color:${a.change > 0 ? "#34d399" : "#fb7185"};border:1px solid ${a.change > 0 ? "rgba(52,211,153,0.4)" : "rgba(251,113,133,0.4)"};border-radius:999px;padding:1px 6px;">big swing</span>`
-        : "";
+    const swing = "";
     const util =
       liability && a.balance_limit && a.balance_limit > 0
         ? `<div style="font-size:11px;margin-top:1px;color:rgba(255,255,255,0.35);">${Math.round(((a.balance_current ?? 0) / a.balance_limit) * 100)}% of ${money(a.balance_limit)} limit</div>`
@@ -646,7 +651,7 @@ function renderHtml(
         })()}</div>
       </td>
       <td align="right" valign="top" style="padding:10px 0 0;color:${liability ? "#fda4af" : "#fff"};font-size:14px;font-weight:600;">
-        ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}${util}${avail}
+        ${liability ? "−" : ""}${money(a.balance_current, a.currency ?? "USD")}${delta}
       </td>
     </tr>
     <tr><td colspan="2" style="padding:8px 0 10px;border-bottom:1px solid rgba(255,255,255,0.07);">
@@ -659,8 +664,8 @@ function renderHtml(
   const zeroRow = (n: number) =>
     n === 0
       ? ""
-      : `<tr><td colspan="2" style="padding:9px 0;color:rgba(255,255,255,0.35);font-size:12px;">
-          + ${n} zero-balance account${n === 1 ? "" : "s"}
+      : `<tr><td colspan="2" align="center" style="padding:8px 0 2px;">
+          <span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.10);" title="${n} zero-balance account${n === 1 ? "" : "s"}">+${n}</span>
         </td></tr>`;
 
   const s_totalForShare = s.cash + s.invested;
@@ -683,10 +688,10 @@ function renderHtml(
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <td style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);">
-              ${title} <span style="color:rgba(255,255,255,0.28);letter-spacing:0;">· ${count}${share != null ? ` · ${share}%` : ""}</span>
+              ${title}
             </td>
             <td align="right" style="font-size:11px;color:rgba(255,255,255,0.6);">
-              ${subtotal}${move !== 0 ? ` <span style="color:${move > 0 ? "#34d399" : "#fb7185"};">${signed(move)}</span>` : ""}
+              ${subtotal}
             </td>
           </tr>
           ${list.map((a) => row(a, sectionMax, opts.liability)).join("")}
@@ -744,7 +749,7 @@ function renderHtml(
           ${(() => {
             const owed = (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0);
             return money(s.totalValue + owed);
-          })()}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
+          })()}${movement === 0 ? "" : ` <span style="font-size:15px;vertical-align:middle;color:${movement > 0 ? "#34d399" : "#fb7185"};">${movement > 0 ? "▲" : "▼"}</span>`}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
         </div>
         ${(() => {
           const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
@@ -755,13 +760,13 @@ function renderHtml(
           </div>`;
         })()}
         <div style="margin-top:8px;"></div>
-        ${statCard("Cash", money(s.cash), sparkline(history, (d) => Number(d.cash), "#38bdf8"))}
-        ${statCard("Investments", money(s.invested), sparkline(history, (d) => Number(d.invested), "#34d399"))}
+        ${statCard("Cash", money(s.cash), sparkline(history, (d) => Number(d.cash), "#38bdf8"), "#fff", s.cashMove)}
+        ${statCard("Investments", money(s.invested), sparkline(history, (d) => Number(d.invested), "#34d399"), "#fff", s.investMove)}
         ${(() => {
           const owed = (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0);
           return Math.abs(owed) < 0.005 ? "" : statCard("Loans receivable", money(owed), "", "#fbbf24");
         })()}
-        ${allocationBar(s)}
+        ${allocationBar(s, (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0))}
         ${bankStrip([...s.cashAccounts, ...s.investAccounts])}
         ${(() => {
           const closes = monthlyCloses(history);
@@ -798,17 +803,21 @@ function renderHtml(
           const owed = loans.reduce((sum, l) => sum + l.outstanding, 0);
           const rows = loans
             .map(
-              (l, i) => `<tr>
+              (l, i) => {
+                const lent = l.starting_balance + l.advanced;
+                const repaidPct = lent > 0 ? Math.min(100, Math.round((l.repaid / lent) * 100)) : 0;
+                return `<tr>
                 <td style="padding:9px 0 ${i === loans.length - 1 ? "2px" : "0"};${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;color:rgba(255,255,255,0.85);">
                   ${l.name}
-                  <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:1px;">
-                    ${l.repaid > 0 ? `repaid ${money(l.repaid)} of ${money(l.starting_balance + l.advanced)}` : l.last_date ? `advanced through ${l.last_date}` : "starting balance"}
+                  <div style="margin-top:5px;max-width:220px;height:3px;border-radius:999px;background:rgba(251,191,36,0.25);font-size:0;line-height:0;">
+                    <div style="height:3px;width:${repaidPct}%;border-radius:999px;background:#34d399;font-size:0;line-height:0;">&nbsp;</div>
                   </div>
                 </td>
                 <td align="right" style="padding:9px 0;${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;font-weight:600;color:#fbbf24;white-space:nowrap;">
                   ${money(l.outstanding)}
                 </td>
-              </tr>`
+              </tr>`;
+              }
             )
             .join("");
           return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -840,7 +849,7 @@ function renderHtml(
               Open Treasury
             </a><!--<![endif]-->
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
-              ${extras.preparedFor ? `Prepared for ${extras.preparedFor} · ` : ""}${extras.footerNote ? `${extras.footerNote} · ` : ""}Balances via Plaid · generated ${reportTime(now)} ET ·
+              ${extras.footerNote ? `${extras.footerNote} · ` : ""}${reportTime(now)} ET ·
               <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
             </div>
           </td></tr>
