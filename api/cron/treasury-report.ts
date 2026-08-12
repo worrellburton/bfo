@@ -418,59 +418,6 @@ function renderText(
 
 // ── HTML body ─────────────────────────────────────────────────────────
 
-/** Email-safe trend graph: fixed-height table cells, no SVG, no script. */
-function renderGraph(fullHistory: DailyTotal[]): string {
-  const history = fullHistory.slice(-30);
-  if (history.length < 2) {
-    return `<div style="margin-top:20px;padding:12px 14px;border:1px dashed rgba(255,255,255,0.12);border-radius:12px;font-size:11px;color:rgba(255,255,255,0.35);">
-      The 30-day trend appears here after a few days of balance history.
-    </div>`;
-  }
-  const totals = history.map((d) => Number(d.cash) + Number(d.invested));
-  const max = Math.max(...totals);
-  const min = Math.min(...totals);
-  if (max <= 0) return "";
-  const windowChange = totals[totals.length - 1] - totals[0];
-  const pct = totals[0] > 0 ? (windowChange / totals[0]) * 100 : 0;
-  const H = 54;
-  // Two-tone stacked bars: cash (sky) under investments (emerald), matching
-  // the allocation legend, so composition over time is visible per day.
-  const cols = history
-    .map((d, i) => {
-      const h = Math.max(3, Math.round((totals[i] / max) * H));
-      const cashH = totals[i] > 0 ? Math.round((Number(d.cash) / totals[i]) * h) : 0;
-      const investH = Math.max(h - cashH, 0);
-      const latest = i === history.length - 1;
-      const green = latest ? "#34d399" : "rgba(52,211,153,0.45)";
-      const blue = latest ? "#38bdf8" : "rgba(56,189,248,0.45)";
-      return `<td align="center" valign="bottom" style="padding:0 1px;">
-        <div style="height:${H - h}px;font-size:0;line-height:0;">&nbsp;</div>
-        <div style="height:${investH}px;border-radius:2px 2px 0 0;background:${green};font-size:0;line-height:0;">&nbsp;</div>
-        <div style="height:${cashH}px;background:${blue};font-size:0;line-height:0;">&nbsp;</div>
-      </td>`;
-    })
-    .join("");
-  const first = history[0].day.slice(5).replace("-", "/");
-  const last = history[history.length - 1].day.slice(5).replace("-", "/");
-  return `<table role="img" aria-label="Balance trend, ${money(totals[0])} to ${money(totals[totals.length - 1])}" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-    <tr>
-      <td style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);padding-bottom:6px;">Trend</td>
-      <td align="right" style="font-size:11px;padding-bottom:6px;color:${windowChange >= 0 ? "#34d399" : "#fb7185"};">
-        ${signed(windowChange)} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)
-      </td>
-    </tr>
-    <tr><td colspan="2">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cols}</tr></table>
-    </td></tr>
-    <tr><td colspan="2" style="padding-top:6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td style="font-size:10px;color:rgba(255,255,255,0.35);">${first}</td>
-        <td align="right" style="font-size:10px;color:rgba(255,255,255,0.35);">${last}</td>
-      </tr></table>
-    </td></tr>
-  </table>`;
-}
-
 function renderActivity(activity: { account: Account; txns: Txn[] }): string {
   const { account, txns } = activity;
   const inflow = txns.filter((t) => -t.amount > 0).reduce((s, t) => s + -t.amount, 0);
@@ -787,7 +734,6 @@ function renderHtml(
         ${biggestMover(s)}
 
         ${alertBanner}
-        ${renderGraph(history)}
         ${empty}
         ${section("Cash", s.cashAccounts, money(s.cash), s.cashMove, { zeros: s.zeroCounts.cash })}
         ${section(
