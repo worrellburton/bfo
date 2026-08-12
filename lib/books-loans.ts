@@ -51,6 +51,18 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
       "&order=date.desc&limit=2000"
   );
 
+  // Entities resolve live from the mappings, not from the stamp written at
+  // sync time — the same overlay every other Books read applies.
+  const prefs = await sb<Array<{ account_id: string; entity_id: string | null; entity_name: string | null }>>(
+    "plaid_account_prefs?select=account_id,entity_id,entity_name&archived_at=is.null"
+  );
+  const prefByAccount = new Map((prefs ?? []).map((p) => [p.account_id, p]));
+  for (const t of txns ?? []) {
+    const pref = prefByAccount.get(t.account_id);
+    (t as any).entity_id = pref?.entity_id ?? null;
+    (t as any).entity_name = pref?.entity_name ?? null;
+  }
+
   const loans = new Map<string, Loan>();
   for (const row of registry ?? []) {
     loans.set(row.name.toLowerCase(), {
