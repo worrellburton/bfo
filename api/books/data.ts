@@ -146,13 +146,15 @@ function label(t: BookTxn): string {
  * silently disappearing.
  */
 function eliminated(t: BookTxn, selection: string[] | null, prefs: Map<string, Pref>): boolean {
-  // Only a *paired* movement nets to zero — both legs carry a counterparty.
-  // A hand-flagged intercompany row with no counterparty has no offsetting
-  // leg, so eliminating it would make money silently leave the P&L; keep it
-  // visible instead.
-  if (!t.counterparty_account_id) return false;
-  if (selection === null) return true; // family-wide view nets all paired intercompany to zero
-  const counterEntity = prefs.get(t.counterparty_account_id)?.entity_id ?? null;
+  // The all-entities rollup eliminates every intercompany movement — that's
+  // the family-wide view the user asked for, and these rows never touch the
+  // operating net (income − expense) either way, so dropping them from the
+  // rollup doesn't distort it. Under a partial selection, a movement is
+  // eliminated only when its counterparty's entity is also selected.
+  if (selection === null) return true;
+  const counterEntity = t.counterparty_account_id
+    ? prefs.get(t.counterparty_account_id)?.entity_id ?? null
+    : null;
   return !!counterEntity && selection.includes(counterEntity);
 }
 
