@@ -243,41 +243,74 @@ export default function Treasury() {
    * closed at the bank (or simply deselected here) stop being shared, and the
    * data they left behind is pruned afterwards.
    */
+  /**
+   * Open the bank's own picker for one connection in update mode and resolve
+   * once the flow closes — "done" if the user finished, "exit" if they backed
+   * out. Kept promise-based so refreshAll can chain the modals one at a time
+   * (Plaid Link only allows a single instance open at once).
+   */
+  function runUpdateLink(itemId: string): Promise<"done" | "exit"> {
+    return new Promise((resolve, reject) => {
+      void (async () => {
+        try {
+          const [{ link_token }] = await Promise.all([
+            call("/api/plaid/create-link-token", {
+              method: "POST",
+              body: JSON.stringify({ kind: "bank", item_id: itemId }),
+            }),
+            loadPlaid(),
+          ]);
+          if (!window.Plaid) throw new Error("Couldn't load Plaid.");
+          window.Plaid.create({
+            token: link_token,
+            // Update mode returns no new public token to exchange — the existing
+            // connection is simply re-scoped to the accounts still selected.
+            onSuccess: () => resolve("done"),
+            onExit: (err) => {
+              if (err) setError(err.display_message || err.error_message || "Refresh cancelled.");
+              resolve("exit");
+            },
+          }).open();
+        } catch (err) {
+          reject(err);
+        }
+      })();
+    });
+  }
+
   async function refreshConnection(conn: Connection) {
     setLinking(true);
     setError("");
     try {
-      const [{ link_token }] = await Promise.all([
-        call("/api/plaid/create-link-token", {
-          method: "POST",
-          body: JSON.stringify({ kind: "bank", item_id: conn.item_id }),
-        }),
-        loadPlaid(),
-      ]);
-      if (!window.Plaid) throw new Error("Couldn't load Plaid.");
-
-      window.Plaid.create({
-        token: link_token,
-        // Update mode returns no new public token to exchange — the existing
-        // connection is simply re-scoped to the accounts still selected.
-        onSuccess: async () => {
-          try {
-            await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" });
-            await load();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Refreshed, but couldn't tidy up old accounts.");
-          } finally {
-            setLinking(false);
-          }
-        },
-        onExit: (err) => {
-          setLinking(false);
-          if (err) setError(err.display_message || err.error_message || "Refresh cancelled.");
-        },
-      }).open();
+      if ((await runUpdateLink(conn.item_id)) === "done") {
+        await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" });
+        await load();
+      }
     } catch (err) {
-      setLinking(false);
       setError(err instanceof Error ? err.message : "Couldn't start Plaid.");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  async function refreshAll() {
+    setLinking(true);
+    setError("");
+    try {
+      let anyDone = false;
+      for (const conn of connections) {
+        const result = await runUpdateLink(conn.item_id);
+        if (result === "done") anyDone = true;
+        else break; // user cancelled — stop before opening the next bank
+      }
+      if (anyDone) {
+        await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" });
+        await load();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't start Plaid.");
+    } finally {
+      setLinking(false);
     }
   }
 
@@ -933,7 +966,26 @@ export default function Treasury() {
 
       {connections.length > 0 && (
         <section className="mt-8">
-          <h2 className={`text-xs uppercase tracking-wider mb-3 ${subtle}`}>Bank connections</h2>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className={`text-xs uppercase tracking-wider ${subtle}`}>Bank connections</h2>
+            {connections.length > 1 && (
+              <button
+                onClick={() => void refreshAll()}
+                disabled={linking}
+                title="Re-pick accounts for every connection in turn, and pull the full history"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
+                  isDark
+                    ? "border-white/10 text-gray-300 hover:text-white hover:border-white/25"
+                    : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {linking ? "Refreshing…" : "Refresh all"}
+              </button>
+            )}
+          </div>
           <div className={`rounded-xl border overflow-hidden ${card}`}>
             {connections.map((conn, i) => {
               const mine = accounts.filter((a) => a.item_id === conn.item_id);
