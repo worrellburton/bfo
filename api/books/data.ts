@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
+import { patchMatching } from "../../lib/books-rules.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -145,10 +146,13 @@ function label(t: BookTxn): string {
  * silently disappearing.
  */
 function eliminated(t: BookTxn, selection: string[] | null, prefs: Map<string, Pref>): boolean {
-  if (selection === null) return true; // family-wide view nets all intercompany to zero
-  const counterEntity = t.counterparty_account_id
-    ? prefs.get(t.counterparty_account_id)?.entity_id ?? null
-    : null;
+  // Only a *paired* movement nets to zero — both legs carry a counterparty.
+  // A hand-flagged intercompany row with no counterparty has no offsetting
+  // leg, so eliminating it would make money silently leave the P&L; keep it
+  // visible instead.
+  if (!t.counterparty_account_id) return false;
+  if (selection === null) return true; // family-wide view nets all paired intercompany to zero
+  const counterEntity = prefs.get(t.counterparty_account_id)?.entity_id ?? null;
   return !!counterEntity && selection.includes(counterEntity);
 }
 
@@ -224,18 +228,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const rule = ((await ruleRes.json()) as any[])[0];
 
-      // Attach everything already synced that matches and isn't on a loan yet.
-      const safe = match.replace(/["*%,()]/g, " ").trim();
-      const pattern = encodeURIComponent(`*${safe}*`);
-      const r = await db(
-        `book_transactions?loan_id=is.null&or=(merchant_name.ilike."${pattern}",name.ilike."${pattern}")`,
-        {
-          method: "PATCH",
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify({ loan_id: loanId }),
-        }
-      );
-      const attached = r.ok ? ((await r.json()) as any[]).length : 0;
+      // Attach every already-synced, not-yet-on-a-loan transaction that
+      // literally contains the rule text — same matcher as the nightly pass.
+      const attached = await patchMatching(db, match, "loan_id=is.null", { loan_id: loanId });
       return res.json({ rule, attached });
     }
 
@@ -253,33 +248,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!match || !category) return res.status(400).json({ error: "missing_fields" });
 
       // Remember the rule (replacing any earlier rule for the same text) so
-      // the nightly sync categorizes future arrivals the same way.
-      await db(`book_rules?match=ilike."${encodeURIComponent(match.replace(/["*%]/g, " "))}"`, {
-        method: "DELETE",
-      }).catch(() => {});
+      // the nightly sync categorizes future arrivals the same way. Find the
+      // duplicate by exact (case-insensitive) text rather than an ilike, which
+      // would mis-handle _ % and other metacharacters.
+      const existing = await db("book_rules?select=id,match&loan_id=is.null");
+      if (existing.ok) {
+        const dup = ((await existing.json()) as Array<{ id: string; match: string }>).find(
+          (x) => x.match.toLowerCase() === match.toLowerCase()
+        );
+        if (dup) await db(`book_rules?id=eq.${dup.id}`, { method: "DELETE" }).catch(() => {});
+      }
       const ruleRes = await db("book_rules", {
         method: "POST",
         body: JSON.stringify({ match, book_category: category }),
       });
       if (!ruleRes.ok) console.error("rule save failed:", (await ruleRes.text()).slice(0, 200));
 
-      // Apply to everything already synced that carries the same text.
-      const safe = match.replace(/["*%,()]/g, " ").trim();
-      const pattern = encodeURIComponent(`*${safe}*`);
-      const r = await db(
-        `book_transactions?or=(merchant_name.ilike."${pattern}",name.ilike."${pattern}")`,
-        {
-          method: "PATCH",
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify({ book_category: category }),
-        }
-      );
-      if (!r.ok) {
-        console.error("bulk categorize failed:", (await r.text()).slice(0, 300));
-        return res.status(500).json({ error: "bulk_failed", message: "Couldn't apply that to the rest." });
-      }
-      const updated = ((await r.json()) as any[]).length;
-      return res.json({ applied: updated, rule: { match, book_category: category } });
+      // Apply to everything already synced that literally contains the text.
+      const applied = await patchMatching(db, match, "", { book_category: category });
+      return res.json({ applied, rule: { match, book_category: category } });
     }
 
     // ── Edits: a person reclassifying a transaction ─────────────────────
@@ -371,7 +358,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         path += `&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))`;
       }
       if (q) {
-        const safe = q.replace(/[%*,()]/g, " ").trim();
+        // Structural chars and the * wildcard drop out; the LIKE metacharacters
+        // _ and % are escaped so a search behaves as a literal substring.
+        const safe = q
+          .replace(/[,()*]/g, " ")
+          .replace(/([\\%_])/g, "\\$1")
+          .trim();
         if (safe) path += `&or=(name.ilike.*${encodeURIComponent(safe)}*,merchant_name.ilike.*${encodeURIComponent(safe)}*)`;
       }
       path += "&order=date.desc,transaction_id.asc";
@@ -555,6 +547,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const stateBy = new Map(states.map((st) => [st.account_id, st]));
 
       const INVESTISH = /ira|brokerage|trust|401|403|roth|529|pension|annuity|mutual/i;
+      // Loan/mortgage/line-of-credit accounts are liabilities, not cash —
+      // without them here their principal would land in the cash bucket and
+      // inflate assets. (Plaid's account `type` would be the fuller signal;
+      // we key on subtype since that's what we store.)
+      const LIABILITY = /credit|mortgage|line of credit|heloc|home equity|student|overdraft|paypal/i;
       type Row = { label: string; detail: string; balance: number };
       const cash: Row[] = [];
       const investments: Row[] = [];
@@ -576,7 +573,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .join(" · ");
         const row: Row = { label, detail: detailBits, balance: Number(st.balance) };
 
-        if (subtype.includes("credit")) credit.push(row);
+        if (LIABILITY.test(subtype)) credit.push(row);
         else if (INVESTISH.test(subtype)) investments.push(row);
         else cash.push(row);
       }
@@ -586,12 +583,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       investments.sort(byBalance);
       credit.sort(byBalance);
 
-      // Loans receivable are family-level; they appear regardless of the
-      // entity selection so the sheet never hides money the family is owed.
-      const { loans } = await computeLoans();
-      const loanRows = loans
-        .filter((l) => Math.abs(l.outstanding) >= 0.005)
-        .map((l) => ({ label: l.name, detail: l.id ? "loan receivable" : "from categories", balance: l.outstanding }));
+      // Loans receivable are family-level — book_loans carries no entity — so
+      // they belong only to the all-entities sheet. Adding them to a single
+      // entity's totals would attribute the whole loan book to that one entity
+      // (and count it again for the next), overstating per-entity net worth.
+      const loanRows =
+        selection === null
+          ? (await computeLoans()).loans
+              .filter((l) => Math.abs(l.outstanding) >= 0.005)
+              .map((l) => ({
+                label: l.name,
+                detail: l.id ? "loan receivable" : "from categories",
+                balance: l.outstanding,
+              }))
+          : [];
 
       const sum = (rows: Row[]) => rows.reduce((total, r) => total + r.balance, 0);
       const totals = {

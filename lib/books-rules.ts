@@ -87,6 +87,60 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
   [/^LOAN_PAYMENTS$/, "Loan payments"],
 ];
 
+type Db = (path: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Apply `patch` to every transaction whose merchant/description literally
+ * contains `needle` (case-insensitive) and satisfies `baseFilter`.
+ *
+ * Filtering happens in JS so it mirrors the nightly rule engine's
+ * `text.includes()` exactly. A PostgREST `ilike` would instead treat `_` and
+ * `%` — common in bank descriptors like ACH_PMT — as SQL wildcards, matching
+ * unintended rows and disagreeing with the nightly pass. Returns the count
+ * patched.
+ */
+export async function patchMatching(
+  db: Db,
+  needle: string,
+  baseFilter: string,
+  patch: Record<string, unknown>
+): Promise<number> {
+  const n = needle.trim().toLowerCase();
+  if (n.length < 2) return 0;
+
+  const ids: string[] = [];
+  for (let from = 0; ; from += 1000) {
+    const path =
+      `book_transactions?select=transaction_id,name,merchant_name` +
+      (baseFilter ? `&${baseFilter}` : "");
+    const r = await db(path, { headers: { Range: `${from}-${from + 999}` } });
+    if (!r.ok) break;
+    const rows = (await r.json()) as Array<{
+      transaction_id: string;
+      name: string | null;
+      merchant_name: string | null;
+    }>;
+    for (const t of rows) {
+      if (`${t.merchant_name ?? ""} ${t.name ?? ""}`.toLowerCase().includes(n)) {
+        ids.push(t.transaction_id);
+      }
+    }
+    if (rows.length < 1000) break;
+  }
+
+  let done = 0;
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+    const list = chunk.map((id) => `"${id}"`).join(",");
+    const r = await db(`book_transactions?transaction_id=in.(${list})`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) done += chunk.length;
+  }
+  return done;
+}
+
 export function categorize(
   name: string | null,
   merchant: string | null,

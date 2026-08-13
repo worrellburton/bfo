@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
-import { categorize } from "../../lib/books-rules.js";
+import { categorize, patchMatching } from "../../lib/books-rules.js";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 /**
@@ -341,13 +341,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const loanRules = await db("book_rules?loan_id=not.is.null&select=match,loan_id");
       if (loanRules.ok) {
         for (const rule of (await loanRules.json()) as Array<{ match: string; loan_id: string }>) {
-          const safe = rule.match.replace(/["*%,()]/g, " ").trim();
-          if (safe.length < 3) continue;
-          const pattern = encodeURIComponent(`*${safe}*`);
-          await db(
-            `book_transactions?loan_id=is.null&or=(merchant_name.ilike."${pattern}",name.ilike."${pattern}")`,
-            { method: "PATCH", body: JSON.stringify({ loan_id: rule.loan_id }) }
-          ).catch(() => {});
+          // Same literal-substring matcher as the app's immediate apply.
+          await patchMatching(db, rule.match, "loan_id=is.null", { loan_id: rule.loan_id });
         }
       }
     } catch {
