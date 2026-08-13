@@ -1,4 +1,5 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { authFetch } from "./auth";
 
@@ -62,6 +63,158 @@ async function saveTxn(patch: {
   return (await res.json()).transaction as Txn;
 }
 
+type Option = { value: string; label: string; hint?: string };
+
+/**
+ * A fully custom dropdown — a rounded pill trigger and a themed popover list
+ * with a checkmark on the current choice. Rendered through a portal with fixed
+ * positioning so it escapes the table's horizontal scroll box (a native
+ * <select>'s option list can't be styled, and an absolutely-positioned menu
+ * would be clipped by the overflow container).
+ */
+function Menu({
+  value,
+  options,
+  isDark,
+  disabled,
+  onChange,
+  tone = "neutral",
+}: {
+  value: string;
+  options: Option[];
+  isDark: boolean;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+  tone?: "neutral" | "amber";
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const current = options.find((o) => o.value === value) ?? options[0];
+  const label = current?.label ?? "—";
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    function place() {
+      const el = btnRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const width = Math.max(r.width, 224);
+      const menuH = Math.min(320, options.length * 38 + 12);
+      const spaceBelow = window.innerHeight - r.bottom;
+      const above = spaceBelow < menuH + 12 && r.top > spaceBelow;
+      setBox({
+        left: Math.min(r.left, window.innerWidth - width - 8),
+        top: above ? Math.max(8, r.top - menuH - 6) : r.bottom + 6,
+        width,
+      });
+    }
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, options.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const pill = `inline-flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 rounded-full text-xs border cursor-pointer max-w-[190px] disabled:opacity-50 transition-colors ${
+    tone === "amber"
+      ? isDark
+        ? "bg-amber-500/10 border-amber-500/25 text-amber-200 hover:bg-amber-500/20"
+        : "bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
+      : isDark
+        ? "bg-white/[0.06] border-white/10 text-gray-200 hover:bg-white/[0.1]"
+        : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50"
+  }`;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={pill}
+      >
+        <span className="truncate">{label}</span>
+        <svg
+          className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}
+          fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+      {open && box &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="listbox"
+            style={{ position: "fixed", left: box.left, top: box.top, width: box.width }}
+            className={`z-[70] rounded-2xl border p-1.5 shadow-xl max-h-80 overflow-y-auto ${
+              isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
+            }`}
+          >
+            {options.map((o) => {
+              const sel = o.value === value;
+              return (
+                <button
+                  key={o.value || "—"}
+                  role="option"
+                  aria-selected={sel}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
+                    sel
+                      ? "bg-emerald-500 text-white font-medium"
+                      : isDark
+                        ? "text-gray-200 hover:bg-white/10"
+                        : "text-gray-800 hover:bg-gray-100"
+                  }`}
+                >
+                  <span className="w-3.5 shrink-0 flex items-center justify-center">
+                    {sel && (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="truncate flex-1">{o.label}</span>
+                  {o.hint && <span className={`text-[10px] ${sel ? "text-white/70" : "text-gray-500"}`}>{o.hint}</span>}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 /**
  * The editable transaction spreadsheet: type and category change in place,
  * the chevron opens every field we hold on the transaction, and the vendor
@@ -90,43 +243,6 @@ export function TxnTable({
 
   const subtle = "text-gray-500";
   const border = isDark ? "border-white/5" : "border-gray-100";
-  const selectCls = `appearance-none pl-3 pr-7 py-1.5 rounded-full text-xs border cursor-pointer max-w-[180px] truncate disabled:opacity-50 ${
-    isDark ? "bg-white/[0.06] border-white/10 text-gray-200" : "bg-white border-gray-200 text-gray-800"
-  }`;
-  // A fully-rounded select with its own chevron, so every dropdown reads the
-  // same regardless of the browser's native control.
-  const Pick = ({
-    value,
-    disabled,
-    onChange,
-    children,
-  }: {
-    value: string;
-    disabled?: boolean;
-    onChange: (v: string) => void;
-    children: ReactNode;
-  }) => (
-    <span className="relative inline-flex items-center">
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className={selectCls}
-      >
-        {children}
-      </select>
-      <svg
-        className={`w-3.5 h-3.5 absolute right-2.5 pointer-events-none ${subtle}`}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        viewBox="0 0 24 24"
-        aria-hidden
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-      </svg>
-    </span>
-  );
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -288,27 +404,31 @@ export function TxnTable({
                 ) : (
                   <>
                 <td className="px-2 py-2.5">
-                  <Pick
+                  <Menu
                     value={t.book_category ?? ""}
+                    isDark={isDark}
                     disabled={busy === t.transaction_id}
                     onChange={(v) => void changeCategory(t, v)}
-                  >
-                    {!t.book_category && <option value="">{pretty(t.plaid_category)} (auto)</option>}
-                    {cats.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </Pick>
+                    options={[
+                      ...(!t.book_category
+                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto" }]
+                        : []),
+                      ...cats.map((c) => ({ value: c, label: c })),
+                    ]}
+                  />
                 </td>
                 <td className="px-2 py-2.5">
-                  <Pick
+                  <Menu
                     value={eff}
+                    isDark={isDark}
                     disabled={busy === t.transaction_id}
                     onChange={(v) => void update(t, { type_override: v })}
-                  >
-                    <option value="normal">{inflow ? "Income" : "Expense"}</option>
-                    <option value="transfer">Transfer</option>
-                    <option value="intercompany">Roll-up</option>
-                  </Pick>
+                    options={[
+                      { value: "normal", label: inflow ? "Income" : "Expense" },
+                      { value: "transfer", label: "Transfer" },
+                      { value: "intercompany", label: "Roll-up" },
+                    ]}
+                  />
                 </td>
                   </>
                 )}
@@ -332,16 +452,16 @@ export function TxnTable({
                       {loans.length > 0 && (
                         <div className="min-w-0">
                           <span className={`text-[10px] uppercase tracking-wider block mb-1 ${subtle}`}>Loan</span>
-                          <Pick
+                          <Menu
                             value={t.loan_id ?? ""}
+                            isDark={isDark}
                             disabled={busy === t.transaction_id}
                             onChange={(v) => void update(t, { loan_id: v || null })}
-                          >
-                            <option value="">Not a loan</option>
-                            {loans.map((l) => (
-                              <option key={l.id} value={l.id}>{l.name}</option>
-                            ))}
-                          </Pick>
+                            options={[
+                              { value: "", label: "Not a loan" },
+                              ...loans.map((l) => ({ value: l.id, label: l.name })),
+                            ]}
+                          />
                         </div>
                       )}
                     </div>

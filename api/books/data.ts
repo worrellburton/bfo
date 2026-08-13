@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
-import { patchMatching } from "../../lib/books-rules.js";
+import { patchMatching, ACCOUNTS } from "../../lib/books-rules.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -333,7 +333,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cats = await fetchAll<{ book_category: string | null }>(
         "book_transactions?select=book_category&book_category=not.is.null"
       );
-      const categories = [...new Set(cats.map((c) => c.book_category!))].sort();
+      // The canonical chart of accounts, unioned with anything already filed in
+      // the data, so every account (incl. manual-only ones) is always offered.
+      const categories = [...new Set([...ACCOUNTS, ...cats.map((c) => c.book_category!)])].sort((a, b) =>
+        a.localeCompare(b)
+      );
 
       const loanRows = await fetchAll<{ id: string; name: string }>(
         "book_loans?archived_at=is.null&select=id,name&order=name.asc"

@@ -87,6 +87,20 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
   [/^LOAN_PAYMENTS$/, "Loan payments"],
 ];
 
+/**
+ * The full chart of accounts offered in the category pickers — every account a
+ * rule or Plaid fallback can assign, plus manual-only accounts like Contracts,
+ * so they're all selectable even before a transaction has been filed under
+ * them. The meta endpoint unions this with whatever's actually in the data.
+ */
+export const ACCOUNTS: string[] = [
+  ...new Set([
+    ...RULES.map((r) => r.category),
+    ...PLAID_FALLBACK.map(([, category]) => category),
+    "Contracts",
+  ]),
+].sort((a, b) => a.localeCompare(b));
+
 type Db = (path: string, init?: RequestInit) => Promise<Response>;
 
 /**
