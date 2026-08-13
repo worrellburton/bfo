@@ -245,7 +245,7 @@ export default function BooksLoans() {
   const totalOutstanding = loans.reduce((s, l) => s + l.outstanding, 0);
 
   return (
-    <div className="max-w-6xl">
+    <div className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
           <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Loans</h1>

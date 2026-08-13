@@ -78,7 +78,7 @@ export default function BooksCell() {
   const title = label ?? SECTION_TITLES[section] ?? section;
 
   return (
-    <div className="max-w-6xl">
+    <div className="w-full">
       <Link to="/books/reports" className={`text-sm ${subtle} hover:underline`}>← Profit &amp; loss</Link>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 mt-2 mb-6">
         <div>

@@ -67,6 +67,14 @@ export default function BooksReports() {
   const [sheet, setSheet] = useState<BalanceSheet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Collapsed P&L sections still show their total row.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleSection = (k: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
 
   const entityParam = selected.size === 0 ? "all" : [...selected].join(",");
 
@@ -123,6 +131,11 @@ export default function BooksReports() {
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
+  const faint = isDark ? "text-gray-700" : "text-gray-300";
+  const colHi = isDark ? "bg-white/[0.035]" : "bg-black/[0.02]";
+  const bandBg = isDark ? "bg-white/[0.02]" : "bg-gray-50/70";
+  const thisYear = Number(year) === new Date().getFullYear();
+  const curMonth = thisYear ? new Date().getMonth() : -1;
 
   const num = "px-3 py-2 text-right whitespace-nowrap tabular-nums";
   const sectionHead = `px-3 py-2 text-[11px] font-semibold uppercase tracking-wider ${subtle}`;
@@ -147,13 +160,14 @@ export default function BooksReports() {
     opts?: { bold?: boolean; color?: string; indent?: boolean; drillLabel?: string | null }
   ) {
     const drillLabel = opts?.drillLabel === undefined ? rowLabel : opts.drillLabel;
+    const band = opts?.bold ? bandBg : "";
     return (
-      <tr key={`${section}-${rowLabel}`} className={`border-t ${rowBorder} ${opts?.bold ? "font-semibold" : ""}`}>
+      <tr key={`${section}-${rowLabel}`} className={`border-t ${rowBorder} ${opts?.bold ? "font-semibold" : ""} ${band}`}>
         <td className={`px-3 py-2 sticky left-0 whitespace-nowrap ${stickyBg} ${opts?.indent ? "pl-6" : ""}`}>
           {rowLabel}
         </td>
         {monthly.map((v, i) => (
-          <td key={i} className={`${num} ${opts?.color ?? (v === 0 ? subtle : "")}`}>
+          <td key={i} className={`${num} ${i === curMonth ? colHi : ""} ${opts?.color ?? (v === 0 ? faint : "")}`}>
             {v === 0 ? (
               money(v)
             ) : (
@@ -161,12 +175,40 @@ export default function BooksReports() {
             )}
           </td>
         ))}
-        <td className={`${num} font-semibold ${opts?.color ?? ""}`}>
+        <td className={`${num} font-semibold ${colHi} ${opts?.color ?? ""}`}>
           {total === 0 ? (
             money(total)
           ) : (
             <button className={cellBtn} onClick={() => drill(section, drillLabel, null)}>{money(total)}</button>
           )}
+        </td>
+      </tr>
+    );
+  }
+
+  /** Clickable section band — folds its line items, keeps the total row. */
+  function sectionHeaderRow(id: string, label: string, extra?: string) {
+    const isCollapsed = collapsed.has(id);
+    return (
+      <tr
+        key={`head-${id}`}
+        onClick={() => toggleSection(id)}
+        className={`border-t ${border} cursor-pointer select-none ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-black/[0.02]"}`}
+      >
+        <td colSpan={14} className={`${sectionHead} sticky left-0 ${stickyBg}`}>
+          <span className="inline-flex items-center gap-1.5">
+            <svg
+              className={`w-3 h-3 transition-transform duration-150 ${isCollapsed ? "-rotate-90" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.5}
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+            {label}
+            {extra && <span className="normal-case font-normal tracking-normal opacity-60">{extra}</span>}
+          </span>
         </td>
       </tr>
     );
@@ -181,16 +223,16 @@ export default function BooksReports() {
         : `${selected.size} entities`;
 
   return (
-    <div className="max-w-6xl">
+    <div className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
         <div>
-          <div className={`inline-flex rounded-lg border p-0.5 mb-3 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+          <div className={`inline-flex rounded-full border p-0.5 mb-3 ${isDark ? "border-white/10" : "border-gray-200"}`}>
             {([["pnl", "Profit & loss"], ["balance", "Balance sheet"]] as const).map(([value, label]) => (
               <button
                 key={value}
                 onClick={() => setView(value)}
                 aria-pressed={view === value}
-                className={`px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
                   view === value
                     ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
                     : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
@@ -219,7 +261,7 @@ export default function BooksReports() {
             <button
               onClick={() => setPickerOpen((v) => !v)}
               aria-expanded={pickerOpen}
-              className={`px-3 py-2 rounded-lg text-sm border cursor-pointer flex items-center gap-2 ${
+              className={`pl-4 pr-3 py-2 rounded-full text-sm border cursor-pointer flex items-center gap-2 ${
                 isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
               }`}
             >
@@ -228,61 +270,91 @@ export default function BooksReports() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
               </svg>
             </button>
-            {pickerOpen && (
-              <div
-                className={`absolute right-0 mt-2 w-72 max-h-80 overflow-y-auto rounded-xl border shadow-lg z-30 p-1.5 ${
-                  isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
-                }`}
-              >
-                <button
-                  onClick={() => setSelected(new Set())}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm cursor-pointer ${
-                    selected.size === 0 ? "font-semibold" : ""
-                  } ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
-                >
-                  All entities
-                </button>
-                <div className={`my-1 border-t ${rowBorder}`} />
-                {entities.map((en) => {
-                  const on = selected.has(en.id);
-                  return (
-                    <label
-                      key={en.id}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer ${
-                        isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
-                      }`}
+            {pickerOpen &&
+              (() => {
+                const allMode = selected.size === 0;
+                // Checking/unchecking against the effective set: in all-mode
+                // every box reads as checked, so the first uncheck drops just
+                // that one entity.
+                const isChecked = (id: string) => allMode || selected.has(id);
+                const toggle = (id: string) => {
+                  setSelected((prev) => {
+                    const base = prev.size === 0 ? new Set(entities.map((e) => e.id)) : new Set(prev);
+                    base.has(id) ? base.delete(id) : base.add(id);
+                    // Everything checked collapses back to the all-entities view.
+                    return base.size === entities.length ? new Set() : base;
+                  });
+                };
+                const box = (on: boolean) => (
+                  <span
+                    className={`w-4 h-4 rounded-[5px] border shrink-0 flex items-center justify-center ${
+                      on
+                        ? "bg-emerald-500 border-emerald-500"
+                        : isDark
+                          ? "border-white/25"
+                          : "border-gray-300"
+                    }`}
+                  >
+                    {on && (
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    )}
+                  </span>
+                );
+                return (
+                  <div
+                    className={`absolute right-0 mt-2 w-72 max-h-80 overflow-y-auto rounded-xl border shadow-lg z-30 p-1.5 ${
+                      isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
+                    }`}
+                  >
+                    <button
+                      onClick={() => setSelected(new Set())}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer ${
+                        allMode ? "font-semibold" : ""
+                      } ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() =>
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            on ? next.delete(en.id) : next.add(en.id);
-                            return next;
-                          })
-                        }
-                      />
-                      <span className="truncate">{en.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
+                      {box(allMode)}
+                      <span>All entities</span>
+                    </button>
+                    <div className={`my-1 border-t ${rowBorder}`} />
+                    {entities.map((en) => {
+                      const on = isChecked(en.id);
+                      return (
+                        <button
+                          key={en.id}
+                          onClick={() => toggle(en.id)}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer text-left ${
+                            isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
+                          }`}
+                        >
+                          {box(on)}
+                          <span className="truncate">{en.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
           </div>
 
           {view === "pnl" && (
-            <select
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              className={`px-3 py-2 rounded-lg text-sm border cursor-pointer ${
-                isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-              }`}
-            >
-              {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+            <span className="relative inline-flex items-center">
+              <select
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                className={`appearance-none pl-4 pr-8 py-2 rounded-full text-sm border cursor-pointer ${
+                  isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
+                }`}
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <svg className="w-3.5 h-3.5 absolute right-3 pointer-events-none opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </span>
           )}
         </div>
       </div>
@@ -378,32 +450,30 @@ export default function BooksReports() {
       ) : (
         <div className={`rounded-xl border overflow-x-auto ${card}`}>
           <table className="text-sm min-w-[1100px] w-full">
-            <thead>
+            <thead className={`sticky top-0 z-20 ${stickyBg}`}>
               <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
-                <th className={`px-3 py-3 text-left font-medium sticky left-0 ${stickyBg}`}>
+                <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 ${stickyBg}`}>
                   {pickerLabel} · {pnl.year}
                 </th>
-                {MONTHS.map((m) => (
-                  <th key={m} className="px-3 py-3 text-right font-medium">{m}</th>
+                {MONTHS.map((m, i) => (
+                  <th key={m} className={`px-3 py-3 text-right font-medium ${i === curMonth ? colHi : ""}`}>{m}</th>
                 ))}
-                <th className="px-3 py-3 text-right font-medium">Total</th>
+                <th className={`px-3 py-3 text-right font-medium ${colHi}`}>Total</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td colSpan={14} className={sectionHead}>Income</td>
-              </tr>
-              {pnl.income.map((r) => bodyRow(r.label, r.monthly, r.total, "income", { indent: true }))}
+              {sectionHeaderRow("income", "Income")}
+              {!collapsed.has("income") &&
+                pnl.income.map((r) => bodyRow(r.label, r.monthly, r.total, "income", { indent: true }))}
               {bodyRow("Total income", pnl.income_monthly, pnl.income_monthly.reduce((a, b) => a + b, 0), "income", {
                 bold: true,
                 color: "text-emerald-500",
                 drillLabel: null,
               })}
 
-              <tr className={`border-t ${border}`}>
-                <td colSpan={14} className={sectionHead}>Expenses</td>
-              </tr>
-              {pnl.expenses.map((r) => bodyRow(r.label, r.monthly, r.total, "expenses", { indent: true }))}
+              {sectionHeaderRow("expenses", "Expenses")}
+              {!collapsed.has("expenses") &&
+                pnl.expenses.map((r) => bodyRow(r.label, r.monthly, r.total, "expenses", { indent: true }))}
               {bodyRow("Total expenses", pnl.expense_monthly, pnl.expense_monthly.reduce((a, b) => a + b, 0), "expenses", {
                 bold: true,
                 drillLabel: null,
@@ -417,12 +487,9 @@ export default function BooksReports() {
 
               {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0) && (
                 <>
-                  <tr className={`border-t ${border}`}>
-                    <td colSpan={14} className={sectionHead}>
-                      Transfers <span className="normal-case tracking-normal font-normal">— own money moving, outside the P&amp;L</span>
-                    </td>
-                  </tr>
-                  {pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
+                  {sectionHeaderRow("transfers", "Transfers", "— own money moving, outside the P&L")}
+                  {!collapsed.has("transfers") &&
+                    pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
                   {bodyRow("Net transfers", pnl.transfers.net, pnl.transfers.total, "transfers", {
                     bold: true,
                     drillLabel: null,
@@ -434,13 +501,13 @@ export default function BooksReports() {
                 pnl.intercompany.in.some((v) => v !== 0) ||
                 pnl.intercompany.out.some((v) => v !== 0)) && (
                 <>
-                  <tr className={`border-t ${border}`}>
-                    <td colSpan={14} className={sectionHead}>
-                      Intercompany <span className="normal-case tracking-normal font-normal">— with entities outside this selection</span>
-                    </td>
-                  </tr>
-                  {bodyRow("In", pnl.intercompany.in, pnl.intercompany.in.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
-                  {bodyRow("Out", pnl.intercompany.out.map((v) => -v), -pnl.intercompany.out.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
+                  {sectionHeaderRow("intercompany", "Intercompany", "— with entities outside this selection")}
+                  {!collapsed.has("intercompany") && (
+                    <>
+                      {bodyRow("In", pnl.intercompany.in, pnl.intercompany.in.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
+                      {bodyRow("Out", pnl.intercompany.out.map((v) => -v), -pnl.intercompany.out.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
+                    </>
+                  )}
                   {bodyRow("Net", pnl.intercompany.net, pnl.intercompany.total, "intercompany", { bold: true, drillLabel: null })}
                 </>
               )}

@@ -181,7 +181,7 @@ export default function AppLayout() {
     navigate(to);
   }
 
-  const menuItemCls = `w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
+  const menuItemCls = `w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
     isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
   }`;
 
@@ -322,7 +322,7 @@ export default function AppLayout() {
           {userMenuOpen && (
             <div
               role="menu"
-              className={`absolute bottom-full left-3 right-3 mb-2 rounded-xl border shadow-lg overflow-hidden z-50 ${
+              className={`absolute bottom-full left-3 mb-2 w-56 max-w-[calc(100vw-1.5rem)] rounded-xl border shadow-lg overflow-hidden z-50 ${
                 isDark ? "bg-[#1a1a1a] border-white/10" : "bg-white border-gray-200"
               }`}
             >
@@ -364,7 +364,7 @@ export default function AppLayout() {
                   navigate("/login");
                 }}
                 role="menuitem"
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
                   isDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
                 }`}
               >

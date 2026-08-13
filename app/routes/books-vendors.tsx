@@ -99,7 +99,7 @@ export default function BooksVendors() {
   const years = [0, 1].map((d) => String(new Date().getFullYear() - d));
 
   return (
-    <div className="max-w-6xl">
+    <div className="w-full">
       <div className="mb-6">
         <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Vendors</h1>
         <p className={`text-sm mt-1 ${subtle}`}>
