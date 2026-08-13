@@ -133,9 +133,14 @@ export default function BooksReports() {
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
   const faint = isDark ? "text-gray-700" : "text-gray-300";
   const colHi = isDark ? "bg-white/[0.035]" : "bg-black/[0.02]";
-  const bandBg = isDark ? "bg-white/[0.02]" : "bg-gray-50/70";
+  const futureCol = isDark ? "bg-white/[0.012]" : "bg-black/[0.012]";
+  const bandBg = isDark ? "bg-white/[0.025]" : "bg-gray-50/80";
+  const hoverRow = isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/70";
   const thisYear = Number(year) === new Date().getFullYear();
   const curMonth = thisYear ? new Date().getMonth() : -1;
+  const sectionKeys = ["income", "expenses", "transfers", "intercompany"];
+  const allCollapsed = sectionKeys.every((k) => collapsed.has(k));
+  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(sectionKeys));
 
   const num = "px-3 py-2 text-right whitespace-nowrap tabular-nums";
   const sectionHead = `px-3 py-2 text-[11px] font-semibold uppercase tracking-wider ${subtle}`;
@@ -157,25 +162,30 @@ export default function BooksReports() {
     monthly: number[],
     total: number,
     section: string,
-    opts?: { bold?: boolean; color?: string; indent?: boolean; drillLabel?: string | null }
+    opts?: { bold?: boolean; headline?: boolean; color?: string; indent?: boolean; drillLabel?: string | null }
   ) {
     const drillLabel = opts?.drillLabel === undefined ? rowLabel : opts.drillLabel;
-    const band = opts?.bold ? bandBg : "";
+    const topBorder = opts?.headline ? `border-t-2 ${border}` : `border-t ${rowBorder}`;
+    const emphasis = opts?.headline ? `${bandBg} text-[15px]` : opts?.bold ? bandBg : hoverRow;
     return (
-      <tr key={`${section}-${rowLabel}`} className={`border-t ${rowBorder} ${opts?.bold ? "font-semibold" : ""} ${band}`}>
-        <td className={`px-3 py-2 sticky left-0 whitespace-nowrap ${stickyBg} ${opts?.indent ? "pl-6" : ""}`}>
+      <tr key={`${section}-${rowLabel}`} className={`${topBorder} ${opts?.bold || opts?.headline ? "font-semibold" : ""} ${emphasis}`}>
+        <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r ${rowBorder} ${stickyBg} ${opts?.indent ? "pl-6" : ""}`}>
           {rowLabel}
         </td>
-        {monthly.map((v, i) => (
-          <td key={i} className={`${num} ${i === curMonth ? colHi : ""} ${opts?.color ?? (v === 0 ? faint : "")}`}>
-            {v === 0 ? (
-              money(v)
-            ) : (
-              <button className={cellBtn} onClick={() => drill(section, drillLabel, i)}>{money(v)}</button>
-            )}
-          </td>
-        ))}
-        <td className={`${num} font-semibold ${colHi} ${opts?.color ?? ""}`}>
+        {monthly.map((v, i) => {
+          const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
+          const tone = opts?.color ?? (v === 0 ? faint : v < 0 ? "text-rose-400" : "");
+          return (
+            <td key={i} className={`${num} ${colBg} ${tone}`}>
+              {v === 0 ? (
+                money(v)
+              ) : (
+                <button className={cellBtn} onClick={() => drill(section, drillLabel, i)}>{money(v)}</button>
+              )}
+            </td>
+          );
+        })}
+        <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${opts?.color ?? (total < 0 ? "text-rose-400" : "")}`}>
           {total === 0 ? (
             money(total)
           ) : (
@@ -193,9 +203,9 @@ export default function BooksReports() {
       <tr
         key={`head-${id}`}
         onClick={() => toggleSection(id)}
-        className={`border-t ${border} cursor-pointer select-none ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-black/[0.02]"}`}
+        className={`border-t ${border} cursor-pointer select-none ${bandBg} ${isDark ? "hover:bg-white/[0.05]" : "hover:bg-black/[0.04]"}`}
       >
-        <td colSpan={14} className={`${sectionHead} sticky left-0 ${stickyBg}`}>
+        <td colSpan={14} className={`${sectionHead} sticky left-0 border-r ${rowBorder} ${bandBg}`}>
           <span className="inline-flex items-center gap-1.5">
             <svg
               className={`w-3 h-3 transition-transform duration-150 ${isCollapsed ? "-rotate-90" : ""}`}
@@ -450,15 +460,34 @@ export default function BooksReports() {
       ) : (
         <div className={`rounded-xl border overflow-x-auto ${card}`}>
           <table className="text-sm min-w-[1100px] w-full">
-            <thead className={`sticky top-0 z-20 ${stickyBg}`}>
+            <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
               <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
-                <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 ${stickyBg}`}>
-                  {pickerLabel} · {pnl.year}
+                <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 border-r ${rowBorder} ${stickyBg}`}>
+                  <button
+                    onClick={toggleAll}
+                    title={allCollapsed ? "Expand all" : "Collapse all"}
+                    className="inline-flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity"
+                  >
+                    <svg
+                      className={`w-3 h-3 transition-transform duration-150 ${allCollapsed ? "-rotate-90" : ""}`}
+                      fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                    {pickerLabel} · {pnl.year}
+                  </button>
                 </th>
                 {MONTHS.map((m, i) => (
-                  <th key={m} className={`px-3 py-3 text-right font-medium ${i === curMonth ? colHi : ""}`}>{m}</th>
+                  <th
+                    key={m}
+                    className={`px-3 py-3 text-right font-medium min-w-[68px] ${
+                      i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : ""
+                    }`}
+                  >
+                    {m}
+                  </th>
                 ))}
-                <th className={`px-3 py-3 text-right font-medium ${colHi}`}>Total</th>
+                <th className={`px-3 py-3 text-right font-medium min-w-[80px] border-l ${rowBorder} ${colHi}`}>Total</th>
               </tr>
             </thead>
             <tbody>
@@ -480,7 +509,7 @@ export default function BooksReports() {
               })}
 
               {bodyRow("Net", pnl.net_monthly, pnl.net_total, "net", {
-                bold: true,
+                headline: true,
                 color: pnl.net_total >= 0 ? "text-emerald-500" : "text-red-400",
                 drillLabel: null,
               })}
