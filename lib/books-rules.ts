@@ -29,77 +29,67 @@ const MOVEMENT = /^(TRANSFER_IN|TRANSFER_OUT|INCOME|LOAN_DISBURSEMENTS|LOAN_PAYM
 
 const RULES: Rule[] = [
   // ── Taxes first — several arrive mislabelled as transfers ─────────────
-  { match: /internal revenue|gcrevenu|gc<>revenu|cochise county treasurer/i, category: "Taxes & government", type: "normal" },
+  { match: /internal revenue|gcrevenu|gc<>revenu|cochise county treasurer/i, category: "6700 Taxes & Licenses", type: "normal" },
 
   // ── Real income and bills whose text often carries a family name — they
   //    must win before the broad internal-move rules below ───────────────
-  { match: /social security|ssa treas/i, category: "Social Security", type: "normal" },
-  { match: /focus hospitalit/i, category: "Property income", type: "normal" },
-  { match: /interest payment|cashback|cash bonus for referring/i, category: "Interest & rewards", type: "normal" },
-  { match: /tep corporate|tucson electric/i, category: "Utilities", type: "normal" },
-  { match: /payment escrow/i, category: "Mortgage & escrow", type: "normal" },
-  { match: /io autopay|citi autopay|wf credit card|auto pay/i, category: "Credit card payments", type: "transfer" },
+  { match: /social security|ssa treas/i, category: "4300 Social Security Income", type: "normal" },
+  { match: /focus hospitalit/i, category: "4000 Rental Income", type: "normal" },
+  { match: /interest payment|cashback|cash bonus for referring/i, category: "4100 Interest Income", type: "normal" },
+  { match: /tep corporate|tucson electric/i, category: "6250 Utilities", type: "normal" },
+  { match: /payment escrow/i, category: "7000 Mortgage Interest", type: "normal" },
+  { match: /io autopay|citi autopay|wf credit card|auto pay/i, category: "9150 Credit Card Payments", type: "transfer" },
 
   // ── Loans the family expects back — reviewed in Transfers, not the P&L ─
-  { match: /7a recovery|seven arrows/i, category: "Seven Arrows Recovery (loan)", type: "transfer" },
+  { match: /7a recovery|seven arrows/i, category: "9300 Loans", type: "transfer" },
 
   // ── Entity-to-entity movements ────────────────────────────────────────
-  { match: ENTITY_NAMES, plaid: MOVEMENT, category: "Intercompany", type: "intercompany" },
+  { match: ENTITY_NAMES, plaid: MOVEMENT, category: "9000 Intercompany", type: "intercompany" },
 
   // ── Family-internal movements (between the family's own accounts) ─────
-  { match: /\bburton\b/i, plaid: MOVEMENT, category: "Internal moves", type: "transfer" },
-  { match: /transfer from mercury to another bank account|auto-routing transfer/i, category: "Internal moves", type: "transfer" },
-  { match: /mobile deposit/i, category: "Deposits", type: "transfer" },
-  { match: /atm withdrawal|withdrawal authorized/i, category: "Cash withdrawals", type: "normal" },
-  { match: /^check$/i, category: "Checks written", type: "normal" },
+  { match: /\bburton\b/i, plaid: MOVEMENT, category: "9100 Internal Transfers", type: "transfer" },
+  { match: /transfer from mercury to another bank account|auto-routing transfer/i, category: "9100 Internal Transfers", type: "transfer" },
+  { match: /mobile deposit/i, category: "9100 Internal Transfers", type: "transfer" },
+  { match: /atm withdrawal|withdrawal authorized/i, category: "6900 Other Operating Expenses", type: "normal" },
+  { match: /^check$/i, category: "6900 Other Operating Expenses", type: "normal" },
 
-  { match: /catalog digital/i, category: "Outside services", type: "normal" },
+  { match: /catalog digital/i, category: "6150 Contract Services", type: "normal" },
 
   // ── Recurring operating expenses ──────────────────────────────────────
-  { match: /liberty mutual/i, category: "Insurance" },
-  { match: /nest payroll|gusto/i, category: "Payroll & HR" },
-  { match: /legalzoom|ecm a legalzoom|\bafp\b/i, category: "Legal & professional" },
-  { match: /mercury subscription|mercury technologies/i, category: "Bank & card fees" },
+  { match: /liberty mutual/i, category: "6200 Insurance" },
+  { match: /nest payroll|gusto/i, category: "6000 Salaries & Wages" },
+  { match: /legalzoom|ecm a legalzoom|\bafp\b/i, category: "6100 Professional Fees" },
+  { match: /mercury subscription|mercury technologies/i, category: "6400 Bank & Card Fees" },
   {
     match:
       /vercel|anthropic|claude|google cloud|openai|coefficient|resend|semrush|serpapi|surferseo|reddgrow|toggl|webshare|clerk|twilio|wispr|svg ai|plaid|intuit|wave\b|fal features|ayrshare|cmd-n|antinote/i,
-    category: "Software & technology",
+    category: "6450 Dues & Subscriptions",
   },
-  { match: /d & m tire|\bbird\b/i, category: "Auto & transport" },
-  { match: /flora|amazon|barnes and noble/i, category: "Merchandise & household" },
+  { match: /d & m tire|\bbird\b/i, category: "6550 Automobile & Transport" },
+  { match: /flora|amazon|barnes and noble/i, category: "6500 Supplies" },
 ];
 
 // Plaid-category fallbacks, when no merchant rule matched.
 const PLAID_FALLBACK: Array<[RegExp, string]> = [
-  [/^TRANSPORTATION$/, "Auto & transport"],
-  [/^GENERAL_MERCHANDISE$/, "Merchandise & household"],
-  [/^FOOD_AND_DRINK$/, "Food & dining"],
-  [/^ENTERTAINMENT$/, "Entertainment"],
-  [/^TRAVEL$/, "Travel"],
-  [/^RENT_AND_UTILITIES$/, "Rent & utilities"],
-  [/^GOVERNMENT_AND_NON_PROFIT$/, "Taxes & government"],
-  [/^GENERAL_SERVICES$/, "Services (other)"],
-  [/^MEDICAL$/, "Medical"],
-  [/^PERSONAL_CARE$/, "Personal care"],
-  [/^INCOME$/, "Other income"],
-  [/^TRANSFER_(IN|OUT)$/, "Other transfers"],
-  [/^LOAN_DISBURSEMENTS$/, "Loan proceeds"],
-  [/^LOAN_PAYMENTS$/, "Loan payments"],
+  [/^TRANSPORTATION$/, "6550 Automobile & Transport"],
+  [/^GENERAL_MERCHANDISE$/, "6500 Supplies"],
+  [/^FOOD_AND_DRINK$/, "6600 Meals & Entertainment"],
+  [/^ENTERTAINMENT$/, "6600 Meals & Entertainment"],
+  [/^TRAVEL$/, "6650 Travel"],
+  [/^RENT_AND_UTILITIES$/, "6250 Utilities"],
+  [/^GOVERNMENT_AND_NON_PROFIT$/, "6700 Taxes & Licenses"],
+  [/^GENERAL_SERVICES$/, "6900 Other Operating Expenses"],
+  [/^MEDICAL$/, "6750 Medical"],
+  [/^PERSONAL_CARE$/, "6900 Other Operating Expenses"],
+  [/^INCOME$/, "4900 Other Income"],
+  [/^TRANSFER_(IN|OUT)$/, "9100 Internal Transfers"],
+  [/^LOAN_DISBURSEMENTS$/, "9300 Loans"],
+  [/^LOAN_PAYMENTS$/, "9300 Loans"],
 ];
 
-/**
- * The full chart of accounts offered in the category pickers — every account a
- * rule or Plaid fallback can assign, plus manual-only accounts like Contracts,
- * so they're all selectable even before a transaction has been filed under
- * them. The meta endpoint unions this with whatever's actually in the data.
- */
-export const ACCOUNTS: string[] = [
-  ...new Set([
-    ...RULES.map((r) => r.category),
-    ...PLAID_FALLBACK.map(([, category]) => category),
-    "Contracts",
-  ]),
-].sort((a, b) => a.localeCompare(b));
+// The numbered chart of accounts lives in books-accounts; re-export it so the
+// meta endpoint and the rule engine share one source of truth.
+export { ACCOUNTS, sectionOf, CHART } from "./books-accounts.js";
 
 type Db = (path: string, init?: RequestInit) => Promise<Response>;
 

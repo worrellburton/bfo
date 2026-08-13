@@ -11,9 +11,10 @@ export function meta() {
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 const SECTION_TITLES: Record<string, string> = {
-  income: "Income",
-  expenses: "Expenses",
-  net: "Net",
+  revenue: "Revenue",
+  operating: "Operating expenses",
+  other: "Other income / (expense)",
+  net: "Net income",
   transfers: "Transfers",
   intercompany: "Intercompany",
 };
@@ -26,7 +27,7 @@ export default function BooksCell() {
 
   const entity = params.get("entity") ?? "all";
   const year = params.get("year") ?? String(new Date().getFullYear());
-  const section = params.get("section") ?? "expenses";
+  const section = params.get("section") ?? "operating";
   const label = params.get("label");
   const month = params.get("month");
 

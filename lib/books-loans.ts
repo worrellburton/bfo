@@ -45,9 +45,10 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
 
   const txns = await sb<LoanTxn[]>(
     "book_transactions?select=*&pending=eq.false" +
-      // The ilike pattern is quoted — bare parentheses inside an or=() group
-      // break PostgREST's parser and the filter silently matches nothing.
-      '&or=(loan_id.not.is.null,book_category.ilike."*(loan)*",intercompany_class.eq.loan)' +
+      // Loans are identified by an explicit loan_id or the intercompany loan
+      // class. (The old "Name (loan)" category convention was retired when the
+      // chart of accounts went numeric — those rows now carry a loan_id.)
+      "&or=(loan_id.not.is.null,intercompany_class.eq.loan)" +
       "&order=date.desc&limit=2000"
   );
 

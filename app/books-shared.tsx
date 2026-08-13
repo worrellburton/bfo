@@ -330,7 +330,7 @@ export function TxnTable({
           <th className="px-2 py-3 font-medium">Date</th>
           <th className="px-2 py-3 font-medium">Description</th>
           <th className="px-2 py-3 font-medium">Entity</th>
-          <th className="px-2 py-3 font-medium">Category</th>
+          <th className="px-2 py-3 font-medium">Account</th>
           <th className="px-2 py-3 font-medium">Type</th>
           <th className="px-2 py-3 font-medium text-right">Amount</th>
         </tr>

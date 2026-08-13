@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
-import { patchMatching, ACCOUNTS } from "../../lib/books-rules.js";
+import { patchMatching, ACCOUNTS, sectionOf } from "../../lib/books-rules.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -408,6 +408,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rowLabel = (t: BookTxn) =>
         t.loan_id ? `${loanNames.get(t.loan_id) ?? "Loan"} (loan)` : label(t);
 
+      // Which income-statement group a 'normal' row lands in: its account's
+      // section, or — for uncategorized / flow-coded rows — by sign.
+      const pnlSection = (t: BookTxn): "revenue" | "operating" | "other" => {
+        const sec = sectionOf(label(t));
+        if (sec === "revenue" || sec === "operating" || sec === "other") return sec;
+        return t.amount < 0 ? "revenue" : "operating";
+      };
+
       // ── One P&L cell: the transactions behind it ──────────────────────
       if (report === "cell") {
         const section = String(req.query.section ?? "");
@@ -418,11 +426,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .filter((t) => {
             if (month !== null && monthOf(t.date) !== month - 1) return false;
             const eff = effType(t);
-            if (section === "income") {
-              return eff === "normal" && t.amount < 0 && (!wantLabel || label(t) === wantLabel);
-            }
-            if (section === "expenses") {
-              return eff === "normal" && t.amount > 0 && (!wantLabel || label(t) === wantLabel);
+            if (section === "revenue" || section === "operating" || section === "other") {
+              return eff === "normal" && pnlSection(t) === section && (!wantLabel || label(t) === wantLabel);
             }
             if (section === "net") return eff === "normal";
             if (section === "transfers") {
@@ -437,10 +442,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ transactions: matches, count: matches.length });
       }
 
-      // ── The P&L matrix itself ─────────────────────────────────────────
+      // ── The P&L matrix itself — grouped into GAAP statement sections ──
       const zeros = () => Array(12).fill(0) as number[];
-      const income = new Map<string, number[]>();
-      const expenses = new Map<string, number[]>();
+      const revenue = new Map<string, number[]>();   // inflows positive
+      const operating = new Map<string, number[]>(); // outflows positive (expense)
+      const other = new Map<string, number[]>();      // 7000s: outflows positive
       const transferCats = new Map<string, number[]>(); // net by category
       const transfersIn = zeros();
       const transfersOut = zeros();
@@ -470,10 +476,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        // Plaid: negative = money in. Cash-basis P&L: inflows are income.
-        const bucket = t.amount < 0 ? income : expenses;
+        // Group by the account's statement section; within an account the
+        // sign nets (a refund reduces the account rather than flipping sides).
+        // Revenue carries inflows positive; expense sections carry outflows
+        // positive. Plaid signs money-in negative.
+        const sec = pnlSection(t);
+        const bucket = sec === "revenue" ? revenue : sec === "other" ? other : operating;
+        const signed = sec === "revenue" ? -t.amount : t.amount;
         const row = bucket.get(label(t)) ?? zeros();
-        row[m] += Math.abs(t.amount);
+        row[m] += signed;
         bucket.set(label(t), row);
       }
 
@@ -484,13 +495,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             monthly,
             total: monthly.reduce((s, v) => s + v, 0),
           }))
-          .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+          // Chart accounts sort by their leading code; everything else trails.
+          .sort((a, b) => a.label.localeCompare(b.label));
 
-      const incomeRows = toRows(income);
-      const expenseRows = toRows(expenses);
-      const incomeMonthly = zeros().map((_, m) => incomeRows.reduce((s, r) => s + r.monthly[m], 0));
-      const expenseMonthly = zeros().map((_, m) => expenseRows.reduce((s, r) => s + r.monthly[m], 0));
-      const netMonthly = incomeMonthly.map((v, m) => v - expenseMonthly[m]);
+      const revenueRows = toRows(revenue);
+      const operatingRows = toRows(operating);
+      const otherRows = toRows(other);
+      const sumMonthly = (rs: Array<{ monthly: number[] }>) =>
+        zeros().map((_, m) => rs.reduce((s, r) => s + r.monthly[m], 0));
+      const revenueMonthly = sumMonthly(revenueRows);
+      const operatingMonthly = sumMonthly(operatingRows);
+      const otherMonthly = sumMonthly(otherRows);
+      const operatingIncomeMonthly = revenueMonthly.map((v, m) => v - operatingMonthly[m]);
+      const netMonthly = operatingIncomeMonthly.map((v, m) => v - otherMonthly[m]);
 
       return res.json({
         year: Number(year),
@@ -498,10 +515,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         basis: "cash",
         transaction_count: rows.length,
         eliminated_count: eliminatedCount,
-        income: incomeRows,
-        expenses: expenseRows,
-        income_monthly: incomeMonthly,
-        expense_monthly: expenseMonthly,
+        revenue: revenueRows,
+        operating: operatingRows,
+        other: otherRows,
+        revenue_monthly: revenueMonthly,
+        operating_monthly: operatingMonthly,
+        other_monthly: otherMonthly,
+        operating_income_monthly: operatingIncomeMonthly,
         net_monthly: netMonthly,
         net_total: netMonthly.reduce((s, v) => s + v, 0),
         transfers: {

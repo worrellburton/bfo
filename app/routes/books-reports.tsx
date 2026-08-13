@@ -13,10 +13,13 @@ type Pnl = {
   entity: string;
   transaction_count: number;
   eliminated_count: number;
-  income: PnlRow[];
-  expenses: PnlRow[];
-  income_monthly: number[];
-  expense_monthly: number[];
+  revenue: PnlRow[];
+  operating: PnlRow[];
+  other: PnlRow[];
+  revenue_monthly: number[];
+  operating_monthly: number[];
+  other_monthly: number[];
+  operating_income_monthly: number[];
   net_monthly: number[];
   net_total: number;
   transfers: { rows: PnlRow[]; in: number[]; out: number[]; net: number[]; total: number };
@@ -138,7 +141,7 @@ export default function BooksReports() {
   const hoverRow = isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/70";
   const thisYear = Number(year) === new Date().getFullYear();
   const curMonth = thisYear ? new Date().getMonth() : -1;
-  const sectionKeys = ["income", "expenses", "transfers", "intercompany"];
+  const sectionKeys = ["revenue", "operating", "other", "transfers", "intercompany"];
   const allCollapsed = sectionKeys.every((k) => collapsed.has(k));
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(sectionKeys));
 
@@ -491,24 +494,44 @@ export default function BooksReports() {
               </tr>
             </thead>
             <tbody>
-              {sectionHeaderRow("income", "Income")}
-              {!collapsed.has("income") &&
-                pnl.income.map((r) => bodyRow(r.label, r.monthly, r.total, "income", { indent: true }))}
-              {bodyRow("Total income", pnl.income_monthly, pnl.income_monthly.reduce((a, b) => a + b, 0), "income", {
+              {sectionHeaderRow("revenue", "Revenue")}
+              {!collapsed.has("revenue") &&
+                pnl.revenue.map((r) => bodyRow(r.label, r.monthly, r.total, "revenue", { indent: true }))}
+              {bodyRow("Total revenue", pnl.revenue_monthly, pnl.revenue_monthly.reduce((a, b) => a + b, 0), "revenue", {
                 bold: true,
                 color: "text-emerald-500",
                 drillLabel: null,
               })}
 
-              {sectionHeaderRow("expenses", "Expenses")}
-              {!collapsed.has("expenses") &&
-                pnl.expenses.map((r) => bodyRow(r.label, r.monthly, r.total, "expenses", { indent: true }))}
-              {bodyRow("Total expenses", pnl.expense_monthly, pnl.expense_monthly.reduce((a, b) => a + b, 0), "expenses", {
+              {sectionHeaderRow("operating", "Operating expenses")}
+              {!collapsed.has("operating") &&
+                pnl.operating.map((r) => bodyRow(r.label, r.monthly, r.total, "operating", { indent: true }))}
+              {bodyRow("Total operating expenses", pnl.operating_monthly, pnl.operating_monthly.reduce((a, b) => a + b, 0), "operating", {
                 bold: true,
                 drillLabel: null,
               })}
 
-              {bodyRow("Net", pnl.net_monthly, pnl.net_total, "net", {
+              {bodyRow(
+                "Operating income",
+                pnl.operating_income_monthly,
+                pnl.operating_income_monthly.reduce((a, b) => a + b, 0),
+                "net",
+                { bold: true, color: "text-gray-400", drillLabel: null }
+              )}
+
+              {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
+                <>
+                  {sectionHeaderRow("other", "Other income / (expense)")}
+                  {!collapsed.has("other") &&
+                    pnl.other.map((r) => bodyRow(r.label, r.monthly, r.total, "other", { indent: true }))}
+                  {bodyRow("Total other", pnl.other_monthly, pnl.other_monthly.reduce((a, b) => a + b, 0), "other", {
+                    bold: true,
+                    drillLabel: null,
+                  })}
+                </>
+              )}
+
+              {bodyRow("Net income", pnl.net_monthly, pnl.net_total, "net", {
                 headline: true,
                 color: pnl.net_total >= 0 ? "text-emerald-500" : "text-red-400",
                 drillLabel: null,
