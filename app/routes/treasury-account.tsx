@@ -25,7 +25,11 @@ type Account = {
   change_since: string | null;
   nickname: string | null;
   hidden: boolean;
+  entity_id: string | null;
+  entity_name: string | null;
 };
+
+type Entity = { id: string; name: string };
 
 type Txn = {
   date: string;
@@ -59,6 +63,8 @@ export default function TreasuryAccount() {
   const isDark = theme === "dark";
 
   const [account, setAccount] = useState<Account | null>(null);
+  const [siblings, setSiblings] = useState<Account[]>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [status, setStatus] = useState<"online" | "reconnect" | "offline">("online");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -78,8 +84,10 @@ export default function TreasuryAccount() {
         const res = await authFetch("/api/plaid/data?report=treasury");
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.message || "Couldn't load the account.");
+        const list: Account[] = (data.accounts ?? []).filter((a: Account) => !a.hidden);
         const found = (data.accounts ?? []).find((a: Account) => a.account_id === accountId);
         if (!found) throw new Error("That account isn't connected any more.");
+        setSiblings(list.some((a) => a.account_id === found.account_id) ? list : [found, ...list]);
         setAccount(found);
         setStatus(
           (data.connections ?? []).find((c: any) => c.item_id === found.item_id)?.status ?? "offline"
@@ -112,6 +120,25 @@ export default function TreasuryAccount() {
   }, [account]);
 
   useEffect(() => {
+    // Entities come from the Firebase assets tree, same source as the mappings page.
+    let unsub: (() => void) | undefined;
+    void (async () => {
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, onValue } = await import("firebase/database");
+      unsub = onValue(ref(db, "assets"), (snap) => {
+        const data = snap.val() || {};
+        setEntities(
+          Object.entries<any>(data)
+            .map(([id, asset]) => ({ id, name: asset?.name || "Unnamed entity" }))
+            .sort((a, b) => a.name.localeCompare(b.name))
+        );
+      });
+    })();
+    return () => unsub?.();
+  }, []);
+
+  useEffect(() => {
     if (editingName) nameInput.current?.focus();
   }, [editingName]);
 
@@ -126,6 +153,24 @@ export default function TreasuryAccount() {
       return;
     }
     setAccount({ ...account, ...("nickname" in patch ? { nickname: patch.nickname || null } : {}), ...("hidden" in patch ? { hidden: !!patch.hidden } : {}) });
+  }
+
+  async function assignEntity(entityId: string) {
+    if (!account) return;
+    const entity = entities.find((e) => e.id === entityId) ?? null;
+    const res = await authFetch("/api/plaid/account-prefs", {
+      method: "POST",
+      body: JSON.stringify({
+        account_id: account.account_id,
+        entity_id: entity?.id ?? "",
+        entity_name: entity?.name ?? "",
+      }),
+    });
+    if (!res.ok) {
+      setError("Couldn't save that mapping.");
+      return;
+    }
+    setAccount({ ...account, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null });
   }
 
   const filtered = useMemo(() => {
@@ -157,9 +202,44 @@ export default function TreasuryAccount() {
   const displayName = account.nickname || account.official_name || account.name;
   const online = status === "online";
 
+  const idx = siblings.findIndex((a) => a.account_id === account.account_id);
+  const count = siblings.length;
+  const prevAcct = count > 1 ? siblings[(idx - 1 + count) % count] : null;
+  const nextAcct = count > 1 ? siblings[(idx + 1) % count] : null;
+  const navBtn = `w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
+    isDark ? "border-white/10 text-gray-400 hover:bg-white/10 hover:text-white" : "border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+  }`;
+
   return (
     <div>
-      <Link to="/treasury" className={`text-sm ${subtle} hover:underline`}>← Treasury</Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link to="/treasury" className={`text-sm ${subtle} hover:underline`}>← Treasury</Link>
+        {count > 1 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => prevAcct && navigate(`/treasury/${prevAcct.account_id}`)}
+              title={prevAcct ? prevAcct.nickname || prevAcct.official_name || prevAcct.name : "Previous"}
+              className={navBtn}
+              aria-label="Previous account"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+            <span className={`text-xs tabular-nums ${subtle}`}>{idx + 1} / {count}</span>
+            <button
+              onClick={() => nextAcct && navigate(`/treasury/${nextAcct.account_id}`)}
+              title={nextAcct ? nextAcct.nickname || nextAcct.official_name || nextAcct.name : "Next"}
+              className={navBtn}
+              aria-label="Next account"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Header card in the bank's colours */}
       <div
@@ -262,6 +342,31 @@ export default function TreasuryAccount() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Entity mapping */}
+      <div className="flex items-center gap-2 mb-6 -mt-1">
+        <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Entity</span>
+        <span className="relative inline-flex items-center">
+          <select
+            value={account.entity_id ?? ""}
+            disabled={entities.length === 0}
+            onChange={(e) => void assignEntity(e.target.value)}
+            className={`appearance-none pl-3.5 pr-9 py-1.5 rounded-full text-sm border cursor-pointer disabled:opacity-50 ${
+              account.entity_id
+                ? isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                : isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
+            }`}
+          >
+            <option value="">{entities.length === 0 ? "No entities found" : "Unassigned"}</option>
+            {entities.map((e) => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+          <svg className="w-3.5 h-3.5 absolute right-3.5 pointer-events-none opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </span>
       </div>
 
       {/* Transactions */}
