@@ -75,6 +75,18 @@ function isTransfer(t: any): boolean {
   return primary === "TRANSFER_IN" || primary === "TRANSFER_OUT";
 }
 
+/**
+ * Mercury embeds the real counterparty in the description
+ * ("…via mercury.com; Merchant name: X"), while Plaid's merchant_name carries
+ * the *sending* entity. Prefer the named payee as the vendor so the recipient
+ * shows through instead of the account owner.
+ */
+function mercuryPayee(name: string | null | undefined): string | null {
+  if (!name || !/via mercury\.com;\s*merchant name:/i.test(name)) return null;
+  const m = name.match(/merchant name:\s*(.+)$/i);
+  return m?.[1]?.trim() || null;
+}
+
 async function upsertChunked(rows: TxnRow[]) {
   for (let i = 0; i < rows.length; i += 500) {
     const r = await db("book_transactions", {
@@ -267,7 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 item_id: item.item_id,
                 date: t.date,
                 name: t.name ?? null,
-                merchant_name: t.merchant_name ?? null,
+                merchant_name: mercuryPayee(t.name) ?? t.merchant_name ?? null,
                 amount: t.amount,
                 pending: !!t.pending,
                 currency: t.iso_currency_code ?? null,

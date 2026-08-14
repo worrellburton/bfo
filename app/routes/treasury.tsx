@@ -283,6 +283,8 @@ export default function Treasury() {
     setError("");
     try {
       if ((await runUpdateLink(conn.item_id)) === "done") {
+        // Extended history only backfills after the cursor is cleared.
+        await call("/api/plaid/reset-cursor", { method: "POST", body: JSON.stringify({ item_id: conn.item_id }) }).catch(() => {});
         await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" });
         await load();
       }
@@ -300,8 +302,10 @@ export default function Treasury() {
       let anyDone = false;
       for (const conn of connections) {
         const result = await runUpdateLink(conn.item_id);
-        if (result === "done") anyDone = true;
-        else break; // user cancelled — stop before opening the next bank
+        if (result !== "done") break; // user cancelled — stop before the next bank
+        anyDone = true;
+        // Clear the cursor so the next sync re-pulls the now-extended window.
+        await call("/api/plaid/reset-cursor", { method: "POST", body: JSON.stringify({ item_id: conn.item_id }) }).catch(() => {});
       }
       if (anyDone) {
         await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" });
