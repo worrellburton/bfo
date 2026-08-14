@@ -339,11 +339,11 @@ export function TxnTable({
         <tr className={`text-left text-xs uppercase tracking-wider ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
           <th className="w-8" />
           <th className="px-2 py-3 font-medium">Date</th>
-          <th className="px-2 py-3 font-medium">Vendor</th>
-          <th className="px-2 py-3 font-medium">Description</th>
           <th className="px-2 py-3 font-medium">Entity</th>
-          <th className="px-2 py-3 font-medium">Account</th>
           <th className="px-2 py-3 font-medium">Type</th>
+          <th className="px-2 py-3 font-medium">Description</th>
+          <th className="px-2 py-3 font-medium">Vendor</th>
+          <th className="px-2 py-3 font-medium">Account</th>
           <th className="px-2 py-3 font-medium text-right">Amount</th>
         </tr>
       </thead>
@@ -375,6 +375,35 @@ export function TxnTable({
                   </button>
                 </td>
                 <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
+                <td className={`px-2 py-2.5 whitespace-nowrap ${t.entity_name ? "" : "text-amber-500"}`}>
+                  {t.entity_name || "Unmapped"}
+                </td>
+                <td className="px-2 py-2.5">
+                  {/* On a loan, the movement posts to the loan account — type
+                      and account give way to the balance sheet. */}
+                  {t.loan_id ? (
+                    <span className={`inline-block px-2 py-1 rounded-md text-xs font-medium ${
+                      isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"
+                    }`}>
+                      {inflow ? "Loan payback" : "Loan advance"}
+                    </span>
+                  ) : (
+                    <Menu
+                      value={eff}
+                      isDark={isDark}
+                      disabled={busy === t.transaction_id}
+                      onChange={(v) => void update(t, { type_override: v })}
+                      options={[
+                        { value: "normal", label: inflow ? "Income" : "Expense" },
+                        { value: "transfer", label: "Transfer" },
+                        { value: "intercompany", label: "Roll-up" },
+                      ]}
+                    />
+                  )}
+                </td>
+                <td className={`px-2 py-2.5 max-w-[280px] ${subtle}`} title={t.name ?? undefined}>
+                  <span className="truncate block max-w-full">{t.name || "—"}</span>
+                </td>
                 <td className="px-2 py-2.5 max-w-[200px]">
                   {vendor ? (
                     <button
@@ -391,62 +420,28 @@ export function TxnTable({
                     <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>
                   )}
                 </td>
-                <td className={`px-2 py-2.5 max-w-[280px] ${subtle}`} title={t.name ?? undefined}>
-                  <span className="truncate block max-w-full">{t.name || "—"}</span>
-                </td>
-                <td className={`px-2 py-2.5 whitespace-nowrap ${t.entity_name ? "" : "text-amber-500"}`}>
-                  {t.entity_name || "Unmapped"}
-                </td>
-                {t.loan_id ? (
-                  <>
-                    {/* On a loan, the movement posts to the loan account —
-                        category and type give way to the balance sheet. */}
-                    <td className="px-2 py-2.5">
-                      <span className={`inline-block px-2 py-1 rounded-md text-xs ${
-                        isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800"
-                      }`}>
-                        {loans.find((l) => l.id === t.loan_id)?.name ?? "Loan"}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <span className={`inline-block px-2 py-1 rounded-md text-xs font-medium ${
-                        isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"
-                      }`}>
-                        {inflow ? "Loan payback" : "Loan advance"}
-                      </span>
-                    </td>
-                  </>
-                ) : (
-                  <>
                 <td className="px-2 py-2.5">
-                  <Menu
-                    value={t.book_category ?? ""}
-                    isDark={isDark}
-                    disabled={busy === t.transaction_id}
-                    onChange={(v) => void changeCategory(t, v)}
-                    options={[
-                      ...(!t.book_category
-                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto" }]
-                        : []),
-                      ...cats.map((c) => ({ value: c, label: c })),
-                    ]}
-                  />
+                  {t.loan_id ? (
+                    <span className={`inline-block px-2 py-1 rounded-md text-xs ${
+                      isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800"
+                    }`}>
+                      {loans.find((l) => l.id === t.loan_id)?.name ?? "Loan"}
+                    </span>
+                  ) : (
+                    <Menu
+                      value={t.book_category ?? ""}
+                      isDark={isDark}
+                      disabled={busy === t.transaction_id}
+                      onChange={(v) => void changeCategory(t, v)}
+                      options={[
+                        ...(!t.book_category
+                          ? [{ value: "", label: pretty(t.plaid_category), hint: "auto" }]
+                          : []),
+                        ...cats.map((c) => ({ value: c, label: c })),
+                      ]}
+                    />
+                  )}
                 </td>
-                <td className="px-2 py-2.5">
-                  <Menu
-                    value={eff}
-                    isDark={isDark}
-                    disabled={busy === t.transaction_id}
-                    onChange={(v) => void update(t, { type_override: v })}
-                    options={[
-                      { value: "normal", label: inflow ? "Income" : "Expense" },
-                      { value: "transfer", label: "Transfer" },
-                      { value: "intercompany", label: "Roll-up" },
-                    ]}
-                  />
-                </td>
-                  </>
-                )}
                 <td className={`px-2 py-2.5 text-right whitespace-nowrap tabular-nums font-medium ${inflow ? "text-emerald-500" : ""}`}>
                   {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
                 </td>
