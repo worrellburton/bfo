@@ -33,6 +33,17 @@ export function money(n: number, currency = "USD"): string {
   return n.toLocaleString("en-US", { style: "currency", currency });
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-08-08" → "Aug 8th". Parsed straight off the ISO string (no timezone). */
+export function shortDate(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  if (!m || !d) return iso;
+  const v = d % 100;
+  const suffix = v >= 11 && v <= 13 ? "th" : ["th", "st", "nd", "rd"][d % 10] ?? "th";
+  return `${SHORT_MONTHS[m - 1]} ${d}${suffix}`;
+}
+
 export function pretty(cat: string | null): string {
   if (!cat) return "Uncategorized";
   const s = cat.replace(/_/g, " ").toLowerCase();
@@ -323,11 +334,12 @@ export function TxnTable({
   ];
 
   return (
-    <table className="w-full text-sm min-w-[900px]">
+    <table className="w-full text-sm min-w-[1020px]">
       <thead>
         <tr className={`text-left text-xs uppercase tracking-wider ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
           <th className="w-8" />
           <th className="px-2 py-3 font-medium">Date</th>
+          <th className="px-2 py-3 font-medium">Vendor</th>
           <th className="px-2 py-3 font-medium">Description</th>
           <th className="px-2 py-3 font-medium">Entity</th>
           <th className="px-2 py-3 font-medium">Account</th>
@@ -362,8 +374,8 @@ export function TxnTable({
                     </svg>
                   </button>
                 </td>
-                <td className={`px-2 py-2.5 whitespace-nowrap tabular-nums ${subtle}`}>{t.date}</td>
-                <td className="px-2 py-2.5 max-w-[320px]">
+                <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
+                <td className="px-2 py-2.5 max-w-[200px]">
                   {vendor ? (
                     <button
                       onClick={() => navigate(`/books/vendors?q=${encodeURIComponent(vendor)}`)}
@@ -378,6 +390,9 @@ export function TxnTable({
                   {t.pending && (
                     <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>
                   )}
+                </td>
+                <td className={`px-2 py-2.5 max-w-[280px] ${subtle}`} title={t.name ?? undefined}>
+                  <span className="truncate block max-w-full">{t.name || "—"}</span>
                 </td>
                 <td className={`px-2 py-2.5 whitespace-nowrap ${t.entity_name ? "" : "text-amber-500"}`}>
                   {t.entity_name || "Unmapped"}
@@ -439,7 +454,7 @@ export function TxnTable({
               {isOpen && (
                 <tr className={`border-b ${border}`}>
                   <td />
-                  <td colSpan={6} className="px-2 pb-3 pt-1">
+                  <td colSpan={7} className="px-2 pb-3 pt-1">
                     <div className={`rounded-lg border p-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 ${
                       isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"
                     }`}>
