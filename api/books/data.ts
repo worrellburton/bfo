@@ -362,6 +362,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         path += `&or=(type_override.eq.transfer,and(type_override.is.null,txn_type.eq.transfer,intercompany.is.false))`;
       } else if (type === "intercompany") {
         path += `&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))`;
+      } else if (type === "uncategorized") {
+        path += `&book_category=is.null`;
       }
       if (q) {
         // Structural chars and the * wildcard drop out; the LIKE metacharacters

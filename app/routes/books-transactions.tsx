@@ -27,8 +27,9 @@ export default function BooksTransactions() {
 
   const [q, setQ] = useState("");
   const [entity, setEntity] = useState("all");
-  const [type, setType] = useState<"all" | "transfers" | "intercompany">("all");
+  const [type, setType] = useState<"all" | "transfers" | "intercompany" | "uncategorized">("all");
   const [year, setYear] = useState("all");
+  const [uncat, setUncat] = useState<number | null>(null);
 
   const query = useCallback(
     (offset: number) => {
@@ -62,6 +63,22 @@ export default function BooksTransactions() {
     const t = setTimeout(() => void load(), q ? 300 : 0);
     return () => clearTimeout(t);
   }, [load, q]);
+
+  const refreshUncat = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ report: "transactions", type: "uncategorized", limit: "1" });
+      if (entity !== "all") params.set("entity", entity);
+      if (year !== "all") params.set("year", year);
+      const res = await authFetch(`/api/books/data?${params}`);
+      if (res.ok) setUncat((await res.json()).total ?? 0);
+    } catch {
+      // the count is a nudge, not critical
+    }
+  }, [entity, year]);
+
+  useEffect(() => {
+    void refreshUncat();
+  }, [refreshUncat]);
 
   useEffect(() => {
     void (async () => {
@@ -178,6 +195,23 @@ export default function BooksTransactions() {
           <button className={chip(type === "all")} onClick={() => setType("all")}>All</button>
           <button className={chip(type === "transfers")} onClick={() => setType("transfers")}>Transfers</button>
           <button className={chip(type === "intercompany")} onClick={() => setType("intercompany")}>Roll-up</button>
+          <button
+            className={`inline-flex items-center gap-1.5 ${chip(type === "uncategorized")}`}
+            onClick={() => setType("uncategorized")}
+          >
+            Uncategorized
+            {uncat != null && uncat > 0 && (
+              <span
+                className={`px-1.5 rounded-full text-[10px] font-semibold ${
+                  type === "uncategorized"
+                    ? "bg-white/20 text-white"
+                    : isDark ? "bg-amber-500/20 text-amber-300" : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {uncat}
+              </span>
+            )}
+          </button>
         </div>
         {!loading && (
           <span className={`text-xs ml-auto ${subtle}`}>
@@ -208,7 +242,10 @@ export default function BooksTransactions() {
               setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
             }
             onError={setError}
-            onReload={() => void load()}
+            onReload={() => {
+              void load();
+              void refreshUncat();
+            }}
           />
         )}
       </div>
