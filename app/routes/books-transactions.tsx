@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, type Txn } from "../books-shared";
+import { TxnTable, Menu, entityTag, entityTagClass, type Txn } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Transactions" }];
@@ -117,11 +117,17 @@ export default function BooksTransactions() {
           ? "bg-white/[0.04] text-gray-400 hover:text-white"
           : "bg-gray-100 text-gray-600 hover:text-gray-900"
     }`;
-  const field = `px-3 py-2 rounded-lg text-sm border cursor-pointer ${
+  const searchField = `px-4 py-2 rounded-full text-sm border cursor-text min-w-[220px] ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
 
   const years = [0, 1, 2].map((d) => String(new Date().getFullYear() - d));
+
+  const entityTagIcon = (name: string) => (
+    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${entityTagClass(name, isDark)}`}>
+      {entityTag(name)}
+    </span>
+  );
 
   return (
     <div className="w-full">
@@ -136,7 +142,7 @@ export default function BooksTransactions() {
         <button
           onClick={() => void syncNow()}
           disabled={syncing}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
             isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
           }`}
         >
@@ -150,21 +156,24 @@ export default function BooksTransactions() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search descriptions…"
-          className={`${field} cursor-text min-w-[200px]`}
+          className={searchField}
         />
-        <select value={entity} onChange={(e) => setEntity(e.target.value)} className={field}>
-          <option value="all">All entities</option>
-          <option value="unmapped">Unmapped</option>
-          {entities.map((en) => (
-            <option key={en.id} value={en.id}>{en.name}</option>
-          ))}
-        </select>
-        <select value={year} onChange={(e) => setYear(e.target.value)} className={field}>
-          <option value="all">All time</option>
-          {years.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+        <Menu
+          value={entity}
+          isDark={isDark}
+          onChange={setEntity}
+          options={[
+            { value: "all", label: "All entities" },
+            { value: "unmapped", label: "Unmapped" },
+            ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
+          ]}
+        />
+        <Menu
+          value={year}
+          isDark={isDark}
+          onChange={setYear}
+          options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
+        />
         <div className="flex gap-1.5">
           <button className={chip(type === "all")} onClick={() => setType("all")}>All</button>
           <button className={chip(type === "transfers")} onClick={() => setType("transfers")}>Transfers</button>
@@ -208,7 +217,7 @@ export default function BooksTransactions() {
         <button
           onClick={() => void loadMore()}
           disabled={loadingMore}
-          className={`mt-4 px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-50 ${
+          className={`mt-4 px-4 py-2 rounded-full text-sm transition-colors cursor-pointer disabled:opacity-50 ${
             isDark ? "bg-white/[0.06] hover:bg-white/10 text-gray-300" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
           }`}
         >

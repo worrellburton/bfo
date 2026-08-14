@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { authFetch } from "./auth";
@@ -44,6 +44,87 @@ export function shortDate(iso: string): string {
   return `${SHORT_MONTHS[m - 1]} ${d}${suffix}`;
 }
 
+// ── Entity tags: a stable 3-letter code + colour per entity ──────────────
+const ENTITY_TAGS: Record<string, string> = {
+  "breezewood": "BRZ",
+  "burton family revocable trust": "BFT",
+  "fdj hesperia, llc": "FDJ",
+  "ledger burton, llc": "LDB",
+  "ledger louise, llc": "LDL",
+  "palomino ranch on the bend, llc": "PAL",
+  "persons lodge llc": "PSL",
+  "sundown investments, llc": "SUN",
+  "swisshelm mountain ventures, llc": "SMV",
+};
+const TAG_STOP = new Set(["llc", "trust", "the", "of", "and", "co", "inc", "lp", "ltd", "corp", "company", "on", "at"]);
+
+/** A stable 3-letter code for an entity, e.g. "Ledger Louise, LLC" → "LDL". */
+export function entityTag(name?: string | null): string {
+  if (!name) return "—";
+  const key = name.toLowerCase().replace(/\(.*?\)/g, "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+  if (ENTITY_TAGS[key]) return ENTITY_TAGS[key];
+  const words = key.split(" ").filter((w) => w && !TAG_STOP.has(w));
+  const base = words.length ? words : key.split(" ");
+  let code = base.map((w) => w[0]).join("").toUpperCase();
+  if (code.length < 3) code = ((base[0] || key).toUpperCase().replace(/[^A-Z]/g, "") + code).slice(0, 3);
+  return code.slice(0, 3) || "—";
+}
+
+const TAG_STYLES: Array<{ dark: string; light: string }> = [
+  { dark: "bg-emerald-500/15 text-emerald-300", light: "bg-emerald-100 text-emerald-800" },
+  { dark: "bg-sky-500/15 text-sky-300", light: "bg-sky-100 text-sky-800" },
+  { dark: "bg-violet-500/15 text-violet-300", light: "bg-violet-100 text-violet-800" },
+  { dark: "bg-amber-500/15 text-amber-300", light: "bg-amber-100 text-amber-800" },
+  { dark: "bg-rose-500/15 text-rose-300", light: "bg-rose-100 text-rose-800" },
+  { dark: "bg-teal-500/15 text-teal-300", light: "bg-teal-100 text-teal-800" },
+  { dark: "bg-indigo-500/15 text-indigo-300", light: "bg-indigo-100 text-indigo-800" },
+  { dark: "bg-orange-500/15 text-orange-300", light: "bg-orange-100 text-orange-800" },
+];
+
+/** A deterministic colour class for an entity's tag, keyed off its name. */
+export function entityTagClass(name: string | null | undefined, isDark: boolean): string {
+  if (!name) return isDark ? "bg-white/[0.06] text-gray-400" : "bg-gray-100 text-gray-500";
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const s = TAG_STYLES[h % TAG_STYLES.length];
+  return isDark ? s.dark : s.light;
+}
+
+/** A tiny stroked icon from a single path. */
+export function Icon({ d, className }: { d: string; className?: string }) {
+  return (
+    <svg className={className ?? "w-3.5 h-3.5 shrink-0"} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+    </svg>
+  );
+}
+
+const P = {
+  down: "M12 4.5v15m0 0l6.75-6.75M12 19.5l-6.75-6.75",
+  up: "M12 19.5v-15m0 0l6.75 6.75M12 4.5L5.25 11.25",
+  swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m3-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
+  building: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h6M9 10.5h6M9 14.25h6M10.5 21v-3.75h3V21",
+  trend: "M2.25 6 9 12.75l4.286-4.286a11.948 11.948 0 0 1 4.306 6.43l.776 2.898m0 0 3.182-5.511m-3.182 5.51-5.511-3.181",
+  receipt: "M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0c1.1.128 1.907 1.077 1.907 2.185z",
+  scale: "M12 3v17.25m-7.5-3.75h15M4.5 6.75l3 7.5 3-7.5m3 0l3 7.5 3-7.5",
+};
+
+/** The type dropdown's leading icon. */
+export function typeIcon(value: string, inflow: boolean): ReactNode {
+  if (value === "transfer") return <Icon d={P.swap} />;
+  if (value === "intercompany") return <Icon d={P.building} />;
+  return <Icon d={inflow ? P.down : P.up} />;
+}
+
+/** The account dropdown's leading icon, by chart section (leading digit). */
+export function accountIcon(label: string): ReactNode {
+  const c = label.trim()[0];
+  if (c === "4") return <Icon d={P.trend} />;
+  if (c === "7") return <Icon d={P.scale} />;
+  if (c === "9") return <Icon d={P.swap} />;
+  return <Icon d={P.receipt} />;
+}
+
 export function pretty(cat: string | null): string {
   if (!cat) return "Uncategorized";
   const s = cat.replace(/_/g, " ").toLowerCase();
@@ -74,7 +155,7 @@ async function saveTxn(patch: {
   return (await res.json()).transaction as Txn;
 }
 
-type Option = { value: string; label: string; hint?: string };
+type Option = { value: string; label: string; hint?: string; icon?: ReactNode };
 
 /**
  * A fully custom dropdown — a rounded pill trigger and a themed popover list
@@ -83,7 +164,7 @@ type Option = { value: string; label: string; hint?: string };
  * <select>'s option list can't be styled, and an absolutely-positioned menu
  * would be clipped by the overflow container).
  */
-function Menu({
+export function Menu({
   value,
   options,
   isDark,
@@ -170,6 +251,7 @@ function Menu({
         aria-expanded={open}
         className={pill}
       >
+        {current?.icon && <span className="shrink-0 opacity-80">{current.icon}</span>}
         <span className="truncate">{label}</span>
         <svg
           className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}
@@ -214,6 +296,7 @@ function Menu({
                       </svg>
                     )}
                   </span>
+                  {o.icon && <span className="shrink-0 opacity-80">{o.icon}</span>}
                   <span className="truncate flex-1">{o.label}</span>
                   {o.hint && <span className={`text-[10px] ${sel ? "text-white/70" : "text-gray-500"}`}>{o.hint}</span>}
                 </button>
@@ -375,8 +458,17 @@ export function TxnTable({
                   </button>
                 </td>
                 <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
-                <td className={`px-2 py-2.5 whitespace-nowrap ${t.entity_name ? "" : "text-amber-500"}`}>
-                  {t.entity_name || "Unmapped"}
+                <td className="px-2 py-2.5 whitespace-nowrap">
+                  {t.entity_name ? (
+                    <span
+                      title={t.entity_name}
+                      className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide ${entityTagClass(t.entity_name, isDark)}`}
+                    >
+                      {entityTag(t.entity_name)}
+                    </span>
+                  ) : (
+                    <span className="text-amber-500 text-xs">Unmapped</span>
+                  )}
                 </td>
                 <td className="px-2 py-2.5">
                   {/* On a loan, the movement posts to the loan account — type
@@ -394,9 +486,9 @@ export function TxnTable({
                       disabled={busy === t.transaction_id}
                       onChange={(v) => void update(t, { type_override: v })}
                       options={[
-                        { value: "normal", label: inflow ? "Income" : "Expense" },
-                        { value: "transfer", label: "Transfer" },
-                        { value: "intercompany", label: "Roll-up" },
+                        { value: "normal", label: inflow ? "Income" : "Expense", icon: typeIcon("normal", inflow) },
+                        { value: "transfer", label: "Transfer", icon: typeIcon("transfer", inflow) },
+                        { value: "intercompany", label: "Roll-up", icon: typeIcon("intercompany", inflow) },
                       ]}
                     />
                   )}
@@ -416,9 +508,6 @@ export function TxnTable({
                   ) : (
                     <span className="font-medium">—</span>
                   )}
-                  {t.pending && (
-                    <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>
-                  )}
                 </td>
                 <td className="px-2 py-2.5">
                   {t.loan_id ? (
@@ -435,15 +524,20 @@ export function TxnTable({
                       onChange={(v) => void changeCategory(t, v)}
                       options={[
                         ...(!t.book_category
-                          ? [{ value: "", label: pretty(t.plaid_category), hint: "auto" }]
+                          ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }]
                           : []),
-                        ...cats.map((c) => ({ value: c, label: c })),
+                        ...cats.map((c) => ({ value: c, label: c, icon: accountIcon(c) })),
                       ]}
                     />
                   )}
                 </td>
-                <td className={`px-2 py-2.5 text-right whitespace-nowrap tabular-nums font-medium ${inflow ? "text-emerald-500" : ""}`}>
-                  {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
+                  <div className={`tabular-nums font-medium ${inflow ? "text-emerald-500" : ""}`}>
+                    {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
+                  </div>
+                  {t.pending && (
+                    <div className={`text-[10px] uppercase tracking-wider ${subtle}`}>pending</div>
+                  )}
                 </td>
               </tr>
               {isOpen && (

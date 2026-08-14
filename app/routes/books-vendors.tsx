@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, type Txn } from "../books-shared";
+import { type Txn, money as fmtMoney, pretty, shortDate, entityTag, entityTagClass } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Vendors" }];
@@ -35,8 +35,6 @@ export default function BooksVendors() {
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [loans, setLoans] = useState<Array<{ id: string; name: string }>>([]);
   const [entity, setEntity] = useState("all");
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [q, setQ] = useState(searchParams.get("q") ?? "");
@@ -52,12 +50,7 @@ export default function BooksVendors() {
     void (async () => {
       try {
         const res = await authFetch("/api/books/data?report=meta");
-        if (res.ok) {
-          const data = await res.json();
-          setEntities(data.entities ?? []);
-          setCategories(data.categories ?? []);
-          setLoans(data.loans ?? []);
-        }
+        if (res.ok) setEntities((await res.json()).entities ?? []);
       } catch {
         // filter just stays short
       }
@@ -110,12 +103,6 @@ export default function BooksVendors() {
       setTxnLoading(null);
     }
   }
-
-  const patchTxn = (name: string) => (t: Txn) =>
-    setVendorTxns((prev) => ({
-      ...prev,
-      [name]: (prev[name] ?? []).map((x) => (x.transaction_id === t.transaction_id ? t : x)),
-    }));
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -248,15 +235,60 @@ export default function BooksVendors() {
                             {txnLoading === v.vendor && !txns ? (
                               <p className={`text-sm py-3 ${subtle}`}>Loading transactions…</p>
                             ) : txns && txns.length > 0 ? (
-                              <div className={`rounded-lg border overflow-x-auto ${border}`}>
-                                <TxnTable
-                                  rows={txns}
-                                  categories={categories}
-                                  loans={loans}
-                                  isDark={isDark}
-                                  onRowChange={patchTxn(v.vendor)}
-                                  onError={setError}
-                                />
+                              <div className={`rounded-lg border overflow-x-auto ${border} ${stickyBg}`}>
+                                <table className="w-full text-sm min-w-[720px]">
+                                  <thead>
+                                    <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
+                                      <th className="px-3 py-2 text-left font-medium">Date</th>
+                                      <th className="px-3 py-2 text-left font-medium">Description</th>
+                                      <th className="px-3 py-2 text-left font-medium">Account</th>
+                                      <th className="px-3 py-2 text-left font-medium">Entity</th>
+                                      <th className="px-3 py-2 text-right font-medium">Amount</th>
+                                      <th className="px-3 py-2 text-right font-medium">Balance</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(() => {
+                                      let bal = 0;
+                                      const asc = [...txns].sort(
+                                        (a, b) => a.date.localeCompare(b.date) || a.transaction_id.localeCompare(b.transaction_id)
+                                      );
+                                      return asc.map((t) => {
+                                        bal += t.amount; // outflow positive = money paid to the vendor
+                                        const inflow = t.amount < 0;
+                                        return (
+                                          <tr key={t.transaction_id} className={`border-t ${rowBorder}`}>
+                                            <td className={`px-3 py-2 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
+                                            <td className="px-3 py-2 max-w-[320px]" title={t.name ?? undefined}>
+                                              <span className="truncate block max-w-full">{t.name || "—"}</span>
+                                            </td>
+                                            <td className={`px-3 py-2 whitespace-nowrap ${subtle}`}>
+                                              {t.book_category || pretty(t.plaid_category)}
+                                            </td>
+                                            <td className="px-3 py-2 whitespace-nowrap">
+                                              {t.entity_name ? (
+                                                <span
+                                                  title={t.entity_name}
+                                                  className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide ${entityTagClass(t.entity_name, isDark)}`}
+                                                >
+                                                  {entityTag(t.entity_name)}
+                                                </span>
+                                              ) : (
+                                                <span className="text-amber-500 text-xs">—</span>
+                                              )}
+                                            </td>
+                                            <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${inflow ? "text-emerald-500" : ""}`}>
+                                              {inflow ? `+${fmtMoney(-t.amount, t.currency ?? "USD")}` : fmtMoney(t.amount, t.currency ?? "USD")}
+                                            </td>
+                                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">
+                                              {fmtMoney(bal, t.currency ?? "USD")}
+                                            </td>
+                                          </tr>
+                                        );
+                                      });
+                                    })()}
+                                  </tbody>
+                                </table>
                               </div>
                             ) : (
                               <p className={`text-sm py-3 ${subtle}`}>No transactions found for this vendor.</p>
