@@ -45,16 +45,18 @@ export function shortDate(iso: string): string {
 }
 
 // ── Entity tags: a stable 3-letter code + colour per entity ──────────────
+// Keys are the normalized form (lowercased, punctuation stripped) so they
+// match what entityTag() computes below.
 const ENTITY_TAGS: Record<string, string> = {
   "breezewood": "BRZ",
   "burton family revocable trust": "BFT",
-  "fdj hesperia, llc": "FDJ",
-  "ledger burton, llc": "LDB",
-  "ledger louise, llc": "LDL",
-  "palomino ranch on the bend, llc": "PAL",
+  "fdj hesperia llc": "FDJ",
+  "ledger burton llc": "LDB",
+  "ledger louise llc": "LDL",
+  "palomino ranch on the bend llc": "PAL",
   "persons lodge llc": "PSL",
-  "sundown investments, llc": "SUN",
-  "swisshelm mountain ventures, llc": "SMV",
+  "sundown investments llc": "SUN",
+  "swisshelm mountain ventures llc": "SMV",
 };
 const TAG_STOP = new Set(["llc", "trust", "the", "of", "and", "co", "inc", "lp", "ltd", "corp", "company", "on", "at"]);
 
@@ -88,6 +90,44 @@ export function entityTagClass(name: string | null | undefined, isDark: boolean)
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   const s = TAG_STYLES[h % TAG_STYLES.length];
   return isDark ? s.dark : s.light;
+}
+
+/**
+ * The entity tag pill with an instant, un-clipped tooltip: the full entity
+ * name appears the moment you hover (no native `title` delay), rendered
+ * through a portal so the table's overflow box never crops it.
+ */
+export function EntityTag({ name, isDark }: { name: string; isDark: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ left: r.left + r.width / 2, top: r.bottom + 6 });
+  };
+  return (
+    <>
+      <span
+        ref={ref}
+        onMouseEnter={show}
+        onMouseLeave={() => setPos(null)}
+        className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide cursor-default ${entityTagClass(name, isDark)}`}
+      >
+        {entityTag(name)}
+      </span>
+      {pos &&
+        createPortal(
+          <div
+            style={{ position: "fixed", left: pos.left, top: pos.top, transform: "translateX(-50%)" }}
+            className={`z-[80] pointer-events-none px-2 py-1 rounded-md text-xs whitespace-nowrap shadow-lg border ${
+              isDark ? "bg-[#161616] text-gray-100 border-white/10" : "bg-gray-900 text-white border-black/10"
+            }`}
+          >
+            {name}
+          </div>,
+          document.body
+        )}
+    </>
+  );
 }
 
 /** A tiny stroked icon from a single path. */
@@ -460,12 +500,7 @@ export function TxnTable({
                 <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
                 <td className="px-2 py-2.5 whitespace-nowrap">
                   {t.entity_name ? (
-                    <span
-                      title={t.entity_name}
-                      className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide ${entityTagClass(t.entity_name, isDark)}`}
-                    >
-                      {entityTag(t.entity_name)}
-                    </span>
+                    <EntityTag name={t.entity_name} isDark={isDark} />
                   ) : (
                     <span className="text-amber-500 text-xs">Unmapped</span>
                   )}

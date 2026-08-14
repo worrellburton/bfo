@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { type Txn, money as fmtMoney, pretty, shortDate, entityTag, entityTagClass } from "../books-shared";
+import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Vendors" }];
@@ -267,12 +267,7 @@ export default function BooksVendors() {
                                             </td>
                                             <td className="px-3 py-2 whitespace-nowrap">
                                               {t.entity_name ? (
-                                                <span
-                                                  title={t.entity_name}
-                                                  className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide ${entityTagClass(t.entity_name, isDark)}`}
-                                                >
-                                                  {entityTag(t.entity_name)}
-                                                </span>
+                                                <EntityTag name={t.entity_name} isDark={isDark} />
                                               ) : (
                                                 <span className="text-amber-500 text-xs">—</span>
                                               )}
