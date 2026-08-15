@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, Menu, entityTag, entityTagClass, type Txn } from "../books-shared";
+import { TxnTable, Menu, BatchBar, entityTag, entityTagClass, type Txn } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Transactions" }];
@@ -105,6 +105,8 @@ export default function BooksTransactions() {
   const [importResult, setImportResult] = useState("");
   const [backfilling, setBackfilling] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
 
   const query = useCallback(
     (offset: number) => {
@@ -510,6 +512,16 @@ export default function BooksTransactions() {
             rows={rows}
             categories={categories}
             isDark={isDark}
+            selection={{
+              selected,
+              toggle: (id) =>
+                setSelected((prev) => {
+                  const next = new Set(prev);
+                  next.has(id) ? next.delete(id) : next.add(id);
+                  return next;
+                }),
+              setAll: (ids) => setSelected(new Set(ids)),
+            }}
             onRowChange={(t) =>
               setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
             }
@@ -533,6 +545,26 @@ export default function BooksTransactions() {
           {loadingMore ? "Loading…" : `Load ${Math.min(PAGE, total - rows.length)} more`}
         </button>
       )}
+      <BatchBar
+        count={selected.size}
+        isDark={isDark}
+        busy={batchBusy}
+        onApply={(patch) => {
+          setBatchBusy(true);
+          void authFetch("/api/books/data", {
+            method: "POST",
+            body: JSON.stringify({ action: "batch_update", transaction_ids: [...selected], ...patch }),
+          })
+            .then(async (res) => {
+              if (!res.ok) throw new Error("Couldn't apply that batch edit.");
+              setSelected(new Set());
+              await load();
+            })
+            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't apply that batch edit."))
+            .finally(() => setBatchBusy(false));
+        }}
+        onClear={() => setSelected(new Set())}
+      />
     </div>
   );
 }

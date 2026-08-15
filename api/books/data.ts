@@ -280,11 +280,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         req.body.vendor_name !== undefined ? String(req.body.vendor_name).trim().slice(0, 80) : undefined;
       const category =
         req.body.book_category !== undefined ? String(req.body.book_category).trim().slice(0, 60) : undefined;
+      const typeOverride = req.body.type_override !== undefined ? String(req.body.type_override) : undefined;
       if (match.length < 2) return res.status(400).json({ error: "missing_match" });
-      if (vendorName === undefined && category === undefined) {
+      if (vendorName === undefined && category === undefined && typeOverride === undefined) {
         return res.status(400).json({ error: "nothing_to_update" });
       }
       if (vendorName !== undefined && !vendorName) return res.status(400).json({ error: "empty_name" });
+      if (typeOverride !== undefined && !["normal", "transfer", "intercompany"].includes(typeOverride)) {
+        return res.status(400).json({ error: "invalid_type" });
+      }
 
       // One rule per matched text: merge into the existing rule if present.
       const existing = await db("book_rules?select=id,match&loan_id=is.null");
@@ -296,6 +300,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rulePatch: Record<string, unknown> = {};
       if (vendorName !== undefined) rulePatch.vendor_name = vendorName;
       if (category !== undefined) rulePatch.book_category = category;
+      if (typeOverride !== undefined) rulePatch.type_override = typeOverride;
       if (dup) {
         await db(`book_rules?id=eq.${dup.id}`, { method: "PATCH", body: JSON.stringify(rulePatch) });
       } else {
@@ -305,8 +310,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const txnPatch: Record<string, unknown> = {};
       if (vendorName !== undefined) txnPatch.merchant_name = vendorName;
       if (category !== undefined) txnPatch.book_category = category;
+      if (typeOverride !== undefined) txnPatch.type_override = typeOverride;
       const applied = await patchMatching(db, match, "", txnPatch);
-      return res.json({ applied, vendor_name: vendorName ?? null, book_category: category ?? null });
+      return res.json({
+        applied,
+        vendor_name: vendorName ?? null,
+        book_category: category ?? null,
+        type_override: typeOverride ?? null,
+      });
+    }
+
+    // ── Batch edits: vendor/description across selected rows ────────────
+    if (req.method === "POST" && req.body?.action === "batch_update") {
+      const ids = Array.isArray(req.body.transaction_ids)
+        ? (req.body.transaction_ids as unknown[]).map(String).filter((id) => id.length > 0 && id.length < 100)
+        : [];
+      if (!ids.length || ids.length > 500) return res.status(400).json({ error: "bad_selection" });
+      const patch: Record<string, unknown> = {};
+      if (req.body.merchant_name !== undefined) {
+        const v = String(req.body.merchant_name).trim().slice(0, 80);
+        if (!v) return res.status(400).json({ error: "empty_vendor" });
+        patch.merchant_name = v;
+      }
+      if (req.body.name !== undefined) {
+        const v = String(req.body.name).trim().slice(0, 300);
+        if (!v) return res.status(400).json({ error: "empty_description" });
+        patch.name = v;
+      }
+      if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
+
+      let updated = 0;
+      for (let i = 0; i < ids.length; i += 200) {
+        const list = ids.slice(i, i + 200).map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+        const r = await db(`book_transactions?transaction_id=in.(${list})`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+        if (r.ok) updated += Math.min(200, ids.length - i);
+      }
+      return res.json({ updated });
     }
 
     // ── Edits: a person reclassifying a transaction ─────────────────────

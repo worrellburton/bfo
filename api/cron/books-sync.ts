@@ -30,16 +30,17 @@ function getPlaidClient() {
 
 const HISTORY_MONTHS = 24;
 
-type UserRule = { match: string; book_category: string | null; vendor_name: string | null };
+type UserRule = { match: string; book_category: string | null; vendor_name: string | null; type_override: string | null };
 
 /** Rules the user taught (category popup, vendor rename) — beat the built-ins. */
 async function loadUserRules(): Promise<UserRule[]> {
-  const r = await db("book_rules?select=match,book_category,vendor_name");
+  const r = await db("book_rules?select=match,book_category,vendor_name,type_override");
   if (!r.ok) return [];
   return ((await r.json()) as UserRule[]).map((rule) => ({
     match: rule.match.toLowerCase(),
     book_category: rule.book_category ?? null,
     vendor_name: rule.vendor_name ?? null,
+    type_override: rule.type_override ?? null,
   }));
 }
 
@@ -53,6 +54,13 @@ function userCategory(rules: UserRule[], name: string | null, merchant: string |
 function userVendor(rules: UserRule[], name: string | null, merchant: string | null): string | null {
   const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
   for (const rule of rules) if (rule.vendor_name && text.includes(rule.match)) return rule.vendor_name;
+  return null;
+}
+
+/** A vendor-level type the user chose ("all Samir payments are roll-up"). */
+function userType(rules: UserRule[], name: string | null, merchant: string | null): string | null {
+  const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
+  for (const rule of rules) if (rule.type_override && text.includes(rule.match)) return rule.type_override;
   return null;
 }
 
@@ -72,6 +80,7 @@ type TxnRow = {
   txn_type: "normal" | "transfer";
   intercompany: boolean;
   book_category: string;
+  type_override?: string;
   entity_id: string | null;
   entity_name: string | null;
   hidden: boolean;
@@ -306,6 +315,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? heuristic) as "normal" | "transfer",
                     intercompany: rule.type === "intercompany",
                     book_category: taught ?? rule.category,
+                    // A vendor-level type rule rides in as the row's override.
+                    ...(() => {
+                      const ut = userType(userRules, t.name ?? null, t.merchant_name ?? null);
+                      return ut ? { type_override: ut } : {};
+                    })(),
                   };
                 })(),
                 entity_id: pref?.entity_id ?? null,
@@ -314,7 +328,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 updated_at: now,
               };
             });
-          await upsertChunked(rows);
+          await upsertChunked(rows.filter((r) => r.type_override === undefined));
+          await upsertChunked(rows.filter((r) => r.type_override !== undefined));
           added += data.added.length;
           modified += data.modified.length;
 

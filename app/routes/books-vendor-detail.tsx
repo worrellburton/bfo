@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { type Txn, TxnTable, Menu, shortDate, accountIcon, accountGroup } from "../books-shared";
+import { type Txn, TxnTable, Menu, BatchBar, shortDate, accountIcon, accountGroup, typeIcon } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Vendor" }];
@@ -33,6 +33,7 @@ export default function BooksVendorDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -81,7 +82,7 @@ export default function BooksVendorDetail() {
   }, [editingName]);
 
   /** Rename / default-account changes ride one endpoint: rule + backfill. */
-  async function saveSettings(patch: { vendor_name?: string; book_category?: string }) {
+  async function saveSettings(patch: { vendor_name?: string; book_category?: string; type_override?: string }) {
     setSaving(true);
     setError("");
     try {
@@ -139,6 +140,16 @@ export default function BooksVendorDetail() {
       map[t.transaction_id] = bal;
     }
     return { ordered: [...asc].reverse(), balances: map };
+  }, [txns]);
+
+  // The type most of this vendor's rows carry — the "default".
+  const defaultType = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of txns) {
+      const eff = t.type_override ?? (t.intercompany ? "intercompany" : t.txn_type === "transfer" ? "transfer" : "normal");
+      counts.set(eff, (counts.get(eff) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "normal";
   }, [txns]);
 
   // The account most of this vendor's rows sit in — the "default".
@@ -206,22 +217,38 @@ export default function BooksVendorDetail() {
               </svg>
             </button>
           )}
-          {/* The account new arrivals from this vendor default into. */}
-          <div className="flex items-center gap-2 mt-2">
-            <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Default account</span>
-            <Menu
-              value={defaultAccount}
-              isDark={isDark}
-              disabled={saving || loading}
-              onChange={(v) => void saveSettings({ book_category: v })}
-              options={categories.map((c) => ({
-                value: c,
-                label: c,
-                short: c.replace(/^\d{4}\s+/, ""),
-                icon: accountIcon(c),
-                group: accountGroup(c),
-              }))}
-            />
+          {/* The account and type new arrivals from this vendor default into. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-2">
+            <span className="inline-flex items-center gap-2">
+              <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Default account</span>
+              <Menu
+                value={defaultAccount}
+                isDark={isDark}
+                disabled={saving || loading}
+                onChange={(v) => void saveSettings({ book_category: v })}
+                options={categories.map((c) => ({
+                  value: c,
+                  label: c,
+                  short: c.replace(/^\d{4}\s+/, ""),
+                  icon: accountIcon(c),
+                  group: accountGroup(c),
+                }))}
+              />
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Default type</span>
+              <Menu
+                value={defaultType}
+                isDark={isDark}
+                disabled={saving || loading}
+                onChange={(v) => void saveSettings({ type_override: v })}
+                options={[
+                  { value: "normal", label: "Income / Expense", icon: typeIcon("normal", false) },
+                  { value: "transfer", label: "Transfer", icon: typeIcon("transfer", false) },
+                  { value: "intercompany", label: "Roll-up", icon: typeIcon("intercompany", false) },
+                ]}
+              />
+            </span>
           </div>
         </div>
 
@@ -296,6 +323,16 @@ export default function BooksVendorDetail() {
               loans={loans}
               isDark={isDark}
               balances={balances}
+              selection={{
+                selected,
+                toggle: (id) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    next.has(id) ? next.delete(id) : next.add(id);
+                    return next;
+                  }),
+                setAll: (ids) => setSelected(new Set(ids)),
+              }}
               onRowChange={(t) =>
                 setTxns((prev) => prev.map((x) => (x.transaction_id === t.transaction_id ? { ...t, entity_id: x.entity_id, entity_name: x.entity_name } : x)))
               }
@@ -305,6 +342,26 @@ export default function BooksVendorDetail() {
           </div>
         </>
       )}
+      <BatchBar
+        count={selected.size}
+        isDark={isDark}
+        busy={saving}
+        onApply={(patch) => {
+          setSaving(true);
+          void authFetch("/api/books/data", {
+            method: "POST",
+            body: JSON.stringify({ action: "batch_update", transaction_ids: [...selected], ...patch }),
+          })
+            .then(async (res) => {
+              if (!res.ok) throw new Error("Couldn't apply that batch edit.");
+              setSelected(new Set());
+              await load();
+            })
+            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't apply that batch edit."))
+            .finally(() => setSaving(false));
+        }}
+        onClear={() => setSelected(new Set())}
+      />
     </div>
   );
 }

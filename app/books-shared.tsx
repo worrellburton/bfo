@@ -490,6 +490,89 @@ export function Menu({
   );
 }
 
+/** Selection wiring TxnTable renders a checkbox column from. */
+export type Selection = {
+  selected: Set<string>;
+  toggle: (id: string) => void;
+  setAll: (ids: string[]) => void;
+};
+
+/**
+ * The floating batch editor: appears while rows are selected, applies a
+ * vendor and/or description to all of them at once.
+ */
+export function BatchBar({
+  count,
+  isDark,
+  busy,
+  onApply,
+  onClear,
+}: {
+  count: number;
+  isDark: boolean;
+  busy?: boolean;
+  onApply: (patch: { merchant_name?: string; name?: string }) => void;
+  onClear: () => void;
+}) {
+  const [vendor, setVendor] = useState("");
+  const [description, setDescription] = useState("");
+  if (count === 0) return null;
+  const field = `px-3 py-1.5 rounded-full text-xs border focus:outline-none ${
+    isDark
+      ? "bg-white/[0.06] border-white/10 text-white placeholder-gray-500 focus:border-white/25"
+      : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
+  }`;
+  const canApply = !!(vendor.trim() || description.trim());
+  return createPortal(
+    <div
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl ${
+        isDark ? "bg-black/70 border-white/10" : "bg-white/90 border-gray-200"
+      }`}
+    >
+      <span className={`text-xs font-medium tabular-nums ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+        {count} selected
+      </span>
+      <input
+        value={vendor}
+        onChange={(e) => setVendor(e.target.value)}
+        placeholder="Vendor…"
+        className={`${field} w-40`}
+      />
+      <input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description…"
+        className={`${field} w-56`}
+      />
+      <button
+        disabled={busy || !canApply}
+        onClick={() => {
+          const patch: { merchant_name?: string; name?: string } = {};
+          if (vendor.trim()) patch.merchant_name = vendor.trim();
+          if (description.trim()) patch.name = description.trim();
+          onApply(patch);
+          setVendor("");
+          setDescription("");
+        }}
+        className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer disabled:opacity-50 ${
+          isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
+        }`}
+      >
+        {busy ? "Applying…" : "Apply"}
+      </button>
+      <button
+        onClick={onClear}
+        className={`px-2.5 py-1.5 rounded-full text-xs cursor-pointer ${
+          isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"
+        }`}
+      >
+        Clear
+      </button>
+    </div>,
+    document.body
+  );
+}
+
 /**
  * The editable transaction spreadsheet: type and category change in place,
  * the chevron opens every field we hold on the transaction, and the vendor
@@ -504,6 +587,7 @@ export function TxnTable({
   onError,
   onReload,
   balances,
+  selection,
 }: {
   rows: Txn[];
   categories: string[];
@@ -514,6 +598,8 @@ export function TxnTable({
   onReload?: () => void;
   /** Optional running balance per transaction id — adds a Balance column. */
   balances?: Record<string, number>;
+  /** Optional row selection — adds a checkbox column for batch editing. */
+  selection?: Selection;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -600,10 +686,36 @@ export function TxnTable({
     ["Last synced", t.updated_at ? new Date(t.updated_at).toLocaleString() : "—"],
   ];
 
+  const box = (on: boolean) => (
+    <span
+      className={`w-4 h-4 rounded-[5px] border shrink-0 inline-flex items-center justify-center transition-colors ${
+        on ? "bg-emerald-500 border-emerald-500" : isDark ? "border-white/20" : "border-gray-300"
+      }`}
+    >
+      {on && (
+        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+        </svg>
+      )}
+    </span>
+  );
+  const allSelected = !!selection && rows.length > 0 && rows.every((r) => selection.selected.has(r.transaction_id));
+
   return (
     <table className="w-full text-sm min-w-[1020px]">
       <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
         <tr className={`text-left text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
+          {selection && (
+            <th className="w-9 pl-3">
+              <button
+                onClick={() => selection.setAll(allSelected ? [] : rows.map((r) => r.transaction_id))}
+                aria-label={allSelected ? "Deselect all" : "Select all"}
+                className="cursor-pointer align-middle"
+              >
+                {box(allSelected)}
+              </button>
+            </th>
+          )}
           <th className="w-8" />
           <th className="px-2 py-2.5 font-medium">Date</th>
           <th className="px-2 py-2.5 font-medium">Entity</th>
@@ -631,8 +743,19 @@ export function TxnTable({
               <tr
                 className={`border-b last:border-b-0 ${border} ${
                   newDay && ri > 0 ? `border-t ${isDark ? "border-t-white/10" : "border-t-gray-200"}` : ""
-                } ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
+                } ${selection?.selected.has(t.transaction_id) ? (isDark ? "bg-emerald-500/[0.05]" : "bg-emerald-50/50") : ""} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
               >
+                {selection && (
+                  <td className="pl-3">
+                    <button
+                      onClick={() => selection.toggle(t.transaction_id)}
+                      aria-label="Select row"
+                      className="cursor-pointer align-middle"
+                    >
+                      {box(selection.selected.has(t.transaction_id))}
+                    </button>
+                  </td>
+                )}
                 <td className="pl-2">
                   <button
                     onClick={() => toggle(t.transaction_id)}
@@ -734,7 +857,7 @@ export function TxnTable({
               {isOpen && (
                 <tr className={`border-b ${border}`}>
                   <td />
-                  <td colSpan={balances ? 8 : 7} className="px-2 pb-3 pt-1">
+                  <td colSpan={7 + (balances ? 1 : 0) + (selection ? 1 : 0)} className="px-2 pb-3 pt-1">
                     <div className={`border-t pt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 ${
                       isDark ? "border-white/10" : "border-gray-200"
                     }`}>
