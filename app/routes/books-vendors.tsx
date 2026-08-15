@@ -179,7 +179,7 @@ export default function BooksVendors() {
         </div>
       )}
 
-      <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto shadow-sm rise-in ${card}`}>
         <table className="text-sm min-w-[1050px] w-full">
           <thead>
             <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
@@ -193,7 +193,15 @@ export default function BooksVendors() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={15} className={`px-4 py-8 text-center ${subtle}`}>Loading…</td></tr>
+              <tr>
+                <td colSpan={15} className="px-4 py-4">
+                  <div className="space-y-2.5">
+                    {Array.from({ length: 6 }, (_, i) => (
+                      <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 3) * 8}%` }} />
+                    ))}
+                  </div>
+                </td>
+              </tr>
             ) : shown.length === 0 ? (
               <tr>
                 <td colSpan={15} className={`px-4 py-8 text-center ${subtle}`}>
@@ -205,6 +213,7 @@ export default function BooksVendors() {
                 {shown.map((v) => {
                   const isOpen = openVendor === v.vendor;
                   const txns = vendorTxns[v.vendor];
+                  const maxSpent = Math.max(...shown.map((s) => s.spent), 1);
                   return (
                     <Fragment key={v.vendor}>
                       <tr className={`border-t ${rowBorder} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
@@ -229,7 +238,17 @@ export default function BooksVendors() {
                         {v.monthly.map((m, i) => (
                           <td key={i} className={`${num} ${m === 0 ? subtle : ""}`}>{money(m)}</td>
                         ))}
-                        <td className={`${num} font-semibold`}>{money(v.spent)}</td>
+                        <td className={`${num} font-semibold`}>
+                          <div>{money(v.spent)}</div>
+                          {v.spent > 0 && (
+                            <div className={`h-[3px] rounded-full mt-1 ml-auto w-16 overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`} aria-hidden>
+                              <div
+                                className="h-full rounded-full bg-emerald-500/60"
+                                style={{ width: `${Math.max(4, Math.round((v.spent / maxSpent) * 100))}%` }}
+                              />
+                            </div>
+                          )}
+                        </td>
                         <td className={`${num} ${v.received ? "text-emerald-500" : subtle}`}>
                           {v.received ? `+${money(v.received)}` : "—"}
                         </td>

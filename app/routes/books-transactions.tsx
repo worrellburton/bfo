@@ -461,13 +461,20 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto shadow-sm rise-in ${card}`}>
         {loading ? (
-          <p className={`px-4 py-8 text-center text-sm ${subtle}`}>Loading…</p>
+          <div className="p-4 space-y-2.5">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 4) * 7}%` }} />
+            ))}
+          </div>
         ) : rows.length === 0 ? (
-          <p className={`px-4 py-8 text-center text-sm ${subtle}`}>
-            No transactions here — adjust the filters, or hit “Sync now” to pull from Plaid.
-          </p>
+          <div className="px-4 py-14 text-center">
+            <svg className={`w-8 h-8 mx-auto mb-3 ${subtle}`} fill="none" stroke="currentColor" strokeWidth={1.2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
+            </svg>
+            <p className={`text-sm ${subtle}`}>Nothing matches these filters.</p>
+          </div>
         ) : (
           <TxnTable
             rows={rows}

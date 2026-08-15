@@ -675,3 +675,46 @@ html.light {
 @media (prefers-reduced-motion: reduce) {
   .auth-char, .auth-otp-active, .auth-spinner { animation: none; }
 }
+
+/* ── Books design system ─────────────────────────────────────────────── */
+
+/* Cards and tables rise in gently on mount. */
+.rise-in {
+  animation: bfo-rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes bfo-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Loading shimmer rows. */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 6px;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.10), transparent);
+  animation: bfo-shimmer 1.4s infinite;
+}
+@keyframes bfo-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* Thin, quiet scrollbars on scrolling tables. */
+.overflow-x-auto { scrollbar-width: thin; scrollbar-color: rgba(128,128,128,0.35) transparent; }
+.overflow-x-auto::-webkit-scrollbar { height: 6px; }
+.overflow-x-auto::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 3px; }
+.overflow-x-auto::-webkit-scrollbar-track { background: transparent; }
+
+/* Keyboard focus is visible without polluting pointer clicks. */
+button:focus-visible, a:focus-visible, [role="option"]:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, 0.6);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

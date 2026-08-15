@@ -471,17 +471,23 @@ export function TxnTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((t) => {
+        {rows.map((t, ri) => {
           const inflow = t.amount < 0;
           const eff = effType(t);
           const vendor = t.merchant_name || t.name;
           const isOpen = open.has(t.transaction_id);
+          // The date prints once per day; later rows in the day stay quiet.
+          const newDay = ri === 0 || rows[ri - 1].date !== t.date;
           const cats = t.book_category && !categories.includes(t.book_category)
             ? [t.book_category, ...categories]
             : categories;
           return (
             <Fragment key={t.transaction_id}>
-              <tr className={`border-b last:border-b-0 ${border} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
+              <tr
+                className={`border-b last:border-b-0 ${border} ${
+                  newDay && ri > 0 ? `border-t ${isDark ? "border-t-white/10" : "border-t-gray-200"}` : ""
+                } ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
+              >
                 <td className="pl-2">
                   <button
                     onClick={() => toggle(t.transaction_id)}
@@ -497,7 +503,9 @@ export function TxnTable({
                     </svg>
                   </button>
                 </td>
-                <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
+                <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>
+                  {newDay ? shortDate(t.date) : ""}
+                </td>
                 <td className="px-2 py-2.5 whitespace-nowrap">
                   {t.entity_name ? (
                     <EntityTag name={t.entity_name} isDark={isDark} />
