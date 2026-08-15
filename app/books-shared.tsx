@@ -308,6 +308,8 @@ export function Menu({
   const label = current?.short ?? current?.label ?? "—";
 
   const searchable = options.length > 10;
+  // Grouped, long lists open as a mega menu: every group in its own column.
+  const mega = options.length > 12 && options.some((o) => o.group);
   const needle = filter.trim().toLowerCase();
   const shown = needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
 
@@ -343,8 +345,8 @@ export function Menu({
       const el = btnRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const width = Math.max(r.width, 224);
-      const menuH = Math.min(320, options.length * 38 + 12);
+      const width = mega ? Math.min(720, window.innerWidth - 24) : Math.max(r.width, 224);
+      const menuH = mega ? 380 : Math.min(320, options.length * 38 + 12);
       const spaceBelow = window.innerHeight - r.bottom;
       const above = spaceBelow < menuH + 12 && r.top > spaceBelow;
       setBox({
@@ -360,7 +362,7 @@ export function Menu({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, options.length]);
+  }, [open, options.length, mega]);
 
   useEffect(() => {
     if (!open) return;
@@ -443,21 +445,17 @@ export function Menu({
                 />
               </div>
             )}
-            <div className="p-1.5 max-h-72 overflow-y-auto">
+            <div className={`p-1.5 overflow-y-auto ${mega ? "max-h-[380px] p-3" : "max-h-72"}`}>
               {shown.length === 0 && (
                 <p className={`px-2.5 py-2 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>No matches.</p>
               )}
-              {shown.map((o, i) => {
-                const sel = o.value === value;
-                const newGroup = o.group && (i === 0 || shown[i - 1].group !== o.group);
-                return (
-                  <Fragment key={o.value || "—"}>
-                    {newGroup && (
-                      <p className={`px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                        {o.group}
-                      </p>
-                    )}
+              {(() => {
+                // Mega: group blocks laid out in columns; flat rows otherwise.
+                const renderOption = (o: Option, i: number) => {
+                  const sel = o.value === value;
+                  return (
                     <button
+                      key={o.value || "—"}
                       role="option"
                       aria-selected={sel}
                       onClick={() => choose(o)}
@@ -479,9 +477,45 @@ export function Menu({
                       <span className="truncate flex-1">{o.label}</span>
                       {o.hint && <span className="text-[10px] text-gray-500">{o.hint}</span>}
                     </button>
-                  </Fragment>
-                );
-              })}
+                  );
+                };
+                if (mega) {
+                  const blocks: Array<{ name: string; items: Array<{ o: Option; i: number }> }> = [];
+                  shown.forEach((o, i) => {
+                    const g = o.group ?? "Other";
+                    const block = blocks.find((b) => b.name === g) ?? (blocks.push({ name: g, items: [] }), blocks[blocks.length - 1]);
+                    block.items.push({ o, i });
+                  });
+                  return (
+                    <div
+                      className="grid gap-x-4 gap-y-3"
+                      style={{ gridTemplateColumns: `repeat(${Math.min(blocks.length, 4)}, minmax(0, 1fr))` }}
+                    >
+                      {blocks.map((b) => (
+                        <div key={b.name} className="min-w-0">
+                          <p className={`px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                            {b.name}
+                          </p>
+                          {b.items.map(({ o, i }) => renderOption(o, i))}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                return shown.map((o, i) => {
+                  const newGroup = o.group && (i === 0 || shown[i - 1].group !== o.group);
+                  return (
+                    <Fragment key={`w-${o.value || "—"}`}>
+                      {newGroup && (
+                        <p className={`px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                          {o.group}
+                        </p>
+                      )}
+                      {renderOption(o, i)}
+                    </Fragment>
+                  );
+                });
+              })()}
             </div>
           </div>,
           document.body
@@ -495,6 +529,8 @@ export type Selection = {
   selected: Set<string>;
   toggle: (id: string) => void;
   setAll: (ids: string[]) => void;
+  /** Set a contiguous range on/off — the shift-click path. */
+  selectMany?: (ids: string[], on: boolean) => void;
 };
 
 /**
@@ -604,6 +640,8 @@ export function TxnTable({
   const navigate = useNavigate();
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  // Anchor row for shift-click range selection.
+  const lastPicked = useRef<number | null>(null);
 
   const subtle = "text-gray-500";
   const border = isDark ? "border-white/5" : "border-gray-100";
@@ -748,9 +786,22 @@ export function TxnTable({
                 {selection && (
                   <td className="pl-3">
                     <button
-                      onClick={() => selection.toggle(t.transaction_id)}
+                      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                      onClick={(e) => {
+                        if (e.shiftKey && selection.selectMany && lastPicked.current != null) {
+                          const [from, to] =
+                            lastPicked.current < ri ? [lastPicked.current, ri] : [ri, lastPicked.current];
+                          selection.selectMany(
+                            rows.slice(from, to + 1).map((r) => r.transaction_id),
+                            !selection.selected.has(t.transaction_id)
+                          );
+                        } else {
+                          selection.toggle(t.transaction_id);
+                        }
+                        lastPicked.current = ri;
+                      }}
                       aria-label="Select row"
-                      className="cursor-pointer align-middle"
+                      className="cursor-pointer align-middle select-none"
                     >
                       {box(selection.selected.has(t.transaction_id))}
                     </button>

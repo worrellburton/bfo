@@ -332,6 +332,12 @@ export default function BooksVendorDetail() {
                     return next;
                   }),
                 setAll: (ids) => setSelected(new Set(ids)),
+                selectMany: (ids, on) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    for (const id of ids) on ? next.add(id) : next.delete(id);
+                    return next;
+                  }),
               }}
               onRowChange={(t) =>
                 setTxns((prev) => prev.map((x) => (x.transaction_id === t.transaction_id ? { ...t, entity_id: x.entity_id, entity_name: x.entity_name } : x)))

@@ -521,6 +521,12 @@ export default function BooksTransactions() {
                   return next;
                 }),
               setAll: (ids) => setSelected(new Set(ids)),
+              selectMany: (ids, on) =>
+                setSelected((prev) => {
+                  const next = new Set(prev);
+                  for (const id of ids) on ? next.add(id) : next.delete(id);
+                  return next;
+                }),
             }}
             onRowChange={(t) =>
               setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
