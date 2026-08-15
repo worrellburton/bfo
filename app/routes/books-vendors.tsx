@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag, Menu, entityTag, entityTagClass } from "../books-shared";
+import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag, Menu, entityTag, entityTagClass, VendorAvatar } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Vendors" }];
@@ -181,8 +181,8 @@ export default function BooksVendors() {
 
       <div className={`rounded-2xl border overflow-x-auto shadow-sm rise-in ${card}`}>
         <table className="text-sm min-w-[1050px] w-full">
-          <thead>
-            <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
+          <thead className={`sticky top-0 z-10 ${stickyBg}`}>
+            <tr className={`text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${border}`}>
               <th className={`px-3 py-3 text-left font-medium sticky left-0 ${stickyBg}`}>Vendor</th>
               {MONTHS.map((m) => (
                 <th key={m} className="px-2.5 py-3 text-right font-medium">{m}</th>
@@ -232,6 +232,7 @@ export default function BooksVendors() {
                             >
                               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                             </svg>
+                            <VendorAvatar name={v.vendor} />
                             <span className="font-medium truncate group-hover:underline">{v.vendor}</span>
                           </button>
                         </td>

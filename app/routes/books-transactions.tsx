@@ -448,8 +448,26 @@ export default function BooksTransactions() {
             )}
           </button>
         </div>
+        {(q || entity !== "all" || year !== "all" || type !== "all") && (
+          <button
+            onClick={() => {
+              setQ("");
+              setEntity("all");
+              setYear("all");
+              setType("all");
+            }}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs cursor-pointer transition-colors ${
+              isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-black hover:bg-gray-100"
+            }`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Clear
+          </button>
+        )}
         {!loading && (
-          <span className={`text-xs ml-auto ${subtle}`}>
+          <span className={`text-xs ml-auto tabular-nums ${subtle}`}>
             {rows.length} of {total.toLocaleString()}
           </span>
         )}

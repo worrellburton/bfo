@@ -169,10 +169,10 @@ export default function BooksReports() {
   ) {
     const drillLabel = opts?.drillLabel === undefined ? rowLabel : opts.drillLabel;
     const topBorder = opts?.headline ? `border-t-2 ${border}` : `border-t ${rowBorder}`;
-    const emphasis = opts?.headline ? `${bandBg} text-[15px]` : opts?.bold ? bandBg : hoverRow;
+    const emphasis = opts?.headline ? `${bandBg} text-[15px]` : opts?.bold ? bandBg : `group ${hoverRow}`;
     return (
       <tr key={`${section}-${rowLabel}`} className={`${topBorder} ${opts?.bold || opts?.headline ? "font-semibold" : ""} ${emphasis}`}>
-        <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r ${rowBorder} ${stickyBg} ${opts?.indent ? "pl-6" : ""}`}>
+        <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r transition-colors ${rowBorder} ${stickyBg} ${isDark ? "group-hover:bg-[#101010]" : "group-hover:bg-gray-50"} ${opts?.indent ? "pl-6" : ""}`}>
           {(() => {
             // "4000 Rental Income" → muted code, emphasized name.
             const m = /^(\d{4})\s+(.+)$/.exec(rowLabel);
@@ -210,7 +210,7 @@ export default function BooksReports() {
   }
 
   /** Clickable section band — folds its line items, keeps the total row. */
-  function sectionHeaderRow(id: string, label: string, extra?: string) {
+  function sectionHeaderRow(id: string, label: string, extra?: string, count?: number) {
     const isCollapsed = collapsed.has(id);
     return (
       <tr
@@ -230,6 +230,11 @@ export default function BooksReports() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
             </svg>
             {label}
+            {count != null && count > 0 && (
+              <span className={`px-1.5 rounded-full text-[10px] font-medium normal-case tracking-normal ${isDark ? "bg-white/[0.07] text-gray-400" : "bg-gray-100 text-gray-500"}`}>
+                {count}
+              </span>
+            )}
             {extra && <span className="normal-case font-normal tracking-normal opacity-60">{extra}</span>}
           </span>
         </td>
@@ -574,7 +579,7 @@ export default function BooksReports() {
               </tr>
             </thead>
             <tbody>
-              {sectionHeaderRow("revenue", "Revenue")}
+              {sectionHeaderRow("revenue", "Revenue", undefined, pnl.revenue.length)}
               {!collapsed.has("revenue") &&
                 pnl.revenue.map((r) => bodyRow(r.label, r.monthly, r.total, "revenue", { indent: true }))}
               {bodyRow("Total revenue", pnl.revenue_monthly, pnl.revenue_monthly.reduce((a, b) => a + b, 0), "revenue", {
@@ -583,7 +588,7 @@ export default function BooksReports() {
                 drillLabel: null,
               })}
 
-              {sectionHeaderRow("operating", "Operating expenses")}
+              {sectionHeaderRow("operating", "Operating expenses", undefined, pnl.operating.length)}
               {!collapsed.has("operating") &&
                 pnl.operating.map((r) => bodyRow(r.label, r.monthly, r.total, "operating", { indent: true }))}
               {bodyRow("Total operating expenses", pnl.operating_monthly, pnl.operating_monthly.reduce((a, b) => a + b, 0), "operating", {
@@ -601,7 +606,7 @@ export default function BooksReports() {
 
               {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
                 <>
-                  {sectionHeaderRow("other", "Other income / (expense)")}
+                  {sectionHeaderRow("other", "Other income / (expense)", undefined, pnl.other.length)}
                   {!collapsed.has("other") &&
                     pnl.other.map((r) => bodyRow(r.label, r.monthly, r.total, "other", { indent: true }))}
                   {bodyRow("Total other", pnl.other_monthly, pnl.other_monthly.reduce((a, b) => a + b, 0), "other", {
@@ -619,7 +624,7 @@ export default function BooksReports() {
 
               {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0) && (
                 <>
-                  {sectionHeaderRow("transfers", "Transfers", "— own money moving, outside the P&L")}
+                  {sectionHeaderRow("transfers", "Transfers", "— own money moving, outside the P&L", pnl.transfers.rows.length)}
                   {!collapsed.has("transfers") &&
                     pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
                   {bodyRow("Net transfers", pnl.transfers.net, pnl.transfers.total, "transfers", {

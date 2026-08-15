@@ -718,3 +718,13 @@ button:focus-visible, a:focus-visible, [role="option"]:focus-visible {
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/* Print: the statement alone, ink-friendly. */
+@media print {
+  aside, nav, .print-hide, button { display: none !important; }
+  html, body { background: #fff !important; font-size: 10px; }
+  main { padding: 0 !important; }
+  .rounded-2xl, .rounded-xl { box-shadow: none !important; border-radius: 0 !important; }
+  .shimmer::after { animation: none; }
+  * { color: #111 !important; background: #fff !important; }
+}

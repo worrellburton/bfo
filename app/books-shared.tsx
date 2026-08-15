@@ -130,6 +130,25 @@ export function EntityTag({ name, isDark }: { name: string; isDark: boolean }) {
   );
 }
 
+const AVATAR_TONES = [
+  "bg-emerald-500/80", "bg-sky-500/80", "bg-violet-500/80", "bg-amber-500/80",
+  "bg-rose-500/80", "bg-teal-500/80", "bg-indigo-500/80", "bg-orange-500/80",
+];
+
+/** A small colored initial disc for a vendor — same hue every time. */
+export function VendorAvatar({ name }: { name: string }) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return (
+    <span
+      aria-hidden
+      className={`w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white ${AVATAR_TONES[h % AVATAR_TONES.length]}`}
+    >
+      {name.trim()[0]?.toUpperCase() ?? "?"}
+    </span>
+  );
+}
+
 /** A tiny stroked icon from a single path. */
 export function Icon({ d, className }: { d: string; className?: string }) {
   return (
@@ -195,7 +214,17 @@ async function saveTxn(patch: {
   return (await res.json()).transaction as Txn;
 }
 
-type Option = { value: string; label: string; hint?: string; icon?: ReactNode };
+type Option = { value: string; label: string; hint?: string; icon?: ReactNode; group?: string };
+
+/** Statement group for a chart account label, for grouped pickers. */
+export function accountGroup(label: string): string {
+  const c = label.trim()[0];
+  if (c === "4") return "Revenue";
+  if (c === "6") return "Operating expenses";
+  if (c === "7") return "Other income / (expense)";
+  if (c === "9") return "Transfers & flow";
+  return "Other";
+}
 
 /**
  * A fully custom dropdown — a rounded pill trigger and a themed popover list
@@ -223,9 +252,41 @@ export function Menu({
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [filter, setFilter] = useState("");
+  const [hi, setHi] = useState(-1);
 
   const current = options.find((o) => o.value === value) ?? options[0];
   const label = current?.label ?? "—";
+
+  const searchable = options.length > 10;
+  const needle = filter.trim().toLowerCase();
+  const shown = needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
+
+  useEffect(() => {
+    if (!open) {
+      setFilter("");
+      setHi(-1);
+    }
+  }, [open]);
+
+  function choose(o: Option) {
+    onChange(o.value);
+    setOpen(false);
+  }
+
+  function onListKey(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((h) => Math.min(h + 1, shown.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const target = shown[hi] ?? shown[0];
+      if (target) choose(target);
+    }
+  }
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -306,42 +367,69 @@ export function Menu({
             ref={panelRef}
             role="listbox"
             style={{ position: "fixed", left: box.left, top: box.top, width: box.width }}
-            className={`z-[70] rounded-2xl border p-1.5 shadow-xl max-h-80 overflow-y-auto ${
+            onKeyDown={onListKey}
+            className={`z-[70] rounded-2xl border shadow-xl overflow-hidden flex flex-col ${
               isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
             }`}
           >
-            {options.map((o) => {
-              const sel = o.value === value;
-              return (
-                <button
-                  key={o.value || "—"}
-                  role="option"
-                  aria-selected={sel}
-                  onClick={() => {
-                    onChange(o.value);
-                    setOpen(false);
+            {searchable && (
+              <div className={`p-1.5 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                <input
+                  autoFocus
+                  value={filter}
+                  onChange={(e) => {
+                    setFilter(e.target.value);
+                    setHi(0);
                   }}
-                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
-                    sel
-                      ? "bg-emerald-500 text-white font-medium"
-                      : isDark
-                        ? "text-gray-200 hover:bg-white/10"
-                        : "text-gray-800 hover:bg-gray-100"
+                  placeholder="Search…"
+                  className={`w-full px-2.5 py-1.5 rounded-lg text-xs focus:outline-none ${
+                    isDark ? "bg-white/[0.06] text-white placeholder-gray-500" : "bg-gray-100 text-gray-900 placeholder-gray-400"
                   }`}
-                >
-                  <span className="w-3.5 shrink-0 flex items-center justify-center">
-                    {sel && (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
+                />
+              </div>
+            )}
+            <div className="p-1.5 max-h-72 overflow-y-auto">
+              {shown.length === 0 && (
+                <p className={`px-2.5 py-2 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>No matches.</p>
+              )}
+              {shown.map((o, i) => {
+                const sel = o.value === value;
+                const newGroup = o.group && (i === 0 || shown[i - 1].group !== o.group);
+                return (
+                  <Fragment key={o.value || "—"}>
+                    {newGroup && (
+                      <p className={`px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                        {o.group}
+                      </p>
                     )}
-                  </span>
-                  {o.icon && <span className="shrink-0 opacity-80">{o.icon}</span>}
-                  <span className="truncate flex-1">{o.label}</span>
-                  {o.hint && <span className={`text-[10px] ${sel ? "text-white/70" : "text-gray-500"}`}>{o.hint}</span>}
-                </button>
-              );
-            })}
+                    <button
+                      role="option"
+                      aria-selected={sel}
+                      onClick={() => choose(o)}
+                      onMouseEnter={() => setHi(i)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
+                        sel
+                          ? "bg-emerald-500 text-white font-medium"
+                          : i === hi
+                            ? isDark ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
+                            : isDark ? "text-gray-200" : "text-gray-800"
+                      }`}
+                    >
+                      <span className="w-3.5 shrink-0 flex items-center justify-center">
+                        {sel && (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                          </svg>
+                        )}
+                      </span>
+                      {o.icon && <span className="shrink-0 opacity-80">{o.icon}</span>}
+                      <span className="truncate flex-1">{o.label}</span>
+                      {o.hint && <span className={`text-[10px] ${sel ? "text-white/70" : "text-gray-500"}`}>{o.hint}</span>}
+                    </button>
+                  </Fragment>
+                );
+              })}
+            </div>
           </div>,
           document.body
         )}
@@ -458,7 +546,7 @@ export function TxnTable({
 
   return (
     <table className="w-full text-sm min-w-[1020px]">
-      <thead>
+      <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
         <tr className={`text-left text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
           <th className="w-8" />
           <th className="px-2 py-2.5 font-medium">Date</th>
@@ -544,9 +632,10 @@ export function TxnTable({
                     <button
                       onClick={() => navigate(`/books/vendors?q=${encodeURIComponent(vendor)}`)}
                       title={`See ${vendor} on the Vendors page`}
-                      className="font-medium truncate block max-w-full text-left cursor-pointer hover:underline"
+                      className="flex items-center gap-2 max-w-full text-left cursor-pointer group/v"
                     >
-                      {vendor}
+                      <VendorAvatar name={vendor} />
+                      <span className="font-medium truncate group-hover/v:underline">{vendor}</span>
                     </button>
                   ) : (
                     <span className="font-medium">—</span>
@@ -569,7 +658,7 @@ export function TxnTable({
                         ...(!t.book_category
                           ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }]
                           : []),
-                        ...cats.map((c) => ({ value: c, label: c, icon: accountIcon(c) })),
+                        ...cats.map((c) => ({ value: c, label: c, icon: accountIcon(c), group: accountGroup(c) })),
                       ]}
                     />
                   )}
