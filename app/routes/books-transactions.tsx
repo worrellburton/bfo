@@ -8,8 +8,72 @@ export function meta() {
 }
 
 type Entity = { id: string; name: string };
+type BankAccount = { account_id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null; institution_name: string };
 
 const PAGE = 100;
+
+/** Tiny CSV parser: quoted fields, commas, CRLF. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some((v) => v.trim() !== "")) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some((v) => v.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+/** "8/7/2025" | "2025-08-07" → "2025-08-07" (null if unparseable). */
+function toIsoDate(s: string): string | null {
+  const t = s.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${yyyy}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+}
+
+/**
+ * Normalize a parsed CSV into {date, description, amount} rows. Understands
+ * Wells Fargo's headerless export (Date, Amount, *, blank, Description) and
+ * any headered file with date/amount/description-ish columns.
+ */
+function normalizeCsv(rows: string[][]): Array<{ date: string; description: string; amount: number }> {
+  if (!rows.length) return [];
+  const first = rows[0].map((v) => v.trim().toLowerCase());
+  const hasHeader = first.some((v) => /date|amount|description|memo|payee/.test(v)) && !toIsoDate(rows[0][0] ?? "");
+  const body = hasHeader ? rows.slice(1) : rows;
+  let di = 0, ai = 1, ti = 4; // Wells Fargo default layout
+  if (hasHeader) {
+    di = first.findIndex((v) => v.includes("date"));
+    ai = first.findIndex((v) => v.includes("amount"));
+    ti = first.findIndex((v) => /description|memo|payee|name/.test(v));
+    if (di < 0 || ai < 0) return [];
+    if (ti < 0) ti = first.length - 1;
+  }
+  return body.flatMap((r) => {
+    const date = toIsoDate(r[di] ?? "");
+    const amount = Number(String(r[ai] ?? "").replace(/[$,]/g, ""));
+    const description = (r[ti] ?? "").trim();
+    if (!date || !Number.isFinite(amount) || amount === 0) return [];
+    return [{ date, description, amount }];
+  });
+}
 
 export default function BooksTransactions() {
   const { theme } = useTheme();
@@ -30,6 +94,16 @@ export default function BooksTransactions() {
   const [type, setType] = useState<"all" | "transfers" | "intercompany" | "uncategorized">("all");
   const [year, setYear] = useState("all");
   const [uncat, setUncat] = useState<number | null>(null);
+
+  // CSV import + Mercury backfill
+  const [importOpen, setImportOpen] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [importAccount, setImportAccount] = useState("");
+  const [csvRows, setCsvRows] = useState<Array<{ date: string; description: string; amount: number }>>([]);
+  const [csvName, setCsvName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState("");
+  const [backfilling, setBackfilling] = useState(false);
 
   const query = useCallback(
     (offset: number) => {
@@ -106,6 +180,74 @@ export default function BooksTransactions() {
     }
   }
 
+  async function openImport() {
+    setImportOpen(true);
+    setImportResult("");
+    if (bankAccounts.length) return;
+    try {
+      const res = await authFetch("/api/plaid/data?report=treasury");
+      if (res.ok) {
+        const data = await res.json();
+        const banks = (data.accounts ?? []).filter((a: any) => a.type !== "investment");
+        setBankAccounts(banks);
+        if (banks[0]) setImportAccount(banks[0].account_id);
+      }
+    } catch {
+      // account list stays empty; the modal says so
+    }
+  }
+
+  function onCsvFile(file: File) {
+    setCsvName(file.name);
+    setImportResult("");
+    void file.text().then((text) => {
+      const rows = normalizeCsv(parseCsv(text));
+      setCsvRows(rows);
+      if (!rows.length) setImportResult("Couldn't find date/amount/description columns in that file.");
+    });
+  }
+
+  async function runImport() {
+    if (!importAccount || !csvRows.length) return;
+    setImporting(true);
+    setImportResult("");
+    try {
+      const res = await authFetch("/api/books/import-csv", {
+        method: "POST",
+        body: JSON.stringify({ account_id: importAccount, rows: csvRows }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Import failed.");
+      setImportResult(`Imported ${data.imported} transactions (${data.skipped_existing} already present).`);
+      setCsvRows([]);
+      setCsvName("");
+      await load();
+      void refreshUncat();
+    } catch (err) {
+      setImportResult(err instanceof Error ? err.message : "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function backfillMercury() {
+    setBackfilling(true);
+    setError("");
+    try {
+      const res = await authFetch("/api/mercury/backfill", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Mercury backfill failed.");
+      setError("");
+      setImportResult("");
+      await load();
+      alert(`Mercury backfill: ${data.backfilled} transactions added.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mercury backfill failed.");
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   async function syncNow() {
     setSyncing(true);
     setError("");
@@ -156,16 +298,108 @@ export default function BooksTransactions() {
             {lastSynced && ` Last synced ${new Date(lastSynced).toLocaleString()}.`}
           </p>
         </div>
-        <button
-          onClick={() => void syncNow()}
-          disabled={syncing}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-            isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
-          }`}
-        >
-          {syncing ? "Syncing…" : "Sync now"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void openImport()}
+            className={`px-4 py-2 rounded-full text-sm transition-colors cursor-pointer border ${
+              isDark
+                ? "border-white/10 text-gray-300 hover:text-white hover:border-white/25"
+                : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
+            }`}
+          >
+            Import CSV
+          </button>
+          <button
+            onClick={() => void backfillMercury()}
+            disabled={backfilling}
+            title="Pull full Mercury history from Mercury's API (needs MERCURY_API_TOKEN)"
+            className={`px-4 py-2 rounded-full text-sm transition-colors cursor-pointer border disabled:opacity-50 ${
+              isDark
+                ? "border-white/10 text-gray-300 hover:text-white hover:border-white/25"
+                : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
+            }`}
+          >
+            {backfilling ? "Backfilling…" : "Mercury history"}
+          </button>
+          <button
+            onClick={() => void syncNow()}
+            disabled={syncing}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+              isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
+            }`}
+          >
+            {syncing ? "Syncing…" : "Sync now"}
+          </button>
+        </div>
       </div>
+
+      {importOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setImportOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md rounded-2xl border shadow-2xl p-5 ${
+              isDark ? "bg-[#141414] border-white/10" : "bg-white border-gray-200"
+            }`}
+          >
+            <h2 className="text-base font-semibold mb-1">Import bank CSV</h2>
+            <p className={`text-xs mb-4 ${subtle}`}>
+              For history Plaid can't reach (Wells Fargo beyond 90 days). Export the range from the
+              bank's site, pick the account it belongs to, and import — duplicates are skipped.
+            </p>
+
+            <label className={`block text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>Account</label>
+            <select
+              value={importAccount}
+              onChange={(e) => setImportAccount(e.target.value)}
+              className={`w-full mb-3 px-3 py-2 rounded-xl text-sm border cursor-pointer ${
+                isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
+              }`}
+            >
+              {bankAccounts.length === 0 && <option value="">Loading accounts…</option>}
+              {bankAccounts.map((a) => (
+                <option key={a.account_id} value={a.account_id}>
+                  {(a.nickname || a.official_name || a.name) + (a.mask ? ` ····${a.mask}` : "")} — {a.institution_name}
+                </option>
+              ))}
+            </select>
+
+            <label className={`block text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>CSV file</label>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => e.target.files?.[0] && onCsvFile(e.target.files[0])}
+              className={`w-full text-sm mb-3 ${subtle}`}
+            />
+
+            {csvRows.length > 0 && (
+              <p className={`text-xs mb-3 ${subtle}`}>
+                {csvName}: <span className="font-medium">{csvRows.length} rows</span>,{" "}
+                {csvRows.reduce((min, r) => (r.date < min ? r.date : min), csvRows[0].date)} →{" "}
+                {csvRows.reduce((max, r) => (r.date > max ? r.date : max), csvRows[0].date)}
+              </p>
+            )}
+            {importResult && <p className={`text-xs mb-3 ${importResult.startsWith("Imported") ? "text-emerald-500" : "text-red-400"}`}>{importResult}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setImportOpen(false)}
+                className={`px-4 py-2 rounded-full text-sm cursor-pointer ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"}`}
+              >
+                Close
+              </button>
+              <button
+                onClick={() => void runImport()}
+                disabled={importing || !csvRows.length || !importAccount}
+                className={`px-4 py-2 rounded-full text-sm font-medium cursor-pointer disabled:opacity-50 ${
+                  isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
+                }`}
+              >
+                {importing ? "Importing…" : "Import"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input
