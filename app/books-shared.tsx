@@ -352,7 +352,6 @@ export function Menu({
         aria-expanded={open}
         className={pill}
       >
-        {current?.icon && <span className="shrink-0 opacity-80">{current.icon}</span>}
         <span className="truncate">{label}</span>
         <svg
           className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}
@@ -408,14 +407,12 @@ export function Menu({
                       onClick={() => choose(o)}
                       onMouseEnter={() => setHi(i)}
                       className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
-                        sel
-                          ? "bg-emerald-500 text-white font-medium"
-                          : i === hi
-                            ? isDark ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
-                            : isDark ? "text-gray-200" : "text-gray-800"
-                      }`}
+                        i === hi
+                          ? isDark ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
+                          : isDark ? "text-gray-200" : "text-gray-800"
+                      } ${sel ? "font-medium" : ""}`}
                     >
-                      <span className="w-3.5 shrink-0 flex items-center justify-center">
+                      <span className="w-3.5 shrink-0 flex items-center justify-center text-emerald-500">
                         {sel && (
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -424,7 +421,7 @@ export function Menu({
                       </span>
                       {o.icon && <span className="shrink-0 opacity-80">{o.icon}</span>}
                       <span className="truncate flex-1">{o.label}</span>
-                      {o.hint && <span className={`text-[10px] ${sel ? "text-white/70" : "text-gray-500"}`}>{o.hint}</span>}
+                      {o.hint && <span className="text-[10px] text-gray-500">{o.hint}</span>}
                     </button>
                   </Fragment>
                 );
@@ -632,10 +629,9 @@ export function TxnTable({
                     <button
                       onClick={() => navigate(`/books/vendors?q=${encodeURIComponent(vendor)}`)}
                       title={`See ${vendor} on the Vendors page`}
-                      className="flex items-center gap-2 max-w-full text-left cursor-pointer group/v"
+                      className="font-medium truncate block max-w-full text-left cursor-pointer hover:underline"
                     >
-                      <VendorAvatar name={vendor} />
-                      <span className="font-medium truncate group-hover/v:underline">{vendor}</span>
+                      {vendor}
                     </button>
                   ) : (
                     <span className="font-medium">—</span>

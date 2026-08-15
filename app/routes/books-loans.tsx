@@ -267,7 +267,7 @@ export default function BooksLoans() {
             if (!newName.trim()) return;
             void createLoan(newName.trim(), Number(newBalance.replace(/[$,]/g, "")) || 0);
           }}
-          className={`rounded-2xl border p-4 mb-6 shadow-sm flex flex-wrap items-end gap-3 ${card}`}
+          className={`rounded-2xl border p-4 mb-6 flex flex-wrap items-end gap-3 ${card}`}
         >
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wider min-w-[220px]">
             <span className={subtle}>Who owes it</span>
@@ -312,7 +312,7 @@ export default function BooksLoans() {
       )}
 
       {!loading && loans.length > 0 && (
-        <div className={`rounded-2xl border p-5 mb-6 shadow-sm flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
+        <div className={`rounded-2xl border p-5 mb-6 flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
           <div>
             <p className={`text-[11px] uppercase tracking-wider ${subtle}`}>Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}</p>
             <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
@@ -338,7 +338,7 @@ export default function BooksLoans() {
           const key = loan.id ?? loan.name;
           const isOpen = open.has(key);
           return (
-            <section key={key} className={`rounded-2xl border mb-4 overflow-hidden shadow-sm ${card}`}>
+            <section key={key} className={`rounded-2xl border mb-4 overflow-hidden ${card}`}>
               <button
                 onClick={() =>
                   setOpen((prev) => {

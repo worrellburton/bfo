@@ -108,7 +108,7 @@ export default function BooksCell() {
         </div>
       )}
 
-      <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto ${card}`}>
         {loading ? (
           <p className={`px-4 py-8 text-center text-sm ${subtle}`}>Loading…</p>
         ) : rows.length === 0 ? (

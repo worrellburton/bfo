@@ -104,6 +104,7 @@ export default function BooksTransactions() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState("");
   const [backfilling, setBackfilling] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const query = useCallback(
     (offset: number) => {
@@ -301,36 +302,54 @@ export default function BooksTransactions() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void openImport()}
-            className={`px-4 py-2 rounded-full text-sm transition-colors cursor-pointer border ${
-              isDark
-                ? "border-white/10 text-gray-300 hover:text-white hover:border-white/25"
-                : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
-            }`}
-          >
-            Import CSV
-          </button>
-          <button
-            onClick={() => void backfillMercury()}
-            disabled={backfilling}
-            title="Pull full Mercury history from Mercury's API (needs MERCURY_API_TOKEN)"
-            className={`px-4 py-2 rounded-full text-sm transition-colors cursor-pointer border disabled:opacity-50 ${
-              isDark
-                ? "border-white/10 text-gray-300 hover:text-white hover:border-white/25"
-                : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
-            }`}
-          >
-            {backfilling ? "Backfilling…" : "Mercury history"}
-          </button>
-          <button
             onClick={() => void syncNow()}
             disabled={syncing}
             className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
               isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
             }`}
           >
-            {syncing ? "Syncing…" : "Sync now"}
+            {syncing ? "Syncing…" : backfilling ? "Backfilling…" : "Sync now"}
           </button>
+          <div className="relative">
+            <button
+              onClick={() => setMoreOpen((v) => !v)}
+              aria-expanded={moreOpen}
+              aria-label="More actions"
+              className={`w-9 h-9 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
+                isDark
+                  ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
+                  : "border-gray-200 text-gray-500 hover:text-black hover:border-gray-400"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </button>
+            {moreOpen && (
+              <div
+                className={`absolute right-0 mt-2 w-44 rounded-2xl border shadow-xl z-30 p-1.5 ${
+                  isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
+                }`}
+              >
+                {([["Import CSV", () => void openImport()], ["Mercury history", () => void backfillMercury()]] as const).map(
+                  ([label, run]) => (
+                    <button
+                      key={label}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        run();
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl text-sm text-left cursor-pointer ${
+                        isDark ? "text-gray-200 hover:bg-white/10" : "text-gray-800 hover:bg-gray-100"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -479,7 +498,7 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      <div className={`rounded-2xl border overflow-x-auto shadow-sm rise-in ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
         {loading ? (
           <div className="p-4 space-y-2.5">
             {Array.from({ length: 8 }, (_, i) => (

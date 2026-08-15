@@ -210,7 +210,7 @@ export default function BooksReports() {
   }
 
   /** Clickable section band — folds its line items, keeps the total row. */
-  function sectionHeaderRow(id: string, label: string, extra?: string, count?: number) {
+  function sectionHeaderRow(id: string, label: string, extra?: string) {
     const isCollapsed = collapsed.has(id);
     return (
       <tr
@@ -230,11 +230,6 @@ export default function BooksReports() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
             </svg>
             {label}
-            {count != null && count > 0 && (
-              <span className={`px-1.5 rounded-full text-[10px] font-medium normal-case tracking-normal ${isDark ? "bg-white/[0.07] text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-                {count}
-              </span>
-            )}
             {extra && <span className="normal-case font-normal tracking-normal opacity-60">{extra}</span>}
           </span>
         </td>
@@ -261,7 +256,7 @@ export default function BooksReports() {
               aria-pressed={view === value}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all cursor-pointer ${
                 view === value
-                  ? isDark ? "bg-white text-black shadow-sm" : "bg-gray-900 text-white shadow-sm"
+                  ? isDark ? "bg-white text-black" : "bg-gray-900 text-white"
                   : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
               }`}
             >
@@ -388,7 +383,7 @@ export default function BooksReports() {
           </div>
         ) : !sheet ? null : (
           <>
-          <div className={`rounded-2xl border overflow-hidden max-w-3xl shadow-sm rise-in ${card}`}>
+          <div className={`rounded-2xl border overflow-hidden max-w-3xl rise-in ${card}`}>
             <table className="w-full text-sm">
               <tbody>
                 {(
@@ -413,21 +408,7 @@ export default function BooksReports() {
                         </tr>
                       ))}
                       <tr className={`border-t font-semibold ${rowBorder}`}>
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-3">
-                            <span>Total {title.toLowerCase()}</span>
-                            {/* Share of total assets, at a glance. */}
-                            <span className={`h-1 rounded-full w-24 overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`} aria-hidden>
-                              <span
-                                className="block h-full rounded-full bg-emerald-500/70"
-                                style={{ width: `${Math.min(100, Math.round((section.total / Math.max(sheet.total_assets, 1)) * 100))}%` }}
-                              />
-                            </span>
-                            <span className={`text-[10px] font-normal tabular-nums ${subtle}`}>
-                              {Math.round((section.total / Math.max(sheet.total_assets, 1)) * 100)}%
-                            </span>
-                          </div>
-                        </td>
+                        <td className="px-4 py-2">Total {title.toLowerCase()}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{moneyFull(section.total)}</td>
                       </tr>
                     </Fragment>
@@ -480,11 +461,11 @@ export default function BooksReports() {
         )
       ) : loading ? (
         <div className="rise-in">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <div className="flex flex-wrap gap-x-12 gap-y-4 mb-7">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className={`rounded-2xl border px-4 py-3.5 ${card}`}>
-                <div className="shimmer h-3 w-20 mb-2.5" />
-                <div className="shimmer h-6 w-28" />
+              <div key={i}>
+                <div className="shimmer h-3 w-20 mb-2" />
+                <div className="shimmer h-7 w-28" />
               </div>
             ))}
           </div>
@@ -500,53 +481,26 @@ export default function BooksReports() {
         </p>
       ) : (
         <>
-        {/* Headline figures for the year, with the monthly shape and momentum. */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 rise-in">
+        {/* The year in four quiet figures. */}
+        <div className={`flex flex-wrap gap-x-12 gap-y-4 mb-7 rise-in`}>
           {(() => {
             const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
             const opInc = sum(pnl.operating_income_monthly);
-            const kpis: Array<{ label: string; value: number; monthly: number[]; tone: string; bar: string }> = [
-              { label: "Revenue", value: sum(pnl.revenue_monthly), monthly: pnl.revenue_monthly, tone: "text-emerald-500", bar: "bg-emerald-500/60" },
-              { label: "Operating expenses", value: sum(pnl.operating_monthly), monthly: pnl.operating_monthly, tone: "", bar: isDark ? "bg-white/30" : "bg-gray-400/70" },
-              { label: "Operating income", value: opInc, monthly: pnl.operating_income_monthly, tone: opInc >= 0 ? "text-emerald-500" : "text-rose-400", bar: opInc >= 0 ? "bg-emerald-500/60" : "bg-rose-400/60" },
-              { label: "Net income", value: pnl.net_total, monthly: pnl.net_monthly, tone: pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400", bar: pnl.net_total >= 0 ? "bg-emerald-500/60" : "bg-rose-400/60" },
+            const kpis: Array<[string, number, string]> = [
+              ["Revenue", sum(pnl.revenue_monthly), ""],
+              ["Operating expenses", sum(pnl.operating_monthly), ""],
+              ["Operating income", opInc, opInc < 0 ? "text-rose-400" : ""],
+              ["Net income", pnl.net_total, pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400"],
             ];
-            // Momentum: latest active month vs the one before it.
-            const last = curMonth >= 0 ? curMonth : 11;
-            return kpis.map((k) => {
-              const max = Math.max(...k.monthly.map((v) => Math.abs(v)), 1);
-              const cur = k.monthly[last] ?? 0;
-              const prev = k.monthly[last - 1] ?? 0;
-              const delta = cur - prev;
-              return (
-                <div key={k.label} className={`rounded-2xl border px-4 py-3.5 ${card}`}>
-                  <p className={`text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>{k.label}</p>
-                  <div className="flex items-baseline gap-2">
-                    <p className={`text-xl font-semibold tabular-nums tracking-tight ${k.tone}`}>{money(k.value)}</p>
-                    {prev !== 0 && delta !== 0 && (
-                      <span className={`text-[11px] tabular-nums ${delta > 0 ? "text-emerald-500" : "text-rose-400"}`}>
-                        {delta > 0 ? "▲" : "▼"} {money(Math.abs(delta))}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-end gap-[3px] h-6 mt-2" aria-hidden>
-                    {k.monthly.map((v, i) => (
-                      <span
-                        key={i}
-                        title={MONTHS[i]}
-                        className={`flex-1 rounded-sm min-h-[2px] ${
-                          v === 0 ? (isDark ? "bg-white/[0.06]" : "bg-gray-100") : k.bar
-                        } ${i === curMonth ? "opacity-100" : "opacity-70"}`}
-                        style={{ height: `${Math.max(8, Math.round((Math.abs(v) / max) * 100))}%` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            });
+            return kpis.map(([label, value, tone]) => (
+              <div key={label}>
+                <p className={`text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>{label}</p>
+                <p className={`text-2xl font-semibold tabular-nums tracking-tight ${tone}`}>{money(value)}</p>
+              </div>
+            ));
           })()}
         </div>
-        <div className={`rounded-2xl border overflow-x-auto shadow-sm rise-in ${card}`}>
+        <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
           <table className="text-sm min-w-[1100px] w-full">
             <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
               <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
@@ -579,7 +533,7 @@ export default function BooksReports() {
               </tr>
             </thead>
             <tbody>
-              {sectionHeaderRow("revenue", "Revenue", undefined, pnl.revenue.length)}
+              {sectionHeaderRow("revenue", "Revenue")}
               {!collapsed.has("revenue") &&
                 pnl.revenue.map((r) => bodyRow(r.label, r.monthly, r.total, "revenue", { indent: true }))}
               {bodyRow("Total revenue", pnl.revenue_monthly, pnl.revenue_monthly.reduce((a, b) => a + b, 0), "revenue", {
@@ -588,7 +542,7 @@ export default function BooksReports() {
                 drillLabel: null,
               })}
 
-              {sectionHeaderRow("operating", "Operating expenses", undefined, pnl.operating.length)}
+              {sectionHeaderRow("operating", "Operating expenses")}
               {!collapsed.has("operating") &&
                 pnl.operating.map((r) => bodyRow(r.label, r.monthly, r.total, "operating", { indent: true }))}
               {bodyRow("Total operating expenses", pnl.operating_monthly, pnl.operating_monthly.reduce((a, b) => a + b, 0), "operating", {
@@ -606,7 +560,7 @@ export default function BooksReports() {
 
               {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
                 <>
-                  {sectionHeaderRow("other", "Other income / (expense)", undefined, pnl.other.length)}
+                  {sectionHeaderRow("other", "Other income / (expense)")}
                   {!collapsed.has("other") &&
                     pnl.other.map((r) => bodyRow(r.label, r.monthly, r.total, "other", { indent: true }))}
                   {bodyRow("Total other", pnl.other_monthly, pnl.other_monthly.reduce((a, b) => a + b, 0), "other", {
@@ -624,7 +578,7 @@ export default function BooksReports() {
 
               {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0) && (
                 <>
-                  {sectionHeaderRow("transfers", "Transfers", "— own money moving, outside the P&L", pnl.transfers.rows.length)}
+                  {sectionHeaderRow("transfers", "Transfers")}
                   {!collapsed.has("transfers") &&
                     pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
                   {bodyRow("Net transfers", pnl.transfers.net, pnl.transfers.total, "transfers", {
@@ -638,7 +592,7 @@ export default function BooksReports() {
                 pnl.intercompany.in.some((v) => v !== 0) ||
                 pnl.intercompany.out.some((v) => v !== 0)) && (
                 <>
-                  {sectionHeaderRow("intercompany", "Intercompany", "— with entities outside this selection")}
+                  {sectionHeaderRow("intercompany", "Intercompany")}
                   {!collapsed.has("intercompany") && (
                     <>
                       {bodyRow("In", pnl.intercompany.in, pnl.intercompany.in.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
@@ -652,9 +606,7 @@ export default function BooksReports() {
           </table>
         </div>
         <p className={`mt-3 text-[11px] ${subtle}`}>
-          Cash basis
-          {pnl.eliminated_count > 0 && ` · ${pnl.eliminated_count} intercompany movements eliminated`}
-          {" · click any figure for its transactions"}
+          Cash basis{pnl.eliminated_count > 0 && ` · ${pnl.eliminated_count} eliminated`}
         </p>
         </>
       )}
