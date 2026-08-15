@@ -38,6 +38,7 @@ export default [
     route("books/reports", "./routes/books-reports.tsx"),
     route("books/reports/cell", "./routes/books-cell.tsx"),
     route("books/vendors", "./routes/books-vendors.tsx"),
+    route("books/vendors/detail", "./routes/books-vendor-detail.tsx"),
     route("books/loans", "./routes/books-loans.tsx"),
     route("treasury/mappings", "./routes/treasury-mappings.tsx"),
     route("treasury/:accountId", "./routes/treasury-account.tsx"),

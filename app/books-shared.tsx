@@ -639,8 +639,8 @@ export function TxnTable({
                 <td className="px-2 py-2.5 max-w-[200px]">
                   {vendor ? (
                     <button
-                      onClick={() => navigate(`/books/vendors?q=${encodeURIComponent(vendor)}`)}
-                      title={`See ${vendor} on the Vendors page`}
+                      onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
+                      title={`Open ${vendor}`}
                       className="font-medium truncate block max-w-full text-left cursor-pointer hover:underline"
                     >
                       {vendor}
