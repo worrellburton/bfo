@@ -60,10 +60,53 @@ const ENTITY_TAGS: Record<string, string> = {
 };
 const TAG_STOP = new Set(["llc", "trust", "the", "of", "and", "co", "inc", "lp", "ltd", "corp", "company", "on", "at"]);
 
+const normTagKey = (name: string) =>
+  name.toLowerCase().replace(/\(.*?\)/g, "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+
+// User-set initials (edited on the Entities page, stored on the Firebase
+// asset). Cached in localStorage so tags render right on first paint;
+// hydrateEntityTags refreshes the cache from Firebase once per session.
+let CUSTOM_TAGS: Record<string, string> = {};
+try {
+  CUSTOM_TAGS = JSON.parse(globalThis.localStorage?.getItem("bfo-entity-tags") ?? "{}");
+} catch {
+  CUSTOM_TAGS = {};
+}
+
+export function setEntityTagLocal(name: string, initials: string | null) {
+  const key = normTagKey(name);
+  if (initials) CUSTOM_TAGS[key] = initials.toUpperCase().slice(0, 4);
+  else delete CUSTOM_TAGS[key];
+  try {
+    localStorage.setItem("bfo-entity-tags", JSON.stringify(CUSTOM_TAGS));
+  } catch {
+    // cache only
+  }
+}
+
+export async function hydrateEntityTags(): Promise<void> {
+  try {
+    const { db, authReady } = await import("./firebase");
+    await authReady;
+    const { ref, get } = await import("firebase/database");
+    const snap = await get(ref(db, "assets"));
+    const data = snap.val() || {};
+    const map: Record<string, string> = {};
+    for (const a of Object.values<any>(data)) {
+      if (a?.name && a?.initials) map[normTagKey(a.name)] = String(a.initials).toUpperCase().slice(0, 4);
+    }
+    CUSTOM_TAGS = map;
+    localStorage.setItem("bfo-entity-tags", JSON.stringify(map));
+  } catch {
+    // tags fall back to derived codes
+  }
+}
+
 /** A stable 3-letter code for an entity, e.g. "Ledger Louise, LLC" → "LDL". */
 export function entityTag(name?: string | null): string {
   if (!name) return "—";
-  const key = name.toLowerCase().replace(/\(.*?\)/g, "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+  const key = normTagKey(name);
+  if (CUSTOM_TAGS[key]) return CUSTOM_TAGS[key];
   if (ENTITY_TAGS[key]) return ENTITY_TAGS[key];
   const words = key.split(" ").filter((w) => w && !TAG_STOP.has(w));
   const base = words.length ? words : key.split(" ");

@@ -109,6 +109,11 @@ export default function AppLayout() {
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Refresh the custom entity-initials cache once per session.
+    void import("../books-shared").then((m) => m.hydrateEntityTags());
+  }, []);
+
+  useEffect(() => {
     if (!isAuthenticated()) {
       navigate("/login");
       return;

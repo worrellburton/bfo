@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useTheme } from "../theme";
 import EstateMap, { INITIAL_ENTITIES } from "./estate-map";
+import { entityTag, entityTagClass, setEntityTagLocal } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Assets" }];
@@ -16,6 +17,7 @@ interface Asset {
   createdAt: number;
   ownerId?: string;
   llcType?: "Disregarded Entity" | "Partnership" | "C Corporation" | "";
+  initials?: string;
   stateLink?: string;
   operatingAgreementDate?: string;
   articlesOfOrgDate?: string;
@@ -38,6 +40,10 @@ export default function Assets() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState("");
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
+  const [copiedEin, setCopiedEin] = useState<string | null>(null);
 
   // Ownership hierarchy from estate map
   const OWNERSHIP_MAP: Record<string, string> = {};
@@ -233,6 +239,22 @@ export default function Assets() {
     }
   }
 
+  async function saveInitials(asset: Asset, raw: string) {
+    const initials = raw.trim().toUpperCase().slice(0, 4);
+    const { db } = await import("../firebase");
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${asset.id}`), { initials });
+    // Books tags pick the change up immediately, not just next session.
+    setEntityTagLocal(asset.name, initials || null);
+  }
+
+  function copyEin(ein: string) {
+    void navigator.clipboard?.writeText(ein).then(() => {
+      setCopiedEin(ein);
+      setTimeout(() => setCopiedEin(null), 1200);
+    });
+  }
+
   async function updateOwner(assetId: string, ownerId: string) {
     const { db } = await import("../firebase");
     const { ref, update } = await import("firebase/database");
@@ -246,8 +268,12 @@ export default function Assets() {
     return owner?.name || "";
   }
 
-  // Sort assets
-  const sorted = [...assets].sort((a, b) => {
+  // Search, then sort
+  const needle = q.trim().toLowerCase();
+  const searched = needle
+    ? assets.filter((a) => a.name.toLowerCase().includes(needle) || (a.ein ?? "").includes(needle))
+    : assets;
+  const sorted = [...searched].sort((a, b) => {
     const dir = sortDir === "asc" ? 1 : -1;
     switch (sortKey) {
       case "name":
@@ -325,13 +351,22 @@ export default function Assets() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Entities</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold tracking-tight">Entities</h1>
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search entities…"
+            className={`px-4 py-1.5 rounded-full text-sm border focus:outline-none ${isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"}`}
+          />
+        </div>
         <div className="flex items-center gap-3">
-          <div className={`flex ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-lg overflow-hidden`}>
+          <div className={`flex p-0.5 ${isDark ? "border-white/10" : "border-gray-200"} border rounded-full`}>
             <button
               onClick={() => setView("list")}
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "list" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
+                view === "list" ? `rounded-full ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
               title="Spreadsheet view"
             >
@@ -342,7 +377,7 @@ export default function Assets() {
             <button
               onClick={() => setView("table")}
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "table" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
+                view === "table" ? `rounded-full ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
               title="Card view"
             >
@@ -353,7 +388,7 @@ export default function Assets() {
             <button
               onClick={() => setView("map")}
               className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "map" ? `${isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
+                view === "map" ? `rounded-full ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
               }`}
               title="Map view"
             >
@@ -364,7 +399,7 @@ export default function Assets() {
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm"
+            className={`px-4 py-2 font-medium rounded-full transition-colors cursor-pointer text-sm ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
           >
             {showForm ? "Cancel" : "+ New Entity"}
           </button>
@@ -419,12 +454,25 @@ export default function Assets() {
         <div className={`border rounded-lg overflow-hidden ${cellBorder}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead>
+              <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
                 <tr className={`${hdrBg} border-b ${cellBorder}`}>
-                  {columns.map((col) => (
+                  {columns.slice(0, 1).map((col) => (
                     <th
                       key={col.key}
-                      className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider cursor-pointer select-none ${col.w} border-r last:border-r-0 ${cellBorder} ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors`}
+                      className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider cursor-pointer select-none ${col.w} ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors`}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col.label}
+                        <SortIcon col={col.key} />
+                      </div>
+                    </th>
+                  ))}
+                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[70px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Tag</th>
+                  {columns.slice(1).map((col) => (
+                    <th
+                      key={col.key}
+                      className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider cursor-pointer select-none ${col.w} ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors`}
                       onClick={() => handleSort(col.key)}
                     >
                       <div className="flex items-center gap-1">
@@ -434,8 +482,8 @@ export default function Assets() {
                     </th>
                   ))}
                   {/* Static columns */}
-                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[110px] border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>State Link</th>
-                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>Op. Agreement</th>
+                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[110px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>State Link</th>
+                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Op. Agreement</th>
                   <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Articles of Org</th>
                 </tr>
               </thead>
@@ -449,7 +497,7 @@ export default function Assets() {
                       className={`border-b last:border-b-0 ${cellBorder} ${hoverBg} transition-colors group`}
                     >
                       {/* Name with tree indentation */}
-                      <td className={`px-3 py-2 border-r ${cellBorder} font-medium`}>
+                      <td className="px-3 py-2 font-medium">
                         <div className="flex items-center" style={{ paddingLeft: `${depth * 20}px` }}>
                           {hasChildren && (
                             <button
@@ -481,10 +529,47 @@ export default function Assets() {
                           >
                             {asset.name}
                           </Link>
+                          {hasChildren && collapsed.has(asset.id) && (
+                            <span className={`ml-2 text-[10px] tabular-nums ${isDark ? "text-gray-600" : "text-gray-400"}`}>
+                              +{assets.filter((a) => a.ownerId === asset.id).length}
+                            </span>
+                          )}
                         </div>
                       </td>
+                      {/* Editable initials tag — Books uses these everywhere */}
+                      <td className="px-3 py-2">
+                        {editingTag === asset.id ? (
+                          <input
+                            autoFocus
+                            value={tagDraft}
+                            onChange={(e) => setTagDraft(e.target.value.toUpperCase().slice(0, 4))}
+                            onBlur={() => {
+                              void saveInitials(asset, tagDraft);
+                              setEditingTag(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                              if (e.key === "Escape") setEditingTag(null);
+                            }}
+                            className={`w-14 px-1.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide uppercase focus:outline-none border ${
+                              isDark ? "bg-white/10 border-white/25 text-white" : "bg-white border-gray-300 text-gray-900"
+                            }`}
+                          />
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingTag(asset.id);
+                              setTagDraft(asset.initials || entityTag(asset.name));
+                            }}
+                            title="Edit initials"
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide cursor-pointer ${entityTagClass(asset.name, isDark)}`}
+                          >
+                            {asset.initials || entityTag(asset.name)}
+                          </button>
+                        )}
+                      </td>
                       {/* Type */}
-                      <td className={`px-3 py-2 border-r ${cellBorder}`}>
+                      <td className="px-3 py-2">
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
                           asset.type === "C-Corp"
                             ? isDark ? "bg-purple-500/20 text-purple-300" : "bg-purple-50 text-purple-700"
@@ -494,26 +579,36 @@ export default function Assets() {
                         </span>
                       </td>
                       {/* LLC Type */}
-                      <td className={`px-3 py-2 border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                         {asset.llcType || "—"}
                       </td>
                       {/* State */}
-                      <td className={`px-3 py-2 border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                         {asset.state || "—"}
                       </td>
                       {/* EIN */}
-                      <td className={`px-3 py-2 border-r ${cellBorder} font-mono ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.ein || "—"}
+                      <td className={`px-3 py-2 font-mono tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.ein ? (
+                          <button
+                            onClick={() => copyEin(asset.ein)}
+                            title="Copy EIN"
+                            className="cursor-pointer hover:underline decoration-dotted underline-offset-2"
+                          >
+                            {copiedEin === asset.ein ? "Copied" : asset.ein}
+                          </button>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       {/* Owned By dropdown */}
-                      <td className={`px-3 py-2 border-r ${cellBorder}`}>
+                      <td className="px-3 py-2">
                         <select
                           value={asset.ownerId || ""}
                           onChange={(e) => {
                             e.stopPropagation();
                             updateOwner(asset.id, e.target.value);
                           }}
-                          className={`w-full text-xs py-1 px-1.5 rounded border ${isDark ? "bg-transparent border-white/10 text-gray-300 focus:border-white/30" : "bg-transparent border-gray-200 text-gray-600 focus:border-gray-400"} focus:outline-none cursor-pointer`}
+                          className={`w-full text-xs py-1 px-1.5 rounded-md border border-transparent bg-transparent focus:outline-none cursor-pointer transition-colors ${isDark ? "text-gray-300 hover:border-white/15 focus:border-white/30" : "text-gray-600 hover:border-gray-200 focus:border-gray-400"}`}
                         >
                           <option value="">None</option>
                           {assets
@@ -527,22 +622,22 @@ export default function Assets() {
                         </select>
                       </td>
                       {/* State Link */}
-                      <td className={`px-3 py-2 border-r ${cellBorder}`}>
+                      <td className="px-3 py-2">
                         {asset.stateLink ? (
                           <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
                             View
                           </a>
                         ) : (
-                          <span className={`${isDark ? "text-yellow-500/60" : "text-yellow-600/60"} italic`}>Missing</span>
+                          <span className="text-[10px] uppercase tracking-wider text-amber-500/60">missing</span>
                         )}
                       </td>
                       {/* Operating Agreement */}
-                      <td className={`px-3 py-2 border-r ${cellBorder} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.operatingAgreementDate || <span className={`${isDark ? "text-yellow-500/60" : "text-yellow-600/60"} italic`}>Missing</span>}
+                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        {asset.operatingAgreementDate || <span className="text-[10px] uppercase tracking-wider text-amber-500/60">missing</span>}
                       </td>
                       {/* Articles of Org */}
                       <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.articlesOfOrgDate || <span className={`${isDark ? "text-yellow-500/60" : "text-yellow-600/60"} italic`}>Missing</span>}
+                        {asset.articlesOfOrgDate || <span className="text-[10px] uppercase tracking-wider text-amber-500/60">missing</span>}
                       </td>
                     </tr>
                   );
