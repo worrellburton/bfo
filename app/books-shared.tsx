@@ -214,7 +214,7 @@ async function saveTxn(patch: {
   return (await res.json()).transaction as Txn;
 }
 
-type Option = { value: string; label: string; hint?: string; icon?: ReactNode; group?: string };
+type Option = { value: string; label: string; hint?: string; icon?: ReactNode; group?: string; short?: string };
 
 /** Statement group for a chart account label, for grouped pickers. */
 export function accountGroup(label: string): string {
@@ -240,6 +240,8 @@ export function Menu({
   disabled,
   onChange,
   tone = "neutral",
+  size = "sm",
+  quiet = false,
 }: {
   value: string;
   options: Option[];
@@ -247,6 +249,10 @@ export function Menu({
   disabled?: boolean;
   onChange: (v: string) => void;
   tone?: "neutral" | "amber";
+  /** md matches page-level filter fields; sm fits inside table rows. */
+  size?: "sm" | "md";
+  /** Borderless until hover — for controls repeated on every row. */
+  quiet?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -256,7 +262,7 @@ export function Menu({
   const [hi, setHi] = useState(-1);
 
   const current = options.find((o) => o.value === value) ?? options[0];
-  const label = current?.label ?? "—";
+  const label = current?.short ?? current?.label ?? "—";
 
   const searchable = options.length > 10;
   const needle = filter.trim().toLowerCase();
@@ -331,15 +337,22 @@ export function Menu({
     };
   }, [open]);
 
-  const pill = `inline-flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 rounded-full text-xs border cursor-pointer max-w-[190px] disabled:opacity-50 transition-colors ${
-    tone === "amber"
+  const dims =
+    size === "md"
+      ? "pl-4 pr-3 py-2 text-sm max-w-[240px]"
+      : "pl-3 pr-2.5 py-1.5 text-xs max-w-[190px]";
+  const skin = quiet
+    ? isDark
+      ? "border-transparent text-gray-200 hover:bg-white/[0.06] -ml-3"
+      : "border-transparent text-gray-800 hover:bg-gray-100 -ml-3"
+    : tone === "amber"
       ? isDark
         ? "bg-amber-500/10 border-amber-500/25 text-amber-200 hover:bg-amber-500/20"
         : "bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
       : isDark
         ? "bg-white/[0.06] border-white/10 text-gray-200 hover:bg-white/[0.1]"
         : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50"
-  }`;
+  const pill = `inline-flex items-center gap-1.5 rounded-full border cursor-pointer disabled:opacity-50 transition-colors ${dims} ${skin}`;
 
   return (
     <>
@@ -602,15 +615,14 @@ export function TxnTable({
                   {/* On a loan, the movement posts to the loan account — type
                       and account give way to the balance sheet. */}
                   {t.loan_id ? (
-                    <span className={`inline-block px-2 py-1 rounded-md text-xs font-medium ${
-                      isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"
-                    }`}>
+                    <span className={`text-xs font-medium ${subtle}`}>
                       {inflow ? "Loan payback" : "Loan advance"}
                     </span>
                   ) : (
                     <Menu
                       value={eff}
                       isDark={isDark}
+                      quiet
                       disabled={busy === t.transaction_id}
                       onChange={(v) => void update(t, { type_override: v })}
                       options={[
@@ -639,22 +651,21 @@ export function TxnTable({
                 </td>
                 <td className="px-2 py-2.5">
                   {t.loan_id ? (
-                    <span className={`inline-block px-2 py-1 rounded-md text-xs ${
-                      isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800"
-                    }`}>
+                    <span className="text-xs font-medium text-amber-500">
                       {loans.find((l) => l.id === t.loan_id)?.name ?? "Loan"}
                     </span>
                   ) : (
                     <Menu
                       value={t.book_category ?? ""}
                       isDark={isDark}
+                      quiet
                       disabled={busy === t.transaction_id}
                       onChange={(v) => void changeCategory(t, v)}
                       options={[
                         ...(!t.book_category
                           ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }]
                           : []),
-                        ...cats.map((c) => ({ value: c, label: c, icon: accountIcon(c), group: accountGroup(c) })),
+                        ...cats.map((c) => ({ value: c, label: c, short: c.replace(/^\d{4}\s+/, ""), icon: accountIcon(c), group: accountGroup(c) })),
                       ]}
                     />
                   )}
@@ -672,8 +683,8 @@ export function TxnTable({
                 <tr className={`border-b ${border}`}>
                   <td />
                   <td colSpan={7} className="px-2 pb-3 pt-1">
-                    <div className={`rounded-lg border p-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 ${
-                      isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"
+                    <div className={`border-t pt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 ${
+                      isDark ? "border-white/10" : "border-gray-200"
                     }`}>
                       {detail(t).map(([k, v]) => (
                         <div key={k} className="min-w-0">
@@ -687,6 +698,7 @@ export function TxnTable({
                           <Menu
                             value={t.loan_id ?? ""}
                             isDark={isDark}
+                            quiet
                             disabled={busy === t.transaction_id}
                             onChange={(v) => void update(t, { loan_id: v || null })}
                             options={[

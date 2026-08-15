@@ -130,6 +130,7 @@ export default function BooksVendors() {
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
   const num = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
+  const faint = isDark ? "text-gray-700" : "text-gray-300";
 
   const years = [0, 1].map((d) => String(new Date().getFullYear() - d));
   const entityTagIcon = (name: string) => (
@@ -153,11 +154,12 @@ export default function BooksVendors() {
             setSearchParams(e.target.value ? { q: e.target.value } : {}, { replace: true });
           }}
           placeholder="Search vendors…"
-          className={`${field} min-w-[200px]`}
+          className={`${field} min-w-[220px]`}
         />
         <Menu
           value={entity}
           isDark={isDark}
+          size="md"
           onChange={setEntity}
           options={[
             { value: "all", label: "All entities" },
@@ -167,6 +169,7 @@ export default function BooksVendors() {
         <Menu
           value={year}
           isDark={isDark}
+          size="md"
           onChange={setYear}
           options={years.map((y) => ({ value: y, label: y }))}
         />
@@ -235,10 +238,10 @@ export default function BooksVendors() {
                           </button>
                         </td>
                         {v.monthly.map((m, i) => (
-                          <td key={i} className={`${num} ${m === 0 ? subtle : ""}`}>{money(m)}</td>
+                          <td key={i} className={`${num} ${m === 0 ? faint : ""}`}>{money(m)}</td>
                         ))}
                         <td className={`${num} font-semibold`}>{money(v.spent)}</td>
-                        <td className={`${num} ${v.received ? "text-emerald-500" : subtle}`}>
+                        <td className={`${num} ${v.received ? "text-emerald-500" : faint}`}>
                           {v.received ? `+${money(v.received)}` : "—"}
                         </td>
                       </tr>

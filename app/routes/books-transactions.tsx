@@ -267,16 +267,6 @@ export default function BooksTransactions() {
 
   const subtle = "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
-  const chip = (active: boolean) =>
-    `px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-      active
-        ? isDark
-          ? "bg-white/15 text-white"
-          : "bg-gray-900 text-white"
-        : isDark
-          ? "bg-white/[0.04] text-gray-400 hover:text-white"
-          : "bg-gray-100 text-gray-600 hover:text-gray-900"
-    }`;
   const searchField = `px-4 py-2 rounded-full text-sm border cursor-text min-w-[220px] ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
@@ -432,6 +422,7 @@ export default function BooksTransactions() {
         <Menu
           value={entity}
           isDark={isDark}
+          size="md"
           onChange={setEntity}
           options={[
             { value: "all", label: "All entities" },
@@ -442,30 +433,32 @@ export default function BooksTransactions() {
         <Menu
           value={year}
           isDark={isDark}
+          size="md"
           onChange={setYear}
           options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
         />
-        <div className="flex gap-1.5">
-          <button className={chip(type === "all")} onClick={() => setType("all")}>All</button>
-          <button className={chip(type === "transfers")} onClick={() => setType("transfers")}>Transfers</button>
-          <button className={chip(type === "intercompany")} onClick={() => setType("intercompany")}>Roll-up</button>
-          <button
-            className={`inline-flex items-center gap-1.5 ${chip(type === "uncategorized")}`}
-            onClick={() => setType("uncategorized")}
-          >
-            Uncategorized
-            {uncat != null && uncat > 0 && (
-              <span
-                className={`px-1.5 rounded-full text-[10px] font-semibold ${
-                  type === "uncategorized"
-                    ? "bg-white/20 text-white"
-                    : isDark ? "bg-amber-500/20 text-amber-300" : "bg-amber-100 text-amber-700"
-                }`}
-              >
-                {uncat}
-              </span>
-            )}
-          </button>
+        <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+          {(
+            [
+              ["all", "All"],
+              ["transfers", "Transfers"],
+              ["intercompany", "Roll-up"],
+              ["uncategorized", uncat ? `Uncategorized ${uncat}` : "Uncategorized"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setType(value)}
+              aria-pressed={type === value}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                type === value
+                  ? isDark ? "bg-white text-black" : "bg-gray-900 text-white"
+                  : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         {(q || entity !== "all" || year !== "all" || type !== "all") && (
           <button
