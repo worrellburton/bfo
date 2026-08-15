@@ -171,10 +171,11 @@ export default function AppLayout() {
 
   const isDark = theme === "dark";
 
-  // The rail expands over the content while hovered; the content never moves.
+  // The content reflows with the rail: expanding the sidebar pushes the page
+  // over (animated by the .sidebar-content transition) instead of covering it.
   const expanded = hovering && hoverCapable;
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
-  const contentInset = SIDEBAR_RAIL_W;
+  const contentInset = railWidth;
   const showLabels = expanded;
   const items = isAdmin(user)
     ? [...navItems, { to: "/users", label: "Users", icon: usersIcon, badge: pending }]

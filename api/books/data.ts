@@ -271,6 +271,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ applied, rule: { match, book_category: category } });
     }
 
+    // ── Vendor settings: rename the vendor and/or set its default account.
+    //    Stored as a rule so the nightly sync keeps applying both to new
+    //    arrivals; existing rows are patched immediately. ──────────────────
+    if (req.method === "POST" && req.body?.action === "vendor_settings") {
+      const match = String(req.body.match ?? "").trim().slice(0, 200);
+      const vendorName =
+        req.body.vendor_name !== undefined ? String(req.body.vendor_name).trim().slice(0, 80) : undefined;
+      const category =
+        req.body.book_category !== undefined ? String(req.body.book_category).trim().slice(0, 60) : undefined;
+      if (match.length < 2) return res.status(400).json({ error: "missing_match" });
+      if (vendorName === undefined && category === undefined) {
+        return res.status(400).json({ error: "nothing_to_update" });
+      }
+      if (vendorName !== undefined && !vendorName) return res.status(400).json({ error: "empty_name" });
+
+      // One rule per matched text: merge into the existing rule if present.
+      const existing = await db("book_rules?select=id,match&loan_id=is.null");
+      const dup = existing.ok
+        ? ((await existing.json()) as Array<{ id: string; match: string }>).find(
+            (x) => x.match.toLowerCase() === match.toLowerCase()
+          )
+        : undefined;
+      const rulePatch: Record<string, unknown> = {};
+      if (vendorName !== undefined) rulePatch.vendor_name = vendorName;
+      if (category !== undefined) rulePatch.book_category = category;
+      if (dup) {
+        await db(`book_rules?id=eq.${dup.id}`, { method: "PATCH", body: JSON.stringify(rulePatch) });
+      } else {
+        await db("book_rules", { method: "POST", body: JSON.stringify({ match, ...rulePatch }) });
+      }
+
+      const txnPatch: Record<string, unknown> = {};
+      if (vendorName !== undefined) txnPatch.merchant_name = vendorName;
+      if (category !== undefined) txnPatch.book_category = category;
+      const applied = await patchMatching(db, match, "", txnPatch);
+      return res.json({ applied, vendor_name: vendorName ?? null, book_category: category ?? null });
+    }
+
     // ── Edits: a person reclassifying a transaction ─────────────────────
     if (req.method === "POST") {
       const { transaction_id, type_override, book_category, loan_id } = req.body ?? {};

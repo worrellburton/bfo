@@ -503,6 +503,7 @@ export function TxnTable({
   onRowChange,
   onError,
   onReload,
+  balances,
 }: {
   rows: Txn[];
   categories: string[];
@@ -511,6 +512,8 @@ export function TxnTable({
   onRowChange: (t: Txn) => void;
   onError: (message: string) => void;
   onReload?: () => void;
+  /** Optional running balance per transaction id — adds a Balance column. */
+  balances?: Record<string, number>;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -609,6 +612,7 @@ export function TxnTable({
           <th className="px-2 py-2.5 font-medium">Vendor</th>
           <th className="px-2 py-2.5 font-medium">Account</th>
           <th className="px-2 py-2.5 font-medium text-right">Amount</th>
+          {balances && <th className="px-2 py-2.5 font-medium text-right">Balance</th>}
         </tr>
       </thead>
       <tbody>
@@ -721,11 +725,16 @@ export function TxnTable({
                     <div className={`text-[10px] uppercase tracking-wider ${subtle}`}>pending</div>
                   )}
                 </td>
+                {balances && (
+                  <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums font-medium">
+                    {money(balances[t.transaction_id] ?? 0, t.currency ?? "USD")}
+                  </td>
+                )}
               </tr>
               {isOpen && (
                 <tr className={`border-b ${border}`}>
                   <td />
-                  <td colSpan={7} className="px-2 pb-3 pt-1">
+                  <td colSpan={balances ? 8 : 7} className="px-2 pb-3 pt-1">
                     <div className={`border-t pt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 ${
                       isDark ? "border-white/10" : "border-gray-200"
                     }`}>

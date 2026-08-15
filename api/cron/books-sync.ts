@@ -30,21 +30,29 @@ function getPlaidClient() {
 
 const HISTORY_MONTHS = 24;
 
-type UserRule = { match: string; book_category: string };
+type UserRule = { match: string; book_category: string | null; vendor_name: string | null };
 
-/** Rules the user taught via the category popup — they beat the built-ins. */
+/** Rules the user taught (category popup, vendor rename) — beat the built-ins. */
 async function loadUserRules(): Promise<UserRule[]> {
-  const r = await db("book_rules?select=match,book_category");
+  const r = await db("book_rules?select=match,book_category,vendor_name");
   if (!r.ok) return [];
   return ((await r.json()) as UserRule[]).map((rule) => ({
     match: rule.match.toLowerCase(),
-    book_category: rule.book_category,
+    book_category: rule.book_category ?? null,
+    vendor_name: rule.vendor_name ?? null,
   }));
 }
 
 function userCategory(rules: UserRule[], name: string | null, merchant: string | null): string | null {
   const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
-  for (const rule of rules) if (text.includes(rule.match)) return rule.book_category;
+  for (const rule of rules) if (rule.book_category && text.includes(rule.match)) return rule.book_category;
+  return null;
+}
+
+/** A user-chosen vendor display name for this transaction, if a rule matches. */
+function userVendor(rules: UserRule[], name: string | null, merchant: string | null): string | null {
+  const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
+  for (const rule of rules) if (rule.vendor_name && text.includes(rule.match)) return rule.vendor_name;
   return null;
 }
 
@@ -279,7 +287,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 item_id: item.item_id,
                 date: t.date,
                 name: t.name ?? null,
-                merchant_name: mercuryPayee(t.name) ?? t.merchant_name ?? null,
+                merchant_name: userVendor(userRules, t.name ?? null, t.merchant_name ?? null) ?? mercuryPayee(t.name) ?? t.merchant_name ?? null,
                 amount: t.amount,
                 pending: !!t.pending,
                 currency: t.iso_currency_code ?? null,
