@@ -173,7 +173,17 @@ export default function BooksReports() {
     return (
       <tr key={`${section}-${rowLabel}`} className={`${topBorder} ${opts?.bold || opts?.headline ? "font-semibold" : ""} ${emphasis}`}>
         <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r ${rowBorder} ${stickyBg} ${opts?.indent ? "pl-6" : ""}`}>
-          {rowLabel}
+          {(() => {
+            // "4000 Rental Income" → muted code, emphasized name.
+            const m = /^(\d{4})\s+(.+)$/.exec(rowLabel);
+            if (!m || opts?.bold || opts?.headline) return rowLabel;
+            return (
+              <>
+                <span className={`tabular-nums text-[11px] mr-1.5 ${faint}`}>{m[1]}</span>
+                {m[2]}
+              </>
+            );
+          })()}
         </td>
         {monthly.map((v, i) => {
           const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
@@ -237,36 +247,22 @@ export default function BooksReports() {
 
   return (
     <div className="w-full">
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-        <div>
-          <div className={`inline-flex rounded-full border p-0.5 mb-3 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-            {([["pnl", "Profit & loss"], ["balance", "Balance sheet"]] as const).map(([value, label]) => (
-              <button
-                key={value}
-                onClick={() => setView(value)}
-                aria-pressed={view === value}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
-                  view === value
-                    ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-                    : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {view === "pnl" ? (
-            <p className={`text-sm ${subtle}`}>
-              Cash basis · click any number for its transactions · movements between selected
-              entities are eliminated{pnl && pnl.eliminated_count > 0 ? ` (${pnl.eliminated_count} eliminated)` : ""}.
-            </p>
-          ) : (
-            <p className={`text-sm ${subtle}`}>
-              What the family owns and owes
-              {sheet?.as_of ? ` · as of ${new Date(sheet.as_of).toLocaleString()}` : ""} · loans stay
-              on the sheet regardless of entity selection.
-            </p>
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+        <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white"}`}>
+          {([["pnl", "Profit & loss"], ["balance", "Balance sheet"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setView(value)}
+              aria-pressed={view === value}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all cursor-pointer ${
+                view === value
+                  ? isDark ? "bg-white text-black shadow-sm" : "bg-gray-900 text-white shadow-sm"
+                  : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <div className="flex items-center gap-2">
           {/* Entity multi-select */}
@@ -382,7 +378,8 @@ export default function BooksReports() {
         loading ? (
           <p className={`text-sm ${subtle}`}>Building the balance sheet…</p>
         ) : !sheet ? null : (
-          <div className={`rounded-xl border overflow-hidden max-w-3xl ${card}`}>
+          <>
+          <div className={`rounded-2xl border overflow-hidden max-w-3xl shadow-sm ${card}`}>
             <table className="w-full text-sm">
               <tbody>
                 {(
@@ -453,6 +450,10 @@ export default function BooksReports() {
               </tbody>
             </table>
           </div>
+          <p className={`mt-3 text-[11px] ${subtle}`}>
+            {sheet.as_of ? `As of ${new Date(sheet.as_of).toLocaleString()}` : ""}
+          </p>
+          </>
         )
       ) : loading ? (
         <p className={`text-sm ${subtle}`}>Building the P&amp;L…</p>
@@ -461,7 +462,29 @@ export default function BooksReports() {
           Nothing booked for {pnl.year} in this selection — sync transactions or widen the entities.
         </p>
       ) : (
-        <div className={`rounded-xl border overflow-x-auto ${card}`}>
+        <>
+        {/* Headline figures for the year, before the statement detail. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          {(() => {
+            const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
+            const revenue = sum(pnl.revenue_monthly);
+            const opex = sum(pnl.operating_monthly);
+            const opInc = sum(pnl.operating_income_monthly);
+            const kpis: Array<[string, number, string]> = [
+              ["Revenue", revenue, "text-emerald-500"],
+              ["Operating expenses", opex, ""],
+              ["Operating income", opInc, opInc >= 0 ? "text-emerald-500" : "text-rose-400"],
+              ["Net income", pnl.net_total, pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400"],
+            ];
+            return kpis.map(([label, value, tone]) => (
+              <div key={label} className={`rounded-2xl border px-4 py-3.5 ${card}`}>
+                <p className={`text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>{label}</p>
+                <p className={`text-xl font-semibold tabular-nums tracking-tight ${tone}`}>{money(value)}</p>
+              </div>
+            ));
+          })()}
+        </div>
+        <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
           <table className="text-sm min-w-[1100px] w-full">
             <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
               <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
@@ -566,6 +589,12 @@ export default function BooksReports() {
             </tbody>
           </table>
         </div>
+        <p className={`mt-3 text-[11px] ${subtle}`}>
+          Cash basis
+          {pnl.eliminated_count > 0 && ` · ${pnl.eliminated_count} intercompany movements eliminated`}
+          {" · click any figure for its transactions"}
+        </p>
+        </>
       )}
     </div>
   );

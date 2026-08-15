@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag } from "../books-shared";
+import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag, Menu, entityTag, entityTagClass } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Vendors" }];
@@ -126,21 +126,22 @@ export default function BooksVendors() {
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
   const drawerBg = isDark ? "bg-white/[0.015]" : "bg-gray-50/70";
-  const field = `px-3 py-2 rounded-lg text-sm border ${
+  const field = `px-4 py-2 rounded-full text-sm border ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
   const num = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
 
   const years = [0, 1].map((d) => String(new Date().getFullYear() - d));
+  const entityTagIcon = (name: string) => (
+    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${entityTagClass(name, isDark)}`}>
+      {entityTag(name)}
+    </span>
+  );
 
   return (
     <div className="w-full">
       <div className="mb-6">
-        <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Vendors</h1>
-        <p className={`text-sm mt-1 ${subtle}`}>
-          Who the family pays, month by month — built automatically from transactions; transfers
-          and intercompany movements excluded.
-        </p>
+        <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Vendors</h1>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -154,17 +155,21 @@ export default function BooksVendors() {
           placeholder="Search vendors…"
           className={`${field} min-w-[200px]`}
         />
-        <select value={entity} onChange={(e) => setEntity(e.target.value)} className={`${field} cursor-pointer`}>
-          <option value="all">All entities</option>
-          {entities.map((en) => (
-            <option key={en.id} value={en.id}>{en.name}</option>
-          ))}
-        </select>
-        <select value={year} onChange={(e) => setYear(e.target.value)} className={`${field} cursor-pointer`}>
-          {years.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+        <Menu
+          value={entity}
+          isDark={isDark}
+          onChange={setEntity}
+          options={[
+            { value: "all", label: "All entities" },
+            ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
+          ]}
+        />
+        <Menu
+          value={year}
+          isDark={isDark}
+          onChange={setYear}
+          options={years.map((y) => ({ value: y, label: y }))}
+        />
         {!loading && <span className={`text-xs ml-auto ${subtle}`}>{shown.length} vendors</span>}
       </div>
 
@@ -174,7 +179,7 @@ export default function BooksVendors() {
         </div>
       )}
 
-      <div className={`rounded-xl border overflow-x-auto ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
         <table className="text-sm min-w-[1050px] w-full">
           <thead>
             <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>

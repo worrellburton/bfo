@@ -248,15 +248,11 @@ export default function BooksLoans() {
     <div className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Loans</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>
-            Money the family is owed. Link transactions from any table's detail panel, or give a
-            transaction the category “Name (loan)”. Balances ride into the Treasury report.
-          </p>
+          <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Loans</h1>
         </div>
         <button
           onClick={() => setAdding((v) => !v)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
             isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
           }`}
         >
@@ -271,7 +267,7 @@ export default function BooksLoans() {
             if (!newName.trim()) return;
             void createLoan(newName.trim(), Number(newBalance.replace(/[$,]/g, "")) || 0);
           }}
-          className={`rounded-xl border p-4 mb-6 flex flex-wrap items-end gap-3 ${card}`}
+          className={`rounded-2xl border p-4 mb-6 shadow-sm flex flex-wrap items-end gap-3 ${card}`}
         >
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wider min-w-[220px]">
             <span className={subtle}>Who owes it</span>
@@ -296,7 +292,7 @@ export default function BooksLoans() {
           <button
             type="submit"
             disabled={saving || !newName.trim()}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
               isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
             }`}
           >
@@ -316,7 +312,7 @@ export default function BooksLoans() {
       )}
 
       {!loading && loans.length > 0 && (
-        <div className={`rounded-xl border p-5 mb-6 flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
+        <div className={`rounded-2xl border p-5 mb-6 shadow-sm flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
           <div>
             <p className={`text-[11px] uppercase tracking-wider ${subtle}`}>Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}</p>
             <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
@@ -331,7 +327,7 @@ export default function BooksLoans() {
       {loading ? (
         <p className={`text-sm ${subtle}`}>Loading…</p>
       ) : loans.length === 0 ? (
-        <div className={`rounded-xl border p-10 text-center ${card}`}>
+        <div className={`rounded-2xl border p-10 text-center ${card}`}>
           <p className="text-sm font-medium">No loans yet</p>
           <p className={`text-xs mt-1 ${subtle}`}>
             Add one above, or set a transaction's category to “Name (loan)” and it shows up here.
@@ -342,7 +338,7 @@ export default function BooksLoans() {
           const key = loan.id ?? loan.name;
           const isOpen = open.has(key);
           return (
-            <section key={key} className={`rounded-xl border mb-4 overflow-hidden ${card}`}>
+            <section key={key} className={`rounded-2xl border mb-4 overflow-hidden shadow-sm ${card}`}>
               <button
                 onClick={() =>
                   setOpen((prev) => {

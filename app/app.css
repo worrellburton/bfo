@@ -11,6 +11,9 @@ body {
   @apply bg-white dark:bg-gray-950;
   /* Base text scaled down 15% (14px → 11.9px); rem-based sizes follow. */
   font-size: 11.9px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
   /* Let the browser pick sensible form-control / scrollbar defaults for both
      schemes. Hard-coding color-scheme: dark (even via prefers-color-scheme)
      causes light-mode text to inherit near-white defaults on dark-OS users. */

@@ -83,10 +83,9 @@ export default function BooksCell() {
       <Link to="/books/reports" className={`text-sm ${subtle} hover:underline`}>← Profit &amp; loss</Link>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 mt-2 mb-6">
         <div>
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>{title}</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>
-            {SECTION_TITLES[section] ?? section} · {when} ·{" "}
-            {rows.length} transaction{rows.length === 1 ? "" : "s"} · changes here move the P&amp;L immediately
+          <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>{title}</h1>
+          <p className={`text-xs mt-1 ${subtle}`}>
+            {SECTION_TITLES[section] ?? section} · {when} · {rows.length} transaction{rows.length === 1 ? "" : "s"}
           </p>
         </div>
         <div className="flex gap-6 text-sm">
@@ -109,7 +108,7 @@ export default function BooksCell() {
         </div>
       )}
 
-      <div className={`rounded-xl border overflow-x-auto ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
         {loading ? (
           <p className={`px-4 py-8 text-center text-sm ${subtle}`}>Loading…</p>
         ) : rows.length === 0 ? (

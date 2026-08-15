@@ -292,11 +292,12 @@ export default function BooksTransactions() {
     <div className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Transactions</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>
-            Every bank transaction across the family, synced nightly from Plaid.
-            {lastSynced && ` Last synced ${new Date(lastSynced).toLocaleString()}.`}
-          </p>
+          <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Transactions</h1>
+          {lastSynced && (
+            <p className={`text-xs mt-1 ${subtle}`}>
+              Synced {new Date(lastSynced).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -460,7 +461,7 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      <div className={`rounded-xl border overflow-x-auto ${card}`}>
+      <div className={`rounded-2xl border overflow-x-auto shadow-sm ${card}`}>
         {loading ? (
           <p className={`px-4 py-8 text-center text-sm ${subtle}`}>Loading…</p>
         ) : rows.length === 0 ? (
