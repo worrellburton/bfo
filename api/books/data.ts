@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
 import { patchMatching, ACCOUNTS, sectionOf } from "../../lib/books-rules.js";
+import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -415,6 +416,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "POST" && req.body?.action === "delete_receipt") {
       const id = Number(req.body.id);
       if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+      // Remove the stored object too, if this receipt is storage-backed.
+      const rowRes = await db(`book_txn_receipt?id=eq.${id}&select=path&limit=1`);
+      const path = rowRes.ok ? ((await rowRes.json()) as any[])[0]?.path : null;
+      if (path) await storageRemove(path);
       await db(`book_txn_receipt?id=eq.${id}`, { method: "DELETE" });
       return res.json({ deleted: true });
     }
@@ -499,7 +504,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         db(`book_txn_receipt?transaction_id=eq.${enc}&order=uploaded_at.desc`),
       ]);
       const log = logRes.ok ? await logRes.json() : [];
-      const receipts = recRes.ok ? await recRes.json() : [];
+      const rawReceipts = recRes.ok ? ((await recRes.json()) as any[]) : [];
+      // Storage-backed receipts are private — hand back a short-lived signed
+      // URL; externally-linked ones keep their url as-is.
+      const receipts = await Promise.all(
+        rawReceipts.map(async (r) => ({
+          ...r,
+          url: r.path ? await storageSignedUrl(r.path) : r.url,
+        }))
+      );
       return res.json({ log, receipts });
     }
 

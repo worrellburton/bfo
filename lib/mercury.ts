@@ -25,6 +25,12 @@ export type MercuryAccount = {
   status: string | null;
 };
 
+export type MercuryAttachment = {
+  fileName: string | null;
+  url: string | null;
+  attachmentType: string | null;
+};
+
 export type MercuryTxn = {
   id: string;
   amount: number;
@@ -36,6 +42,7 @@ export type MercuryTxn = {
   status: string | null;
   postedAt: string | null;
   createdAt: string | null;
+  attachments?: MercuryAttachment[];
 };
 
 async function mget(path: string): Promise<any> {
@@ -67,6 +74,19 @@ export async function mercuryTransactions(accountId: string, sinceDay: string): 
     if (txns.length < limit || out.length >= total) break;
   }
   return out;
+}
+
+/** Download an attachment's bytes (Mercury attachment URLs are pre-signed). */
+export async function mercuryDownload(url: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  try {
+    const token = process.env.MERCURY_API_TOKEN;
+    const r = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!r.ok) return null;
+    const buf = new Uint8Array(await r.arrayBuffer());
+    return { bytes: buf, contentType: r.headers.get("content-type") || "application/octet-stream" };
+  } catch {
+    return null;
+  }
 }
 
 /** Last four digits of a Mercury account number, to line up with a Plaid mask. */

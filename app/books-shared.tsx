@@ -698,10 +698,12 @@ export function BatchBar({
  */
 export function TxnHistoryPanel({ transactionId, isDark }: { transactionId: string; isDark: boolean }) {
   const [log, setLog] = useState<Array<{ id: number; field: string; old_value: string | null; new_value: string | null; source: string; changed_at: string }>>([]);
-  const [receipts, setReceipts] = useState<Array<{ id: number; url: string; label: string | null }>>([]);
+  const [receipts, setReceipts] = useState<Array<{ id: number; url: string | null; label: string | null; source?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
 
   async function load() {
@@ -733,6 +735,30 @@ export function TxnHistoryPanel({ transactionId, isDark }: { transactionId: stri
     await authFetch("/api/books/data", { method: "POST", body: JSON.stringify({ action: "delete_receipt", id }) });
     await load();
   }
+  async function uploadFile(file: File) {
+    setUploadErr("");
+    if (file.size > 3 * 1024 * 1024) { setUploadErr("Files must be under 3 MB."); return; }
+    setBusy(true);
+    try {
+      const data_base64 = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const res = await authFetch("/api/books/upload-receipt", {
+        method: "POST",
+        body: JSON.stringify({ transaction_id: transactionId, filename: file.name, content_type: file.type, data_base64 }),
+      });
+      if (res.ok) await load();
+      else setUploadErr("Upload failed.");
+    } catch {
+      setUploadErr("Upload failed.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
 
   const fieldLabel: Record<string, string> = {
     book_category: "Account", type_override: "Type", loan_id: "Loan", merchant_name: "Vendor", name: "Description",
@@ -747,9 +773,12 @@ export function TxnHistoryPanel({ transactionId, isDark }: { transactionId: stri
           <ul className="space-y-1 mb-2">
             {receipts.map((r) => (
               <li key={r.id} className="flex items-center gap-2 text-xs">
-                <a href={r.url} target="_blank" rel="noreferrer" className="truncate text-blue-500 hover:underline flex-1">
+                <a href={r.url ?? undefined} target="_blank" rel="noreferrer" className="truncate text-blue-500 hover:underline flex-1">
                   {r.label || r.url}
                 </a>
+                {r.source && r.source !== "manual" && r.source !== "upload" && (
+                  <span className={`shrink-0 text-[9px] uppercase tracking-wider ${subtle}`}>{r.source}</span>
+                )}
                 <button onClick={() => void removeReceipt(r.id)} className={`shrink-0 ${subtle} hover:text-red-500 cursor-pointer`}>✕</button>
               </li>
             ))}
@@ -762,8 +791,8 @@ export function TxnHistoryPanel({ transactionId, isDark }: { transactionId: stri
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void addReceipt()}
-            placeholder="Paste a document URL…"
-            className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs border focus:outline-none ${
+            placeholder="Paste a URL…"
+            className={`flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-xs border focus:outline-none ${
               isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400"
             }`}
           />
@@ -774,7 +803,17 @@ export function TxnHistoryPanel({ transactionId, isDark }: { transactionId: stri
           >
             Add
           </button>
+          <input ref={fileRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); }} />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            title="Upload a file"
+            className={`shrink-0 px-2.5 py-1.5 rounded-lg text-xs border cursor-pointer disabled:opacity-40 ${isDark ? "border-white/10 text-gray-300 hover:bg-white/10" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+          >
+            {busy ? "…" : "Upload"}
+          </button>
         </div>
+        {uploadErr && <p className="text-xs text-red-500 mt-1">{uploadErr}</p>}
       </div>
       <div className="min-w-0">
         <span className={`text-[10px] uppercase tracking-wider block mb-1.5 ${subtle}`}>History</span>

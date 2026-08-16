@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { categorize } from "../../lib/books-rules.js";
-import { mercuryConfigured, mercuryAccounts, mercuryTransactions, mask4 } from "../../lib/mercury.js";
+import { mercuryConfigured, mercuryAccounts, mercuryTransactions, mercuryDownload, mask4 } from "../../lib/mercury.js";
+import { storageUpload } from "../../lib/storage.js";
 
 /**
  * Backfill Mercury history from Mercury's own API — it returns the full
@@ -121,6 +122,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!r.ok) throw new Error(`upsert failed: ${(await r.text()).slice(0, 300)}`);
       }
 
+      // Pull Mercury's own receipt attachments into Books storage. Same
+      // window as the rows above; idempotent by (transaction_id, label).
+      let receiptsAdded = 0;
+      const eligible = txns.filter((t) => {
+        const date = (t.postedAt ?? t.createdAt ?? "").slice(0, 10);
+        return t.status === "sent" && date && date >= sinceDay && (!earliest || date < earliest) && (t.attachments?.length ?? 0) > 0;
+      });
+      if (eligible.length) {
+        const ids = eligible.map((t) => `"mercury_${t.id}"`).join(",");
+        const existingRes = await db(`book_txn_receipt?transaction_id=in.(${ids})&select=transaction_id,label`);
+        const existing = new Set(
+          existingRes.ok ? ((await existingRes.json()) as any[]).map((r) => `${r.transaction_id}|${r.label}`) : []
+        );
+        for (const t of eligible) {
+          for (const att of t.attachments ?? []) {
+            if (!att.url) continue;
+            const txnId = `mercury_${t.id}`;
+            const label = (att.fileName || "receipt").slice(0, 120);
+            if (existing.has(`${txnId}|${label}`)) continue;
+            const dl = await mercuryDownload(att.url);
+            if (!dl || !dl.bytes.length) continue;
+            try {
+              const safe = label.replace(/[^a-zA-Z0-9._-]/g, "_");
+              const path = `${txnId}/mercury-${safe}`;
+              await storageUpload(path, dl.bytes, dl.contentType);
+              const ins = await db("book_txn_receipt", {
+                method: "POST",
+                body: JSON.stringify({ transaction_id: txnId, path, label, content_type: dl.contentType, source: "mercury" }),
+              });
+              if (ins.ok) receiptsAdded += 1;
+            } catch {
+              /* best-effort per attachment */
+            }
+          }
+        }
+      }
+
       totalInserted += rows.length;
       summary.push({
         mercury_account: acct.name,
@@ -129,6 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         plaid_account: pref.nickname || pref.account_name,
         fetched: txns.length,
         backfilled: rows.length,
+        receipts: receiptsAdded,
         before: earliest,
       });
     }
