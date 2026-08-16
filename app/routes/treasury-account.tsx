@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
+import { money, signed } from "../currency";
 
 export function meta() {
   return [{ title: "BFO - Account" }];
@@ -41,11 +42,6 @@ type Txn = {
   currency: string | null;
 };
 
-const money = (n: number | null | undefined, currency = "USD") =>
-  n == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
-
-const signed = (n: number, currency = "USD") =>
-  `${n >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Math.abs(n))}`;
 
 function tint(hex: string | null): string {
   const fallback = "99, 102, 241";

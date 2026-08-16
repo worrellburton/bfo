@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
+import { money, signed } from "../currency";
 
 export function meta() {
   return [{ title: "BFO - Treasury" }];
@@ -72,16 +73,6 @@ function loadPlaid(): Promise<void> {
   });
 }
 
-const money = (n: number | null | undefined, currency = "USD") =>
-  n == null
-    ? "—"
-    : new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
-
-const signed = (n: number, currency = "USD") =>
-  `${n >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-  }).format(Math.abs(n))}`;
 
 function sinceLabel(iso: string | null): string {
   if (!iso) return "";
