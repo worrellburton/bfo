@@ -63,13 +63,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : []
     );
 
-    const rulesRes = await db("book_rules?select=match,book_category");
+    // Same rule set the nightly sync applies, so imported rows pick up the
+    // user's category, vendor rename, and type override — not just category.
+    const rulesRes = await db("book_rules?select=match,book_category,vendor_name,type_override");
     const userRules = rulesRes.ok
       ? ((await rulesRes.json()) as any[]).map((r) => ({
           match: String(r.match).toLowerCase(),
-          book_category: r.book_category as string,
+          book_category: (r.book_category ?? null) as string | null,
+          vendor_name: (r.vendor_name ?? null) as string | null,
+          type_override: (r.type_override ?? null) as string | null,
         }))
       : [];
+    const ruleFor = (desc: string) => {
+      const text = desc.toLowerCase();
+      return {
+        category: userRules.find((u) => u.book_category && text.includes(u.match))?.book_category ?? null,
+        vendor: userRules.find((u) => u.vendor_name && text.includes(u.match))?.vendor_name ?? null,
+        type: userRules.find((u) => u.type_override && text.includes(u.match))?.type_override ?? null,
+      };
+    };
 
     const now = new Date().toISOString();
     let skipped = 0;
@@ -85,8 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .update(`${accountId}|${r.date}|${amount.toFixed(2)}|${r.description}`)
         .digest("hex");
       const rule = categorize(r.description, null, null);
-      const taught =
-        userRules.find((u) => r.description.toLowerCase().includes(u.match))?.book_category ?? null;
+      const taught = ruleFor(r.description);
       return [
         {
           transaction_id: `csv_${id}`,
@@ -94,7 +105,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           item_id: "csv_import",
           date: r.date,
           name: r.description || null,
-          merchant_name: null,
+          // A vendor-rename rule names the payee, same as a synced row.
+          merchant_name: taught.vendor,
           amount,
           pending: false,
           currency: "USD",
@@ -105,7 +117,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             | "normal"
             | "transfer",
           intercompany: rule.type === "intercompany",
-          book_category: taught ?? rule.category,
+          book_category: taught.category ?? rule.category,
+          // Uniform across every row (null when no rule) so the bulk upsert
+          // keeps one column set; mirrors the sync's type override.
+          type_override: taught.type,
           entity_id: pref?.entity_id ?? null,
           entity_name: pref?.entity_name ?? null,
           hidden: pref?.hidden ?? false,

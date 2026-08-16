@@ -1,19 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser } from "../../lib/auth.js";
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
-
-function getPlaidClient() {
-  const config = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  return new PlaidApi(config);
-}
+import { getPlaidClient } from "../../lib/plaid.js";
+import { currentUser, sbFetch } from "../../lib/auth.js";
 
 /**
  * Disconnect a bank connection — and leave the database clean.
@@ -40,10 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const enc = encodeURIComponent(item_id);
 
   try {
-    const url = process.env.SUPABASE_URL!;
-    const key = process.env.SUPABASE_SERVICE_KEY!;
-    const headers = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
-    const rest = (path: string, init?: RequestInit) => fetch(`${url}/rest/v1/${path}`, { ...init, headers });
+    const rest = (path: string, init?: RequestInit) => sbFetch(path, init);
 
     // Revoke the item with Plaid (best-effort — a dead token shouldn't block cleanup).
     const itemRes = await rest(`plaid_items?item_id=eq.${enc}&select=access_token`);

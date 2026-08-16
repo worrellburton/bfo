@@ -1,19 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser } from "../../lib/auth.js";
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
-
-function getPlaidClient() {
-  const config = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  return new PlaidApi(config);
-}
 
 // A visit older than this counts as a new "login" for change-since purposes.
 const ROTATE_AFTER_MS = 30 * 60 * 1000;

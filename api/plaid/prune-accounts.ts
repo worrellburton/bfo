@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, sb, sbFetch } from "../../lib/auth.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 /**
  * Reconcile what we store against what the banks still report.
@@ -14,19 +14,6 @@ import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
  * POST → { removed: [{ account_id, mask, ... }], counts }
  * POST { dry_run: true } → report what would be removed, delete nothing.
  */
-
-function getPlaidClient() {
-  const config = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  return new PlaidApi(config);
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();

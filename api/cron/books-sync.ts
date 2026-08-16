@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { categorize, patchMatching } from "../../lib/books-rules.js";
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 /**
  * Books runs on Plaid. Every night this pulls new/changed bank transactions
@@ -14,19 +14,6 @@ import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
  * GET  → the Vercel cron (Bearer CRON_SECRET when set)
  * POST → manual "Sync now" from the app (any signed-in user)
  */
-
-function getPlaidClient() {
-  const config = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  return new PlaidApi(config);
-}
 
 const HISTORY_MONTHS = 24;
 

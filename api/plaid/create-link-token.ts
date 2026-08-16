@@ -1,19 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, sb } from "../../lib/auth.js";
-import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
-
-function getPlaidClient() {
-  const config = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  return new PlaidApi(config);
-}
+import { Products, CountryCode } from "plaid";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");

@@ -1,20 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser } from "../../lib/auth.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
-import { Configuration, CountryCode, PlaidApi, PlaidEnvironments } from "plaid";
-
-function getPlaidClient() {
-  const config = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  return new PlaidApi(config);
-}
+import { CountryCode } from "plaid";
 
 async function upsertItem(row: {
   item_id: string;
