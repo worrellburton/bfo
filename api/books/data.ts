@@ -909,6 +909,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // ── #7 Recurring detection: streams that repeat on a cadence ─────────
+    if (report === "recurring") {
+      const prefs = await getPrefs();
+      const rows = withLiveEntity(
+        await fetchAll<BookTxn>(
+          `book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=date.asc`
+        ),
+        prefs
+      );
+      // Group by vendor identity (only real P&L / spend rows).
+      const byVendor = new Map<string, BookTxn[]>();
+      for (const t of rows) {
+        if (effType(t) === "intercompany") continue;
+        const v = (t.merchant_name || t.name || "").trim();
+        if (!v) continue;
+        (byVendor.get(v) ?? byVendor.set(v, []).get(v)!).push(t);
+      }
+
+      const median = (xs: number[]) => {
+        const s = [...xs].sort((a, b) => a - b);
+        return s[Math.floor(s.length / 2)];
+      };
+      const cadenceOf = (gap: number): { name: string; days: number } | null => {
+        if (gap >= 6 && gap <= 8) return { name: "weekly", days: 7 };
+        if (gap >= 12 && gap <= 16) return { name: "biweekly", days: 14 };
+        if (gap >= 26 && gap <= 35) return { name: "monthly", days: 30 };
+        if (gap >= 58 && gap <= 64) return { name: "bimonthly", days: 61 };
+        if (gap >= 85 && gap <= 96) return { name: "quarterly", days: 91 };
+        if (gap >= 350 && gap <= 380) return { name: "yearly", days: 365 };
+        return null;
+      };
+
+      const dayMs = 86400000;
+      const streams: any[] = [];
+      for (const [vendor, txns] of byVendor) {
+        if (txns.length < 3) continue;
+        const dates = txns.map((t) => Date.parse(t.date));
+        const gaps: number[] = [];
+        for (let i = 1; i < dates.length; i++) gaps.push(Math.round((dates[i] - dates[i - 1]) / dayMs));
+        const g = median(gaps);
+        const cadence = cadenceOf(g);
+        if (!cadence) continue;
+        // Regular enough? Most gaps should sit near the median.
+        const regular = gaps.filter((x) => Math.abs(x - g) <= Math.max(3, g * 0.2)).length;
+        if (regular / gaps.length < 0.6) continue;
+
+        const amounts = txns.map((t) => t.amount);
+        const avg = amounts.reduce((s, v) => s + v, 0) / amounts.length;
+        const last = txns[txns.length - 1];
+        const dom = median(txns.map((t) => Number(t.date.slice(8, 10))));
+        streams.push({
+          vendor,
+          cadence: cadence.name,
+          cadence_days: cadence.days,
+          avg_amount: Math.round(avg),
+          last_amount: last.amount,
+          count: txns.length,
+          last_date: last.date,
+          day_of_month: dom,
+          account: last.book_category,
+          entity_name: last.entity_name,
+          next_expected: new Date(Date.parse(last.date) + cadence.days * dayMs).toISOString().slice(0, 10),
+        });
+      }
+      streams.sort((a, b) => Math.abs(b.avg_amount) - Math.abs(a.avg_amount));
+      return res.json({ streams });
+    }
+
     // ── #3 Reconciliation: does the ledger tie to each bank balance? ─────
     if (report === "reconciliation") {
       const prefs = await getPrefs();

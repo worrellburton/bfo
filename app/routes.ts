@@ -36,6 +36,7 @@ export default [
     route("treasury", "./routes/treasury.tsx"),
     route("books/transactions", "./routes/books-transactions.tsx"),
     route("books/review", "./routes/books-review.tsx"),
+    route("books/calendar", "./routes/books-calendar.tsx"),
     route("books/reports", "./routes/books-reports.tsx"),
     route("books/reports/cell", "./routes/books-cell.tsx"),
     route("books/vendors", "./routes/books-vendors.tsx"),

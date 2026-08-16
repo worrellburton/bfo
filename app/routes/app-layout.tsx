@@ -58,6 +58,7 @@ const navItems = [
     children: [
       { to: "/books/transactions", label: "Transactions" },
       { to: "/books/review", label: "Review" },
+      { to: "/books/calendar", label: "Calendar" },
       { to: "/books/reports", label: "Reports" },
       { to: "/books/vendors", label: "Vendors" },
       { to: "/books/rules", label: "Rules" },
