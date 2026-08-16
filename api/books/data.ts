@@ -735,6 +735,92 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // ── #9 Statements: trial balance + cash-flow summary (cash basis) ────
+    if (report === "statements") {
+      const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+      const selection = parseEntities(String(req.query.entity ?? "all"));
+      const prefs = await getPrefs();
+      const rows = withLiveEntity(
+        await fetchAll<BookTxn>(
+          `book_transactions?select=*&pending=eq.false&date=gte.${year}-01-01&date=lte.${year}-12-31` +
+            scopeFilter(prefs, selection)
+        ),
+        prefs
+      );
+
+      // Trial balance: each account's net (outflow positive), with section.
+      const accounts = new Map<string, { debit: number; credit: number }>();
+      const cash = { operating: 0, financing: 0, uncategorized: 0 };
+      for (const t of rows) {
+        const acct = label(t);
+        const a = accounts.get(acct) ?? { debit: 0, credit: 0 };
+        if (t.amount > 0) a.debit += t.amount; else a.credit += -t.amount;
+        accounts.set(acct, a);
+
+        const sec = sectionOf(acct);
+        const inflow = -t.amount; // money in positive
+        if (sec === "flow") cash.financing += inflow;
+        else if (sec === null) cash.uncategorized += inflow;
+        else cash.operating += inflow; // revenue/operating/other
+      }
+      const trialBalance = [...accounts.entries()]
+        .map(([account, v]) => ({
+          account,
+          section: sectionOf(account) ?? "uncategorized",
+          debit: Math.round(v.debit),
+          credit: Math.round(v.credit),
+          net: Math.round(v.debit - v.credit),
+        }))
+        .sort((a, b) => a.account.localeCompare(b.account));
+
+      return res.json({
+        year: Number(year),
+        basis: "cash",
+        trial_balance: trialBalance,
+        totals: {
+          debit: trialBalance.reduce((s, r) => s + r.debit, 0),
+          credit: trialBalance.reduce((s, r) => s + r.credit, 0),
+        },
+        cash_flow: {
+          operating: Math.round(cash.operating),
+          financing: Math.round(cash.financing),
+          uncategorized: Math.round(cash.uncategorized),
+          net_change: Math.round(cash.operating + cash.financing + cash.uncategorized),
+        },
+      });
+    }
+
+    // ── #9 1099 vendor totals: contractor payments for tax season ────────
+    if (report === "tax1099") {
+      const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+      const prefs = await getPrefs();
+      const rows = withLiveEntity(
+        await fetchAll<BookTxn>(
+          `book_transactions?select=*&pending=eq.false&date=gte.${year}-01-01&date=lte.${year}-12-31` +
+            scopeFilter(prefs, null)
+        ),
+        prefs
+      );
+      // 1099-NEC candidates: payments to vendors booked to service accounts.
+      const NEC = /^(6100|6150|6000)/;
+      const byVendor = new Map<string, { paid: number; count: number; account: string }>();
+      for (const t of rows) {
+        if (effType(t) !== "normal" || t.amount <= 0) continue;
+        const acct = label(t);
+        if (!NEC.test(acct)) continue;
+        const vendor = (t.merchant_name || t.name || "Unknown").trim();
+        const v = byVendor.get(vendor) ?? { paid: 0, count: 0, account: acct };
+        v.paid += t.amount;
+        v.count += 1;
+        byVendor.set(vendor, v);
+      }
+      const vendors = [...byVendor.entries()]
+        .map(([vendor, v]) => ({ vendor, paid: Math.round(v.paid), count: v.count, account: v.account }))
+        .filter((v) => v.paid >= 600) // the IRS 1099 threshold
+        .sort((a, b) => b.paid - a.paid);
+      return res.json({ year: Number(year), threshold: 600, vendors });
+    }
+
     if (report === "loans") {
       const { loans, totalOutstanding } = await computeLoans();
       const rules = await fetchAll<{ id: string; match: string; loan_id: string | null }>(

@@ -66,8 +66,10 @@ export default function BooksReports() {
   const pickerRef = useRef<HTMLDivElement>(null);
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [pnl, setPnl] = useState<Pnl | null>(null);
-  const [view, setView] = useState<"pnl" | "balance">("pnl");
+  const [view, setView] = useState<"pnl" | "balance" | "statements">("pnl");
   const [sheet, setSheet] = useState<BalanceSheet | null>(null);
+  const [statements, setStatements] = useState<any | null>(null);
+  const [tax1099, setTax1099] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   // Collapsed P&L sections still show their total row.
@@ -80,6 +82,40 @@ export default function BooksReports() {
     });
 
   const entityParam = selected.size === 0 ? "all" : [...selected].join(",");
+
+  // Pull the year's transactions and hand the browser a CSV for the CPA.
+  const [exporting, setExporting] = useState(false);
+  async function downloadCsv() {
+    setExporting(true);
+    try {
+      const rows: any[] = [];
+      for (let offset = 0; ; offset += 500) {
+        const res = await authFetch(
+          `/api/books/data?report=transactions&year=${year}&entity=${encodeURIComponent(entityParam)}&limit=500&offset=${offset}`
+        );
+        if (!res.ok) break;
+        const data = await res.json();
+        rows.push(...(data.transactions ?? []));
+        if ((data.transactions ?? []).length < 500) break;
+      }
+      const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const header = ["Date", "Entity", "Description", "Vendor", "Account", "Amount"];
+      const body = rows.map((t) =>
+        [t.date, t.entity_name ?? "", t.name ?? "", t.merchant_name ?? "", t.book_category ?? "", (-t.amount).toFixed(2)]
+          .map(esc)
+          .join(",")
+      );
+      const csv = [header.join(","), ...body].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `bfo-transactions-${year}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -113,13 +149,22 @@ export default function BooksReports() {
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data?.message || "Couldn't build the P&L.");
           setPnl(data);
-        } else {
+        } else if (view === "balance") {
           const res = await authFetch(
             `/api/books/data?report=balance-sheet&entity=${encodeURIComponent(entityParam)}`
           );
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data?.message || "Couldn't build the balance sheet.");
           setSheet(data);
+        } else {
+          const [sRes, tRes] = await Promise.all([
+            authFetch(`/api/books/data?report=statements&entity=${encodeURIComponent(entityParam)}&year=${year}`),
+            authFetch(`/api/books/data?report=tax1099&year=${year}`),
+          ]);
+          const sData = await sRes.json().catch(() => ({}));
+          if (!sRes.ok) throw new Error(sData?.message || "Couldn't build the statements.");
+          setStatements(sData);
+          setTax1099(tRes.ok ? await tRes.json() : null);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Couldn't build that report.");
@@ -249,7 +294,7 @@ export default function BooksReports() {
     <div className="w-full">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
         <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white"}`}>
-          {([["pnl", "Profit & loss"], ["balance", "Balance sheet"]] as const).map(([value, label]) => (
+          {([["pnl", "Profit & loss"], ["balance", "Balance sheet"], ["statements", "Statements"]] as const).map(([value, label]) => (
             <button
               key={value}
               onClick={() => setView(value)}
@@ -396,7 +441,97 @@ export default function BooksReports() {
         </div>
       )}
 
-      {view === "balance" ? (
+      {view === "statements" ? (
+        loading || !statements ? (
+          <div className={`rounded-2xl border p-4 max-w-3xl space-y-2.5 rise-in ${card}`}>
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="shimmer h-4" style={{ width: `${95 - (i % 3) * 10}%` }} />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-6 max-w-3xl">
+            {/* Cash-flow summary */}
+            <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
+              <div className={`px-4 py-2.5 border-b ${border} flex items-center justify-between`}>
+                <span className="text-sm font-semibold">Cash flow · {statements.year}</span>
+                <button
+                  onClick={() => void downloadCsv()}
+                  disabled={exporting}
+                  className={`px-3 py-1.5 rounded-lg text-xs cursor-pointer disabled:opacity-50 ${isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+                >
+                  {exporting ? "Exporting…" : "Export CSV"}
+                </button>
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {([
+                    ["Operating activities", statements.cash_flow.operating],
+                    ["Financing activities (transfers, loans, draws)", statements.cash_flow.financing],
+                    ["Uncategorized", statements.cash_flow.uncategorized],
+                  ] as const).map(([k, v]) => (
+                    <tr key={k} className={`border-t ${rowBorder}`}>
+                      <td className="px-4 py-2">{k}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(v)}</td>
+                    </tr>
+                  ))}
+                  <tr className={`border-t ${border} font-semibold`}>
+                    <td className="px-4 py-2">Net change in cash</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(statements.cash_flow.net_change)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Trial balance */}
+            <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
+              <div className={`px-4 py-2.5 border-b ${border} text-sm font-semibold`}>Trial balance</div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className={`${sectionHead} border-b ${border}`}>
+                    <th className="px-4 py-2 text-left font-medium">Account</th>
+                    <th className="px-4 py-2 text-right font-medium">Debit</th>
+                    <th className="px-4 py-2 text-right font-medium">Credit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statements.trial_balance.map((r: any) => (
+                    <tr key={r.account} className={`border-t ${rowBorder}`}>
+                      <td className="px-4 py-2">{r.account}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{r.debit ? money(r.debit) : "—"}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{r.credit ? money(r.credit) : "—"}</td>
+                    </tr>
+                  ))}
+                  <tr className={`border-t ${border} font-semibold`}>
+                    <td className="px-4 py-2">Totals</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(statements.totals.debit)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(statements.totals.credit)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* 1099 vendor totals */}
+            {tax1099 && tax1099.vendors.length > 0 && (
+              <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
+                <div className={`px-4 py-2.5 border-b ${border} text-sm font-semibold`}>
+                  1099 candidates · paid ≥ ${tax1099.threshold} in {tax1099.year}
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {tax1099.vendors.map((v: any) => (
+                      <tr key={v.vendor} className={`border-t ${rowBorder}`}>
+                        <td className="px-4 py-2 truncate max-w-[320px]" title={v.vendor}>{v.vendor}</td>
+                        <td className={`px-4 py-2 text-xs ${subtle}`}>{v.account.replace(/^\d{4}\s+/, "")}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(v.paid)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      ) : view === "balance" ? (
         loading ? (
           <div className={`rounded-2xl border p-4 max-w-3xl space-y-2.5 rise-in ${card}`}>
             {Array.from({ length: 8 }, (_, i) => (
