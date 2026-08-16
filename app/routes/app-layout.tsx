@@ -277,7 +277,7 @@ export default function AppLayout() {
                         to={c.to}
                         onClick={() => setDrawerOpen(false)}
                         className={({ isActive }) =>
-                          `rounded-lg pl-[38px] pr-3 py-1.5 text-[13px] transition-colors ${
+                          `rounded-lg pl-[38px] pr-3 py-1.5 text-sm transition-colors ${
                             isActive
                               ? isDark
                                 ? "text-white bg-white/5"
