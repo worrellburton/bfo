@@ -468,6 +468,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== "GET") return res.status(405).json({ error: "method_not_allowed" });
     const report = String(req.query.report ?? "");
 
+    // ── #1 The learned rules — everything the books taught themselves ────
+    if (report === "rules") {
+      const rules = await fetchAll<any>(
+        "book_rules?select=id,match,book_category,vendor_name,type_override,loan_id,created_at&order=created_at.desc"
+      );
+      // How many transactions each rule currently touches, for context.
+      const counts = new Map<string, number>();
+      const txns = await fetchAll<{ merchant_name: string | null; name: string | null }>(
+        "book_transactions?select=merchant_name,name"
+      );
+      for (const r of rules) {
+        const needle = String(r.match).toLowerCase();
+        let n = 0;
+        for (const t of txns) {
+          if (`${t.merchant_name ?? ""} ${t.name ?? ""}`.toLowerCase().includes(needle)) n++;
+        }
+        counts.set(r.id, n);
+      }
+      return res.json({ rules: rules.map((r: any) => ({ ...r, matches: counts.get(r.id) ?? 0 })) });
+    }
+
     // ── One transaction's audit trail + attached receipts ────────────────
     if (report === "history") {
       const txnId = String(req.query.transaction_id ?? "").trim();

@@ -60,6 +60,7 @@ const navItems = [
       { to: "/books/review", label: "Review" },
       { to: "/books/reports", label: "Reports" },
       { to: "/books/vendors", label: "Vendors" },
+      { to: "/books/rules", label: "Rules" },
       { to: "/books/loans", label: "Loans" },
     ],
     icon: (
