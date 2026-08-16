@@ -56,6 +56,108 @@ function tint(hex: string | null): string {
   return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
 }
 
+// ── CSV import (bank history past the Plaid window) ──────────────────────────
+type CsvRow = { date: string; description: string; amount: number };
+
+/** RFC-ish CSV split: honours quotes, doubled quotes, and CRLF. */
+function splitCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += ch;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+/** "08/13/2026", "2026-08-13", "8/3/26" → "YYYY-MM-DD" (or "" if unusable). */
+function normalizeDate(raw: string): string {
+  const s = raw.trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/.exec(s);
+  if (m) {
+    const mo = m[1].padStart(2, "0");
+    const da = m[2].padStart(2, "0");
+    let yr = m[3];
+    if (yr.length === 2) yr = Number(yr) > 70 ? `19${yr}` : `20${yr}`;
+    return `${yr}-${mo}-${da}`;
+  }
+  return "";
+}
+
+/** "$1,234.56", "(45.00)", "-45" → number (parens / trailing minus = negative). */
+function parseAmount(raw: string): number {
+  let s = raw.trim();
+  if (!s) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  if (/-$/.test(s)) { neg = true; s = s.replace(/-$/, ""); }
+  s = s.replace(/[$,\s]/g, "");
+  const n = Number(s);
+  if (!Number.isFinite(n)) return NaN;
+  return neg ? -Math.abs(n) : n;
+}
+
+/**
+ * Parse a bank CSV into {date, description, amount} rows. Handles both
+ * headered exports (maps columns by name, incl. split Debit/Credit) and the
+ * header-less Wells Fargo layout [date, amount, *, "", description].
+ * Sign out is the bank convention: deposits positive, withdrawals negative.
+ */
+function parseBankCsv(text: string): CsvRow[] {
+  const records = splitCsv(text);
+  if (!records.length) return [];
+  const header = records[0].map((c) => c.trim().toLowerCase());
+  const hasHeader = header.some((c) => /date|amount|description|payee|debit|credit|withdraw|deposit|memo/.test(c));
+
+  let iDate = -1, iDesc = -1, iAmt = -1, iDebit = -1, iCredit = -1;
+  let body = records;
+  if (hasHeader) {
+    header.forEach((c, i) => {
+      if (iDate < 0 && /date/.test(c)) iDate = i;
+      if (iDesc < 0 && /desc|payee|name|memo/.test(c)) iDesc = i;
+      if (iAmt < 0 && /^amount|amount$|\bamount\b/.test(c)) iAmt = i;
+      if (iDebit < 0 && /debit|withdraw/.test(c)) iDebit = i;
+      if (iCredit < 0 && /credit|deposit/.test(c)) iCredit = i;
+    });
+    body = records.slice(1);
+  } else {
+    iDate = 0; iAmt = 1; iDesc = 4; // Wells Fargo default
+  }
+  if (iDate < 0) iDate = 0;
+
+  const out: CsvRow[] = [];
+  for (const cols of body) {
+    const date = normalizeDate(cols[iDate] ?? "");
+    if (!date) continue;
+    const description = (iDesc >= 0 ? cols[iDesc] ?? "" : "").trim() || (cols.find((c, i) => i !== iDate && i !== iAmt && c.trim()) ?? "").trim();
+    let amount = NaN;
+    if (iAmt >= 0 && (cols[iAmt] ?? "").trim() !== "") {
+      amount = parseAmount(cols[iAmt]);
+    } else if (iDebit >= 0 || iCredit >= 0) {
+      const d = parseAmount(cols[iDebit] ?? "");
+      const c = parseAmount(cols[iCredit] ?? "");
+      amount = (Number.isFinite(c) ? Math.abs(c) : 0) - (Number.isFinite(d) ? Math.abs(d) : 0);
+    }
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    out.push({ date, description, amount });
+  }
+  return out;
+}
+
 export default function TreasuryAccount() {
   const { accountId } = useParams();
   const navigate = useNavigate();
@@ -77,6 +179,10 @@ export default function TreasuryAccount() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const nameInput = useRef<HTMLInputElement>(null);
+
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -171,6 +277,40 @@ export default function TreasuryAccount() {
       return;
     }
     setAccount({ ...account, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null });
+  }
+
+  async function importCsv(file: File) {
+    if (!account) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const text = await file.text();
+      const rows = parseBankCsv(text);
+      if (!rows.length) {
+        setImportMsg({ ok: false, text: "Couldn't find any dated rows with amounts in that file." });
+        return;
+      }
+      const res = await authFetch("/api/books/import-csv", {
+        method: "POST",
+        body: JSON.stringify({ account_id: account.account_id, rows }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Import failed.");
+      const imported = data.imported ?? 0;
+      const skipped = data.skipped_existing ?? 0;
+      setImportMsg({
+        ok: true,
+        text:
+          `Imported ${imported} transaction${imported === 1 ? "" : "s"} into Books` +
+          (skipped ? ` · ${skipped} already present` : "") +
+          ". They appear in the Books ledger.",
+      });
+    } catch (err) {
+      setImportMsg({ ok: false, text: err instanceof Error ? err.message : "Import failed." });
+    } finally {
+      setImporting(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
   }
 
   const filtered = useMemo(() => {
@@ -372,17 +512,54 @@ export default function TreasuryAccount() {
       {/* Transactions */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <h2 className={`text-sm font-semibold ${isDark ? "" : "text-gray-900"}`}>Transactions</h2>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Filter…"
-          className={`px-3 py-1.5 rounded-lg text-xs border focus:outline-none w-48 ${
-            isDark
-              ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
-              : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
-          }`}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importCsv(f);
+            }}
+          />
+          <button
+            onClick={() => fileInput.current?.click()}
+            disabled={importing}
+            title="Import a bank CSV export — history older than Plaid serves"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border cursor-pointer disabled:opacity-50 transition-colors ${
+              isDark ? "bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/10" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 7.5L12 3m0 0L7.5 7.5M12 3v13.5" />
+            </svg>
+            {importing ? "Importing…" : "Import CSV"}
+          </button>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter…"
+            className={`px-3 py-1.5 rounded-lg text-xs border focus:outline-none w-48 ${
+              isDark
+                ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
+                : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
+            }`}
+          />
+        </div>
       </div>
+
+      {importMsg && (
+        <div
+          className={`mb-3 rounded-lg px-4 py-2.5 text-xs ${
+            importMsg.ok
+              ? isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"
+              : isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"
+          }`}
+        >
+          {importMsg.text}
+        </div>
+      )}
 
       <div className={`rounded-xl border overflow-hidden ${card}`}>
         {txnState === "loading" && <p className={`text-sm p-5 ${subtle}`}>Loading transactions…</p>}
