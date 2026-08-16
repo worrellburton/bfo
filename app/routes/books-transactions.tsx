@@ -83,6 +83,7 @@ export default function BooksTransactions() {
   const [total, setTotal] = useState(0);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [vendorNames, setVendorNames] = useState<string[]>([]);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -91,7 +92,7 @@ export default function BooksTransactions() {
 
   const [q, setQ] = useState("");
   const [entity, setEntity] = useState("all");
-  const [type, setType] = useState<"all" | "transfers" | "intercompany" | "uncategorized">("all");
+  const [type, setType] = useState<"all" | "revenue" | "expenses" | "transfers" | "intercompany" | "uncategorized">("all");
   const [year, setYear] = useState("all");
   const [uncat, setUncat] = useState<number | null>(null);
 
@@ -165,6 +166,7 @@ export default function BooksTransactions() {
         const data = await res.json();
         setEntities(data.entities ?? []);
         setCategories(data.categories ?? []);
+        setVendorNames(data.vendors ?? []);
         setLastSynced(data.last_synced_at ?? null);
       } catch {
         // meta is decoration
@@ -443,6 +445,8 @@ export default function BooksTransactions() {
           {(
             [
               ["all", "All"],
+              ["revenue", "Income"],
+              ["expenses", "Expense"],
               ["transfers", "Transfers"],
               ["intercompany", "Roll-up"],
               ["uncategorized", uncat ? `Uncategorized ${uncat}` : "Uncategorized"],
@@ -555,6 +559,7 @@ export default function BooksTransactions() {
         count={selected.size}
         isDark={isDark}
         busy={batchBusy}
+        vendorSuggestions={vendorNames}
         onApply={(patch) => {
           setBatchBusy(true);
           void authFetch("/api/books/data", {

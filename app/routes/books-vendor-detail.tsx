@@ -30,6 +30,7 @@ export default function BooksVendorDetail() {
   const [txns, setTxns] = useState<Txn[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loans, setLoans] = useState<Array<{ id: string; name: string }>>([]);
+  const [vendors, setVendors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -48,8 +49,10 @@ export default function BooksVendorDetail() {
       const res = await authFetch(`/api/books/data?${qs}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Couldn't load this vendor.");
-      // Exact vendor identity only — the search is a substring match.
-      setTxns(((data.transactions ?? []) as Txn[]).filter((t) => (t.merchant_name || t.name) === name));
+      // Exact vendor identity, but tolerant of case/whitespace so it mirrors
+      // how the Vendors list keys a vendor (trim + lowercase).
+      const key = name.trim().toLowerCase();
+      setTxns(((data.transactions ?? []) as Txn[]).filter((t) => (t.merchant_name || t.name || "").trim().toLowerCase() === key));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load this vendor.");
     } finally {
@@ -70,6 +73,7 @@ export default function BooksVendorDetail() {
           const data = await res.json();
           setCategories(data.categories ?? []);
           setLoans(data.loans ?? []);
+          setVendors(data.vendors ?? []);
         }
       } catch {
         // pickers just stay short
@@ -249,6 +253,25 @@ export default function BooksVendorDetail() {
                 ]}
               />
             </span>
+            {/* Fold this vendor's whole history into another vendor. */}
+            <span className="inline-flex items-center gap-2">
+              <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Merge into</span>
+              <Menu
+                value=""
+                isDark={isDark}
+                disabled={saving || loading || vendors.length < 2}
+                placeholder="Choose vendor…"
+                onChange={(target) => {
+                  if (!target || target === name) return;
+                  if (window.confirm(`Merge "${name}" into "${target}"? All ${stats.count} transaction${stats.count === 1 ? "" : "s"} will move to "${target}".`)) {
+                    void saveSettings({ vendor_name: target });
+                  }
+                }}
+                options={vendors
+                  .filter((v) => v !== name)
+                  .map((v) => ({ value: v, label: v }))}
+              />
+            </span>
           </div>
         </div>
 
@@ -352,6 +375,7 @@ export default function BooksVendorDetail() {
         count={selected.size}
         isDark={isDark}
         busy={saving}
+        vendorSuggestions={vendors}
         onApply={(patch) => {
           setSaving(true);
           void authFetch("/api/books/data", {

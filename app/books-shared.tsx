@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { authFetch } from "./auth";
@@ -285,6 +285,7 @@ export function Menu({
   tone = "neutral",
   size = "sm",
   quiet = false,
+  placeholder,
 }: {
   value: string;
   options: Option[];
@@ -296,6 +297,8 @@ export function Menu({
   size?: "sm" | "md";
   /** Borderless until hover — for controls repeated on every row. */
   quiet?: boolean;
+  /** Trigger label when no option is selected (an action-style picker). */
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -304,8 +307,9 @@ export function Menu({
   const [filter, setFilter] = useState("");
   const [hi, setHi] = useState(-1);
 
-  const current = options.find((o) => o.value === value) ?? options[0];
-  const label = current?.short ?? current?.label ?? "—";
+  const current = options.find((o) => o.value === value);
+  const label =
+    current?.short ?? current?.label ?? placeholder ?? options[0]?.short ?? options[0]?.label ?? "—";
 
   const searchable = options.length > 10;
   // Grouped, long lists open as a mega menu: every group in its own column.
@@ -345,8 +349,10 @@ export function Menu({
       const el = btnRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const width = mega ? Math.min(720, window.innerWidth - 24) : Math.max(r.width, 224);
-      const menuH = mega ? 380 : Math.min(320, options.length * 38 + 12);
+      // Mega opens the full width of the viewport so every account column
+      // spreads out and nothing has to scroll.
+      const width = mega ? window.innerWidth - 24 : Math.max(r.width, 224);
+      const menuH = mega ? Math.round(window.innerHeight * 0.72) : Math.min(320, options.length * 38 + 12);
       const spaceBelow = window.innerHeight - r.bottom;
       const above = spaceBelow < menuH + 12 && r.top > spaceBelow;
       setBox({
@@ -445,7 +451,7 @@ export function Menu({
                 />
               </div>
             )}
-            <div className={`p-1.5 overflow-y-auto ${mega ? "max-h-[380px] p-3" : "max-h-72"}`}>
+            <div className={`p-1.5 overflow-y-auto ${mega ? "max-h-[72vh] p-4" : "max-h-72"}`}>
               {shown.length === 0 && (
                 <p className={`px-2.5 py-2 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>No matches.</p>
               )}
@@ -543,15 +549,30 @@ export function BatchBar({
   busy,
   onApply,
   onClear,
+  vendorSuggestions = [],
 }: {
   count: number;
   isDark: boolean;
   busy?: boolean;
   onApply: (patch: { merchant_name?: string; name?: string }) => void;
   onClear: () => void;
+  /** Existing vendor names — the vendor field autocompletes against these. */
+  vendorSuggestions?: string[];
 }) {
   const [vendor, setVendor] = useState("");
   const [description, setDescription] = useState("");
+  const [vendorFocus, setVendorFocus] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  // Vendors whose name contains what's typed — capped so the list stays usable.
+  const matches = useMemo(() => {
+    const q = vendor.trim().toLowerCase();
+    if (!q) return [] as string[];
+    return vendorSuggestions
+      .filter((v) => v.toLowerCase().includes(q) && v.toLowerCase() !== q)
+      .slice(0, 8);
+  }, [vendor, vendorSuggestions]);
+  const showMenu = vendorFocus && matches.length > 0;
+  useEffect(() => setHighlight(0), [vendor]);
   if (count === 0) return null;
   const field = `px-3 py-1.5 rounded-full text-xs border focus:outline-none ${
     isDark
@@ -568,12 +589,51 @@ export function BatchBar({
       <span className={`text-xs font-medium tabular-nums ${isDark ? "text-gray-300" : "text-gray-700"}`}>
         {count} selected
       </span>
-      <input
-        value={vendor}
-        onChange={(e) => setVendor(e.target.value)}
-        placeholder="Vendor…"
-        className={`${field} w-40`}
-      />
+      <div className="relative">
+        {showMenu && (
+          <div
+            className={`absolute bottom-full mb-1.5 left-0 w-56 max-h-60 overflow-y-auto rounded-xl border shadow-2xl backdrop-blur-xl py-1 ${
+              isDark ? "bg-black/80 border-white/10" : "bg-white/95 border-gray-200"
+            }`}
+          >
+            {matches.map((v, i) => (
+              <button
+                key={v}
+                // Keep focus on the input so blur doesn't close before the click lands.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setVendor(v);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+                className={`w-full text-left px-3 py-1.5 text-xs truncate cursor-pointer ${
+                  i === highlight
+                    ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
+                    : isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+                title={v}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        )}
+        <input
+          value={vendor}
+          onChange={(e) => setVendor(e.target.value)}
+          onFocus={() => setVendorFocus(true)}
+          onBlur={() => setVendorFocus(false)}
+          onKeyDown={(e) => {
+            if (!showMenu) return;
+            if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, matches.length - 1)); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+            else if (e.key === "Enter" || e.key === "Tab") {
+              if (matches[highlight]) { e.preventDefault(); setVendor(matches[highlight]); }
+            }
+          }}
+          placeholder="Vendor…"
+          className={`${field} w-40`}
+        />
+      </div>
       <input
         value={description}
         onChange={(e) => setDescription(e.target.value)}

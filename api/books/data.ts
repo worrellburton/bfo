@@ -423,7 +423,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "book_loans?archived_at=is.null&select=id,name&order=name.asc"
       );
 
-      return res.json({ entities, categories, loans: loanRows, total_transactions: total, last_synced_at: last });
+      // Distinct vendor display names — feeds batch autoselect and vendor merge.
+      const vendorRows = await fetchAll<{ merchant_name: string | null; name: string | null }>(
+        "book_transactions?select=merchant_name,name"
+      );
+      const vendors = [
+        ...new Set(vendorRows.map((v) => (v.merchant_name || v.name || "").trim()).filter(Boolean)),
+      ].sort((a, b) => a.localeCompare(b));
+
+      return res.json({ entities, categories, loans: loanRows, vendors, total_transactions: total, last_synced_at: last });
     }
 
     if (report === "transactions") {
@@ -444,12 +452,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         path += `&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))`;
       } else if (type === "uncategorized") {
         path += `&book_category=is.null`;
+      } else if (type === "revenue") {
+        path += `&book_category=like.4*`;
+      } else if (type === "expenses") {
+        path += `&or=(book_category.like.6*,book_category.like.7*)`;
       }
       if (q) {
-        // Structural chars and the * wildcard drop out; the LIKE metacharacters
-        // _ and % are escaped so a search behaves as a literal substring.
+        // Comma and parens are PostgREST or=() structure — turn them (and any
+        // typed *) into wildcards so a literal "Burton, Robert" still matches
+        // across the punctuation. The LIKE metacharacters _ and % are escaped.
         const safe = q
-          .replace(/[,()*]/g, " ")
+          .replace(/[,()*]/g, "*")
           .replace(/([\\%_])/g, "\\$1")
           .trim();
         if (safe) path += `&or=(name.ilike.*${encodeURIComponent(safe)}*,merchant_name.ilike.*${encodeURIComponent(safe)}*)`;
