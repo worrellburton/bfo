@@ -298,8 +298,48 @@ export default function AppLayout() {
           })}
         </nav>
 
+        {/* Sunrise / sunset — a visible theme switch that sits above the user. */}
+        <div className="mt-auto px-3 pt-1">
+          <button
+            onClick={() => toggle()}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            title={isDark ? "Sunrise — light mode" : "Sunset — dark mode"}
+            className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors cursor-pointer ${
+              showLabels ? "" : "lg:justify-center lg:px-0"
+            } ${isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
+          >
+            <span className="relative inline-flex shrink-0 w-5 h-5 items-center justify-center">
+              {isDark ? (
+                <svg className="w-4 h-4 text-indigo-300" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              )}
+            </span>
+            <span className={`flex-1 text-left text-sm font-medium ${showLabels ? "" : "lg:hidden"}`}>
+              {isDark ? "Sunset" : "Sunrise"}
+            </span>
+            {/* The track slides between sunrise (amber) and sunset (indigo). */}
+            <span
+              className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 ${showLabels ? "" : "lg:hidden"} ${
+                isDark ? "bg-indigo-500/30" : "bg-amber-400/70"
+              }`}
+              aria-hidden
+            >
+              <span
+                className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                  isDark ? "translate-x-[3px]" : "translate-x-[21px]"
+                }`}
+              />
+            </span>
+          </button>
+        </div>
+
         {/* Bottom: the signed-in user, as the menu trigger */}
-        <div className="relative mt-auto p-3" ref={userMenuRef}>
+        <div className="relative p-3" ref={userMenuRef}>
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             aria-expanded={userMenuOpen}

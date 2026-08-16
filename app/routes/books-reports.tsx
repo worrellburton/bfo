@@ -282,13 +282,13 @@ export default function BooksReports() {
             {pickerOpen &&
               (() => {
                 const allMode = selected.size === 0;
-                // Checking/unchecking against the effective set: in all-mode
-                // every box reads as checked, so the first uncheck drops just
-                // that one entity.
                 const isChecked = (id: string) => allMode || selected.has(id);
                 const toggle = (id: string) => {
                   setSelected((prev) => {
-                    const base = prev.size === 0 ? new Set(entities.map((e) => e.id)) : new Set(prev);
+                    // From the all-entities view, a click isolates just that one
+                    // (select one — not "everything except this").
+                    if (prev.size === 0) return new Set([id]);
+                    const base = new Set(prev);
                     base.has(id) ? base.delete(id) : base.add(id);
                     // Everything checked collapses back to the all-entities view.
                     return base.size === entities.length ? new Set() : base;
@@ -311,37 +311,59 @@ export default function BooksReports() {
                     )}
                   </span>
                 );
+                // Wide mega layout: entities spread across columns so nothing
+                // scrolls. ~5 per column, capped at 3 columns.
+                const cols = Math.min(3, Math.max(1, Math.ceil(entities.length / 5)));
                 return (
                   <div
-                    className={`absolute right-0 mt-2 w-72 max-h-80 overflow-y-auto rounded-xl border shadow-lg z-30 p-1.5 ${
+                    className={`absolute right-0 mt-2 w-[min(680px,calc(100vw-2rem))] max-h-[72vh] overflow-y-auto rounded-2xl border shadow-xl z-30 p-2 ${
                       isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
                     }`}
                   >
-                    <button
-                      onClick={() => setSelected(new Set())}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer ${
-                        allMode ? "font-semibold" : ""
-                      } ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
-                    >
-                      {box(allMode)}
-                      <span>All entities</span>
-                    </button>
-                    <div className={`my-1 border-t ${rowBorder}`} />
-                    {entities.map((en) => {
-                      const on = isChecked(en.id);
-                      return (
+                    {/* Select all / clear, side by side and full width. */}
+                    <div className="flex items-center gap-1.5 px-1 pb-1.5">
+                      <button
+                        onClick={() => setSelected(new Set())}
+                        className={`flex-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer ${
+                          allMode ? "font-semibold" : ""
+                        } ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
+                      >
+                        {box(allMode)}
+                        <span>All entities</span>
+                      </button>
+                      {!allMode && (
                         <button
-                          key={en.id}
-                          onClick={() => toggle(en.id)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer text-left ${
-                            isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
+                          onClick={() => setSelected(new Set())}
+                          className={`px-3 py-2 rounded-lg text-xs cursor-pointer ${
+                            isDark ? "text-gray-400 hover:bg-white/5 hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-black"
                           }`}
                         >
-                          {box(on)}
-                          <span className="truncate">{en.name}</span>
+                          Reset
                         </button>
-                      );
-                    })}
+                      )}
+                    </div>
+                    <div className={`mb-1 border-t ${rowBorder}`} />
+                    <div
+                      className="grid gap-x-2"
+                      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+                    >
+                      {entities.map((en) => {
+                        const on = isChecked(en.id);
+                        return (
+                          <button
+                            key={en.id}
+                            onClick={() => toggle(en.id)}
+                            title={en.name}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer text-left ${
+                              isDark ? "hover:bg-white/5" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            {box(on)}
+                            <span className="truncate">{en.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })()}
