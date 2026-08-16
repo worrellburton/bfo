@@ -25,6 +25,7 @@ export const CHART: Account[] = [
   { code: "4100", name: "Interest Income", section: "revenue" },
   { code: "4200", name: "Dividend & Investment Income", section: "revenue" },
   { code: "4300", name: "Social Security Income", section: "revenue" },
+  { code: "4400", name: "Insurance & Claim Income", section: "revenue" },
   { code: "4900", name: "Other Income", section: "revenue" },
 
   // ── 6000 · Operating expenses ─────────────────────────────────────────
@@ -43,7 +44,6 @@ export const CHART: Account[] = [
   { code: "6650", name: "Travel", section: "operating" },
   { code: "6700", name: "Taxes & Licenses", section: "operating" },
   { code: "6750", name: "Medical", section: "operating" },
-  { code: "6800", name: "Contracts", section: "operating" },
   { code: "6900", name: "Other Operating Expenses", section: "operating" },
 
   // ── 7000 · Other income / (expense) ───────────────────────────────────
@@ -54,6 +54,7 @@ export const CHART: Account[] = [
   { code: "9000", name: "Intercompany", section: "flow" },
   { code: "9100", name: "Internal Transfers", section: "flow" },
   { code: "9150", name: "Credit Card Payments", section: "flow" },
+  { code: "9200", name: "Owner Draws", section: "flow" },
   { code: "9300", name: "Loans", section: "flow" },
 ];
 
@@ -98,10 +99,10 @@ export const MIGRATE: Record<string, string> = {
   "Taxes & government": "6700 Taxes & Licenses",
   "Medical": "6750 Medical",
   "Personal care": "6900 Other Operating Expenses",
-  "Contracts": "6800 Contracts",
+  "Contracts": "6150 Contract Services",
   "Services (other)": "6900 Other Operating Expenses",
   "Checks written": "6900 Other Operating Expenses",
-  "Cash withdrawals": "6900 Other Operating Expenses",
+  "Cash withdrawals": "9200 Owner Draws",
   "Mortgage & escrow": "7000 Mortgage Interest",
   "Intercompany": "9000 Intercompany",
   "Internal moves": "9100 Internal Transfers",

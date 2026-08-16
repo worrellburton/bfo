@@ -66,7 +66,7 @@ type TxnRow = {
   payment_channel: string | null;
   txn_type: "normal" | "transfer";
   intercompany: boolean;
-  book_category: string;
+  book_category: string | null;
   type_override?: string;
   entity_id: string | null;
   entity_name: string | null;

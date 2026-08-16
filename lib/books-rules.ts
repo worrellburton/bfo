@@ -36,6 +36,8 @@ const RULES: Rule[] = [
   { match: /social security|ssa treas/i, category: "4300 Social Security Income", type: "normal" },
   { match: /focus hospitalit/i, category: "4000 Rental Income", type: "normal" },
   { match: /interest payment|cashback|cash bonus for referring/i, category: "4100 Interest Income", type: "normal" },
+  // Health-insurance claim payments — a real revenue stream, not "other income".
+  { match: /hcclaimpmt|\baetna\b|\bkfhp\b|kaiser/i, category: "4400 Insurance & Claim Income", type: "normal" },
   { match: /tep corporate|tucson electric/i, category: "6250 Utilities", type: "normal" },
   { match: /payment escrow/i, category: "7000 Mortgage Interest", type: "normal" },
   { match: /io autopay|citi autopay|wf credit card|auto pay/i, category: "9150 Credit Card Payments", type: "transfer" },
@@ -50,19 +52,21 @@ const RULES: Rule[] = [
   { match: /\bburton\b/i, plaid: MOVEMENT, category: "9100 Internal Transfers", type: "transfer" },
   { match: /transfer from mercury to another bank account|auto-routing transfer/i, category: "9100 Internal Transfers", type: "transfer" },
   { match: /mobile deposit/i, category: "9100 Internal Transfers", type: "transfer" },
-  { match: /atm withdrawal|withdrawal authorized/i, category: "6900 Other Operating Expenses", type: "normal" },
+  // Cash out of the family's own accounts — a draw, not an operating expense,
+  // so it stays off the income statement.
+  { match: /atm withdrawal|withdrawal authorized/i, category: "9200 Owner Draws", type: "transfer" },
   { match: /^check$/i, category: "6900 Other Operating Expenses", type: "normal" },
 
   { match: /catalog digital/i, category: "6150 Contract Services", type: "normal" },
 
   // ── Recurring operating expenses ──────────────────────────────────────
-  { match: /liberty mutual/i, category: "6200 Insurance" },
+  { match: /liberty mutual|\bhartford\b|safeco|first insurance/i, category: "6200 Insurance" },
   { match: /nest payroll|gusto/i, category: "6000 Salaries & Wages" },
-  { match: /legalzoom|ecm a legalzoom|\bafp\b/i, category: "6100 Professional Fees" },
+  { match: /legalzoom|ecm a legalzoom|\bafp\b|beachfleischman|beach fleischman|first gen law/i, category: "6100 Professional Fees" },
   { match: /mercury subscription|mercury technologies/i, category: "6400 Bank & Card Fees" },
   {
     match:
-      /vercel|anthropic|claude|google cloud|openai|coefficient|resend|semrush|serpapi|surferseo|reddgrow|toggl|webshare|clerk|twilio|wispr|svg ai|plaid|intuit|wave\b|fal features|ayrshare|cmd-n|antinote/i,
+      /vercel|anthropic|claude|google cloud|openai|coefficient|resend|semrush|serpapi|surferseo|reddgrow|toggl|webshare|clerk|twilio|wispr|svg ai|plaid|intuit|wave\b|fal features|ayrshare|cmd-n|antinote|squarespace|webflow|crunchbase/i,
     category: "6450 Dues & Subscriptions",
   },
   { match: /d & m tire|\bbird\b/i, category: "6550 Automobile & Transport" },
@@ -149,7 +153,7 @@ export function categorize(
   name: string | null,
   merchant: string | null,
   plaidCategory: string | null
-): { category: string; type: RuleType | null } {
+): { category: string | null; type: RuleType | null } {
   const text = `${merchant ?? ""} ${name ?? ""}`.trim();
   const plaid = plaidCategory ?? "";
 
@@ -161,5 +165,8 @@ export function categorize(
   for (const [re, category] of PLAID_FALLBACK) {
     if (re.test(plaid)) return { category, type: null };
   }
-  return { category: "Uncategorized", type: null };
+  // Nothing matched — leave it genuinely uncategorized (null) so the
+  // Uncategorized filter surfaces it, rather than a phantom "Uncategorized"
+  // account that sits outside the chart.
+  return { category: null, type: null };
 }
