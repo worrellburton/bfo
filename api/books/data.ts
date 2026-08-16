@@ -105,6 +105,10 @@ type Pref = {
   entity_id: string | null;
   entity_name: string | null;
   hidden: boolean;
+  nickname?: string | null;
+  account_name?: string | null;
+  mask?: string | null;
+  institution_name?: string | null;
 };
 
 /**
@@ -113,7 +117,7 @@ type Pref = {
  */
 async function getPrefs(): Promise<Map<string, Pref>> {
   const rows = await fetchAll<Pref>(
-    "plaid_account_prefs?select=account_id,entity_id,entity_name,hidden&archived_at=is.null"
+    "plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name&archived_at=is.null"
   );
   return new Map(rows.map((p) => [p.account_id, p]));
 }
@@ -819,6 +823,100 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .filter((v) => v.paid >= 600) // the IRS 1099 threshold
         .sort((a, b) => b.paid - a.paid);
       return res.json({ year: Number(year), threshold: 600, vendors });
+    }
+
+    // ── #2 + #8 Review queue: uncategorized, low-confidence, duplicates,
+    //    and outliers — everything that wants a human's eyes ──────────────
+    if (report === "review") {
+      const prefs = await getPrefs();
+      const rows = withLiveEntity(
+        await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}`),
+        prefs
+      );
+      const slim = (t: BookTxn) => ({
+        transaction_id: t.transaction_id,
+        date: t.date,
+        name: t.name,
+        merchant_name: t.merchant_name,
+        amount: t.amount,
+        book_category: t.book_category,
+        entity_name: t.entity_name,
+        account_id: t.account_id,
+        item_id: t.item_id,
+      });
+
+      // Uncategorized (no account) and low-confidence (still in a catch-all).
+      const uncategorized = rows.filter((t) => !t.book_category);
+      const CATCHALL = new Set(["6900 Other Operating Expenses", "4900 Other Income"]);
+      const lowConfidence = rows.filter((t) => t.book_category && CATCHALL.has(t.book_category));
+
+      // Duplicates: same account + date + amount. Cross-source (more than one
+      // feed) is a near-certain double; same-feed repeats are "possible".
+      const groups = new Map<string, BookTxn[]>();
+      for (const t of rows) {
+        const key = `${t.account_id}|${t.date}|${Math.round(t.amount * 100)}`;
+        (groups.get(key) ?? groups.set(key, []).get(key)!).push(t);
+      }
+      const duplicates = [...groups.values()]
+        .filter((g) => g.length > 1)
+        .map((g) => ({
+          count: g.length,
+          cross_source: new Set(g.map((t) => t.item_id)).size > 1,
+          amount: g[0].amount,
+          date: g[0].date,
+          rows: g.map(slim),
+        }))
+        .sort((a, b) => Number(b.cross_source) - Number(a.cross_source) || Math.abs(b.amount) - Math.abs(a.amount));
+
+      // Outliers: the biggest P&L-affecting items, for a sanity read.
+      const outliers = rows
+        .filter((t) => effType(t) === "normal")
+        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+        .slice(0, 15)
+        .map(slim);
+
+      return res.json({
+        counts: {
+          uncategorized: uncategorized.length,
+          low_confidence: lowConfidence.length,
+          duplicate_groups: duplicates.length,
+        },
+        uncategorized: uncategorized.slice(0, 100).map(slim),
+        low_confidence: lowConfidence.slice(0, 100).map(slim),
+        duplicates: duplicates.slice(0, 50),
+        outliers,
+      });
+    }
+
+    // ── #3 Reconciliation: does the ledger tie to each bank balance? ─────
+    if (report === "reconciliation") {
+      const prefs = await getPrefs();
+      const rows = await fetchAll<{ account_id: string; amount: number }>(
+        `book_transactions?select=account_id,amount&pending=eq.false`
+      );
+      const ledger = new Map<string, number>();
+      for (const t of rows) ledger.set(t.account_id, (ledger.get(t.account_id) ?? 0) - t.amount); // inflow +
+      const state = await fetchAll<{ account_id: string; balance: number }>(
+        "plaid_account_state?select=account_id,balance"
+      );
+      const accounts = state
+        .map((s) => {
+          const pref = prefs.get(s.account_id);
+          if (pref?.hidden) return null;
+          const ledgerNet = Math.round((ledger.get(s.account_id) ?? 0) * 100) / 100;
+          const bankBalance = Math.round(Number(s.balance) * 100) / 100;
+          return {
+            account_id: s.account_id,
+            name: pref?.nickname || pref?.account_name || pref?.mask || s.account_id,
+            institution: pref?.institution_name ?? null,
+            entity_name: pref?.entity_name ?? null,
+            ledger_net: ledgerNet,
+            bank_balance: bankBalance,
+            has_ledger: ledger.has(s.account_id),
+          };
+        })
+        .filter(Boolean);
+      return res.json({ accounts });
     }
 
     if (report === "loans") {
