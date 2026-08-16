@@ -670,6 +670,98 @@ export function BatchBar({
 }
 
 /**
+ * An in-app confirm — replaces the browser's native confirm() so the choice
+ * looks like the rest of the app. `onConfirm` is the primary action; the
+ * optional `onAlt`/`altLabel` adds a middle path (e.g. "just this one"); the
+ * backdrop, Escape, and Cancel all dismiss without acting.
+ */
+export function ConfirmDialog({
+  isDark,
+  title,
+  message,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  altLabel,
+  tone = "default",
+  onConfirm,
+  onAlt,
+  onClose,
+}: {
+  isDark: boolean;
+  title: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  altLabel?: string;
+  tone?: "default" | "danger";
+  onConfirm: () => void;
+  onAlt?: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Enter") onConfirm();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, onConfirm]);
+
+  const primary =
+    tone === "danger"
+      ? "bg-red-600 text-white hover:bg-red-500"
+      : isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800";
+  const ghost = isDark ? "text-gray-300 hover:bg-white/[0.06]" : "text-gray-600 hover:bg-gray-100";
+  const alt = isDark ? "border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border-gray-200 text-gray-800 hover:bg-gray-50";
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm rise-in"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        className={`w-full max-w-sm rounded-2xl border shadow-2xl p-5 ${
+          isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
+        }`}
+      >
+        <h3 className={`text-base font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>{title}</h3>
+        {message && (
+          <div className={`mt-2 text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-gray-600"}`}>{message}</div>
+        )}
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className={`px-3.5 py-2 rounded-lg text-sm cursor-pointer transition-colors ${ghost}`}
+          >
+            {cancelLabel}
+          </button>
+          {altLabel && onAlt && (
+            <button
+              onClick={onAlt}
+              className={`px-3.5 py-2 rounded-lg text-sm border cursor-pointer transition-colors ${alt}`}
+            >
+              {altLabel}
+            </button>
+          )}
+          <button
+            autoFocus
+            onClick={onConfirm}
+            className={`px-3.5 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${primary}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/**
  * The editable transaction spreadsheet: type and category change in place,
  * the chevron opens every field we hold on the transaction, and the vendor
  * name walks to the Vendors page.
@@ -700,6 +792,7 @@ export function TxnTable({
   const navigate = useNavigate();
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  const [pendingCat, setPendingCat] = useState<{ t: Txn; category: string; match: string } | null>(null);
   // Anchor row for shift-click range selection.
   const lastPicked = useRef<number | null>(null);
 
@@ -730,22 +823,22 @@ export function TxnTable({
   /**
    * A category change offers to teach the books: apply the same category to
    * every transaction carrying this description, and keep applying it to new
-   * ones via a stored rule. Declining changes just the one row.
+   * ones via a stored rule. The in-app dialog picks between all and one.
    */
-  async function changeCategory(t: Txn, category: string) {
+  function changeCategory(t: Txn, category: string) {
     const match = (t.merchant_name || t.name || "").trim();
-    const teach =
-      !!match &&
-      confirm(
-        `Categorize ALL "${match}" transactions as "${category}" — and automatically categorize new ones the same way?
-
-` +
-          "Cancel applies it to just this transaction."
-      );
-    if (!teach) {
-      await update(t, { book_category: category });
+    if (!match) {
+      void applyCategoryOne(t, category);
       return;
     }
+    setPendingCat({ t, category, match });
+  }
+
+  async function applyCategoryOne(t: Txn, category: string) {
+    await update(t, { book_category: category });
+  }
+
+  async function applyCategoryAll(t: Txn, category: string, match: string) {
     setBusy(t.transaction_id);
     try {
       const res = await authFetch("/api/books/data", {
@@ -800,6 +893,7 @@ export function TxnTable({
   const allSelected = !!selection && rows.length > 0 && rows.every((r) => selection.selected.has(r.transaction_id));
 
   return (
+   <>
     <table className="w-full text-sm min-w-[1020px]">
       <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
         <tr className={`text-left text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
@@ -1003,5 +1097,32 @@ export function TxnTable({
         })}
       </tbody>
     </table>
+    {pendingCat && (
+      <ConfirmDialog
+        isDark={isDark}
+        title={`Categorize all “${pendingCat.match}”?`}
+        message={
+          <>
+            Apply <span className="font-medium">{pendingCat.category}</span> to every “{pendingCat.match}”
+            transaction and keep categorizing new ones the same way — or just this one.
+          </>
+        }
+        confirmLabel="Apply to all & remember"
+        altLabel="Just this one"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          const p = pendingCat;
+          setPendingCat(null);
+          void applyCategoryAll(p.t, p.category, p.match);
+        }}
+        onAlt={() => {
+          const p = pendingCat;
+          setPendingCat(null);
+          void applyCategoryOne(p.t, p.category);
+        }}
+        onClose={() => setPendingCat(null)}
+      />
+    )}
+   </>
   );
 }

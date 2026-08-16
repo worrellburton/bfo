@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { type Txn, TxnTable, Menu, BatchBar, shortDate, accountIcon, accountGroup, typeIcon } from "../books-shared";
+import { type Txn, TxnTable, Menu, BatchBar, ConfirmDialog, shortDate, accountIcon, accountGroup, typeIcon } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Vendor" }];
@@ -38,6 +38,7 @@ export default function BooksVendorDetail() {
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [mergeTarget, setMergeTarget] = useState<string | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -263,9 +264,7 @@ export default function BooksVendorDetail() {
                 placeholder="Choose vendor…"
                 onChange={(target) => {
                   if (!target || target === name) return;
-                  if (window.confirm(`Merge "${name}" into "${target}"? All ${stats.count} transaction${stats.count === 1 ? "" : "s"} will move to "${target}".`)) {
-                    void saveSettings({ vendor_name: target });
-                  }
+                  setMergeTarget(target);
                 }}
                 options={vendors
                   .filter((v) => v !== name)
@@ -392,6 +391,26 @@ export default function BooksVendorDetail() {
         }}
         onClear={() => setSelected(new Set())}
       />
+      {mergeTarget && (
+        <ConfirmDialog
+          isDark={isDark}
+          title={`Merge into “${mergeTarget}”?`}
+          message={
+            <>
+              All {stats.count} transaction{stats.count === 1 ? "" : "s"} under “{name}” will move to{" "}
+              “{mergeTarget}”, and future ones will follow.
+            </>
+          }
+          confirmLabel="Merge"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            const target = mergeTarget;
+            setMergeTarget(null);
+            void saveSettings({ vendor_name: target });
+          }}
+          onClose={() => setMergeTarget(null)}
+        />
+      )}
     </div>
   );
 }
