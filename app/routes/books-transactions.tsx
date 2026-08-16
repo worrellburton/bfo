@@ -95,6 +95,7 @@ export default function BooksTransactions() {
   const [type, setType] = useState<"all" | "revenue" | "expenses" | "transfers" | "intercompany" | "uncategorized">("all");
   const [year, setYear] = useState("all");
   const [uncat, setUncat] = useState<number | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "date", dir: "desc" });
 
   // CSV import + Mercury backfill
   const [importOpen, setImportOpen] = useState(false);
@@ -116,10 +117,15 @@ export default function BooksTransactions() {
       if (type !== "all") params.set("type", type);
       if (year !== "all") params.set("year", year);
       if (q.trim()) params.set("q", q.trim());
+      if (!(sort.key === "date" && sort.dir === "desc")) params.set("sort", `${sort.key}.${sort.dir}`);
       return `/api/books/data?${params}`;
     },
-    [entity, type, year, q]
+    [entity, type, year, q, sort]
   );
+
+  // Click a column: same column flips direction, a new column starts descending.
+  const onSort = (key: string) =>
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -516,6 +522,8 @@ export default function BooksTransactions() {
             rows={rows}
             categories={categories}
             isDark={isDark}
+            sort={sort}
+            onSort={onSort}
             selection={{
               selected,
               toggle: (id) =>
@@ -560,6 +568,7 @@ export default function BooksTransactions() {
         isDark={isDark}
         busy={batchBusy}
         vendorSuggestions={vendorNames}
+        categories={categories}
         onApply={(patch) => {
           setBatchBusy(true);
           void authFetch("/api/books/data", {

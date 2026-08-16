@@ -375,6 +375,7 @@ export default function BooksVendorDetail() {
         isDark={isDark}
         busy={saving}
         vendorSuggestions={vendors}
+        categories={categories}
         onApply={(patch) => {
           setSaving(true);
           void authFetch("/api/books/data", {

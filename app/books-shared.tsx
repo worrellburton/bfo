@@ -550,17 +550,21 @@ export function BatchBar({
   onApply,
   onClear,
   vendorSuggestions = [],
+  categories = [],
 }: {
   count: number;
   isDark: boolean;
   busy?: boolean;
-  onApply: (patch: { merchant_name?: string; name?: string }) => void;
+  onApply: (patch: { merchant_name?: string; name?: string; book_category?: string }) => void;
   onClear: () => void;
   /** Existing vendor names — the vendor field autocompletes against these. */
   vendorSuggestions?: string[];
+  /** Chart of accounts — enables the batch Account picker. */
+  categories?: string[];
 }) {
   const [vendor, setVendor] = useState("");
   const [description, setDescription] = useState("");
+  const [account, setAccount] = useState("");
   const [vendorFocus, setVendorFocus] = useState(false);
   const [highlight, setHighlight] = useState(0);
   // Vendors whose name contains what's typed — capped so the list stays usable.
@@ -579,7 +583,7 @@ export function BatchBar({
       ? "bg-white/[0.06] border-white/10 text-white placeholder-gray-500 focus:border-white/25"
       : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
   }`;
-  const canApply = !!(vendor.trim() || description.trim());
+  const canApply = !!(vendor.trim() || description.trim() || account);
   return createPortal(
     <div
       className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl ${
@@ -640,15 +644,33 @@ export function BatchBar({
         placeholder="Description…"
         className={`${field} w-56`}
       />
+      {categories.length > 0 && (
+        <Menu
+          value={account}
+          isDark={isDark}
+          size="sm"
+          placeholder="Account…"
+          onChange={setAccount}
+          options={categories.map((c) => ({
+            value: c,
+            label: c,
+            short: c.replace(/^\d{4}\s+/, ""),
+            icon: accountIcon(c),
+            group: accountGroup(c),
+          }))}
+        />
+      )}
       <button
         disabled={busy || !canApply}
         onClick={() => {
-          const patch: { merchant_name?: string; name?: string } = {};
+          const patch: { merchant_name?: string; name?: string; book_category?: string } = {};
           if (vendor.trim()) patch.merchant_name = vendor.trim();
           if (description.trim()) patch.name = description.trim();
+          if (account) patch.book_category = account;
           onApply(patch);
           setVendor("");
           setDescription("");
+          setAccount("");
         }}
         className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer disabled:opacity-50 ${
           isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
@@ -776,6 +798,8 @@ export function TxnTable({
   onReload,
   balances,
   selection,
+  sort,
+  onSort,
 }: {
   rows: Txn[];
   categories: string[];
@@ -788,6 +812,10 @@ export function TxnTable({
   balances?: Record<string, number>;
   /** Optional row selection — adds a checkbox column for batch editing. */
   selection?: Selection;
+  /** Current server-side sort — enables clickable, sortable column headers. */
+  sort?: { key: string; dir: "asc" | "desc" };
+  /** Called with a column key when a sortable header is clicked. */
+  onSort?: (key: string) => void;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -798,6 +826,33 @@ export function TxnTable({
 
   const subtle = "text-gray-500";
   const border = isDark ? "border-white/5" : "border-gray-100";
+
+  // A column header: a sort button when the column is sortable and onSort is
+  // wired, otherwise plain text (vendor page and other embeds stay static).
+  const Th = ({ label, sortKey, align = "left" }: { label: string; sortKey?: string; align?: "left" | "right" }) => {
+    const sortable = !!onSort && !!sortKey;
+    const active = sort?.key === sortKey;
+    if (!sortable) {
+      return <th className={`px-2 py-2.5 font-medium ${align === "right" ? "text-right" : ""}`}>{label}</th>;
+    }
+    return (
+      <th className={`px-2 py-2.5 font-medium ${align === "right" ? "text-right" : ""}`}>
+        <button
+          onClick={() => onSort!(sortKey!)}
+          className={`inline-flex items-center gap-1 cursor-pointer transition-colors ${
+            align === "right" ? "flex-row-reverse" : ""
+          } ${active ? (isDark ? "text-white" : "text-gray-900") : "hover:" + (isDark ? "text-gray-300" : "text-gray-700")}`}
+        >
+          {label}
+          <span className={`inline-flex ${active ? "opacity-100" : "opacity-30"}`}>
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d={active && sort?.dir === "asc" ? "M4.5 15.75l7.5-7.5 7.5 7.5" : "M19.5 8.25l-7.5 7.5-7.5-7.5"} />
+            </svg>
+          </span>
+        </button>
+      </th>
+    );
+  };
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -909,13 +964,13 @@ export function TxnTable({
             </th>
           )}
           <th className="w-8" />
-          <th className="px-2 py-2.5 font-medium">Date</th>
-          <th className="px-2 py-2.5 font-medium">Entity</th>
-          <th className="px-2 py-2.5 font-medium">Type</th>
-          <th className="px-2 py-2.5 font-medium">Description</th>
-          <th className="px-2 py-2.5 font-medium">Vendor</th>
-          <th className="px-2 py-2.5 font-medium">Account</th>
-          <th className="px-2 py-2.5 font-medium text-right">Amount</th>
+          <Th label="Date" sortKey="date" />
+          <Th label="Entity" sortKey="entity" />
+          <Th label="Type" />
+          <Th label="Description" sortKey="description" />
+          <Th label="Vendor" sortKey="vendor" />
+          <Th label="Account" sortKey="account" />
+          <Th label="Amount" sortKey="amount" align="right" />
           {balances && <th className="px-2 py-2.5 font-medium text-right">Balance</th>}
         </tr>
       </thead>

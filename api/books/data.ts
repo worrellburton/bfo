@@ -337,6 +337,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!v) return res.status(400).json({ error: "empty_description" });
         patch.name = v;
       }
+      if (req.body.book_category !== undefined) {
+        // An account move also detaches any loan link, so the rows post to the
+        // chosen P&L account instead of the balance sheet.
+        patch.book_category = String(req.body.book_category).trim().slice(0, 60) || null;
+        patch.loan_id = null;
+      }
       if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
 
       let updated = 0;
@@ -467,7 +473,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .trim();
         if (safe) path += `&or=(name.ilike.*${encodeURIComponent(safe)}*,merchant_name.ilike.*${encodeURIComponent(safe)}*)`;
       }
-      path += "&order=date.desc,transaction_id.asc";
+      // Optional sort: sort=<key>.<dir>, whitelisted to real columns. The
+      // transaction_id tiebreaker keeps pagination stable across pages.
+      const SORT_COLUMNS: Record<string, string> = {
+        date: "date",
+        amount: "amount",
+        vendor: "merchant_name",
+        account: "book_category",
+        entity: "entity_name",
+        description: "name",
+      };
+      const [sortKey, sortDirRaw] = String(req.query.sort ?? "").split(".");
+      const sortCol = SORT_COLUMNS[sortKey];
+      const sortDir = sortDirRaw === "asc" ? "asc" : "desc";
+      path += sortCol
+        ? `&order=${sortCol}.${sortDir}.nullslast,transaction_id.asc`
+        : "&order=date.desc,transaction_id.asc";
 
       const r = await db(path, {
         headers: { Range: `${offset}-${offset + limit - 1}`, Prefer: "count=exact" },
