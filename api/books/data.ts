@@ -40,6 +40,41 @@ function prettyCategory(primary: string | null): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/**
+ * Record field-level changes to the immutable audit log — one row per field
+ * that actually changed. Best-effort: a logging failure never blocks the edit.
+ */
+async function logChanges(
+  transaction_ids: string[],
+  before: Record<string, unknown> | null,
+  patch: Record<string, unknown>,
+  source: string,
+  actor: string | null
+): Promise<void> {
+  try {
+    const rows: any[] = [];
+    for (const id of transaction_ids) {
+      for (const [field, next] of Object.entries(patch)) {
+        const prev = before ? before[field] : undefined;
+        // For batch edits we don't hold each row's old value — log new only.
+        if (before && String(prev ?? "") === String(next ?? "")) continue;
+        rows.push({
+          transaction_id: id,
+          field,
+          old_value: prev === undefined ? null : prev === null ? null : String(prev),
+          new_value: next === null ? null : String(next),
+          source,
+          actor,
+        });
+      }
+    }
+    if (!rows.length) return;
+    await db("book_txn_log", { method: "POST", body: JSON.stringify(rows) });
+  } catch {
+    /* audit logging is best-effort */
+  }
+}
+
 type BookTxn = {
   transaction_id: string;
   account_id: string;
@@ -354,7 +389,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         if (r.ok) updated += Math.min(200, ids.length - i);
       }
+      await logChanges(ids, null, patch, "batch", user.id);
       return res.json({ updated });
+    }
+
+    // ── Receipts: attach / remove a document URL on a transaction ────────
+    if (req.method === "POST" && req.body?.action === "add_receipt") {
+      const txnId = String(req.body.transaction_id ?? "").trim();
+      const url = String(req.body.url ?? "").trim();
+      const label = req.body.label != null ? String(req.body.label).trim().slice(0, 120) : null;
+      if (!txnId) return res.status(400).json({ error: "missing_transaction_id" });
+      if (!/^https?:\/\/.{3,}/i.test(url)) return res.status(400).json({ error: "bad_url" });
+      const r = await db("book_txn_receipt", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ transaction_id: txnId, url: url.slice(0, 1000), label }),
+      });
+      if (!r.ok) return res.status(500).json({ error: "receipt_failed" });
+      return res.json({ receipt: ((await r.json()) as any[])[0] ?? null });
+    }
+    if (req.method === "POST" && req.body?.action === "delete_receipt") {
+      const id = Number(req.body.id);
+      if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+      await db(`book_txn_receipt?id=eq.${id}`, { method: "DELETE" });
+      return res.json({ deleted: true });
     }
 
     // ── Edits: a person reclassifying a transaction ─────────────────────
@@ -382,6 +440,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
 
+      // Capture the old values first, so the audit log records old → new.
+      const beforeRes = await db(
+        `book_transactions?transaction_id=eq.${encodeURIComponent(transaction_id)}&select=book_category,type_override,loan_id,merchant_name,name&limit=1`
+      );
+      const before = beforeRes.ok ? ((await beforeRes.json()) as any[])[0] ?? null : null;
+
       const r = await db(`book_transactions?transaction_id=eq.${encodeURIComponent(transaction_id)}`, {
         method: "PATCH",
         headers: { Prefer: "return=representation" },
@@ -393,11 +457,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const rows = (await r.json()) as BookTxn[];
       if (!rows.length) return res.status(404).json({ error: "not_found" });
+      await logChanges([transaction_id], before, patch, "edit", user.id);
       return res.json({ transaction: rows[0] });
     }
 
     if (req.method !== "GET") return res.status(405).json({ error: "method_not_allowed" });
     const report = String(req.query.report ?? "");
+
+    // ── One transaction's audit trail + attached receipts ────────────────
+    if (report === "history") {
+      const txnId = String(req.query.transaction_id ?? "").trim();
+      if (!txnId) return res.status(400).json({ error: "missing_transaction_id" });
+      const enc = encodeURIComponent(txnId);
+      const [logRes, recRes] = await Promise.all([
+        db(`book_txn_log?transaction_id=eq.${enc}&order=changed_at.desc&limit=200`),
+        db(`book_txn_receipt?transaction_id=eq.${enc}&order=uploaded_at.desc`),
+      ]);
+      const log = logRes.ok ? await logRes.json() : [];
+      const receipts = recRes.ok ? await recRes.json() : [];
+      return res.json({ log, receipts });
+    }
 
     if (report === "meta") {
       const prefs = await getPrefs();

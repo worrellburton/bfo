@@ -692,6 +692,114 @@ export function BatchBar({
 }
 
 /**
+ * Audit trail + receipts for one transaction — loads on demand when the row's
+ * detail drawer opens. Every categorization/vendor/type change shows as
+ * old → new; receipts are URL-referenced documents you can attach or remove.
+ */
+export function TxnHistoryPanel({ transactionId, isDark }: { transactionId: string; isDark: boolean }) {
+  const [log, setLog] = useState<Array<{ id: number; field: string; old_value: string | null; new_value: string | null; source: string; changed_at: string }>>([]);
+  const [receipts, setReceipts] = useState<Array<{ id: number; url: string; label: string | null }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const subtle = isDark ? "text-gray-500" : "text-gray-500";
+
+  async function load() {
+    try {
+      const res = await authFetch(`/api/books/data?report=history&transaction_id=${encodeURIComponent(transactionId)}`);
+      if (res.ok) {
+        const d = await res.json();
+        setLog(d.log ?? []);
+        setReceipts(d.receipts ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [transactionId]);
+
+  async function addReceipt() {
+    if (!/^https?:\/\/.{3,}/i.test(url.trim())) return;
+    setBusy(true);
+    try {
+      const res = await authFetch("/api/books/data", {
+        method: "POST",
+        body: JSON.stringify({ action: "add_receipt", transaction_id: transactionId, url: url.trim() }),
+      });
+      if (res.ok) { setUrl(""); await load(); }
+    } finally { setBusy(false); }
+  }
+  async function removeReceipt(id: number) {
+    await authFetch("/api/books/data", { method: "POST", body: JSON.stringify({ action: "delete_receipt", id }) });
+    await load();
+  }
+
+  const fieldLabel: Record<string, string> = {
+    book_category: "Account", type_override: "Type", loan_id: "Loan", merchant_name: "Vendor", name: "Description",
+  };
+  const border = isDark ? "border-white/10" : "border-gray-200";
+
+  return (
+    <div className={`mt-3 border-t pt-3 grid gap-x-8 gap-y-3 sm:grid-cols-2 ${border}`}>
+      <div className="min-w-0">
+        <span className={`text-[10px] uppercase tracking-wider block mb-1.5 ${subtle}`}>Receipts & documents</span>
+        {receipts.length > 0 ? (
+          <ul className="space-y-1 mb-2">
+            {receipts.map((r) => (
+              <li key={r.id} className="flex items-center gap-2 text-xs">
+                <a href={r.url} target="_blank" rel="noreferrer" className="truncate text-blue-500 hover:underline flex-1">
+                  {r.label || r.url}
+                </a>
+                <button onClick={() => void removeReceipt(r.id)} className={`shrink-0 ${subtle} hover:text-red-500 cursor-pointer`}>✕</button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={`text-xs mb-2 ${subtle}`}>None attached.</p>
+        )}
+        <div className="flex items-center gap-1.5">
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void addReceipt()}
+            placeholder="Paste a document URL…"
+            className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs border focus:outline-none ${
+              isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400"
+            }`}
+          />
+          <button
+            onClick={() => void addReceipt()}
+            disabled={busy || !url.trim()}
+            className={`px-2.5 py-1.5 rounded-lg text-xs cursor-pointer disabled:opacity-40 ${isDark ? "bg-white/10 text-white hover:bg-white/15" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+      <div className="min-w-0">
+        <span className={`text-[10px] uppercase tracking-wider block mb-1.5 ${subtle}`}>History</span>
+        {loading ? (
+          <p className={`text-xs ${subtle}`}>Loading…</p>
+        ) : log.length === 0 ? (
+          <p className={`text-xs ${subtle}`}>No manual changes recorded.</p>
+        ) : (
+          <ul className="space-y-1">
+            {log.slice(0, 12).map((e) => (
+              <li key={e.id} className="text-xs">
+                <span className={subtle}>{new Date(e.changed_at).toLocaleDateString()} · </span>
+                <span className="font-medium">{fieldLabel[e.field] ?? e.field}</span>
+                <span className={subtle}> {e.old_value ? `“${e.old_value}” → ` : "set "}</span>
+                <span>{e.new_value ? `“${e.new_value}”` : "cleared"}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * An in-app confirm — replaces the browser's native confirm() so the choice
  * looks like the rest of the app. `onConfirm` is the primary action; the
  * optional `onAlt`/`altLabel` adds a middle path (e.g. "just this one"); the
@@ -1136,6 +1244,7 @@ export function TxnTable({
                         </div>
                       )}
                     </div>
+                    <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} />
                   </td>
                 </tr>
               )}
