@@ -987,26 +987,20 @@ export function TxnTable({
                   )}
                 </td>
                 <td className="px-2 py-2.5">
-                  {/* On a loan, the movement posts to the loan account — type
-                      and account give way to the balance sheet. */}
-                  {t.loan_id ? (
-                    <span className={`text-xs font-medium ${subtle}`}>
-                      {inflow ? "Loan payback" : "Loan advance"}
-                    </span>
-                  ) : (
-                    <Menu
-                      value={eff}
-                      isDark={isDark}
-                      quiet
-                      disabled={busy === t.transaction_id}
-                      onChange={(v) => void update(t, { type_override: v })}
-                      options={[
-                        { value: "normal", label: inflow ? "Income" : "Expense", icon: typeIcon("normal", inflow) },
-                        { value: "transfer", label: "Transfer", icon: typeIcon("transfer", inflow) },
-                        { value: "intercompany", label: "Roll-up", icon: typeIcon("intercompany", inflow) },
-                      ]}
-                    />
-                  )}
+                  {/* Fully editable — a loan link no longer locks the row; the
+                      loan classification maps back to its underlying type. */}
+                  <Menu
+                    value={eff === "loan" ? (t.type_override ?? "normal") : eff}
+                    isDark={isDark}
+                    quiet
+                    disabled={busy === t.transaction_id}
+                    onChange={(v) => void update(t, t.loan_id ? { type_override: v, loan_id: null } : { type_override: v })}
+                    options={[
+                      { value: "normal", label: inflow ? "Income" : "Expense", icon: typeIcon("normal", inflow) },
+                      { value: "transfer", label: "Transfer", icon: typeIcon("transfer", inflow) },
+                      { value: "intercompany", label: "Roll-up", icon: typeIcon("intercompany", inflow) },
+                    ]}
+                  />
                 </td>
                 <td className={`px-2 py-2.5 max-w-[280px] ${subtle}`} title={t.name ?? undefined}>
                   <span className="truncate block max-w-full">{t.name || "—"}</span>
@@ -1025,25 +1019,23 @@ export function TxnTable({
                   )}
                 </td>
                 <td className="px-2 py-2.5">
-                  {t.loan_id ? (
-                    <span className="text-xs font-medium text-amber-500">
-                      {loans.find((l) => l.id === t.loan_id)?.name ?? "Loan"}
-                    </span>
-                  ) : (
-                    <Menu
-                      value={t.book_category ?? ""}
-                      isDark={isDark}
-                      quiet
-                      disabled={busy === t.transaction_id}
-                      onChange={(v) => void changeCategory(t, v)}
-                      options={[
-                        ...(!t.book_category
-                          ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }]
-                          : []),
-                        ...cats.map((c) => ({ value: c, label: c, short: c.replace(/^\d{4}\s+/, ""), icon: accountIcon(c), group: accountGroup(c) })),
-                      ]}
-                    />
-                  )}
+                  {/* Always a category picker. A loan-linked row shows the loan
+                      as its placeholder; choosing an account detaches the loan
+                      so the movement posts to the P&L instead. */}
+                  <Menu
+                    value={t.book_category ?? ""}
+                    isDark={isDark}
+                    quiet
+                    disabled={busy === t.transaction_id}
+                    placeholder={t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined}
+                    onChange={(v) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v))}
+                    options={[
+                      ...(!t.book_category && !t.loan_id
+                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }]
+                        : []),
+                      ...cats.map((c) => ({ value: c, label: c, short: c.replace(/^\d{4}\s+/, ""), icon: accountIcon(c), group: accountGroup(c) })),
+                    ]}
+                  />
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <div className={`tabular-nums font-medium ${inflow ? "text-emerald-500" : ""}`}>

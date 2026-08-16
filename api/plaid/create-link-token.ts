@@ -61,9 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : { products }),
       country_codes: [CountryCode.Us],
       language: "en",
-      // Books wants 24 months of history — request it on new links AND on
-      // reconnects (update mode), so relinking an old 90-day connection
-      // extends its window and Plaid backfills the older transactions.
+      // Request the full 730-day window. NOTE: Plaid only honours this on the
+      // Item's FIRST historical pull — update mode cannot extend an Item that
+      // already pulled at the 90-day default. To deepen an old connection you
+      // must remove the Item and add it fresh (this value then takes effect).
+      // Wells Fargo checking tops out ~18 months regardless; that's a WF cap.
       ...(kind === "bank" ? { transactions: { days_requested: 730 } } : {}),
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
     });
