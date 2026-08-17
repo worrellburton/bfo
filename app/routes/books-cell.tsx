@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, money, type Txn } from "../books-shared";
+import { TxnTable, BatchBar, money, type Txn } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Detail" }];
@@ -35,6 +35,9 @@ export default function BooksCell() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [vendorNames, setVendorNames] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,7 +65,11 @@ export default function BooksCell() {
     void (async () => {
       try {
         const res = await authFetch("/api/books/data?report=meta");
-        if (res.ok) setCategories((await res.json()).categories ?? []);
+        if (res.ok) {
+          const data = await res.json();
+          setCategories(data.categories ?? []);
+          setVendorNames(data.vendors ?? []);
+        }
       } catch {
         // dropdown just stays short
       }
@@ -118,12 +125,50 @@ export default function BooksCell() {
             rows={rows}
             categories={categories}
             isDark={isDark}
+            selection={{
+              selected,
+              toggle: (id) =>
+                setSelected((prev) => {
+                  const next = new Set(prev);
+                  next.has(id) ? next.delete(id) : next.add(id);
+                  return next;
+                }),
+              setAll: (ids) => setSelected(new Set(ids)),
+              selectMany: (ids, on) =>
+                setSelected((prev) => {
+                  const next = new Set(prev);
+                  for (const id of ids) on ? next.add(id) : next.delete(id);
+                  return next;
+                }),
+            }}
             onRowChange={() => void load()}
             onError={setError}
             onReload={() => void load()}
           />
         )}
       </div>
+      <BatchBar
+        count={selected.size}
+        isDark={isDark}
+        busy={batchBusy}
+        vendorSuggestions={vendorNames}
+        categories={categories}
+        onApply={(patch) => {
+          setBatchBusy(true);
+          void authFetch("/api/books/data", {
+            method: "POST",
+            body: JSON.stringify({ action: "batch_update", transaction_ids: [...selected], ...patch }),
+          })
+            .then(async (res) => {
+              if (!res.ok) throw new Error("Couldn't apply that batch edit.");
+              setSelected(new Set());
+              await load();
+            })
+            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't apply that batch edit."))
+            .finally(() => setBatchBusy(false));
+        }}
+        onClear={() => setSelected(new Set())}
+      />
     </div>
   );
 }
