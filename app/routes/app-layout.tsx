@@ -58,7 +58,6 @@ const navItems = [
     children: [
       { to: "/books/transactions", label: "Transactions" },
       { to: "/books/review", label: "Review" },
-      { to: "/books/calendar", label: "Calendar" },
       { to: "/books/reports", label: "Reports" },
       { to: "/books/vendors", label: "Vendors" },
       { to: "/books/rules", label: "Rules" },
@@ -67,6 +66,18 @@ const navItems = [
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+      </svg>
+    ),
+  },
+  {
+    to: "/books/calendar",
+    label: "In Progress",
+    children: [
+      { to: "/books/calendar", label: "Calendar" },
+    ],
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
   },
@@ -184,6 +195,19 @@ export default function AppLayout() {
     ? [...navItems, { to: "/users", label: "Users", icon: usersIcon, badge: pending }]
     : navItems;
 
+  // Bird-style drill-in nav: a group opens into its own sub-view. `drill`
+  // holds the open group's path; "__root__" forces the top level; null follows
+  // the current route (so landing on a group's page opens that group).
+  const activeGroupTo =
+    (items as any[]).find((i) => i.children?.some((c: any) => location.pathname.startsWith(c.to)))?.to ?? null;
+  const [drill, setDrill] = useState<string | null>(null);
+  useEffect(() => {
+    setDrill(activeGroupTo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+  const openGroup =
+    drill && drill !== "__root__" ? ((items as any[]).find((i) => i.to === drill && i.children) ?? null) : null;
+
   function go(to: string) {
     setUserMenuOpen(false);
     setDrawerOpen(false);
@@ -228,14 +252,69 @@ export default function AppLayout() {
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
-          {items.map((item) => {
-            const children = ("children" in item ? (item as any).children : null) as
-              | Array<{ to: string; label: string }>
-              | null;
-            const groupActive = !!children && children.some((c) => location.pathname.startsWith(c.to));
-            return (
-              <div key={item.to} className="flex flex-col gap-0.5">
+          {showLabels && openGroup ? (
+            /* Drilled-in group: a back header, then its pages as a flat list. */
+            <>
+              <button
+                onClick={() => setDrill("__root__")}
+                className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
+                  isDark ? "text-gray-300 hover:text-white hover:bg-white/5" : "text-gray-700 hover:text-black hover:bg-black/5"
+                }`}
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                <span className="truncate">{openGroup.label}</span>
+              </button>
+              <div className={`h-px mx-2 my-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
+              {openGroup.children.map((c: { to: string; label: string }) => (
                 <NavLink
+                  key={c.to}
+                  to={c.to}
+                  onClick={() => setDrawerOpen(false)}
+                  className={({ isActive }) =>
+                    `rounded-lg px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? isDark ? "bg-white/10 text-white font-medium" : "bg-black/5 text-black font-medium"
+                        : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
+                    }`
+                  }
+                >
+                  {c.label}
+                </NavLink>
+              ))}
+            </>
+          ) : (
+            /* Top level: leaf items link; grouped items drill in with a chevron. */
+            items.map((item) => {
+              const children = ("children" in item ? (item as any).children : null) as
+                | Array<{ to: string; label: string }>
+                | null;
+              const groupActive = !!children && children.some((c) => location.pathname.startsWith(c.to));
+
+              if (showLabels && children) {
+                return (
+                  <button
+                    key={item.to}
+                    onClick={() => setDrill(item.to)}
+                    className={`relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 cursor-pointer ${
+                      groupActive
+                        ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
+                        : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
+                    }`}
+                  >
+                    <span className="inline-flex shrink-0">{item.icon}</span>
+                    <span className="ml-2 flex-1 truncate text-left">{item.label}</span>
+                    <svg className="w-4 h-4 shrink-0 opacity-50" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
+                  </button>
+                );
+              }
+
+              return (
+                <NavLink
+                  key={item.to}
                   to={item.to}
                   end={item.to === "/home"}
                   onClick={() => setDrawerOpen(false)}
@@ -246,18 +325,13 @@ export default function AppLayout() {
                       showLabels ? "" : "lg:justify-center lg:px-0"
                     } ${
                       isActive || groupActive
-                        ? isDark
-                          ? "bg-white/10 text-white"
-                          : "bg-black/5 text-black"
-                        : isDark
-                          ? "text-gray-400 hover:text-white hover:bg-white/5"
-                          : "text-gray-500 hover:text-black hover:bg-black/5"
+                        ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
+                        : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
                     }`
                   }
                 >
                   <span className="relative inline-flex shrink-0">
                     {item.icon}
-                    {/* The badge survives collapse — it is often the whole point */}
                     {"badge" in item && (item as any).badge > 0 && !showLabels && (
                       <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
                         {(item as any).badge}
@@ -271,34 +345,9 @@ export default function AppLayout() {
                     </span>
                   )}
                 </NavLink>
-                {/* Subpages drop down while the group is where you are */}
-                {children && groupActive && (
-                  <div className={`flex flex-col gap-0.5 ${showLabels ? "" : "lg:hidden"}`}>
-                    {children.map((c) => (
-                      <NavLink
-                        key={c.to}
-                        to={c.to}
-                        onClick={() => setDrawerOpen(false)}
-                        className={({ isActive }) =>
-                          `rounded-lg pl-[38px] pr-3 py-1.5 text-sm transition-colors ${
-                            isActive
-                              ? isDark
-                                ? "text-white bg-white/5"
-                                : "text-black bg-black/5"
-                              : isDark
-                                ? "text-gray-500 hover:text-white hover:bg-white/5"
-                                : "text-gray-500 hover:text-black hover:bg-black/5"
-                          }`
-                        }
-                      >
-                        {c.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </nav>
 
         {/* Sunrise / sunset — a visible theme switch that sits above the user. */}
