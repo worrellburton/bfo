@@ -712,19 +712,37 @@ html.light {
 .overflow-x-auto::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 3px; }
 .overflow-x-auto::-webkit-scrollbar-track { background: transparent; }
 
+/* Frozen first column lifts with a soft edge once a table scrolls sideways. */
+.books-col-shadow th.left-0, .books-col-shadow td.left-0 {
+  box-shadow: 10px 0 12px -10px rgba(0, 0, 0, 0.22);
+  clip-path: inset(0 -14px 0 0);
+}
+.books-col-shadow-dark th.left-0, .books-col-shadow-dark td.left-0 {
+  box-shadow: 10px 0 12px -10px rgba(0, 0, 0, 0.7);
+  clip-path: inset(0 -14px 0 0);
+}
+
 /* Keyboard focus is visible without polluting pointer clicks. */
-button:focus-visible, a:focus-visible, [role="option"]:focus-visible {
+button:focus-visible, a:focus-visible, select:focus-visible,
+[role="option"]:focus-visible, tr[tabindex]:focus-visible {
   outline: 2px solid rgba(16, 185, 129, 0.6);
   outline-offset: 2px;
   border-radius: 6px;
+}
+tr[tabindex]:focus-visible {
+  outline-offset: -2px;
 }
 
 /* Print: the statement alone, ink-friendly. */
 @media print {
   aside, nav, .print-hide, button { display: none !important; }
+  /* Drillable amounts are buttons — keep the numbers on paper. */
+  table button { display: inline !important; }
   html, body { background: #fff !important; font-size: 10px; }
   main { padding: 0 !important; }
   .rounded-2xl, .rounded-xl { box-shadow: none !important; border-radius: 0 !important; }
+  /* Wide statements print in full instead of clipping at the scroll edge. */
+  .overflow-x-auto { overflow: visible !important; }
   .shimmer::after { animation: none; }
   * { color: #111 !important; background: #fff !important; }
 }

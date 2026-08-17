@@ -72,6 +72,9 @@ export default function BooksReports() {
   const [tax1099, setTax1099] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // The frozen label column casts a soft edge once a table scrolls sideways.
+  const [pnlXScrolled, setPnlXScrolled] = useState(false);
+  const [flowXScrolled, setFlowXScrolled] = useState(false);
   // Collapsed P&L sections still show their total row.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleSection = (k: string) =>
@@ -190,8 +193,10 @@ export default function BooksReports() {
   const allCollapsed = sectionKeys.every((k) => collapsed.has(k));
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(sectionKeys));
 
+  const colShadow = isDark ? "books-col-shadow-dark" : "books-col-shadow";
+
   const num = "px-3 py-2 text-right whitespace-nowrap tabular-nums";
-  const sectionHead = `px-3 py-2 text-[11px] font-semibold uppercase tracking-wider ${subtle}`;
+  const sectionHead = `px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider ${subtle}`;
 
   /** Walk into the transactions behind one cell. */
   function drill(section: string, rowLabel: string | null, monthIndex: number | null) {
@@ -201,7 +206,7 @@ export default function BooksReports() {
     navigate(`/books/reports/cell?${params}`);
   }
 
-  const cellBtn = `w-full text-right cursor-pointer rounded px-1 -mx-1 transition-colors ${
+  const cellBtn = `w-full text-right cursor-pointer rounded px-1 -mx-1 transition-colors hover:underline decoration-dotted decoration-1 underline-offset-[3px] ${
     isDark ? "hover:bg-white/10" : "hover:bg-black/5"
   }`;
 
@@ -239,18 +244,33 @@ export default function BooksReports() {
           return (
             <td key={i} className={`${num} ${colBg} ${tone}`}>
               {v === 0 ? (
-                money(v)
+                // A month that hasn't happened yet stays blank, not dashed.
+                thisYear && i > curMonth ? "" : money(v)
               ) : (
-                <button className={cellBtn} onClick={() => drill(section, drillLabel, i)}>{money(v)}</button>
+                <button
+                  className={cellBtn}
+                  title="View underlying transactions"
+                  aria-label={`${rowLabel}, ${MONTHS[i]}: view transactions`}
+                  onClick={() => drill(section, drillLabel, i)}
+                >
+                  {money(v)}
+                </button>
               )}
             </td>
           );
         })}
-        <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${opts?.signColor ? signTone(total) : opts?.color ?? (total < 0 ? "text-rose-400" : "")}`}>
+        <td className={`${num} font-semibold border-l ${border} ${colHi} ${opts?.signColor ? signTone(total) : opts?.color ?? (total < 0 ? "text-rose-400" : "")}`}>
           {total === 0 ? (
             money(total)
           ) : (
-            <button className={cellBtn} onClick={() => drill(section, drillLabel, null)}>{money(total)}</button>
+            <button
+              className={cellBtn}
+              title="View underlying transactions"
+              aria-label={`${rowLabel}, full year: view transactions`}
+              onClick={() => drill(section, drillLabel, null)}
+            >
+              {money(total)}
+            </button>
           )}
         </td>
       </tr>
@@ -271,6 +291,14 @@ export default function BooksReports() {
       <tr
         key={`head-${id}`}
         onClick={() => toggleSection(id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleSection(id);
+          }
+        }}
+        tabIndex={0}
+        aria-expanded={!isCollapsed}
         className={`border-t ${border} cursor-pointer select-none ${bandBg} ${isDark ? "hover:bg-white/[0.05]" : "hover:bg-black/[0.04]"}`}
       >
         <td colSpan={showInline ? 1 : 14} className={`${sectionHead} sticky left-0 border-r ${rowBorder} ${bandBg} whitespace-nowrap`}>
@@ -294,11 +322,11 @@ export default function BooksReports() {
               const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
               return (
                 <td key={i} className={`${num} font-semibold ${colBg} ${v === 0 ? faint : totals!.tone ?? (v < 0 ? "text-rose-400" : "")}`}>
-                  {money(v)}
+                  {v === 0 && thisYear && i > curMonth ? "" : money(v)}
                 </td>
               );
             })}
-            <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${totals!.tone ?? (totals!.total < 0 ? "text-rose-400" : "")}`}>
+            <td className={`${num} font-semibold border-l ${border} ${colHi} ${totals!.tone ?? (totals!.total < 0 ? "text-rose-400" : "")}`}>
               {money(totals!.total)}
             </td>
           </>
@@ -340,12 +368,12 @@ export default function BooksReports() {
             <button
               onClick={() => setPickerOpen((v) => !v)}
               aria-expanded={pickerOpen}
-              className={`pl-4 pr-3 py-2 rounded-full text-sm border cursor-pointer flex items-center gap-2 ${
+              className={`pl-4 pr-3 py-2 rounded-full text-sm border cursor-pointer flex items-center gap-2 max-w-[280px] ${
                 isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
               }`}
             >
-              {pickerLabel}
-              <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <span className="truncate">{pickerLabel}</span>
+              <svg className="w-3.5 h-3.5 opacity-60 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
               </svg>
             </button>
@@ -444,7 +472,7 @@ export default function BooksReports() {
               <select
                 value={year}
                 onChange={(e) => setYear(e.target.value)}
-                className={`appearance-none pl-4 pr-8 py-2 rounded-full text-sm border cursor-pointer ${
+                className={`appearance-none pl-4 pr-8 py-2 rounded-full text-sm tabular-nums border cursor-pointer ${
                   isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
                 }`}
               >
@@ -461,7 +489,7 @@ export default function BooksReports() {
       </div>
 
       {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
+        <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>
           {error}
         </div>
       )}
@@ -512,7 +540,7 @@ export default function BooksReports() {
               <div className={`px-4 py-2.5 border-b ${border} text-sm font-semibold`}>Trial balance</div>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className={`${sectionHead} border-b ${border}`}>
+                  <tr className={`text-[11px] uppercase tracking-wider ${subtle} border-b ${border}`}>
                     <th className="px-4 py-2 text-left font-medium">Account</th>
                     <th className="px-4 py-2 text-right font-medium">Debit</th>
                     <th className="px-4 py-2 text-right font-medium">Credit</th>
@@ -636,15 +664,23 @@ export default function BooksReports() {
               </tbody>
             </table>
           </div>
-          <p className={`mt-3 text-[11px] ${subtle}`}>
-            {sheet.as_of ? `As of ${new Date(sheet.as_of).toLocaleString()}` : ""}
+          <p className={`mt-3 text-[11px] uppercase tracking-wider ${subtle}`}>
+            {sheet.as_of
+              ? `As of ${new Date(sheet.as_of).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}`
+              : ""}
           </p>
           </>
         )
       ) : loading ? (
         <div className="rise-in">
-          <div className="flex flex-wrap gap-x-12 gap-y-4 mb-7">
-            {[0, 1, 2, 3].map((i) => (
+          <div className="flex flex-wrap gap-x-16 gap-y-4 mb-7">
+            {[0, 1, 2, 3, 4].map((i) => (
               <div key={i}>
                 <div className="shimmer h-3 w-20 mb-2" />
                 <div className="shimmer h-7 w-28" />
@@ -652,19 +688,25 @@ export default function BooksReports() {
             ))}
           </div>
           <div className={`rounded-2xl border p-4 space-y-2.5 ${card}`}>
+            <div className="shimmer h-8 mb-3" />
             {Array.from({ length: 10 }, (_, i) => (
               <div key={i} className="shimmer h-4" style={{ width: `${95 - (i % 4) * 8}%` }} />
             ))}
           </div>
         </div>
       ) : !pnl ? null : pnl.transaction_count === 0 ? (
-        <p className={`text-sm ${subtle}`}>
-          Nothing booked for {pnl.year} in this selection — sync transactions or widen the entities.
-        </p>
+        <div
+          className={`rounded-2xl border border-dashed px-6 py-14 text-center rise-in ${
+            isDark ? "border-white/15" : "border-gray-300"
+          }`}
+        >
+          <p className="text-sm font-medium mb-1">Nothing booked for {pnl.year}</p>
+          <p className={`text-sm ${subtle}`}>Sync transactions or widen the entity selection.</p>
+        </div>
       ) : (
         <>
-        {/* The year in four quiet figures. */}
-        <div className={`flex flex-wrap gap-x-12 gap-y-4 mb-7 rise-in`}>
+        {/* The year in five quiet figures. */}
+        <div className={`flex flex-wrap gap-y-4 mb-7 rise-in`}>
           {(() => {
             const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
             const rev = sum(pnl.revenue_monthly);
@@ -678,14 +720,17 @@ export default function BooksReports() {
               ["Net income", money(pnl.net_total), pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400"],
             ];
             return kpis.map(([label, display, tone]) => (
-              <div key={label}>
+              <div key={label} className={`px-8 first:pl-0 last:pr-0 border-l first:border-l-0 ${border}`}>
                 <p className={`text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>{label}</p>
                 <p className={`text-2xl font-semibold tabular-nums tracking-tight ${tone}`}>{display}</p>
               </div>
             ));
           })()}
         </div>
-        <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
+        <div
+          className={`rounded-2xl border overflow-x-auto rise-in ${card} ${pnlXScrolled ? colShadow : ""}`}
+          onScroll={(e) => setPnlXScrolled(e.currentTarget.scrollLeft > 2)}
+        >
           <table className="text-sm min-w-[1100px] w-full">
             <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
               <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
@@ -707,14 +752,18 @@ export default function BooksReports() {
                 {MONTHS.map((m, i) => (
                   <th
                     key={m}
-                    className={`px-3 py-3 text-right font-medium min-w-[68px] ${
-                      i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : ""
+                    className={`px-3 py-3 text-right min-w-[68px] ${
+                      i === curMonth
+                        ? `${colHi} font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`
+                        : thisYear && i > curMonth
+                          ? `${futureCol} font-medium`
+                          : "font-medium"
                     }`}
                   >
                     {m}
                   </th>
                 ))}
-                <th className={`px-3 py-3 text-right font-medium min-w-[80px] border-l ${rowBorder} ${colHi}`}>Total</th>
+                <th className={`px-3 py-3 text-right font-medium min-w-[80px] border-l ${border} ${colHi}`}>Total</th>
               </tr>
             </thead>
             <tbody>
@@ -790,17 +839,19 @@ export default function BooksReports() {
                 const marginTotal = revTotal ? (opTotal / revTotal) * 100 : 0;
                 const fmt = (p: number) => (p === 0 ? "—" : `${Math.round(p)}%`);
                 return (
-                  <tr className={`border-t ${rowBorder} ${bandBg}`}>
+                  <tr className={`border-t ${border} ${bandBg}`}>
                     <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r text-xs uppercase tracking-wider ${rowBorder} ${stickyBg} ${subtle}`}>
                       Operating margin
                     </td>
                     {marginMonthly.map((p, i) => {
                       const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
                       return (
-                        <td key={i} className={`${num} ${colBg} ${p < 0 ? "text-rose-400" : subtle}`}>{fmt(p)}</td>
+                        <td key={i} className={`${num} text-xs ${colBg} ${p === 0 ? faint : p < 0 ? "text-rose-400" : subtle}`}>
+                          {p === 0 && thisYear && i > curMonth ? "" : fmt(p)}
+                        </td>
                       );
                     })}
-                    <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${marginTotal < 0 ? "text-rose-400" : subtle}`}>
+                    <td className={`${num} text-xs font-semibold border-l ${border} ${colHi} ${marginTotal === 0 ? faint : marginTotal < 0 ? "text-rose-400" : subtle}`}>
                       {fmt(marginTotal)}
                     </td>
                   </tr>
@@ -816,17 +867,31 @@ export default function BooksReports() {
           pnl.intercompany.total !== 0 ||
           pnl.intercompany.in.some((v) => v !== 0) ||
           pnl.intercompany.out.some((v) => v !== 0)) && (
-          <div className={`rounded-2xl border overflow-x-auto rise-in mt-6 ${card}`}>
+          <div
+            className={`rounded-2xl border overflow-x-auto rise-in mt-6 ${card} ${flowXScrolled ? colShadow : ""}`}
+            onScroll={(e) => setFlowXScrolled(e.currentTarget.scrollLeft > 2)}
+          >
             <table className="text-sm min-w-[1100px] w-full">
               <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
                 <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
                   <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 border-r ${rowBorder} ${stickyBg}`}>
                     Transfers & flow
                   </th>
-                  {MONTHS.map((m) => (
-                    <th key={m} className="px-3 py-3 text-right font-medium">{m}</th>
+                  {MONTHS.map((m, i) => (
+                    <th
+                      key={m}
+                      className={`px-3 py-3 text-right min-w-[68px] ${
+                        i === curMonth
+                          ? `${colHi} font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`
+                          : thisYear && i > curMonth
+                            ? `${futureCol} font-medium`
+                            : "font-medium"
+                      }`}
+                    >
+                      {m}
+                    </th>
                   ))}
-                  <th className={`px-3 py-3 text-right font-medium border-l ${rowBorder}`}>Total</th>
+                  <th className={`px-3 py-3 text-right font-medium min-w-[80px] border-l ${border} ${colHi}`}>Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -869,7 +934,7 @@ export default function BooksReports() {
             </table>
           </div>
         )}
-        <p className={`mt-3 text-[11px] ${subtle}`}>
+        <p className={`mt-3 text-[11px] uppercase tracking-wider ${subtle}`}>
           Cash basis{pnl.eliminated_count > 0 && ` · ${pnl.eliminated_count} eliminated`}
         </p>
         </>
