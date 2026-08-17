@@ -59,6 +59,7 @@ function titleCase(s: string): string {
     .toLowerCase()
     .replace(/\b[a-z]/g, (c) => c.toUpperCase())
     .replace(/\bLlc\b/g, "LLC")
+    .replace(/\bPllc\b/g, "PLLC")
     .replace(/\bPc\b/g, "PC");
 }
 
@@ -83,12 +84,30 @@ function genericParse(description: string): string | null {
 }
 
 /**
- * The best vendor we can derive for a transaction. Curated patterns win;
- * a real Plaid merchant is kept; a family-surname merchant is replaced by
- * whatever the descriptor reveals.
+ * An explicit "Merchant name: X" embedded in the descriptor — the feed
+ * telling us the counterparty outright. Family/trust names are ignored
+ * (they're the account holder, not a vendor).
+ */
+function embeddedMerchant(desc: string): string | null {
+  const m = /merchant name:\s*([^;]+)/i.exec(desc);
+  if (!m) return null;
+  const v = m[1].trim().replace(/\s+/g, " ");
+  if (!v || FAMILY_NAME.test(v) || /burton family/i.test(v)) return null;
+  // One of the family's own bank accounts is a transfer leg, not a vendor.
+  if (/••|\bx{4,}\d|^(mercury|wells fargo)\b.*\b(checking|savings|credit)\b/i.test(v)) return null;
+  // Preserve real casing; only tame ALL-CAPS feeds.
+  return v === v.toUpperCase() ? titleCase(v) : v;
+}
+
+/**
+ * The best vendor we can derive for a transaction. An explicit embedded
+ * merchant wins; curated patterns next; a real Plaid merchant is kept; a
+ * family-surname merchant is replaced by whatever the descriptor reveals.
  */
 export function betterVendor(description: string | null, plaidMerchant: string | null): string | null {
   const desc = (description ?? "").trim();
+  const embedded = embeddedMerchant(desc);
+  if (embedded) return embedded;
   for (const [re, vendor] of KNOWN) if (re.test(desc)) return vendor;
   const merchant = (plaidMerchant ?? "").trim();
   if (merchant && !FAMILY_NAME.test(merchant)) return merchant;

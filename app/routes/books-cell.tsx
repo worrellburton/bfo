@@ -87,7 +87,15 @@ export default function BooksCell() {
 
   return (
     <div className="w-full">
-      <Link to="/books/reports" className={`text-sm ${subtle} hover:underline`}>← Profit &amp; loss</Link>
+      <Link
+        to={`/books/reports?${new URLSearchParams({
+          ...(entity !== "all" ? { entity } : {}),
+          ...(year !== String(new Date().getFullYear()) ? { year } : {}),
+        })}`}
+        className={`text-sm ${subtle} hover:underline`}
+      >
+        ← Profit &amp; loss
+      </Link>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 mt-2 mb-6">
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>{title}</h1>

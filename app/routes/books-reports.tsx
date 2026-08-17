@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 
@@ -59,14 +59,25 @@ export default function BooksReports() {
   const isDark = theme === "dark";
   const navigate = useNavigate();
 
+  // The report's state lives in the URL, so a drill-down's back link (or a
+  // refresh, or a shared link) restores exactly the view you were on.
+  const [urlParams, setUrlParams] = useSearchParams();
   const [entities, setEntities] = useState<Entity[]>([]);
   // Empty selection = all entities.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    const e = urlParams.get("entity");
+    return e && e !== "all" ? new Set(e.split(",").filter(Boolean)) : new Set();
+  });
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [year, setYear] = useState(() =>
+    /^\d{4}$/.test(urlParams.get("year") ?? "") ? urlParams.get("year")! : String(new Date().getFullYear())
+  );
   const [pnl, setPnl] = useState<Pnl | null>(null);
-  const [view, setView] = useState<"pnl" | "balance" | "statements">("pnl");
+  const [view, setView] = useState<"pnl" | "balance" | "statements">(() => {
+    const v = urlParams.get("view");
+    return v === "balance" || v === "statements" ? v : "pnl";
+  });
   const [sheet, setSheet] = useState<BalanceSheet | null>(null);
   const [statements, setStatements] = useState<any | null>(null);
   const [tax1099, setTax1099] = useState<any | null>(null);
@@ -85,6 +96,16 @@ export default function BooksReports() {
     });
 
   const entityParam = selected.size === 0 ? "all" : [...selected].join(",");
+
+  // Mirror the current view into the URL (replace — no history spam).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (entityParam !== "all") next.set("entity", entityParam);
+    if (year !== String(new Date().getFullYear())) next.set("year", year);
+    if (view !== "pnl") next.set("view", view);
+    if (next.toString() !== urlParams.toString()) setUrlParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityParam, year, view]);
 
   // Pull the year's transactions and hand the browser a CSV for the CPA.
   const [exporting, setExporting] = useState(false);
