@@ -210,8 +210,11 @@ export default function BooksReports() {
     monthly: number[],
     total: number,
     section: string,
-    opts?: { bold?: boolean; headline?: boolean; color?: string; indent?: boolean; drillLabel?: string | null }
+    opts?: { bold?: boolean; headline?: boolean; color?: string; signColor?: boolean; indent?: boolean; drillLabel?: string | null }
   ) {
+    // Per-cell colour by that cell's own sign (green up, red down) — so a
+    // negative year never paints a profitable month red.
+    const signTone = (v: number) => (v === 0 ? faint : v < 0 ? "text-rose-400" : "text-emerald-500");
     const drillLabel = opts?.drillLabel === undefined ? rowLabel : opts.drillLabel;
     const topBorder = opts?.headline ? `border-t-2 ${border}` : `border-t ${rowBorder}`;
     const emphasis = opts?.headline ? `${bandBg} text-[15px]` : opts?.bold ? bandBg : `group ${hoverRow}`;
@@ -232,7 +235,7 @@ export default function BooksReports() {
         </td>
         {monthly.map((v, i) => {
           const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
-          const tone = opts?.color ?? (v === 0 ? faint : v < 0 ? "text-rose-400" : "");
+          const tone = opts?.signColor ? signTone(v) : opts?.color ?? (v === 0 ? faint : v < 0 ? "text-rose-400" : "");
           return (
             <td key={i} className={`${num} ${colBg} ${tone}`}>
               {v === 0 ? (
@@ -243,7 +246,7 @@ export default function BooksReports() {
             </td>
           );
         })}
-        <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${opts?.color ?? (total < 0 ? "text-rose-400" : "")}`}>
+        <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${opts?.signColor ? signTone(total) : opts?.color ?? (total < 0 ? "text-rose-400" : "")}`}>
           {total === 0 ? (
             money(total)
           ) : (
@@ -642,17 +645,20 @@ export default function BooksReports() {
         <div className={`flex flex-wrap gap-x-12 gap-y-4 mb-7 rise-in`}>
           {(() => {
             const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
+            const rev = sum(pnl.revenue_monthly);
             const opInc = sum(pnl.operating_income_monthly);
-            const kpis: Array<[string, number, string]> = [
-              ["Revenue", sum(pnl.revenue_monthly), ""],
-              ["Operating expenses", sum(pnl.operating_monthly), ""],
-              ["Operating income", opInc, opInc < 0 ? "text-rose-400" : ""],
-              ["Net income", pnl.net_total, pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400"],
+            const opMargin = rev !== 0 ? (opInc / rev) * 100 : 0;
+            const kpis: Array<[string, string, string]> = [
+              ["Revenue", money(rev), ""],
+              ["Operating expenses", money(sum(pnl.operating_monthly)), ""],
+              ["Operating income", money(opInc), opInc < 0 ? "text-rose-400" : ""],
+              ["Operating margin", `${opMargin.toFixed(1)}%`, opMargin < 0 ? "text-rose-400" : ""],
+              ["Net income", money(pnl.net_total), pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400"],
             ];
-            return kpis.map(([label, value, tone]) => (
+            return kpis.map(([label, display, tone]) => (
               <div key={label}>
                 <p className={`text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>{label}</p>
-                <p className={`text-2xl font-semibold tabular-nums tracking-tight ${tone}`}>{money(value)}</p>
+                <p className={`text-2xl font-semibold tabular-nums tracking-tight ${tone}`}>{display}</p>
               </div>
             ));
           })()}
@@ -715,6 +721,33 @@ export default function BooksReports() {
                 { bold: true, color: "text-gray-400", drillLabel: null }
               )}
 
+              {/* Operating margin = operating income ÷ revenue, per month. */}
+              {(() => {
+                const marginMonthly = pnl.operating_income_monthly.map((v, i) =>
+                  pnl.revenue_monthly[i] ? (v / pnl.revenue_monthly[i]) * 100 : 0
+                );
+                const revTotal = pnl.revenue_monthly.reduce((a, b) => a + b, 0);
+                const opTotal = pnl.operating_income_monthly.reduce((a, b) => a + b, 0);
+                const marginTotal = revTotal ? (opTotal / revTotal) * 100 : 0;
+                const fmt = (p: number) => (p === 0 ? "—" : `${Math.round(p)}%`);
+                return (
+                  <tr className={`border-t ${rowBorder} ${bandBg}`}>
+                    <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r text-xs uppercase tracking-wider ${rowBorder} ${stickyBg} ${subtle}`}>
+                      Operating margin
+                    </td>
+                    {marginMonthly.map((p, i) => {
+                      const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
+                      return (
+                        <td key={i} className={`${num} ${colBg} ${p < 0 ? "text-rose-400" : subtle}`}>{fmt(p)}</td>
+                      );
+                    })}
+                    <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${marginTotal < 0 ? "text-rose-400" : subtle}`}>
+                      {fmt(marginTotal)}
+                    </td>
+                  </tr>
+                );
+              })()}
+
               {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
                 <>
                   {sectionHeaderRow("other", "Other income / (expense)")}
@@ -729,7 +762,7 @@ export default function BooksReports() {
 
               {bodyRow("Net income", pnl.net_monthly, pnl.net_total, "net", {
                 headline: true,
-                color: pnl.net_total >= 0 ? "text-emerald-500" : "text-red-400",
+                signColor: true,
                 drillLabel: null,
               })}
 

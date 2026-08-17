@@ -56,12 +56,61 @@ const navItems = [
     to: "/books/transactions",
     label: "Books",
     children: [
-      { to: "/books/transactions", label: "Transactions" },
-      { to: "/books/review", label: "Review" },
-      { to: "/books/reports", label: "Reports" },
-      { to: "/books/vendors", label: "Vendors" },
-      { to: "/books/rules", label: "Rules" },
-      { to: "/books/loans", label: "Loans" },
+      {
+        to: "/books/transactions",
+        label: "Transactions",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-9L21 3m0 0l-4.5 4.5M21 3H7.5" />
+          </svg>
+        ),
+      },
+      {
+        to: "/books/review",
+        label: "Review",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+      },
+      {
+        to: "/books/reports",
+        label: "Reports",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
+        ),
+      },
+      {
+        to: "/books/vendors",
+        label: "Vendors",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
+          </svg>
+        ),
+      },
+      {
+        to: "/books/rules",
+        label: "Rules",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
+        ),
+      },
+      {
+        to: "/books/loans",
+        label: "Loans",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+          </svg>
+        ),
+      },
     ],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -73,7 +122,15 @@ const navItems = [
     to: "/books/calendar",
     label: "In Progress",
     children: [
-      { to: "/books/calendar", label: "Calendar" },
+      {
+        to: "/books/calendar",
+        label: "Calendar",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+          </svg>
+        ),
+      },
     ],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -267,20 +324,21 @@ export default function AppLayout() {
                 <span className="truncate">{openGroup.label}</span>
               </button>
               <div className={`h-px mx-2 my-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
-              {openGroup.children.map((c: { to: string; label: string }) => (
+              {openGroup.children.map((c: { to: string; label: string; icon?: React.ReactNode }) => (
                 <NavLink
                   key={c.to}
                   to={c.to}
                   onClick={() => setDrawerOpen(false)}
                   className={({ isActive }) =>
-                    `rounded-lg px-3 py-2 text-sm transition-colors ${
+                    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
                       isActive
                         ? isDark ? "bg-white/10 text-white font-medium" : "bg-black/5 text-black font-medium"
                         : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
                     }`
                   }
                 >
-                  {c.label}
+                  {c.icon && <span className="shrink-0 inline-flex">{c.icon}</span>}
+                  <span className="truncate">{c.label}</span>
                 </NavLink>
               ))}
             </>
