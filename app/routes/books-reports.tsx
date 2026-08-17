@@ -797,14 +797,6 @@ export default function BooksReports() {
                 </>
               )}
 
-              {bodyRow(
-                "Operating income",
-                pnl.operating_income_monthly,
-                pnl.operating_income_monthly.reduce((a, b) => a + b, 0),
-                "net",
-                { bold: true, color: "text-gray-400", drillLabel: null }
-              )}
-
               {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
                 <>
                   {sectionHeaderRow("other", "Other income / (expense)", undefined, {
