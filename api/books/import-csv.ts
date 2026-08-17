@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash } from "node:crypto";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { categorize } from "../../lib/books-rules.js";
+import { betterVendor } from "../../lib/vendor-parse.js";
 
 /**
  * Import bank-exported CSV rows into Books — the escape hatch for history a
@@ -105,8 +106,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           item_id: "csv_import",
           date: r.date,
           name: r.description || null,
-          // A vendor-rename rule names the payee, same as a synced row.
-          merchant_name: taught.vendor,
+          // A vendor-rename rule names the payee; otherwise the descriptor
+          // parser derives one, same as the nightly sync.
+          merchant_name: taught.vendor ?? betterVendor(r.description, null),
           amount,
           pending: false,
           currency: "USD",

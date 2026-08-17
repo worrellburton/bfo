@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { categorize, patchMatching } from "../../lib/books-rules.js";
+import { betterVendor } from "../../lib/vendor-parse.js";
 
 /**
  * Books runs on Plaid. Every night this pulls new/changed bank transactions
@@ -283,7 +284,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 item_id: item.item_id,
                 date: t.date,
                 name: t.name ?? null,
-                merchant_name: userVendor(userRules, t.name ?? null, t.merchant_name ?? null) ?? mercuryPayee(t.name) ?? t.merchant_name ?? null,
+                merchant_name:
+                  userVendor(userRules, t.name ?? null, t.merchant_name ?? null) ??
+                  mercuryPayee(t.name) ??
+                  betterVendor(t.name ?? null, t.merchant_name ?? null),
                 amount: t.amount,
                 pending: !!t.pending,
                 currency: t.iso_currency_code ?? null,
