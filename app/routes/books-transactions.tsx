@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 import { TxnTable, Menu, BatchBar, entityTag, entityTagClass, type Txn } from "../books-shared";
@@ -110,17 +110,27 @@ export default function BooksTransactions() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
 
+  // If the search text is an entity's initials (its tag), search by that
+  // entity instead of the description — so "BFT" finds that entity's rows.
+  const tagMatch = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (!t) return null;
+    return entities.find((e) => entityTag(e.name).toLowerCase() === t) ?? null;
+  }, [q, entities]);
+
   const query = useCallback(
     (offset: number) => {
       const params = new URLSearchParams({ report: "transactions", limit: String(PAGE), offset: String(offset) });
-      if (entity !== "all") params.set("entity", entity);
+      const effEntity = tagMatch ? tagMatch.id : entity;
+      if (effEntity !== "all") params.set("entity", effEntity);
       if (type !== "all") params.set("type", type);
       if (year !== "all") params.set("year", year);
-      if (q.trim()) params.set("q", q.trim());
+      // Only pass the text search when it isn't an entity-initials match.
+      if (!tagMatch && q.trim()) params.set("q", q.trim());
       if (!(sort.key === "date" && sort.dir === "desc")) params.set("sort", `${sort.key}.${sort.dir}`);
       return `/api/books/data?${params}`;
     },
-    [entity, type, year, q, sort]
+    [entity, type, year, q, sort, tagMatch]
   );
 
   // Click a column: same column flips direction, a new column starts descending.
@@ -422,13 +432,20 @@ export default function BooksTransactions() {
       )}
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search descriptions…"
-          className={searchField}
-        />
+        <div className="relative">
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search descriptions or initials…"
+            className={searchField}
+          />
+          {tagMatch && (
+            <span className={`absolute -bottom-4 left-3 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
+              Filtering by {tagMatch.name}
+            </span>
+          )}
+        </div>
         <Menu
           value={entity}
           isDark={isDark}
