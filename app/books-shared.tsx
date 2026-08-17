@@ -1125,7 +1125,9 @@ export function TxnTable({
         {rows.map((t, ri) => {
           const inflow = t.amount < 0;
           const eff = effType(t);
-          const vendor = t.merchant_name || t.name;
+          // Transfers and other own-money movements have no counterparty —
+          // their vendor cell stays blank rather than echoing the descriptor.
+          const vendor = t.merchant_name || (eff === "normal" ? t.name : null);
           const isOpen = open.has(t.transaction_id);
           // The date prints once per day; later rows in the day stay quiet.
           const newDay = ri === 0 || rows[ri - 1].date !== t.date;

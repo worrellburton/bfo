@@ -10,7 +10,9 @@
  *   3. Plaid's merchant_name, unless it's just a family name.
  */
 
-const KNOWN: Array<[RegExp, string]> = [
+// A null vendor means "this movement has no counterparty" — an internal
+// transfer is not a vendor, so those rows deliberately stay vendor-less.
+const KNOWN: Array<[RegExp, string | null]> = [
   [/truist mortg/i, "Truist Mortgage"],
   [/vanguard/i, "Vanguard"],
   [/capital one/i, "Capital One"],
@@ -20,10 +22,10 @@ const KNOWN: Array<[RegExp, string]> = [
   [/bmobnk|bmo bank|bmo harris/i, "BMO Bank"],
   [/az dept of rev/i, "AZ Dept of Revenue"],
   [/evolve bank/i, "Evolve Bank"],
-  [/distributing to trust/i, "Trust Distribution"],
-  [/online transfer (to|from)/i, "Internal Transfer"],
-  [/choice financial|partnering with choice/i, "Internal Transfer"],
-  [/incoming wire|^wt fed#|^wt seq#/i, "Wire Transfer"],
+  [/distributing to trust/i, null],
+  [/online transfer (to|from)/i, null],
+  [/choice financial|partnering with choice/i, null],
+  [/incoming wire|^wt fed#|^wt seq#/i, null],
   [/citi card|citi autopay/i, "Citi Card"],
   [/wf credit card/i, "Wells Fargo Card"],
   [/internal revenue|\birs\b/i, "IRS"],
@@ -31,8 +33,8 @@ const KNOWN: Array<[RegExp, string]> = [
   [/\bkfhp\b|kaiser/i, "Kaiser Permanente"],
   [/tep corporate|tucson electric/i, "Tucson Electric Power"],
   [/social security|ssa treas/i, "Social Security Administration"],
-  [/mobile deposit/i, "Mobile Deposit"],
-  [/atm withdrawal|withdrawal authorized/i, "ATM Withdrawal"],
+  [/mobile deposit/i, null],
+  [/atm withdrawal|withdrawal authorized/i, null],
 ];
 
 /** Just the family's names — a merchant label that adds no information. */
