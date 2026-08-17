@@ -227,14 +227,27 @@ export default function BooksReports() {
       <tr key={`${section}-${rowLabel}`} className={`${topBorder} ${opts?.bold || opts?.headline ? "font-semibold" : ""} ${emphasis}`}>
         <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r transition-colors ${rowBorder} ${stickyBg} ${isDark ? "group-hover:bg-[#101010]" : "group-hover:bg-gray-50"} ${opts?.indent ? "pl-6" : ""}`}>
           {(() => {
-            // "4000 Rental Income" → muted code, emphasized name.
+            // "4000 Rental Income" → muted code, emphasized name. A plain
+            // account row's name walks to its full-year transaction list.
             const m = /^(\d{4})\s+(.+)$/.exec(rowLabel);
-            if (!m || opts?.bold || opts?.headline) return rowLabel;
-            return (
+            const plain = !opts?.bold && !opts?.headline;
+            const inner = m && plain ? (
               <>
                 <span className={`tabular-nums text-[11px] mr-1.5 ${faint}`}>{m[1]}</span>
                 {m[2]}
               </>
+            ) : (
+              rowLabel
+            );
+            if (!plain || !drillLabel) return inner;
+            return (
+              <button
+                className="cursor-pointer hover:underline decoration-dotted underline-offset-2 text-left"
+                title={`Open ${rowLabel}`}
+                onClick={() => drill(section, drillLabel, null)}
+              >
+                {inner}
+              </button>
             );
           })()}
         </td>
