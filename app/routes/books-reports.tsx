@@ -257,16 +257,23 @@ export default function BooksReports() {
     );
   }
 
-  /** Clickable section band — folds its line items, keeps the total row. */
-  function sectionHeaderRow(id: string, label: string, extra?: string) {
+  /** Clickable section band — folds its line items. When folded and given
+   *  totals, the band itself carries the numbers (no separate total row). */
+  function sectionHeaderRow(
+    id: string,
+    label: string,
+    extra?: string,
+    totals?: { monthly: number[]; total: number; tone?: string }
+  ) {
     const isCollapsed = collapsed.has(id);
+    const showInline = isCollapsed && !!totals;
     return (
       <tr
         key={`head-${id}`}
         onClick={() => toggleSection(id)}
         className={`border-t ${border} cursor-pointer select-none ${bandBg} ${isDark ? "hover:bg-white/[0.05]" : "hover:bg-black/[0.04]"}`}
       >
-        <td colSpan={14} className={`${sectionHead} sticky left-0 border-r ${rowBorder} ${bandBg}`}>
+        <td colSpan={showInline ? 1 : 14} className={`${sectionHead} sticky left-0 border-r ${rowBorder} ${bandBg} whitespace-nowrap`}>
           <span className="inline-flex items-center gap-1.5">
             <svg
               className={`w-3 h-3 transition-transform duration-150 ${isCollapsed ? "-rotate-90" : ""}`}
@@ -281,6 +288,21 @@ export default function BooksReports() {
             {extra && <span className="normal-case font-normal tracking-normal opacity-60">{extra}</span>}
           </span>
         </td>
+        {showInline && (
+          <>
+            {totals!.monthly.map((v, i) => {
+              const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
+              return (
+                <td key={i} className={`${num} font-semibold ${colBg} ${v === 0 ? faint : totals!.tone ?? (v < 0 ? "text-rose-400" : "")}`}>
+                  {money(v)}
+                </td>
+              );
+            })}
+            <td className={`${num} font-semibold border-l ${rowBorder} ${colHi} ${totals!.tone ?? (totals!.total < 0 ? "text-rose-400" : "")}`}>
+              {money(totals!.total)}
+            </td>
+          </>
+        )}
       </tr>
     );
   }
@@ -696,22 +718,35 @@ export default function BooksReports() {
               </tr>
             </thead>
             <tbody>
-              {sectionHeaderRow("revenue", "Revenue")}
-              {!collapsed.has("revenue") &&
-                pnl.revenue.map((r) => bodyRow(r.label, r.monthly, r.total, "revenue", { indent: true }))}
-              {bodyRow("Total revenue", pnl.revenue_monthly, pnl.revenue_monthly.reduce((a, b) => a + b, 0), "revenue", {
-                bold: true,
-                color: "text-emerald-500",
-                drillLabel: null,
+              {sectionHeaderRow("revenue", "Revenue", undefined, {
+                monthly: pnl.revenue_monthly,
+                total: pnl.revenue_monthly.reduce((a, b) => a + b, 0),
+                tone: "text-emerald-500",
               })}
+              {!collapsed.has("revenue") && (
+                <>
+                  {pnl.revenue.map((r) => bodyRow(r.label, r.monthly, r.total, "revenue", { indent: true }))}
+                  {bodyRow("Total revenue", pnl.revenue_monthly, pnl.revenue_monthly.reduce((a, b) => a + b, 0), "revenue", {
+                    bold: true,
+                    color: "text-emerald-500",
+                    drillLabel: null,
+                  })}
+                </>
+              )}
 
-              {sectionHeaderRow("operating", "Operating expenses")}
-              {!collapsed.has("operating") &&
-                pnl.operating.map((r) => bodyRow(r.label, r.monthly, r.total, "operating", { indent: true }))}
-              {bodyRow("Total operating expenses", pnl.operating_monthly, pnl.operating_monthly.reduce((a, b) => a + b, 0), "operating", {
-                bold: true,
-                drillLabel: null,
+              {sectionHeaderRow("operating", "Operating expenses", undefined, {
+                monthly: pnl.operating_monthly,
+                total: pnl.operating_monthly.reduce((a, b) => a + b, 0),
               })}
+              {!collapsed.has("operating") && (
+                <>
+                  {pnl.operating.map((r) => bodyRow(r.label, r.monthly, r.total, "operating", { indent: true }))}
+                  {bodyRow("Total operating expenses", pnl.operating_monthly, pnl.operating_monthly.reduce((a, b) => a + b, 0), "operating", {
+                    bold: true,
+                    drillLabel: null,
+                  })}
+                </>
+              )}
 
               {bodyRow(
                 "Operating income",
@@ -720,6 +755,30 @@ export default function BooksReports() {
                 "net",
                 { bold: true, color: "text-gray-400", drillLabel: null }
               )}
+
+              {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
+                <>
+                  {sectionHeaderRow("other", "Other income / (expense)", undefined, {
+                    monthly: pnl.other_monthly,
+                    total: pnl.other_monthly.reduce((a, b) => a + b, 0),
+                  })}
+                  {!collapsed.has("other") && (
+                    <>
+                      {pnl.other.map((r) => bodyRow(r.label, r.monthly, r.total, "other", { indent: true }))}
+                      {bodyRow("Total other", pnl.other_monthly, pnl.other_monthly.reduce((a, b) => a + b, 0), "other", {
+                        bold: true,
+                        drillLabel: null,
+                      })}
+                    </>
+                  )}
+                </>
+              )}
+
+              {bodyRow("Net income", pnl.net_monthly, pnl.net_total, "net", {
+                headline: true,
+                signColor: true,
+                drillLabel: null,
+              })}
 
               {/* Operating margin = operating income ÷ revenue, per month. */}
               {(() => {
@@ -747,54 +806,69 @@ export default function BooksReports() {
                   </tr>
                 );
               })()}
-
-              {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
-                <>
-                  {sectionHeaderRow("other", "Other income / (expense)")}
-                  {!collapsed.has("other") &&
-                    pnl.other.map((r) => bodyRow(r.label, r.monthly, r.total, "other", { indent: true }))}
-                  {bodyRow("Total other", pnl.other_monthly, pnl.other_monthly.reduce((a, b) => a + b, 0), "other", {
-                    bold: true,
-                    drillLabel: null,
-                  })}
-                </>
-              )}
-
-              {bodyRow("Net income", pnl.net_monthly, pnl.net_total, "net", {
-                headline: true,
-                signColor: true,
-                drillLabel: null,
-              })}
-
-              {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0) && (
-                <>
-                  {sectionHeaderRow("transfers", "Transfers")}
-                  {!collapsed.has("transfers") &&
-                    pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
-                  {bodyRow("Net transfers", pnl.transfers.net, pnl.transfers.total, "transfers", {
-                    bold: true,
-                    drillLabel: null,
-                  })}
-                </>
-              )}
-
-              {(pnl.intercompany.total !== 0 ||
-                pnl.intercompany.in.some((v) => v !== 0) ||
-                pnl.intercompany.out.some((v) => v !== 0)) && (
-                <>
-                  {sectionHeaderRow("intercompany", "Intercompany")}
-                  {!collapsed.has("intercompany") && (
-                    <>
-                      {bodyRow("In", pnl.intercompany.in, pnl.intercompany.in.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
-                      {bodyRow("Out", pnl.intercompany.out.map((v) => -v), -pnl.intercompany.out.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
-                    </>
-                  )}
-                  {bodyRow("Net", pnl.intercompany.net, pnl.intercompany.total, "intercompany", { bold: true, drillLabel: null })}
-                </>
-              )}
             </tbody>
           </table>
         </div>
+
+        {/* Transfers & intercompany live in their own table — cash movements,
+            not part of the income statement. */}
+        {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0 ||
+          pnl.intercompany.total !== 0 ||
+          pnl.intercompany.in.some((v) => v !== 0) ||
+          pnl.intercompany.out.some((v) => v !== 0)) && (
+          <div className={`rounded-2xl border overflow-x-auto rise-in mt-6 ${card}`}>
+            <table className="text-sm min-w-[1100px] w-full">
+              <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
+                <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
+                  <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 border-r ${rowBorder} ${stickyBg}`}>
+                    Transfers & flow
+                  </th>
+                  {MONTHS.map((m) => (
+                    <th key={m} className="px-3 py-3 text-right font-medium">{m}</th>
+                  ))}
+                  <th className={`px-3 py-3 text-right font-medium border-l ${rowBorder}`}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0) && (
+                  <>
+                    {sectionHeaderRow("transfers", "Transfers", undefined, {
+                      monthly: pnl.transfers.net,
+                      total: pnl.transfers.total,
+                    })}
+                    {!collapsed.has("transfers") && (
+                      <>
+                        {pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
+                        {bodyRow("Net transfers", pnl.transfers.net, pnl.transfers.total, "transfers", {
+                          bold: true,
+                          drillLabel: null,
+                        })}
+                      </>
+                    )}
+                  </>
+                )}
+
+                {(pnl.intercompany.total !== 0 ||
+                  pnl.intercompany.in.some((v) => v !== 0) ||
+                  pnl.intercompany.out.some((v) => v !== 0)) && (
+                  <>
+                    {sectionHeaderRow("intercompany", "Intercompany", undefined, {
+                      monthly: pnl.intercompany.net,
+                      total: pnl.intercompany.total,
+                    })}
+                    {!collapsed.has("intercompany") && (
+                      <>
+                        {bodyRow("In", pnl.intercompany.in, pnl.intercompany.in.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
+                        {bodyRow("Out", pnl.intercompany.out.map((v) => -v), -pnl.intercompany.out.reduce((a, b) => a + b, 0), "intercompany", { indent: true, drillLabel: null })}
+                        {bodyRow("Net", pnl.intercompany.net, pnl.intercompany.total, "intercompany", { bold: true, drillLabel: null })}
+                      </>
+                    )}
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
         <p className={`mt-3 text-[11px] ${subtle}`}>
           Cash basis{pnl.eliminated_count > 0 && ` · ${pnl.eliminated_count} eliminated`}
         </p>

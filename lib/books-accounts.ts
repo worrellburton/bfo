@@ -55,6 +55,8 @@ export const CHART: Account[] = [
   { code: "9100", name: "Internal Transfers", section: "flow" },
   { code: "9150", name: "Credit Card Payments", section: "flow" },
   { code: "9200", name: "Owner Draws", section: "flow" },
+  { code: "9210", name: "Trustee Draws — Amanda", section: "flow" },
+  { code: "9220", name: "Trustee Draws — Bobby", section: "flow" },
   { code: "9300", name: "Loans", section: "flow" },
 ];
 
