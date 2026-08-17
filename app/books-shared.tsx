@@ -555,7 +555,7 @@ export function BatchBar({
   count: number;
   isDark: boolean;
   busy?: boolean;
-  onApply: (patch: { merchant_name?: string; name?: string; book_category?: string }) => void;
+  onApply: (patch: { merchant_name?: string; name?: string; book_category?: string; type_override?: string }) => void;
   onClear: () => void;
   /** Existing vendor names — the vendor field autocompletes against these. */
   vendorSuggestions?: string[];
@@ -565,6 +565,7 @@ export function BatchBar({
   const [vendor, setVendor] = useState("");
   const [description, setDescription] = useState("");
   const [account, setAccount] = useState("");
+  const [batchType, setBatchType] = useState("");
   const [vendorFocus, setVendorFocus] = useState(false);
   const [highlight, setHighlight] = useState(0);
   // Vendors whose name contains what's typed — capped so the list stays usable.
@@ -583,7 +584,7 @@ export function BatchBar({
       ? "bg-white/[0.06] border-white/10 text-white placeholder-gray-500 focus:border-white/25"
       : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
   }`;
-  const canApply = !!(vendor.trim() || description.trim() || account);
+  const canApply = !!(vendor.trim() || description.trim() || account || batchType);
   return createPortal(
     <div
       className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl ${
@@ -644,6 +645,18 @@ export function BatchBar({
         placeholder="Description…"
         className={`${field} w-56`}
       />
+      <Menu
+        value={batchType}
+        isDark={isDark}
+        size="sm"
+        placeholder="Type…"
+        onChange={setBatchType}
+        options={[
+          { value: "normal", label: "Income / Expense", icon: typeIcon("normal", false) },
+          { value: "transfer", label: "Transfer", icon: typeIcon("transfer", false) },
+          { value: "intercompany", label: "Roll-up", icon: typeIcon("intercompany", false) },
+        ]}
+      />
       {categories.length > 0 && (
         <Menu
           value={account}
@@ -663,14 +676,16 @@ export function BatchBar({
       <button
         disabled={busy || !canApply}
         onClick={() => {
-          const patch: { merchant_name?: string; name?: string; book_category?: string } = {};
+          const patch: { merchant_name?: string; name?: string; book_category?: string; type_override?: string } = {};
           if (vendor.trim()) patch.merchant_name = vendor.trim();
           if (description.trim()) patch.name = description.trim();
           if (account) patch.book_category = account;
+          if (batchType) patch.type_override = batchType;
           onApply(patch);
           setVendor("");
           setDescription("");
           setAccount("");
+          setBatchType("");
         }}
         className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer disabled:opacity-50 ${
           isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"

@@ -383,6 +383,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         patch.book_category = String(req.body.book_category).trim().slice(0, 60) || null;
         patch.loan_id = null;
       }
+      if (req.body.type_override !== undefined) {
+        if (!["normal", "transfer", "intercompany"].includes(String(req.body.type_override))) {
+          return res.status(400).json({ error: "invalid_type" });
+        }
+        patch.type_override = req.body.type_override;
+      }
       if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
 
       let updated = 0;
