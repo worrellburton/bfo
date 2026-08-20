@@ -92,7 +92,7 @@ function mercuryPayee(name: string | null | undefined): string | null {
   return m?.[1]?.trim() || null;
 }
 
-async function upsertChunked(rows: TxnRow[]) {
+async function upsertChunked(rows: Array<Record<string, unknown>>) {
   for (let i = 0; i < rows.length; i += 500) {
     const r = await db("book_transactions", {
       method: "POST",
@@ -245,6 +245,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const userRules = await loadUserRules();
 
+    // Rows a person has hand-edited (the audit log knows which): the bank
+    // refresh keeps their vendor/account/type intact and only updates the
+    // mechanical columns.
+    const editedRes = await db("book_txn_log?select=transaction_id");
+    const editedIds = new Set<string>(
+      editedRes.ok ? ((await editedRes.json()) as any[]).map((r) => r.transaction_id) : []
+    );
+
     const prefsRes = await db("plaid_account_prefs?select=*");
     const prefs = new Map<string, any>(
       prefsRes.ok ? ((await prefsRes.json()) as any[]).map((p) => [p.account_id, p]) : []
@@ -265,6 +273,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let removed = 0;
 
       try {
+       // Plaid can mutate the item mid-pagination; the documented recovery is
+       // to restart from the original cursor. Upserts are idempotent, so a
+       // single restart is safe.
+       for (let attempt = 0; ; attempt++) {
+        try {
         let hasMore = true;
         while (hasMore) {
           const sync = await client.transactionsSync({
@@ -319,8 +332,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 updated_at: now,
               };
             });
-          await upsertChunked(rows.filter((r) => r.type_override === undefined));
-          await upsertChunked(rows.filter((r) => r.type_override !== undefined));
+          // Hand-edited rows keep the fields a person set; everything else
+          // gets the full refresh. Each partition keeps uniform keys, which
+          // the PostgREST bulk upsert requires.
+          const fresh = rows.filter((r) => !editedIds.has(r.transaction_id));
+          const guarded = rows
+            .filter((r) => editedIds.has(r.transaction_id))
+            .map(({ merchant_name, name, book_category, type_override, ...keep }) => keep);
+          await upsertChunked(fresh.filter((r) => r.type_override === undefined));
+          await upsertChunked(fresh.filter((r) => r.type_override !== undefined));
+          await upsertChunked(guarded);
           added += data.added.length;
           modified += data.modified.length;
 
@@ -337,6 +358,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           cursor = data.next_cursor;
           hasMore = data.has_more;
         }
+        break;
+        } catch (pageErr: any) {
+          if (pageErr.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" && attempt === 0) {
+            cursor = item.transactions_cursor || undefined;
+            added = 0;
+            modified = 0;
+            removed = 0;
+            continue;
+          }
+          throw pageErr;
+        }
+       }
 
         await db(`plaid_items?item_id=eq.${encodeURIComponent(item.item_id)}`, {
           method: "PATCH",
