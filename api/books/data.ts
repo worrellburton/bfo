@@ -25,14 +25,32 @@ import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
 
 /** Page through PostgREST's 1000-row window until the query is exhausted. */
 async function fetchAll<T>(pathWithFilters: string): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += 1000) {
+  // The first page carries the exact row count, so the remaining pages can
+  // fetch concurrently instead of one round trip per 1,000 rows.
+  const first = await db(pathWithFilters, { headers: { Range: "0-999", Prefer: "count=exact" } });
+  if (!first.ok) throw new Error(`DB error: ${(await first.text()).slice(0, 300)}`);
+  const out: T[] = (await first.json()) as T[];
+  const total = Number(first.headers.get("content-range")?.split("/")[1]);
+  if (Number.isFinite(total) && total > out.length) {
+    const pages: Array<Promise<Response>> = [];
+    for (let from = 1000; from < total; from += 1000) {
+      pages.push(db(pathWithFilters, { headers: { Range: `${from}-${from + 999}` } }));
+    }
+    for (const r of await Promise.all(pages)) {
+      if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
+      out.push(...((await r.json()) as T[]));
+    }
+    return out;
+  }
+  // No usable count header — fall back to sequential paging.
+  for (let from = out.length; out.length % 1000 === 0 && out.length > 0; from += 1000) {
     const r = await db(pathWithFilters, { headers: { Range: `${from}-${from + 999}` } });
     if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
     const rows = (await r.json()) as T[];
     out.push(...rows);
-    if (rows.length < 1000) return out;
+    if (rows.length < 1000) break;
   }
+  return out;
 }
 
 function prettyCategory(primary: string | null): string {
@@ -523,41 +541,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (report === "meta") {
-      const prefs = await getPrefs();
+      // One combined scan feeds both the categories and the vendors list, and
+      // every independent lookup runs in parallel — this endpoint fires on
+      // nearly every Books page mount, so round trips are the whole cost.
+      const [prefs, countRes, lastRes, scanRows, loanRows] = await Promise.all([
+        getPrefs(),
+        db("book_transactions?select=transaction_id&limit=1", { headers: { Prefer: "count=exact" } }),
+        db("book_transactions?select=updated_at&order=updated_at.desc&limit=1"),
+        fetchAll<{ merchant_name: string | null; name: string | null; book_category: string | null }>(
+          "book_transactions?select=merchant_name,name,book_category"
+        ),
+        fetchAll<{ id: string; name: string }>("book_loans?archived_at=is.null&select=id,name&order=name.asc"),
+      ]);
+
       const seen = new Map<string, string>();
       for (const p of prefs.values()) if (p.entity_id) seen.set(p.entity_id, p.entity_name ?? p.entity_id);
       const entities = [...seen.entries()]
         .map(([id, name]) => ({ id, name }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
-      const countRes = await db("book_transactions?select=transaction_id&limit=1", {
-        headers: { Prefer: "count=exact" },
-      });
       const total = Number(countRes.headers.get("content-range")?.split("/")[1] ?? 0);
-      const lastRes = await db("book_transactions?select=updated_at&order=updated_at.desc&limit=1");
       const last = lastRes.ok ? ((await lastRes.json()) as any[])[0]?.updated_at ?? null : null;
 
-      // The chart of accounts as it exists in the data — feeds the category
-      // dropdowns so edits pick from real lines.
-      const cats = await fetchAll<{ book_category: string | null }>(
-        "book_transactions?select=book_category&book_category=not.is.null"
-      );
       // The canonical chart of accounts, unioned with anything already filed in
       // the data, so every account (incl. manual-only ones) is always offered.
-      const categories = [...new Set([...ACCOUNTS, ...cats.map((c) => c.book_category!)])].sort((a, b) =>
-        a.localeCompare(b)
-      );
-
-      const loanRows = await fetchAll<{ id: string; name: string }>(
-        "book_loans?archived_at=is.null&select=id,name&order=name.asc"
-      );
+      const categories = [
+        ...new Set([...ACCOUNTS, ...scanRows.map((r) => r.book_category).filter((c): c is string => !!c)]),
+      ].sort((a, b) => a.localeCompare(b));
 
       // Distinct vendor display names — feeds batch autoselect and vendor merge.
-      const vendorRows = await fetchAll<{ merchant_name: string | null; name: string | null }>(
-        "book_transactions?select=merchant_name,name"
-      );
       const vendors = [
-        ...new Set(vendorRows.map((v) => (v.merchant_name || v.name || "").trim()).filter(Boolean)),
+        ...new Set(scanRows.map((v) => (v.merchant_name || v.name || "").trim()).filter(Boolean)),
       ].sort((a, b) => a.localeCompare(b));
 
       return res.json({ entities, categories, loans: loanRows, vendors, total_transactions: total, last_synced_at: last });
