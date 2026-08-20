@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useTheme } from "../theme";
+import { authFetch } from "../auth";
 
 export function meta() {
   return [{ title: "BFO - Finance | Financial Dashboard" }];
@@ -180,7 +181,7 @@ export default function QuickBooks() {
     e.stopPropagation();
     const name = companyData[realmId]?.companyName || "this company";
     if (!confirm(`Disconnect ${name}?`)) return;
-    await fetch(`/api/quickbooks/disconnect?realm_id=${realmId}`, { method: "POST" });
+    await authFetch(`/api/quickbooks/disconnect?realm_id=${realmId}`, { method: "POST" });
     setCompanies((prev) => prev.filter((c) => c.realm_id !== realmId));
     setCompanyData((prev) => { const next = { ...prev }; delete next[realmId]; return next; });
     if (expandedRealm === realmId) setExpandedRealm(null);

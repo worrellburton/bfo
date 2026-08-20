@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { currentUser } from "../../lib/auth.js";
 
 const BUCKET = "documents";
 
@@ -19,6 +20,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
+
+  const user = await currentUser(req);
+  if (!user) return res.status(401).json({ error: "unauthorized" });
 
   const { assetId, fileName, contentType } = (req.body || {}) as {
     assetId?: string;
@@ -42,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .createSignedUploadUrl(path);
 
     if (error || !data) {
-      return res.status(500).json({ error: "signed_url_failed", message: error?.message });
+      return res.status(500).json({ error: "signed_url_failed" });
     }
 
     // Public URL the client can share once the upload finishes.
@@ -59,6 +63,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (err: any) {
     console.error("upload-url failed", err);
-    return res.status(500).json({ error: "server_error", message: err?.message });
+    return res.status(500).json({ error: "server_error" });
   }
 }

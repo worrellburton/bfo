@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
+import { currentUser } from "../lib/auth.js";
 
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_FETCH_BYTES = 5 * 1024 * 1024; // 5 MB cap on the document we send to Claude
@@ -22,6 +23,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
+
+  const user = await currentUser(req);
+  if (!user) return res.status(401).json({ error: "unauthorized" });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -126,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error("rename-doc failed", err);
     return res.status(500).json({
       error: "claude_error",
-      message: err?.message || "Claude request failed",
+      message: "Rename failed.",
     });
   }
 }

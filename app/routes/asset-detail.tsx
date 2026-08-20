@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useTheme } from "../theme";
+import { authFetch } from "../auth";
 
 export function meta() {
   return [{ title: "BFO - Asset" }];
@@ -404,7 +405,7 @@ export default function AssetDetail() {
     if (doc?.storagePath) {
       if (doc.storageProvider === "supabase") {
         try {
-          await fetch("/api/documents/delete", {
+          await authFetch("/api/documents/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: doc.storagePath }),
@@ -441,7 +442,7 @@ export default function AssetDetail() {
     try {
       // 1. Ask the server for a signed upload URL into the Supabase
       //    "documents" bucket.
-      const urlRes = await fetch("/api/documents/upload-url", {
+      const urlRes = await authFetch("/api/documents/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -531,7 +532,7 @@ export default function AssetDetail() {
   async function handleRenameDoc(doc: AssetDoc) {
     setRenamingDocId(doc.id);
     try {
-      const res = await fetch("/api/rename-doc", {
+      const res = await authFetch("/api/rename-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
