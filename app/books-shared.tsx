@@ -587,7 +587,7 @@ export function BatchBar({
   const canApply = !!(vendor.trim() || description.trim() || account || batchType);
   return createPortal(
     <div
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl ${
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl max-w-[calc(100vw-1rem)] ${
         isDark ? "bg-black/70 border-white/10" : "bg-white/90 border-gray-200"
       }`}
     >

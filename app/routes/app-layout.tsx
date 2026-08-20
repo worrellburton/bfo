@@ -248,6 +248,8 @@ export default function AppLayout() {
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
   const contentInset = railWidth;
   const showLabels = expanded;
+  // The mobile drawer always shows labels, so drill-in navigation works there too.
+  const labelsVisible = expanded || drawerOpen;
   const items = isAdmin(user)
     ? [...navItems, { to: "/users", label: "Users", icon: usersIcon, badge: pending }]
     : navItems;
@@ -309,7 +311,7 @@ export default function AppLayout() {
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
-          {showLabels && openGroup ? (
+          {labelsVisible && openGroup ? (
             /* Drilled-in group: a back header, then its pages as a flat list. */
             <>
               <button
@@ -350,7 +352,7 @@ export default function AppLayout() {
                 | null;
               const groupActive = !!children && children.some((c) => location.pathname.startsWith(c.to));
 
-              if (showLabels && children) {
+              if (labelsVisible && children) {
                 return (
                   <button
                     key={item.to}
@@ -543,13 +545,15 @@ export default function AppLayout() {
         aria-label="Quick navigation"
         className="mobile-dock fixed bottom-4 left-1/2 -translate-x-1/2 z-40 lg:hidden"
       >
-        {["Entities", "Treasury", "Home", "MSAs", "Tools"].map((label) => {
+        {["Entities", "Treasury", "Home", "Books", "Tools"].map((label) => {
           const item = navItems.find((n) => n.label === label);
           if (!item) return null;
           const active =
             item.to === "/home"
               ? location.pathname === "/home"
-              : location.pathname.startsWith(item.to);
+              : item.label === "Books"
+                ? location.pathname.startsWith("/books")
+                : location.pathname.startsWith(item.to);
           return (
             <NavLink
               key={item.to}
