@@ -1055,6 +1055,20 @@ export function TxnTable({
     await update(t, { book_category: category });
   }
 
+  // Built once per categories change, not per row per render — the account
+  // picker options were the biggest allocation churn in the table.
+  const baseCatOptions = useMemo(
+    () =>
+      categories.map((c) => ({
+        value: c,
+        label: c,
+        short: c.replace(/^\d{4}\s+/, ""),
+        icon: accountIcon(c),
+        group: accountGroup(c),
+      })),
+    [categories]
+  );
+
   async function applyCategoryAll(t: Txn, category: string, match: string) {
     setBusy(t.transaction_id);
     try {
@@ -1146,9 +1160,19 @@ export function TxnTable({
           const isOpen = open.has(t.transaction_id);
           // The date prints once per day; later rows in the day stay quiet.
           const newDay = ri === 0 || rows[ri - 1].date !== t.date;
-          const cats = t.book_category && !categories.includes(t.book_category)
-            ? [t.book_category, ...categories]
-            : categories;
+          const catOptions =
+            t.book_category && !categories.includes(t.book_category)
+              ? [
+                  {
+                    value: t.book_category,
+                    label: t.book_category,
+                    short: t.book_category.replace(/^\d{4}\s+/, ""),
+                    icon: accountIcon(t.book_category),
+                    group: accountGroup(t.book_category),
+                  },
+                  ...baseCatOptions,
+                ]
+              : baseCatOptions;
           return (
             <Fragment key={t.transaction_id}>
               <tr
@@ -1248,12 +1272,11 @@ export function TxnTable({
                     disabled={busy === t.transaction_id}
                     placeholder={t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined}
                     onChange={(v) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v))}
-                    options={[
-                      ...(!t.book_category && !t.loan_id
-                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }]
-                        : []),
-                      ...cats.map((c) => ({ value: c, label: c, short: c.replace(/^\d{4}\s+/, ""), icon: accountIcon(c), group: accountGroup(c) })),
-                    ]}
+                    options={
+                      !t.book_category && !t.loan_id
+                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }, ...catOptions]
+                        : catOptions
+                    }
                   />
                 </td>
                 <td className="px-2 py-2.5 text-right whitespace-nowrap">

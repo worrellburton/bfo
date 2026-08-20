@@ -12,6 +12,29 @@ type BankAccount = { account_id: string; name: string; official_name: string | n
 
 const PAGE = 100;
 
+/**
+ * Debounced search box — keystrokes re-render only this input; the page (and
+ * its 100-row table) re-renders once, 300ms after typing pauses.
+ */
+function SearchBox({ value, onCommit, className }: { value: string; onCommit: (v: string) => void; className: string }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  useEffect(() => {
+    if (v === value) return;
+    const t = setTimeout(() => onCommit(v), 300);
+    return () => clearTimeout(t);
+  }, [v, value, onCommit]);
+  return (
+    <input
+      type="search"
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      placeholder="Search descriptions or initials…"
+      className={className}
+    />
+  );
+}
+
 /** Tiny CSV parser: quoted fields, commas, CRLF. */
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -153,10 +176,10 @@ export default function BooksTransactions() {
     }
   }, [query]);
 
+  // q arrives already debounced by the SearchBox — load immediately.
   useEffect(() => {
-    const t = setTimeout(() => void load(), q ? 300 : 0);
-    return () => clearTimeout(t);
-  }, [load, q]);
+    void load();
+  }, [load]);
 
   const refreshUncat = useCallback(async () => {
     try {
@@ -433,13 +456,7 @@ export default function BooksTransactions() {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative">
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search descriptions or initials…"
-            className={searchField}
-          />
+          <SearchBox value={q} onCommit={setQ} className={searchField} />
           {tagMatch && (
             <span className={`absolute -bottom-4 left-3 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
               Filtering by {tagMatch.name}

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import jsPDF from "jspdf";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -1273,7 +1272,9 @@ function WarRoomTab() {
 
 // --- PDF Report Generator ---
 
-function generatePDF() {
+async function generatePDF() {
+  // Loaded on demand — jsPDF is 380K and only needed when exporting.
+  const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const margin = 18;
