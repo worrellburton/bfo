@@ -648,12 +648,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         t.loan_id ? `${loanNames.get(t.loan_id) ?? "Loan"} (loan)` : label(t);
 
       // Which income-statement group a 'normal' row lands in: its account's
-      // section, or — for uncategorized / flow-coded rows — by sign.
+      // section, or — for uncategorized rows — by sign.
       const pnlSection = (t: BookTxn): "revenue" | "operating" | "other" => {
         const sec = sectionOf(label(t));
         if (sec === "revenue" || sec === "operating" || sec === "other") return sec;
         return t.amount < 0 ? "revenue" : "operating";
       };
+      // A 9000s account never posts to the income statement — the chart's
+      // contract. Even typed "normal", such a row belongs with the flows.
+      const flowAcct = (t: BookTxn) => sectionOf(label(t)) === "flow";
 
       // ── One P&L cell: the transactions behind it ──────────────────────
       if (report === "cell") {
@@ -666,11 +669,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (month !== null && monthOf(t.date) !== month - 1) return false;
             const eff = effType(t);
             if (section === "revenue" || section === "operating" || section === "other") {
-              return eff === "normal" && pnlSection(t) === section && (!wantLabel || label(t) === wantLabel);
+              return eff === "normal" && !flowAcct(t) && pnlSection(t) === section && (!wantLabel || label(t) === wantLabel);
             }
-            if (section === "net") return eff === "normal";
+            if (section === "net") return eff === "normal" && !flowAcct(t);
             if (section === "transfers") {
-              return (eff === "transfer" || eff === "loan") && (!wantLabel || rowLabel(t) === wantLabel);
+              return (
+                (eff === "transfer" || eff === "loan" || (eff === "normal" && flowAcct(t))) &&
+                (!wantLabel || rowLabel(t) === wantLabel)
+              );
             }
             if (section === "intercompany") {
               return eff === "intercompany" && !eliminated(t, selection, prefs);
@@ -706,7 +712,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           else interOut[m] += t.amount;
           continue;
         }
-        if (eff === "transfer" || eff === "loan") {
+        if (eff === "transfer" || eff === "loan" || flowAcct(t)) {
           if (t.amount < 0) transfersIn[m] += -t.amount;
           else transfersOut[m] += t.amount;
           const row = transferCats.get(rowLabel(t)) ?? zeros();
@@ -910,7 +916,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Outliers: the biggest P&L-affecting items, for a sanity read.
       const outliers = rows
-        .filter((t) => effType(t) === "normal")
+        .filter((t) => effType(t) === "normal" && sectionOf(label(t)) !== "flow")
         .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
         .slice(0, 15)
         .map(slim);

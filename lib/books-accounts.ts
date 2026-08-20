@@ -73,7 +73,17 @@ const byCode = new Map(CHART.map((a) => [a.code, a] as const));
 export function sectionOf(label: string | null | undefined): Section | null {
   if (!label) return null;
   const code = label.trim().slice(0, 4);
-  return byCode.get(code)?.section ?? null;
+  const known = byCode.get(code)?.section;
+  if (known) return known;
+  // User-created numbered accounts (e.g. "9210 Trustee Draws — Amanda")
+  // follow the same code ranges as the canonical chart.
+  if (/^\d{4}$/.test(code)) {
+    if (code[0] === "4") return "revenue";
+    if (code[0] === "6") return "operating";
+    if (code[0] === "7") return "other";
+    if (code[0] === "9") return "flow";
+  }
+  return null;
 }
 
 /**
