@@ -100,14 +100,30 @@ function embeddedMerchant(desc: string): string | null {
 }
 
 /**
+ * A wire's beneficiary/originator (/BNF= or /ORG=) or a Zelle payee — the
+ * descriptor names the real counterparty even though the transaction is a
+ * wire or P2P mechanism.
+ */
+function namedCounterparty(desc: string): string | null {
+  const wire = /\/(?:BNF|ORG)=([^/;]+?)(?=\s+SRF#|\s+TRN#|\s+RFB#|\s*\/|$)/i.exec(desc);
+  const zelle = /zelle to ([a-z][a-z .'-]{2,30}?)(?= on \d|\s+ref\b|$)/i.exec(desc);
+  const raw = (wire?.[1] ?? zelle?.[1])?.trim().replace(/\s+/g, " ");
+  if (!raw || FAMILY_NAME.test(raw) || /burton family/i.test(raw)) return null;
+  return raw === raw.toUpperCase() ? titleCase(raw) : raw;
+}
+
+/**
  * The best vendor we can derive for a transaction. An explicit embedded
- * merchant wins; curated patterns next; a real Plaid merchant is kept; a
- * family-surname merchant is replaced by whatever the descriptor reveals.
+ * merchant wins; a named wire/Zelle counterparty next; curated patterns
+ * after that; a real Plaid merchant is kept; a family-surname merchant is
+ * replaced by whatever the descriptor reveals.
  */
 export function betterVendor(description: string | null, plaidMerchant: string | null): string | null {
   const desc = (description ?? "").trim();
   const embedded = embeddedMerchant(desc);
   if (embedded) return embedded;
+  const named = namedCounterparty(desc);
+  if (named) return named;
   for (const [re, vendor] of KNOWN) if (re.test(desc)) return vendor;
   const merchant = (plaidMerchant ?? "").trim();
   if (merchant && !FAMILY_NAME.test(merchant)) return merchant;
