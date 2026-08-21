@@ -243,7 +243,7 @@ export default function BooksReports() {
     const signTone = (v: number) => (v === 0 ? faint : v < 0 ? "text-rose-400" : "text-emerald-500");
     const drillLabel = opts?.drillLabel === undefined ? rowLabel : opts.drillLabel;
     const topBorder = opts?.headline ? `border-t-2 ${border}` : `border-t ${rowBorder}`;
-    const emphasis = opts?.headline ? `${bandBg} text-[15px]` : opts?.bold ? bandBg : `group ${hoverRow}`;
+    const emphasis = opts?.headline || opts?.bold ? bandBg : `group ${hoverRow}`;
     return (
       <tr key={`${section}-${rowLabel}`} className={`${topBorder} ${opts?.bold || opts?.headline ? "font-semibold" : ""} ${emphasis}`}>
         <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r transition-colors ${rowBorder} ${stickyBg} ${isDark ? "group-hover:bg-[#101010]" : "group-hover:bg-gray-50"} ${opts?.indent ? "pl-6" : ""}`}>
