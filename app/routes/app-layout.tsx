@@ -543,7 +543,8 @@ export default function AppLayout() {
       {/* Mobile dock — floating glass pill, primary destinations only */}
       <nav
         aria-label="Quick navigation"
-        className="mobile-dock fixed bottom-4 left-1/2 -translate-x-1/2 z-40 lg:hidden"
+        className="mobile-dock fixed left-1/2 -translate-x-1/2 z-40 lg:hidden"
+        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
       >
         {["Entities", "Treasury", "Home", "Books", "Tools"].map((label) => {
           const item = navItems.find((n) => n.label === label);

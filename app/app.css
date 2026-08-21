@@ -746,3 +746,7 @@ tr[tabindex]:focus-visible {
   .shimmer::after { animation: none; }
   * { color: #111 !important; background: #fff !important; }
 }
+
+/* A scroll row that hides its bar — mobile filter strips. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

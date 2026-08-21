@@ -301,6 +301,8 @@ export function Menu({
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // On phones the menu opens as a bottom sheet instead of an anchored popover.
+  const [sheet, setSheet] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(null);
@@ -344,7 +346,7 @@ export function Menu({
   }
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || sheet) return;
     function place() {
       const el = btnRef.current;
       if (!el) return;
@@ -411,7 +413,10 @@ export function Menu({
         ref={btnRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setSheet(typeof window !== "undefined" && window.innerWidth < 640);
+          setOpen((v) => !v);
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={pill}
@@ -424,34 +429,45 @@ export function Menu({
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
         </svg>
       </button>
-      {open && box &&
+      {open && (sheet || box) &&
         createPortal(
+          <>
+          {sheet && (
+            <div className="fixed inset-0 z-[69] bg-black/40" onClick={() => setOpen(false)} aria-hidden />
+          )}
           <div
             ref={panelRef}
             role="listbox"
-            style={{ position: "fixed", left: box.left, top: box.top, width: box.width }}
+            style={
+              sheet
+                ? { position: "fixed", left: 0, right: 0, bottom: 0, paddingBottom: "env(safe-area-inset-bottom)" }
+                : { position: "fixed", left: box!.left, top: box!.top, width: box!.width }
+            }
             onKeyDown={onListKey}
-            className={`z-[70] rounded-2xl border shadow-xl overflow-hidden flex flex-col ${
+            className={`z-[70] border shadow-xl overflow-hidden flex flex-col ${sheet ? "rounded-t-2xl" : "rounded-2xl"} ${
               isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
             }`}
           >
+            {sheet && (
+              <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
+            )}
             {searchable && (
               <div className={`p-1.5 border-b ${isDark ? "border-white/5" : "border-gray-100"}`}>
                 <input
-                  autoFocus
+                  autoFocus={!sheet}
                   value={filter}
                   onChange={(e) => {
                     setFilter(e.target.value);
                     setHi(0);
                   }}
                   placeholder="Search…"
-                  className={`w-full px-2.5 py-1.5 rounded-lg text-xs focus:outline-none ${
+                  className={`w-full px-2.5 py-1.5 rounded-lg text-base sm:text-xs focus:outline-none ${
                     isDark ? "bg-white/[0.06] text-white placeholder-gray-500" : "bg-gray-100 text-gray-900 placeholder-gray-400"
                   }`}
                 />
               </div>
             )}
-            <div className={`p-1.5 overflow-y-auto ${mega ? "max-h-[72vh] p-4" : "max-h-72"}`}>
+            <div className={`p-1.5 overflow-y-auto ${mega && !sheet ? "max-h-[72vh] p-4" : sheet ? "max-h-[65vh] pb-2" : "max-h-72"}`}>
               {shown.length === 0 && (
                 <p className={`px-2.5 py-2 text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>No matches.</p>
               )}
@@ -466,7 +482,7 @@ export function Menu({
                       aria-selected={sel}
                       onClick={() => choose(o)}
                       onMouseEnter={() => setHi(i)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
+                      className={`w-full flex items-center gap-2 px-2.5 rounded-xl text-left cursor-pointer transition-colors ${sheet ? "py-3 text-sm" : "py-2 text-xs"} ${
                         i === hi
                           ? isDark ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
                           : isDark ? "text-gray-200" : "text-gray-800"
@@ -485,7 +501,7 @@ export function Menu({
                     </button>
                   );
                 };
-                if (mega) {
+                if (mega && !sheet) {
                   const blocks: Array<{ name: string; items: Array<{ o: Option; i: number }> }> = [];
                   shown.forEach((o, i) => {
                     const g = o.group ?? "Other";
@@ -523,7 +539,8 @@ export function Menu({
                 });
               })()}
             </div>
-          </div>,
+          </div>
+          </>,
           document.body
         )}
     </>
@@ -587,7 +604,7 @@ export function BatchBar({
   const canApply = !!(vendor.trim() || description.trim() || account || batchType);
   return createPortal(
     <div
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl max-w-[calc(100vw-1rem)] ${
+      className={`fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom))] lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-wrap items-center justify-center gap-2 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-xl max-w-[calc(100vw-1rem)] ${
         isDark ? "bg-black/70 border-white/10" : "bg-white/90 border-gray-200"
       }`}
     >
@@ -1123,9 +1140,167 @@ export function TxnTable({
   );
   const allSelected = !!selection && rows.length > 0 && rows.every((r) => selection.selected.has(r.transaction_id));
 
+  const catOptionsFor = (t: Txn) =>
+    t.book_category && !categories.includes(t.book_category)
+      ? [
+          {
+            value: t.book_category,
+            label: t.book_category,
+            short: t.book_category.replace(/^\d{4}\s+/, ""),
+            icon: accountIcon(t.book_category),
+            group: accountGroup(t.book_category),
+          },
+          ...baseCatOptions,
+        ]
+      : baseCatOptions;
+
   return (
    <>
-    <table className="w-full text-sm min-w-[1020px]">
+    {/* ── Mobile: a card per transaction, grouped by day — nothing scrolls
+        sideways, every target is thumb-sized, and tapping a card expands
+        the same editors and history the desktop drawer has. ─────────────── */}
+    <div className="lg:hidden">
+      {selection && rows.length > 0 && (
+        <div className={`flex items-center justify-between px-4 py-2 border-b ${border}`}>
+          <button
+            onClick={() => selection.setAll(allSelected ? [] : rows.map((r) => r.transaction_id))}
+            className={`flex items-center gap-2 text-xs cursor-pointer ${subtle}`}
+          >
+            {box(allSelected)}
+            {allSelected ? "Deselect all" : "Select all"}
+          </button>
+          {selection.selected.size > 0 && (
+            <span className={`text-xs tabular-nums ${subtle}`}>{selection.selected.size} selected</span>
+          )}
+        </div>
+      )}
+      {rows.map((t, ri) => {
+        const inflow = t.amount < 0;
+        const eff = effType(t);
+        const vendor = t.merchant_name || (eff === "normal" ? t.name : null);
+        const isOpen = open.has(t.transaction_id);
+        const newDay = ri === 0 || rows[ri - 1].date !== t.date;
+        const checked = selection?.selected.has(t.transaction_id) ?? false;
+        const catOptions = catOptionsFor(t);
+        return (
+          <Fragment key={`m-${t.transaction_id}`}>
+            {newDay && (
+              <div className={`px-4 pt-4 pb-1.5 text-[11px] uppercase tracking-[0.14em] ${subtle}`}>
+                {shortDate(t.date)}
+              </div>
+            )}
+            <div
+              className={`flex items-start gap-3 px-4 border-b ${border} ${
+                checked ? (isDark ? "bg-emerald-500/[0.06]" : "bg-emerald-50/60") : ""
+              }`}
+            >
+              {selection && (
+                <button
+                  onClick={() => selection.toggle(t.transaction_id)}
+                  aria-label="Select transaction"
+                  className="py-4 -my-0.5 cursor-pointer"
+                >
+                  {box(checked)}
+                </button>
+              )}
+              <button
+                onClick={() => toggle(t.transaction_id)}
+                aria-expanded={isOpen}
+                className="flex-1 min-w-0 py-3 text-left cursor-pointer"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className={`font-medium truncate text-[15px] ${isDark ? "" : "text-gray-900"}`}>
+                    {vendor || t.name || "—"}
+                  </span>
+                  <span className={`tabular-nums font-semibold whitespace-nowrap text-[15px] ${inflow ? "text-emerald-500" : ""}`}>
+                    {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-1 min-w-0">
+                  {t.entity_name ? (
+                    <EntityTag name={t.entity_name} isDark={isDark} />
+                  ) : (
+                    <span className="text-amber-500 text-[11px] shrink-0">Unmapped</span>
+                  )}
+                  <span className={`text-xs truncate ${subtle}`}>
+                    {(t.book_category ?? pretty(t.plaid_category)).replace(/^\d{4}\s+/, "")}
+                  </span>
+                  {t.pending && (
+                    <span className={`text-[10px] uppercase tracking-wider shrink-0 ${subtle}`}>pending</span>
+                  )}
+                  <svg
+                    className={`w-3.5 h-3.5 ml-auto shrink-0 transition-transform ${isOpen ? "rotate-180" : ""} ${subtle}`}
+                    fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </div>
+              </button>
+            </div>
+            {isOpen && (
+              <div className={`px-4 pb-4 border-b ${border} ${isDark ? "bg-white/[0.015]" : "bg-gray-50/60"}`}>
+                <div className="flex flex-wrap items-center gap-2 pt-3">
+                  <Menu
+                    value={eff === "loan" ? (t.type_override ?? "normal") : eff}
+                    isDark={isDark}
+                    disabled={busy === t.transaction_id}
+                    onChange={(v) => void update(t, t.loan_id ? { type_override: v, loan_id: null } : { type_override: v })}
+                    options={[
+                      { value: "normal", label: inflow ? "Income" : "Expense", icon: typeIcon("normal", inflow) },
+                      { value: "transfer", label: "Transfer", icon: typeIcon("transfer", inflow) },
+                      { value: "intercompany", label: "Roll-up", icon: typeIcon("intercompany", inflow) },
+                    ]}
+                  />
+                  <Menu
+                    value={t.book_category ?? ""}
+                    isDark={isDark}
+                    disabled={busy === t.transaction_id}
+                    placeholder={t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined}
+                    onChange={(v) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v))}
+                    options={
+                      !t.book_category && !t.loan_id
+                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }, ...catOptions]
+                        : catOptions
+                    }
+                  />
+                  {loans.length > 0 && (
+                    <Menu
+                      value={t.loan_id ?? ""}
+                      isDark={isDark}
+                      disabled={busy === t.transaction_id}
+                      placeholder="Loan…"
+                      onChange={(v) => void update(t, { loan_id: v || null })}
+                      options={[{ value: "", label: "Not a loan" }, ...loans.map((l) => ({ value: l.id, label: l.name }))]}
+                    />
+                  )}
+                  {vendor && (
+                    <button
+                      onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
+                      className={`px-3 py-1.5 rounded-full text-xs border cursor-pointer ${
+                        isDark ? "border-white/10 text-gray-300" : "border-gray-200 text-gray-700"
+                      }`}
+                    >
+                      Open vendor →
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3">
+                  {detail(t).map(([k, v]) => (
+                    <div key={k} className="min-w-0">
+                      <span className={`text-[10px] uppercase tracking-wider block ${subtle}`}>{k}</span>
+                      <span className="text-xs break-all">{v}</span>
+                    </div>
+                  ))}
+                </div>
+                <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} />
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+
+    <table className="hidden lg:table w-full text-sm min-w-[1020px]">
       <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
         <tr className={`text-left text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
           {selection && (
@@ -1160,19 +1335,7 @@ export function TxnTable({
           const isOpen = open.has(t.transaction_id);
           // The date prints once per day; later rows in the day stay quiet.
           const newDay = ri === 0 || rows[ri - 1].date !== t.date;
-          const catOptions =
-            t.book_category && !categories.includes(t.book_category)
-              ? [
-                  {
-                    value: t.book_category,
-                    label: t.book_category,
-                    short: t.book_category.replace(/^\d{4}\s+/, ""),
-                    icon: accountIcon(t.book_category),
-                    group: accountGroup(t.book_category),
-                  },
-                  ...baseCatOptions,
-                ]
-              : baseCatOptions;
+          const catOptions = catOptionsFor(t);
           return (
             <Fragment key={t.transaction_id}>
               <tr

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 import { TxnTable, Menu, BatchBar, entityTag, entityTagClass, type Txn } from "../books-shared";
@@ -160,6 +160,22 @@ export default function BooksTransactions() {
   const onSort = (key: string) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
 
+  // Infinite scroll: the next page loads as the sentinel nears the viewport.
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || loading || loadingMore || rows.length >= total) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) void loadMore();
+      },
+      { rootMargin: "600px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length, total, loading, loadingMore]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -310,7 +326,8 @@ export default function BooksTransactions() {
 
   const subtle = "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
-  const searchField = `px-4 py-2 rounded-full text-sm border cursor-text min-w-[220px] ${
+  // text-base on phones so iOS doesn't auto-zoom the page when focusing.
+  const searchField = `px-4 py-2 rounded-full text-base sm:text-sm border cursor-text w-full sm:w-auto sm:min-w-[220px] ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
 
@@ -454,8 +471,10 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="relative">
+      {/* Mobile: full-width search on its own line, then one swipeable filter
+          row — nothing wraps into a pile. Desktop keeps the single row. */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
+        <div className="relative w-full sm:w-auto">
           <SearchBox value={q} onCommit={setQ} className={searchField} />
           {tagMatch && (
             <span className={`absolute -bottom-4 left-3 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
@@ -463,6 +482,7 @@ export default function BooksTransactions() {
             </span>
           )}
         </div>
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:contents [&>*]:shrink-0">
         <Menu
           value={entity}
           isDark={isDark}
@@ -524,8 +544,9 @@ export default function BooksTransactions() {
             Clear
           </button>
         )}
+        </div>
         {!loading && (
-          <span className={`text-xs ml-auto tabular-nums ${subtle}`}>
+          <span className={`text-xs sm:ml-auto tabular-nums ${subtle}`}>
             {rows.length} of {total.toLocaleString()}
           </span>
         )}
@@ -586,6 +607,8 @@ export default function BooksTransactions() {
         )}
       </div>
 
+      {/* Scroll sentinel — nearing it auto-loads the next page. */}
+      {!loading && rows.length < total && <div ref={sentinelRef} aria-hidden />}
       {!loading && rows.length < total && (
         <button
           onClick={() => void loadMore()}
