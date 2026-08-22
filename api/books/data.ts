@@ -418,7 +418,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         if (r.ok) updated += Math.min(200, ids.length - i);
       }
-      await logChanges(ids, null, patch, "batch", user.id);
+      // Log only the fields the user actually chose. loan_id here is an
+      // automatic side-effect of an account move, not an edit — logging it
+      // would assert a "loan changed" event that never happened.
+      const { loan_id: _dropped, ...logPatch } = patch;
+      await logChanges(ids, null, logPatch, "batch", user.id);
       return res.json({ updated });
     }
 
