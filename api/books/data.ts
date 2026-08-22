@@ -3,6 +3,7 @@ import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
 import { patchMatching, ACCOUNTS, sectionOf } from "../../lib/books-rules.js";
 import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
+import { sunriseUtcDate } from "../../lib/sunrise.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -441,6 +442,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!r.ok) return res.status(500).json({ error: "receipt_failed" });
       return res.json({ receipt: ((await r.json()) as any[])[0] ?? null });
     }
+    // Toggle the daily sync-at-sunrise behavior.
+    if (req.method === "POST" && req.body?.action === "set_sunrise_sync") {
+      const enabled = !!req.body.enabled;
+      await db("books_settings?id=eq.1", {
+        method: "PATCH",
+        body: JSON.stringify({ sync_at_sunrise: enabled, updated_at: new Date().toISOString() }),
+      });
+      return res.json({ sync_at_sunrise: enabled });
+    }
+
     if (req.method === "POST" && req.body?.action === "delete_receipt") {
       const id = Number(req.body.id);
       if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
@@ -520,6 +531,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         counts.set(r.id, n);
       }
       return res.json({ rules: rules.map((r: any) => ({ ...r, matches: counts.get(r.id) ?? 0 })) });
+    }
+
+    // Books auto-sync settings — the sunrise toggle + when it next fires.
+    if (report === "settings") {
+      const sRes = await db("books_settings?id=eq.1&select=*&limit=1");
+      const s = sRes.ok ? ((await sRes.json()) as any[])[0] ?? null : null;
+      const now = new Date();
+      let nextSunrise = sunriseUtcDate(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate(), s?.sync_lat ?? 32.2226, s?.sync_lng ?? -110.9747);
+      // If today's sunrise already passed, show tomorrow's.
+      if (nextSunrise && nextSunrise < now) {
+        const t = new Date(now.getTime() + 86400000);
+        nextSunrise = sunriseUtcDate(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate(), s?.sync_lat ?? 32.2226, s?.sync_lng ?? -110.9747);
+      }
+      return res.json({
+        sync_at_sunrise: !!s?.sync_at_sunrise,
+        last_auto_sync_date: s?.last_auto_sync_date ?? null,
+        next_sunrise_utc: nextSunrise ? nextSunrise.toISOString() : null,
+      });
     }
 
     // ── One transaction's audit trail + attached receipts ────────────────

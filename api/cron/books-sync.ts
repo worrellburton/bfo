@@ -3,6 +3,7 @@ import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { categorize, patchMatching } from "../../lib/books-rules.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
+import { sunriseUtcDate } from "../../lib/sunrise.js";
 
 /**
  * Books runs on Plaid. Every night this pulls new/changed bank transactions
@@ -188,6 +189,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!fromCron) {
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: "unauthorized" });
+  }
+
+  // Sunrise gate — only for the automatic cron run. The cron fires a few times
+  // across the morning window; on each fire we sync once, at the first fire on
+  // or after today's local sunrise, and only if the toggle is on. A person
+  // hitting "Sync now" always syncs immediately (this gate is skipped).
+  if (fromCron) {
+    try {
+      const sRes = await db("books_settings?id=eq.1&select=*&limit=1");
+      const s = sRes.ok ? ((await sRes.json()) as any[])[0] : null;
+      if (!s?.sync_at_sunrise) {
+        return res.status(200).json({ skipped: "sunrise_sync_disabled" });
+      }
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      if (s.last_auto_sync_date === today) {
+        return res.status(200).json({ skipped: "already_synced_today" });
+      }
+      const sunrise = sunriseUtcDate(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate(), s.sync_lat, s.sync_lng);
+      if (sunrise && now < sunrise) {
+        return res.status(200).json({ skipped: "before_sunrise", sunrise_utc: sunrise.toISOString() });
+      }
+      // Fall through and sync; today's date is claimed only after it succeeds
+      // (below), so a failed run retries at the next window rather than being
+      // skipped for the day. Upserts are idempotent, so the rare overlap of
+      // two morning fires is harmless.
+    } catch (err: any) {
+      console.error("sunrise gate error:", err.message);
+      // On a gate failure, fall through and sync — missing a sync is worse.
+    }
   }
 
   // Re-run the chart-of-accounts rules over everything already synced —
@@ -418,6 +449,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           entity_name: pref.entity_name ?? null,
           hidden: pref.hidden ?? false,
         }),
+      }).catch(() => {});
+    }
+
+    // Mark today's automatic run complete, so later morning fires skip it.
+    if (fromCron) {
+      await db("books_settings?id=eq.1", {
+        method: "PATCH",
+        body: JSON.stringify({ last_auto_sync_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }),
       }).catch(() => {});
     }
 

@@ -132,6 +132,37 @@ export default function BooksTransactions() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+  const [sunriseOn, setSunriseOn] = useState(false);
+  const [nextSunrise, setNextSunrise] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await authFetch("/api/books/data?report=settings");
+        if (res.ok) {
+          const d = await res.json();
+          setSunriseOn(!!d.sync_at_sunrise);
+          setNextSunrise(d.next_sunrise_utc ?? null);
+        }
+      } catch {
+        /* toggle just defaults off */
+      }
+    })();
+  }, []);
+
+  async function toggleSunrise() {
+    const next = !sunriseOn;
+    setSunriseOn(next); // optimistic
+    try {
+      const res = await authFetch("/api/books/data", {
+        method: "POST",
+        body: JSON.stringify({ action: "set_sunrise_sync", enabled: next }),
+      });
+      if (!res.ok) setSunriseOn(!next);
+    } catch {
+      setSunriseOn(!next);
+    }
+  }
 
   // If the search text is an entity's initials (its tag), search by that
   // entity instead of the description — so "BFT" finds that entity's rows.
@@ -377,10 +408,41 @@ export default function BooksTransactions() {
             </button>
             {moreOpen && (
               <div
-                className={`absolute right-0 mt-2 w-44 rounded-2xl border shadow-xl z-30 p-1.5 ${
+                className={`absolute right-0 mt-2 w-56 rounded-2xl border shadow-xl z-30 p-1.5 ${
                   isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
                 }`}
               >
+                {/* Sync at sunrise — a daily automatic sync at local dawn. */}
+                <button
+                  onClick={() => void toggleSunrise()}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-left cursor-pointer ${
+                    isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
+                  }`}
+                >
+                  <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                  </svg>
+                  <span className="flex-1 min-w-0">
+                    <span className={isDark ? "text-gray-200" : "text-gray-800"}>Sync at sunrise</span>
+                    {sunriseOn && nextSunrise && (
+                      <span className={`block text-[11px] ${subtle}`}>
+                        Next {new Date(nextSunrise).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`relative w-9 h-5 rounded-full shrink-0 transition-colors ${
+                      sunriseOn ? "bg-amber-500" : isDark ? "bg-white/15" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                        sunriseOn ? "translate-x-[18px]" : "translate-x-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
+                <div className={`my-1 border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
                 {([["Import CSV", () => void openImport()], ["Mercury history", () => void backfillMercury()]] as const).map(
                   ([label, run]) => (
                     <button

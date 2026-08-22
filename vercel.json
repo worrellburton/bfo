@@ -15,7 +15,7 @@
     },
     {
       "path": "/api/cron/books-sync",
-      "schedule": "0 8 * * *"
+      "schedule": "0 12-15 * * *"
     }
   ],
   "rewrites": [
