@@ -969,9 +969,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // x-vercel-cron header, which Vercel stamps on real cron invocations and
   // strips from outside traffic — so this endpoint is never open to the
   // public internet.
-  const authorized = secret
-    ? req.headers.authorization === `Bearer ${secret}`
-    : !!req.headers["x-vercel-cron"];
+  // A genuine cron fire carries the x-vercel-cron header (Vercel stamps it and
+  // strips it from outside traffic). When CRON_SECRET is set Vercel *also*
+  // injects Authorization: Bearer $CRON_SECRET. Accept either signal — keying
+  // solely off the Bearer match locked out every scheduled invocation whenever
+  // the injected header didn't line up, which is exactly what happened here.
+  const authorized =
+    !!req.headers["x-vercel-cron"] ||
+    (!!secret && req.headers.authorization === `Bearer ${secret}`);
   if (!authorized) {
     return res.status(401).json({ error: "unauthorized" });
   }

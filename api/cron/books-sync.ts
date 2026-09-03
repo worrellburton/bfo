@@ -182,10 +182,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Cron proves itself with the secret — or, when none is configured, with
   // the x-vercel-cron header Vercel stamps on real cron invocations and
   // strips from outside traffic. A person proves themselves with a session.
+  // A genuine Vercel cron carries the x-vercel-cron header (stripped from any
+  // external request); a programmatic caller can instead present CRON_SECRET.
+  // Accept EITHER — requiring only the Bearer locked out real cron fires when
+  // Vercel's Authorization injection didn't match.
   const cronSecret = process.env.CRON_SECRET;
   const fromCron =
     req.method === "GET" &&
-    (cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !!req.headers["x-vercel-cron"]);
+    (!!req.headers["x-vercel-cron"] || (!!cronSecret && req.headers.authorization === `Bearer ${cronSecret}`));
   if (!fromCron) {
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: "unauthorized" });
