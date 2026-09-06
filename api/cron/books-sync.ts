@@ -179,18 +179,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  // Cron proves itself one of two ways. Vercel stamps every scheduled
-  // invocation with x-vercel-cron-schedule (the platform owns x-vercel-*
-  // request headers, so outside traffic can't supply it), and when CRON_SECRET
-  // is configured it also sends Authorization: Bearer $CRON_SECRET. Accept
-  // either — an earlier version keyed off an "x-vercel-cron" header Vercel
-  // never sends, which silently 401'd every scheduled fire. A person proves
+  // Cron proves itself with Authorization: Bearer $CRON_SECRET, which Vercel
+  // injects on every scheduled fire once that env var exists. Until it is
+  // configured, fall back to the x-vercel-cron-schedule header Vercel stamps
+  // on scheduled fires — verified NOT to be stripped from outside traffic, so
+  // it is a stopgap, not a credential: the moment CRON_SECRET is set, the
+  // Bearer match becomes mandatory and the header alone no longer passes.
+  // (An earlier version keyed off an "x-vercel-cron" header Vercel never
+  // sends, which silently 401'd every scheduled fire.) A person proves
   // themselves with a session.
   const cronSecret = process.env.CRON_SECRET;
   const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
   const fromCron =
     req.method === "GET" &&
-    (!!cronScheduleHeader || (!!cronSecret && req.headers.authorization === `Bearer ${cronSecret}`));
+    (cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !!cronScheduleHeader);
   if (!fromCron) {
     const user = await currentUser(req);
     if (!user) {

@@ -964,15 +964,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Scheduled cron path. Vercel stamps every scheduled invocation with
-  // x-vercel-cron-schedule (the platform owns x-vercel-* request headers, so
-  // outside traffic can't supply it) and, when CRON_SECRET is configured, also
-  // sends Authorization: Bearer $CRON_SECRET. Accept either. An earlier
-  // version keyed off an "x-vercel-cron" header Vercel never sends, which
-  // silently 401'd every scheduled fire.
+  // Scheduled cron path. With CRON_SECRET configured Vercel injects
+  // Authorization: Bearer $CRON_SECRET on every scheduled fire and that match
+  // is mandatory. Without it, fall back to the x-vercel-cron-schedule header
+  // Vercel stamps on scheduled fires — verified NOT to be stripped from outside
+  // traffic, so it's a stopgap only (and the secret guard below stops this
+  // handler cold anyway). An earlier version keyed off an "x-vercel-cron"
+  // header Vercel never sends, which silently 401'd every scheduled fire.
   const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
-  const authorized =
-    !!cronScheduleHeader || (!!secret && req.headers.authorization === `Bearer ${secret}`);
+  const authorized = secret ? req.headers.authorization === `Bearer ${secret}` : !!cronScheduleHeader;
   if (!authorized) {
     // Booleans only — never the secret — so a rejected fire explains itself.
     console.error("treasury-report rejected", {
