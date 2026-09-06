@@ -964,21 +964,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Scheduled cron path. With CRON_SECRET configured Vercel sends
-  // Authorization: Bearer $CRON_SECRET; without it we still require the
-  // x-vercel-cron header, which Vercel stamps on real cron invocations and
-  // strips from outside traffic — so this endpoint is never open to the
-  // public internet.
-  // A genuine cron fire carries the x-vercel-cron header (Vercel stamps it and
-  // strips it from outside traffic). When CRON_SECRET is set Vercel *also*
-  // injects Authorization: Bearer $CRON_SECRET. Accept either signal — keying
-  // solely off the Bearer match locked out every scheduled invocation whenever
-  // the injected header didn't line up, which is exactly what happened here.
+  // Scheduled cron path. Vercel stamps every scheduled invocation with
+  // x-vercel-cron-schedule (the platform owns x-vercel-* request headers, so
+  // outside traffic can't supply it) and, when CRON_SECRET is configured, also
+  // sends Authorization: Bearer $CRON_SECRET. Accept either. An earlier
+  // version keyed off an "x-vercel-cron" header Vercel never sends, which
+  // silently 401'd every scheduled fire.
+  const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
   const authorized =
-    !!req.headers["x-vercel-cron"] ||
-    (!!secret && req.headers.authorization === `Bearer ${secret}`);
+    !!cronScheduleHeader || (!!secret && req.headers.authorization === `Bearer ${secret}`);
   if (!authorized) {
+    // Booleans only — never the secret — so a rejected fire explains itself.
+    console.error("treasury-report rejected", {
+      schedule_header: !!cronScheduleHeader,
+      auth_header: !!req.headers.authorization,
+      secret_configured: !!secret,
+      ua: req.headers["user-agent"] ?? null,
+    });
     return res.status(401).json({ error: "unauthorized" });
+  }
+
+  // The balance pull below authenticates to /api/plaid/data with
+  // x-internal-cron: CRON_SECRET. Without the secret that call can only fail,
+  // and the failure path emails every subscriber a "balances unavailable"
+  // notice — so stop here, loudly, rather than spam the family each Monday.
+  if (!secret) {
+    console.error("treasury-report: CRON_SECRET is not configured; cannot fetch balances. Set it in Vercel → Project → Settings → Environment Variables (Production) and redeploy.");
+    return res.status(500).json({ error: "cron_secret_missing" });
   }
 
   try {

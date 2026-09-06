@@ -179,20 +179,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  // Cron proves itself with the secret — or, when none is configured, with
-  // the x-vercel-cron header Vercel stamps on real cron invocations and
-  // strips from outside traffic. A person proves themselves with a session.
-  // A genuine Vercel cron carries the x-vercel-cron header (stripped from any
-  // external request); a programmatic caller can instead present CRON_SECRET.
-  // Accept EITHER — requiring only the Bearer locked out real cron fires when
-  // Vercel's Authorization injection didn't match.
+  // Cron proves itself one of two ways. Vercel stamps every scheduled
+  // invocation with x-vercel-cron-schedule (the platform owns x-vercel-*
+  // request headers, so outside traffic can't supply it), and when CRON_SECRET
+  // is configured it also sends Authorization: Bearer $CRON_SECRET. Accept
+  // either — an earlier version keyed off an "x-vercel-cron" header Vercel
+  // never sends, which silently 401'd every scheduled fire. A person proves
+  // themselves with a session.
   const cronSecret = process.env.CRON_SECRET;
+  const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
   const fromCron =
     req.method === "GET" &&
-    (!!req.headers["x-vercel-cron"] || (!!cronSecret && req.headers.authorization === `Bearer ${cronSecret}`));
+    (!!cronScheduleHeader || (!!cronSecret && req.headers.authorization === `Bearer ${cronSecret}`));
   if (!fromCron) {
     const user = await currentUser(req);
-    if (!user) return res.status(401).json({ error: "unauthorized" });
+    if (!user) {
+      // Booleans only — never the secret — so a rejected fire explains itself
+      // in the runtime logs instead of being a bare 401.
+      console.error("books-sync rejected", {
+        method: req.method,
+        schedule_header: !!cronScheduleHeader,
+        auth_header: !!req.headers.authorization,
+        secret_configured: !!cronSecret,
+        ua: req.headers["user-agent"] ?? null,
+      });
+      return res.status(401).json({ error: "unauthorized" });
+    }
   }
 
   // Sunrise gate — only for the automatic cron run. The cron fires a few times

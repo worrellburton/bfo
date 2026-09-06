@@ -134,35 +134,70 @@ export default function BooksTransactions() {
   const [batchBusy, setBatchBusy] = useState(false);
   const [sunriseOn, setSunriseOn] = useState(false);
   const [nextSunrise, setNextSunrise] = useState<string | null>(null);
+  const [lastAutoSync, setLastAutoSync] = useState<string | null>(null);
+  const [sunriseBusy, setSunriseBusy] = useState(false);
+  const [sunriseError, setSunriseError] = useState("");
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await authFetch("/api/books/data?report=settings");
-        if (res.ok) {
-          const d = await res.json();
-          setSunriseOn(!!d.sync_at_sunrise);
-          setNextSunrise(d.next_sunrise_utc ?? null);
-        }
-      } catch {
-        /* toggle just defaults off */
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/books/data?report=settings");
+      if (res.ok) {
+        const d = await res.json();
+        setSunriseOn(!!d.sync_at_sunrise);
+        setNextSunrise(d.next_sunrise_utc ?? null);
+        setLastAutoSync(d.last_auto_sync_date ?? null);
       }
-    })();
+    } catch {
+      /* toggle just defaults off */
+    }
   }, []);
 
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
   async function toggleSunrise() {
+    if (sunriseBusy) return;
     const next = !sunriseOn;
     setSunriseOn(next); // optimistic
+    setSunriseBusy(true);
+    setSunriseError("");
     try {
       const res = await authFetch("/api/books/data", {
         method: "POST",
         body: JSON.stringify({ action: "set_sunrise_sync", enabled: next }),
       });
-      if (!res.ok) setSunriseOn(!next);
-    } catch {
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Couldn't save the sunrise setting.");
+      }
+      // Re-read so the "next sunrise" / "last ran" line reflects the server.
+      await loadSettings();
+    } catch (err) {
       setSunriseOn(!next);
+      setSunriseError(err instanceof Error ? err.message : "Couldn't save the sunrise setting.");
+    } finally {
+      setSunriseBusy(false);
     }
   }
+
+  // "today 6:04 AM" / "tomorrow 6:05 AM" — the next automatic sync, in the
+  // viewer's local time.
+  const nextSunriseLabel = useMemo(() => {
+    if (!nextSunrise) return null;
+    const d = new Date(nextSunrise);
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    return `${sameDay ? "today" : "tomorrow"} ${time}`;
+  }, [nextSunrise]);
+
+  const lastAutoSyncLabel = useMemo(() => {
+    if (!lastAutoSync) return "hasn't run yet";
+    // last_auto_sync_date is a plain YYYY-MM-DD; render it without a TZ shift.
+    const [y, m, dd] = lastAutoSync.split("-").map(Number);
+    return `last ran ${new Date(y, m - 1, dd).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  }, [lastAutoSync]);
 
   // If the search text is an entity's initials (its tag), search by that
   // entity instead of the description — so "BFT" finds that entity's rows.
@@ -380,14 +415,25 @@ export default function BooksTransactions() {
               Synced {new Date(lastSynced).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
             </p>
           )}
+          {/* The toggle used to be silent — you couldn't tell whether the
+              morning sync ever ran. Say when it fires next and when it last did. */}
+          {sunriseOn && (
+            <p className={`text-xs mt-0.5 ${sunriseError ? "text-red-500" : "text-amber-600"}`}>
+              {sunriseError
+                ? sunriseError
+                : `Sunrise sync${nextSunriseLabel ? ` · next ${nextSunriseLabel}` : ""} · ${lastAutoSyncLabel}`}
+            </p>
+          )}
+          {!sunriseOn && sunriseError && <p className="text-xs mt-0.5 text-red-500">{sunriseError}</p>}
         </div>
         <div className="flex items-center gap-2">
           {/* Sync at sunrise — a daily automatic sync at local dawn. */}
           <button
             onClick={() => void toggleSunrise()}
-            title={sunriseOn && nextSunrise ? `Next sync ${new Date(nextSunrise).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" })}` : "Sync automatically at sunrise"}
+            disabled={sunriseBusy}
+            title={sunriseOn && nextSunriseLabel ? `Next sync ${nextSunriseLabel}` : "Sync automatically at sunrise"}
             aria-pressed={sunriseOn}
-            className={`inline-flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-full text-sm border cursor-pointer transition-colors ${
+            className={`inline-flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-full text-sm border cursor-pointer transition-colors disabled:opacity-60 ${
               sunriseOn
                 ? isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-700"
                 : isDark ? "border-white/10 text-gray-400 hover:text-white" : "border-gray-200 text-gray-500 hover:text-black"
