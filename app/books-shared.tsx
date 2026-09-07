@@ -35,6 +35,18 @@ export function money(n: number, currency = "USD"): string {
 
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+const LONG_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "2026-09-07" → "September 7, 2026". Parsed off the ISO string (no timezone). */
+export function longDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${LONG_MONTHS[m - 1]} ${d}, ${y}`;
+}
+
 /** "2026-08-08" → "Aug 8th". Parsed straight off the ISO string (no timezone). */
 export function shortDate(iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
@@ -227,6 +239,32 @@ export function accountIcon(label: string): ReactNode {
   return <Icon d={P.receipt} />;
 }
 
+/**
+ * The account pill's leading disc, tinted by chart section: revenue green,
+ * operating orange, other violet, flow neutral. Unset stays neutral.
+ */
+export function AccountDisc({ label, isDark }: { label: string; isDark: boolean }) {
+  const c = label.trim()[0];
+  const neutral = isDark ? "bg-white/10 text-gray-300" : "bg-gray-200 text-gray-600";
+  const tone =
+    c === "4" ? "bg-emerald-500/20 text-emerald-400"
+    : c === "6" ? "bg-orange-500/20 text-orange-400"
+    : c === "7" ? "bg-violet-500/20 text-violet-400"
+    : neutral;
+  return (
+    <span aria-hidden className={`w-5 h-5 rounded-full shrink-0 inline-flex items-center justify-center ${tone}`}>
+      {accountIcon(label)}
+    </span>
+  );
+}
+
+/** The small dot after an amount — reads the row's type at a glance. */
+export function typeDot(eff: string, inflow: boolean): string {
+  if (eff === "intercompany") return "bg-violet-400";
+  if (eff === "transfer" || eff === "loan") return "bg-gray-500";
+  return inflow ? "bg-emerald-400" : "bg-sky-400";
+}
+
 export function pretty(cat: string | null): string {
   if (!cat) return "Uncategorized";
   const s = cat.replace(/_/g, " ").toLowerCase();
@@ -286,13 +324,17 @@ export function Menu({
   size = "sm",
   quiet = false,
   placeholder,
+  leading,
 }: {
   value: string;
   options: Option[];
   isDark: boolean;
   disabled?: boolean;
   onChange: (v: string) => void;
-  tone?: "neutral" | "amber";
+  /** soft: a filled, low-contrast pill (the category chip in the ledger). */
+  tone?: "neutral" | "amber" | "soft";
+  /** Rendered before the label on the trigger only — e.g. a tinted icon disc. */
+  leading?: ReactNode;
   /** md matches page-level filter fields; sm fits inside table rows. */
   size?: "sm" | "md";
   /** Borderless until hover — for controls repeated on every row. */
@@ -402,10 +444,16 @@ export function Menu({
       ? isDark
         ? "bg-amber-500/10 border-amber-500/25 text-amber-200 hover:bg-amber-500/20"
         : "bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
-      : isDark
-        ? "bg-white/[0.06] border-white/10 text-gray-200 hover:bg-white/[0.1]"
-        : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50"
-  const pill = `inline-flex items-center gap-1.5 rounded-full border cursor-pointer disabled:opacity-50 transition-colors ${dims} ${skin}`;
+      : tone === "soft"
+        ? isDark
+          ? "bg-white/[0.06] border-white/[0.04] text-gray-200 hover:bg-white/[0.1]"
+          : "bg-gray-100 border-gray-100 text-gray-800 hover:bg-gray-200"
+        : isDark
+          ? "bg-white/[0.06] border-white/10 text-gray-200 hover:bg-white/[0.1]"
+          : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50";
+  // A leading disc sits nearly flush with the pill's edge.
+  const pad = leading ? dims.replace(/\bpl-\S+/, "pl-1") : dims;
+  const pill = `inline-flex items-center gap-1.5 rounded-full border cursor-pointer disabled:opacity-50 transition-colors ${pad} ${skin}`;
 
   return (
     <>
@@ -421,6 +469,7 @@ export function Menu({
         aria-expanded={open}
         className={pill}
       >
+        {leading}
         <span className="truncate">{label}</span>
         <svg
           className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}
@@ -1300,11 +1349,15 @@ export function TxnTable({
       })}
     </div>
 
-    <table className="hidden lg:table w-full text-sm min-w-[1020px]">
+    {/* ── Desktop: Copilot-style ledger. Rows group under a date band; the
+        merchant leads with a muted description beneath; the account is a
+        soft pill with a section-tinted icon; transfers dim; the amount
+        carries a type dot. Details expand from the trailing chevron. ──── */}
+    <table className="hidden lg:table w-full text-sm min-w-[960px]">
       <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
-        <tr className={`text-left text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
+        <tr className={`text-left text-xs ${subtle} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
           {selection && (
-            <th className="w-9 pl-3">
+            <th className="w-10 pl-4">
               <button
                 onClick={() => selection.setAll(allSelected ? [] : rows.map((r) => r.transaction_id))}
                 aria-label={allSelected ? "Deselect all" : "Select all"}
@@ -1314,15 +1367,14 @@ export function TxnTable({
               </button>
             </th>
           )}
-          <th className="w-8" />
-          <Th label="Date" sortKey="date" />
+          <Th label="Merchant / Description" sortKey="vendor" />
+          <Th label="Category" sortKey="account" />
           <Th label="Entity" sortKey="entity" />
           <Th label="Type" />
-          <Th label="Description" sortKey="description" />
-          <Th label="Vendor" sortKey="vendor" />
-          <Th label="Account" sortKey="account" />
+          <Th label="Date" sortKey="date" />
           <Th label="Amount" sortKey="amount" align="right" />
           {balances && <th className="px-2 py-2.5 font-medium text-right">Balance</th>}
+          <th className="w-10" />
         </tr>
       </thead>
       <tbody>
@@ -1330,21 +1382,33 @@ export function TxnTable({
           const inflow = t.amount < 0;
           const eff = effType(t);
           // Transfers and other own-money movements have no counterparty —
-          // their vendor cell stays blank rather than echoing the descriptor.
+          // the descriptor stands in as the (muted) primary line.
           const vendor = t.merchant_name || (eff === "normal" ? t.name : null);
           const isOpen = open.has(t.transaction_id);
-          // The date prints once per day; later rows in the day stay quiet.
           const newDay = ri === 0 || rows[ri - 1].date !== t.date;
+          const dim = eff === "transfer" || eff === "intercompany";
+          const checked = selection?.selected.has(t.transaction_id) ?? false;
           const catOptions = catOptionsFor(t);
+          const cols = 7 + (balances ? 1 : 0) + (selection ? 1 : 0);
           return (
             <Fragment key={t.transaction_id}>
+              {newDay && (
+                <tr>
+                  <td
+                    colSpan={cols}
+                    className={`px-4 py-1.5 text-[11px] ${subtle} ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}
+                  >
+                    {longDate(t.date)}
+                  </td>
+                </tr>
+              )}
               <tr
-                className={`border-b last:border-b-0 ${border} ${
-                  newDay && ri > 0 ? `border-t ${isDark ? "border-t-white/10" : "border-t-gray-200"}` : ""
-                } ${selection?.selected.has(t.transaction_id) ? (isDark ? "bg-emerald-500/[0.05]" : "bg-emerald-50/50") : ""} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
+                className={`group border-b last:border-b-0 ${border} transition-colors ${
+                  checked ? (isDark ? "bg-emerald-500/[0.05]" : "bg-emerald-50/50") : ""
+                } ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
               >
                 {selection && (
-                  <td className="pl-3">
+                  <td className="pl-4">
                     <button
                       onMouseDown={(e) => e.shiftKey && e.preventDefault()}
                       onClick={(e) => {
@@ -1363,36 +1427,66 @@ export function TxnTable({
                       aria-label="Select row"
                       className="cursor-pointer align-middle select-none"
                     >
-                      {box(selection.selected.has(t.transaction_id))}
+                      {box(checked)}
                     </button>
                   </td>
                 )}
-                <td className="pl-2">
-                  <button
-                    onClick={() => toggle(t.transaction_id)}
-                    aria-expanded={isOpen}
-                    aria-label="Full detail"
-                    className={`p-1 rounded cursor-pointer ${subtle} hover:${isDark ? "text-white" : "text-black"}`}
-                  >
-                    <svg
-                      className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                      fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
-                  </button>
+                <td className="px-2 py-3 max-w-[400px]">
+                  <div className={`flex items-center gap-3 min-w-0 ${dim ? "opacity-60 group-hover:opacity-100 transition-opacity" : ""}`}>
+                    <VendorAvatar name={vendor || t.name || "?"} />
+                    <div className="min-w-0">
+                      {vendor ? (
+                        <button
+                          onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
+                          title={`Open ${vendor}`}
+                          className={`font-medium truncate block max-w-full text-left cursor-pointer hover:underline ${
+                            isDark ? "text-gray-100" : "text-gray-900"
+                          }`}
+                        >
+                          {vendor}
+                        </button>
+                      ) : (
+                        <span className={`font-medium truncate block max-w-full ${subtle}`} title={t.name ?? undefined}>
+                          {t.name || "—"}
+                        </span>
+                      )}
+                      {(t.pending || (vendor && t.name && t.name !== vendor)) && (
+                        <div className={`text-[11px] truncate ${subtle}`} title={t.name ?? undefined}>
+                          {t.pending && <span className="text-amber-500">Pending</span>}
+                          {t.pending && vendor && t.name && t.name !== vendor ? " · " : ""}
+                          {vendor && t.name && t.name !== vendor ? t.name : ""}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </td>
-                <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>
-                  {newDay ? shortDate(t.date) : ""}
+                <td className="px-2 py-3">
+                  {/* Always a category picker. A loan-linked row shows the loan
+                      as its placeholder; choosing an account detaches the loan
+                      so the movement posts to the P&L instead. */}
+                  <Menu
+                    value={t.book_category ?? ""}
+                    isDark={isDark}
+                    tone="soft"
+                    leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} />}
+                    disabled={busy === t.transaction_id}
+                    placeholder={t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined}
+                    onChange={(v) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v))}
+                    options={
+                      !t.book_category && !t.loan_id
+                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }, ...catOptions]
+                        : catOptions
+                    }
+                  />
                 </td>
-                <td className="px-2 py-2.5 whitespace-nowrap">
+                <td className="px-2 py-3 whitespace-nowrap">
                   {t.entity_name ? (
                     <EntityTag name={t.entity_name} isDark={isDark} />
                   ) : (
                     <span className="text-amber-500 text-xs">Unmapped</span>
                   )}
                 </td>
-                <td className="px-2 py-2.5">
+                <td className="px-2 py-3">
                   {/* Fully editable — a loan link no longer locks the row; the
                       loan classification maps back to its underlying type. */}
                   <Menu
@@ -1408,58 +1502,47 @@ export function TxnTable({
                     ]}
                   />
                 </td>
-                <td className={`px-2 py-2.5 max-w-[280px] ${subtle}`} title={t.name ?? undefined}>
-                  <span className="truncate block max-w-full">{t.name || "—"}</span>
+                <td className={`px-2 py-3 whitespace-nowrap ${subtle}`} title={t.date}>
+                  {longDate(t.date)}
                 </td>
-                <td className="px-2 py-2.5 max-w-[200px]">
-                  {vendor ? (
-                    <button
-                      onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
-                      title={`Open ${vendor}`}
-                      className="font-medium truncate block max-w-full text-left cursor-pointer hover:underline"
+                <td className="px-2 py-3 text-right whitespace-nowrap">
+                  <span className="inline-flex items-center justify-end gap-2">
+                    <span
+                      className={`tabular-nums font-medium ${inflow ? "text-emerald-500" : ""} ${
+                        dim ? "opacity-60 group-hover:opacity-100 transition-opacity" : ""
+                      }`}
                     >
-                      {vendor}
-                    </button>
-                  ) : (
-                    <span className="font-medium">—</span>
-                  )}
-                </td>
-                <td className="px-2 py-2.5">
-                  {/* Always a category picker. A loan-linked row shows the loan
-                      as its placeholder; choosing an account detaches the loan
-                      so the movement posts to the P&L instead. */}
-                  <Menu
-                    value={t.book_category ?? ""}
-                    isDark={isDark}
-                    quiet
-                    disabled={busy === t.transaction_id}
-                    placeholder={t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined}
-                    onChange={(v) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v))}
-                    options={
-                      !t.book_category && !t.loan_id
-                        ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }, ...catOptions]
-                        : catOptions
-                    }
-                  />
-                </td>
-                <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                  <div className={`tabular-nums font-medium ${inflow ? "text-emerald-500" : ""}`}>
-                    {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
-                  </div>
-                  {t.pending && (
-                    <div className={`text-[10px] uppercase tracking-wider ${subtle}`}>pending</div>
-                  )}
+                      {inflow ? `+${money(-t.amount, t.currency ?? "USD")}` : money(t.amount, t.currency ?? "USD")}
+                    </span>
+                    <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${typeDot(eff, inflow)}`} />
+                  </span>
                 </td>
                 {balances && (
-                  <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums font-medium">
+                  <td className="px-2 py-3 text-right whitespace-nowrap tabular-nums font-medium">
                     {money(balances[t.transaction_id] ?? 0, t.currency ?? "USD")}
                   </td>
                 )}
+                <td className="pr-3 text-right">
+                  <button
+                    onClick={() => toggle(t.transaction_id)}
+                    aria-expanded={isOpen}
+                    aria-label="Full detail"
+                    className={`p-1.5 rounded-full cursor-pointer transition-colors ${subtle} ${
+                      isDark ? "hover:bg-white/10 hover:text-white" : "hover:bg-gray-100 hover:text-black"
+                    }`}
+                  >
+                    <svg
+                      className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                      fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </button>
+                </td>
               </tr>
               {isOpen && (
                 <tr className={`border-b ${border}`}>
-                  <td />
-                  <td colSpan={7 + (balances ? 1 : 0) + (selection ? 1 : 0)} className="px-2 pb-3 pt-1">
+                  <td colSpan={cols} className="px-4 pb-4 pt-1">
                     <div className={`border-t pt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 ${
                       isDark ? "border-white/10" : "border-gray-200"
                     }`}>

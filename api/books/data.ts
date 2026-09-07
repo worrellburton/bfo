@@ -634,21 +634,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const prefs = await getPrefs();
       const selection = entity === "unmapped" ? ("unmapped" as const) : parseEntities(entity);
-      let path = `book_transactions?select=*${scopeFilter(prefs, selection)}`;
+      // The filter is built once and shared by the page query and the summary.
+      let filter = scopeFilter(prefs, selection);
       if (year && /^\d{4}$/.test(year)) {
-        path += `&date=gte.${year}-01-01&date=lte.${year}-12-31`;
+        filter += `&date=gte.${year}-01-01&date=lte.${year}-12-31`;
       }
       // Override-aware type filters, kept server-side for correct counts.
       if (type === "transfers") {
-        path += `&or=(type_override.eq.transfer,and(type_override.is.null,txn_type.eq.transfer,intercompany.is.false))`;
+        filter += `&or=(type_override.eq.transfer,and(type_override.is.null,txn_type.eq.transfer,intercompany.is.false))`;
       } else if (type === "intercompany") {
-        path += `&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))`;
+        filter += `&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))`;
       } else if (type === "uncategorized") {
-        path += `&book_category=is.null`;
+        filter += `&book_category=is.null`;
       } else if (type === "revenue") {
-        path += `&book_category=like.4*`;
+        filter += `&book_category=like.4*`;
       } else if (type === "expenses") {
-        path += `&or=(book_category.like.6*,book_category.like.7*)`;
+        filter += `&or=(book_category.like.6*,book_category.like.7*)`;
       }
       if (q) {
         // Comma and parens are PostgREST or=() structure — turn them (and any
@@ -658,8 +659,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .replace(/[,()*]/g, "*")
           .replace(/([\\%_])/g, "\\$1")
           .trim();
-        if (safe) path += `&or=(name.ilike.*${encodeURIComponent(safe)}*,merchant_name.ilike.*${encodeURIComponent(safe)}*)`;
+        if (safe) filter += `&or=(name.ilike.*${encodeURIComponent(safe)}*,merchant_name.ilike.*${encodeURIComponent(safe)}*)`;
       }
+      let path = `book_transactions?select=*${filter}`;
       // Optional sort: sort=<key>.<dir>, whitelisted to real columns. The
       // transaction_id tiebreaker keeps pagination stable across pages.
       const SORT_COLUMNS: Record<string, string> = {
@@ -683,7 +685,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
       const rows = (await r.json()) as BookTxn[];
       const total = Number(r.headers.get("content-range")?.split("/")[1] ?? rows.length);
-      return res.json({ transactions: withLiveEntity(rows, prefs), total, offset, limit });
+
+      // The first page also carries totals for the whole filtered set — the
+      // strip above the ledger (count, outflows, inflows, date span). Later
+      // pages skip it; the numbers don't change as you scroll.
+      let summary: { count: number; expenses: number; income: number; first: string | null; last: string | null } | null = null;
+      if (offset === 0) {
+        const all = await fetchAll<{ date: string; amount: number | string }>(
+          `book_transactions?select=date,amount${filter}&order=date.asc`
+        );
+        let expenses = 0;
+        let income = 0;
+        for (const t of all) {
+          const a = Number(t.amount);
+          if (a > 0) expenses += a;
+          else income -= a;
+        }
+        summary = {
+          count: all.length,
+          expenses: Math.round(expenses * 100) / 100,
+          income: Math.round(income * 100) / 100,
+          first: all[0]?.date ?? null,
+          last: all[all.length - 1]?.date ?? null,
+        };
+      }
+      return res.json({ transactions: withLiveEntity(rows, prefs), total, offset, limit, summary });
     }
 
     if (report === "pnl" || report === "cell") {

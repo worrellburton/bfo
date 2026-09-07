@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, Menu, BatchBar, entityTag, entityTagClass, type Txn } from "../books-shared";
+import { TxnTable, Menu, BatchBar, entityTag, entityTagClass, longDate, money, type Txn } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Transactions" }];
 }
 
 type Entity = { id: string; name: string };
+/** Totals for the whole filtered set — the strip above the ledger. */
+type Summary = { count: number; expenses: number; income: number; first: string | null; last: string | null };
 type BankAccount = { account_id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null; institution_name: string };
 
 const PAGE = 100;
@@ -104,6 +106,7 @@ export default function BooksTransactions() {
 
   const [rows, setRows] = useState<Txn[]>([]);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [vendorNames, setVendorNames] = useState<string[]>([]);
@@ -251,6 +254,7 @@ export default function BooksTransactions() {
       if (!res.ok) throw new Error(data?.message || "Couldn't load transactions.");
       setRows(data.transactions ?? []);
       setTotal(data.total ?? 0);
+      setSummary(data.summary ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load transactions.");
     } finally {
@@ -393,7 +397,7 @@ export default function BooksTransactions() {
   const subtle = "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   // text-base on phones so iOS doesn't auto-zoom the page when focusing.
-  const searchField = `px-4 py-2 rounded-full text-base sm:text-sm border cursor-text w-full sm:w-auto sm:min-w-[220px] ${
+  const searchField = `pl-9 pr-4 py-2 rounded-full text-base sm:text-sm border cursor-text w-full sm:w-auto sm:min-w-[240px] ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
 
@@ -581,86 +585,28 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      {/* Mobile: full-width search on its own line, then one swipeable filter
-          row — nothing wraps into a pile. Desktop keeps the single row. */}
-      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
-        <div className="relative w-full sm:w-auto">
-          <SearchBox value={q} onCommit={setQ} className={searchField} />
-          {tagMatch && (
-            <span className={`absolute -bottom-4 left-3 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
-              Filtering by {tagMatch.name}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:contents [&>*]:shrink-0">
-        <Menu
-          value={entity}
-          isDark={isDark}
-          size="md"
-          onChange={setEntity}
-          options={[
-            { value: "all", label: "All entities" },
-            { value: "unmapped", label: "Unmapped" },
-            ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
-          ]}
-        />
-        <Menu
-          value={year}
-          isDark={isDark}
-          size="md"
-          onChange={setYear}
-          options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
-        />
-        <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+      {/* Summary strip — the whole filtered set, not just the rows loaded. */}
+      {summary && !loading && (
+        <div
+          className={`grid grid-cols-2 lg:grid-cols-4 rounded-2xl border mb-4 divide-y lg:divide-y-0 lg:divide-x ${card} ${
+            isDark ? "divide-white/10" : "divide-gray-200"
+          }`}
+        >
           {(
             [
-              ["all", "All"],
-              ["revenue", "Income"],
-              ["expenses", "Expense"],
-              ["transfers", "Transfers"],
-              ["intercompany", "Roll-up"],
-              ["uncategorized", uncat ? `Uncategorized ${uncat}` : "Uncategorized"],
+              ["Total transactions", summary.count.toLocaleString(), ""],
+              ["Date range", summary.first && summary.last ? `${longDate(summary.first)} – ${longDate(summary.last)}` : "—", ""],
+              ["Total expenses", summary.expenses ? `-${money(summary.expenses)}` : money(0), ""],
+              ["Total income", money(summary.income), "text-emerald-500"],
             ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setType(value)}
-              aria-pressed={type === value}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap tabular-nums ${
-                type === value
-                  ? isDark ? "bg-white text-black" : "bg-gray-900 text-white"
-                  : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
-              }`}
-            >
-              {label}
-            </button>
+          ).map(([label, value, tone]) => (
+            <div key={label} className="px-5 py-3.5 text-sm whitespace-nowrap">
+              <span className={subtle}>{label} </span>
+              <span className={`font-semibold tabular-nums ${tone}`}>{value}</span>
+            </div>
           ))}
         </div>
-        {(q || entity !== "all" || year !== "all" || type !== "all") && (
-          <button
-            onClick={() => {
-              setQ("");
-              setEntity("all");
-              setYear("all");
-              setType("all");
-            }}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs cursor-pointer transition-colors ${
-              isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-black hover:bg-gray-100"
-            }`}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            Clear
-          </button>
-        )}
-        </div>
-        {!loading && (
-          <span className={`text-xs sm:ml-auto tabular-nums ${subtle}`}>
-            {rows.length} of {total.toLocaleString()}
-          </span>
-        )}
-      </div>
+      )}
 
       {error && (
         <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
@@ -668,53 +614,168 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
-        {loading ? (
-          <div className="p-4 space-y-2.5">
-            {Array.from({ length: 8 }, (_, i) => (
-              <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 4) * 7}%` }} />
-            ))}
+      <div className={`rounded-2xl border rise-in ${card}`}>
+        {/* Card header: micro-label, search, pickers — then the type row. */}
+        <div className={`px-4 pt-4 pb-3 border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${subtle}`}>Transactions</span>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
+                <svg
+                  className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${subtle}`}
+                  fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                </svg>
+                <SearchBox value={q} onCommit={setQ} className={searchField} />
+                {tagMatch && (
+                  <span className={`absolute -bottom-4 left-3 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
+                    Filtering by {tagMatch.name}
+                  </span>
+                )}
+              </div>
+              <div className="hidden sm:flex items-center gap-2">
+                <Menu
+                  value={entity}
+                  isDark={isDark}
+                  size="md"
+                  onChange={setEntity}
+                  options={[
+                    { value: "all", label: "All entities" },
+                    { value: "unmapped", label: "Unmapped" },
+                    ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
+                  ]}
+                />
+                <Menu
+                  value={year}
+                  isDark={isDark}
+                  size="md"
+                  onChange={setYear}
+                  options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
+                />
+              </div>
+            </div>
           </div>
-        ) : rows.length === 0 ? (
-          <div className="px-4 py-14 text-center">
-            <svg className={`w-8 h-8 mx-auto mb-3 ${subtle}`} fill="none" stroke="currentColor" strokeWidth={1.2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
-            </svg>
-            <p className={`text-sm ${subtle}`}>Nothing matches these filters.</p>
+          <div className="flex items-center gap-2 mt-3 overflow-x-auto no-scrollbar [&>*]:shrink-0">
+            <div className="sm:hidden flex items-center gap-2">
+              <Menu
+                value={entity}
+                isDark={isDark}
+                size="md"
+                onChange={setEntity}
+                options={[
+                  { value: "all", label: "All entities" },
+                  { value: "unmapped", label: "Unmapped" },
+                  ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
+                ]}
+              />
+              <Menu
+                value={year}
+                isDark={isDark}
+                size="md"
+                onChange={setYear}
+                options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
+              />
+            </div>
+            <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+              {(
+                [
+                  ["all", "All"],
+                  ["revenue", "Income"],
+                  ["expenses", "Expense"],
+                  ["transfers", "Transfers"],
+                  ["intercompany", "Roll-up"],
+                  ["uncategorized", uncat ? `Uncategorized ${uncat}` : "Uncategorized"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setType(value)}
+                  aria-pressed={type === value}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                    type === value
+                      ? isDark ? "bg-white text-black" : "bg-gray-900 text-white"
+                      : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {(q || entity !== "all" || year !== "all" || type !== "all") && (
+              <button
+                onClick={() => {
+                  setQ("");
+                  setEntity("all");
+                  setYear("all");
+                  setType("all");
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs cursor-pointer transition-colors ${
+                  isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-black hover:bg-gray-100"
+                }`}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Clear
+              </button>
+            )}
+            {!loading && (
+              <span className={`ml-auto text-xs tabular-nums ${subtle}`}>
+                {rows.length} of {total.toLocaleString()}
+              </span>
+            )}
           </div>
-        ) : (
-          <TxnTable
-            rows={rows}
-            categories={categories}
-            isDark={isDark}
-            sort={sort}
-            onSort={onSort}
-            selection={{
-              selected,
-              toggle: (id) =>
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  next.has(id) ? next.delete(id) : next.add(id);
-                  return next;
-                }),
-              setAll: (ids) => setSelected(new Set(ids)),
-              selectMany: (ids, on) =>
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  for (const id of ids) on ? next.add(id) : next.delete(id);
-                  return next;
-                }),
-            }}
-            onRowChange={(t) =>
-              setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
-            }
-            onError={setError}
-            onReload={() => {
-              void load();
-              void refreshUncat();
-            }}
-          />
-        )}
+        </div>
+
+        <div className="overflow-x-auto">
+          {loading ? (
+            <div className="p-4 space-y-2.5">
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 4) * 7}%` }} />
+              ))}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="px-4 py-14 text-center">
+              <svg className={`w-8 h-8 mx-auto mb-3 ${subtle}`} fill="none" stroke="currentColor" strokeWidth={1.2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
+              </svg>
+              <p className={`text-sm ${subtle}`}>Nothing matches these filters.</p>
+            </div>
+          ) : (
+            <TxnTable
+              rows={rows}
+              categories={categories}
+              isDark={isDark}
+              sort={sort}
+              onSort={onSort}
+              selection={{
+                selected,
+                toggle: (id) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    next.has(id) ? next.delete(id) : next.add(id);
+                    return next;
+                  }),
+                setAll: (ids) => setSelected(new Set(ids)),
+                selectMany: (ids, on) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    for (const id of ids) on ? next.add(id) : next.delete(id);
+                    return next;
+                  }),
+              }}
+              onRowChange={(t) =>
+                setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
+              }
+              onError={setError}
+              onReload={() => {
+                void load();
+                void refreshUncat();
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Scroll sentinel — nearing it auto-loads the next page. */}
