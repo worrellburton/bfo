@@ -11,6 +11,8 @@
  * type_override always beats both.
  */
 
+import { sectionOf } from "./books-accounts.js";
+
 export type RuleType = "normal" | "transfer" | "intercompany";
 
 type Rule = {
@@ -19,7 +21,24 @@ type Rule = {
   type?: RuleType;
   /** Restrict the rule to these Plaid primary categories. */
   plaid?: RegExp;
+  /**
+   * Test the *counterparty* rather than the whole description. Mercury
+   * descriptions lead with the family's own entity ("From Ledger Louise, LLC
+   * via mercury.com; Merchant name: Griselda Ivonne") — that names the payer,
+   * not who was paid — so an entity-name rule read against the full text
+   * would call every payroll run an intercompany movement.
+   */
+  counterparty?: boolean;
 };
+
+const MERCURY_PAYEE = /via mercury\.com;\s*merchant name:\s*(.+)$/i;
+
+/** The other party to the transaction — for Mercury rows, only the payee segment. */
+export function counterpartyText(name: string | null, merchant: string | null): string {
+  const m = (name ?? "").match(MERCURY_PAYEE);
+  if (m) return m[1].trim();
+  return `${merchant ?? ""} ${name ?? ""}`.trim();
+}
 
 // The family's entities, as they appear inside bank descriptions.
 const ENTITY_NAMES =
@@ -47,10 +66,10 @@ const RULES: Rule[] = [
   { match: /7a recovery|seven arrows/i, category: "9300 Loans", type: "transfer" },
 
   // ── Entity-to-entity movements ────────────────────────────────────────
-  { match: ENTITY_NAMES, plaid: MOVEMENT, category: "9000 Intercompany", type: "intercompany" },
+  { match: ENTITY_NAMES, plaid: MOVEMENT, category: "9000 Intercompany", type: "intercompany", counterparty: true },
 
   // ── Family-internal movements (between the family's own accounts) ─────
-  { match: /\bburton\b/i, plaid: MOVEMENT, category: "9100 Internal Transfers", type: "transfer" },
+  { match: /\bburton\b/i, plaid: MOVEMENT, category: "9100 Internal Transfers", type: "transfer", counterparty: true },
   { match: /transfer from mercury to another bank account|auto-routing transfer/i, category: "9100 Internal Transfers", type: "transfer" },
   { match: /mobile deposit/i, category: "9100 Internal Transfers", type: "transfer" },
   // Cash out of the family's own accounts — a draw, not an operating expense,
@@ -156,10 +175,11 @@ export function categorize(
   plaidCategory: string | null
 ): { category: string | null; type: RuleType | null } {
   const text = `${merchant ?? ""} ${name ?? ""}`.trim();
+  const counterparty = counterpartyText(name, merchant);
   const plaid = plaidCategory ?? "";
 
   for (const rule of RULES) {
-    if (!rule.match.test(text)) continue;
+    if (!rule.match.test(rule.counterparty ? counterparty : text)) continue;
     if (rule.plaid && !rule.plaid.test(plaid)) continue;
     return { category: rule.category, type: rule.type ?? null };
   }
@@ -170,4 +190,34 @@ export function categorize(
   // Uncategorized filter surfaces it, rather than a phantom "Uncategorized"
   // account that sits outside the chart.
   return { category: null, type: null };
+}
+
+/**
+ * The type a chart account implies. Booking to a P&L account (4000s–7000s)
+ * makes a row ordinary income/expense; 9000 Intercompany is a roll-up; the
+ * other 9000s are the family's own money moving around.
+ */
+export function typeForCategory(category: string | null | undefined): RuleType | null {
+  const section = sectionOf(category);
+  if (!section) return null;
+  if (section !== "flow") return "normal";
+  return (category ?? "").trim().startsWith("9000") ? "intercompany" : "transfer";
+}
+
+/**
+ * Final classification for a row. A user-taught account (a vendor's default
+ * account, or "all of these, and from now on") beats the built-in chart —
+ * and it decides the type too. Before this, the taught account won the
+ * category column while the built-in rule still set the type, so a payroll
+ * run booked to Salaries & Wages could arrive flagged as a roll-up.
+ */
+export function classify(
+  name: string | null,
+  merchant: string | null,
+  plaidCategory: string | null,
+  taughtCategory: string | null
+): { category: string | null; type: RuleType | null } {
+  const rule = categorize(name, merchant, plaidCategory);
+  if (!taughtCategory) return rule;
+  return { category: taughtCategory, type: typeForCategory(taughtCategory) ?? rule.type };
 }

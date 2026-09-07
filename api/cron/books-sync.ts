@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
-import { categorize, patchMatching } from "../../lib/books-rules.js";
+import { classify, patchMatching } from "../../lib/books-rules.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 
@@ -253,9 +253,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!r.ok) throw new Error(await r.text());
         const rows = (await r.json()) as any[];
         for (const t of rows) {
-          const rule = categorize(t.name, t.merchant_name, t.plaid_category);
           const taught = userCategory(userRules, t.name, t.merchant_name);
-          const key = JSON.stringify([taught ?? rule.category, rule.type]);
+          const cls = classify(t.name, t.merchant_name, t.plaid_category, taught);
+          const key = JSON.stringify([cls.category, cls.type]);
           (groups.get(key) ?? groups.set(key, []).get(key)!).push(t.transaction_id);
         }
         if (rows.length < 1000) break;
@@ -264,8 +264,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const [key, ids] of groups) {
         const [category, type] = JSON.parse(key) as [string, string | null];
         const patch: Record<string, unknown> = { book_category: category };
-        if (type === "intercompany") patch.intercompany = true;
-        else if (type) {
+        if (type === "intercompany") {
+          patch.intercompany = true;
+          patch.txn_type = "transfer";
+        } else if (type) {
           patch.txn_type = type;
           patch.intercompany = false;
         }
@@ -361,13 +363,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   // rule that forces a type beats the Plaid heuristic. A
                   // user's type_override (not written here) beats both, and a
                   // user-taught category rule beats the built-in chart.
-                  const rule = categorize(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null);
                   const taught = userCategory(userRules, t.name ?? null, t.merchant_name ?? null);
+                  const cls = classify(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null, taught);
                   const heuristic = isTransfer(t) ? "transfer" : "normal";
                   return {
-                    txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? heuristic) as "normal" | "transfer",
-                    intercompany: rule.type === "intercompany",
-                    book_category: taught ?? rule.category,
+                    txn_type: (cls.type === "intercompany" ? "transfer" : cls.type ?? heuristic) as "normal" | "transfer",
+                    intercompany: cls.type === "intercompany",
+                    book_category: cls.category,
                     // A vendor-level type rule rides in as the row's override.
                     ...(() => {
                       const ut = userType(userRules, t.name ?? null, t.merchant_name ?? null);

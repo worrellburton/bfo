@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash } from "node:crypto";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
-import { categorize } from "../../lib/books-rules.js";
+import { classify } from "../../lib/books-rules.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 
 /**
@@ -97,8 +97,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = createHash("sha1")
         .update(`${accountId}|${r.date}|${amount.toFixed(2)}|${r.description}`)
         .digest("hex");
-      const rule = categorize(r.description, null, null);
       const taught = ruleFor(r.description);
+      const rule = classify(r.description, null, null, taught.category ?? null);
       return [
         {
           transaction_id: `csv_${id}`,
@@ -119,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             | "normal"
             | "transfer",
           intercompany: rule.type === "intercompany",
-          book_category: taught.category ?? rule.category,
+          book_category: rule.category,
           // Uniform across every row (null when no rule) so the bulk upsert
           // keeps one column set; mirrors the sync's type override.
           type_override: taught.type,

@@ -1,7 +1,24 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
-import { patchMatching, ACCOUNTS, sectionOf } from "../../lib/books-rules.js";
+import { patchMatching, ACCOUNTS, sectionOf, typeForCategory } from "../../lib/books-rules.js";
+
+/**
+ * Booking rows to an account also settles their mechanical type: a P&L
+ * account means income/expense, 9000 means roll-up, the other 9000s a
+ * transfer. Without this, a vendor defaulted to Salaries & Wages kept the
+ * intercompany flag a description-based rule had set, and showed as Roll-up.
+ * A user's explicit type_override still wins at read time.
+ */
+function categoryPatch(category: string): Record<string, unknown> {
+  const implied = typeForCategory(category);
+  if (!implied) return { book_category: category };
+  return {
+    book_category: category,
+    intercompany: implied === "intercompany",
+    txn_type: implied === "normal" ? "normal" : "transfer",
+  };
+}
 import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 
@@ -326,7 +343,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!ruleRes.ok) console.error("rule save failed:", (await ruleRes.text()).slice(0, 200));
 
       // Apply to everything already synced that literally contains the text.
-      const applied = await patchMatching(db, match, "", { book_category: category });
+      const applied = await patchMatching(db, match, "", categoryPatch(category));
       return res.json({ applied, rule: { match, book_category: category } });
     }
 
@@ -368,7 +385,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const txnPatch: Record<string, unknown> = {};
       if (vendorName !== undefined) txnPatch.merchant_name = vendorName;
-      if (category !== undefined) txnPatch.book_category = category;
+      if (category !== undefined) Object.assign(txnPatch, categoryPatch(category));
       if (typeOverride !== undefined) txnPatch.type_override = typeOverride;
       const applied = await patchMatching(db, match, "", txnPatch);
       return res.json({

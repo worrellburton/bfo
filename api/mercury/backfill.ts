@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, sbFetch as db } from "../../lib/auth.js";
-import { categorize } from "../../lib/books-rules.js";
+import { classify } from "../../lib/books-rules.js";
 import { mercuryConfigured, mercuryAccounts, mercuryTransactions, mercuryDownload, mask4 } from "../../lib/mercury.js";
 import { storageUpload } from "../../lib/storage.js";
 
@@ -85,9 +85,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const description = t.bankDescription?.trim() || t.note?.trim() || vendor;
           // Mercury signs outflows negative; Plaid (and Books) signs them positive.
           const amount = -t.amount;
-          const rule = categorize(description ?? null, vendor, null);
           const text = `${vendor ?? ""} ${description ?? ""}`.toLowerCase();
           const taught = userRules.find((r) => text.includes(r.match))?.book_category ?? null;
+          const rule = classify(description ?? null, vendor, null, taught);
           return {
             transaction_id: `mercury_${t.id}`,
             account_id: pref.account_id,
@@ -105,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               | "normal"
               | "transfer",
             intercompany: rule.type === "intercompany",
-            book_category: taught ?? rule.category,
+            book_category: rule.category,
             entity_id: pref.entity_id ?? null,
             entity_name: pref.entity_name ?? null,
             hidden: pref.hidden ?? false,
