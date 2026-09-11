@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { computeLoans, type Loan } from "../../lib/books-loans.js";
+import { anticipateInflows, renderInflowsCard, renderInflowsText, type Anticipated, type InflowRow } from "../../lib/books-inflows.js";
 import { currentUser, formatPhone, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 
 /**
@@ -111,6 +112,33 @@ async function loadHistory(): Promise<DailyTotal[]> {
     return (rows ?? []).reverse();
   } catch {
     return [];
+  }
+}
+
+/**
+ * Anticipated monthly cash in, from the Books ledger: the last 18 months of
+ * posted income on visible accounts, with each account's current entity.
+ * Any hiccup returns null — the report still sends without the card.
+ */
+async function loadAnticipatedInflows(now: Date): Promise<Anticipated | null> {
+  try {
+    const since = new Date(now.getTime() - 548 * 86400000).toISOString().slice(0, 10);
+    const prefs = await sb<Array<{ account_id: string; entity_name: string | null; hidden: boolean | null }>>(
+      "plaid_account_prefs?select=account_id,entity_name,hidden&archived_at=is.null"
+    );
+    const hidden = new Set((prefs ?? []).filter((p) => p.hidden).map((p) => p.account_id));
+    const entityOf = new Map((prefs ?? []).map((p) => [p.account_id, p.entity_name ?? null]));
+    const rows = await sb<Array<InflowRow & { account_id: string }>>(
+      `book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id` +
+        `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc&limit=5000`
+    );
+    const visible = (rows ?? [])
+      .filter((r) => !hidden.has(r.account_id))
+      .map((r) => ({ ...r, entity_name: entityOf.get(r.account_id) ?? r.entity_name ?? null }));
+    return anticipateInflows(visible, now);
+  } catch (err) {
+    console.error("anticipated inflows unavailable:", err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
@@ -383,7 +411,8 @@ function renderText(
   movement: number,
   now: Date,
   activity: Array<{ account: Account; txns: Txn[] }> = [],
-  loans: Loan[] = []
+  loans: Loan[] = [],
+  inflows: Anticipated | null = null
 ): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
@@ -399,6 +428,7 @@ function renderText(
   if (s.cashAccounts.length) out.push("CASH", ...s.cashAccounts.map(line));
   if (s.zeroCounts.cash) out.push(`  (+ ${s.zeroCounts.cash} zero-balance account${s.zeroCounts.cash === 1 ? "" : "s"})`);
   if (s.investAccounts.length) out.push("", "INVESTMENTS", ...s.investAccounts.map(line));
+  if (inflows) out.push(...renderInflowsText(inflows, (n) => money(n)));
   for (const entry of activity) {
     out.push("", `RECENT ACTIVITY — ${accountLabel(entry.account)}`);
     for (const t of entry.txns) {
@@ -546,6 +576,7 @@ function renderHtml(
     footerNote?: string | null;
     preparedFor?: string | null;
     loans?: Loan[];
+    inflows?: Anticipated | null;
   } = {}
 ): string {
   const statCard = (label: string, value: string, spark = "", accent = "#fff", move: number | null = null) => `
@@ -748,6 +779,7 @@ function renderHtml(
           s.investMove,
           { zeros: s.zeroCounts.invest }
         )}
+        ${extras.inflows ? renderInflowsCard(extras.inflows, (n) => money(n), APP_URL) : ""}
         ${(() => {
           const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
           if (!loans.length) return "";
@@ -917,11 +949,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { accounts, connections } = await fetchTreasury(origin, authHeaders);
       const s = shape(accounts);
       const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-      const [history, activity, lastReportDate, loans] = await Promise.all([
+      const [history, activity, lastReportDate, loans, inflows] = await Promise.all([
         loadHistory(),
         fetchRecentActivity(origin, authHeaders, accounts),
         lastDeliveryDate(),
         loadLoans(),
+        loadAnticipatedInflows(now),
       ]);
 
       let recipients = [me.email];
@@ -941,9 +974,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendEmailWithRetry(
           recipients,
           subjectLine(s, movement, !broadcast, now, true),
-          renderText(s, movement, now, activity, loans),
+          renderText(s, movement, now, activity, loans, inflows),
           renderHtml(s, movement, history, now, connections, activity, {
             loans,
+            inflows,
             lastReportDate,
             footerNote: broadcast
               ? `Sent manually by ${me.name ?? me.email}`
@@ -1046,11 +1080,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { accounts, connections } = pulled;
     const s = shape(accounts);
     const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-    const [history, activity, lastReportDate, loans] = await Promise.all([
+    const [history, activity, lastReportDate, loans, inflows] = await Promise.all([
       loadHistory(),
       fetchRecentActivity(origin, cronHeaders, accounts),
       lastDeliveryDate(),
       loadLoans(),
+      loadAnticipatedInflows(now),
     ]);
 
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
@@ -1066,9 +1101,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendEmailWithRetry(
           recipients,
           subjectLine(s, movement, false, now),
-          renderText(s, movement, now, activity, loans),
+          renderText(s, movement, now, activity, loans, inflows),
           renderHtml(s, movement, history, now, connections, activity, {
             loans,
+            inflows,
             lastReportDate,
             footerNote: nextLabel ? `Next report ${nextLabel}` : null,
             preparedFor: user.name ?? "the Burton Family Office",
