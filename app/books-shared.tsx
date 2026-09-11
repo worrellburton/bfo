@@ -1431,36 +1431,38 @@ export function TxnTable({
                     </button>
                   </td>
                 )}
-                <td className="px-2 py-3 max-w-[400px]">
+                <td className="px-2 py-2.5 max-w-[460px]">
+                  {/* One line: vendor, then the descriptor muted beside it.
+                      Both truncate; the vendor keeps a floor so a long
+                      descriptor can't squeeze it out. */}
                   <div className={`flex items-center gap-3 min-w-0 ${dim ? "opacity-60 group-hover:opacity-100 transition-opacity" : ""}`}>
                     <VendorAvatar name={vendor || t.name || "?"} />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex items-baseline gap-2">
                       {vendor ? (
                         <button
                           onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
                           title={`Open ${vendor}`}
-                          className={`font-medium truncate block max-w-full text-left cursor-pointer hover:underline ${
+                          className={`font-medium truncate shrink-0 max-w-[240px] text-left cursor-pointer hover:underline ${
                             isDark ? "text-gray-100" : "text-gray-900"
                           }`}
                         >
                           {vendor}
                         </button>
                       ) : (
-                        <span className={`font-medium truncate block max-w-full ${subtle}`} title={t.name ?? undefined}>
+                        <span className={`font-medium truncate min-w-0 ${subtle}`} title={t.name ?? undefined}>
                           {t.name || "—"}
                         </span>
                       )}
-                      {(t.pending || (vendor && t.name && t.name !== vendor)) && (
-                        <div className={`text-[11px] truncate ${subtle}`} title={t.name ?? undefined}>
-                          {t.pending && <span className="text-amber-500">Pending</span>}
-                          {t.pending && vendor && t.name && t.name !== vendor ? " · " : ""}
-                          {vendor && t.name && t.name !== vendor ? t.name : ""}
-                        </div>
+                      {t.pending && <span className="text-[11px] text-amber-500 shrink-0">Pending</span>}
+                      {vendor && t.name && t.name !== vendor && (
+                        <span className={`text-[11px] truncate min-w-0 ${subtle}`} title={t.name}>
+                          {t.name}
+                        </span>
                       )}
                     </div>
                   </div>
                 </td>
-                <td className="px-2 py-3">
+                <td className="px-2 py-2.5">
                   {/* Always a category picker. A loan-linked row shows the loan
                       as its placeholder; choosing an account detaches the loan
                       so the movement posts to the P&L instead. */}
@@ -1479,14 +1481,14 @@ export function TxnTable({
                     }
                   />
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap">
+                <td className="px-2 py-2.5 whitespace-nowrap">
                   {t.entity_name ? (
                     <EntityTag name={t.entity_name} isDark={isDark} />
                   ) : (
                     <span className="text-amber-500 text-xs">Unmapped</span>
                   )}
                 </td>
-                <td className="px-2 py-3">
+                <td className="px-2 py-2.5">
                   {/* Fully editable — a loan link no longer locks the row; the
                       loan classification maps back to its underlying type. */}
                   <Menu
@@ -1502,10 +1504,10 @@ export function TxnTable({
                     ]}
                   />
                 </td>
-                <td className={`px-2 py-3 whitespace-nowrap ${subtle}`} title={t.date}>
+                <td className={`px-2 py-2.5 whitespace-nowrap ${subtle}`} title={t.date}>
                   {longDate(t.date)}
                 </td>
-                <td className="px-2 py-3 text-right whitespace-nowrap">
+                <td className="px-2 py-2.5 text-right whitespace-nowrap">
                   <span className="inline-flex items-center justify-end gap-2">
                     <span
                       className={`tabular-nums font-medium ${inflow ? "text-emerald-500" : ""} ${
@@ -1518,7 +1520,7 @@ export function TxnTable({
                   </span>
                 </td>
                 {balances && (
-                  <td className="px-2 py-3 text-right whitespace-nowrap tabular-nums font-medium">
+                  <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums font-medium">
                     {money(balances[t.transaction_id] ?? 0, t.currency ?? "USD")}
                   </td>
                 )}
