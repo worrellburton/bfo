@@ -38,12 +38,41 @@ export type InflowStream = {
   /** The expected date has passed by a few days with nothing arriving. */
   overdue: boolean;
   count: number;
+  /**
+   * detected: read off the ledger's rhythm. planned: a person entered it
+   * (books_expected_inflows). estimated: computed from a balance or yield.
+   */
+  basis?: "detected" | "planned" | "estimated";
+  /** Short provenance shown under the name, e.g. "from 3 months of dividends". */
+  note?: string | null;
 };
+
+/** A planned inflow from books_expected_inflows. */
+export type PlannedInflow = {
+  name: string;
+  amount: number;
+  cadence: "monthly" | "one_time";
+  expectedDay?: number | null;
+  entity?: string | null;
+  note?: string | null;
+};
+
+export type InflowOptions = {
+  /** Detected sources to leave out (case-insensitive substring match). */
+  exclude?: string[];
+  planned?: PlannedInflow[];
+  /** Streams the caller computed itself (e.g. money-market earnings). */
+  computed?: InflowStream[];
+};
+
+export type OneTimeInflow = { name: string; amount: number; expectedDate: string | null; entity: string | null; note: string | null };
 
 export type Anticipated = {
   /** Sum of every active stream's monthly equivalent. */
   monthly: number;
   streams: InflowStream[];
+  /** Planned one-off receipts — listed, never folded into the monthly figure. */
+  oneTime: OneTimeInflow[];
   /** Average of all qualifying inflows over the trailing 91 days, per month. */
   trailing3moAvg: number;
   /** Inflows that arrived but sit outside any stream — irregular income. */
@@ -96,16 +125,28 @@ function isIncome(t: InflowRow): boolean {
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
-export function anticipateInflows(rows: InflowRow[], today = new Date()): Anticipated {
+/** Next occurrence of a day-of-month on or after today, as ISO. */
+function nextMonthlyDate(todayIso: string, dom: number | null | undefined): string | null {
+  if (!dom || dom < 1 || dom > 31) return null;
+  const [y, m, d] = todayIso.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + (d > dom ? 1 : 0), 1));
+  const lastDom = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(dom, lastDom));
+  return isoDay(target);
+}
+
+export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: InflowOptions = {}): Anticipated {
   const todayIso = isoDay(today);
   const todayMs = Date.parse(todayIso);
   const income = rows.filter(isIncome).sort((a, b) => a.date.localeCompare(b.date));
+  const excluded = (opts.exclude ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean);
 
   // Group by source identity — the vendor, else the raw descriptor.
   const bySource = new Map<string, InflowRow[]>();
   for (const t of income) {
     const key = (t.merchant_name || t.name || "").trim();
     if (!key) continue;
+    if (excluded.some((x) => key.toLowerCase().includes(x))) continue;
     (bySource.get(key) ?? bySource.set(key, []).get(key)!).push(t);
   }
 
@@ -201,9 +242,42 @@ export function anticipateInflows(rows: InflowRow[], today = new Date()): Antici
       nextExpected,
       overdue,
       count: dates.length,
+      basis: "detected",
     });
     for (const t of txns) inStream.add(t);
   }
+
+  // Planned inflows ride alongside the detected ones; one-offs are listed
+  // separately so a single expected receipt never inflates "per month".
+  const oneTime: OneTimeInflow[] = [];
+  for (const p of opts.planned ?? []) {
+    if (!(p.amount > 0)) continue;
+    if (p.cadence === "one_time") {
+      oneTime.push({
+        name: p.name,
+        amount: Math.round(p.amount),
+        expectedDate: nextMonthlyDate(todayIso, p.expectedDay),
+        entity: p.entity ?? null,
+        note: p.note ?? null,
+      });
+      continue;
+    }
+    streams.push({
+      source: p.name,
+      entity: p.entity ?? null,
+      account: null,
+      cadence: "monthly",
+      monthly: Math.round(p.amount),
+      typical: Math.round(p.amount),
+      lastDate: todayIso,
+      nextExpected: nextMonthlyDate(todayIso, p.expectedDay),
+      overdue: false,
+      count: 0,
+      basis: "planned",
+      note: p.note ?? null,
+    });
+  }
+  for (const c of opts.computed ?? []) if (c.monthly > 0) streams.push({ ...c, basis: c.basis ?? "estimated" });
 
   streams.sort((a, b) => b.monthly - a.monthly);
 
@@ -220,6 +294,7 @@ export function anticipateInflows(rows: InflowRow[], today = new Date()): Antici
   return {
     monthly: Math.round(streams.reduce((s, x) => s + x.monthly, 0)),
     streams,
+    oneTime,
     trailing3moAvg: Math.round(trailing / 3),
     irregular3moAvg: Math.round(irregular / 3),
   };
@@ -238,9 +313,9 @@ const shortDay = (iso: string | null) =>
 
 /** The email card. `money` is the report's own formatter so styles match. */
 export function renderInflowsCard(a: Anticipated, money: (n: number) => string, appUrl: string): string {
-  if (!a.streams.length) return "";
+  if (!a.streams.length && !a.oneTime.length) return "";
   // Pennies of interest still count toward the total, but don't earn a row.
-  const shown = a.streams.filter((s) => s.monthly >= 25).slice(0, 8);
+  const shown = a.streams.filter((s) => s.monthly >= 25).slice(0, 10);
   const hiddenCount = a.streams.length - shown.length;
   const rows = shown
     .map((s, i) => {
@@ -249,7 +324,9 @@ export function renderInflowsCard(a: Anticipated, money: (n: number) => string, 
         : s.overdue
           ? `<span style="color:#fbbf24;">expected ${shortDay(s.nextExpected)} · overdue</span>`
           : `next ${shortDay(s.nextExpected)}`;
-      const meta = [CADENCE_LABEL[s.cadence], when].filter(Boolean).join(" · ");
+      const label =
+        s.basis === "planned" ? "Planned monthly" : s.basis === "estimated" ? "Estimated monthly" : CADENCE_LABEL[s.cadence];
+      const meta = [label, s.basis === "planned" && !s.nextExpected ? null : when, s.note].filter(Boolean).join(" · ");
       const equiv = s.cadence === "monthly" ? "" : `<div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:1px;">${money(s.typical)} ${CADENCE_LABEL[s.cadence].toLowerCase()}</div>`;
       const entity = s.entity ? `<span style="margin-left:7px;font-size:10px;color:rgba(255,255,255,0.4);">${s.entity.replace(/\s*\(100%\)\s*$/, "")}</span>` : "";
       return `<tr>
@@ -264,6 +341,19 @@ export function renderInflowsCard(a: Anticipated, money: (n: number) => string, 
     })
     .join("");
   const more = hiddenCount > 0 ? `<div style="margin-top:6px;font-size:11px;color:rgba(255,255,255,0.35);">+${hiddenCount} smaller stream${hiddenCount === 1 ? "" : "s"}</div>` : "";
+  const once = a.oneTime.length
+    ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Also expected once</div>
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${a.oneTime
+         .map(
+           (o) => `<tr>
+             <td style="padding:6px 0 0;font-size:13px;color:rgba(255,255,255,0.85);">${o.name}${o.entity ? `<span style="margin-left:7px;font-size:10px;color:rgba(255,255,255,0.4);">${o.entity}</span>` : ""}${
+               o.expectedDate || o.note ? `<div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.4);">${[o.expectedDate ? `expected ${shortDay(o.expectedDate)}` : null, o.note].filter(Boolean).join(" · ")}</div>` : ""
+             }</td>
+             <td align="right" valign="top" style="padding:6px 0 0;font-size:13px;font-weight:600;color:#34d399;white-space:nowrap;">+${money(o.amount)}</td>
+           </tr>`
+         )
+         .join("")}</table>`
+    : "";
   const actual =
     a.trailing3moAvg > 0
       ? `Last 3 months actually averaged <span style="color:rgba(255,255,255,0.7);">${money(a.trailing3moAvg)}</span> / mo${
@@ -282,9 +372,10 @@ export function renderInflowsCard(a: Anticipated, money: (n: number) => string, 
         </tr>
       </table>
       <div style="margin-top:4px;font-size:22px;font-weight:600;color:#34d399;">+${money(a.monthly)}</div>
-      <div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.4);">${a.streams.length} recurring stream${a.streams.length === 1 ? "" : "s"} the books expect to keep arriving</div>
+      <div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.4);">${a.streams.length} stream${a.streams.length === 1 ? "" : "s"} expected to keep arriving</div>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;">${rows}</table>
       ${more}
+      ${once}
       ${actual ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:rgba(255,255,255,0.4);">${actual} <a href="${appUrl}/books/calendar" style="color:rgba(255,255,255,0.55);">Calendar →</a></div>` : ""}
     </td></tr>
   </table>`;
@@ -292,12 +383,14 @@ export function renderInflowsCard(a: Anticipated, money: (n: number) => string, 
 
 /** Plain-text twin of the card. */
 export function renderInflowsText(a: Anticipated, money: (n: number) => string): string[] {
-  if (!a.streams.length) return [];
+  if (!a.streams.length && !a.oneTime.length) return [];
   const out = ["", `ANTICIPATED CASH IN — ${money(a.monthly)} / month`];
-  for (const s of a.streams.filter((x) => x.monthly >= 25).slice(0, 8)) {
+  for (const s of a.streams.filter((x) => x.monthly >= 25).slice(0, 10)) {
     const when = !s.nextExpected ? "" : s.overdue ? `, expected ${s.nextExpected} — overdue` : `, next ${s.nextExpected}`;
-    out.push(`  ${s.source}: +${money(s.monthly)} / mo (${CADENCE_LABEL[s.cadence].toLowerCase()}${when})`);
+    const label = s.basis === "planned" ? "planned" : s.basis === "estimated" ? "estimated" : CADENCE_LABEL[s.cadence].toLowerCase();
+    out.push(`  ${s.source}: +${money(s.monthly)} / mo (${label}${when}${s.note ? `; ${s.note}` : ""})`);
   }
+  for (const o of a.oneTime) out.push(`  Once: ${o.name} +${money(o.amount)}${o.expectedDate ? ` expected ${o.expectedDate}` : ""}`);
   if (a.trailing3moAvg > 0) out.push(`  Last 3 months actual: ${money(a.trailing3moAvg)} / mo avg`);
   return out;
 }

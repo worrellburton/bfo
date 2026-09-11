@@ -1,6 +1,15 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { computeLoans, type Loan } from "../../lib/books-loans.js";
-import { anticipateInflows, renderInflowsCard, renderInflowsText, type Anticipated, type InflowRow } from "../../lib/books-inflows.js";
+import {
+  anticipateInflows,
+  renderInflowsCard,
+  renderInflowsText,
+  type Anticipated,
+  type InflowRow,
+  type InflowStream,
+  type PlannedInflow,
+} from "../../lib/books-inflows.js";
+import { getPlaidClient } from "../../lib/plaid.js";
 import { currentUser, formatPhone, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 
 /**
@@ -115,10 +124,117 @@ async function loadHistory(): Promise<DailyTotal[]> {
   }
 }
 
+/** A row of books_expected_inflows — the card's manual adjustments. */
+type InflowAdjustment = {
+  kind: "manual" | "exclude" | "yield";
+  name: string;
+  amount: number | string | null;
+  cadence: "monthly" | "one_time" | null;
+  expected_day: number | null;
+  entity_name: string | null;
+  note: string | null;
+  apy: number | string | null;
+  institution: string | null;
+};
+
+const MONEY_MARKET_NAME = /money market|cash reserves|federal money|treasury money|settlement fund/i;
+const MONEY_MARKET_TICKERS = new Set(["VMFXX", "VMRXX", "VUSXX", "VMSXX", "VCTXX", "VYFXX"]);
+
+/** Last day of the month the fund pays on — this month, or next if today is it. */
+function nextMonthEnd(now: Date): string {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+  if (end.toISOString().slice(0, 10) <= now.toISOString().slice(0, 10)) {
+    end.setUTCMonth(end.getUTCMonth() + 2, 0);
+  }
+  return end.toISOString().slice(0, 10);
+}
+
+/**
+ * Money-market earnings at a brokerage: the fund's actual dividends over
+ * the last three complete months when Plaid reports them; otherwise the
+ * current money-market balance × the row's APY / 12. Hidden accounts are
+ * left out. Null on any failure — the card just omits the line.
+ */
+async function moneyMarketEarnings(now: Date, adj: InflowAdjustment, hidden: Set<string>): Promise<InflowStream | null> {
+  try {
+    const wanted = (adj.institution ?? "Vanguard").toLowerCase();
+    const items = await sb<Array<{ item_id: string; access_token: string; institution_name: string }>>(
+      "plaid_items?select=item_id,access_token,institution_name"
+    );
+    const item = (items ?? []).find((i) => (i.institution_name ?? "").toLowerCase().includes(wanted));
+    if (!item) return null;
+    const client = getPlaidClient();
+    const isMoneyMarket = (sec?: { ticker_symbol?: string | null; name?: string | null } | null) =>
+      !!sec && (MONEY_MARKET_TICKERS.has((sec.ticker_symbol ?? "").toUpperCase()) || MONEY_MARKET_NAME.test(sec.name ?? ""));
+    const base = {
+      source: adj.name,
+      entity: adj.entity_name,
+      account: null,
+      cadence: "monthly" as const,
+      lastDate: now.toISOString().slice(0, 10),
+      nextExpected: nextMonthEnd(now),
+      overdue: false,
+      basis: "estimated" as const,
+    };
+
+    // Actual dividends first. Only the cash dividend/interest events count —
+    // the matching "dividend reinvestment" buy is the same money again.
+    const end = now.toISOString().slice(0, 10);
+    const start = new Date(now.getTime() - 130 * 86400000).toISOString().slice(0, 10);
+    const tx = await client.investmentsTransactionsGet({
+      access_token: item.access_token,
+      start_date: start,
+      end_date: end,
+      options: { count: 500, offset: 0 },
+    });
+    const securities = new Map(tx.data.securities.map((s) => [s.security_id, s]));
+    const byMonth = new Map<string, number>();
+    let lastDate: string | null = null;
+    for (const t of tx.data.investment_transactions) {
+      if (hidden.has(t.account_id)) continue;
+      if (!isMoneyMarket(securities.get(t.security_id ?? ""))) continue;
+      const kind = `${t.type} ${t.subtype ?? ""}`.toLowerCase();
+      if (!/dividend|interest/.test(kind) || /reinvest/.test(kind)) continue;
+      const month = t.date.slice(0, 7);
+      byMonth.set(month, (byMonth.get(month) ?? 0) + Math.abs(t.amount));
+      if (!lastDate || t.date > lastDate) lastDate = t.date;
+    }
+    const complete = [...byMonth.entries()].filter(([m]) => m < end.slice(0, 7)).sort().slice(-3);
+    if (complete.length) {
+      const monthly = Math.round(complete.reduce((s, [, v]) => s + v, 0) / complete.length);
+      return {
+        ...base,
+        monthly,
+        typical: monthly,
+        lastDate: lastDate ?? base.lastDate,
+        count: complete.length,
+        note: `from ${complete.length} month${complete.length === 1 ? "" : "s"} of dividends`,
+      };
+    }
+
+    // No dividend history from Plaid: estimate from the balance and APY.
+    const apy = Number(adj.apy ?? 0);
+    if (!(apy > 0)) return null;
+    const hold = await client.investmentsHoldingsGet({ access_token: item.access_token });
+    const held = new Map(hold.data.securities.map((s) => [s.security_id, s]));
+    const value = hold.data.holdings
+      .filter((h) => !hidden.has(h.account_id) && isMoneyMarket(held.get(h.security_id)))
+      .reduce((s, h) => s + (h.institution_value ?? 0), 0);
+    if (value <= 0) return null;
+    const monthly = Math.round((value * apy) / 12);
+    return { ...base, monthly, typical: monthly, count: 0, note: `${(apy * 100).toFixed(2)}% on ${money(value)}` };
+  } catch (err) {
+    console.error("money-market earnings unavailable:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 /**
  * Anticipated monthly cash in, from the Books ledger: the last 18 months of
- * posted income on visible accounts, with each account's current entity.
- * Any hiccup returns null — the report still sends without the card.
+ * posted income on visible accounts, with each account's current entity —
+ * plus the adjustments in books_expected_inflows (planned receipts,
+ * exclusions, yield estimates). Any hiccup returns null — the report still
+ * sends without the card.
  */
 async function loadAnticipatedInflows(now: Date): Promise<Anticipated | null> {
   try {
@@ -128,14 +244,34 @@ async function loadAnticipatedInflows(now: Date): Promise<Anticipated | null> {
     );
     const hidden = new Set((prefs ?? []).filter((p) => p.hidden).map((p) => p.account_id));
     const entityOf = new Map((prefs ?? []).map((p) => [p.account_id, p.entity_name ?? null]));
-    const rows = await sb<Array<InflowRow & { account_id: string }>>(
-      `book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id` +
-        `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc&limit=5000`
-    );
+    const [rows, adjustments] = await Promise.all([
+      sb<Array<InflowRow & { account_id: string }>>(
+        `book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id` +
+          `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc&limit=5000`
+      ),
+      sb<InflowAdjustment[]>("books_expected_inflows?select=*&active=eq.true&order=created_at.asc").catch(() => [] as InflowAdjustment[]),
+    ]);
     const visible = (rows ?? [])
       .filter((r) => !hidden.has(r.account_id))
       .map((r) => ({ ...r, entity_name: entityOf.get(r.account_id) ?? r.entity_name ?? null }));
-    return anticipateInflows(visible, now);
+
+    const adj = adjustments ?? [];
+    const planned: PlannedInflow[] = adj
+      .filter((a) => a.kind === "manual")
+      .map((a) => ({
+        name: a.name,
+        amount: Number(a.amount ?? 0),
+        cadence: a.cadence === "one_time" ? "one_time" : "monthly",
+        expectedDay: a.expected_day,
+        entity: a.entity_name,
+        note: a.note,
+      }));
+    const exclude = adj.filter((a) => a.kind === "exclude").map((a) => a.name);
+    const computed = (
+      await Promise.all(adj.filter((a) => a.kind === "yield").map((a) => moneyMarketEarnings(now, a, hidden)))
+    ).filter((s): s is InflowStream => !!s);
+
+    return anticipateInflows(visible, now, { planned, exclude, computed });
   } catch (err) {
     console.error("anticipated inflows unavailable:", err instanceof Error ? err.message : err);
     return null;
