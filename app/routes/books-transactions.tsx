@@ -1,7 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, Menu, BatchBar, entityTag, entityTagClass, longDate, money, type Txn } from "../books-shared";
+import {
+  TxnTable,
+  Menu,
+  BatchBar,
+  entityTag,
+  entityTagClass,
+  money,
+  type Txn,
+  type TxnView,
+  tiers,
+  MICRO,
+  incomeTone,
+  amberTone,
+  popoverSurface,
+  primaryBtn,
+  outlineBtn,
+  cardSurface,
+  hairline,
+  dateRange,
+} from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Transactions" }];
@@ -15,10 +34,45 @@ type BankAccount = { account_id: string; name: string; official_name: string | n
 const PAGE = 100;
 
 /**
+ * List ⇄ cards. Desktop defaults to the table, phones to cards; an explicit
+ * choice is remembered per browser and wins over the device default.
+ */
+const VIEW_KEY = "bfo-books-view";
+const deviceDefault = (): TxnView =>
+  typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches ? "list" : "cards";
+
+/** True while the viewport matches `query` (tracks resizes). */
+function useMediaQuery(query: string): boolean {
+  const [on, setOn] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const sync = () => setOn(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [query]);
+  return on;
+}
+
+// The full hint needs ≈200px of field: tablets (full width) and xl+ (238px)
+// have it; phones (16px type) and the 166px field at lg get the one-word hint.
+const SEARCH_ROOMY = "(min-width: 640px) and (max-width: 1023.98px), (min-width: 1280px)";
+
+/**
  * Debounced search box — keystrokes re-render only this input; the page (and
  * its 100-row table) re-renders once, 300ms after typing pauses.
  */
-function SearchBox({ value, onCommit, className }: { value: string; onCommit: (v: string) => void; className: string }) {
+function SearchBox({
+  value,
+  onCommit,
+  className,
+  placeholder = "Search merchants or memos…",
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  className: string;
+  placeholder?: string;
+}) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   useEffect(() => {
@@ -31,7 +85,7 @@ function SearchBox({ value, onCommit, className }: { value: string; onCommit: (v
       type="search"
       value={v}
       onChange={(e) => setV(e.target.value)}
-      placeholder="Search descriptions or initials…"
+      placeholder={placeholder}
       className={className}
     />
   );
@@ -123,6 +177,40 @@ export default function BooksTransactions() {
   const [uncat, setUncat] = useState<number | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "date", dir: "desc" });
 
+  const [view, setView] = useState<TxnView>(() => {
+    try {
+      const s = localStorage.getItem(VIEW_KEY);
+      if (s === "list" || s === "cards") return s;
+    } catch {
+      /* private mode — fall through to the device default */
+    }
+    return deviceDefault();
+  });
+  // Re-derive the default when the device class changes (window resized across
+  // the lg breakpoint, tablet rotated) — but only while nothing is stored.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => {
+      try {
+        if (localStorage.getItem(VIEW_KEY) !== null) return;
+      } catch {
+        /* treat as nothing stored */
+      }
+      setView(deviceDefault());
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  const pickView = (v: TxnView) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* the choice just doesn't persist */
+    }
+  };
+
   // CSV import + Mercury backfill
   const [importOpen, setImportOpen] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -133,6 +221,32 @@ export default function BooksTransactions() {
   const [importResult, setImportResult] = useState("");
   const [backfilling, setBackfilling] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  // The kebab menu closes on an outside click or Escape, like every popover.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
+  // The import dialog closes on Escape like every other floating surface.
+  useEffect(() => {
+    if (!importOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setImportOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [importOpen]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [sunriseOn, setSunriseOn] = useState(false);
@@ -196,10 +310,10 @@ export default function BooksTransactions() {
   }, [nextSunrise]);
 
   const lastAutoSyncLabel = useMemo(() => {
-    if (!lastAutoSync) return "hasn't run yet";
+    if (!lastAutoSync) return "Hasn't run yet";
     // last_auto_sync_date is a plain YYYY-MM-DD; render it without a TZ shift.
     const [y, m, dd] = lastAutoSync.split("-").map(Number);
-    return `last ran ${new Date(y, m - 1, dd).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+    return `Last ran ${new Date(y, m - 1, dd).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   }, [lastAutoSync]);
 
   // If the search text is an entity's initials (its tag), search by that
@@ -394,56 +508,247 @@ export default function BooksTransactions() {
     }
   }
 
-  const subtle = "text-gray-500";
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
-  // text-base on phones so iOS doesn't auto-zoom the page when focusing.
-  const searchField = `pl-9 pr-4 py-2 rounded-full text-base sm:text-sm border cursor-text w-full sm:w-auto sm:min-w-[240px] ${
-    isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
+  // ── Skins ────────────────────────────────────────────────────────────────
+  // One text ladder, one card surface, one rule weight — shared with
+  // books-shared so the strip, toolbar and table read as a single system.
+  const { t1, t2, t3 } = tiers(isDark);
+  const card = `rounded-2xl border ${cardSurface(isDark)}`;
+  const rule = isDark ? "border-white/[0.08]" : "border-gray-200";
+  const hair = hairline(isDark);
+  const textInput = isDark
+    ? "bg-white/[0.04] border-white/10 text-gray-100 placeholder:text-gray-500 hover:border-white/15 focus:outline-none focus:border-white/25 focus:bg-white/[0.06]"
+    : "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400/100 hover:border-gray-300 focus:outline-none focus:border-gray-400";
+  // 16px on phones so iOS doesn't auto-zoom the page when the field focuses;
+  // the placeholder stays on the scale so the resting field matches the
+  // pickers beside it.
+  const searchField = `h-[40px] sm:h-9 w-full lg:w-56 xl:w-80 pl-9 pr-4 rounded-full text-[16px] sm:text-sm placeholder:text-sm border cursor-text [&::-webkit-search-cancel-button]:appearance-none ${textInput}`;
+  const btnBase =
+    "inline-flex items-center justify-center rounded-full font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default";
+  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${
+    isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"
   }`;
+  // A floor on phones so "All" isn't the narrowest control on the page.
+  const segment = "inline-flex items-center justify-center h-full min-w-[44px] sm:min-w-0 px-3 rounded-full text-sm font-medium whitespace-nowrap transition-colors cursor-pointer";
+  // Segments sit inside the container's 2px inset, so on phones their box is
+  // 35px; a pseudo-element grows the hit area past the container edge to 43px.
+  const segHit = "relative after:content-[''] after:absolute after:inset-x-0 after:-inset-y-1 sm:after:inset-0";
+  const segOn = isDark ? "bg-white text-black" : "bg-gray-900 text-white";
+  const segOff = isDark
+    ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]"
+    : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
+  // The view toggle is a mode switch, not another filter: a quiet icon pair
+  // with no pill container, so it never reads as a second "All".
+  const viewBtn = "w-[40px] h-[40px] sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer";
+  const viewOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-gray-200 text-gray-900";
+  const viewOff = isDark ? `${t3} hover:text-gray-100 hover:bg-white/[0.06]` : `${t3} hover:text-gray-900 hover:bg-gray-100`;
 
   const years = [0, 1, 2].map((d) => String(new Date().getFullYear() - d));
+  const searchRoomy = useMediaQuery(SEARCH_ROOMY);
 
   const entityTagIcon = (name: string) => (
-    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${entityTagClass(name, isDark)}`}>
+    <span
+      className={`inline-flex items-center h-5 px-1.5 rounded-md text-xs font-semibold tracking-[0.04em] leading-none ${entityTagClass(name, isDark)}`}
+    >
       {entityTag(name)}
     </span>
   );
 
+  const filtered = Boolean(q.trim()) || entity !== "all" || year !== "all" || type !== "all";
+  function clearFilters() {
+    setQ("");
+    setEntity("all");
+    setYear("all");
+    setType("all");
+  }
+
+  // ── Toolbar pieces ───────────────────────────────────────────────────────
+  // Rendered from helpers so the lg+ single row and the phone two-row layout
+  // share identical literal class strings.
+  const searchBox = (cls: string) => (
+    <div className={`relative ${cls}`}>
+      <svg
+        className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${t3}`}
+        fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+      </svg>
+      <SearchBox
+        value={q}
+        onCommit={setQ}
+        className={searchField}
+        placeholder={searchRoomy ? "Search merchants or memos…" : "Search…"}
+      />
+    </div>
+  );
+  const entityMenu = () => (
+    <Menu
+      value={tagMatch ? tagMatch.id : entity}
+      isDark={isDark}
+      size="md"
+      label="Entity"
+      onChange={setEntity}
+      options={[
+        { value: "all", label: "All entities" },
+        { value: "unmapped", label: "Unmapped" },
+        ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
+      ]}
+    />
+  );
+  const timeMenu = () => (
+    <Menu
+      value={year}
+      isDark={isDark}
+      size="md"
+      label="Period"
+      onChange={setYear}
+      options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
+    />
+  );
+  const typeSegments = () => (
+    <div role="group" aria-label="Type" className={segContainer}>
+      {(
+        [
+          ["all", "All"],
+          ["revenue", "Income"],
+          ["expenses", "Expense"],
+          ["transfers", "Transfers"],
+          ["intercompany", "Roll-up"],
+          ["uncategorized", "Uncategorized"],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => setType(value)}
+          aria-pressed={type === value}
+          className={`${segment} ${segHit} ${type === value ? segOn : segOff}`}
+        >
+          {label}
+          {value === "uncategorized" && uncat ? <span className="ml-1 tabular-nums opacity-60">{uncat}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+  const viewToggle = () => (
+    <div role="group" aria-label="View" className="inline-flex items-center gap-0.5 lg:ml-2">
+      {(
+        [
+          ["list", "List view", "M4 6h16M4 12h16M4 18h16"],
+          ["cards", "Card view", "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"],
+        ] as const
+      ).map(([v, name, d]) => (
+        <button
+          key={v}
+          type="button"
+          data-testid={v === "list" ? "view-list" : "view-cards"}
+          aria-label={name}
+          title={name}
+          aria-pressed={view === v}
+          onClick={() => pickView(v)}
+          className={`${viewBtn} ${view === v ? viewOn : viewOff}`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+  // Icon-only at lg, where the one-row toolbar has no room for a label.
+  const clearButton = (cls: string) => (
+    <button
+      type="button"
+      onClick={clearFilters}
+      aria-label="Clear filters"
+      title="Clear filters"
+      className={`${btnBase} gap-1 lg:w-9 lg:px-0 xl:w-auto xl:px-3 ${cls} ${outlineBtn(isDark)}`}
+    >
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+      <span className="lg:hidden xl:inline">Clear</span>
+    </button>
+  );
+
+  // ── Loading states ───────────────────────────────────────────────────────
+  // Only the very first fetch shows the skeleton. A re-sort, filter or search
+  // keeps the ledger mounted and dims it: no flash, no scroll jump, and the
+  // sort button keeps keyboard focus.
+  const firstLoad = loading && summary === null;
+  const refreshing = loading && !firstLoad;
+
+  // ── Summary strip ────────────────────────────────────────────────────────
+  const ready = summary !== null;
+  const hasRows = ready && summary.count > 0;
+  const strip: Array<{ label: string; value: string | null; tone: string }> = [
+    { label: "Total transactions", value: ready ? summary.count.toLocaleString() : null, tone: "" },
+    {
+      label: "Date range",
+      value: ready ? (hasRows && summary.first && summary.last ? dateRange(summary.first, summary.last) : "—") : null,
+      tone: "",
+    },
+    { label: "Total expenses", value: ready ? (hasRows ? money(summary.expenses) : "—") : null, tone: "" },
+    {
+      label: "Total income",
+      value: ready ? (hasRows ? `+${money(summary.income)}` : "—") : null,
+      tone: hasRows ? incomeTone(isDark) : "",
+    },
+  ];
+  const cellBorder = ["", "border-l", "border-t lg:border-t-0 lg:border-l", "border-l border-t lg:border-t-0"] as const;
+
   return (
-    <div className="w-full">
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Transactions</h1>
-          {lastSynced && (
-            <p className={`text-xs mt-1 ${subtle}`}>
-              Synced {new Date(lastSynced).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+    <div className="w-full tabular-nums">
+      {/* ── Header. One DOM for every width: the title block takes the row,
+          the compact actions (sunrise, kebab — and Sync now from sm) sit at
+          its right, and on phones Sync now drops to a full-width outline
+          button on its own line. */}
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-3 mb-5">
+        {/* Below sm the title block dissolves (`contents`) so the h1 shares a
+            line with the actions and the meta line drops under both at full
+            width; from sm it is one block at the left as before. */}
+        <div className="contents sm:block sm:min-w-0 sm:flex-1">
+          <h1 className={`order-1 flex-1 min-w-0 self-center text-2xl font-semibold tracking-tight leading-tight ${t1}`}>Transactions</h1>
+          {(lastSynced || (sunriseOn && !sunriseError)) && (
+            <p className={`order-3 basis-full -mt-1.5 sm:basis-auto sm:mt-1 text-xs tabular-nums flex flex-wrap items-center gap-x-1.5 gap-y-0.5 ${t2}`}>
+              {lastSynced && (
+                <span>
+                  Synced {new Date(lastSynced).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+              {/* The toggle used to be silent — you couldn't tell whether the
+                  morning sync ever ran. Say when it fires next and when it last
+                  did. The amber status dot is the separator for its clause;
+                  a "·" before it would be two bullets in a row. */}
+              {sunriseOn && !sunriseError && (
+                <>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden />
+                    {nextSunriseLabel ? `Next sunrise sync ${nextSunriseLabel}` : "Sunrise sync on"}
+                  </span>
+                  <span className="hidden sm:inline" aria-hidden>·</span>
+                  <span className="hidden sm:inline">{lastAutoSyncLabel}</span>
+                </>
+              )}
             </p>
           )}
-          {/* The toggle used to be silent — you couldn't tell whether the
-              morning sync ever ran. Say when it fires next and when it last did. */}
-          {sunriseOn && (
-            <p className={`text-xs mt-0.5 ${sunriseError ? "text-red-500" : "text-amber-600"}`}>
-              {sunriseError
-                ? sunriseError
-                : `Sunrise sync${nextSunriseLabel ? ` · next ${nextSunriseLabel}` : ""} · ${lastAutoSyncLabel}`}
-            </p>
-          )}
-          {!sunriseOn && sunriseError && <p className="text-xs mt-0.5 text-red-500">{sunriseError}</p>}
+          {sunriseError && <p className="order-3 basis-full -mt-1.5 sm:basis-auto sm:mt-1 text-xs text-red-500">{sunriseError}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="order-2 flex items-center gap-2 sm:-mt-0.5">
           {/* Sync at sunrise — a daily automatic sync at local dawn. */}
           <button
+            type="button"
+            role="switch"
+            aria-checked={sunriseOn}
+            aria-label="Sunrise sync"
             onClick={() => void toggleSunrise()}
             disabled={sunriseBusy}
             title={sunriseOn && nextSunriseLabel ? `Next sync ${nextSunriseLabel}` : "Sync automatically at sunrise"}
-            aria-pressed={sunriseOn}
-            className={`inline-flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-full text-sm border cursor-pointer transition-colors disabled:opacity-60 ${
-              sunriseOn
-                ? isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-700"
-                : isDark ? "border-white/10 text-gray-400 hover:text-white" : "border-gray-200 text-gray-500 hover:text-black"
-            }`}
+            className={`inline-flex items-center gap-2 h-[40px] sm:h-9 pl-2.5 sm:pl-3 pr-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default ${outlineBtn(isDark)}`}
           >
-            <svg className={`w-4 h-4 shrink-0 ${sunriseOn ? "text-amber-500" : ""}`} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <svg
+              className={`w-4 h-4 shrink-0 transition-colors ${sunriseOn ? amberTone(isDark) : ""}`}
+              fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
             </svg>
             <span className="hidden sm:inline">Sunrise sync</span>
@@ -452,8 +757,7 @@ export default function BooksTransactions() {
                 the knob slide past the end of the track. Track 36×20, knob 16,
                 2px inset → "on" travel is exactly 16px. */}
             <span
-              role="switch"
-              aria-checked={sunriseOn}
+              aria-hidden
               className={`relative block w-[36px] h-[20px] rounded-full shrink-0 overflow-hidden transition-colors ${
                 sunriseOn ? "bg-amber-500" : isDark ? "bg-white/15" : "bg-gray-300"
               }`}
@@ -466,45 +770,42 @@ export default function BooksTransactions() {
             </span>
           </button>
           <button
+            type="button"
             onClick={() => void syncNow()}
             disabled={syncing}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-              isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
-            }`}
+            className={`hidden sm:inline-flex items-center justify-center rounded-full font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default h-9 px-4 text-sm ${primaryBtn(isDark)}`}
           >
             {syncing ? "Syncing…" : backfilling ? "Backfilling…" : "Sync now"}
           </button>
-          <div className="relative">
+          <div className="relative" ref={moreRef}>
             <button
+              type="button"
               onClick={() => setMoreOpen((v) => !v)}
               aria-expanded={moreOpen}
+              aria-haspopup="menu"
               aria-label="More actions"
-              className={`w-9 h-9 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
-                isDark
-                  ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
-                  : "border-gray-200 text-gray-500 hover:text-black hover:border-gray-400"
+              className={`w-[40px] h-[40px] sm:w-9 sm:h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${outlineBtn(isDark)} ${
+                moreOpen ? (isDark ? "bg-white/[0.08] text-white" : "bg-gray-100 text-gray-900") : ""
               }`}
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
                 <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
               </svg>
             </button>
             {moreOpen && (
-              <div
-                className={`absolute right-0 mt-2 w-44 rounded-2xl border shadow-xl z-30 p-1.5 ${
-                  isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
-                }`}
-              >
+              <div role="menu" className={`absolute right-0 mt-1.5 w-44 rounded-xl border p-1 pop-in z-40 ${popoverSurface(isDark)}`}>
                 {([["Import CSV", () => void openImport()], ["Mercury history", () => void backfillMercury()]] as const).map(
                   ([label, run]) => (
                     <button
                       key={label}
+                      type="button"
+                      role="menuitem"
                       onClick={() => {
                         setMoreOpen(false);
                         run();
                       }}
-                      className={`w-full px-3 py-2 rounded-xl text-sm text-left cursor-pointer ${
-                        isDark ? "text-gray-200 hover:bg-white/10" : "text-gray-800 hover:bg-gray-100"
+                      className={`w-full h-[40px] sm:h-8 px-2 rounded-lg text-xs text-left cursor-pointer transition-colors ${
+                        isDark ? "text-gray-200 hover:bg-white/[0.08]" : "text-gray-800 hover:bg-gray-100"
                       }`}
                     >
                       {label}
@@ -515,29 +816,43 @@ export default function BooksTransactions() {
             )}
           </div>
         </div>
+        {/* Phones: Sync now on its own full-width line, an outline button so
+            a white pill doesn't outrank the KPI numbers on a small screen. */}
+        <button
+          type="button"
+          onClick={() => void syncNow()}
+          disabled={syncing}
+          className={`${btnBase} order-4 w-full h-[40px] px-4 text-sm sm:hidden ${outlineBtn(isDark)}`}
+        >
+          {syncing ? "Syncing…" : backfilling ? "Backfilling…" : "Sync now"}
+        </button>
       </div>
 
+      {/* ── CSV import ───────────────────────────────────────────────────── */}
       {importOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setImportOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] fade-in"
+          onClick={() => setImportOpen(false)}
+        >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-title"
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-md rounded-2xl border shadow-2xl p-5 ${
-              isDark ? "bg-[#141414] border-white/10" : "bg-white border-gray-200"
-            }`}
+            className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}
           >
-            <h2 className="text-base font-semibold mb-1">Import bank CSV</h2>
-            <p className={`text-xs mb-4 ${subtle}`}>
+            <h2 id="import-title" className={`text-lg font-semibold tracking-tight ${t1}`}>Import bank CSV</h2>
+            <p className={`mt-1 text-xs mb-4 ${t2}`}>
               For history Plaid can't reach (Wells Fargo beyond 90 days). Export the range from the
               bank's site, pick the account it belongs to, and import — duplicates are skipped.
             </p>
 
-            <label className={`block text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>Account</label>
+            <label htmlFor="import-account" className={`block ${MICRO} ${t2} mb-1`}>Account</label>
             <select
+              id="import-account"
               value={importAccount}
               onChange={(e) => setImportAccount(e.target.value)}
-              className={`w-full mb-3 px-3 py-2 rounded-xl text-sm border cursor-pointer ${
-                isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-              }`}
+              className={`w-full mb-3 h-[40px] sm:h-9 px-3.5 rounded-full text-[16px] sm:text-sm border cursor-pointer ${textInput}`}
             >
               {bankAccounts.length === 0 && <option value="">Loading accounts…</option>}
               {bankAccounts.map((a) => (
@@ -547,36 +862,39 @@ export default function BooksTransactions() {
               ))}
             </select>
 
-            <label className={`block text-[11px] uppercase tracking-wider mb-1 ${subtle}`}>CSV file</label>
+            <label htmlFor="import-file" className={`block ${MICRO} ${t2} mb-1`}>CSV file</label>
             <input
+              id="import-file"
               type="file"
               accept=".csv,text/csv"
               onChange={(e) => e.target.files?.[0] && onCsvFile(e.target.files[0])}
-              className={`w-full text-sm mb-3 ${subtle}`}
+              className={`w-full text-xs mb-3 ${t2}`}
             />
 
             {csvRows.length > 0 && (
-              <p className={`text-xs mb-3 ${subtle}`}>
-                {csvName}: <span className="font-medium">{csvRows.length} rows</span>,{" "}
+              <p className={`text-xs tabular-nums mb-3 ${t2}`}>
+                {csvName}: <span className={`font-medium ${t1}`}>{csvRows.length} rows</span>,{" "}
                 {csvRows.reduce((min, r) => (r.date < min ? r.date : min), csvRows[0].date)} →{" "}
                 {csvRows.reduce((max, r) => (r.date > max ? r.date : max), csvRows[0].date)}
               </p>
             )}
-            {importResult && <p className={`text-xs mb-3 ${importResult.startsWith("Imported") ? "text-emerald-500" : "text-red-400"}`}>{importResult}</p>}
+            {importResult && (
+              <p className={`text-xs mb-3 ${importResult.startsWith("Imported") ? incomeTone(isDark) : "text-red-500"}`}>{importResult}</p>
+            )}
 
             <div className="flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => setImportOpen(false)}
-                className={`px-4 py-2 rounded-full text-sm cursor-pointer ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"}`}
+                className={`${btnBase} h-[40px] sm:h-9 px-4 text-sm ${t2} ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}
               >
                 Close
               </button>
               <button
+                type="button"
                 onClick={() => void runImport()}
                 disabled={importing || !csvRows.length || !importAccount}
-                className={`px-4 py-2 rounded-full text-sm font-medium cursor-pointer disabled:opacity-50 ${
-                  isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
-                }`}
+                className={`${btnBase} h-[40px] sm:h-9 px-4 text-sm ${primaryBtn(isDark)}`}
               >
                 {importing ? "Importing…" : "Import"}
               </button>
@@ -585,168 +903,115 @@ export default function BooksTransactions() {
         </div>
       )}
 
-      {/* Summary strip — the whole filtered set, not just the rows loaded. */}
-      {summary && !loading && (
-        <div
-          className={`grid grid-cols-2 lg:grid-cols-4 rounded-2xl border mb-4 divide-y lg:divide-y-0 lg:divide-x ${card} ${
-            isDark ? "divide-white/10" : "divide-gray-200"
-          }`}
-        >
-          {(
-            [
-              ["Total transactions", summary.count.toLocaleString(), ""],
-              ["Date range", summary.first && summary.last ? `${longDate(summary.first)} – ${longDate(summary.last)}` : "—", ""],
-              ["Total expenses", summary.expenses ? `-${money(summary.expenses)}` : money(0), ""],
-              ["Total income", money(summary.income), "text-emerald-500"],
-            ] as const
-          ).map(([label, value, tone]) => (
-            <div key={label} className="px-5 py-3.5 text-sm whitespace-nowrap">
-              <span className={subtle}>{label} </span>
-              <span className={`font-semibold tabular-nums ${tone}`}>{value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* ── Summary strip — the whole filtered set, not just the rows loaded. */}
+      <div className={`grid grid-cols-2 lg:grid-cols-4 overflow-hidden mb-5 tabular-nums ${card}`}>
+        {strip.map(({ label, value, tone }, i) => (
+          <div key={label} className={`min-w-0 px-4 py-3 ${cellBorder[i]} ${hair}`}>
+            <span className={`block text-xs font-medium ${t2}`}>{label}</span>
+            {value === null ? (
+              <span className="mt-1 h-[13px] flex items-center" aria-hidden>
+                <span className="shimmer inline-block h-3 w-20 rounded!" />
+              </span>
+            ) : (
+              <span
+                title={value}
+                className={`block mt-1 text-lg font-semibold tabular-nums leading-none tracking-tight truncate ${tone || t1}`}
+              >
+                {value}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
 
       {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
+        <div className={`mb-5 rounded-2xl px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
           {error}
         </div>
       )}
 
-      <div className={`rounded-2xl border rise-in ${card}`}>
-        {/* Card header: micro-label, search, pickers — then the type row. */}
-        <div className={`px-4 pt-4 pb-3 border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <span className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${subtle}`}>Transactions</span>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:flex-none">
-                <svg
-                  className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${subtle}`}
-                  fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-                </svg>
-                <SearchBox value={q} onCommit={setQ} className={searchField} />
-                {tagMatch && (
-                  <span className={`absolute -bottom-4 left-3 text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
-                    Filtering by {tagMatch.name}
-                  </span>
-                )}
-              </div>
-              <div className="hidden sm:flex items-center gap-2">
-                <Menu
-                  value={entity}
-                  isDark={isDark}
-                  size="md"
-                  onChange={setEntity}
-                  options={[
-                    { value: "all", label: "All entities" },
-                    { value: "unmapped", label: "Unmapped" },
-                    ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
-                  ]}
-                />
-                <Menu
-                  value={year}
-                  isDark={isDark}
-                  size="md"
-                  onChange={setYear}
-                  options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
-                />
-              </div>
+      {/* ── Ledger ───────────────────────────────────────────────────────── */}
+      <div className={card}>
+        {/* One DOM for every width. lg+: a single row — search · entity ·
+            period · clear … type segments · view toggle. Below lg: search +
+            toggle on the first line, then the filters in a scrolling strip.
+            The strip is `lg:contents`, so on desktop its children join the
+            row directly and `order-*` places them. Its basis is the full
+            card width (content + both insets) so the clip edge is the card
+            edge, softened by a short fade; Clear sits before the type
+            segments on phones so it's reachable without scrolling. */}
+        <div className={`px-4 py-3 border-b ${rule}`}>
+          <div className="flex flex-wrap items-center gap-2">
+            {searchBox("order-1 flex-1 min-w-0 lg:flex-none")}
+            <div className="order-2 shrink-0 lg:order-6">{viewToggle()}</div>
+            <div className="order-3 basis-[calc(100%+2rem)] -mx-4 px-4 scroll-px-4 flex items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0 [mask-image:linear-gradient(to_right,#000_calc(100%-12px),transparent)] lg:[mask-image:none] lg:contents">
+              <div className="lg:order-2">{entityMenu()}</div>
+              <div className="lg:order-3">{timeMenu()}</div>
+              {filtered && <div className="lg:order-4">{clearButton("h-[40px] sm:h-9 px-3 text-sm")}</div>}
+              <div className="lg:order-5 lg:ml-auto">{typeSegments()}</div>
             </div>
-          </div>
-          <div className="flex items-center gap-2 mt-3 overflow-x-auto no-scrollbar [&>*]:shrink-0">
-            <div className="sm:hidden flex items-center gap-2">
-              <Menu
-                value={entity}
-                isDark={isDark}
-                size="md"
-                onChange={setEntity}
-                options={[
-                  { value: "all", label: "All entities" },
-                  { value: "unmapped", label: "Unmapped" },
-                  ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
-                ]}
-              />
-              <Menu
-                value={year}
-                isDark={isDark}
-                size="md"
-                onChange={setYear}
-                options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
-              />
-            </div>
-            <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-              {(
-                [
-                  ["all", "All"],
-                  ["revenue", "Income"],
-                  ["expenses", "Expense"],
-                  ["transfers", "Transfers"],
-                  ["intercompany", "Roll-up"],
-                  ["uncategorized", uncat ? `Uncategorized ${uncat}` : "Uncategorized"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  onClick={() => setType(value)}
-                  aria-pressed={type === value}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap tabular-nums ${
-                    type === value
-                      ? isDark ? "bg-white text-black" : "bg-gray-900 text-white"
-                      : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {(q || entity !== "all" || year !== "all" || type !== "all") && (
-              <button
-                onClick={() => {
-                  setQ("");
-                  setEntity("all");
-                  setYear("all");
-                  setType("all");
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs cursor-pointer transition-colors ${
-                  isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-black hover:bg-gray-100"
-                }`}
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Clear
-              </button>
-            )}
-            {!loading && (
-              <span className={`ml-auto text-xs tabular-nums ${subtle}`}>
-                {rows.length} of {total.toLocaleString()}
-              </span>
-            )}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-4 space-y-2.5">
-              {Array.from({ length: 8 }, (_, i) => (
-                <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 4) * 7}%` }} />
-              ))}
-            </div>
+        <div
+          aria-busy={refreshing || undefined}
+          className={`transition-opacity ${refreshing ? "opacity-60 pointer-events-none" : ""}`}
+        >
+          {firstLoad ? (
+            view === "cards" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-3 sm:p-4" aria-busy>
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="shimmer h-24 rounded-xl!" />
+                ))}
+              </div>
+            ) : (
+              <div aria-busy>
+                {/* A header-height rule first, so the real thead doesn't push
+                    the rows down when they arrive. */}
+                <div className={`flex items-center gap-3 px-4 h-[33px] border-b ${rule}`}>
+                  <span className="shimmer w-[16px] h-[16px] rounded-[4px]! lg:invisible" />
+                  <span className="shimmer h-2.5 w-14 rounded!" />
+                  <span className="ml-auto shimmer h-2.5 w-12 rounded!" />
+                </div>
+                {Array.from({ length: 8 }, (_, i) => (
+                  <div key={i} className={`flex items-center gap-3 px-4 py-3 border-b last:border-b-0 ${hair}`}>
+                    {/* `.shimmer` sets its own radius unlayered, so the
+                        skeleton radii are marked important to match the row.
+                        The box keeps its width (the avatar column lines up)
+                        but is invisible at lg+, where live rows hide it too. */}
+                    <span className="shimmer w-[16px] h-[16px] rounded-[4px]! lg:invisible" />
+                    <span className="shimmer w-6 h-6 rounded-full!" />
+                    <span className="shimmer h-3 w-40 rounded!" />
+                    <span className="shimmer h-3 w-56 rounded! opacity-60" />
+                    <span className="ml-auto shimmer h-7 w-40 rounded-full!" />
+                    <span className="shimmer h-3 w-20 rounded!" />
+                  </div>
+                ))}
+              </div>
+            )
           ) : rows.length === 0 ? (
-            <div className="px-4 py-14 text-center">
-              <svg className={`w-8 h-8 mx-auto mb-3 ${subtle}`} fill="none" stroke="currentColor" strokeWidth={1.2} viewBox="0 0 24 24">
+            <div className="px-4 py-16 text-center">
+              <svg className={`w-6 h-6 mx-auto ${t3}`} fill="none" stroke="currentColor" strokeWidth={1.4} viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
               </svg>
-              <p className={`text-sm ${subtle}`}>Nothing matches these filters.</p>
+              <p className={`mt-3 text-sm font-medium ${t1}`}>No transactions match</p>
+              <p className={`mt-1 text-xs ${t2}`}>Try another search or clear the filters.</p>
+              {filtered && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className={`${btnBase} mt-4 h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             <TxnTable
               rows={rows}
               categories={categories}
               isDark={isDark}
+              view={view}
               sort={sort}
               onSort={onSort}
               selection={{
@@ -776,21 +1041,27 @@ export default function BooksTransactions() {
             />
           )}
         </div>
+
+        {/* Footer: how far we are + load more. The sentinel sits here so nearing
+            the end of the loaded rows auto-loads the next page. */}
+        {!firstLoad && rows.length < total && (
+          <div className={`flex items-center justify-center gap-3 px-4 py-3 border-t ${hair}`}>
+            <span className={`text-xs tabular-nums ${t2}`}>
+              Showing {rows.length.toLocaleString()} of {total.toLocaleString()}
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className={`${btnBase} h-[40px] sm:h-7 px-3 text-xs tabular-nums ${outlineBtn(isDark)}`}
+            >
+              {loadingMore ? "Loading…" : `Load ${Math.min(PAGE, total - rows.length)} more`}
+            </button>
+            <div ref={sentinelRef} aria-hidden />
+          </div>
+        )}
       </div>
 
-      {/* Scroll sentinel — nearing it auto-loads the next page. */}
-      {!loading && rows.length < total && <div ref={sentinelRef} aria-hidden />}
-      {!loading && rows.length < total && (
-        <button
-          onClick={() => void loadMore()}
-          disabled={loadingMore}
-          className={`mt-4 px-4 py-2 rounded-full text-sm transition-colors cursor-pointer disabled:opacity-50 ${
-            isDark ? "bg-white/[0.06] hover:bg-white/10 text-gray-300" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-          }`}
-        >
-          {loadingMore ? "Loading…" : `Load ${Math.min(PAGE, total - rows.length)} more`}
-        </button>
-      )}
       <BatchBar
         count={selected.size}
         isDark={isDark}
