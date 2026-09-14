@@ -731,6 +731,10 @@ button:focus-visible, a:focus-visible, select:focus-visible,
 tr[tabindex]:focus-visible {
   outline-offset: -2px;
 }
+input:focus-visible, textarea:focus-visible { outline: 2px solid rgba(16, 185, 129, 0.6); outline-offset: 2px; }
+:where(button, a, select, input, textarea, [role="option"]) { outline-color: rgba(16, 185, 129, 0.6); }
+html.light :where(button, a, select, input, textarea, [role="option"]) { outline-color: rgb(5 150 105); }
+html.light :is(button, a, select, input, textarea, [role="option"]):focus-visible { outline-color: rgb(5 150 105); }
 
 /* Print: the statement alone, ink-friendly. */
 @media print {
@@ -753,8 +757,14 @@ tr[tabindex]:focus-visible {
 /* Floating surfaces settle in; sheets slide up; backdrops fade. */
 .pop-in{animation:bfo-pop 140ms cubic-bezier(.16,1,.3,1) both}
 @keyframes bfo-pop{from{opacity:0;transform:translateY(-2px) scale(.985)}to{opacity:1;transform:none}}
+.pop-in-up{animation:bfo-pop-up 140ms cubic-bezier(.16,1,.3,1) both}
+@keyframes bfo-pop-up{from{opacity:0;transform:translateY(2px) scale(.985)}to{opacity:1;transform:none}}
+.pop-out{animation:bfo-pop 100ms ease-in reverse both}
+.pop-out-up{animation:bfo-pop-up 100ms ease-in reverse both}
 .sheet-in{animation:bfo-sheet 220ms cubic-bezier(.16,1,.3,1) both}
 @keyframes bfo-sheet{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.sheet-out{animation:bfo-sheet 180ms cubic-bezier(.4,0,1,1) reverse both}
 .fade-in{animation:bfo-fade 160ms ease-out both}
 @keyframes bfo-fade{from{opacity:0}to{opacity:1}}
-@media (prefers-reduced-motion:reduce){.pop-in,.sheet-in,.fade-in{animation:none}}
+.fade-out{animation:bfo-fade 140ms ease-in reverse both}
+@media (prefers-reduced-motion:reduce){.pop-in,.pop-in-up,.pop-out,.pop-out-up,.sheet-in,.sheet-out,.fade-in,.fade-out{animation:none}.shimmer::after{animation:none;transform:none;opacity:.5}}
