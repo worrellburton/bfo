@@ -931,7 +931,10 @@ export default function BooksTransactions() {
           <div className="flex flex-wrap items-center gap-2">
             {searchBox()}
             <div className="order-2 shrink-0 lg:order-6">{viewToggle()}</div>
-            <div className="order-3 basis-[calc(100%+2rem)] -mx-4 px-4 scroll-px-4 flex items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0 [mask-image:linear-gradient(to_right,#000_calc(100%-12px),transparent)] lg:[mask-image:none] lg:contents">
+            {/* `py-2 -my-2`: overflow-x clips vertically too, so the strip
+                keeps the ring's 4px (and most of the tablet tap boxes) inside
+                its own padding; the negative margin gives the height back. */}
+            <div className="order-3 basis-[calc(100%+2rem)] -mx-4 px-4 py-2 -my-2 scroll-px-4 flex items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0 [mask-image:linear-gradient(to_right,#000_calc(100%-12px),transparent)] lg:[mask-image:none] lg:contents">
               {/* At lg the row has ~875px for six controls: the chosen entity
                   truncates at 12rem there (the tag in its option and the
                   strip say the rest) so a long LLC name never wraps the row. */}

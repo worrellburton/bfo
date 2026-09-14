@@ -1064,10 +1064,14 @@ export function Menu({
   const padR = size === "md" ? "pr-3" : quiet ? "pr-1.5" : "pr-2.5";
   const width = size === "md" ? "max-w-[240px]" : quiet ? "" : touch ? "max-w-full" : "max-w-[190px]";
   const shift = quiet && size !== "md" ? "-ml-2" : "";
+  // The quiet pill has no resting colour of its own: it inherits the cell's
+  // (the Type column rests at t3 for the default word and t2 for the
+  // exceptions, and the row's hover lifts it — see the Type cell). Hover,
+  // focus and open on the pill itself go to t1.
   const skin = quiet
     ? isDark
-      ? `${t2} hover:bg-white/[0.06] hover:text-gray-100 aria-expanded:bg-white/[0.1] aria-expanded:text-gray-100`
-      : `${t2} hover:bg-gray-100 hover:text-gray-900 aria-expanded:bg-gray-200 aria-expanded:text-gray-900`
+      ? "hover:bg-white/[0.06] hover:text-gray-100 focus-visible:text-gray-100 aria-expanded:bg-white/[0.1] aria-expanded:text-gray-100"
+      : "hover:bg-gray-100 hover:text-gray-900 focus-visible:text-gray-900 aria-expanded:bg-gray-200 aria-expanded:text-gray-900"
     : tone === "amber"
       ? isDark
         ? "bg-amber-500/10 border-amber-500/25 text-amber-200 hover:bg-amber-500/20 aria-expanded:bg-amber-500/25"
@@ -1891,7 +1895,10 @@ export function Toast({ message, isDark, onClose }: { message: string; isDark: b
  */
 const COLS = {
   select: "w-9 pl-3 py-2.5 align-middle",
-  category: "w-60 xl:w-80 hidden md:table-cell",
+  // md–lg the pill is the touch size (text-sm): "Other Operating Expenses"
+  // measures 182.9 there, so the column is 17rem (190.4 usable); at lg the
+  // text-xs pill (161.5) fits the 15rem column.
+  category: "w-68 lg:w-60 xl:w-80 hidden md:table-cell",
   entity: "w-14 lg:w-16 xl:w-28",
   type: "w-28 xl:w-40 hidden lg:table-cell",
   date: "w-28 xl:w-36 hidden lg:table-cell",
@@ -2115,6 +2122,12 @@ export function TxnTable({
     : "bg-emerald-50 shadow-[inset_2px_0_0_0_#10b981]";
   // The open row holds the hover tint, so it reads as "the one you touched".
   const expandedBg = isDark ? "bg-white/[0.04]" : "bg-gray-50";
+  // Type column resting tier (the quiet pill inherits it): t3 for the default
+  // word, lifted to t2 while the row is hovered; exceptions rest at t2.
+  const typeTone = (eff: string) =>
+    eff === "normal"
+      ? isDark ? "text-gray-500 group-hover:text-gray-400" : "text-gray-500/80 group-hover:text-gray-500/100"
+      : t2;
   // One hit-area token for every 28px gutter control (checkbox, chevron):
   // rounded-md with the quiet fill; the open chevron holds a step more.
   const hitFill = isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100";
@@ -2778,7 +2791,11 @@ export function TxnTable({
               <tr
                 aria-busy={isBusy || undefined}
                 onClick={lgUp ? undefined : (e) => rowTap(e, t.transaction_id)}
-                className={`group transition-[color,background-color,box-shadow] duration-100 max-lg:cursor-pointer ${topBorder} ${hover} ${checked ? selectedSkin : ""} ${
+                // A checked row keeps its tint under the pointer: the hover
+                // fill only exists on unchecked rows (a `hover:` utility
+                // outranks a bare one in both themes, so the two must never
+                // sit on the same row).
+                className={`group transition-[color,background-color,box-shadow] duration-100 max-lg:cursor-pointer ${topBorder} ${checked ? selectedSkin : hover} ${
                   isOpen ? expandedBg : ""
                 }`}
               >
@@ -2833,18 +2850,23 @@ export function TxnTable({
                     {/* flex-1 gives this box a definite width, so the vendor's
                         percentage cap is half the column, not half itself. */}
                     <div className="flex-1 min-w-0 flex items-baseline gap-2 leading-5">
-                      {vendor ? (
+                      {vendor && lgUp ? (
                         <button
                           type="button"
                           onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
                           title={`Open ${vendorText}`}
-                          // Below lg the text gets a row-filling tap box (the
-                          // inner span truncates, so the button itself never
-                          // clips its pseudo-element).
-                          className={`text-sm font-medium min-w-0 md:shrink-0 max-w-[240px] xl:max-w-[50%] text-left cursor-pointer hover:underline ${TAP.line} ${dim ? t2 : t1}`}
+                          className={`text-sm font-medium min-w-0 md:shrink-0 max-w-[240px] xl:max-w-[50%] text-left cursor-pointer hover:underline ${dim ? t2 : t1}`}
                         >
                           <span className="block truncate">{vendorText}</span>
                         </button>
+                      ) : vendor ? (
+                        // Below lg the row is the tap target and it expands;
+                        // the name is plain text so a tap on it does the same
+                        // thing as a tap beside it. "Open vendor →" in the
+                        // expanded editors is the way to leave.
+                        <span className={`text-sm font-medium truncate min-w-0 md:shrink-0 max-w-[240px] ${dim ? t2 : t1}`} title={vendorText}>
+                          {vendorText}
+                        </span>
                       ) : (
                         <span className={`text-sm font-normal truncate min-w-0 ${t2}`} title={t.name ?? undefined}>
                           {memo || "—"}
@@ -2888,7 +2910,13 @@ export function TxnTable({
                     <span className={`text-xs ${amberTone(isDark)}`}>Unmapped</span>
                   )}
                 </td>
-                <td className={`${cell} hidden lg:table-cell`}>
+                {/* The default word (Income / Expense) rests a tier below the
+                    exceptions so the column recedes and only Transfer /
+                    Roll-up / Loan read; hovering the row lifts it to t2 with
+                    the chevron. (A readable word at t3 is a deliberate
+                    deviation from the tier rule: it repeats on every row and
+                    the detail panel states the type in full.) */}
+                <td className={`${cell} hidden lg:table-cell transition-colors duration-100 ${typeTone(eff)}`}>
                   <Menu {...typeProps(t, eff, inflow)} isDark={isDark} quiet size="sm" chevron="hover" label="Type" />
                 </td>
                 {/* Said once per day while the rows are in date order. */}
@@ -2933,7 +2961,7 @@ export function TxnTable({
                       {/* Below lg the Type/Category columns are hidden, so the
                           editors reappear here. */}
                       <div className="lg:hidden mb-4">
-                        {renderEditors(t, { type: true, category: true, categoryClass: "md:hidden", loan: true })}
+                        {renderEditors(t, { type: true, category: true, categoryClass: "md:hidden", loan: true, vendorLink: true })}
                       </div>
                       {renderDetail(t, true)}
                       <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} cache={historyCache.current} />
