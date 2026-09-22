@@ -1059,7 +1059,13 @@ async function fetchTreasury(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.CRON_SECRET;
-  const origin = `https://${req.headers.host}`;
+  // The report pulls balances by calling our own /api/plaid/data. That call
+  // must go to the public domain: Vercel's scheduler invokes this function on
+  // the *.vercel.app deployment URL, which sits behind Deployment Protection,
+  // so a self-fetch built from req.headers.host got redirected to a Vercel
+  // login page — no balances, no report, just a "balances unavailable" notice
+  // every Monday. APP_URL is the custom production domain, which is public.
+  const origin = APP_URL;
   const now = new Date();
 
   const loadLoans = async (): Promise<Loan[]> => {
