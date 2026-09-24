@@ -141,13 +141,41 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
   const income = rows.filter(isIncome).sort((a, b) => a.date.localeCompare(b.date));
   const excluded = (opts.exclude ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean);
 
-  // Group by source identity — the vendor, else the raw descriptor.
-  const bySource = new Map<string, InflowRow[]>();
+  // Group by source identity — the vendor, else the raw descriptor. The same
+  // payer arrives under several spellings ("Focus Hospitality", the bank's
+  // truncated "Focus Hospitalit", a renamed "FOCUS HOSPITALITY"); keyed on the
+  // exact string, a payment filed under one spelling left the stream it
+  // belonged to looking overdue. So names are compared case- and
+  // punctuation-blind, and a name that is a truncation of a longer one
+  // (≥ 8 characters) joins it.
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const labelled: Array<{ t: InflowRow; label: string; key: string }> = [];
   for (const t of income) {
-    const key = (t.merchant_name || t.name || "").trim();
-    if (!key) continue;
-    if (excluded.some((x) => key.toLowerCase().includes(x))) continue;
-    (bySource.get(key) ?? bySource.set(key, []).get(key)!).push(t);
+    const label = (t.merchant_name || t.name || "").trim();
+    if (!label) continue;
+    if (excluded.some((x) => label.toLowerCase().includes(x))) continue;
+    labelled.push({ t, label, key: norm(label) });
+  }
+  const keys = [...new Set(labelled.map((l) => l.key))].sort((a, b) => b.length - a.length);
+  const canonical = new Map<string, string>();
+  for (const k of keys) {
+    const longer = keys.find((o) => o.length > k.length && k.length >= 8 && o.startsWith(k));
+    canonical.set(k, longer ? canonical.get(longer) ?? longer : k);
+  }
+  const groups = new Map<string, { rows: InflowRow[]; labels: Map<string, number> }>();
+  for (const { t, label, key } of labelled) {
+    const g = groups.get(canonical.get(key)!) ?? { rows: [], labels: new Map() };
+    g.rows.push(t);
+    g.labels.set(label, (g.labels.get(label) ?? 0) + 1);
+    groups.set(canonical.get(key)!, g);
+  }
+  // Display the most common spelling, preferring mixed case over SHOUTING.
+  const bySource = new Map<string, InflowRow[]>();
+  for (const g of groups.values()) {
+    const name = [...g.labels.entries()].sort(
+      (a, b) => Number(a[0] === a[0].toUpperCase()) - Number(b[0] === b[0].toUpperCase()) || b[1] - a[1] || b[0].length - a[0].length
+    )[0][0];
+    bySource.set(name, g.rows.sort((a, b) => a.date.localeCompare(b.date)));
   }
 
   const streams: InflowStream[] = [];
@@ -250,8 +278,14 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
   // Planned inflows ride alongside the detected ones; one-offs are listed
   // separately so a single expected receipt never inflates "per month".
   const oneTime: OneTimeInflow[] = [];
+  // A planned entry steps aside once the books detect the real stream (the
+  // WADR draw planned at $8,000 later arrives monthly on its own) — otherwise
+  // the same money would be counted twice.
+  const detected = streams.map((s) => norm(s.source));
   for (const p of opts.planned ?? []) {
     if (!(p.amount > 0)) continue;
+    const pk = `${norm(p.name)} ${norm(p.entity ?? "")}`;
+    if (p.cadence === "monthly" && detected.some((d) => d.length >= 4 && pk.includes(d))) continue;
     if (p.cadence === "one_time") {
       oneTime.push({
         name: p.name,
