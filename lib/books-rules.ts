@@ -59,7 +59,7 @@ const RULES: Rule[] = [
   { match: /hcclaimpmt|\baetna\b|\bkfhp\b|kaiser/i, category: "4400 Insurance & Claim Income", type: "normal" },
   { match: /tep corporate|tucson electric/i, category: "6250 Utilities", type: "normal" },
   { match: /payment escrow/i, category: "7000 Mortgage Interest", type: "normal" },
-  { match: /io autopay|citi autopay|wf credit card|auto pay/i, category: "9150 Credit Card Payments", type: "transfer" },
+  { match: /\bio (auto)?pay(ment)?\b|citi autopay|wf credit card|auto pay/i, category: "9150 Credit Card Payments", type: "transfer" },
   { match: /to visa signature card|citi card online payment|capital one mobile pmt/i, category: "9150 Credit Card Payments", type: "transfer" },
 
   // ── Loans the family expects back — reviewed in Transfers, not the P&L ─

@@ -335,9 +335,24 @@ function tidyMemo(text: string): string {
   return out.join(" ").replace(/\s+([,;:])/g, "$1").trim();
 }
 
+/**
+ * Mercury IO card payments say which account is on the other side:
+ * "IO PAYMENT; Merchant name: Mercury Credit" on the checking leg and
+ * "IO AUTOPAY; Merchant name: Mercury Checking ••2017" on the card leg.
+ * Read as the direction of the payment instead of the bank's shorthand.
+ */
+function cardPaymentMemo(name: string | null): string | null {
+  const m = /^io (auto)?pay(?:ment)?;\s*merchant name:\s*(.+)$/i.exec((name ?? "").trim());
+  if (!m) return null;
+  const kind = m[1] ? "Autopay" : "Payment";
+  const other = m[2].trim();
+  if (/\bcredit\b/i.test(other)) return `${kind} to IO card`;
+  return `${kind} from ${other.replace(/^mercury\s*[-–]?\s*/i, "")}`;
+}
+
 /** A vendor-less memo as the ledger's primary line. */
 function memoText(name: string | null): string {
-  return tidyMemo(displayName(name)) || displayName(name);
+  return cardPaymentMemo(name) ?? (tidyMemo(displayName(name)) || displayName(name));
 }
 
 /**
@@ -346,6 +361,8 @@ function memoText(name: string | null): string {
  * and the reference numbers the bank appends.
  */
 function descriptorFor(name: string | null, vendor: string | null, entity?: string | null): string | null {
+  const card = cardPaymentMemo(name);
+  if (card) return card;
   let d = tidyMemo(displayName(name));
   if (!d) return null;
   if (vendor) {

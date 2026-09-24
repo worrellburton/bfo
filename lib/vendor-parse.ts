@@ -26,6 +26,10 @@ const KNOWN: Array<[RegExp, string | null]> = [
   [/online transfer (to|from)/i, null],
   [/choice financial|partnering with choice/i, null],
   [/incoming wire|^wt fed#|^wt seq#/i, null],
+  // Mercury IO credit card payments: "IO PAYMENT; Merchant name: Mercury
+  // Credit" on the checking leg, "IO AUTOPAY; Merchant name: Mercury Checking
+  // ••2017" on the card leg. The counterparty on both legs is the card.
+  [/^io (auto)?pay(ment)?\b/i, "Mercury IO Card"],
   [/citi card|citi autopay/i, "Citi Card"],
   [/wf credit card/i, "Wells Fargo Card"],
   [/internal revenue|\birs\b/i, "IRS"],
@@ -65,7 +69,10 @@ function titleCase(s: string): string {
 
 /** Generic parse: the leading alpha words of a descriptor, minus the noise. */
 function genericParse(description: string): string | null {
-  let s = description.trim();
+  // Only the descriptor proper: a "; Merchant name: …" suffix is the feed's
+  // own field, never part of the payee ("IO PAYMENT; Merchant name: …" once
+  // parsed as the vendor "Io Payment Merchant Name").
+  let s = description.split(";")[0].trim();
   for (const p of PREFIXES) s = s.replace(p, "");
   const words: string[] = [];
   for (const raw of s.split(/\s+/)) {
