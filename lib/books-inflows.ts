@@ -164,7 +164,7 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
   }
   const groups = new Map<string, { rows: InflowRow[]; labels: Map<string, number> }>();
   for (const { t, label, key } of labelled) {
-    const g = groups.get(canonical.get(key)!) ?? { rows: [], labels: new Map() };
+    const g = groups.get(canonical.get(key)!) ?? { rows: [] as InflowRow[], labels: new Map<string, number>() };
     g.rows.push(t);
     g.labels.set(label, (g.labels.get(label) ?? 0) + 1);
     groups.set(canonical.get(key)!, g);
