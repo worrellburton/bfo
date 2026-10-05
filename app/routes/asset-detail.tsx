@@ -27,7 +27,37 @@ interface Asset {
   articles?: UploadedFile;
   einLetter?: UploadedFile;
   operatingAgreement?: UploadedFile;
+  verification?: Verification;
 }
+
+type VerifyField =
+  | "name" | "type" | "state" | "ein" | "formationDate" | "address"
+  | "registeredAgent" | "llcType" | "operatingAgreementDate" | "articlesOfOrgDate";
+
+interface Verification {
+  checkedAt: number;
+  summary: string;
+  fields: { field: VerifyField; found: string | null; status: "match" | "mismatch" | "missing_on_record" | "not_found"; source: string | null; note: string | null }[];
+  owners: { name: string; percent: number | null; source: string | null }[];
+  ownershipStatus: "match" | "mismatch" | "unclear";
+  issues: { severity: "high" | "medium" | "low"; message: string }[];
+  documentsRead: string[];
+  /** The record as it was when checked — so stale findings can be spotted. */
+  recordAtCheck?: Partial<Record<VerifyField, string>>;
+}
+
+const VERIFY_LABEL: Record<VerifyField, string> = {
+  name: "Legal name",
+  type: "Entity type",
+  state: "State of formation",
+  ein: "EIN",
+  formationDate: "Formation date",
+  address: "Principal address",
+  registeredAgent: "Registered agent",
+  llcType: "Tax classification",
+  operatingAgreementDate: "Operating agreement date",
+  articlesOfOrgDate: "Articles filing date",
+};
 
 interface UploadedFile {
   url: string;
@@ -71,6 +101,7 @@ interface AssetDoc {
   storageProvider?: "supabase" | "firebase";
   size?: number;
   contentType?: string;
+  factsCheckedAt?: number; // key facts already read from this document
   autoFileSkip?: boolean; // removed from a filing slot by hand — don't auto-file again
 }
 
@@ -173,6 +204,28 @@ function docKind(doc: { contentType?: string; storagePath?: string }): string {
   if (ct.includes("presentation") || ct.includes("powerpoint")) return "PPT";
   const sub = ct.split("/").pop() || "";
   return sub.replace(/[^a-z0-9]/g, "").slice(0, 4).toUpperCase() || "FILE";
+}
+
+/** Compare values the way a person would: case, punctuation and legal suffixes aside. */
+function normValue(v: string | null | undefined): string {
+  return (v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function normEntityName(v: string | null | undefined): string {
+  return (v ?? "")
+    .toLowerCase()
+    .replace(/\(\d+%\)/g, "")
+    .replace(/[,.]/g, " ")
+    .replace(/\b(llc|l l c|inc|incorporated|corp|corporation|lp|ltd|limited partnership|limited liability company)\b/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function timeAgo(ms: number): string {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 90) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  const d = Math.round(s / 86400);
+  return d === 1 ? "yesterday" : `${d} days ago`;
 }
 
 // ── Formation filings ────────────────────────────────────────────────────
@@ -442,6 +495,10 @@ export default function AssetDetail() {
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [copiedEin, setCopiedEin] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
+  const [showMatches, setShowMatches] = useState(false);
+  const [assetNames, setAssetNames] = useState<Record<string, string>>({});
 
   // Contract editing
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
@@ -490,6 +547,15 @@ export default function AssetDetail() {
           setDocs([]);
         }
       });
+
+      // Every entity's name — to show and set who owns this one.
+      const { get } = await import("firebase/database");
+      get(ref(db, "assets"))
+        .then((snap) => {
+          const all = (snap.val() ?? {}) as Record<string, { name?: string }>;
+          setAssetNames(Object.fromEntries(Object.entries(all).filter(([, v]) => v?.name).map(([k, v]) => [k, v.name as string])));
+        })
+        .catch(() => {});
 
       // Corp data
       unsub5 = onValue(ref(db, `assets/${id}/corp`), (snapshot) => {
@@ -692,7 +758,8 @@ export default function AssetDetail() {
       } satisfies UploadedFile,
     };
     const filled: string[] = [];
-    if (facts) {
+    // Only trust a document's facts when the reader agrees on what it is.
+    if (facts && CLASSIFIER_KIND[facts.kind] === kind) {
       if (facts.ein && !current.ein?.trim() && (kind === "einLetter" || kind === "w9")) {
         patch.ein = facts.ein;
         filled.push(`EIN ${facts.ein}`);
@@ -774,6 +841,162 @@ export default function AssetDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset, docs]);
+
+  // Filed documents whose key facts are still blank on the record get read
+  // once (the document is marked so it isn't read again on every visit).
+  const enriching = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!asset) return;
+    const blankFor: Record<FileKind, boolean> = {
+      einLetter: !asset.ein?.trim(),
+      w9: !asset.ein?.trim(),
+      articles: !asset.formationDate || !asset.articlesOfOrgDate || !asset.state?.trim(),
+      operatingAgreement: !asset.operatingAgreementDate,
+    };
+    for (const kind of FILING_KINDS) {
+      const docId = asset[kind]?.docId;
+      if (!docId || !blankFor[kind] || enriching.current.has(docId)) continue;
+      const doc = docs.find((d) => d.id === docId);
+      if (!doc || doc.factsCheckedAt || !doc.storagePath) continue;
+      enriching.current.add(docId);
+      void enrichFromDocument(kind, doc);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset, docs]);
+
+  async function enrichFromDocument(kind: FileKind, doc: AssetDoc) {
+    setSorting((n) => n + 1);
+    try {
+      const r = await authFetch("/api/documents/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: doc.url, fileName: doc.name, contentType: doc.contentType }),
+      });
+      if (!r.ok) return;
+      const facts = (await r.json()) as Classified;
+      const current = assetRef.current;
+      if (!current) return;
+      const patch: Record<string, unknown> = {};
+      if (CLASSIFIER_KIND[facts.kind] !== kind) {
+        // The reader doesn't think this is a {kind}; don't take its facts.
+        const { db, authReady } = await import("../firebase");
+        await authReady;
+        const { ref, update } = await import("firebase/database");
+        await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now() });
+        return;
+      }
+      const filled: string[] = [];
+      if (facts.ein && !current.ein?.trim() && (kind === "einLetter" || kind === "w9")) {
+        patch.ein = facts.ein;
+        filled.push(`EIN ${facts.ein}`);
+      }
+      if (facts.date && kind === "articles") {
+        if (!current.articlesOfOrgDate) {
+          patch.articlesOfOrgDate = facts.date;
+          filled.push(`articles filed ${fmtDate(facts.date)}`);
+        }
+        if (!current.formationDate) patch.formationDate = facts.date;
+      }
+      if (facts.state && kind === "articles" && !current.state?.trim()) patch.state = facts.state;
+      if (facts.date && kind === "operatingAgreement" && !current.operatingAgreementDate) {
+        patch.operatingAgreementDate = facts.date;
+        filled.push(`agreement dated ${fmtDate(facts.date)}`);
+      }
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, update } = await import("firebase/database");
+      if (Object.keys(patch).length) await update(ref(db, `assets/${id}`), patch);
+      await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now() });
+      if (filled.length) setFilingNotes((n) => [...n, `Read “${doc.name}” · added ${filled.join(", ")}`]);
+    } catch (err) {
+      console.error("reading filed document failed", err);
+    } finally {
+      setSorting((n) => n - 1);
+    }
+  }
+
+  // ── Verify the record against its documents ────────────────────────────
+  function recordValues(a: Asset): Partial<Record<VerifyField, string>> {
+    return {
+      name: a.name,
+      type: a.type,
+      state: a.state,
+      ein: a.ein,
+      formationDate: a.formationDate,
+      address: a.address,
+      registeredAgent: a.registeredAgent,
+      llcType: a.llcType || "",
+      operatingAgreementDate: a.operatingAgreementDate,
+      articlesOfOrgDate: a.articlesOfOrgDate,
+    };
+  }
+
+  async function runVerification() {
+    if (!asset) return;
+    const readable = docs.filter((d) => d.storagePath && /pdf|image\//i.test(d.contentType || ""));
+    // Filing slots uploaded straight to a slot (not via Documents) count too.
+    const slotOnly = FILING_KINDS.filter((k) => asset[k] && !asset[k]!.docId).map((k) => ({
+      name: asset[k]!.fileName,
+      url: asset[k]!.url,
+      contentType: asset[k]!.contentType,
+      filedAs: filingTitle(k, asset.type),
+    }));
+    const filedAs = new Map(FILING_KINDS.filter((k) => asset[k]?.docId).map((k) => [asset[k]!.docId!, filingTitle(k, asset.type)]));
+    const documents = [
+      ...slotOnly,
+      ...readable.map((d) => ({ name: d.name, url: d.url, contentType: d.contentType, filedAs: filedAs.get(d.id) ?? null })),
+    ];
+    if (!documents.length) {
+      setVerifyError("Upload the entity's documents first — there's nothing to check against.");
+      return;
+    }
+    setVerifying(true);
+    setVerifyError("");
+    try {
+      const record = recordValues(asset);
+      const r = await authFetch("/api/documents/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: { ...record, owner: asset.ownerId ? assetNames[asset.ownerId] ?? null : null },
+          documents,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error === "no_readable_documents" ? "None of the documents could be read (PDF or image needed)." : "The check didn't finish — try again.");
+      const result: Verification = { ...(data as Verification), recordAtCheck: record };
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, update } = await import("firebase/database");
+      await update(ref(db, `assets/${id}`), { verification: JSON.parse(JSON.stringify(result)) });
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : "Verification failed.");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  /** Apply one finding: write the documented value to the record. */
+  async function applyFinding(field: VerifyField, value: string) {
+    let v = value.trim();
+    if (field === "llcType") {
+      const m = /partner/i.test(v) ? "Partnership" : /corp/i.test(v) ? "C Corporation" : /disregard|single/i.test(v) ? "Disregarded Entity" : "";
+      if (!m) return;
+      v = m;
+    }
+    if (field === "type") v = /corp|inc/i.test(v) ? "C-Corp" : "LLC";
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), { [field]: v });
+  }
+
+  async function applyOwner(ownerId: string) {
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), { ownerId });
+  }
 
   /** Ask Claude to read every unfiled PDF/image in the library and file what fits. */
   async function scanLibrary() {
@@ -1509,6 +1732,24 @@ export default function AssetDetail() {
   const statusIsActive = asset.status === "Active";
 
   const emptyValue = <span className={isDark ? "text-gray-600" : "text-gray-300"}>&mdash;</span>;
+  // A filing's key fact: its date, and whether the document itself is on file.
+  const filedFact = (kind: FileKind, date?: string) => {
+    const file = asset[kind];
+    if (!file && !fmtDate(date)) return null;
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+        {fmtDate(date) ? <span className="tabular-nums">{fmtDate(date)}</span> : <span className={textMuted}>Date not on record</span>}
+        {file ? (
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] ${isDark ? "text-emerald-400" : "text-emerald-600"} hover:underline`}>
+            <Icon name="check" className="h-2.5 w-2.5" strokeWidth={2.5} />
+            On file
+          </a>
+        ) : (
+          <span className={`font-mono text-[10px] uppercase tracking-[0.1em] ${isDark ? "text-amber-400/90" : "text-amber-600"}`}>No document</span>
+        )}
+      </span>
+    );
+  };
   const factCell = (label: string, content: React.ReactNode, extraCls = "") => (
     <div key={label} className={`min-w-0 border-l border-t px-5 py-3.5 ${divider} ${extraCls}`}>
       <dt className={kicker}>{label}</dt>
@@ -1553,6 +1794,12 @@ export default function AssetDetail() {
                     </span>
                   )}
                   <span className={`${chipNeutral} ${asset.state ? "" : textMuted}`}>{asset.state || "No state"}</span>
+                  {asset.ownerId && assetNames[asset.ownerId] && (
+                    <Link to={`/assets/${asset.ownerId}`} className={`${chipNeutral} transition-colors ${isDark ? "hover:border-white/20" : "hover:border-gray-300"}`}>
+                      <span className={textMuted}>Owned by</span>
+                      {assetNames[asset.ownerId]}
+                    </Link>
+                  )}
                   {asset.status && (
                     <span
                       className={`${chipBase} ${
@@ -1723,8 +1970,8 @@ export default function AssetDetail() {
             {factCell("Principal address", asset.address)}
             {factCell("Formation date", fmtDate(asset.formationDate) ? <span className="tabular-nums">{fmtDate(asset.formationDate)}</span> : null)}
             {factCell(asset.type === "C-Corp" ? "Classification" : "LLC type", asset.llcType)}
-            {factCell("Operating agreement", fmtDate(asset.operatingAgreementDate) ? <span className="tabular-nums">{fmtDate(asset.operatingAgreementDate)}</span> : null)}
-            {factCell("Articles of org", fmtDate(asset.articlesOfOrgDate) ? <span className="tabular-nums">{fmtDate(asset.articlesOfOrgDate)}</span> : null)}
+            {factCell(asset.type === "C-Corp" ? "Bylaws" : "Operating agreement", filedFact("operatingAgreement", asset.operatingAgreementDate))}
+            {factCell(asset.type === "C-Corp" ? "Certificate" : "Articles of org", filedFact("articles", asset.articlesOfOrgDate))}
             {factCell(
               "State link",
               asset.stateLink ? (
@@ -2373,6 +2620,168 @@ export default function AssetDetail() {
               )}
             </ul>
           </section>
+
+          {/* Document check */}
+          {(() => {
+            const v = asset.verification;
+            const current = recordValues(asset);
+            const findings = (v?.fields ?? []).map((f) => {
+              const now = current[f.field] ?? "";
+              const resolved = !!f.found && normValue(now) === normValue(f.found);
+              return { ...f, now, resolved };
+            });
+            const actionable = findings.filter((f) => !f.resolved && (f.status === "mismatch" || f.status === "missing_on_record") && f.found);
+            const matched = findings.filter((f) => f.status === "match" || f.resolved);
+            const changedSince = v?.recordAtCheck
+              ? (Object.keys(v.recordAtCheck) as VerifyField[]).some((k) => normValue(v.recordAtCheck![k]) !== normValue(current[k]))
+              : false;
+            const recordedOwner = asset.ownerId ? assetNames[asset.ownerId] ?? null : null;
+            const docOwners = v?.owners ?? [];
+            const soleOwner = docOwners.length === 1 ? docOwners[0] : null;
+            const soleOwnerId = soleOwner
+              ? Object.entries(assetNames).find(([aid, n]) => aid !== id && normEntityName(n) === normEntityName(soleOwner.name))?.[0]
+              : undefined;
+            const ownerOk = !!recordedOwner && docOwners.some((o) => normEntityName(o.name) === normEntityName(recordedOwner));
+            const ownerMismatch = docOwners.length > 0 && !ownerOk;
+            const clean = !!v && actionable.length === 0 && !ownerMismatch && !(v.issues ?? []).some((i) => i.severity !== "low");
+            return (
+              <section className={`overflow-hidden rounded-2xl ${surface}`}>
+                <header className={`flex items-start justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
+                  <div className="min-w-0">
+                    <p className={kicker}>Document check</p>
+                    <p className="mt-1 text-[14px] font-semibold leading-snug">
+                      {verifying ? "Reading documents…" : !v ? "Not verified yet" : clean ? "Record matches documents" : `${actionable.length + (ownerMismatch ? 1 : 0) + (v.issues ?? []).filter((i) => i.severity !== "low").length} to review`}
+                    </p>
+                    {v && !verifying && (
+                      <p className={`mt-0.5 font-mono text-[10px] ${textMuted}`}>
+                        {v.documentsRead.length} document{v.documentsRead.length === 1 ? "" : "s"} · {timeAgo(v.checkedAt)}
+                        {changedSince && <span className={isDark ? "text-amber-400" : "text-amber-600"}> · record changed since</span>}
+                      </p>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => void runVerification()} disabled={verifying} className={`${btnXsOutline} shrink-0 disabled:cursor-wait disabled:opacity-60`}>
+                    <Icon name="sparkle" className="w-3 h-3" />
+                    {verifying ? "Checking…" : v ? "Re-check" : "Verify"}
+                  </button>
+                </header>
+
+                {verifying && (
+                  <div className="px-5 py-4">
+                    <div className={`h-1 overflow-hidden rounded-full ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
+                      <div className={`h-full w-1/3 animate-[verify-scan_1.4s_ease-in-out_infinite] rounded-full ${accentBg}`} />
+                    </div>
+                    <p className={`mt-2.5 text-[11px] leading-snug ${textMuted}`}>
+                      Claude is reading the filings and comparing them with this record — ownership, EIN, dates, addresses. This can take a minute.
+                    </p>
+                    <style>{`@keyframes verify-scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }`}</style>
+                  </div>
+                )}
+
+                {!verifying && !v && (
+                  <p className={`px-5 py-4 text-[11.5px] leading-snug ${textMuted}`}>
+                    Reads this entity's documents and checks the record against them: legal name, EIN, state, formation and agreement dates, address, registered agent, tax classification and who owns it.
+                  </p>
+                )}
+                {verifyError && <p className="px-5 pb-3 pt-2 text-[11px] text-red-400">{verifyError}</p>}
+
+                {!verifying && v && (
+                  <div className="space-y-3 px-5 py-4">
+                    {v.summary && <p className={`text-[12px] leading-relaxed ${textSoft}`}>{v.summary}</p>}
+
+                    {/* Ownership */}
+                    <div className={`rounded-lg border px-3 py-2.5 ${hairline} ${ownerMismatch ? (isDark ? "border-amber-500/30 bg-amber-500/[0.06]" : "border-amber-200 bg-amber-50/70") : ""}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={kicker}>Ownership</p>
+                        <span className={`font-mono text-[9.5px] uppercase tracking-[0.12em] ${ownerOk ? (isDark ? "text-emerald-400" : "text-emerald-600") : ownerMismatch ? (isDark ? "text-amber-400" : "text-amber-600") : textMuted}`}>
+                          {ownerOk ? "Matches" : ownerMismatch ? "Differs" : "Not stated"}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-[12px]">
+                        <span className={textMuted}>Record: </span>
+                        {recordedOwner ?? "No owner set"}
+                      </p>
+                      {docOwners.length > 0 && (
+                        <p className="mt-0.5 text-[12px]">
+                          <span className={textMuted}>Documents: </span>
+                          {docOwners.map((o) => `${o.name}${o.percent != null ? ` (${o.percent}%)` : ""}`).join(", ")}
+                        </p>
+                      )}
+                      {ownerMismatch && soleOwnerId && (
+                        <button type="button" onClick={() => void applyOwner(soleOwnerId)} className={`mt-2 ${btnXsOutline}`}>
+                          Set owner to {assetNames[soleOwnerId]}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Fields that need a decision */}
+                    {actionable.map((f) => (
+                      <div key={f.field} className={`rounded-lg border px-3 py-2.5 ${hairline}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[12px] font-medium">{VERIFY_LABEL[f.field]}</p>
+                          <span className={`font-mono text-[9.5px] uppercase tracking-[0.12em] ${f.status === "mismatch" ? (isDark ? "text-amber-400" : "text-amber-600") : accentText}`}>
+                            {f.status === "mismatch" ? "Differs" : "Not on record"}
+                          </span>
+                        </div>
+                        {f.status === "mismatch" && (
+                          <p className="mt-1 break-words text-[11.5px]">
+                            <span className={textMuted}>Record: </span>
+                            {f.field.endsWith("Date") ? fmtDate(f.now) || f.now : f.now}
+                          </p>
+                        )}
+                        <p className="mt-0.5 break-words text-[11.5px]">
+                          <span className={textMuted}>Documents: </span>
+                          {f.field.endsWith("Date") ? fmtDate(f.found ?? "") || f.found : f.found}
+                        </p>
+                        {(f.source || f.note) && (
+                          <p className={`mt-1 text-[10.5px] leading-snug ${textMuted}`}>{[f.source, f.note].filter(Boolean).join(" — ")}</p>
+                        )}
+                        <button type="button" onClick={() => void applyFinding(f.field, f.found!)} className={`mt-2 ${btnXsOutline}`}>
+                          <Icon name="check" className="w-3 h-3" />
+                          Use document value
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Other issues */}
+                    {(v.issues ?? []).length > 0 && (
+                      <ul className="space-y-1.5">
+                        {v.issues.map((i, n) => (
+                          <li key={n} className="flex items-start gap-2 text-[11.5px] leading-snug">
+                            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${i.severity === "high" ? "bg-red-500" : i.severity === "medium" ? "bg-amber-500" : isDark ? "bg-white/30" : "bg-gray-300"}`} />
+                            <span>{i.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* What already matches */}
+                    {matched.length > 0 && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setShowMatches((x) => !x)}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}
+                        >
+                          <Icon name="check" className="h-3 w-3" strokeWidth={2.5} />
+                          {matched.length} field{matched.length === 1 ? "" : "s"} confirmed
+                        </button>
+                        {showMatches && (
+                          <ul className="mt-1.5 space-y-0.5">
+                            {matched.map((f) => (
+                              <li key={f.field} className={`flex justify-between gap-3 text-[11px] ${textMuted}`}>
+                                <span>{VERIFY_LABEL[f.field]}</span>
+                                <span className="truncate text-right">{f.source}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })()}
 
           <section className={`overflow-hidden rounded-2xl ${surface}`}>
             {sectionHeader(
