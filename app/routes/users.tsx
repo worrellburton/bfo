@@ -57,6 +57,16 @@ export default function Users() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ name: "", phone: "", email: "", role: "member" as Role });
+  // Inline rename: which user's name is being edited, and the text so far.
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+
+  async function saveName(user: User) {
+    if (!renaming || renaming.id !== user.id) return;
+    const name = renaming.name.trim();
+    setRenaming(null);
+    if (!name || name === (user.name ?? "")) return;
+    await mutate("PATCH", user, { name });
+  }
 
   useEffect(() => {
     if (!isAdmin()) {
@@ -294,10 +304,40 @@ export default function Users() {
                         <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${isDark ? "bg-white/10" : "bg-black/5 text-gray-700"}`}>
                           {initialsFor(user)}
                         </span>
-                        <span className="font-medium">
-                          {user.name || "—"}
-                          {self && <span className={`ml-1.5 text-xs font-normal ${subtle}`}>you</span>}
-                        </span>
+                        {renaming?.id === user.id ? (
+                          <input
+                            autoFocus
+                            value={renaming.name}
+                            onChange={(e) => setRenaming({ id: user.id, name: e.target.value })}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onBlur={() => void saveName(user)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                              if (e.key === "Escape") setRenaming(null);
+                            }}
+                            placeholder="Full name"
+                            aria-label={`Name for ${user.email ?? user.phoneFormatted ?? "user"}`}
+                            className={`h-7 w-60 max-w-full rounded-md border px-2 text-[13px] font-medium outline-none ${
+                              isDark ? "border-white/20 bg-white/[0.04] text-white focus:border-white/40" : "border-gray-300 bg-white text-gray-900 focus:border-gray-500"
+                            }`}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRenaming({ id: user.id, name: user.name ?? "" })}
+                            disabled={busyId === user.id || (user.role === "owner" && !canSetOwner && !self)}
+                            title="Rename"
+                            className={`group inline-flex items-center gap-1.5 rounded-md text-left font-medium cursor-pointer disabled:cursor-default ${
+                              isDark ? "hover:text-white" : "hover:text-gray-900"
+                            }`}
+                          >
+                            <span className={user.name ? "" : subtle}>{user.name || "Add a name"}</span>
+                            {self && <span className={`text-xs font-normal ${subtle}`}>you</span>}
+                            <svg className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
+                            </svg>
+                          </button>
+                        )}
                       </span>
                     </td>
                     <td className={`${td} whitespace-nowrap ${user.email ? "" : subtle}`}>{user.email ?? "—"}</td>
