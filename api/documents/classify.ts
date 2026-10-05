@@ -84,23 +84,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const client = new Anthropic({ apiKey });
   try {
-    const message = await client.messages.create(
-      {
-        model: MODEL,
-        max_tokens: 4000,
-        system: SYSTEM,
-        output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
-        messages: [
-          {
-            role: "user",
-            content: [block, { type: "text", text: `File name: ${fileName ?? "(unknown)"}\nClassify this document.` }],
-          },
-        ],
-        // Server-side fallback on a safety decline (not yet in this SDK's types).
-        ...({ fallbacks: "default" } as Record<string, unknown>),
-      },
-      { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
-    );
+    const params: Anthropic.Messages.MessageCreateParamsNonStreaming = {
+      model: MODEL,
+      max_tokens: 4000,
+      system: SYSTEM,
+      output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
+      messages: [
+        {
+          role: "user",
+          content: [block, { type: "text", text: `File name: ${fileName ?? "(unknown)"}\nClassify this document.` }],
+        },
+      ],
+    };
+    let message: Anthropic.Messages.Message;
+    try {
+      // Server-side fallback on a safety decline (not yet in this SDK's types).
+      message = await client.messages.create(
+        { ...params, ...({ fallbacks: "default" } as Record<string, unknown>) },
+        { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
+      );
+    } catch (err) {
+      // If the fallback option itself is refused, run the plain request.
+      if (!(err instanceof Anthropic.BadRequestError)) throw err;
+      message = await client.messages.create(params);
+    }
     if (message.stop_reason === "refusal") {
       return res.status(200).json({ kind: "other", confidence: "low", read: true });
     }

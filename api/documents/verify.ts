@@ -161,20 +161,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const client = new Anthropic({ apiKey });
   try {
-    const message = await client.messages
-      .stream(
-        {
-          model: MODEL,
-          max_tokens: 16000,
-          system: SYSTEM,
-          output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-          messages: [{ role: "user", content }],
-          // Server-side fallback on a safety decline (not yet in this SDK's types).
-          ...({ fallbacks: "default" } as Record<string, unknown>),
-        },
-        { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
-      )
-      .finalMessage();
+    const params: Anthropic.Messages.MessageCreateParamsNonStreaming = {
+      model: MODEL,
+      max_tokens: 16000,
+      system: SYSTEM,
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+      messages: [{ role: "user", content }],
+    };
+    let message: Anthropic.Messages.Message;
+    try {
+      // Server-side fallback on a safety decline (not yet in this SDK's types).
+      message = await client.messages
+        .stream(
+          { ...params, ...({ fallbacks: "default" } as Record<string, unknown>) },
+          { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
+        )
+        .finalMessage();
+    } catch (err) {
+      // If the fallback option itself is refused, run the plain request.
+      if (!(err instanceof Anthropic.BadRequestError)) throw err;
+      message = await client.messages.stream(params).finalMessage();
+    }
     if (message.stop_reason === "refusal") return res.status(422).json({ error: "declined" });
     if (message.stop_reason === "max_tokens") return res.status(502).json({ error: "truncated" });
     const text = message.content
