@@ -206,7 +206,7 @@ function TrendChart({
 
   return (
     <div
-      className="relative h-[132px] w-full cursor-crosshair touch-pan-y select-none sm:h-[176px]"
+      className="relative h-[96px] w-full cursor-crosshair touch-pan-y select-none sm:h-[120px]"
       onPointerMove={onMove}
       onPointerDown={onMove}
       onPointerLeave={() => setHover(null)}
@@ -447,7 +447,7 @@ export default function Home() {
   const surface = isDark
     ? "border border-white/[0.08] bg-white/[0.02]"
     : "border border-gray-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_1px_3px_rgba(16,24,40,0.03)]";
-  const kicker = "font-mono text-[10px] uppercase tracking-[0.14em] text-gray-500";
+  const kicker = "font-mono text-[10px] uppercase tracking-[0.08em] text-gray-500";
   const textMuted = "text-gray-500";
   const textSoft = isDark ? "text-gray-400" : "text-gray-600";
   const hairline = isDark ? "border-white/[0.08]" : "border-gray-200";
@@ -582,7 +582,7 @@ export default function Home() {
         </>
       ),
       sub: `${completeCount} of ${scored.length} entities at 100`,
-      corner: <Ring score={avgScore} size={40} stroke={3} isDark={isDark} label={false} />,
+      corner: <Ring score={avgScore} size={28} stroke={2.5} isDark={isDark} label={false} />,
       foot: (
         <div className="mt-3 flex h-1 gap-[2px] overflow-hidden rounded-full">
           {[...scored]
@@ -596,9 +596,8 @@ export default function Home() {
     });
   }
 
-  const tileGrid = showHero
-    ? "grid grid-cols-2 gap-3 lg:col-span-4 lg:grid-cols-2 sm:gap-4"
-    : "grid grid-cols-2 gap-3 lg:col-span-12 lg:grid-cols-4 sm:gap-4";
+  // KPI tiles sit in one row above the chart — four across on desktop.
+  const tileGrid = "grid grid-cols-2 gap-3 lg:col-span-12 lg:grid-cols-4";
 
   const quickLinks: { to: string; label: string; icon: keyof typeof ICONS }[] = [
     { to: "/estate-map", label: "Estate Map", icon: "map" },
@@ -609,12 +608,12 @@ export default function Home() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-4 sm:space-y-5">
+    <div className="mx-auto max-w-[1280px] space-y-3 sm:space-y-4">
       {/* ── Greeting ─────────────────────────────────────────────────── */}
       <header className={`flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between ${rise}`}>
         <div className="min-w-0">
           <p className={kicker}>{dateLine}</p>
-          <h1 className="mt-2 text-[24px] font-semibold leading-[1.1] tracking-[-0.02em] sm:text-[30px]">
+          <h1 className="mt-1.5 text-[20px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[24px]">
             {greeting}
             {firstName ? `, ${firstName}` : ""}
           </h1>
@@ -646,7 +645,7 @@ export default function Home() {
           </p>
         </div>
         {latest && (
-          <p className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] ${textMuted}`}>
+          <p className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] ${textMuted}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
             Treasury as of {shortDay(latest.day)}
           </p>
@@ -654,9 +653,9 @@ export default function Home() {
       </header>
 
       {/* ── Hero + KPI tiles ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         {showHero && (
-          <section className={`relative overflow-hidden rounded-2xl lg:col-span-8 ${surface} ${rise}`} style={delay(1)}>
+          <section className={`relative order-last overflow-hidden rounded-2xl lg:col-span-12 ${surface} ${rise}`} style={delay(1)}>
             <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent ${isDark ? "via-[#818cf8]/70" : "via-[#4f46e5]/50"} to-transparent`} />
             <div className={`pointer-events-none absolute -top-28 left-1/3 h-48 w-1/2 rounded-full blur-3xl ${isDark ? "bg-[#818cf8]/[0.09]" : "bg-[#4f46e5]/[0.05]"}`} />
             <div
@@ -672,7 +671,7 @@ export default function Home() {
               <div className="relative space-y-4 p-5 sm:p-6">
                 <Bone className="h-3 w-40" />
                 <Bone className="h-10 w-64 max-w-full" />
-                <Bone className="h-[132px] w-full sm:h-[176px]" />
+                <Bone className="h-[96px] w-full sm:h-[120px]" />
                 <div className="grid grid-cols-3 gap-4">
                   <Bone className="h-8" />
                   <Bone className="h-8" />
@@ -681,14 +680,14 @@ export default function Home() {
               </div>
             ) : (
               <div className="relative">
-                <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 sm:px-6 sm:pt-6">
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
                   <div className="min-w-0">
                     <p className={kicker}>
                       Net position
                       <span className="mx-1.5 opacity-50">/</span>
                       {hover != null ? shortDay(shown.day) : "cash + invested"}
                     </p>
-                    <p className="mt-2 text-[34px] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[46px]">
+                    <p className="mt-2 text-[26px] font-semibold leading-none tracking-[-0.025em] tabular-nums sm:text-[32px]">
                       {fmtUSD(shown.value)}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -731,10 +730,10 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="mt-4 px-1 sm:px-2">
+                <div className="mt-2 px-1 sm:px-2">
                   <TrendChart points={series} isDark={isDark} hover={hover} setHover={setHover} />
                 </div>
-                <div className={`flex justify-between px-5 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] sm:px-6 ${textMuted}`}>
+                <div className={`flex justify-between px-5 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.08em] sm:px-6 ${textMuted}`}>
                   <span>{shortDay(first.day)}</span>
                   <span>{shortDay(series[series.length - 1].day)}</span>
                 </div>
@@ -750,7 +749,7 @@ export default function Home() {
                     { label: "Credit owed", value: latest.credit, dot: isDark ? "rgba(255,255,255,0.25)" : "rgba(17,24,39,0.2)" },
                   ];
                   return (
-                    <div className={`mt-3 border-t px-5 pb-5 pt-4 sm:px-6 ${hairline}`}>
+                    <div className={`mt-2 border-t px-5 pb-4 pt-3 ${hairline}`}>
                       <div className="flex h-1.5 overflow-hidden rounded-full">
                         <span style={{ width: `${cashPct}%`, background: cashColor }} />
                         <span className="ml-[2px] flex-1" style={{ background: invColor }} />
@@ -762,7 +761,7 @@ export default function Home() {
                               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: p.dot }} />
                               <span className="truncate">{p.label}</span>
                             </p>
-                            <p className="mt-1 truncate text-[14px] font-medium tabular-nums sm:text-[15px]">
+                            <p className="mt-1 truncate text-[13px] font-medium tabular-nums">
                               <span className="sm:hidden">{fmtCompact(p.value)}</span>
                               <span className="hidden sm:inline">{fmtUSD(p.value)}</span>
                             </p>
@@ -799,7 +798,7 @@ export default function Home() {
                   <p className={`${kicker} truncate`}>{t.label}</p>
                   {t.corner ? <span className="-mt-0.5 shrink-0">{t.corner}</span> : null}
                 </div>
-                <p className="mt-2 text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums sm:text-[24px]">{t.value}</p>
+                <p className="mt-2 text-[20px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{t.value}</p>
                 <p className={`mt-1.5 truncate text-[11.5px] ${textMuted}`}>{t.sub}</p>
                 <div className="mt-auto">{t.foot}</div>
               </Link>
@@ -913,7 +912,7 @@ export default function Home() {
                               : `${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`
                           }`}
                         >
-                          <span className={`font-mono text-[8.5px] uppercase tracking-[0.12em] ${s.overdue ? "text-amber-400" : textMuted}`}>
+                          <span className={`font-mono text-[8.5px] uppercase tracking-[0.08em] ${s.overdue ? "text-amber-400" : textMuted}`}>
                             {d ? d.toLocaleDateString("en-US", { month: "short" }) : "—"}
                           </span>
                           <span className="text-[14px] font-semibold leading-tight tabular-nums">{d ? d.getDate() : "?"}</span>
