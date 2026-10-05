@@ -387,7 +387,6 @@ export default function Home() {
     [inflows]
   );
   const overdue = upcoming.filter((s) => s.overdue);
-  const nextUp = upcoming.find((s) => !s.overdue && s.nextExpected);
 
   // ── Needs attention ────────────────────────────────────────────────────
   type Attn = { key: string; icon: keyof typeof ICONS; tone: "amber" | "indigo" | "neutral"; title: ReactNode; detail: ReactNode; to: string; aside?: ReactNode };
@@ -447,7 +446,7 @@ export default function Home() {
   const surface = isDark
     ? "border border-white/[0.08] bg-white/[0.02]"
     : "border border-gray-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_1px_3px_rgba(16,24,40,0.03)]";
-  const kicker = "font-mono text-[10px] uppercase tracking-[0.08em] text-gray-500";
+  const kicker = "text-[12px] font-medium text-gray-500";
   const textMuted = "text-gray-500";
   const textSoft = isDark ? "text-gray-400" : "text-gray-600";
   const hairline = isDark ? "border-white/[0.08]" : "border-gray-200";
@@ -458,7 +457,7 @@ export default function Home() {
   const negChip = isDark ? "border-rose-500/20 bg-rose-500/10 text-rose-300" : "border-rose-200 bg-rose-50 text-rose-700";
   const warnChip = isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-700";
   const neutralChip = isDark ? "border-white/[0.08] bg-white/[0.03] text-gray-400" : "border-gray-200 bg-gray-50 text-gray-600";
-  const chipBase = "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-medium tabular-nums whitespace-nowrap";
+  const chipBase = "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums whitespace-nowrap";
   const toneTile = {
     amber: isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-600",
     indigo: isDark ? "bg-[#818cf8]/10 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]",
@@ -477,127 +476,7 @@ export default function Home() {
   const showHero = homeLoading || !!(treasury && series.length >= 2);
   const showComing = homeLoading || !!inflows;
 
-  // ── KPI tiles ──────────────────────────────────────────────────────────
-  const flowDelta = (cur: number, prev: number, upIsGood: boolean) => {
-    const p = pctChange(cur, prev);
-    if (p == null) return null;
-    const good = upIsGood ? p >= 0 : p <= 0;
-    return (
-      <span className={`${chipBase} ${Math.abs(p) < 1 ? neutralChip : good ? posChip : warnChip}`}>
-        <Icon name={p >= 0 ? "arrowUp" : "arrowDown"} className="h-2.5 w-2.5" strokeWidth={2.4} />
-        {fmtPct(p)}
-      </span>
-    );
-  };
-  const compareBars = (cur: number, prev: number, color: string) => {
-    const max = Math.max(cur, prev, 1);
-    return (
-      <div className="mt-3 space-y-1.5">
-        {[
-          { label: "30d", v: cur, c: color, o: 1 },
-          { label: "prior", v: prev, c: isDark ? "rgba(255,255,255,0.18)" : "rgba(17,24,39,0.14)", o: 1 },
-        ].map((b) => (
-          <div key={b.label} className="flex items-center gap-2">
-            <span className={`w-9 shrink-0 font-mono text-[9.5px] uppercase tracking-[0.1em] ${textMuted}`}>{b.label}</span>
-            <span className={`h-1 flex-1 overflow-hidden rounded-full ${isDark ? "bg-white/[0.04]" : "bg-gray-100"}`}>
-              <span
-                className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-700"
-                style={{ width: `${Math.max(2, (b.v / max) * 100)}%`, background: b.c }}
-              />
-            </span>
-          </div>
-        ))}
-      </div>
-    );
-  };
 
-  type Tile = { key: string; label: string; value: ReactNode; sub: ReactNode; corner?: ReactNode; foot?: ReactNode; to?: string };
-  const tiles: (Tile | "loading")[] = [];
-  if (homeLoading) tiles.push("loading", "loading", "loading");
-  else {
-    if (flow) {
-      tiles.push({
-        key: "in",
-        label: "Money in",
-        value: fmtCompact(flow.current.in),
-        sub: <>30d · vs {fmtCompact(flow.prior.in)} prior</>,
-        corner: flowDelta(flow.current.in, flow.prior.in, true),
-        foot: compareBars(flow.current.in, flow.prior.in, isDark ? "#34d399" : "#059669"),
-        to: "/books/transactions",
-      });
-      tiles.push({
-        key: "out",
-        label: "Money out",
-        value: fmtCompact(flow.current.out),
-        sub: <>30d · vs {fmtCompact(flow.prior.out)} prior</>,
-        corner: flowDelta(flow.current.out, flow.prior.out, false),
-        foot: compareBars(flow.current.out, flow.prior.out, isDark ? "#818cf8" : "#4f46e5"),
-        to: "/books/transactions",
-      });
-    }
-    if (inflows) {
-      tiles.push({
-        key: "expected",
-        label: "Expected / mo",
-        value: fmtCompact(inflows.monthly),
-        sub: `${inflows.streams.length} recurring source${inflows.streams.length === 1 ? "" : "s"}`,
-        foot: (
-          <>
-            {inflows.monthly > 0 && (
-              <div className="mt-3 flex h-1 gap-[2px] overflow-hidden rounded-full">
-                {inflows.streams.map((st, k) => (
-                  <span
-                    key={st.source}
-                    className="h-full"
-                    style={{
-                      width: `${(st.monthly / inflows.monthly) * 100}%`,
-                      background: isDark ? "#34d399" : "#059669",
-                      opacity: 1 - k * 0.13,
-                    }}
-                    title={`${st.source}: ${fmtUSD(st.monthly)}/mo`}
-                  />
-                ))}
-              </div>
-            )}
-            {nextUp?.nextExpected && (
-              <p className={`mt-2 truncate text-[11.5px] ${textSoft}`}>
-                Next: <span className={isDark ? "text-gray-200" : "text-gray-900"}>{nextUp.source}</span> · {relDay(nextUp.nextExpected)}
-              </p>
-            )}
-          </>
-        ),
-        to: "/books/calendar",
-      });
-    }
-  }
-  if (assetsLoading) tiles.push("loading");
-  else if (scored.length) {
-    tiles.push({
-      key: "complete",
-      label: "Completeness",
-      value: (
-        <>
-          {avgScore}
-          <span className={`ml-1 text-[13px] font-normal ${textMuted}`}>/ 100</span>
-        </>
-      ),
-      sub: `${completeCount} of ${scored.length} entities at 100`,
-      corner: <Ring score={avgScore} size={28} stroke={2.5} isDark={isDark} label={false} />,
-      foot: (
-        <div className="mt-3 flex h-1 gap-[2px] overflow-hidden rounded-full">
-          {[...scored]
-            .sort((a, b) => b.score - a.score)
-            .map((a) => (
-              <span key={a.id} className="h-full flex-1" style={{ background: scoreColor(a.score, isDark), opacity: 0.35 + (a.score / 100) * 0.65 }} title={`${a.name}: ${a.score}`} />
-            ))}
-        </div>
-      ),
-      to: "/assets",
-    });
-  }
-
-  // KPI tiles sit in one row above the chart — four across on desktop.
-  const tileGrid = "grid grid-cols-2 gap-3 lg:col-span-12 lg:grid-cols-4";
 
   const quickLinks: { to: string; label: string; icon: keyof typeof ICONS }[] = [
     { to: "/estate-map", label: "Estate Map", icon: "map" },
@@ -608,16 +487,16 @@ export default function Home() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1280px] space-y-3 sm:space-y-4">
+    <div className="mx-auto max-w-[1200px] space-y-3 px-1 sm:space-y-4 sm:px-4 lg:px-10">
       {/* ── Greeting ─────────────────────────────────────────────────── */}
       <header className={`flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between ${rise}`}>
         <div className="min-w-0">
           <p className={kicker}>{dateLine}</p>
-          <h1 className="mt-1.5 text-[20px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[24px]">
+          <h1 className="mt-1 text-[18px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[20px]">
             {greeting}
             {firstName ? `, ${firstName}` : ""}
           </h1>
-          <p className={`mt-2 flex items-center gap-2 text-[13px] ${textSoft}`}>
+          <p className={`mt-2 flex items-center gap-2 text-[12.5px] ${textSoft}`}>
             {!attentionReady ? (
               <>
                 <span className={`h-1.5 w-1.5 rounded-full ${isDark ? "bg-white/30" : "bg-gray-300"}`} />
@@ -645,7 +524,7 @@ export default function Home() {
           </p>
         </div>
         {latest && (
-          <p className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] ${textMuted}`}>
+          <p className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
             Treasury as of {shortDay(latest.day)}
           </p>
@@ -687,7 +566,7 @@ export default function Home() {
                       <span className="mx-1.5 opacity-50">/</span>
                       {hover != null ? shortDay(shown.day) : "cash + invested"}
                     </p>
-                    <p className="mt-2 text-[26px] font-semibold leading-none tracking-[-0.025em] tabular-nums sm:text-[32px]">
+                    <p className="mt-1.5 text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums sm:text-[26px]">
                       {fmtUSD(shown.value)}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -697,7 +576,7 @@ export default function Home() {
                         {fmtCompact(Math.abs(change))}
                         {changePct != null && <span className="opacity-70">· {fmtPct(changePct)}</span>}
                       </span>
-                      <span className={`text-[11.5px] ${textMuted}`}>
+                      <span className={`text-[11px] ${textMuted}`}>
                         {hover != null ? `since ${shortDay(first.day)}` : `over ${series.length - 1} days`}
                       </span>
                     </div>
@@ -716,7 +595,7 @@ export default function Home() {
                           setHover(null);
                         }}
                         aria-pressed={range === r.key}
-                        className={`h-6 cursor-pointer rounded-md px-2.5 font-mono text-[10px] tracking-[0.08em] transition-colors ${
+                        className={`h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
                           range === r.key
                             ? isDark
                               ? "bg-white/[0.09] text-white"
@@ -733,7 +612,7 @@ export default function Home() {
                 <div className="mt-2 px-1 sm:px-2">
                   <TrendChart points={series} isDark={isDark} hover={hover} setHover={setHover} />
                 </div>
-                <div className={`flex justify-between px-5 pb-1 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.08em] sm:px-6 ${textMuted}`}>
+                <div className={`flex justify-between px-5 pb-1 pt-1.5 text-[11px] ${textMuted}`}>
                   <span>{shortDay(first.day)}</span>
                   <span>{shortDay(series[series.length - 1].day)}</span>
                 </div>
@@ -761,7 +640,7 @@ export default function Home() {
                               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: p.dot }} />
                               <span className="truncate">{p.label}</span>
                             </p>
-                            <p className="mt-1 truncate text-[13px] font-medium tabular-nums">
+                            <p className="mt-1 truncate text-[12.5px] font-medium tabular-nums">
                               <span className="sm:hidden">{fmtCompact(p.value)}</span>
                               <span className="hidden sm:inline">{fmtUSD(p.value)}</span>
                             </p>
@@ -776,35 +655,6 @@ export default function Home() {
           </section>
         )}
 
-        <div className={tileGrid}>
-          {tiles.map((t, i) =>
-            t === "loading" ? (
-              <div key={`l${i}`} className={`rounded-2xl p-4 ${surface}`}>
-                <Bone className="h-2.5 w-20" />
-                <Bone className="mt-3 h-6 w-24" />
-                <Bone className="mt-2 h-2.5 w-16" />
-                <Bone className="mt-4 h-1.5 w-full" />
-              </div>
-            ) : (
-              <Link
-                key={t.key}
-                to={t.to ?? "/"}
-                className={`group relative flex min-w-0 flex-col rounded-2xl p-4 transition-colors ${surface} ${
-                  isDark ? "hover:border-white/[0.14] hover:bg-white/[0.035]" : "hover:border-gray-300"
-                } ${rise}`}
-                style={delay(i + 2)}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className={`${kicker} truncate`}>{t.label}</p>
-                  {t.corner ? <span className="-mt-0.5 shrink-0">{t.corner}</span> : null}
-                </div>
-                <p className="mt-2 text-[20px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{t.value}</p>
-                <p className={`mt-1.5 truncate text-[11.5px] ${textMuted}`}>{t.sub}</p>
-                <div className="mt-auto">{t.foot}</div>
-              </Link>
-            )
-          )}
-        </div>
       </div>
 
       {/* ── Needs attention + Coming in ──────────────────────────────── */}
@@ -815,7 +665,7 @@ export default function Home() {
               <p className={kicker}>Needs attention</p>
               {attentionReady && attention.length > 0 && <span className={`${chipBase} ${warnChip}`}>{attention.length}</span>}
             </div>
-            <Link to="/books/review" className={`text-[11.5px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
+            <Link to="/books/review" className={`text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
               Review desk →
             </Link>
           </div>
@@ -836,7 +686,7 @@ export default function Home() {
               <span className={`flex h-10 w-10 items-center justify-center rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}>
                 <Icon name="check" className="h-5 w-5" />
               </span>
-              <p className="text-[14px] font-medium">All clear</p>
+              <p className="text-[13px] font-medium">All clear</p>
               <p className={`text-[12px] ${textMuted}`}>Books are categorized, inflows on time and records complete.</p>
             </div>
           ) : (
@@ -848,8 +698,8 @@ export default function Home() {
                       <Icon name={a.icon} className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium">{a.title}</span>
-                      <span className={`block truncate text-[11.5px] ${textMuted}`}>{a.detail}</span>
+                      <span className="block truncate text-[12.5px] font-medium">{a.title}</span>
+                      <span className={`block truncate text-[11px] ${textMuted}`}>{a.detail}</span>
                     </span>
                     {a.aside}
                     <Icon
@@ -870,12 +720,12 @@ export default function Home() {
               <div className="flex min-w-0 items-baseline gap-2.5">
                 <p className={kicker}>Coming in</p>
                 {inflows && (
-                  <span className={`truncate text-[11.5px] tabular-nums ${textMuted}`}>
+                  <span className={`truncate text-[11px] tabular-nums ${textMuted}`}>
                     ≈ <span className={accentText}>{fmtUSD(inflows.monthly)}</span> / mo
                   </span>
                 )}
               </div>
-              <Link to="/books/calendar" className={`shrink-0 text-[11.5px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
+              <Link to="/books/calendar" className={`shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
                 Calendar →
               </Link>
             </div>
@@ -912,13 +762,13 @@ export default function Home() {
                               : `${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`
                           }`}
                         >
-                          <span className={`font-mono text-[8.5px] uppercase tracking-[0.08em] ${s.overdue ? "text-amber-400" : textMuted}`}>
+                          <span className={`text-[9.5px] font-medium ${s.overdue ? "text-amber-400" : textMuted}`}>
                             {d ? d.toLocaleDateString("en-US", { month: "short" }) : "—"}
                           </span>
-                          <span className="text-[14px] font-semibold leading-tight tabular-nums">{d ? d.getDate() : "?"}</span>
+                          <span className="text-[13px] font-semibold leading-tight tabular-nums">{d ? d.getDate() : "?"}</span>
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium">{s.source}</span>
+                          <span className="block truncate text-[12.5px] font-medium">{s.source}</span>
                           <span className={`block truncate text-[11px] capitalize ${textMuted}`}>
                             {s.overdue ? <span className="text-amber-400 normal-case">Overdue · </span> : null}
                             {s.cadence}
@@ -926,7 +776,7 @@ export default function Home() {
                           </span>
                         </span>
                         <span className="shrink-0 text-right">
-                          <span className="block text-[13px] font-medium tabular-nums">{fmtUSD(s.typical)}</span>
+                          <span className="block text-[12.5px] font-medium tabular-nums">{fmtUSD(s.typical)}</span>
                           {s.nextExpected && <span className={`block text-[10.5px] ${textMuted}`}>{relDay(s.nextExpected)}</span>}
                         </span>
                       </Link>
@@ -945,9 +795,15 @@ export default function Home() {
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <p className={kicker}>Holding structure</p>
             {!assetsLoading && (
-              <span className={`text-[11.5px] tabular-nums ${textMuted}`}>
+              <span className={`text-[11px] tabular-nums ${textMuted}`}>
                 {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp · {stateCount} state{stateCount === 1 ? "" : "s"}
               </span>
+            )}
+            {!assetsLoading && scored.length > 0 && (
+              <Link to="/assets" className={`inline-flex items-center gap-1.5 text-[11px] tabular-nums ${textMuted} hover:underline`} title="Average record completeness">
+                <Ring score={avgScore} size={16} stroke={2} isDark={isDark} label={false} />
+                {avgScore}/100 complete
+              </Link>
             )}
           </div>
           <nav className="-mx-1 flex flex-wrap gap-1.5" aria-label="Jump to">
@@ -955,7 +811,7 @@ export default function Home() {
               <Link
                 key={q.to}
                 to={q.to}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium transition-colors ${hairline} ${
+                className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${hairline} ${
                   isDark ? "text-gray-300 hover:border-white/20 hover:bg-white/[0.04] hover:text-white" : "text-gray-700 hover:border-gray-300 hover:bg-gray-50"
                 }`}
               >
@@ -991,7 +847,7 @@ export default function Home() {
                 >
                   <Ring score={e.score} size={36} stroke={2.75} isDark={isDark} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">{e.name}</span>
+                    <span className="block truncate text-[12.5px] font-medium">{e.name}</span>
                     <span className={`mt-0.5 flex items-center gap-1.5 text-[11px] ${textMuted}`}>
                       <span
                         className={`rounded px-1 py-px font-mono text-[9.5px] tracking-[0.04em] ${
