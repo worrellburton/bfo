@@ -167,7 +167,7 @@ function TrendChart({
   hover,
   setHover,
 }: {
-  points: { day: string; value: number }[];
+  points: { day: string; value: number; cash: number; invested: number; credit: number }[];
   isDark: boolean;
   hover: number | null;
   setHover: (i: number | null) => void;
@@ -255,8 +255,93 @@ function TrendChart({
             className={`pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${isDark ? "border-gray-950" : "border-white"}`}
             style={{ left: `${(active[0] / W) * 100}%`, top: `${(active[1] / H) * 100}%`, background: accent }}
           />
+          <PointCard points={points} index={hover!} x={active[0] / W} isDark={isDark} />
         </>
       )}
+    </div>
+  );
+}
+
+/** The popup for one point on the chart: the day's full position and what moved. */
+function PointCard({
+  points,
+  index,
+  x,
+  isDark,
+}: {
+  points: { day: string; value: number; cash: number; invested: number; credit: number }[];
+  index: number;
+  x: number;
+  isDark: boolean;
+}) {
+  const p = points[index];
+  if (!p) return null;
+  const prev = index > 0 ? points[index - 1] : null;
+  const start = points[0];
+  const signed = (n: number) => `${n >= 0 ? "+" : "−"}${fmtUSD(Math.abs(n))}`;
+  const tone = (n: number) => (Math.abs(n) < 0.5 ? "text-gray-500" : n > 0 ? (isDark ? "text-emerald-300" : "text-emerald-600") : isDark ? "text-rose-300" : "text-rose-600");
+  const pct = (n: number, base: number) => {
+    if (!base) return "";
+    const v = Math.abs((n / base) * 100);
+    return ` (${n >= 0 ? "+" : "−"}${v < 0.1 ? v.toFixed(2) : v.toFixed(1)}%)`;
+  };
+  const date = dayDate(p.day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const rows: { label: string; value: number; delta: number | null; good: 1 | -1 }[] = [
+    { label: "Cash", value: p.cash, delta: prev ? p.cash - prev.cash : null, good: 1 },
+    { label: "Invested", value: p.invested, delta: prev ? p.invested - prev.invested : null, good: 1 },
+    { label: "Credit owed", value: p.credit, delta: prev ? p.credit - prev.credit : null, good: -1 },
+  ];
+  const dayMove = prev ? p.value - prev.value : null;
+  const rangeMove = p.value - start.value;
+  // Beside the point, centred on the chart, flipping sides past the middle —
+  // so it never runs off the card above or below.
+  const alignRight = x > 0.55;
+  return (
+    <div
+      className={`pointer-events-none absolute z-20 w-[248px] rounded-xl border p-3 text-[11.5px] shadow-xl backdrop-blur-md ${
+        isDark ? "border-white/10 bg-[#0d0f17]/95 text-gray-200 shadow-black/50" : "border-gray-200 bg-white/95 text-gray-800 shadow-gray-900/10"
+      }`}
+      style={{
+        left: `${x * 100}%`,
+        top: "50%",
+        transform: `translate(${alignRight ? "calc(-100% - 14px)" : "14px"}, -50%)`,
+      }}
+    >
+      <p className="text-[11px] font-medium text-gray-500">{date}</p>
+      <p className="mt-1 text-[16px] font-semibold tabular-nums tracking-[-0.01em]">{fmtUSD(p.value)}</p>
+      <div className="mt-1 space-y-0.5 tabular-nums">
+        {dayMove != null && (
+          <p className="flex justify-between gap-3">
+            <span className="text-gray-500">Day change</span>
+            <span className={tone(dayMove)}>
+              {signed(dayMove)}
+              {pct(dayMove, prev!.value)}
+            </span>
+          </p>
+        )}
+        {index > 0 && (
+          <p className="flex justify-between gap-3">
+            <span className="text-gray-500">Since {shortDay(start.day)}</span>
+            <span className={tone(rangeMove)}>
+              {signed(rangeMove)}
+              {pct(rangeMove, start.value)}
+            </span>
+          </p>
+        )}
+      </div>
+      <div className={`mt-2 space-y-1 border-t pt-2 tabular-nums ${isDark ? "border-white/10" : "border-gray-100"}`}>
+        {rows.map((r) => (
+          <p key={r.label} className="flex items-baseline justify-between gap-3">
+            <span className="text-gray-500">{r.label}</span>
+            <span className="flex items-baseline gap-2">
+              {r.delta != null && Math.abs(r.delta) >= 0.5 && (
+                <span className={`text-[10.5px] ${tone(r.delta * r.good)}`}>{signed(r.delta)}</span>
+              )}
+              <span className="font-medium">{fmtUSD(r.value)}</span>
+            </span>
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
@@ -363,7 +448,7 @@ export default function Home() {
   const rangeDays = RANGES.find((r) => r.key === range)!.days;
   const series = useMemo(() => {
     if (!treasury) return [];
-    const all = treasury.map((t) => ({ day: t.day, value: t.cash + t.invested }));
+    const all = treasury.map((t) => ({ day: t.day, value: t.cash + t.invested, cash: t.cash, invested: t.invested, credit: t.credit }));
     return Number.isFinite(rangeDays) ? all.slice(-(rangeDays + 1)) : all;
   }, [treasury, rangeDays]);
   const latest = treasury ? treasury[treasury.length - 1] : null;
