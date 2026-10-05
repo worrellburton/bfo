@@ -1,8 +1,44 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
 import EstateMap, { INITIAL_ENTITIES } from "./estate-map";
-import { entityTag, entityTagClass, setEntityTagLocal } from "../books-shared";
+import { entityCompleteness, type CompletenessItem } from "../entity-completeness";
+import {
+  BTN_BASE,
+  Icon,
+  MICRO,
+  Menu,
+  PATHS,
+  TAG_PILL,
+  TAP,
+  Toast,
+  amberTone,
+  cardSurface,
+  entityTag,
+  entityTagClass,
+  ghostBtn,
+  hairline,
+  incomeTone,
+  outlineBtn,
+  popoverSurface,
+  primaryBtn,
+  ruleBorder,
+  setEntityTagLocal,
+  textInput,
+  tiers,
+  useFocusTrap,
+  useMedia,
+} from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Assets" }];
@@ -21,61 +57,478 @@ interface Asset {
   stateLink?: string;
   operatingAgreementDate?: string;
   articlesOfOrgDate?: string;
+  // Read for the completeness score; written on the entity page.
+  address?: string;
+  registeredAgent?: string;
+  formationDate?: string;
+  einLetter?: unknown;
+  w9?: unknown;
+  articles?: unknown;
+  operatingAgreement?: unknown;
 }
 
-type SortKey = "name" | "type" | "state" | "ein" | "ownerId" | "llcType";
+type SortKey = "name" | "type" | "llcType" | "state" | "ein" | "owner" | "filings" | "score";
 type SortDir = "asc" | "desc";
+type EntView = "list" | "cards" | "map";
+type Score = { score: number; items: CompletenessItem[]; missing: CompletenessItem[] };
+
+// ── Seed tables (unchanged from the original page) ──────────────────────────
+// Ownership hierarchy from the estate map: child name (lowercased) → parent name.
+const OWNERSHIP_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const ent of INITIAL_ENTITIES) {
+    if (ent.parentId) {
+      const parent = INITIAL_ENTITIES.find((e) => e.id === ent.parentId);
+      if (parent) map[ent.name.toLowerCase()] = parent.name;
+    }
+  }
+  return map;
+})();
+
+// LLC type mapping based on known entity data
+const LLC_TYPE_MAP: Record<string, "Disregarded Entity" | "Partnership" | "C Corporation"> = {
+  "ledger louise, llc": "Disregarded Entity",
+  "swisshelm mountain ventures, llc": "Disregarded Entity",
+  "sundown investments, llc": "Disregarded Entity",
+  "ledger burton, llc": "Disregarded Entity",
+  "worrell burton, llc": "Disregarded Entity",
+  "fdj hesperia, llc (100%)": "Disregarded Entity",
+  "fdj cfs, llc (100%)": "Disregarded Entity",
+  "palomino ranch on the bend, llc (100%)": "Disregarded Entity",
+  "persons lodge llc (100%)": "Disregarded Entity",
+  "breezewood (100%)": "Disregarded Entity",
+  "arizona center for recovery - a new direction, llc": "Disregarded Entity",
+  "quail lakes apartments, llc": "Partnership",
+  "hsl tp hotel, llc": "Partnership",
+  "hsl placita west ltd partnership": "Partnership",
+};
+
+const FILING_KEYS = ["einLetter", "w9", "articles", "operatingAgreement"] as const;
+
+/**
+ * List ⇄ cards ⇄ map. Desktop defaults to the list, phones to cards; an
+ * explicit choice is remembered per browser and wins over the device default
+ * (the same contract as the Books ledger).
+ */
+const VIEW_KEY = "bfo-entities-view";
+function readStoredView(): EntView | null {
+  try {
+    const s = localStorage.getItem(VIEW_KEY);
+    if (s === "list" || s === "cards" || s === "map") return s;
+  } catch {
+    /* private mode — fall through to the device default */
+  }
+  return null;
+}
+
+/** The head's fill and bottom rule live on the cells (see books-shared headSkin). */
+function headSkin(isDark: boolean): string {
+  return isDark
+    ? "bg-[#080808] [&>th]:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]"
+    : "bg-white [&>th]:shadow-[inset_0_-1px_0_0_#e5e7eb]";
+}
+
+// Fixed widths in px (the root is 85%, so rem columns would drift). Entity is
+// the only fluid column; columns join as the viewport grows so the table
+// never scrolls sideways: md Type · Owned by · Filings, xl State · EIN,
+// 1400px Tax classification.
+const COLS = {
+  type: "w-[76px] hidden md:table-cell",
+  llcType: "w-[136px] hidden min-[1400px]:table-cell",
+  state: "w-[104px] hidden xl:table-cell",
+  ein: "w-[108px] hidden xl:table-cell",
+  owner: "w-[180px] hidden md:table-cell",
+  filings: "w-[80px] hidden md:table-cell",
+  score: "w-[96px]",
+  menu: "w-[44px]",
+};
+
+/** "Missing: Registered agent, W-9 (+16)" — the points are what the record would gain. */
+function missingSummary(s: Score, max = 2): string {
+  if (!s.missing.length) return "All requirements on file";
+  const names = s.missing.slice(0, max).map((m) => m.label);
+  const more = s.missing.length - max;
+  return `Missing: ${names.join(", ")}${more > 0 ? ` +${more} more` : ""} (+${100 - s.score})`;
+}
+
+function scoreTone(score: number, isDark: boolean): string {
+  if (score >= 100) return isDark ? "text-emerald-400" : "text-emerald-600";
+  if (score < 60) return isDark ? "text-amber-400" : "text-amber-600";
+  return isDark ? "text-gray-300" : "text-gray-600/100";
+}
+
+// ── Small pieces ────────────────────────────────────────────────────────────
+
+/** A completeness ring: the track plus an arc for the score. */
+function Ring({ score, size, isDark, stroke = 2, children }: { score: number; size: number; isDark: boolean; stroke?: number; children?: ReactNode }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - Math.max(0, Math.min(100, score)) / 100);
+  return (
+    <span className={`relative inline-flex items-center justify-center shrink-0 ${scoreTone(score, isDark)}`} style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className={isDark ? "stroke-white/10" : "stroke-gray-200"} />
+        {score > 0 && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={off}
+          />
+        )}
+      </svg>
+      {children && <span className="absolute inset-0 flex items-center justify-center">{children}</span>}
+    </span>
+  );
+}
+
+// Tips warm up like the entity-tag tooltip: the first waits, the next ones
+// are instant for a moment so scanning a column reads as one gesture.
+let tipWarmUntil = 0;
+
+/**
+ * A hover / focus card rendered through a portal (never clipped by the
+ * table). The trigger is a real button so it takes keyboard focus and a tap
+ * opens it on touch; the summary rides on aria-label for screen readers.
+ */
+function Tip({
+  isDark,
+  label,
+  content,
+  children,
+  className = "",
+  width = 232,
+}: {
+  isDark: boolean;
+  label: string;
+  content: ReactNode;
+  children: ReactNode;
+  className?: string;
+  width?: number;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const timer = useRef<number | null>(null);
+  const shown = useRef(false);
+  const id = useId();
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    shown.current = true;
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
+    setPos(window.innerHeight - r.bottom > 220 ? { left, top: r.bottom + 8 } : { left, bottom: window.innerHeight - r.top + 8 });
+  };
+  const enter = () => {
+    if (Date.now() < tipWarmUntil) show();
+    else timer.current = window.setTimeout(show, 250);
+  };
+  const hide = () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    if (shown.current) tipWarmUntil = Date.now() + 400;
+    shown.current = false;
+    setPos(null);
+  };
+  useEffect(() => {
+    if (!pos) return;
+    const h = () => hide();
+    window.addEventListener("scroll", h, true);
+    window.addEventListener("resize", h);
+    return () => {
+      window.removeEventListener("scroll", h, true);
+      window.removeEventListener("resize", h);
+    };
+  }, [pos]);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        aria-describedby={pos ? id : undefined}
+        onMouseEnter={enter}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onClick={show}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && pos) {
+            e.preventDefault();
+            hide();
+          }
+        }}
+        className={`inline-flex items-center rounded-md cursor-default ${className}`}
+      >
+        {children}
+      </button>
+      {pos &&
+        createPortal(
+          <div
+            id={id}
+            role="tooltip"
+            style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width }}
+            className={`z-[80] pointer-events-none rounded-xl border px-3 py-2.5 text-left tabular-nums ${
+              pos.top !== undefined ? "pop-in origin-top" : "pop-in-up origin-bottom"
+            } ${popoverSurface(isDark)}`}
+          >
+            {content}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
+type RowAction = { label: string; run?: () => void; href?: string };
+
+/**
+ * The row kebab: an anchored popover on sm+, a bottom sheet on phones (the
+ * same idiom as the ledger's ⋯). Arrow keys move, Escape / Tab close, focus
+ * returns to the trigger.
+ */
+function RowMenu({
+  isDark,
+  name,
+  actions,
+  onOpenChange,
+  className = "",
+}: {
+  isDark: boolean;
+  name: string;
+  actions: RowAction[];
+  onOpenChange?: (open: boolean) => void;
+  className?: string;
+}) {
+  const { t1, t3 } = tiers(isDark);
+  const smUp = useMedia("(min-width: 640px)");
+  const [open, setOpen] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const focusFirst = useRef(false);
+  const W = 200;
+
+  const items = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? []);
+  const setBoth = (v: boolean) => {
+    setOpen(v);
+    onOpenChange?.(v);
+  };
+  const close = (refocus: boolean) => {
+    setBoth(false);
+    setBox(null);
+    if (refocus) btnRef.current?.focus({ preventScroll: true });
+  };
+  const openMenu = (kbd: boolean) => {
+    focusFirst.current = kbd;
+    setSheet(!smUp);
+    setBoth(true);
+  };
+
+  useFocusTrap(panelRef, open && sheet, { initial: "container" });
+
+  useLayoutEffect(() => {
+    if (!open || sheet) return;
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const h = actions.length * 32 + 10;
+    const left = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+    setBox(window.innerHeight - r.bottom > h + 12 ? { left, top: r.bottom + 6 } : { left, bottom: window.innerHeight - r.top + 6 });
+  }, [open, sheet, actions.length]);
+
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return;
+    if (focusFirst.current) {
+      focusFirst.current = false;
+      requestAnimationFrame(() => items()[0]?.focus());
+    }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      closeRef.current(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeRef.current(true);
+      }
+    };
+    const onScroll = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return;
+      if (!sheet) closeRef.current(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, sheet]);
+
+  const onPanelKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Tab") {
+      if (!sheet) close(false);
+      return;
+    }
+    const list = items();
+    if (!list.length) return;
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    let next = -1;
+    if (e.key === "ArrowDown") next = (i + 1) % list.length;
+    else if (e.key === "ArrowUp") next = i < 0 ? list.length - 1 : (i - 1 + list.length) % list.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = list.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    list[next].focus();
+  };
+
+  const itemSkin = isDark
+    ? "text-gray-200 hover:bg-white/[0.08] focus-visible:bg-white/[0.08]"
+    : "text-gray-800 hover:bg-gray-100 focus-visible:bg-gray-100";
+  const itemCls = sheet
+    ? `w-full min-h-[44px] px-3 rounded-lg text-base text-left inline-flex items-center gap-3 cursor-pointer transition-colors ${itemSkin}`
+    : `w-full h-8 px-2 rounded-lg text-xs text-left inline-flex items-center whitespace-nowrap cursor-pointer transition-colors ${itemSkin}`;
+  const renderItems = () =>
+    actions.map((a) =>
+      a.href ? (
+        <a key={a.label} role="menuitem" href={a.href} target="_blank" rel="noopener noreferrer" onClick={() => close(false)} className={itemCls}>
+          {a.label}
+          <Icon d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" className="ml-auto w-3 h-3 opacity-50" />
+        </a>
+      ) : (
+        <button
+          key={a.label}
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            // Refocus the kebab first so whatever the action opens records it.
+            close(true);
+            a.run?.();
+          }}
+          className={itemCls}
+        >
+          {a.label}
+        </button>
+      )
+    );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? close(false) : openMenu(false))}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+            e.preventDefault();
+            if (open) items()[0]?.focus();
+            else openMenu(true);
+          }
+        }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${name}`}
+        className={`w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-[color,background-color,opacity] ${TAP.box} ${t3} ${
+          isDark
+            ? "hover:bg-white/[0.06] hover:text-white aria-expanded:bg-white/[0.08] aria-expanded:text-gray-100"
+            : "hover:bg-gray-100 hover:text-gray-900 aria-expanded:bg-gray-100 aria-expanded:text-gray-900"
+        } ${className}`}
+      >
+        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <circle cx="5" cy="12" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="19" cy="12" r="1.6" />
+        </svg>
+      </button>
+      {open &&
+        (sheet || box) &&
+        createPortal(
+          sheet ? (
+            <>
+              <div className="fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] fade-in" onClick={() => close(true)} aria-hidden />
+              <div
+                ref={panelRef}
+                role="menu"
+                aria-label={`Actions for ${name}`}
+                tabIndex={-1}
+                onKeyDown={onPanelKey}
+                className={`fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border flex flex-col pb-[max(env(safe-area-inset-bottom),12px)] sheet-in ${popoverSurface(isDark)}`}
+              >
+                <div className={`mx-auto mt-2 mb-1 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
+                <p className={`px-4 pt-2 pb-1 text-base font-semibold truncate ${t1}`}>{name}</p>
+                <div className="p-2">{renderItems()}</div>
+              </div>
+            </>
+          ) : (
+            <div
+              ref={panelRef}
+              role="menu"
+              aria-label={`Actions for ${name}`}
+              onKeyDown={onPanelKey}
+              style={{ position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: W }}
+              className={`z-[70] rounded-xl border p-1 ${box!.top !== undefined ? "pop-in origin-top" : "pop-in-up origin-bottom"} ${popoverSurface(isDark)}`}
+            >
+              {renderItems()}
+            </div>
+          ),
+          document.body
+        )}
+    </>
+  );
+}
+
+// ── Page ────────────────────────────────────────────────────────────────────
 
 export default function Assets() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const navigate = useNavigate();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [toast, setToast] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"LLC" | "C-Corp">("LLC");
-  const [state, setState] = useState("");
-  const [ein, setEin] = useState("");
-  const [view, setView] = useState<"list" | "table" | "map">("list");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
+  const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp">("all");
+  const [stateF, setStateF] = useState("all");
+  const [attention, setAttention] = useState(false);
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [copiedEin, setCopiedEin] = useState<string | null>(null);
+  const [menuRow, setMenuRow] = useState<string | null>(null);
 
-  // Ownership hierarchy from estate map
-  const OWNERSHIP_MAP: Record<string, string> = {};
-  for (const ent of INITIAL_ENTITIES) {
-    if (ent.parentId) {
-      const parent = INITIAL_ENTITIES.find((e) => e.id === ent.parentId);
-      if (parent) {
-        OWNERSHIP_MAP[ent.name.toLowerCase()] = parent.name;
-      }
+  const [choice, setChoice] = useState<EntView | null>(readStoredView);
+  const lgUp = useMedia("(min-width: 1024px)");
+  const view: EntView = choice ?? (lgUp ? "list" : "cards");
+  const pickView = (v: EntView) => {
+    setChoice(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* the choice just doesn't persist */
     }
-  }
-
-  // LLC type mapping based on known entity data
-  const LLC_TYPE_MAP: Record<string, "Disregarded Entity" | "Partnership" | "C Corporation"> = {
-    "ledger louise, llc": "Disregarded Entity",
-    "swisshelm mountain ventures, llc": "Disregarded Entity",
-    "sundown investments, llc": "Disregarded Entity",
-    "ledger burton, llc": "Disregarded Entity",
-    "worrell burton, llc": "Disregarded Entity",
-    "fdj hesperia, llc (100%)": "Disregarded Entity",
-    "fdj cfs, llc (100%)": "Disregarded Entity",
-    "palomino ranch on the bend, llc (100%)": "Disregarded Entity",
-    "persons lodge llc (100%)": "Disregarded Entity",
-    "breezewood (100%)": "Disregarded Entity",
-    "arizona center for recovery - a new direction, llc": "Disregarded Entity",
-    "quail lakes apartments, llc": "Partnership",
-    "hsl tp hotel, llc": "Partnership",
-    "hsl placita west ltd partnership": "Partnership",
   };
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let alive = true;
 
     async function setup() {
       const { db, authReady } = await import("../firebase");
@@ -190,62 +643,61 @@ export default function Assets() {
         }
       }
 
-      unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const arr = Object.entries(data).map(([id, value]) => ({
-            id,
-            ...(value as Omit<Asset, "id">),
-          }));
-          setAssets(arr);
-        } else {
-          setAssets([]);
+      if (!alive) return;
+      unsubscribe = onValue(
+        ref(db, "assets"),
+        (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            const arr = Object.entries(data).map(([id, value]) => ({
+              id,
+              ...(value as Omit<Asset, "id">),
+            }));
+            setAssets(arr);
+          } else {
+            setAssets([]);
+          }
+          setLoadError("");
+          setLoading(false);
+        },
+        (err) => {
+          console.error("Assets load error:", err);
+          setLoadError("Couldn't load entities.");
+          setLoading(false);
         }
-        setLoading(false);
-      });
+      );
     }
 
-    setup();
-    return () => unsubscribe?.();
+    void setup();
+    return () => {
+      alive = false;
+      unsubscribe?.();
+    };
   }, []);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-
+  async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp"; state: string; ein: string }) {
     const { db } = await import("../firebase");
     const { push, ref } = await import("firebase/database");
-
     await push(ref(db, "assets"), {
-      name: name.trim(),
-      type,
-      state: state.trim(),
-      ein: ein.trim(),
+      name: fields.name.trim(),
+      type: fields.type,
+      state: fields.state.trim(),
+      ein: fields.ein.trim(),
       createdAt: Date.now(),
     });
-
-    setName("");
-    setState("");
-    setEin("");
-    setShowForm(false);
-  }
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
   }
 
   async function saveInitials(asset: Asset, raw: string) {
     const initials = raw.trim().toUpperCase().slice(0, 4);
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
-    await update(ref(db, `assets/${asset.id}`), { initials });
-    // Books tags pick the change up immediately, not just next session.
-    setEntityTagLocal(asset.name, initials || null);
+    try {
+      const { db } = await import("../firebase");
+      const { ref, update } = await import("firebase/database");
+      await update(ref(db, `assets/${asset.id}`), { initials });
+      // Books tags pick the change up immediately, not just next session.
+      setEntityTagLocal(asset.name, initials || null);
+    } catch {
+      setToast("Couldn't save those initials.");
+    }
   }
 
   function copyEin(ein: string) {
@@ -256,429 +708,1129 @@ export default function Assets() {
   }
 
   async function updateOwner(assetId: string, ownerId: string) {
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
-    await update(ref(db, `assets/${assetId}`), { ownerId: ownerId || "" });
-  }
-
-  // Build ownership tree
-  function getOwnerName(ownerId: string | undefined) {
-    if (!ownerId) return "";
-    const owner = assets.find((a) => a.id === ownerId);
-    return owner?.name || "";
-  }
-
-  // Search, then sort
-  const needle = q.trim().toLowerCase();
-  const searched = needle
-    ? assets.filter((a) => a.name.toLowerCase().includes(needle) || (a.ein ?? "").includes(needle))
-    : assets;
-  const sorted = [...searched].sort((a, b) => {
-    const dir = sortDir === "asc" ? 1 : -1;
-    switch (sortKey) {
-      case "name":
-        return dir * a.name.localeCompare(b.name);
-      case "type":
-        return dir * a.type.localeCompare(b.type);
-      case "state":
-        return dir * (a.state || "").localeCompare(b.state || "");
-      case "ein":
-        return dir * (a.ein || "").localeCompare(b.ein || "");
-      case "ownerId":
-        return dir * getOwnerName(a.ownerId).localeCompare(getOwnerName(b.ownerId));
-      case "llcType":
-        return dir * (a.llcType || "").localeCompare(b.llcType || "");
-      default:
-        return 0;
+    try {
+      const { db } = await import("../firebase");
+      const { ref, update } = await import("firebase/database");
+      await update(ref(db, `assets/${assetId}`), { ownerId: ownerId || "" });
+    } catch {
+      setToast("Couldn't change the owner.");
     }
-  });
+  }
 
-  // Build tree structure: root entities first, then children nested under parents
-  function buildTree(items: Asset[]): { asset: Asset; depth: number }[] {
-    const result: { asset: Asset; depth: number }[] = [];
-    const roots = items.filter((a) => !a.ownerId || !items.find((p) => p.id === a.ownerId));
-    const children = (parentId: string, depth: number) => {
-      if (collapsed.has(parentId)) return;
-      const kids = items.filter((a) => a.ownerId === parentId);
-      kids.sort((a, b) => a.name.localeCompare(b.name));
-      for (const kid of kids) {
-        result.push({ asset: kid, depth });
-        children(kid.id, depth + 1);
+  // ── Derived data ─────────────────────────────────────────────────────────
+  const byId = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
+  const scores = useMemo(() => new Map<string, Score>(assets.map((a) => [a.id, entityCompleteness(a)])), [assets]);
+  const scoreOf = (a: Asset) => scores.get(a.id) ?? entityCompleteness(a);
+  // Children by owner (only owners that exist; a self-owner is a root).
+  const childrenOf = useMemo(() => {
+    const m = new Map<string, Asset[]>();
+    for (const a of assets) {
+      if (!a.ownerId || a.ownerId === a.id || !byId.has(a.ownerId)) continue;
+      const list = m.get(a.ownerId) ?? [];
+      list.push(a);
+      m.set(a.ownerId, list);
+    }
+    return m;
+  }, [assets, byId]);
+  const ownerName = (a: Asset) => (a.ownerId ? byId.get(a.ownerId)?.name ?? "" : "");
+  const tagOf = (a: { name: string; initials?: string }) => a.initials || entityTag(a.name);
+  const filingCount = (a: Asset) => FILING_KEYS.filter((k) => !!a[k]).length;
+
+  function descendantsOf(id: string): Set<string> {
+    const out = new Set<string>();
+    const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      for (const k of childrenOf.get(cur) ?? []) {
+        if (out.has(k.id)) continue;
+        out.add(k.id);
+        stack.push(k.id);
       }
-    };
-    roots.sort((a, b) => a.name.localeCompare(b.name));
-    for (const root of roots) {
-      result.push({ asset: root, depth: 0 });
-      children(root.id, 1);
     }
-    return result;
+    return out;
   }
 
-  const treeRows = buildTree(sorted);
+  const states = useMemo(
+    () => [...new Set(assets.map((a) => (a.state || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [assets]
+  );
+  const hasStateless = assets.some((a) => !(a.state || "").trim());
 
-  function SortIcon({ col }: { col: SortKey }) {
-    if (sortKey !== col) {
-      return (
-        <svg className="w-3 h-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-      );
-    }
-    return sortDir === "asc" ? (
-      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      </svg>
-    ) : (
-      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
+  // ── Filtering ────────────────────────────────────────────────────────────
+  const needle = q.trim().toLowerCase();
+  const digits = needle.replace(/\D/g, "");
+  const filtered = Boolean(needle) || typeF !== "all" || stateF !== "all" || attention;
+  const matches = (a: Asset) => {
+    if (typeF !== "all" && a.type !== typeF) return false;
+    const st = (a.state || "").trim();
+    if (stateF === "__none" ? !!st : stateF !== "all" && st !== stateF) return false;
+    if (attention && scoreOf(a).score >= 100) return false;
+    if (!needle) return true;
+    return (
+      a.name.toLowerCase().includes(needle) ||
+      st.toLowerCase().includes(needle) ||
+      (a.ein || "").toLowerCase().includes(needle) ||
+      (digits.length >= 2 && (a.ein || "").replace(/\D/g, "").includes(digits)) ||
+      tagOf(a).toLowerCase() === needle
     );
+  };
+  const matched = assets.filter(matches);
+  const matchedIds = new Set(matched.map((a) => a.id));
+  function clearFilters() {
+    setQ("");
+    setTypeF("all");
+    setStateF("all");
+    setAttention(false);
   }
 
-  const inputCls = `${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none`;
-  const cellBorder = isDark ? "border-white/10" : "border-gray-200";
-  const hdrBg = isDark ? "bg-white/[0.03]" : "bg-gray-50";
-  const hoverBg = isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50";
-  const columns: { key: SortKey; label: string; w: string }[] = [
-    { key: "name", label: "Entity Name", w: "min-w-[220px]" },
-    { key: "type", label: "Type", w: "w-[80px]" },
-    { key: "llcType", label: "LLC Type", w: "w-[140px]" },
-    { key: "state", label: "State", w: "w-[100px]" },
-    { key: "ein", label: "EIN", w: "w-[120px]" },
-    { key: "ownerId", label: "Owned By", w: "w-[180px]" },
+  // ── Sorting ──────────────────────────────────────────────────────────────
+  // Sorting by Entity keeps the ownership tree (siblings ordered by name);
+  // any other column flattens the list so e.g. the weakest records rise to
+  // the top across the whole family. Blank values always sort last.
+  const treeMode = sort.key === "name";
+  const textKey = (a: Asset): string => {
+    switch (sort.key) {
+      case "type":
+        return a.type || "";
+      case "llcType":
+        return a.llcType || "";
+      case "state":
+        return (a.state || "").trim();
+      case "ein":
+        return (a.ein || "").trim();
+      case "owner":
+        return ownerName(a);
+      default:
+        return a.name;
+    }
+  };
+  const cmp = (a: Asset, b: Asset): number => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    if (sort.key === "score" || sort.key === "filings") {
+      const d = sort.key === "score" ? scoreOf(a).score - scoreOf(b).score : filingCount(a) - filingCount(b);
+      return d * dir || a.name.localeCompare(b.name);
+    }
+    const x = textKey(a);
+    const y = textKey(b);
+    if (!x !== !y) return x ? -1 : 1;
+    return x.localeCompare(y) * dir || a.name.localeCompare(b.name);
+  };
+  const onSort = (key: SortKey) =>
+    setSort((s) =>
+      s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }
+    );
+
+  type Row = { asset: Asset; depth: number; kids: number; context: boolean };
+  // The tree: matches plus their ancestors (shown muted, for context), in
+  // pre-order. Cycles (A owns B owns A) fall back to roots so nothing hides.
+  function buildRows(respectCollapse: boolean): Row[] {
+    if (!treeMode) return [...matched].sort(cmp).map((asset) => ({ asset, depth: 0, kids: 0, context: false }));
+    const visible = new Set<string>();
+    for (const a of matched) {
+      let cur: Asset | undefined = a;
+      const guard = new Set<string>();
+      while (cur && !guard.has(cur.id)) {
+        guard.add(cur.id);
+        visible.add(cur.id);
+        cur = cur.ownerId && cur.ownerId !== cur.id ? byId.get(cur.ownerId) : undefined;
+      }
+    }
+    const inSet = assets.filter((a) => visible.has(a.id));
+    const kidsOf = (id: string) => (childrenOf.get(id) ?? []).filter((k) => visible.has(k.id)).sort(cmp);
+    const out: Row[] = [];
+    const seen = new Set<string>();
+    const walk = (a: Asset, depth: number) => {
+      if (seen.has(a.id)) return;
+      seen.add(a.id);
+      const kids = kidsOf(a.id);
+      out.push({ asset: a, depth, kids: kids.length, context: !matchedIds.has(a.id) });
+      if (respectCollapse && collapsed.has(a.id)) {
+        // Mark the hidden subtree seen so the cycle sweep doesn't resurface it.
+        for (const d of descendantsOf(a.id)) seen.add(d);
+        return;
+      }
+      for (const k of kids) walk(k, depth + 1);
+    };
+    const roots = inSet.filter((a) => !a.ownerId || a.ownerId === a.id || !visible.has(a.ownerId)).sort(cmp);
+    for (const r of roots) walk(r, 0);
+    for (const a of inSet.sort(cmp)) if (!seen.has(a.id)) walk(a, 0);
+    return out;
+  }
+  const rows = buildRows(true);
+  const cardRows = buildRows(false).filter((r) => !r.context);
+  const parentIds = [...childrenOf.keys()];
+  const allExpanded = collapsed.size === 0;
+  const toggleNode = (id: string, open?: boolean) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      const isOpen = !next.has(id);
+      if (open === undefined ? isOpen : !open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const ownerOptions = (a: Asset) => {
+    // An entity can't be owned by itself or by anything beneath it.
+    const banned = descendantsOf(a.id);
+    banned.add(a.id);
+    if (a.ownerId) banned.delete(a.ownerId);
+    return [
+      { value: "", label: "No owner" },
+      ...[...assets]
+        .filter((o) => !banned.has(o.id))
+        .sort((x, y) => x.name.localeCompare(y.name))
+        .map((o) => ({
+          value: o.id,
+          label: o.name,
+          icon: <span className={`${TAG_PILL} ${entityTagClass(o.name, isDark)}`}>{tagOf(o)}</span>,
+        })),
+    ];
+  };
+
+  // ── Summary (the filtered set, like the ledger's strip) ──────────────────
+  const total = matched.length;
+  const llcs = matched.filter((a) => a.type !== "C-Corp").length;
+  const corps = matched.filter((a) => a.type === "C-Corp").length;
+  const stateCount = new Set(matched.map((a) => (a.state || "").trim()).filter(Boolean)).size;
+  const avg = total ? Math.round(matched.reduce((s, a) => s + scoreOf(a).score, 0) / total) : 0;
+  const complete = matched.filter((a) => scoreOf(a).score >= 100).length;
+  const attentionAll = assets.filter((a) => scoreOf(a).score < 100).length;
+  const attentionShown = total - complete;
+
+  // ── Skins (books-shared tokens) ──────────────────────────────────────────
+  const { t1, t2, t3 } = tiers(isDark);
+  const card = `rounded-2xl border ${cardSurface(isDark)}`;
+  const rule = ruleBorder(isDark);
+  const hair = hairline(isDark);
+  const field = textInput(isDark);
+  const searchField = `h-[40px] sm:h-9 w-full pl-9 pr-4 rounded-full text-[16px] sm:text-sm placeholder:text-sm border cursor-text [&::-webkit-search-cancel-button]:appearance-none ${field}`;
+  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${
+    isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"
+  }`;
+  const segment = "inline-flex items-center justify-center h-full min-w-[44px] sm:min-w-0 px-3 rounded-full text-sm font-medium whitespace-nowrap transition-colors cursor-pointer";
+  const segOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200";
+  const segOff = isDark
+    ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]"
+    : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
+  const viewSeg = `h-full w-[40px] sm:w-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${TAP.seg}`;
+  const hover = isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50";
+  // The row whose menu is open holds a tint, so it reads as "the one you touched".
+  const activeRow = isDark ? "bg-white/[0.04]" : "bg-gray-50";
+  const cell = "px-2 py-3.5 lg:py-3";
+  // "No owner" is the soft pill with its fill withdrawn until hover, so the
+  // column only speaks where there is an owner.
+  const noOwner = isDark
+    ? "[&>button]:text-gray-500 [&>button:not(:hover):not([aria-expanded=true])]:bg-transparent"
+    : "[&>button]:text-gray-500/100 [&>button:not(:hover):not([aria-expanded=true])]:bg-transparent";
+  const chevBtn = `w-5 h-5 rounded-md inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors ${TAP.box} ${t3} ${
+    isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"
+  }`;
+  const kpiSize = "text-xl lg:text-3xl leading-none";
+  const kpi = `block mt-1 ${kpiSize} font-semibold tracking-tight truncate`;
+
+  // ── Pieces shared by list and cards ──────────────────────────────────────
+  const tagChip = (a: Asset, touch = false) =>
+    editingTag === a.id ? (
+      <input
+        autoFocus
+        value={tagDraft}
+        aria-label={`Initials for ${a.name}`}
+        onChange={(e) => setTagDraft(e.target.value.toUpperCase().slice(0, 4))}
+        onBlur={() => {
+          void saveInitials(a, tagDraft);
+          setEditingTag(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            e.preventDefault();
+            setEditingTag(null);
+          }
+        }}
+        className={`${touch ? "h-6 lg:h-5" : "h-5"} w-[52px] shrink-0 px-1.5 rounded-md text-xs font-semibold tracking-[0.04em] uppercase border focus-visible:outline-0! ${
+          isDark ? "bg-white/10 border-white/25 text-white" : "bg-white border-gray-300 text-gray-900"
+        }`}
+      />
+    ) : (
+      <button
+        type="button"
+        onClick={() => {
+          setEditingTag(a.id);
+          setTagDraft(tagOf(a));
+        }}
+        title="Edit initials"
+        aria-label={`Initials ${tagOf(a)} — edit`}
+        className={`${TAG_PILL} ${touch ? "h-6 px-2 lg:h-5 lg:px-1.5" : ""} cursor-pointer transition-[filter] hover:brightness-110 ${entityTagClass(a.name, isDark)}`}
+      >
+        {tagOf(a)}
+      </button>
+    );
+
+  const typeBadge = (a: Asset) => (
+    <span
+      title={a.type === "LLC" && a.llcType ? `LLC · ${a.llcType}` : a.type}
+      className={`inline-flex items-center shrink-0 h-5 px-1.5 rounded-md text-xs font-medium leading-none ${
+        a.type === "C-Corp"
+          ? isDark ? "border border-white/15 text-gray-300" : "border border-gray-300 text-gray-700"
+          : isDark ? "bg-white/[0.05] text-gray-400" : "bg-gray-100 text-gray-500/100"
+      }`}
+    >
+      {a.type || "—"}
+    </span>
+  );
+
+  const scoreCard = (a: Asset, s: Score) => (
+    <>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className={`text-sm font-semibold ${t1}`}>{s.score}% complete</p>
+        {s.missing.length > 0 && <p className={`text-xs ${t2}`}>+{100 - s.score} available</p>}
+      </div>
+      {s.missing.length > 0 ? (
+        <>
+          <p className={`mt-2.5 mb-1 ${MICRO} ${t2}`}>Missing</p>
+          <ul className="space-y-1">
+            {s.missing.map((m) => (
+              <li key={m.key} className="flex items-baseline justify-between gap-4 text-xs">
+                <span className={t1}>{m.label}</span>
+                <span className={t2}>+{Math.round((m.weight / s.items.reduce((n, i) => n + i.weight, 0)) * 100)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>Every requirement for {a.type === "C-Corp" ? "a C-Corp" : "an LLC"} is on file.</p>
+      )}
+    </>
+  );
+
+  const filingsCard = (a: Asset, s: Score) => {
+    const filings = s.items.filter((i) => (FILING_KEYS as readonly string[]).includes(i.key));
+    return (
+      <>
+        <p className={`mb-1.5 ${MICRO} ${t2}`}>Filings</p>
+        <ul className="space-y-1">
+          {filings.map((f) => (
+            <li key={f.key} className="flex items-center gap-2 text-xs">
+              {f.done ? (
+                <Icon d={PATHS.check} strokeWidth={2.5} className={`w-3 h-3 shrink-0 ${incomeTone(isDark)}`} />
+              ) : (
+                <span aria-hidden className={`w-3 h-3 shrink-0 inline-flex items-center justify-center`}>
+                  <span className={`w-[7px] h-[7px] rounded-full border-[1.5px] ${isDark ? "border-white/30" : "border-gray-400"}`} />
+                </span>
+              )}
+              <span className={f.done ? t1 : t2}>{f.label}</span>
+              <span className={`ml-auto ${f.done ? t2 : amberTone(isDark)}`}>{f.done ? "On file" : "Missing"}</span>
+            </li>
+          ))}
+        </ul>
+        {a.stateLink && <p className={`mt-2 text-xs ${t2}`}>State filing link in the ⋯ menu.</p>}
+      </>
+    );
+  };
+
+  const filingPips = (a: Asset, s: Score) => {
+    const filings = s.items.filter((i) => (FILING_KEYS as readonly string[]).includes(i.key));
+    const on = filings.filter((f) => f.done);
+    return (
+      <Tip
+        isDark={isDark}
+        label={`Filings: ${on.length} of ${filings.length} on file${on.length < filings.length ? ` — missing ${filings.filter((f) => !f.done).map((f) => f.label).join(", ")}` : ""}`}
+        content={filingsCard(a, s)}
+        className={`h-7 px-1.5 -mx-1.5 gap-[4px] ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+      >
+        {filings.map((f) => (
+          <span
+            key={f.key}
+            aria-hidden
+            className={`w-[7px] h-[7px] rounded-full ${
+              f.done ? (isDark ? "bg-emerald-400" : "bg-emerald-600") : `border-[1.5px] ${isDark ? "border-white/25" : "border-gray-300"}`
+            }`}
+          />
+        ))}
+      </Tip>
+    );
+  };
+
+  const rowActions = (a: Asset): RowAction[] => [
+    { label: "Open entity", run: () => navigate(`/assets/${a.id}`) },
+    {
+      label: "Edit initials",
+      run: () => {
+        setEditingTag(a.id);
+        setTagDraft(tagOf(a));
+      },
+    },
+    ...(a.ein ? [{ label: "Copy EIN", run: () => copyEin(a.ein) }] : []),
+    ...(a.stateLink ? [{ label: "State filing", href: a.stateLink }] : []),
   ];
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold tracking-tight">Entities</h1>
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search entities…"
-            className={`px-4 py-1.5 rounded-full text-sm border focus:outline-none ${isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"}`}
-          />
-        </div>
-        <div className="flex items-center gap-3">
-          <div className={`flex p-0.5 ${isDark ? "border-white/10" : "border-gray-200"} border rounded-full`}>
-            <button
-              onClick={() => setView("list")}
-              className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "list" ? `rounded-full ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
-              }`}
-              title="Spreadsheet view"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M10 3v18M14 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setView("table")}
-              className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "table" ? `rounded-full ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
-              }`}
-              title="Card view"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setView("map")}
-              className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
-                view === "map" ? `rounded-full ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}` : `${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`
-              }`}
-              title="Map view"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
-            </button>
-          </div>
+  // A column header: a sort button (ledger recipe — the caret is an arrow,
+  // revealed on hover, solid when active).
+  const th = (label: string, key: SortKey | null, className = "", extra?: ReactNode) => {
+    const thCls = `px-2 py-2.5 font-medium text-left ${className}`;
+    if (!key) {
+      return (
+        <th scope="col" className={thCls}>
+          {label}
+        </th>
+      );
+    }
+    const active = sort.key === key;
+    return (
+      <th scope="col" aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} className={`group/th ${thCls}`}>
+        <span className="inline-flex items-center gap-2">
           <button
-            onClick={() => setShowForm(!showForm)}
-            className={`px-4 py-2 font-medium rounded-full transition-colors cursor-pointer text-sm ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+            type="button"
+            onClick={() => onSort(key)}
+            className={`inline-flex items-center gap-1 h-6 -my-0.5 px-1.5 -mx-1.5 rounded-md cursor-pointer transition-colors ${TAP.head} ${
+              active ? t1 : isDark ? "hover:text-gray-100 hover:bg-white/[0.04]" : "hover:text-gray-900 hover:bg-gray-100"
+            }`}
           >
-            {showForm ? "Cancel" : "+ New Entity"}
+            {label}
+            <Icon
+              d={active && sort.dir === "asc" ? PATHS.up : PATHS.down}
+              strokeWidth={2}
+              className={`w-3 h-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover/th:opacity-60"}`}
+            />
           </button>
+          {extra}
+        </span>
+      </th>
+    );
+  };
+
+  // ── Toolbar pieces ───────────────────────────────────────────────────────
+  const searchBox = () => (
+    <div className="relative order-1 flex-1 min-w-0 lg:min-w-[10rem] lg:max-w-[20rem] xl:flex-none xl:w-72">
+      <Icon d={PATHS.search} className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${t3}`} strokeWidth={2} />
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        aria-label="Search entities by name, EIN or state"
+        placeholder="Search entities…"
+        className={searchField}
+      />
+    </div>
+  );
+  const typeSegments = () => (
+    <div role="group" aria-label="Entity type" className={segContainer}>
+      {(
+        [
+          ["all", "All"],
+          ["LLC", "LLC"],
+          ["C-Corp", "C-Corp"],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => setTypeF(value)}
+          aria-pressed={typeF === value}
+          className={`${segment} ${TAP.seg} ${typeF === value ? segOn : segOff}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  const stateMenu = () => (
+    <Menu
+      value={stateF}
+      isDark={isDark}
+      size="md"
+      label="State"
+      onChange={setStateF}
+      options={[
+        { value: "all", label: "All states" },
+        ...states.map((s) => ({ value: s, label: s })),
+        ...(hasStateless ? [{ value: "__none", label: "No state" }] : []),
+      ]}
+    />
+  );
+  const attentionToggle = () => (
+    <button
+      type="button"
+      aria-pressed={attention}
+      onClick={() => setAttention((v) => !v)}
+      title="Records below 100% complete"
+      className={`${BTN_BASE} h-[40px] sm:h-9 px-3.5 gap-2 text-sm whitespace-nowrap ${TAP.md} ${
+        attention
+          ? isDark
+            ? "border border-amber-500/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+            : "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+          : outlineBtn(isDark)
+      }`}
+    >
+      <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${isDark ? "bg-amber-400" : "bg-amber-500"}`} />
+      Needs attention
+      <span className={`font-normal ${attention ? "" : t2}`}>{attentionAll}</span>
+    </button>
+  );
+  const clearButton = () => (
+    <button type="button" onClick={clearFilters} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${TAP.md} ${outlineBtn(isDark)}`}>
+      Clear
+    </button>
+  );
+  const viewToggle = () => (
+    <div role="group" aria-label="View" className={segContainer}>
+      {(
+        [
+          ["list", "List view", PATHS.list],
+          ["cards", "Card view", PATHS.grid],
+          [
+            "map",
+            "Map view",
+            "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7",
+          ],
+        ] as const
+      ).map(([v, name, d]) => (
+        <button
+          key={v}
+          type="button"
+          aria-label={name}
+          title={name}
+          aria-pressed={view === v}
+          onClick={() => pickView(v)}
+          className={`${viewSeg} ${view === v ? segOn : segOff}`}
+        >
+          <Icon d={d} className="w-3.5 h-3.5" />
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── Strip ────────────────────────────────────────────────────────────────
+  const ready = !loading;
+  const strip: Array<{ label: string; value: string; tone?: string; sub?: ReactNode }> = [
+    { label: "Entities", value: String(total), sub: total ? `${complete} complete` : "—" },
+    { label: "LLCs", value: String(llcs) },
+    { label: "C-Corps", value: String(corps) },
+    { label: "States", value: String(stateCount) },
+    {
+      label: "Avg completeness",
+      value: total ? `${avg}%` : "—",
+      tone: total && avg >= 100 ? incomeTone(isDark) : "",
+      sub: !total ? (
+        "—"
+      ) : attentionShown > 0 ? (
+        <button
+          type="button"
+          onClick={() => setAttention((v) => !v)}
+          aria-pressed={attention}
+          className={`relative cursor-pointer hover:underline underline-offset-2 ${TAP.line} ${amberTone(isDark)}`}
+        >
+          {attentionShown} need{attentionShown === 1 ? "s" : ""} attention
+        </button>
+      ) : (
+        <span className={incomeTone(isDark)}>All complete</span>
+      ),
+    },
+  ];
+  const stripBorder = [
+    "",
+    "border-l",
+    "border-t md:border-t-0 md:border-l",
+    "border-l border-t md:border-t-0",
+    "col-span-2 md:col-span-1 border-t md:border-t-0 md:border-l",
+  ] as const;
+
+  // ── Skeletons ────────────────────────────────────────────────────────────
+  const bar = (cls: string) => <div className={`shimmer ${cls}`} aria-hidden />;
+  const listSkeleton = (
+    <table className="w-full table-fixed text-sm" aria-busy="true" aria-label="Loading entities">
+      <thead>
+        <tr className={`text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
+          <th scope="col" className="pl-4 pr-2 py-2.5 font-medium">Entity</th>
+          <th scope="col" className={`${COLS.type} px-2 py-2.5 font-medium`}>Type</th>
+          <th scope="col" className={`${COLS.llcType} px-2 py-2.5 font-medium`}>Tax classification</th>
+          <th scope="col" className={`${COLS.state} px-2 py-2.5 font-medium`}>State</th>
+          <th scope="col" className={`${COLS.ein} px-2 py-2.5 font-medium`}>EIN</th>
+          <th scope="col" className={`${COLS.owner} px-2 py-2.5 font-medium`}>Owned by</th>
+          <th scope="col" className={`${COLS.filings} px-2 py-2.5 font-medium`}>Filings</th>
+          <th scope="col" className={`${COLS.score} px-2 py-2.5 font-medium`}>Complete</th>
+          <th scope="col" className={COLS.menu}><span className="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: 8 }, (_, i) => (
+          <tr key={i} className={i === 0 ? "" : `border-t ${hair}`}>
+            <td className={`pl-4 pr-2 py-3.5 lg:py-3`}>
+              <div className="flex items-center gap-2" style={{ paddingLeft: [0, 18, 36, 36, 18, 36, 54, 0][i] }}>
+                {bar("w-5 h-3 opacity-0")}
+                {bar("h-5 w-9 rounded-md!")}
+                {bar("h-3 w-44")}
+              </div>
+            </td>
+            <td className={`${cell} ${COLS.type}`}>{bar("h-5 w-10 rounded-md!")}</td>
+            <td className={`${cell} ${COLS.llcType}`}>{bar("h-3 w-24")}</td>
+            <td className={`${cell} ${COLS.state}`}>{bar("h-3 w-14")}</td>
+            <td className={`${cell} ${COLS.ein}`}>{bar("h-3 w-20")}</td>
+            <td className={`${cell} ${COLS.owner}`}>{bar("h-7 w-32 rounded-full!")}</td>
+            <td className={`${cell} ${COLS.filings}`}>{bar("h-2 w-10")}</td>
+            <td className={`${cell} ${COLS.score}`}>{bar("h-3 w-12")}</td>
+            <td />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  const cardsSkeleton = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 p-4" aria-busy="true" aria-label="Loading entities">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className={`rounded-xl border p-3 flex flex-col gap-2.5 ${cardSurface(isDark)}`}>
+          <div className="flex items-center gap-3">
+            {bar("h-6 w-9 rounded-md!")}
+            <div className="flex-1 min-w-0">
+              {bar("h-3.5 w-2/3")}
+              {bar("mt-1.5 h-2.5 w-1/2")}
+            </div>
+            {bar("w-8 h-8 rounded-full!")}
+          </div>
+          {bar("h-2.5 w-3/4")}
+          <div className="flex items-center gap-2">
+            {bar("h-8 lg:h-7 w-36 rounded-full!")}
+            {bar("h-2 w-10")}
+          </div>
         </div>
+      ))}
+    </div>
+  );
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  return (
+    <div className="w-full tabular-nums">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div className="min-w-0">
+          <h1 className={`text-2xl font-semibold tracking-tight leading-tight ${t1}`}>Entities</h1>
+          <p className={`mt-1 text-xs ${t2}`}>
+            {loading ? (
+              <span className="shimmer inline-block h-[1em] w-40 rounded! align-middle" aria-hidden />
+            ) : (
+              <>
+                {assets.length} {assets.length === 1 ? "entity" : "entities"}
+                {attentionAll > 0 && (
+                  <>
+                    {" · "}
+                    {attentionAll} below 100%
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 pl-3.5 pr-4 gap-1.5 text-sm ${TAP.md} ${primaryBtn(isDark)}`}
+        >
+          <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className="w-3.5 h-3.5" />
+          New entity
+        </button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleCreate} className={`mb-6 p-6 ${isDark ? "bg-white/5 border-white/10" : "bg-black/5 border-gray-200"} border rounded-xl max-w-lg space-y-4`}>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => setType("LLC")}
-              className={`flex-1 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
-                type === "LLC"
-                  ? "bg-white text-black"
-                  : `${isDark ? "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10" : "bg-black/5 text-gray-500 border-gray-200 hover:bg-gray-100"} border`
-              }`}
-            >
-              LLC
-            </button>
-            <button
-              type="button"
-              onClick={() => setType("C-Corp")}
-              className={`flex-1 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
-                type === "C-Corp"
-                  ? "bg-white text-black"
-                  : `${isDark ? "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10" : "bg-black/5 text-gray-500 border-gray-200 hover:bg-gray-100"} border`
-              }`}
-            >
-              C-Corp
-            </button>
+      <NewEntityDialog isDark={isDark} open={showForm} onClose={() => setShowForm(false)} onCreate={handleCreate} />
+
+      {/* Summary strip */}
+      <div className={`grid grid-cols-2 md:grid-cols-5 overflow-hidden mb-5 tabular-nums ${card}`}>
+        {strip.map(({ label, value, tone, sub }, i) => (
+          <div key={label} className={`min-w-0 px-4 py-3 ${stripBorder[i]} ${hair}`}>
+            <span className={`block text-xs font-medium ${t2}`}>{label}</span>
+            {!ready ? (
+              <span className={`mt-1 block ${kpiSize}`} aria-hidden>
+                <span className="shimmer inline-block h-[1em] w-14 rounded! align-top" />
+              </span>
+            ) : (
+              <span className={`${kpi} ${tone || t1}`}>{value}</span>
+            )}
+            {sub !== undefined &&
+              (!ready ? (
+                <span className="mt-1 block text-xs leading-tight" aria-hidden>
+                  <span className="shimmer inline-block h-[1em] w-24 rounded! align-top" />
+                </span>
+              ) : (
+                <span className={`block mt-1 text-xs leading-tight truncate ${t2}`}>{sub}</span>
+              ))}
           </div>
+        ))}
+      </div>
 
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Entity name" required className={`w-full px-4 py-2 ${inputCls}`} />
-          <input type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="State of formation (e.g. Delaware)" className={`w-full px-4 py-2 ${inputCls}`} />
-          <input type="text" value={ein} onChange={(e) => setEin(e.target.value)} placeholder="EIN (optional)" className={`w-full px-4 py-2 ${inputCls}`} />
-
-          <button type="submit" className="w-full py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
-            Create {type}
-          </button>
-        </form>
+      {loadError && (
+        <div role="alert" className={`mb-5 rounded-2xl px-4 py-2 text-sm fade-in ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
+          {loadError}
+        </div>
       )}
 
-      {view === "map" ? (
-        <EstateMap embedded />
-      ) : loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : assets.length === 0 ? (
-        <p className="text-gray-500">No entities yet. Create one to get started.</p>
-      ) : view === "list" ? (
-        /* ── Spreadsheet view with tree hierarchy ── */
-        <div className={`border rounded-lg overflow-hidden ${cellBorder}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className={`sticky top-0 z-10 ${isDark ? "bg-[#0b0b0b]" : "bg-white"}`}>
-                <tr className={`${hdrBg} border-b ${cellBorder}`}>
-                  {columns.slice(0, 1).map((col) => (
-                    <th
-                      key={col.key}
-                      className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider cursor-pointer select-none ${col.w} ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors`}
-                      onClick={() => handleSort(col.key)}
-                    >
-                      <div className="flex items-center gap-1">
-                        {col.label}
-                        <SortIcon col={col.key} />
-                      </div>
-                    </th>
-                  ))}
-                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[70px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Tag</th>
-                  {columns.slice(1).map((col) => (
-                    <th
-                      key={col.key}
-                      className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider cursor-pointer select-none ${col.w} ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors`}
-                      onClick={() => handleSort(col.key)}
-                    >
-                      <div className="flex items-center gap-1">
-                        {col.label}
-                        <SortIcon col={col.key} />
-                      </div>
-                    </th>
-                  ))}
-                  {/* Static columns */}
-                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[110px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>State Link</th>
-                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Op. Agreement</th>
-                  <th className={`px-3 py-2.5 text-left font-semibold uppercase tracking-wider w-[120px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>Articles of Org</th>
-                </tr>
-              </thead>
-              <tbody>
-                {treeRows.map(({ asset, depth }) => {
-                  const hasChildren = assets.some((a) => a.ownerId === asset.id);
-                  const isExpanded = !collapsed.has(asset.id);
-                  return (
-                    <tr
-                      key={asset.id}
-                      className={`border-b last:border-b-0 ${cellBorder} ${hoverBg} transition-colors group`}
-                    >
-                      {/* Name with tree indentation */}
-                      <td className="px-3 py-2 font-medium">
-                        <div className="flex items-center" style={{ paddingLeft: `${depth * 20}px` }}>
-                          {hasChildren && (
-                            <button
-                              onClick={() =>
-                                setCollapsed((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(asset.id)) next.delete(asset.id);
-                                  else next.add(asset.id);
-                                  return next;
-                                })
-                              }
-                              className={`mr-1.5 p-0.5 rounded cursor-pointer ${isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"}`}
-                            >
-                              <svg className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            </button>
-                          )}
-                          {depth > 0 && !hasChildren && (
-                            <span className={`mr-1.5 ${isDark ? "text-gray-600" : "text-gray-300"}`}>
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            </span>
-                          )}
-                          <Link
-                            to={`/assets/${asset.id}`}
-                            className={`${isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-600 hover:text-blue-500"} truncate`}
-                          >
-                            {asset.name}
-                          </Link>
-                          {hasChildren && collapsed.has(asset.id) && (
-                            <span className={`ml-2 text-[10px] tabular-nums ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-                              +{assets.filter((a) => a.ownerId === asset.id).length}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      {/* Editable initials tag — Books uses these everywhere */}
-                      <td className="px-3 py-2">
-                        {editingTag === asset.id ? (
-                          <input
-                            autoFocus
-                            value={tagDraft}
-                            onChange={(e) => setTagDraft(e.target.value.toUpperCase().slice(0, 4))}
-                            onBlur={() => {
-                              void saveInitials(asset, tagDraft);
-                              setEditingTag(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                              if (e.key === "Escape") setEditingTag(null);
-                            }}
-                            className={`w-14 px-1.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide uppercase focus:outline-none border ${
-                              isDark ? "bg-white/10 border-white/25 text-white" : "bg-white border-gray-300 text-gray-900"
-                            }`}
-                          />
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setEditingTag(asset.id);
-                              setTagDraft(asset.initials || entityTag(asset.name));
-                            }}
-                            title="Edit initials"
-                            className={`px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide cursor-pointer ${entityTagClass(asset.name, isDark)}`}
-                          >
-                            {asset.initials || entityTag(asset.name)}
-                          </button>
-                        )}
-                      </td>
-                      {/* Type */}
-                      <td className="px-3 py-2">
-                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                          asset.type === "C-Corp"
-                            ? isDark ? "bg-purple-500/20 text-purple-300" : "bg-purple-50 text-purple-700"
-                            : isDark ? "bg-blue-500/20 text-blue-300" : "bg-blue-50 text-blue-700"
-                        }`}>
-                          {asset.type}
-                        </span>
-                      </td>
-                      {/* LLC Type */}
-                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.llcType || "—"}
-                      </td>
-                      {/* State */}
-                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.state || "—"}
-                      </td>
-                      {/* EIN */}
-                      <td className={`px-3 py-2 font-mono tabular-nums ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.ein ? (
-                          <button
-                            onClick={() => copyEin(asset.ein)}
-                            title="Copy EIN"
-                            className="cursor-pointer hover:underline decoration-dotted underline-offset-2"
-                          >
-                            {copiedEin === asset.ein ? "Copied" : asset.ein}
-                          </button>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      {/* Owned By dropdown */}
-                      <td className="px-3 py-2">
-                        <select
-                          value={asset.ownerId || ""}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            updateOwner(asset.id, e.target.value);
-                          }}
-                          className={`w-full text-xs py-1 px-1.5 rounded-md border border-transparent bg-transparent focus:outline-none cursor-pointer transition-colors ${isDark ? "text-gray-300 hover:border-white/15 focus:border-white/30" : "text-gray-600 hover:border-gray-200 focus:border-gray-400"}`}
-                        >
-                          <option value="">None</option>
-                          {assets
-                            .filter((a) => a.id !== asset.id)
-                            .sort((a, b) => a.name.localeCompare(b.name))
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.name}
-                              </option>
-                            ))}
-                        </select>
-                      </td>
-                      {/* State Link */}
-                      <td className="px-3 py-2">
-                        {asset.stateLink ? (
-                          <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
-                            View
-                          </a>
-                        ) : (
-                          <span className="text-[10px] uppercase tracking-wider text-amber-500/60">missing</span>
-                        )}
-                      </td>
-                      {/* Operating Agreement */}
-                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.operatingAgreementDate || <span className="text-[10px] uppercase tracking-wider text-amber-500/60">missing</span>}
-                      </td>
-                      {/* Articles of Org */}
-                      <td className={`px-3 py-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                        {asset.articlesOfOrgDate || <span className="text-[10px] uppercase tracking-wider text-amber-500/60">missing</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className={`px-3 py-2 text-xs ${isDark ? "text-gray-500 bg-white/[0.02]" : "text-gray-400 bg-gray-50"} border-t ${cellBorder}`}>
-            {assets.length} entities
-          </div>
-        </div>
-      ) : (
-        /* ── Card view ── */
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {sorted.map((asset) => (
-            <Link
-              key={asset.id}
-              to={`/assets/${asset.id}`}
-              className={`p-5 ${isDark ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-black/5 border-gray-200 hover:bg-gray-100"} border rounded-xl transition-colors block`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold text-lg">{asset.name}</h3>
-                  <p className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm mt-1`}>{asset.state || "No state"}</p>
-                </div>
-                <span className={`text-xs font-mono ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"} px-2 py-1 rounded`}>
-                  {asset.type}
-                </span>
+      <div className={card}>
+        {/* Toolbar: one DOM for every width. lg+: search · type · state ·
+            attention · clear … view toggle in one row. Below lg: search +
+            toggle, then the filters in a scrolling strip. */}
+        <div className={`px-4 py-3 ${view === "map" ? "" : `border-b ${rule}`}`}>
+          {view === "map" ? (
+            <div className="flex items-center gap-3">
+              <p className={`flex-1 min-w-0 text-sm ${t2}`}>
+                Ownership map <span className="hidden sm:inline">— drag to pan, scroll to zoom. Filters apply to the list and cards.</span>
+              </p>
+              <div className="shrink-0">{viewToggle()}</div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {searchBox()}
+              <div className="order-2 shrink-0 lg:order-7">{viewToggle()}</div>
+              <div className="order-3 basis-[calc(100%+2rem)] -mx-4 px-4 py-2 -my-2 scroll-px-4 flex items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0 [mask-image:linear-gradient(to_right,#000_calc(100%-12px),transparent)] lg:[mask-image:none] lg:contents">
+                <div className="lg:order-2">{typeSegments()}</div>
+                <div className="lg:order-3">{stateMenu()}</div>
+                <div className="lg:order-4">{attentionToggle()}</div>
+                {filtered && <div className="lg:order-5">{clearButton()}</div>}
+                <div className="hidden lg:block lg:order-6 lg:ml-auto" aria-hidden />
               </div>
-              {asset.ein && (
-                <p className="text-gray-500 text-xs mt-3">EIN: {asset.ein}</p>
-              )}
-              {asset.ownerId && (
-                <p className={`text-xs mt-1 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                  Owned by: {getOwnerName(asset.ownerId)}
-                </p>
-              )}
-            </Link>
+            </div>
+          )}
+        </div>
+
+        {view === "map" ? null : loading ? (
+          view === "list" ? listSkeleton : cardsSkeleton
+        ) : assets.length === 0 ? (
+          <div className="px-4 py-16 text-center">
+            <Icon d={PATHS.building} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
+            <p className={`mt-3 text-sm font-medium ${t1}`}>No entities yet</p>
+            <p className={`mt-1 text-xs ${t2}`}>Create one to get started.</p>
+            <button type="button" onClick={() => setShowForm(true)} className={`${BTN_BASE} mt-4 h-[40px] sm:h-9 px-4 text-sm ${primaryBtn(isDark)}`}>
+              New entity
+            </button>
+          </div>
+        ) : matched.length === 0 ? (
+          <div className="px-4 py-16 text-center">
+            <Icon d={PATHS.search} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
+            <p className={`mt-3 text-sm font-medium ${t1}`}>No entities match</p>
+            <p className={`mt-1 text-xs ${t2}`}>Try another search or clear the filters.</p>
+            <button type="button" onClick={clearFilters} className={`${BTN_BASE} mt-4 h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}>
+              Clear filters
+            </button>
+          </div>
+        ) : view === "list" ? (
+          /* ── List: the ownership tree, one calm line per entity ── */
+          <table aria-label="Entities" className="w-full table-fixed text-sm tabular-nums">
+            <thead className="sticky top-0 z-10">
+              <tr className={`text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
+                {th(
+                  "Entity",
+                  "name",
+                  "pl-4",
+                  treeMode && parentIds.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setCollapsed(allExpanded ? new Set(parentIds) : new Set())}
+                      className={`relative h-6 -my-0.5 px-1.5 rounded-md font-normal cursor-pointer transition-colors ${TAP.head} ${t3} ${
+                        isDark ? "hover:text-gray-100 hover:bg-white/[0.04]" : "hover:text-gray-900 hover:bg-gray-100"
+                      }`}
+                    >
+                      {allExpanded ? "Collapse all" : "Expand all"}
+                    </button>
+                  ) : !treeMode ? (
+                    <button
+                      type="button"
+                      onClick={() => setSort({ key: "name", dir: "asc" })}
+                      title="Sorted flat by another column — back to the ownership tree"
+                      className={`relative h-6 -my-0.5 px-1.5 rounded-md font-normal cursor-pointer transition-colors ${TAP.head} ${t3} ${
+                        isDark ? "hover:text-gray-100 hover:bg-white/[0.04]" : "hover:text-gray-900 hover:bg-gray-100"
+                      }`}
+                    >
+                      Show tree
+                    </button>
+                  ) : undefined
+                )}
+                {th("Type", "type", COLS.type)}
+                {th("Tax classification", "llcType", COLS.llcType)}
+                {th("State", "state", COLS.state)}
+                {th("EIN", "ein", COLS.ein)}
+                {th("Owned by", "owner", COLS.owner)}
+                {th("Filings", "filings", COLS.filings)}
+                {th("Complete", "score", COLS.score)}
+                <th scope="col" className={COLS.menu}>
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="fade-in">
+              {rows.map(({ asset: a, depth, kids, context }, ri) => {
+                const s = scoreOf(a);
+                const isCollapsed = collapsed.has(a.id);
+                const menuOpen = menuRow === a.id;
+                const mute = context ? "opacity-55" : "";
+                return (
+                  <tr
+                    key={a.id}
+                    className={`group transition-colors duration-100 ${ri === 0 ? "" : `border-t ${hair}`} ${menuOpen ? activeRow : hover}`}
+                  >
+                    <td className={`pl-4 pr-2 py-3.5 lg:py-3`}>
+                      <div className="flex items-center gap-2 min-w-0" style={{ paddingLeft: depth * 18 }}>
+                        {treeMode &&
+                          (kids > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleNode(a.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "ArrowRight") {
+                                  e.preventDefault();
+                                  toggleNode(a.id, true);
+                                } else if (e.key === "ArrowLeft") {
+                                  e.preventDefault();
+                                  toggleNode(a.id, false);
+                                }
+                              }}
+                              aria-expanded={!isCollapsed}
+                              aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${a.name}`}
+                              className={chevBtn}
+                            >
+                              <Icon
+                                d={PATHS.chevronRight}
+                                strokeWidth={2.2}
+                                className={`w-3 h-3 transition-transform motion-reduce:transition-none ${isCollapsed ? "" : "rotate-90"}`}
+                              />
+                            </button>
+                          ) : (
+                            <span className="w-5 shrink-0" aria-hidden />
+                          ))}
+                        <span className={`shrink-0 inline-flex ${mute}`}>{tagChip(a)}</span>
+                        <Link
+                          to={`/assets/${a.id}`}
+                          title={a.name}
+                          className={`min-w-0 truncate text-sm hover:underline underline-offset-2 ${context ? `font-normal ${t2}` : `font-medium ${t1}`}`}
+                        >
+                          {a.name}
+                        </Link>
+                        {isCollapsed && kids > 0 && <span className={`shrink-0 text-xs ${t2}`}>+{kids}</span>}
+                      </div>
+                    </td>
+                    <td className={`${cell} ${COLS.type} ${mute}`}>{typeBadge(a)}</td>
+                    <td className={`${cell} ${COLS.llcType} truncate ${a.llcType ? t2 : t3} ${mute}`} title={a.llcType || undefined}>
+                      {a.llcType || "—"}
+                    </td>
+                    <td className={`${cell} ${COLS.state} truncate ${a.state ? t2 : t3} ${mute}`} title={a.state || undefined}>
+                      {a.state || "—"}
+                    </td>
+                    <td className={`${cell} ${COLS.ein} whitespace-nowrap ${mute}`}>
+                      {a.ein ? (
+                        <button
+                          type="button"
+                          onClick={() => copyEin(a.ein)}
+                          title="Copy EIN"
+                          className={`font-mono text-xs tabular-nums cursor-pointer rounded hover:underline decoration-dotted underline-offset-2 ${
+                            copiedEin === a.ein ? incomeTone(isDark) : t2
+                          }`}
+                        >
+                          {copiedEin === a.ein ? "Copied" : a.ein}
+                        </button>
+                      ) : (
+                        <span className={t3}>—</span>
+                      )}
+                    </td>
+                    <td className={`${cell} ${COLS.owner} ${mute}`}>
+                      <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
+                        <Menu
+                          value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
+                          options={ownerOptions(a)}
+                          onChange={(v) => void updateOwner(a.id, v)}
+                          isDark={isDark}
+                          tone="soft"
+                          size="sm"
+                          touch
+                          chevron="hover"
+                          label="Owned by"
+                        />
+                      </div>
+                    </td>
+                    <td className={`${cell} ${COLS.filings} ${mute}`}>{filingPips(a, s)}</td>
+                    <td className={`${cell} ${COLS.score} ${mute}`}>
+                      <Tip
+                        isDark={isDark}
+                        label={`${s.score}% complete. ${missingSummary(s, 99)}`}
+                        content={scoreCard(a, s)}
+                        className={`h-7 px-1.5 -mx-1.5 gap-2 ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+                      >
+                        <Ring score={s.score} size={16} isDark={isDark} />
+                        <span className={`text-sm font-medium tabular-nums ${s.score >= 100 ? incomeTone(isDark) : s.score < 60 ? amberTone(isDark) : t1}`}>
+                          {s.score}
+                        </span>
+                      </Tip>
+                    </td>
+                    <td className="pr-2 text-right align-middle">
+                      <RowMenu
+                        isDark={isDark}
+                        name={a.name}
+                        actions={rowActions(a)}
+                        onOpenChange={(o) => setMenuRow(o ? a.id : null)}
+                        className={menuOpen ? "" : "lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          /* ── Cards: one per entity, ownership order ── */
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 p-4 fade-in">
+            {cardRows.map(({ asset: a }) => {
+              const s = scoreOf(a);
+              const menuOpen = menuRow === a.id;
+              const surface = menuOpen
+                ? isDark ? "border-white/[0.12] bg-white/[0.05]" : "border-gray-300 bg-gray-50"
+                : isDark ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]" : "border-gray-200 bg-white hover:bg-gray-50";
+              return (
+                <div key={a.id} className={`group relative flex flex-col gap-2.5 rounded-xl border p-3 transition-colors duration-100 ${surface}`}>
+                  <div className="flex items-center gap-3">
+                    {tagChip(a, true)}
+                    <div className="flex-1 min-w-0">
+                      <Link
+                        to={`/assets/${a.id}`}
+                        title={a.name}
+                        className={`block truncate text-base lg:text-sm font-medium leading-5 hover:underline underline-offset-2 ${t1}`}
+                      >
+                        {a.name}
+                      </Link>
+                      <p className={`mt-0.5 truncate text-sm lg:text-xs ${t2}`}>
+                        {a.type}
+                        {a.state ? ` · ${a.state}` : ""}
+                        {a.ein ? (
+                          <>
+                            {" · "}
+                            <span className="font-mono">{a.ein}</span>
+                          </>
+                        ) : (
+                          <span className={t3}> · No EIN</span>
+                        )}
+                      </p>
+                    </div>
+                    <Tip
+                      isDark={isDark}
+                      label={`${s.score}% complete. ${missingSummary(s, 99)}`}
+                      content={scoreCard(a, s)}
+                      className="rounded-full shrink-0"
+                    >
+                      <Ring score={s.score} size={34} stroke={2.5} isDark={isDark}>
+                        <span className={`text-[11px] font-semibold tabular-nums ${s.score >= 100 ? "" : t1}`}>{s.score}</span>
+                      </Ring>
+                    </Tip>
+                  </div>
+                  {s.missing.length === 0 ? (
+                    <p className={`text-sm lg:text-xs truncate ${incomeTone(isDark)}`}>All requirements on file</p>
+                  ) : (
+                    <p className={`flex items-baseline gap-1 min-w-0 text-sm lg:text-xs ${t2}`} title={missingSummary(s, 99)}>
+                      <span className="truncate">Missing: {s.missing.map((m) => m.label).join(", ")}</span>
+                      <span className={`shrink-0 ${amberTone(isDark)}`}>+{100 - s.score}</span>
+                    </p>
+                  )}
+                  <div className="mt-auto flex items-center gap-3 min-w-0">
+                    <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
+                      <Menu
+                        value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
+                        options={ownerOptions(a)}
+                        onChange={(v) => void updateOwner(a.id, v)}
+                        isDark={isDark}
+                        tone="soft"
+                        size="sm"
+                        touch
+                        label="Owned by"
+                        leading={<Icon d={PATHS.building} className="w-3.5 h-3.5 shrink-0 opacity-60" />}
+                      />
+                    </div>
+                    <span className="shrink-0">{filingPips(a, s)}</span>
+                    <RowMenu
+                      isDark={isDark}
+                      name={a.name}
+                      actions={rowActions(a)}
+                      onOpenChange={(o) => setMenuRow(o ? a.id : null)}
+                      className="ml-auto -mr-1.5 shrink-0"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {view !== "map" && !loading && matched.length > 0 && (
+          <div className={`flex items-center justify-between gap-3 px-4 py-3 border-t ${hair}`}>
+            <span role="status" aria-live="polite" className={`text-xs ${t2}`}>
+              {filtered ? `Showing ${matched.length} of ${assets.length} entities` : `${assets.length} entities`}
+              {view === "list" && treeMode && filtered && rows.some((r) => r.context) && " · owners shown for context"}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {view === "map" && (
+        <div className="mt-5">
+          <EstateMap embedded />
+        </div>
+      )}
+
+      <Toast message={toast} isDark={isDark} onClose={() => setToast("")} />
+    </div>
+  );
+}
+
+// ── New entity dialog ───────────────────────────────────────────────────────
+/** The create form (same fields, same write), as a dialog in the Books idiom. */
+function NewEntityDialog({
+  isDark,
+  open,
+  onClose,
+  onCreate,
+}: {
+  isDark: boolean;
+  open: boolean;
+  onClose: () => void;
+  onCreate: (fields: { name: string; type: "LLC" | "C-Corp"; state: string; ein: string }) => Promise<void>;
+}) {
+  const { t1, t2 } = tiers(isDark);
+  const ref = useRef<HTMLFormElement>(null);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"LLC" | "C-Corp">("LLC");
+  const [state, setState] = useState("");
+  const [ein, setEin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useFocusTrap(ref, open);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    setError("");
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  if (!open) return null;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onCreate({ name, type, state, ein });
+      setName("");
+      setState("");
+      setEin("");
+      onClose();
+    } catch {
+      setError("Couldn't create that entity.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const fieldCls = `w-full h-[40px] sm:h-9 px-3.5 rounded-full text-[16px] sm:text-sm border ${textInput(isDark)}`;
+  const segContainer = `flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"}`;
+  const segOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200";
+  const segOff = isDark ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]" : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
+  const label = `block ${MICRO} ${t2} mb-1`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] fade-in"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <form
+        ref={ref}
+        onSubmit={submit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-entity-title"
+        className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}
+      >
+        <h2 id="new-entity-title" className={`text-lg font-semibold tracking-tight ${t1}`}>
+          New entity
+        </h2>
+        <p className={`mt-1 mb-4 text-xs ${t2}`}>Add the basics now; filings and the rest live on the entity's page.</p>
+
+        <span id="new-entity-type" className={label}>
+          Type
+        </span>
+        <div role="group" aria-labelledby="new-entity-type" className={`${segContainer} mb-3`}>
+          {(["LLC", "C-Corp"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={type === t}
+              onClick={() => setType(t)}
+              className={`flex-1 h-full rounded-full text-sm font-medium transition-colors cursor-pointer ${type === t ? segOn : segOff}`}
+            >
+              {t}
+            </button>
           ))}
         </div>
-      )}
+
+        <label htmlFor="new-entity-name" className={label}>
+          Name
+        </label>
+        <input
+          id="new-entity-name"
+          data-autofocus
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Entity name"
+          required
+          className={`${fieldCls} mb-3`}
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div>
+            <label htmlFor="new-entity-state" className={label}>
+              State of formation
+            </label>
+            <input id="new-entity-state" type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="e.g. Delaware" className={fieldCls} />
+          </div>
+          <div>
+            <label htmlFor="new-entity-ein" className={label}>
+              EIN
+            </label>
+            <input
+              id="new-entity-ein"
+              type="text"
+              inputMode="numeric"
+              value={ein}
+              onChange={(e) => setEin(e.target.value)}
+              placeholder="Optional"
+              className={`${fieldCls} font-mono`}
+            />
+          </div>
+        </div>
+
+        {error && (
+          <p role="alert" className="mb-3 text-xs text-red-500">
+            {error}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${ghostBtn(isDark)}`}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            aria-busy={busy || undefined}
+            className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm aria-busy:pointer-events-none ${primaryBtn(isDark)}`}
+          >
+            {busy ? "Creating…" : `Create ${type}`}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
