@@ -487,7 +487,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1200px] space-y-3 px-1 sm:space-y-4 sm:px-4 lg:px-10">
+    <div className="mx-auto max-w-[1120px] space-y-3 px-2 sm:space-y-4 sm:px-8 lg:px-20 xl:px-24">
       {/* ── Greeting ─────────────────────────────────────────────────── */}
       <header className={`flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between ${rise}`}>
         <div className="min-w-0">
