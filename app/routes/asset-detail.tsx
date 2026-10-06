@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useTheme } from "../theme";
 import { authFetch } from "../auth";
+import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 
 export function meta() {
   return [{ title: "BFO - Asset" }];
@@ -9,7 +10,7 @@ export function meta() {
 
 interface Asset {
   name: string;
-  type: "LLC" | "C-Corp";
+  type: "LLC" | "C-Corp" | "Trust";
   state: string;
   ein: string;
   createdAt: number;
@@ -19,7 +20,10 @@ interface Asset {
   status?: string;
   notes?: string;
   ownerId?: string;
-  llcType?: "Disregarded Entity" | "Partnership" | "C Corporation" | "";
+  llcType?: string; // tax classification (LLC/corp options, or grantor / non-grantor for a trust)
+  trustees?: string;
+  grantors?: string;
+  beneficiaries?: string;
   stateLink?: string;
   operatingAgreementDate?: string;
   articlesOfOrgDate?: string;
@@ -27,12 +31,15 @@ interface Asset {
   articles?: UploadedFile;
   einLetter?: UploadedFile;
   operatingAgreement?: UploadedFile;
+  trustAgreement?: UploadedFile;
+  trustCertificate?: UploadedFile;
   verification?: Verification;
 }
 
 type VerifyField =
   | "name" | "type" | "state" | "ein" | "formationDate" | "address"
-  | "registeredAgent" | "llcType" | "operatingAgreementDate" | "articlesOfOrgDate";
+  | "registeredAgent" | "llcType" | "operatingAgreementDate" | "articlesOfOrgDate"
+  | "trustees" | "grantors" | "beneficiaries";
 
 interface Verification {
   checkedAt: number;
@@ -57,6 +64,9 @@ const VERIFY_LABEL: Record<VerifyField, string> = {
   llcType: "Tax classification",
   operatingAgreementDate: "Operating agreement date",
   articlesOfOrgDate: "Articles filing date",
+  trustees: "Trustees",
+  grantors: "Grantors",
+  beneficiaries: "Beneficiaries",
 };
 
 interface UploadedFile {
@@ -229,19 +239,31 @@ function timeAgo(ms: number): string {
 }
 
 // ── Formation filings ────────────────────────────────────────────────────
-type FileKind = "einLetter" | "w9" | "articles" | "operatingAgreement";
-const FILING_KINDS: FileKind[] = ["einLetter", "w9", "articles", "operatingAgreement"];
+type FileKind = "einLetter" | "w9" | "articles" | "operatingAgreement" | "trustAgreement" | "trustCertificate";
+/** Every slot an entity can have — for lookups that don't care about type. */
+const FILING_KINDS: FileKind[] = ["einLetter", "w9", "articles", "operatingAgreement", "trustAgreement", "trustCertificate"];
+
+/** The slots that matter for this kind of entity, in display order. */
+function filingKinds(type: EntityType): FileKind[] {
+  return type === "Trust"
+    ? ["trustAgreement", "trustCertificate", "einLetter", "w9"]
+    : ["einLetter", "w9", "articles", "operatingAgreement"];
+}
 
 function filingTitle(kind: FileKind, type?: Asset["type"]): string {
   const corp = type === "C-Corp";
+  if (kind === "trustAgreement") return "Trust Agreement";
+  if (kind === "trustCertificate") return "Certification of Trust";
   if (kind === "einLetter") return "EIN Letter";
   if (kind === "w9") return "Form W-9";
   if (kind === "articles") return corp ? "Certificate of Incorporation" : "Articles of Organization";
   return corp ? "Bylaws" : "Operating Agreement";
 }
 
-function filingDescription(kind: FileKind): string {
-  if (kind === "einLetter") return "IRS EIN assignment — CP 575 or 147C.";
+function filingDescription(kind: FileKind, type?: EntityType): string {
+  if (kind === "trustAgreement") return "The signed trust instrument and any amendments.";
+  if (kind === "trustCertificate") return "Short certificate banks and title companies ask for.";
+  if (kind === "einLetter") return type === "Trust" ? "Only if the trust has its own EIN (CP 575)." : "IRS EIN assignment — CP 575 or 147C.";
   if (kind === "w9") return "Request for Taxpayer Identification Number.";
   if (kind === "articles") return "State formation filing — articles or certificate.";
   return "Governing agreement among the owners.";
@@ -250,6 +272,8 @@ function filingDescription(kind: FileKind): string {
 /** A confident guess from the document's name alone. */
 function guessFiling(name: string): FileKind | null {
   const n = name.toLowerCase();
+  if (/certification of trust|certificate of trust|trust certificate|abstract of trust|memorandum of trust/.test(n)) return "trustCertificate";
+  if (/trust agreement|declaration of trust|trust instrument|trust indenture|amended and restated .*trust/.test(n)) return "trustAgreement";
   if (/\bw[\s-]?9\b/.test(n)) return "w9";
   if (/\bein\b|\bcp[\s-]?575\b|\b147[\s-]?c\b|\bss[\s-]?4\b|employer identification/.test(n)) return "einLetter";
   if (/operating agreement|\bllc agreement\b|\bbylaws?\b/.test(n)) return "operatingAgreement";
@@ -262,32 +286,11 @@ const CLASSIFIER_KIND: Record<string, FileKind | undefined> = {
   w9: "w9",
   articles: "articles",
   operating_agreement: "operatingAgreement",
+  trust_agreement: "trustAgreement",
+  trust_certificate: "trustCertificate",
 };
 
 type Classified = { kind: string; confidence: "high" | "medium" | "low"; ein: string | null; date: string | null; state: string | null };
-
-/** Everything an entity record needs, weighted to 100. */
-function completeness(asset: Asset) {
-  const corp = asset.type === "C-Corp";
-  const items: { key: string; label: string; weight: number; done: boolean; filing?: FileKind }[] = [
-    { key: "ein", label: "EIN", weight: 12, done: !!asset.ein?.trim() },
-    { key: "state", label: "State of formation", weight: 6, done: !!asset.state?.trim() },
-    { key: "formationDate", label: "Formation date", weight: 6, done: !!asset.formationDate },
-    { key: "address", label: "Principal address", weight: 6, done: !!asset.address?.trim() },
-    { key: "registeredAgent", label: "Registered agent", weight: 6, done: !!asset.registeredAgent?.trim() },
-    ...(corp ? [] : [{ key: "llcType", label: "Tax classification", weight: 6, done: !!asset.llcType }]),
-    ...FILING_KINDS.map((k) => ({
-      key: k,
-      label: filingTitle(k, asset.type),
-      weight: k === "articles" ? 18 : k === "operatingAgreement" ? 16 : k === "einLetter" ? 14 : 10,
-      done: !!asset[k],
-      filing: k,
-    })),
-  ];
-  const total = items.reduce((s, i) => s + i.weight, 0);
-  const got = items.reduce((s, i) => s + (i.done ? i.weight : 0), 0);
-  return { score: Math.round((got / total) * 100), items };
-}
 
 // Services Included: dropdown with a per-service toggle, plus a reorderable
 // selected list — the order here is the order services appear in the contract PDF.
@@ -323,7 +326,7 @@ function ServicesDropdown({
     `inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${on ? "translate-x-3.5" : "translate-x-0.5"}`;
   return (
     <div>
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] mb-2 text-gray-500">Services Included</p>
+      <p className="text-[11px]  mb-2 text-gray-500">Services Included</p>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -400,7 +403,7 @@ export default function AssetDetail() {
     : "border border-gray-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_1px_3px_rgba(16,24,40,0.03)]";
   const hairline = isDark ? "border-white/[0.08]" : "border-gray-200";
   const divider = isDark ? "border-white/[0.06]" : "border-gray-100";
-  const kicker = "font-mono text-[10px] uppercase tracking-[0.14em] text-gray-500";
+  const kicker = "text-[12px] font-medium text-gray-500";
   const textMuted = "text-gray-500";
   const textSoft = isDark ? "text-gray-400" : "text-gray-600";
   const accentText = isDark ? "text-[#a5b4fc]" : "text-[#4f46e5]";
@@ -462,7 +465,10 @@ export default function AssetDetail() {
     w9: { uploading: false, progress: 0, error: null, dragOver: false },
     articles: { uploading: false, progress: 0, error: null, dragOver: false },
     operatingAgreement: { uploading: false, progress: 0, error: null, dragOver: false },
+    trustAgreement: { uploading: false, progress: 0, error: null, dragOver: false },
+    trustCertificate: { uploading: false, progress: 0, error: null, dragOver: false },
   });
+  const kindsFor = (a: Asset | null) => filingKinds(entityType(a ?? {}));
   // Auto-filing: notes about where uploads went, and how many are being read.
   const [filingNotes, setFilingNotes] = useState<string[]>([]);
   const [sorting, setSorting] = useState(0);
@@ -607,6 +613,9 @@ export default function AssetDetail() {
       status: form.status || "Active",
       notes: form.notes || "",
       llcType: form.llcType || "",
+      trustees: form.trustees || "",
+      grantors: form.grantors || "",
+      beneficiaries: form.beneficiaries || "",
       stateLink: form.stateLink || "",
       operatingAgreementDate: form.operatingAgreementDate || "",
       articlesOfOrgDate: form.articlesOfOrgDate || "",
@@ -771,6 +780,14 @@ export default function AssetDetail() {
         }
         if (!current.articlesOfOrgDate) patch.articlesOfOrgDate = facts.date;
       }
+      if (facts.date && (kind === "trustAgreement" || kind === "trustCertificate") && !current.formationDate) {
+        patch.formationDate = facts.date;
+        filled.push(`trust dated ${fmtDate(facts.date)}`);
+      }
+      if (facts.state && kind === "trustAgreement" && !current.state?.trim()) {
+        patch.state = facts.state;
+        filled.push(`governed by ${facts.state} law`);
+      }
       if (facts.date && kind === "operatingAgreement" && !current.operatingAgreementDate) {
         patch.operatingAgreementDate = facts.date;
         filled.push(`agreement dated ${fmtDate(facts.date)}`);
@@ -818,6 +835,9 @@ export default function AssetDetail() {
     }
     if (!kind) return null;
     const title = filingTitle(kind, assetRef.current?.type);
+    if (!kindsFor(assetRef.current).includes(kind)) {
+      return `“${doc.name}” looks like ${title === "Operating Agreement" || title === "Articles of Organization" ? "an LLC filing" : `a ${title}`}, which doesn't apply here — kept in Documents`;
+    }
     if (assetRef.current?.[kind] || claimedRef.current.has(kind)) {
       return `${title} already on file — kept “${doc.name}” in Documents`;
     }
@@ -831,7 +851,7 @@ export default function AssetDetail() {
   useEffect(() => {
     if (!asset) return;
     const linked = new Set(FILING_KINDS.map((k) => asset[k]?.docId).filter(Boolean));
-    for (const kind of FILING_KINDS) {
+    for (const kind of kindsFor(asset)) {
       if (asset[kind] || autoFiledOnLoad.current.has(kind)) continue;
       const doc = docs.find((d) => !d.autoFileSkip && !linked.has(d.id) && guessFiling(d.name) === kind);
       if (!doc) continue;
@@ -852,8 +872,10 @@ export default function AssetDetail() {
       w9: !asset.ein?.trim(),
       articles: !asset.formationDate || !asset.articlesOfOrgDate || !asset.state?.trim(),
       operatingAgreement: !asset.operatingAgreementDate,
+      trustAgreement: !asset.formationDate || !asset.state?.trim(),
+      trustCertificate: !asset.formationDate,
     };
-    for (const kind of FILING_KINDS) {
+    for (const kind of kindsFor(asset)) {
       const docId = asset[kind]?.docId;
       if (!docId || !blankFor[kind] || enriching.current.has(docId)) continue;
       const doc = docs.find((d) => d.id === docId);
@@ -898,6 +920,14 @@ export default function AssetDetail() {
         if (!current.formationDate) patch.formationDate = facts.date;
       }
       if (facts.state && kind === "articles" && !current.state?.trim()) patch.state = facts.state;
+      if (facts.date && (kind === "trustAgreement" || kind === "trustCertificate") && !current.formationDate) {
+        patch.formationDate = facts.date;
+        filled.push(`trust dated ${fmtDate(facts.date)}`);
+      }
+      if (facts.state && kind === "trustAgreement" && !current.state?.trim()) {
+        patch.state = facts.state;
+        filled.push(`governed by ${facts.state} law`);
+      }
       if (facts.date && kind === "operatingAgreement" && !current.operatingAgreementDate) {
         patch.operatingAgreementDate = facts.date;
         filled.push(`agreement dated ${fmtDate(facts.date)}`);
@@ -919,7 +949,7 @@ export default function AssetDetail() {
   function recordValues(a: Asset): Partial<Record<VerifyField, string>> {
     return {
       name: a.name,
-      type: a.type,
+      type: entityType(a),
       state: a.state,
       ein: a.ein,
       formationDate: a.formationDate,
@@ -928,6 +958,9 @@ export default function AssetDetail() {
       llcType: a.llcType || "",
       operatingAgreementDate: a.operatingAgreementDate,
       articlesOfOrgDate: a.articlesOfOrgDate,
+      trustees: a.trustees,
+      grantors: a.grantors,
+      beneficiaries: a.beneficiaries,
     };
   }
 
@@ -980,11 +1013,15 @@ export default function AssetDetail() {
   async function applyFinding(field: VerifyField, value: string) {
     let v = value.trim();
     if (field === "llcType") {
-      const m = /partner/i.test(v) ? "Partnership" : /corp/i.test(v) ? "C Corporation" : /disregard|single/i.test(v) ? "Disregarded Entity" : "";
+      const m = /non[- ]?grantor|complex|simple trust/i.test(v)
+        ? "Non-grantor trust"
+        : /grantor|revocable/i.test(v)
+          ? "Grantor trust"
+          : /partner/i.test(v) ? "Partnership" : /corp/i.test(v) ? "C Corporation" : /disregard|single/i.test(v) ? "Disregarded Entity" : "";
       if (!m) return;
       v = m;
     }
-    if (field === "type") v = /corp|inc/i.test(v) ? "C-Corp" : "LLC";
+    if (field === "type") v = /trust/i.test(v) ? "Trust" : /corp|inc/i.test(v) ? "C-Corp" : "LLC";
     const { db, authReady } = await import("../firebase");
     await authReady;
     const { ref, update } = await import("firebase/database");
@@ -1006,7 +1043,7 @@ export default function AssetDetail() {
     const candidates = docs.filter((d) => !linked.has(d.id) && !d.autoFileSkip && d.storagePath);
     const notes: string[] = [];
     for (const doc of candidates) {
-      if (FILING_KINDS.every((k) => assetRef.current?.[k])) break;
+      if (kindsFor(assetRef.current).every((k) => assetRef.current?.[k])) break;
       const note = await autoFile(doc);
       if (note) notes.push(note);
     }
@@ -1531,7 +1568,7 @@ export default function AssetDetail() {
             <p className="text-[12.5px] font-medium leading-tight">{title}</p>
             <p className={`mt-0.5 text-[11px] ${textMuted}`}>{description}</p>
           </div>
-          <span className={`inline-flex shrink-0 items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] ${isDark ? "text-amber-400/90" : "text-amber-600"}`}>
+          <span className={`inline-flex shrink-0 items-center gap-1.5 text-[11px]  ${isDark ? "text-amber-400/90" : "text-amber-600"}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             Missing
           </span>
@@ -1704,9 +1741,12 @@ export default function AssetDetail() {
   }
 
   // Derived header values
-  const glyph = asset.type === "C-Corp" ? "INC" : asset.type === "LLC" ? "LLC" : String(asset.type || "ENT").slice(0, 3).toUpperCase();
-  const filedCount = FILING_KINDS.filter((k) => asset[k]).length;
-  const { score, items: checklist } = completeness(asset);
+  const etype = entityType(asset);
+  const isTrust = etype === "Trust";
+  const glyph = etype === "C-Corp" ? "INC" : etype === "Trust" ? "TR" : "LLC";
+  const kinds = filingKinds(etype);
+  const filedCount = kinds.filter((k) => asset[k]).length;
+  const { score, items: checklist } = entityCompleteness(asset);
   const missing = checklist.filter((i) => !i.done);
   const scoreTone = score >= 90 ? "emerald" : score >= 60 ? "indigo" : "amber";
   const scoreColor = {
@@ -1718,10 +1758,14 @@ export default function AssetDetail() {
   for (const k of FILING_KINDS) if (asset[k]?.docId) docFiledAs.set(asset[k]!.docId!, k);
   const activeContracts = contracts.filter((c) => c.status === "active").length;
   const metrics: { label: string; value: string; sub?: string }[] = [];
-  if (asset.type === "LLC") metrics.push({ label: "Contracts", value: String(contracts.length), sub: `${activeContracts} active` });
-  if (asset.type === "C-Corp") metrics.push({ label: "Directors", value: String(directors.length), sub: `${shareholders.length} holder${shareholders.length === 1 ? "" : "s"}` });
+  if (isTrust) {
+    const trustees = (asset.trustees ?? "").split(/[,;\n]/).map((t) => t.trim()).filter(Boolean);
+    metrics.push({ label: "Trustees", value: String(trustees.length), sub: trustees.length ? trustees[0] : "none recorded" });
+  }
+  if (etype === "LLC") metrics.push({ label: "Contracts", value: String(contracts.length), sub: `${activeContracts} active` });
+  if (etype === "C-Corp") metrics.push({ label: "Directors", value: String(directors.length), sub: `${shareholders.length} holder${shareholders.length === 1 ? "" : "s"}` });
   metrics.push({ label: "Completeness", value: `${score}`, sub: "/ 100" });
-  metrics.push({ label: "Filings", value: `${filedCount}/${FILING_KINDS.length}`, sub: filedCount === FILING_KINDS.length ? "complete" : "on file" });
+  metrics.push({ label: "Filings", value: `${filedCount}/${kinds.length}`, sub: filedCount === kinds.length ? "complete" : "on file" });
   metrics.push({
     label: "On record since",
     value: asset.createdAt ? new Date(asset.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—",
@@ -1740,12 +1784,12 @@ export default function AssetDetail() {
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
         {fmtDate(date) ? <span className="tabular-nums">{fmtDate(date)}</span> : <span className={textMuted}>Date not on record</span>}
         {file ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] ${isDark ? "text-emerald-400" : "text-emerald-600"} hover:underline`}>
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 text-[11px]  ${isDark ? "text-emerald-400" : "text-emerald-600"} hover:underline`}>
             <Icon name="check" className="h-2.5 w-2.5" strokeWidth={2.5} />
             On file
           </a>
         ) : (
-          <span className={`font-mono text-[10px] uppercase tracking-[0.1em] ${isDark ? "text-amber-400/90" : "text-amber-600"}`}>No document</span>
+          <span className={`text-[11px]  ${isDark ? "text-amber-400/90" : "text-amber-600"}`}>No document</span>
         )}
       </span>
     );
@@ -1786,7 +1830,7 @@ export default function AssetDetail() {
               <div className="min-w-0">
                 <h1 className="break-words text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[28px]">{asset.name}</h1>
                 <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                  <span className={`${chipNeutral} font-mono tracking-[0.06em]`}>{asset.type}</span>
+                  <span className={chipNeutral}>{etype}</span>
                   {asset.llcType && (
                     <span className={chipNeutral}>
                       <span className={`h-1 w-1 rounded-full ${accentBg}`} />
@@ -1816,7 +1860,14 @@ export default function AssetDetail() {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:pt-1">
-              <button onClick={() => setEditing(!editing)} className={btnOutline}>
+              <button
+                onClick={() => {
+                  // Edit with the entity's real type selected (old records say "LLC" for the trust).
+                  if (!editing) setForm({ ...asset, type: entityType(asset) });
+                  setEditing(!editing);
+                }}
+                className={btnOutline}
+              >
                 <Icon name="edit" />
                 {editing ? "Cancel" : "Edit"}
               </button>
@@ -1858,8 +1909,8 @@ export default function AssetDetail() {
             )}
             {field(
               "Entity type",
-              <div className={`grid grid-cols-2 gap-1 rounded-lg border p-1 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`}>
-                {(["LLC", "C-Corp"] as const).map((t) => (
+              <div className={`grid grid-cols-3 gap-1 rounded-lg border p-1 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`}>
+                {(["LLC", "C-Corp", "Trust"] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -1885,43 +1936,61 @@ export default function AssetDetail() {
               </select>,
             )}
             {field(
-              "State of formation",
+              entityType(form) === "Trust" ? "Governing law (state)" : "State of formation",
               <input value={form.state || ""} onChange={(e) => setForm({ ...form, state: e.target.value })} placeholder="State of formation" className={fieldInput} />,
             )}
             {field(
               "EIN",
               <input value={form.ein || ""} onChange={(e) => setForm({ ...form, ein: e.target.value })} placeholder="EIN" className={`${fieldInput} font-mono tabular-nums`} />,
             )}
-            {field(
+            {entityType(form) !== "Trust" && field(
               "Registered agent",
               <input value={form.registeredAgent || ""} onChange={(e) => setForm({ ...form, registeredAgent: e.target.value })} placeholder="Registered agent" className={fieldInput} />,
             )}
             {field(
-              "Principal address",
+              entityType(form) === "Trust" ? "Mailing address" : "Principal address",
               <input value={form.address || ""} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Principal address" className={fieldInput} />,
             )}
             {field(
-              "Formation date",
+              entityType(form) === "Trust" ? "Trust date" : "Formation date",
               <input type="date" value={form.formationDate || ""} onChange={(e) => setForm({ ...form, formationDate: e.target.value })} className={fieldInput} />,
             )}
             {field(
               "Entity classification",
-              <select value={form.llcType || ""} onChange={(e) => setForm({ ...form, llcType: e.target.value as Asset["llcType"] })} className={fieldInput}>
-                <option value="">Select LLC Type...</option>
-                <option value="Disregarded Entity">Disregarded Entity</option>
-                <option value="Partnership">Partnership</option>
-                <option value="C Corporation">C Corporation</option>
+              <select value={form.llcType || ""} onChange={(e) => setForm({ ...form, llcType: e.target.value })} className={fieldInput}>
+                <option value="">Select…</option>
+                {TAX_CLASSES[entityType(form)].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+                {form.llcType && !TAX_CLASSES[entityType(form)].includes(form.llcType) && <option value={form.llcType}>{form.llcType}</option>}
               </select>,
             )}
-            {field(
+            {entityType(form) === "Trust" && (
+              <>
+                {field(
+                  "Trustees",
+                  <input value={form.trustees || ""} onChange={(e) => setForm({ ...form, trustees: e.target.value })} placeholder="e.g. Robert Burton, Claire Burton" className={fieldInput} />,
+                )}
+                {field(
+                  "Grantors",
+                  <input value={form.grantors || ""} onChange={(e) => setForm({ ...form, grantors: e.target.value })} placeholder="Who created and funded the trust" className={fieldInput} />,
+                )}
+                {field(
+                  "Beneficiaries",
+                  <input value={form.beneficiaries || ""} onChange={(e) => setForm({ ...form, beneficiaries: e.target.value })} placeholder="Who the trust benefits" className={fieldInput} />,
+                  true,
+                )}
+              </>
+            )}
+            {entityType(form) !== "Trust" && field(
               "State filing link",
               <input value={form.stateLink || ""} onChange={(e) => setForm({ ...form, stateLink: e.target.value })} placeholder="https://..." type="url" className={fieldInput} />,
             )}
-            {field(
+            {entityType(form) !== "Trust" && field(
               "Operating agreement",
               <input type="date" value={form.operatingAgreementDate || ""} onChange={(e) => setForm({ ...form, operatingAgreementDate: e.target.value })} className={fieldInput} />,
             )}
-            {field(
+            {entityType(form) !== "Trust" && field(
               "Articles of organization",
               <input type="date" value={form.articlesOfOrgDate || ""} onChange={(e) => setForm({ ...form, articlesOfOrgDate: e.target.value })} className={fieldInput} />,
             )}
@@ -1966,13 +2035,28 @@ export default function AssetDetail() {
                 </span>
               ) : null,
             )}
+            {isTrust ? (
+              <>
+                {factCell("Trustees", asset.trustees)}
+                {factCell("Grantors", asset.grantors)}
+                {factCell("Trust date", fmtDate(asset.formationDate) ? <span className="tabular-nums">{fmtDate(asset.formationDate)}</span> : null)}
+                {factCell("Governing law", asset.state)}
+                {factCell("Tax classification", asset.llcType)}
+                {factCell("Beneficiaries", asset.beneficiaries)}
+                {factCell("Trust agreement", filedFact("trustAgreement", asset.formationDate))}
+                {factCell("Mailing address", asset.address)}
+              </>
+            ) : (
+              <>
             {factCell("Registered agent", asset.registeredAgent)}
             {factCell("Principal address", asset.address)}
             {factCell("Formation date", fmtDate(asset.formationDate) ? <span className="tabular-nums">{fmtDate(asset.formationDate)}</span> : null)}
-            {factCell(asset.type === "C-Corp" ? "Classification" : "LLC type", asset.llcType)}
-            {factCell(asset.type === "C-Corp" ? "Bylaws" : "Operating agreement", filedFact("operatingAgreement", asset.operatingAgreementDate))}
-            {factCell(asset.type === "C-Corp" ? "Certificate" : "Articles of org", filedFact("articles", asset.articlesOfOrgDate))}
-            {factCell(
+            {factCell(etype === "C-Corp" ? "Classification" : "LLC type", asset.llcType)}
+            {factCell(etype === "C-Corp" ? "Bylaws" : "Operating agreement", filedFact("operatingAgreement", asset.operatingAgreementDate))}
+            {factCell(etype === "C-Corp" ? "Certificate" : "Articles of org", filedFact("articles", asset.articlesOfOrgDate))}
+              </>
+            )}
+            {!isTrust && factCell(
               "State link",
               asset.stateLink ? (
                 <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${accentText}`}>
@@ -2244,7 +2328,7 @@ export default function AssetDetail() {
           )}
 
           {/* Operating Contracts */}
-          {asset.type === "LLC" && (() => {
+          {etype === "LLC" && (() => {
             const showEmpty = contracts.length === 0 && !addingContract;
             return (
               <section className={`overflow-hidden rounded-2xl ${surface}`}>
@@ -2318,7 +2402,7 @@ export default function AssetDetail() {
                                   <select
                                     value={contract.status}
                                     onChange={(e) => updateContractStatus(contract.id, e.target.value as "draft" | "active" | "terminated")}
-                                    className={`h-6 appearance-none rounded-full border pl-2.5 pr-6 font-mono text-[10px] uppercase tracking-[0.1em] outline-none cursor-pointer ${statusPillCls(contract.status)} ${
+                                    className={`h-6 appearance-none rounded-full border pl-2.5 pr-6 text-[11px]  outline-none cursor-pointer ${statusPillCls(contract.status)} ${
                                       isDark ? "[&_option]:bg-[#111118] [&_option]:text-gray-200" : "[&_option]:bg-white [&_option]:text-gray-900"
                                     }`}
                                   >
@@ -2586,7 +2670,7 @@ export default function AssetDetail() {
                     type="button"
                     onClick={() => {
                       if (item.done) return;
-                      if (item.filing) document.getElementById(`filing-${item.filing}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      if (item.filing) document.getElementById(`filing-${item.key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
                       else setEditing(true);
                     }}
                     className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-[12px] transition-colors ${
@@ -2612,7 +2696,7 @@ export default function AssetDetail() {
                   <button
                     type="button"
                     onClick={() => setShowDone((v) => !v)}
-                    className={`w-full cursor-pointer rounded-md px-3 py-1.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${textMuted} ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+                    className={`w-full cursor-pointer rounded-md px-3 py-1.5 text-left text-[11px]  transition-colors ${textMuted} ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
                   >
                     {showDone ? "Hide completed" : `Show ${checklist.length - missing.length} completed`}
                   </button>
@@ -2692,7 +2776,7 @@ export default function AssetDetail() {
                     <div className={`rounded-lg border px-3 py-2.5 ${hairline} ${ownerMismatch ? (isDark ? "border-amber-500/30 bg-amber-500/[0.06]" : "border-amber-200 bg-amber-50/70") : ""}`}>
                       <div className="flex items-center justify-between gap-2">
                         <p className={kicker}>Ownership</p>
-                        <span className={`font-mono text-[9.5px] uppercase tracking-[0.12em] ${ownerOk ? (isDark ? "text-emerald-400" : "text-emerald-600") : ownerMismatch ? (isDark ? "text-amber-400" : "text-amber-600") : textMuted}`}>
+                        <span className={`text-[11px]  ${ownerOk ? (isDark ? "text-emerald-400" : "text-emerald-600") : ownerMismatch ? (isDark ? "text-amber-400" : "text-amber-600") : textMuted}`}>
                           {ownerOk ? "Matches" : ownerMismatch ? "Differs" : "Not stated"}
                         </span>
                       </div>
@@ -2718,7 +2802,7 @@ export default function AssetDetail() {
                       <div key={f.field} className={`rounded-lg border px-3 py-2.5 ${hairline}`}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-[12px] font-medium">{VERIFY_LABEL[f.field]}</p>
-                          <span className={`font-mono text-[9.5px] uppercase tracking-[0.12em] ${f.status === "mismatch" ? (isDark ? "text-amber-400" : "text-amber-600") : accentText}`}>
+                          <span className={`text-[11px]  ${f.status === "mismatch" ? (isDark ? "text-amber-400" : "text-amber-600") : accentText}`}>
                             {f.status === "mismatch" ? "Differs" : "Not on record"}
                           </span>
                         </div>
@@ -2760,7 +2844,7 @@ export default function AssetDetail() {
                         <button
                           type="button"
                           onClick={() => setShowMatches((x) => !x)}
-                          className={`inline-flex cursor-pointer items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${isDark ? "text-emerald-400" : "text-emerald-600"}`}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 text-[11px]  ${isDark ? "text-emerald-400" : "text-emerald-600"}`}
                         >
                           <Icon name="check" className="h-3 w-3" strokeWidth={2.5} />
                           {matched.length} field{matched.length === 1 ? "" : "s"} confirmed
@@ -2785,24 +2869,24 @@ export default function AssetDetail() {
 
           <section className={`overflow-hidden rounded-2xl ${surface}`}>
             {sectionHeader(
-              "Formation",
+              isTrust ? "Trust documents" : "Formation",
               "Filings",
               undefined,
-              <span className={`font-mono text-[10px] uppercase tracking-[0.14em] tabular-nums ${filedCount === FILING_KINDS.length ? (isDark ? "text-emerald-400" : "text-emerald-600") : textMuted}`}>
-                {filedCount}/{FILING_KINDS.length} on file
+              <span className={`text-[11px] tabular-nums ${filedCount === kinds.length ? (isDark ? "text-emerald-400" : "text-emerald-600") : textMuted}`}>
+                {filedCount}/{kinds.length} on file
               </span>,
             )}
             <div className={`divide-y ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>
-              {FILING_KINDS.map((k) => (
+              {kinds.map((k) => (
                 <Fragment key={k}>
-                  {renderFileSlot(k, filingTitle(k, asset.type), filingDescription(k), "application/pdf,image/png,image/jpeg", ["application/pdf", "image/png", "image/jpeg"])}
+                  {renderFileSlot(k, filingTitle(k, etype), filingDescription(k, etype), "application/pdf,image/png,image/jpeg", ["application/pdf", "image/png", "image/jpeg"])}
                 </Fragment>
               ))}
             </div>
             <div className={`border-t px-5 py-3 ${hairline}`}>
               <p className={`text-[11px] leading-snug ${textMuted}`}>
                 Documents you upload are read and filed here automatically.
-                {docs.length > 0 && filedCount < FILING_KINDS.length && (
+                {docs.length > 0 && filedCount < kinds.length && (
                   <>
                     {" "}
                     <button

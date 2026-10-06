@@ -12,7 +12,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
 import { EstateMapView, INITIAL_ENTITIES } from "./estate-map";
-import { entityCompleteness, type CompletenessItem } from "../entity-completeness";
+import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
 import {
   BTN_BASE,
   Icon,
@@ -47,7 +47,7 @@ export function meta() {
 interface Asset {
   id: string;
   name: string;
-  type: "LLC" | "C-Corp";
+  type: "LLC" | "C-Corp" | "Trust";
   state: string;
   ein: string;
   createdAt: number;
@@ -921,7 +921,7 @@ export default function Assets() {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
-  const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp">("all");
+  const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp" | "Trust">("all");
   const [stateF, setStateF] = useState<string[]>([]);
   const [attention, setAttention] = useState(false);
   const [editingTag, setEditingTag] = useState<string | null>(null);
@@ -960,7 +960,7 @@ export default function Assets() {
           for (const ent of INITIAL_ENTITIES) {
             if (!existingNames.has(ent.name.toLowerCase())) {
               const lower = ent.name.toLowerCase();
-              const type = lower.includes("inc") && !lower.includes("llc") ? "C-Corp" : "LLC";
+              const type = /\btrust\b/.test(lower) ? "Trust" : lower.includes("inc") && !lower.includes("llc") ? "C-Corp" : "LLC";
               await push(ref(db, "assets"), {
                 name: ent.name,
                 type,
@@ -982,7 +982,7 @@ export default function Assets() {
           const snap2 = await get(ref(db, "assets"));
           const all = snap2.val() || {};
           const entityData: Record<string, { state?: string; ein?: string; type?: string; address?: string; formationDate?: string }> = {
-            "burton family revocable trust": { type: "LLC", state: "", address: "" },
+            "burton family revocable trust": { type: "Trust", state: "", address: "" },
             "ledger burton, llc": { state: "Delaware", ein: "93-3749778", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-17" },
             "ledger louise, llc": { state: "Nevada", ein: "93-3776895", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-11" },
             "sundown investments, llc": { state: "Arizona", ein: "93-3965064", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-16" },
@@ -1057,16 +1057,34 @@ export default function Assets() {
         }
       }
 
+      // One-time fix: early seeding saved every non-Inc entity as an "LLC",
+      // the family trust included. Store trusts as trusts.
+      if (!localStorage.getItem("bfo-trust-type-v1")) {
+        try {
+          const snap4 = await get(ref(db, "assets"));
+          const all4 = (snap4.val() || {}) as Record<string, { name?: string; type?: string }>;
+          for (const [fbId, v] of Object.entries(all4)) {
+            if (v?.type === "LLC" && /\btrust\b/i.test(v?.name ?? "")) {
+              await update(ref(db, `assets/${fbId}`), { type: "Trust" });
+            }
+          }
+          localStorage.setItem("bfo-trust-type-v1", "1");
+        } catch (err) {
+          console.error("Trust type fix error:", err);
+        }
+      }
+
       if (!alive) return;
       unsubscribe = onValue(
         ref(db, "assets"),
         (snapshot) => {
           const data = snapshot.val();
           if (data) {
-            const arr = Object.entries(data).map(([id, value]) => ({
-              id,
-              ...(value as Omit<Asset, "id">),
-            }));
+            const arr = Object.entries(data).map(([id, value]) => {
+              const a = { id, ...(value as Omit<Asset, "id">) };
+              // Old records stored the trust as an "LLC"; show its real type.
+              return { ...a, type: entityType(a) };
+            });
             setAssets(arr);
           } else {
             setAssets([]);
@@ -1089,7 +1107,7 @@ export default function Assets() {
     };
   }, []);
 
-  async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp"; state: string; ein: string }) {
+  async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp" | "Trust"; state: string; ein: string }) {
     const { db } = await import("../firebase");
     const { push, ref } = await import("firebase/database");
     await push(ref(db, "assets"), {
@@ -1309,8 +1327,9 @@ export default function Assets() {
 
   // ── Summary (the filtered set, like the ledger's strip) ──────────────────
   const total = matched.length;
-  const llcs = matched.filter((a) => a.type !== "C-Corp").length;
+  const llcs = matched.filter((a) => a.type === "LLC").length;
   const corps = matched.filter((a) => a.type === "C-Corp").length;
+  const trusts = matched.filter((a) => a.type === "Trust").length;
   const stateCount = new Set(matched.map((a) => (a.state || "").trim()).filter(Boolean)).size;
   const avg = total ? Math.round(matched.reduce((s, a) => s + scoreOf(a).score, 0) / total) : 0;
   const complete = matched.filter((a) => scoreOf(a).score >= 100).length;
@@ -1390,7 +1409,7 @@ export default function Assets() {
     <span
       title={a.type === "LLC" && a.llcType ? `LLC · ${a.llcType}` : a.type}
       className={`inline-flex items-center shrink-0 h-5 px-1.5 rounded-md text-xs font-medium leading-none ${
-        a.type === "C-Corp"
+        a.type === "C-Corp" || a.type === "Trust"
           ? isDark ? "border border-white/15 text-gray-300" : "border border-gray-300 text-gray-700"
           : isDark ? "bg-white/[0.05] text-gray-400" : "bg-gray-100 text-gray-500/100"
       }`}
@@ -1418,7 +1437,7 @@ export default function Assets() {
           </ul>
         </>
       ) : (
-        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>Every requirement for {a.type === "C-Corp" ? "a C-Corp" : "an LLC"} is on file.</p>
+        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>Every requirement for {a.type === "C-Corp" ? "a C-Corp" : a.type === "Trust" ? "a trust" : "an LLC"} is on file.</p>
       )}
     </>
   );
@@ -1540,6 +1559,7 @@ export default function Assets() {
           ["all", "All"],
           ["LLC", "LLC"],
           ["C-Corp", "C-Corp"],
+          ["Trust", "Trust"],
         ] as const
       ).map(([value, label]) => (
         <button
@@ -1620,7 +1640,7 @@ export default function Assets() {
   const strip: Array<{ label: string; value: string; tone?: string; sub?: ReactNode }> = [
     { label: "Entities", value: String(total), sub: total ? `${complete} complete` : "—" },
     { label: "LLCs", value: String(llcs) },
-    { label: "C-Corps", value: String(corps) },
+    { label: trusts ? "C-Corps · Trusts" : "C-Corps", value: trusts ? `${corps} · ${trusts}` : String(corps) },
     { label: "States", value: String(stateCount) },
     {
       label: "Avg compliance",
@@ -2101,12 +2121,12 @@ function NewEntityDialog({
   isDark: boolean;
   open: boolean;
   onClose: () => void;
-  onCreate: (fields: { name: string; type: "LLC" | "C-Corp"; state: string; ein: string }) => Promise<void>;
+  onCreate: (fields: { name: string; type: "LLC" | "C-Corp" | "Trust"; state: string; ein: string }) => Promise<void>;
 }) {
   const { t1, t2 } = tiers(isDark);
   const ref = useRef<HTMLFormElement>(null);
   const [name, setName] = useState("");
-  const [type, setType] = useState<"LLC" | "C-Corp">("LLC");
+  const [type, setType] = useState<"LLC" | "C-Corp" | "Trust">("LLC");
   const [state, setState] = useState("");
   const [ein, setEin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2179,7 +2199,7 @@ function NewEntityDialog({
           Type
         </span>
         <div role="group" aria-labelledby="new-entity-type" className={`${segContainer} mb-3`}>
-          {(["LLC", "C-Corp"] as const).map((t) => (
+          {(["LLC", "C-Corp", "Trust"] as const).map((t) => (
             <button
               key={t}
               type="button"

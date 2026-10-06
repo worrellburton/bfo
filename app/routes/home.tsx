@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { authFetch, getUser } from "../auth";
-import { entityCompleteness } from "../entity-completeness";
+import { entityCompleteness, entityType } from "../entity-completeness";
 import { HomeBackground } from "../home-background";
 import { useTheme } from "../theme";
 
@@ -17,7 +17,7 @@ export function meta() {
 interface Asset {
   id: string;
   name: string;
-  type: "LLC" | "C-Corp";
+  type: "LLC" | "C-Corp" | "Trust";
   state?: string;
   ein?: string;
   ownerId?: string;
@@ -614,7 +614,10 @@ export default function Home() {
             const data = snapshot.val();
             setAssets(
               data
-                ? Object.entries(data).map(([id, value]) => ({ id, ...(value as Omit<Asset, "id">) }))
+                ? Object.entries(data).map(([id, value]) => {
+                    const a = { id, ...(value as Omit<Asset, "id">) };
+                    return { ...a, type: entityType(a) };
+                  })
                 : []
             );
             setAssetsLoading(false);
@@ -697,6 +700,7 @@ export default function Home() {
     .slice(0, 3);
   const llcCount = scored.filter((a) => a.type === "LLC").length;
   const corpCount = scored.filter((a) => a.type === "C-Corp").length;
+  const trustCount = scored.filter((a) => a.type === "Trust").length;
   const stateCount = new Set(scored.map((a) => a.state?.trim()).filter(Boolean)).size;
 
   // ── Derived: money ─────────────────────────────────────────────────────
@@ -1140,7 +1144,7 @@ export default function Home() {
             <p className={kicker}>Holding structure</p>
             {!assetsLoading && (
               <span className={`text-[11px] tabular-nums ${textMuted}`}>
-                {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp · {stateCount} state{stateCount === 1 ? "" : "s"}
+                {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp{trustCount ? ` · ${trustCount} trust${trustCount === 1 ? "" : "s"}` : ""} · {stateCount} state{stateCount === 1 ? "" : "s"}
               </span>
             )}
             {!assetsLoading && scored.length > 0 && (
@@ -1266,13 +1270,13 @@ export default function Home() {
                             )}
                             <Ring score={e.score} size={16} stroke={2} isDark={isDark} label={false} />
                             <span className="min-w-0 flex-1 truncate text-[12px]">{e.name}</span>
-                            {e.type === "C-Corp" && (
+                            {e.type !== "LLC" && (
                               <span
                                 className={`shrink-0 rounded px-1 py-px text-[10px] font-medium ${
                                   isDark ? "bg-[#818cf8]/12 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]"
                                 }`}
                               >
-                                C-Corp
+                                {e.type}
                               </span>
                             )}
                             <span className={`w-6 shrink-0 text-right text-[10.5px] tabular-nums ${textMuted}`}>{e.score}</span>

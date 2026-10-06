@@ -11,14 +11,14 @@ import { currentUser } from "../../lib/auth.js";
 const MODEL = "claude-opus-5-5";
 const MAX_FETCH_BYTES = 20 * 1024 * 1024;
 
-export type DocKind = "ein_letter" | "w9" | "articles" | "operating_agreement" | "other";
+export type DocKind = "ein_letter" | "w9" | "articles" | "operating_agreement" | "trust_agreement" | "trust_certificate" | "other";
 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["kind", "confidence", "entityName", "ein", "date", "state"],
   properties: {
-    kind: { type: "string", enum: ["ein_letter", "w9", "articles", "operating_agreement", "other"] },
+    kind: { type: "string", enum: ["ein_letter", "w9", "articles", "operating_agreement", "trust_agreement", "trust_certificate", "other"] },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
     entityName: { type: ["string", "null"] },
     ein: { type: ["string", "null"] },
@@ -34,10 +34,12 @@ const SYSTEM = [
   "- w9: IRS Form W-9, Request for Taxpayer Identification Number.",
   "- articles: the state formation filing — Articles of Organization, Articles of Incorporation, Certificate of Formation, Certificate of Incorporation, Certificate of Organization.",
   "- operating_agreement: an LLC Operating Agreement or corporate Bylaws.",
+  "- trust_agreement: a trust instrument — trust agreement, declaration of trust, or an amended and restated trust.",
+  "- trust_certificate: a certification / certificate / abstract / memorandum of trust (the short summary banks ask for).",
   "- other: anything else (contracts, statements, invoices, tax returns, amendments, annual reports).",
   "Also extract, only when printed in the document: the entity's legal name, its EIN (format NN-NNNNNNN),",
-  "the key date as YYYY-MM-DD (EIN letter: date issued; articles: filing/effective date; operating agreement: effective date; w9: signature date),",
-  "and the state of formation as a full state name. Use null for anything not visible. Never guess.",
+  "the key date as YYYY-MM-DD (EIN letter: date issued; articles: filing/effective date; operating agreement: effective date; trust agreement or certificate: the date the trust was made; w9: signature date),",
+  "and the state of formation (for a trust: the state whose law governs it) as a full state name. Use null for anything not visible. Never guess.",
   "confidence: high when the document's title or form number makes the type unambiguous.",
 ].join("\n");
 

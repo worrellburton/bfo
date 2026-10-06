@@ -24,6 +24,9 @@ const FIELDS = [
   "llcType",
   "operatingAgreementDate",
   "articlesOfOrgDate",
+  "trustees",
+  "grantors",
+  "beneficiaries",
 ] as const;
 
 const SCHEMA = {
@@ -84,7 +87,7 @@ const SYSTEM = [
   "- mismatch: the documents clearly state a different value.",
   "- missing_on_record: the record is blank but the documents state a value.",
   "- not_found: no document states this field.",
-  "Field meanings: name = legal name; type = LLC or C-Corp; state = state of formation (full name); ein = NN-NNNNNNN;",
+  "Field meanings: name = legal name; type = LLC, C-Corp or Trust; state = state of formation (full name); ein = NN-NNNNNNN;",
   "formationDate = date the entity was formed/filed with the state (YYYY-MM-DD); address = principal/mailing address;",
   "registeredAgent = statutory/registered agent name; llcType = federal tax classification, one of 'Disregarded Entity', 'Partnership', 'C Corporation';",
   "operatingAgreementDate = effective date of the operating agreement or bylaws (YYYY-MM-DD); articlesOfOrgDate = filing date of the articles/certificate (YYYY-MM-DD).",
@@ -92,6 +95,9 @@ const SYSTEM = [
   "Owners: list the members/shareholders and ownership percentages the documents state (operating agreement schedule of members, articles' members/managers, K-1/W-9 context).",
   "ownershipStatus compares them to the recorded owner: match, mismatch, or unclear when the documents don't say.",
   "issues: anything else a careful paralegal would flag — a document for a different entity, conflicting values between documents, an unsigned agreement, a W-9 with the wrong tax classification. Severity high for anything that could be legally or tax-relevant.",
+  "For a trust (type Trust): name = the trust's name; state = governing law; formationDate = the date the trust was made; llcType = 'Grantor trust' or 'Non-grantor trust';",
+  "trustees, grantors and beneficiaries = the people or entities named, comma-separated; registeredAgent, operatingAgreementDate and articlesOfOrgDate don't apply (not_found). A revocable living trust usually has no EIN of its own while the grantor is alive.",
+  "Owners of a trust: report the grantors / settlors as owners only if the documents say so; otherwise ownershipStatus is unclear.",
   "Never guess. Only report what the documents actually state. The summary is one or two plain sentences.",
 ].join("\n");
 
