@@ -275,6 +275,29 @@ export default function AppLayout() {
     };
   }, [drawerOpen]);
 
+  // Bird-style drill-in nav: a group opens into its own sub-view. `drill`
+  // holds the open group's path; "__root__" forces the top level; null follows
+  // the current route (so landing on a group's page opens that group). These
+  // hooks sit above the signed-out early return so they always run.
+  const activeGroupTo =
+    (navItems as any[]).find((i) => i.children?.some((c: any) => location.pathname.startsWith(c.to)))?.to ?? null;
+  const [drill, setDrill] = useState<string | null>(null);
+  useEffect(() => {
+    setDrill(activeGroupTo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  // Below lg the rail is an off-canvas drawer; while it's closed its links
+  // must not be reachable by Tab.
+  const [isDesktop, setIsDesktop] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
   if (!isAuthenticated()) return null;
 
   const isDark = theme === "dark";
@@ -289,16 +312,6 @@ export default function AppLayout() {
   const labelsVisible = expanded || drawerOpen;
   const items = navItems;
 
-  // Bird-style drill-in nav: a group opens into its own sub-view. `drill`
-  // holds the open group's path; "__root__" forces the top level; null follows
-  // the current route (so landing on a group's page opens that group).
-  const activeGroupTo =
-    (items as any[]).find((i) => i.children?.some((c: any) => location.pathname.startsWith(c.to)))?.to ?? null;
-  const [drill, setDrill] = useState<string | null>(null);
-  useEffect(() => {
-    setDrill(activeGroupTo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
   const openGroup =
     drill && drill !== "__root__" ? ((items as any[]).find((i) => i.to === drill && i.children) ?? null) : null;
 
@@ -335,6 +348,7 @@ export default function AppLayout() {
 
       <aside
         ref={drawerRef}
+        inert={!isDesktop && !drawerOpen}
         aria-label="Navigation"
         onTouchStart={(e) => {
           const t = e.touches[0];

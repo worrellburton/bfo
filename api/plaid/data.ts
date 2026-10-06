@@ -536,7 +536,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (!item) {
-      return res.status(401).json({ error: "not_connected", message: "No Plaid accounts connected" });
+      return res.status(409).json({ error: "not_connected", message: "No Plaid accounts connected" });
     }
 
     const accessToken = item.access_token;
@@ -630,7 +630,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     console.error("Plaid data error:", err.response?.data || err.message);
     if (err.response?.data?.error_code === "ITEM_LOGIN_REQUIRED") {
-      return res.status(401).json({ error: "auth_expired", message: "Please reconnect your investment account" });
+      return res.status(409).json({ error: "auth_expired", message: "Please reconnect your investment account" });
     }
     res.status(500).json({ error: err.response?.data?.error_message || err.message });
   }

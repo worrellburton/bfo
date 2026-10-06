@@ -16,11 +16,8 @@ type Entity = {
   x: number;
   y: number;
   color?: string;
-  quickBooksRealmId?: string;
-  quickBooksName?: string;
 };
 
-type QBCompany = { realm_id: string; company_name: string };
 
 /** The `assets` record an estate-map entity matches by (lowercased) name. */
 type AssetRec = { id: string; data: CompletenessInput };
@@ -124,7 +121,7 @@ export const INITIAL_ENTITIES: Entity[] = [
 ];
 
 // ── Geometry (scene px — the whole scene is scaled to fit the canvas) ─────
-const CARD_W = 264; // room for the name, the QuickBooks chip and the compliance ring
+const CARD_W = 264; // room for the name and the compliance ring
 const ROOT_W = 344; // the trust gets room for its full name
 const CARD_H = 60;
 const LEAF_H = 46;
@@ -460,8 +457,6 @@ export function EstateMapView({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [qbCompanies, setQbCompanies] = useState<QBCompany[]>([]);
-  const [attachingId, setAttachingId] = useState<string | null>(null);
   const [assetByName, setAssetByName] = useState<Record<string, AssetRec>>({});
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -528,33 +523,6 @@ export function EstateMapView({
     return () => clearTimeout(timer);
   }, [entities]);
 
-  // Fetch connected QuickBooks companies
-  useEffect(() => {
-    async function loadQB() {
-      try {
-        const res = await fetch("/api/quickbooks/data?report=list");
-        const data = await res.json();
-        const list: { realm_id: string; company_name: string }[] = data?.companies || [];
-        // Resolve company names for each
-        const resolved = await Promise.all(
-          list.map(async (c) => {
-            if (c.company_name) return c;
-            try {
-              const infoRes = await fetch(`/api/quickbooks/data?report=company-info&realm_id=${c.realm_id}`);
-              const info = await infoRes.json();
-              return { realm_id: c.realm_id, company_name: info?.CompanyInfo?.CompanyName || c.realm_id };
-            } catch {
-              return { realm_id: c.realm_id, company_name: c.realm_id };
-            }
-          })
-        );
-        setQbCompanies(resolved);
-      } catch {
-        setQbCompanies([]);
-      }
-    }
-    loadQB();
-  }, []);
 
   // Subscribe to Firebase assets and build a name -> record lookup (the id
   // opens the entity page; the record scores the paperwork).
@@ -853,21 +821,6 @@ export function EstateMapView({
     setSelectedEdge(null);
   }
 
-  function handleAttachQB(entityId: string, realmId: string | null) {
-    const company = realmId ? qbCompanies.find((c) => c.realm_id === realmId) : null;
-    setEntities((prev) =>
-      prev.map((e) =>
-        e.id === entityId
-          ? {
-              ...e,
-              quickBooksRealmId: realmId || undefined,
-              quickBooksName: company?.company_name || undefined,
-            }
-          : e
-      )
-    );
-    setAttachingId(null);
-  }
 
   function startRename(id: string) {
     const ent = entityById.get(id);
@@ -951,8 +904,7 @@ export function EstateMapView({
   }, [hoveredId, drag, layout]);
 
   const stats = useMemo(() => {
-    const qb = entities.filter((e) => e.quickBooksRealmId).length;
-    return { entities: entities.length, branches: layout.branches, levels: layout.levels, qb, unlinked: layout.tray?.count ?? 0 };
+    return { entities: entities.length, branches: layout.branches, levels: layout.levels, unlinked: layout.tray?.count ?? 0 };
   }, [entities, layout]);
 
   // ── Skins ───────────────────────────────────────────────────────────────
@@ -994,7 +946,6 @@ export function EstateMapView({
     const dim = (lit ? !on : unlit && !opts.ghost) || (drag && drag.id === box.id && !opts.ghost);
     const glyph = leaf ? 24 : root ? 34 : 30;
     const editing = editingId === box.id && !opts.ghost;
-    const qb = !!ent.quickBooksRealmId;
     const ringSize = leaf ? 24 : root ? 32 : 28;
 
     const ring = isTarget
@@ -1071,17 +1022,6 @@ export function EstateMapView({
             {metaFor(box, info)}
           </div>
         </div>
-        {qb && (
-          <span
-            className={`relative inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider ring-1 ${
-              isDark ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/25" : "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-            }`}
-            title={`QuickBooks: ${ent.quickBooksName || "connected"}`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-            QB
-          </span>
-        )}
         <ComplianceRing c={complianceFor(box.id)} size={ringSize} isDark={isDark} />
       </div>
     );
@@ -1312,13 +1252,6 @@ export function EstateMapView({
                     Go to entity page
                     <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M7 17L17 7M9 7h8v8" /></svg>
                   </button>
-                  <button
-                    className={toolBtn}
-                    onClick={() => setAttachingId(box.id)}
-                    title={entityById.get(box.id)?.quickBooksRealmId ? `QuickBooks: ${entityById.get(box.id)?.quickBooksName ?? ""}` : "Attach QuickBooks"}
-                  >
-                    <span className="font-mono text-[9px] font-bold">QB</span>
-                  </button>
                   <button className={toolBtn} onClick={() => startRename(box.id)} title="Rename">
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" /></svg>
                   </button>
@@ -1390,12 +1323,6 @@ export function EstateMapView({
             <span><b className={`font-semibold ${ink}`}>{stats.branches}</b> branches</span>
             <span className="opacity-40">/</span>
             <span><b className={`font-semibold ${ink}`}>{stats.levels}</b> levels</span>
-            {stats.qb > 0 && (
-              <>
-                <span className="opacity-40">/</span>
-                <span><b className={`font-semibold ${ink}`}>{stats.qb}</b> on QuickBooks</span>
-              </>
-            )}
           </span>
         </div>
 
@@ -1470,76 +1397,6 @@ export function EstateMapView({
         ))}
       </div>
 
-      {/* Attach QuickBooks modal */}
-      {attachingId && (() => {
-        const entity = entityById.get(attachingId);
-        if (!entity) return null;
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setAttachingId(null)}>
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className={`relative w-full max-w-md overflow-hidden rounded-2xl border shadow-2xl ${
-                isDark ? "bg-[#0d0f17] border-white/10" : "bg-white border-gray-200"
-              }`}
-            >
-              <span className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent" />
-              <div className={`p-5 border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
-                <div className={`text-[11px] font-medium ${muted}`}>QuickBooks</div>
-                <h3 className={`mt-1 font-semibold text-sm ${isDark ? "text-white" : "text-gray-900"}`}>Attach a company file</h3>
-                <p className={`text-xs mt-1 ${muted}`}>{entity.name}</p>
-              </div>
-              <div className="p-5">
-                {qbCompanies.length === 0 ? (
-                  <div className={`text-center py-6 ${muted}`}>
-                    <p className="text-xs">No QuickBooks accounts connected.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1 max-h-80 overflow-y-auto">
-                    {qbCompanies.map((c) => {
-                      const isCurrent = entity.quickBooksRealmId === c.realm_id;
-                      return (
-                        <button
-                          key={c.realm_id}
-                          onClick={() => handleAttachQB(entity.id, c.realm_id)}
-                          className={`w-full text-left px-3 py-2.5 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
-                            isCurrent
-                              ? isDark ? "bg-green-500/15 text-green-400 border border-green-500/30" : "bg-green-50 text-green-700 border border-green-300"
-                              : isDark ? "hover:bg-white/5 text-gray-300 border border-white/5" : "hover:bg-gray-50 text-gray-700 border border-gray-200"
-                          }`}
-                        >
-                          <span className="truncate">{c.company_name}</span>
-                          {isCurrent && (
-                            <svg className="w-4 h-4 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div className={`p-4 border-t flex items-center justify-between ${isDark ? "border-white/10" : "border-gray-200"}`}>
-                {entity.quickBooksRealmId ? (
-                  <button
-                    onClick={() => handleAttachQB(entity.id, null)}
-                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                      isDark ? "text-red-400 hover:bg-red-500/10 border border-red-500/20" : "text-red-600 hover:bg-red-50 border border-red-200"
-                    }`}
-                  >
-                    Detach
-                  </button>
-                ) : <span />}
-                <button
-                  onClick={() => setAttachingId(null)}
-                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${btnClass}`}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
