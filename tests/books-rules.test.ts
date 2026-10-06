@@ -15,6 +15,10 @@ describe("categorize", () => {
   it("falls back to Plaid's category", () => {
     expect(categorize("UBER TRIP", "Uber", "TRANSPORTATION").category).toBe("6550 Automobile & Transport");
   });
+  it("books home improvement and bank fees", () => {
+    expect(categorize("THE HOME DEPOT #402", "The Home Depot", "HOME_IMPROVEMENT").category).toBe("6300 Repairs & Maintenance");
+    expect(categorize("MONTHLY SERVICE FEE", null, "BANK_FEES").category).toBe("6400 Bank & Card Fees");
+  });
   it("leaves an unknown row genuinely uncategorized", () => {
     expect(categorize("SOMETHING NEW", "Nobody", "SOMETHING_ELSE")).toEqual({ category: null, type: null });
   });

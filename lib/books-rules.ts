@@ -104,6 +104,8 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
   [/^GOVERNMENT_AND_NON_PROFIT$/, "6700 Taxes & Licenses"],
   [/^GENERAL_SERVICES$/, "6900 Other Operating Expenses"],
   [/^MEDICAL$/, "6750 Medical"],
+  [/^HOME_IMPROVEMENT$/, "6300 Repairs & Maintenance"],
+  [/^BANK_FEES$/, "6400 Bank & Card Fees"],
   [/^PERSONAL_CARE$/, "6900 Other Operating Expenses"],
   [/^INCOME$/, "4900 Other Income"],
   [/^TRANSFER_(IN|OUT)$/, "9100 Internal Transfers"],
