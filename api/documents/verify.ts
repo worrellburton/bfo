@@ -101,6 +101,11 @@ const SYSTEM = [
   "Never guess. Only report what the documents actually state. The summary is one or two plain sentences.",
 ].join("\n");
 
+/** Anthropic refused because the account behind ANTHROPIC_API_KEY has no credit. */
+function outOfCredit(err: unknown): boolean {
+  return err instanceof Anthropic.APIError && /credit balance/i.test(err.message);
+}
+
 type Body = {
   entity?: Record<string, string | null | undefined> & { owner?: string | null };
   documents?: { name: string; url: string; contentType?: string; filedAs?: string | null }[];
@@ -185,7 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .finalMessage();
     } catch (err) {
       // If the fallback option itself is refused, run the plain request.
-      if (!(err instanceof Anthropic.BadRequestError)) throw err;
+      if (!(err instanceof Anthropic.BadRequestError) || outOfCredit(err)) throw err;
       message = await client.messages.stream(params).finalMessage();
     }
     if (message.stop_reason === "refusal") return res.status(422).json({ error: "declined" });
@@ -198,6 +203,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ...result, documentsRead: read, checkedAt: Date.now() });
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return res.status(429).json({ error: "rate_limited" });
+    if (outOfCredit(err)) return res.status(503).json({ error: "ai_unavailable" });
     console.error("verify failed", err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : err);
     return res.status(502).json({ error: "verify_failed" });
   }

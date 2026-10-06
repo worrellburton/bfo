@@ -11,12 +11,17 @@ import { currentUser } from "../../lib/auth.js";
 const MODEL = "claude-opus-5-5";
 const MAX_FETCH_BYTES = 20 * 1024 * 1024;
 
+/** Anthropic refused because the account behind ANTHROPIC_API_KEY has no credit. */
+function outOfCredit(err: unknown): boolean {
+  return err instanceof Anthropic.APIError && /credit balance/i.test(err.message);
+}
+
 export type DocKind = "ein_letter" | "w9" | "articles" | "operating_agreement" | "trust_agreement" | "trust_certificate" | "other";
 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["kind", "confidence", "entityName", "ein", "date", "state"],
+  required: ["kind", "confidence", "entityName", "ein", "date", "state", "trustees", "grantors", "beneficiaries"],
   properties: {
     kind: { type: "string", enum: ["ein_letter", "w9", "articles", "operating_agreement", "trust_agreement", "trust_certificate", "other"] },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
@@ -24,6 +29,9 @@ const SCHEMA = {
     ein: { type: ["string", "null"] },
     date: { type: ["string", "null"] },
     state: { type: ["string", "null"] },
+    trustees: { type: ["string", "null"] },
+    grantors: { type: ["string", "null"] },
+    beneficiaries: { type: ["string", "null"] },
   },
 } as const;
 
@@ -40,6 +48,9 @@ const SYSTEM = [
   "Also extract, only when printed in the document: the entity's legal name, its EIN (format NN-NNNNNNN),",
   "the key date as YYYY-MM-DD (EIN letter: date issued; articles: filing/effective date; operating agreement: effective date; trust agreement or certificate: the date the trust was made; w9: signature date),",
   "and the state of formation (for a trust: the state whose law governs it) as a full state name. Use null for anything not visible. Never guess.",
+  "For trust documents (agreement, certification, appointment of trustees, amendments), also list the trustees, the grantors / settlors / trustors,",
+  "and the beneficiaries as named in the document, comma-separated (people or entities). Use null when not stated.",
+  "A document that appoints successor trustees or assigns property to the trust is 'other' — but still report the names it states.",
   "confidence: high when the document's title or form number makes the type unambiguous.",
 ].join("\n");
 
@@ -107,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     } catch (err) {
       // If the fallback option itself is refused, run the plain request.
-      if (!(err instanceof Anthropic.BadRequestError)) throw err;
+      if (!(err instanceof Anthropic.BadRequestError) || outOfCredit(err)) throw err;
       message = await client.messages.create(params);
     }
     if (message.stop_reason === "refusal") {
@@ -124,6 +135,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ein: string | null;
       date: string | null;
       state: string | null;
+      trustees: string | null;
+      grantors: string | null;
+      beneficiaries: string | null;
     };
     const ein = parsed.ein && /^\d{2}-?\d{7}$/.test(parsed.ein.trim())
       ? parsed.ein.trim().replace(/^(\d{2})-?(\d{7})$/, "$1-$2")
@@ -133,6 +147,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) {
       return res.status(429).json({ error: "rate_limited" });
+    }
+    if (outOfCredit(err)) {
+      console.error("classify-doc: Anthropic account is out of credit");
+      return res.status(503).json({ error: "ai_unavailable", message: "Document reading is paused — the Anthropic account behind BFO is out of credit." });
     }
     console.error("classify-doc failed", err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : err);
     return res.status(502).json({ error: "classify_failed" });

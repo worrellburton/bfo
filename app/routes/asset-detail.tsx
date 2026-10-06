@@ -274,6 +274,9 @@ function guessFiling(name: string): FileKind | null {
   const n = name.toLowerCase();
   if (/certification of trust|certificate of trust|trust certificate|abstract of trust|memorandum of trust/.test(n)) return "trustCertificate";
   if (/trust agreement|declaration of trust|trust instrument|trust indenture|amended and restated .*trust/.test(n)) return "trustAgreement";
+  // A file named for the trust itself ("… Burton Family Revocable Trust") is
+  // the trust instrument, unless the name says it's something about the trust.
+  if (/(revocable|living|family|irrevocable) trust\b/.test(n) && !/certif|existence|assignment|appointment|amendment|schedule|resignation|memorandum|abstract|deed|transfer/.test(n)) return "trustAgreement";
   if (/\bw[\s-]?9\b/.test(n)) return "w9";
   if (/\bein\b|\bcp[\s-]?575\b|\b147[\s-]?c\b|\bss[\s-]?4\b|employer identification/.test(n)) return "einLetter";
   if (/operating agreement|\bllc agreement\b|\bbylaws?\b/.test(n)) return "operatingAgreement";
@@ -290,7 +293,16 @@ const CLASSIFIER_KIND: Record<string, FileKind | undefined> = {
   trust_certificate: "trustCertificate",
 };
 
-type Classified = { kind: string; confidence: "high" | "medium" | "low"; ein: string | null; date: string | null; state: string | null };
+type Classified = {
+  kind: string;
+  confidence: "high" | "medium" | "low";
+  ein: string | null;
+  date: string | null;
+  state: string | null;
+  trustees?: string | null;
+  grantors?: string | null;
+  beneficiaries?: string | null;
+};
 
 // Services Included: dropdown with a per-service toggle, plus a reorderable
 // selected list — the order here is the order services appear in the contract PDF.
@@ -472,6 +484,8 @@ export default function AssetDetail() {
   // Auto-filing: notes about where uploads went, and how many are being read.
   const [filingNotes, setFilingNotes] = useState<string[]>([]);
   const [sorting, setSorting] = useState(0);
+  // Set when the document reader is unavailable (e.g. the AI account is out of credit).
+  const [aiDown, setAiDown] = useState<string | null>(null);
   const assetRef = useRef<Asset | null>(null);
   assetRef.current = asset;
   const claimedRef = useRef<Set<FileKind>>(new Set());
@@ -809,6 +823,27 @@ export default function AssetDetail() {
   }
 
   /** Work out what a document is (name first, then Claude reads it) and file it. */
+  /** A trust's trustees, grantors and beneficiaries, from any trust document that names them. */
+  async function fillTrustPeople(facts: Classified, doc: AssetDoc) {
+    const current = assetRef.current;
+    if (!current || entityType(current) !== "Trust") return;
+    const patch: Record<string, string> = {};
+    const added: string[] = [];
+    for (const key of ["trustees", "grantors", "beneficiaries"] as const) {
+      const v = facts[key]?.trim();
+      if (v && !current[key]?.trim()) {
+        patch[key] = v;
+        added.push(`${key} ${v}`);
+      }
+    }
+    if (!added.length) return;
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), patch);
+    setFilingNotes((n) => [...n, `Read “${doc.name}” · added ${added.join("; ")}`]);
+  }
+
   async function autoFile(doc: AssetDoc, useClaude = true): Promise<string | null> {
     const ct = (doc.contentType || "").toLowerCase();
     const readable = ct.includes("pdf") || /^image\/(png|jpe?g|gif|webp)$/.test(ct);
@@ -826,6 +861,11 @@ export default function AssetDetail() {
           facts = (await r.json()) as Classified;
           const read = CLASSIFIER_KIND[facts.kind];
           if (read && facts.confidence !== "low") kind = read;
+          setAiDown(null);
+          await fillTrustPeople(facts, doc);
+        } else if (r.status === 503) {
+          const body = await r.json().catch(() => ({}));
+          setAiDown(body?.message || "Document reading is unavailable right now.");
         }
       } catch {
         // fall back to the name
@@ -894,8 +934,15 @@ export default function AssetDetail() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: doc.url, fileName: doc.name, contentType: doc.contentType }),
       });
+      if (r.status === 503) {
+        const body = await r.json().catch(() => ({}));
+        setAiDown(body?.message || "Document reading is unavailable right now.");
+        return;
+      }
       if (!r.ok) return;
       const facts = (await r.json()) as Classified;
+      setAiDown(null);
+      await fillTrustPeople(facts, doc);
       const current = assetRef.current;
       if (!current) return;
       const patch: Record<string, unknown> = {};
@@ -996,7 +1043,14 @@ export default function AssetDetail() {
         }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error === "no_readable_documents" ? "None of the documents could be read (PDF or image needed)." : "The check didn't finish — try again.");
+      if (!r.ok)
+        throw new Error(
+          data?.error === "no_readable_documents"
+            ? "None of the documents could be read (PDF or image needed)."
+            : data?.error === "ai_unavailable"
+              ? "Document reading is paused — the Anthropic account behind BFO is out of credit."
+              : "The check didn't finish — try again.",
+        );
       const result: Verification = { ...(data as Verification), recordAtCheck: record };
       const { db, authReady } = await import("../firebase");
       await authReady;
@@ -2511,6 +2565,14 @@ export default function AssetDetail() {
                 )}
               </label>
               {docDrop.error && <p className="mt-2 text-[11px] text-red-400">{docDrop.error}</p>}
+              {aiDown && (
+                <div className={`mt-2.5 flex items-start gap-2 rounded-lg border px-3 py-2 text-[11.5px] leading-snug ${isDark ? "border-amber-500/30 bg-amber-500/[0.07] text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                  <span>
+                    {aiDown} Uploads are saved and filed by name only until it's back — then use “Scan existing documents” to read them.
+                  </span>
+                </div>
+              )}
               {(sorting > 0 || filingNotes.length > 0) && (
                 <div className={`mt-2.5 rounded-lg border px-3 py-2 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50/70"}`}>
                   {sorting > 0 && (
