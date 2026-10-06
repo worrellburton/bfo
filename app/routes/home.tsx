@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { Link } from "react-router";
 import { authFetch, getUser } from "../auth";
 import { entityCompleteness, entityType } from "../entity-completeness";
+import { obligations } from "../entity-paperwork";
 import { HomeBackground } from "../home-background";
 import { useTheme } from "../theme";
 
@@ -760,6 +761,42 @@ export default function Home() {
       title: `${s.source} hasn't arrived`,
       detail: `Expected ${s.nextExpected ? relDay(s.nextExpected) : "recently"} · usually ${fmtUSD(s.typical)} ${s.cadence}`,
       to: "/books/calendar",
+    });
+  }
+  // State filings due within 60 days and federal returns within 30, across
+  // every entity — from the paperwork rule book's deadlines.
+  const dueSoon = useMemo(() => {
+    const now = new Date();
+    const todayMs = Date.parse(now.toISOString().slice(0, 10));
+    const out: { id: string; entity: string; title: string; due: string; days: number }[] = [];
+    for (const a of scored) {
+      for (const o of obligations(a, now)) {
+        if (!o.due) continue;
+        const days = Math.round((Date.parse(o.due) - todayMs) / 86400000);
+        if (days < 0 || days > (o.key === "fed" ? 30 : 60)) continue;
+        out.push({ id: a.id, entity: a.name, title: o.title, due: o.due, days });
+      }
+    }
+    return out.sort((x, y) => x.days - y.days);
+  }, [scored]);
+  if (!assetsLoading && dueSoon.length > 0) {
+    const first = dueSoon[0];
+    attention.push({
+      key: "filings-due",
+      icon: "clock",
+      tone: first.days <= 14 ? "amber" : "neutral",
+      title:
+        dueSoon.length === 1
+          ? `${first.entity}: ${first.title} due ${relDay(first.due)}`
+          : `${dueSoon.length} filings due in the next ${first.days <= 30 ? "month" : "two months"}`,
+      detail:
+        dueSoon.length === 1
+          ? "Open the entity for the fee and where to file"
+          : dueSoon
+              .slice(0, 2)
+              .map((d) => `${d.entity} · ${d.title.replace(/^(Arizona|Nevada|Delaware) /, "")} ${relDay(d.due)}`)
+              .join("; ") + (dueSoon.length > 2 ? ` +${dueSoon.length - 2} more` : ""),
+      to: `/assets/${first.id}`,
     });
   }
   if (!assetsLoading && missingEin.length > 0) {
