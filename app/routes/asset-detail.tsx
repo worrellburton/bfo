@@ -486,6 +486,9 @@ export default function AssetDetail() {
   const [sorting, setSorting] = useState(0);
   // Set when the document reader is unavailable (e.g. the AI account is out of credit).
   const [aiDown, setAiDown] = useState<string | null>(null);
+  // Live progress for "Scan existing documents", shown as a toast at the bottom.
+  const [scan, setScan] = useState<{ total: number; done: number; current: string | null; notes: string[]; finished: boolean } | null>(null);
+  const scanHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assetRef = useRef<Asset | null>(null);
   assetRef.current = asset;
   const claimedRef = useRef<Set<FileKind>>(new Set());
@@ -841,7 +844,9 @@ export default function AssetDetail() {
     await authReady;
     const { ref, update } = await import("firebase/database");
     await update(ref(db, `assets/${id}`), patch);
-    setFilingNotes((n) => [...n, `Read “${doc.name}” · added ${added.join("; ")}`]);
+    const note = `Read “${doc.name}” · added ${added.join("; ")}`;
+    setFilingNotes((n) => [...n, note]);
+    setScan((sc) => (sc && !sc.finished ? { ...sc, notes: [...sc.notes, note] } : sc));
   }
 
   async function autoFile(doc: AssetDoc, useClaude = true): Promise<string | null> {
@@ -1095,12 +1100,19 @@ export default function AssetDetail() {
     if (!current) return;
     const linked = new Set(FILING_KINDS.map((k) => current[k]?.docId).filter(Boolean));
     const candidates = docs.filter((d) => !linked.has(d.id) && !d.autoFileSkip && d.storagePath);
+    if (scanHideTimer.current) clearTimeout(scanHideTimer.current);
+    setScan({ total: candidates.length, done: 0, current: candidates[0]?.name ?? null, notes: [], finished: candidates.length === 0 });
     const notes: string[] = [];
-    for (const doc of candidates) {
-      if (kindsFor(assetRef.current).every((k) => assetRef.current?.[k])) break;
+    // Read every candidate — even once the slots are full, a trust's
+    // documents still name its trustees, grantors and beneficiaries.
+    for (const [i, doc] of candidates.entries()) {
+      setScan((sc) => (sc ? { ...sc, current: doc.name } : sc));
       const note = await autoFile(doc);
       if (note) notes.push(note);
+      setScan((sc) => (sc ? { ...sc, done: i + 1, notes: note ? [...sc.notes, note] : sc.notes } : sc));
     }
+    setScan((sc) => (sc ? { ...sc, current: null, finished: true } : sc));
+    scanHideTimer.current = setTimeout(() => setScan(null), 12000);
     setFilingNotes(notes.length ? notes : ["Nothing new to file — no unfiled document matched an empty slot."]);
   }
 
@@ -2966,6 +2978,95 @@ export default function AssetDetail() {
           </section>
         </aside>
       </div>
+
+      {/* Live progress while documents are being read */}
+      {(scan || sorting > 0) && (() => {
+        const total = scan?.total ?? 0;
+        const done = scan?.done ?? 0;
+        const finished = !!scan?.finished && sorting === 0;
+        const pct = scan && total ? (done / total) * 100 : null;
+        const filed = (scan?.notes ?? []).filter((n) => n.startsWith("Filed") || n.startsWith("Read"));
+        return (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed inset-x-0 z-50 flex justify-center px-4 pointer-events-none bottom-[calc(6.5rem+env(safe-area-inset-bottom))] lg:bottom-6"
+          >
+            <div
+              className={`pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-xl motion-safe:animate-[scan-toast-in_320ms_cubic-bezier(0.16,1,0.3,1)_both] ${
+                isDark ? "border-white/10 bg-[#0d0f17]/95 shadow-black/60" : "border-gray-200 bg-white/95 shadow-gray-900/15"
+              }`}
+            >
+              <style>{`@keyframes scan-toast-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }`}</style>
+              <div className="flex items-start gap-3 px-4 pt-3.5">
+                <span
+                  className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                    finished ? (isDark ? "bg-emerald-500/15 text-emerald-300" : "bg-emerald-50 text-emerald-600") : accentTile
+                  }`}
+                >
+                  {finished ? <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Icon name="sparkle" className="h-3.5 w-3.5 motion-safe:animate-pulse" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold leading-tight">
+                    {finished
+                      ? filed.length
+                        ? `Done — ${filed.length} update${filed.length === 1 ? "" : "s"}`
+                        : "Done — nothing new found"
+                      : scan
+                        ? `Reading documents · ${Math.min(done + 1, total)} of ${total}`
+                        : `Reading ${sorting} document${sorting === 1 ? "" : "s"}…`}
+                  </p>
+                  <p className={`mt-0.5 truncate text-[11.5px] ${textMuted}`}>
+                    {aiDown
+                      ? "Paused — the document reader is unavailable."
+                      : finished
+                        ? `${total} document${total === 1 ? "" : "s"} checked`
+                        : scan?.current
+                          ? scan.current
+                          : "Working out what each file is…"}
+                  </p>
+                </div>
+                {finished && (
+                  <button
+                    type="button"
+                    onClick={() => setScan(null)}
+                    aria-label="Dismiss"
+                    className={`-mr-1 grid h-6 w-6 place-items-center rounded-md transition-colors cursor-pointer ${isDark ? "text-gray-500 hover:bg-white/10 hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"}`}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
+              </div>
+              <div className="px-4 pb-3.5 pt-3">
+                <div className={`h-1 overflow-hidden rounded-full ${isDark ? "bg-white/[0.07]" : "bg-gray-100"}`}>
+                  {pct == null || (!finished && pct === 0) ? (
+                    <div className={`h-full w-1/3 rounded-full ${accentBg} motion-safe:animate-[verify-scan_1.4s_ease-in-out_infinite]`} />
+                  ) : (
+                    <div
+                      className={`h-full rounded-full transition-[width] duration-500 ${finished ? "bg-emerald-500" : accentBg}`}
+                      style={{ width: `${finished ? 100 : Math.max(6, pct)}%` }}
+                    />
+                  )}
+                </div>
+                <style>{`@keyframes verify-scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }`}</style>
+                {(scan?.notes.length ?? 0) > 0 && (
+                  <ul className="mt-2.5 max-h-36 space-y-1 overflow-y-auto">
+                    {scan!.notes.map((n, i) => (
+                      <li key={i} className="flex items-start gap-2 text-[11.5px] leading-snug">
+                        <Icon
+                          name={n.startsWith("Filed") || n.startsWith("Read") ? "check" : "doc"}
+                          className={`mt-px h-3 w-3 shrink-0 ${n.startsWith("Filed") || n.startsWith("Read") ? (isDark ? "text-emerald-400" : "text-emerald-600") : textMuted}`}
+                        />
+                        <span className={n.startsWith("Filed") || n.startsWith("Read") ? "" : textMuted}>{n}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
