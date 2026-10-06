@@ -25,6 +25,7 @@ export default [
     route("settings", "./routes/settings.tsx"),
     route("users", "./routes/users.tsx"),
     route("treasury", "./routes/treasury.tsx"),
+    route("investments", "./routes/investments.tsx"),
     route("books/transactions", "./routes/books-transactions.tsx"),
     route("books/review", "./routes/books-review.tsx"),
     route("books/calendar", "./routes/books-calendar.tsx"),

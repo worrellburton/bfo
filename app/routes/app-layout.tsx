@@ -35,20 +35,20 @@ const navItems = [
     ),
   },
   {
-    to: "/tools",
-    label: "Tools",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
-      </svg>
-    ),
-  },
-  {
     to: "/treasury",
     label: "Treasury",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM5.25 10.5v7.5m4.5-7.5v7.5m4.5-7.5v7.5m4.5-7.5v7.5M3 21h18" />
+      </svg>
+    ),
+  },
+  {
+    to: "/investments",
+    label: "Investments",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
       </svg>
     ),
   },
@@ -71,6 +71,15 @@ const navItems = [
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+      },
+      {
+        to: "/books/calendar",
+        label: "Calendar",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
           </svg>
         ),
       },
@@ -119,26 +128,6 @@ const navItems = [
     ),
   },
   {
-    to: "/books/calendar",
-    label: "In Progress",
-    children: [
-      {
-        to: "/books/calendar",
-        label: "Calendar",
-        icon: (
-          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-          </svg>
-        ),
-      },
-    ],
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-  {
     to: "/msas",
     label: "MSAs",
     icon: (
@@ -158,6 +147,10 @@ const navItems = [
   },
 ];
 
+
+// The nav reads as two groups — what the family owns, then the work of
+// running it — separated by a little air rather than headings.
+const SECTION_BREAK = "/books/transactions";
 
 const usersIcon = (
   <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -250,9 +243,7 @@ export default function AppLayout() {
   const showLabels = expanded;
   // The mobile drawer always shows labels, so drill-in navigation works there too.
   const labelsVisible = expanded || drawerOpen;
-  const items = isAdmin(user)
-    ? [...navItems, { to: "/users", label: "Users", icon: usersIcon, badge: pending }]
-    : navItems;
+  const items = navItems;
 
   // Bird-style drill-in nav: a group opens into its own sub-view. `drill`
   // holds the open group's path; "__root__" forces the top level; null follows
@@ -357,7 +348,7 @@ export default function AppLayout() {
                   <button
                     key={item.to}
                     onClick={() => setDrill(item.to)}
-                    className={`relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 cursor-pointer ${
+                    className={`relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 cursor-pointer ${item.to === SECTION_BREAK ? "mt-4" : ""} ${
                       groupActive
                         ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
                         : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
@@ -381,7 +372,7 @@ export default function AppLayout() {
                   title={showLabels ? undefined : item.label}
                   aria-label={showLabels ? undefined : item.label}
                   className={({ isActive }) =>
-                    `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${
+                    `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${item.to === SECTION_BREAK ? "mt-4" : ""} ${
                       showLabels ? "" : "lg:justify-center lg:px-0"
                     } ${
                       isActive || groupActive
@@ -423,11 +414,14 @@ export default function AppLayout() {
             } ${isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
           >
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+              className={`relative w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                 isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
               }`}
             >
               {initials(user)}
+              {pending > 0 && isAdmin(user) && (
+                <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${isDark ? "ring-black" : "ring-white"}`} aria-label={`${pending} waiting for approval`} />
+              )}
             </div>
             <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "lg:hidden"}`}>
               <span className="block truncate font-medium">{displayName(user)}</span>
@@ -456,6 +450,18 @@ export default function AppLayout() {
                 )}
                 {isDark ? "Light mode" : "Dark mode"}
               </button>
+
+              {isAdmin(user) && (
+                <button onClick={() => go("/users")} className={menuItemCls} role="menuitem">
+                  <span className="inline-flex [&>svg]:h-4 [&>svg]:w-4">{usersIcon}</span>
+                  <span className="flex-1">Users</span>
+                  {pending > 0 && (
+                    <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
+                      {pending}
+                    </span>
+                  )}
+                </button>
+              )}
 
               <button onClick={() => go("/notifications")} className={menuItemCls} role="menuitem">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -506,7 +512,7 @@ export default function AppLayout() {
         className="mobile-dock fixed left-1/2 -translate-x-1/2 z-40 lg:hidden"
         style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
       >
-        {["Entities", "Treasury", "Home", "Books", "Tools"].map((label) => {
+        {["Entities", "Treasury", "Home", "Books", "Investments"].map((label) => {
           const item = navItems.find((n) => n.label === label);
           if (!item) return null;
           const active =
