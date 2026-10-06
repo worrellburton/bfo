@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, sbFetch } from "../../lib/auth.js";
+import { canWrite, currentUser, sbFetch } from "../../lib/auth.js";
 
 /** Set a bank account's nickname and/or hidden flag. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -8,6 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const { account_id, nickname, hidden, entity_id, entity_name } = req.body ?? {};
   if (!account_id || typeof account_id !== "string") {

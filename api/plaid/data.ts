@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser } from "../../lib/auth.js";
+import { currentUser, secretMatches } from "../../lib/auth.js";
 
 // A visit older than this counts as a new "login" for change-since purposes.
 const ROTATE_AFTER_MS = 30 * 60 * 1000;
@@ -95,7 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // The scheduled report runs without a session; it proves itself with the
   // cron secret instead.
   const cronSecret = process.env.CRON_SECRET;
-  const fromCron = !!cronSecret && req.headers["x-internal-cron"] === cronSecret;
+  const fromCron = secretMatches(req.headers["x-internal-cron"], cronSecret);
   if (!fromCron) {
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: "unauthorized" });

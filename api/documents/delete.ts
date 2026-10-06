@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { currentUser } from "../../lib/auth.js";
+import { canWrite, currentUser } from "../../lib/auth.js";
 
 const BUCKET = "documents";
 
@@ -19,9 +19,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const { path } = (req.body || {}) as { path?: string };
   if (!path) return res.status(400).json({ error: "missing_path" });
+  // Only entity documents (written by upload-url under assets/<id>/) can be
+  // removed through here — never anything else in the bucket.
+  if (!/^assets\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(path) || path.includes("..")) {
+    return res.status(400).json({ error: "invalid_path" });
+  }
 
   try {
     const supabase = getSupabase();

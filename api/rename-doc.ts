@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
-import { currentUser } from "../lib/auth.js";
+import { canWrite, currentUser } from "../lib/auth.js";
+import { fetchDocument } from "../lib/fetch-document.js";
 
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_FETCH_BYTES = 5 * 1024 * 1024; // 5 MB cap on the document we send to Claude
@@ -26,6 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -50,34 +52,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // fetch fails we still answer based on the filename alone.
   let fileBlock: Anthropic.Messages.ContentBlockParam | null = null;
   if (url) {
-    try {
-      const fetchRes = await fetch(url);
-      if (fetchRes.ok) {
-        const len = Number(fetchRes.headers.get("content-length") || "0");
-        if (!len || len <= MAX_FETCH_BYTES) {
-          const buf = Buffer.from(await fetchRes.arrayBuffer());
-          if (buf.byteLength <= MAX_FETCH_BYTES) {
-            const ct = (contentType || fetchRes.headers.get("content-type") || "").toLowerCase();
-            const b64 = buf.toString("base64");
-            if (ct.includes("pdf")) {
-              fileBlock = {
-                type: "document",
-                source: { type: "base64", media_type: "application/pdf", data: b64 },
-              } as Anthropic.Messages.ContentBlockParam;
-            } else if (ct.startsWith("image/")) {
-              const mt = ct.split(";")[0];
-              if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(mt)) {
-                fileBlock = {
-                  type: "image",
-                  source: { type: "base64", media_type: mt as any, data: b64 },
-                } as Anthropic.Messages.ContentBlockParam;
-              }
-            }
-          }
-        }
+    const file = await fetchDocument(url, MAX_FETCH_BYTES);
+    if (file) {
+      const ct = (contentType || file.contentType).toLowerCase().split(";")[0];
+      const b64 = file.buf.toString("base64");
+      if (ct.includes("pdf")) {
+        fileBlock = { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } };
+      } else if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(ct)) {
+        fileBlock = {
+          type: "image",
+          source: { type: "base64", media_type: ct as "image/png" | "image/jpeg" | "image/gif" | "image/webp", data: b64 },
+        };
       }
-    } catch {
-      // ignore — fall back to name-only
     }
   }
 

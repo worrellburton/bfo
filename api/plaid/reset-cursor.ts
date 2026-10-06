@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, sbFetch } from "../../lib/auth.js";
+import { canWrite, currentUser, sbFetch } from "../../lib/auth.js";
 
 /**
  * Clear a connection's transactions cursor so the next Books sync re-pulls its
@@ -13,6 +13,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const itemId = String(req.body?.item_id ?? "").trim();
   if (!itemId) return res.status(400).json({ error: "missing_item_id" });

@@ -828,7 +828,6 @@ export default function Home() {
     { to: "/assets", label: "Entities", icon: "building" },
     { to: "/treasury", label: "Treasury", icon: "bank" },
     { to: "/books/transactions", label: "Books", icon: "book" },
-    { to: "/tools/taxes", label: "Taxes", icon: "receipt" },
   ];
 
   return (

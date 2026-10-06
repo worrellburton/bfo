@@ -35,7 +35,7 @@ npm run dev
 Your application will be available at `http://localhost:5173`.
 
 Note that `npm run dev` serves the SPA only — the `/api/*` serverless functions
-(sign-in, Plaid, QuickBooks) need `vercel dev` or a deployment.
+(sign-in, Plaid, Mercury, documents) need `vercel dev` or a deployment.
 
 ## Environment
 
@@ -43,7 +43,7 @@ Set these in the Vercel project:
 
 | Variable | Used for |
 | --- | --- |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | users, sessions, sign-in codes, Plaid + QuickBooks tokens |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | users, sessions, sign-in codes, Plaid tokens, Books, entity documents |
 | `BIRD_ACCESS_KEY` | Bird API access key (sent as `Authorization: AccessKey …`) |
 | `BIRD_WORKSPACE_ID` | Bird workspace the channels live in |
 | `BIRD_SMS_CHANNEL_ID` | *optional* — pins the SMS channel; otherwise the workspace's SMS channel is discovered automatically |
@@ -51,12 +51,12 @@ Set these in the Vercel project:
 | `AUTH_SECRET` | *optional* — pepper mixed into the hash of each one-time code |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | bank links on `/treasury`, brokerage links on `/investments` |
 | `PLAID_REDIRECT_URI` | *optional* — required for Production OAuth banks; must match an Allowed redirect URI in the Plaid dashboard |
-| `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET` | QuickBooks reports |
-| `ANTHROPIC_API_KEY` | agents and document renaming |
+| `ANTHROPIC_API_KEY` | reading, filing and verifying entity documents |
+| `CRON_SECRET` | authenticates the scheduled Books sync and Treasury report |
 
 ### Sign-in
 
-`/login` takes a phone number or an email address, sends a 6-digit code through
+`/login` takes a phone number, sends a 6-digit code through
 Bird, and exchanges it for a 30-day session stored in `app_sessions`. Anyone who
 verifies a code lands in `app_users` as `incoming` — an owner or admin approves
 them from `/users` before they can get in. Roles are `owner`, `admin`, `member`

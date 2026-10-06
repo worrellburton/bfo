@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser } from "../../lib/auth.js";
+import { canWrite, currentUser } from "../../lib/auth.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
 import { CountryCode } from "plaid";
 
@@ -40,6 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const { public_token, institution_name, institution_id, kind } = req.body || {};
   if (!public_token) return res.status(400).json({ error: "Missing public_token" });

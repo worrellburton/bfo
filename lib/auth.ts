@@ -495,6 +495,16 @@ export function isAdmin(user: AppUser): boolean {
   return user.role === "owner" || user.role === "admin";
 }
 
+/** Viewers can look but not change anything. */
+export function canWrite(user: AppUser): boolean {
+  return user.role !== "viewer";
+}
+
+/** True when `presented` is exactly `secret`, compared in constant time. */
+export function secretMatches(presented: unknown, secret: string | undefined): boolean {
+  return !!secret && typeof presented === "string" && safeEqual(presented, secret);
+}
+
 // ── HTTP plumbing ─────────────────────────────────────────────────────
 
 export function publicUser(user: AppUser) {

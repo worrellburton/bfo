@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser, sbFetch as db } from "../../lib/auth.js";
+import { canWrite, currentUser, sbFetch as db, secretMatches } from "../../lib/auth.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
@@ -192,7 +192,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
   const fromCron =
     req.method === "GET" &&
-    (cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !!cronScheduleHeader);
+    (cronSecret ? secretMatches(req.headers.authorization, `Bearer ${cronSecret}`) : !!cronScheduleHeader);
   if (!fromCron) {
     const user = await currentUser(req);
     if (!user) {
@@ -207,6 +207,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       return res.status(401).json({ error: "unauthorized" });
     }
+    if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
   }
 
   // Sunrise gate — only for the automatic cron run. The cron fires a few times

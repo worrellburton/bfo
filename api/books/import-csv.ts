@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash } from "node:crypto";
-import { currentUser, sbFetch as db } from "../../lib/auth.js";
+import { canWrite, currentUser, sbFetch as db } from "../../lib/auth.js";
 import { classify } from "../../lib/books-rules.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 
@@ -25,6 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const accountId = String(req.body?.account_id ?? "").trim();
   const input = Array.isArray(req.body?.rows) ? (req.body.rows as InRow[]) : [];

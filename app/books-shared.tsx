@@ -706,9 +706,11 @@ export function accountIcon(label: string): ReactNode {
  * The account pill's leading disc, tinted by chart section: revenue green,
  * operating orange, other violet, flow neutral. Unset stays neutral.
  */
-export function AccountDisc({ label, isDark }: { label: string; isDark: boolean }) {
+export function AccountDisc({ label, isDark, uncategorized = false }: { label: string; isDark: boolean; uncategorized?: boolean }) {
   const c = label.trim()[0];
-  const tone = isDark
+  const tone = uncategorized
+    ? isDark ? "bg-amber-500/15 text-amber-300" : "bg-amber-100 text-amber-700"
+    : isDark
     ? c === "4" ? "bg-emerald-500/15 text-emerald-300"
       : c === "6" ? "bg-orange-500/15 text-orange-300"
       : c === "7" ? "bg-violet-500/15 text-violet-300"
@@ -2401,7 +2403,20 @@ export function TxnTable({
       onChange: (v: string) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v)),
       options:
         !t.book_category && !t.loan_id
-          ? [{ value: "", label: pretty(t.plaid_category), hint: "auto", icon: accountIcon("") }, ...catOptions]
+          ? [
+              // Not on the books yet: say so on the pill, and keep Plaid's own
+              // guess as a hint in the list rather than passing it off as the
+              // account (it used to read "Home improvement" under the
+              // Uncategorized filter).
+              {
+                value: "",
+                label: "Uncategorized",
+                short: "Uncategorized",
+                hint: t.plaid_category ? `Plaid: ${pretty(t.plaid_category)}` : undefined,
+                icon: accountIcon(""),
+              },
+              ...catOptions,
+            ]
           : catOptions,
     };
   };
@@ -2442,7 +2457,7 @@ export function TxnTable({
               size="sm"
               touch
               label="Account"
-              leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} />}
+              leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
             />
           </div>
         )}
@@ -2683,7 +2698,7 @@ export function TxnTable({
                       touch
                       chevron="always"
                       label="Account"
-                      leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} />}
+                      leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
                     />
                   </div>
                   {t.entity_name ? (
@@ -2916,7 +2931,7 @@ export function TxnTable({
                       touch
                       chevron="hover"
                       label="Account"
-                      leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} />}
+                      leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
                     />
                   </div>
                 </td>

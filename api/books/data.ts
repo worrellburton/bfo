@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, sbFetch as db } from "../../lib/auth.js";
+import { canWrite, currentUser, sbFetch as db } from "../../lib/auth.js";
 import { computeLoans } from "../../lib/books-loans.js";
 import { patchMatching, ACCOUNTS, sectionOf, typeForCategory } from "../../lib/books-rules.js";
 
@@ -241,6 +241,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (req.method !== "GET" && !canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   try {
     // ── Loan registry actions ───────────────────────────────────────────

@@ -30,7 +30,7 @@ export default function TermsOfService() {
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>2. Description of Service</h2>
         <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-          BFO Finance is a private financial management and analytics platform that integrates with third-party services including QuickBooks Online. The Service is intended solely for authorized users of the Burton Family Office.
+          BFO Finance is a private financial management and analytics platform that integrates with third-party services including Plaid and Mercury. The Service is intended solely for authorized users of the Burton Family Office.
         </p>
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>3. Account and Access</h2>
@@ -40,7 +40,7 @@ export default function TermsOfService() {
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>4. Third-Party Integrations</h2>
         <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-          The Service may connect to third-party platforms such as Intuit QuickBooks. By authorizing these connections, you grant BFO Finance permission to access your financial data from these platforms in accordance with their respective terms of service. We do not store your third-party credentials.
+          The Service may connect to third-party platforms such as Plaid and Mercury. By authorizing these connections, you grant BFO Finance permission to access your financial data from these platforms in accordance with their respective terms of service. We do not store your third-party credentials.
         </p>
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>5. Data Use</h2>

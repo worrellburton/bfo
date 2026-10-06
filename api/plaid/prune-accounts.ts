@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser, sb, sbFetch } from "../../lib/auth.js";
+import { canWrite, currentUser, sb, sbFetch } from "../../lib/auth.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
 
 /**
@@ -21,6 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const dryRun = !!req.body?.dry_run;
 

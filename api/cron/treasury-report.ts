@@ -10,7 +10,7 @@ import {
   type PlannedInflow,
 } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser, formatPhone, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { currentUser, formatPhone, sb, secretMatches, sendEmail, type AppUser } from "../../lib/auth.js";
 
 /**
  * The Treasury report email. GET = the daily Vercel cron (sends to whoever's
@@ -1148,7 +1148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // handler cold anyway). An earlier version keyed off an "x-vercel-cron"
   // header Vercel never sends, which silently 401'd every scheduled fire.
   const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
-  const authorized = secret ? req.headers.authorization === `Bearer ${secret}` : !!cronScheduleHeader;
+  const authorized = secret ? secretMatches(req.headers.authorization, `Bearer ${secret}`) : !!cronScheduleHeader;
   if (!authorized) {
     // Booleans only — never the secret — so a rejected fire explains itself.
     console.error("treasury-report rejected", {

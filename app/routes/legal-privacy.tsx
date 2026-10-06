@@ -28,7 +28,7 @@ export default function PrivacyPolicy() {
           <strong>Account Information:</strong> When you use BFO Finance, we may collect your name, email address, and login credentials for authentication purposes.
         </p>
         <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-          <strong>Financial Data:</strong> When you connect third-party services (such as QuickBooks Online), we access financial data including but not limited to: income statements, balance sheets, invoices, expenses, and transaction history. This data is accessed via secure API connections using OAuth 2.0 authorization.
+          <strong>Financial Data:</strong> When you connect third-party services (such as your bank through Plaid, or Mercury), we access financial data including but not limited to: account balances, transactions, and investment holdings. This data is accessed via secure API connections using OAuth 2.0 authorization.
         </p>
         <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
           <strong>Usage Data:</strong> We may collect information about how you interact with the Service, including pages viewed and features used.
@@ -40,7 +40,7 @@ export default function PrivacyPolicy() {
         </p>
         <ul style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16, paddingLeft: 24 }}>
           <li>Provide financial analytics, dashboards, and reporting</li>
-          <li>Display your QuickBooks data within the BFO Finance platform</li>
+          <li>Display your connected account data within the BFO Finance platform</li>
           <li>Maintain and improve the Service</li>
           <li>Ensure the security of your account</li>
         </ul>
@@ -57,7 +57,7 @@ export default function PrivacyPolicy() {
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>4. Data Security</h2>
         <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-          We implement industry-standard security measures to protect your data. Third-party integrations use OAuth 2.0 for authorization — we never store your QuickBooks username or password. Access tokens are stored securely and refreshed automatically.
+          We implement industry-standard security measures to protect your data. Third-party integrations use OAuth 2.0 for authorization — we never store your bank usernames or passwords. Access tokens are stored securely and refreshed automatically.
         </p>
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>5. Data Retention</h2>
@@ -67,7 +67,7 @@ export default function PrivacyPolicy() {
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>6. Third-Party Services</h2>
         <p style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>
-          BFO Finance integrates with third-party services including Intuit QuickBooks Online. These services have their own privacy policies that govern their collection and use of your data. We encourage you to review the privacy policies of any third-party services you connect.
+          BFO Finance integrates with third-party services including Plaid and Mercury. These services have their own privacy policies that govern their collection and use of your data. We encourage you to review the privacy policies of any third-party services you connect.
         </p>
 
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 32, marginBottom: 12 }}>7. Your Rights</h2>

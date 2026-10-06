@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, sbFetch as db } from "../../lib/auth.js";
+import { canWrite, currentUser, sbFetch as db } from "../../lib/auth.js";
 import { storageUpload } from "../../lib/storage.js";
 
 /**
@@ -16,6 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const txnId = String(req.body?.transaction_id ?? "").trim();
   const filename = String(req.body?.filename ?? "file").trim().slice(0, 120) || "file";

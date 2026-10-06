@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
-import { currentUser } from "../../lib/auth.js";
+import { canWrite, currentUser } from "../../lib/auth.js";
+import { fetchDocument } from "../../lib/fetch-document.js";
 
 /**
  * Reads an uploaded entity document and says which formation filing it is,
@@ -60,6 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "missing_api_key" });
@@ -73,25 +75,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Fetch the document so Claude can read it — PDFs and common images only.
   let block: Anthropic.Messages.ContentBlockParam | null = null;
-  try {
-    const r = await fetch(url);
-    if (r.ok) {
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.byteLength <= MAX_FETCH_BYTES) {
-        const ct = (contentType || r.headers.get("content-type") || "").toLowerCase().split(";")[0];
-        const data = buf.toString("base64");
-        if (ct.includes("pdf")) {
-          block = { type: "document", source: { type: "base64", media_type: "application/pdf", data } };
-        } else if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(ct)) {
-          block = {
-            type: "image",
-            source: { type: "base64", media_type: ct as "image/png" | "image/jpeg" | "image/gif" | "image/webp", data },
-          };
-        }
-      }
+  const file = await fetchDocument(url, MAX_FETCH_BYTES);
+  if (file) {
+    const ct = (contentType || file.contentType).toLowerCase().split(";")[0];
+    const data = file.buf.toString("base64");
+    if (ct.includes("pdf")) {
+      block = { type: "document", source: { type: "base64", media_type: "application/pdf", data } };
+    } else if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(ct)) {
+      block = {
+        type: "image",
+        source: { type: "base64", media_type: ct as "image/png" | "image/jpeg" | "image/gif" | "image/webp", data },
+      };
     }
-  } catch {
-    // fall through — nothing to read
   }
   if (!block) return res.status(200).json({ kind: "other", confidence: "low", read: false });
 

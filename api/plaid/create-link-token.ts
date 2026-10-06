@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser, sb } from "../../lib/auth.js";
+import { canWrite, currentUser, sb } from "../../lib/auth.js";
 import { Products, CountryCode } from "plaid";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -12,6 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await currentUser(req);
   if (!user) return res.status(401).json({ error: "unauthorized" });
+  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   // Brokerage connections ask for investments; Treasury asks for transactions
   // so bank balances and history come back.

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
 import { currentUser } from "../../lib/auth.js";
+import { fetchDocument } from "../../lib/fetch-document.js";
 
 /**
  * Cross-checks an entity's record against its own documents: Claude reads
@@ -130,15 +131,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ordered = [...documents].sort((a, b) => Number(!!b.filedAs) - Number(!!a.filedAs)).slice(0, MAX_DOCS);
   const fetched = await Promise.all(
     ordered.map(async (d) => {
-      try {
-        const r = await fetch(d.url);
-        if (!r.ok) return null;
-        const buf = Buffer.from(await r.arrayBuffer());
-        const ct = (d.contentType || r.headers.get("content-type") || "").toLowerCase().split(";")[0];
-        return { doc: d, buf, ct };
-      } catch {
-        return null;
-      }
+      const file = await fetchDocument(d.url, MAX_TOTAL_BYTES);
+      if (!file) return null;
+      const ct = (d.contentType || file.contentType).toLowerCase().split(";")[0];
+      return { doc: d, buf: file.buf, ct };
     })
   );
   const content: Anthropic.Messages.ContentBlockParam[] = [];
