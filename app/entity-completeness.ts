@@ -43,8 +43,8 @@ export function entityType(a: { name?: string; type?: string }): EntityType {
 
 /** Tax classifications that fit each type. */
 export const TAX_CLASSES: Record<EntityType, string[]> = {
-  LLC: ["Disregarded Entity", "Partnership", "C Corporation"],
-  "C-Corp": ["C Corporation"],
+  LLC: ["Disregarded Entity", "Partnership", "S Corporation", "C Corporation"],
+  "C-Corp": ["C Corporation", "S Corporation"],
   Trust: ["Grantor trust", "Non-grantor trust"],
 };
 

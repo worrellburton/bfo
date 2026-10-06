@@ -525,43 +525,14 @@ export function EstateMapView({
 
 
   // Subscribe to Firebase assets and build a name -> record lookup (the id
-  // opens the entity page; the record scores the paperwork).
-  // Seed any Estate Map entities that don't exist as assets yet.
+  // opens the entity page; the record scores the paperwork). Read-only: the
+  // map no longer creates entity records from its built-in list.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    let seeded = false;
     async function setup() {
       const { db, authReady } = await import("../firebase");
       await authReady;
-      const { ref, onValue, push, get } = await import("firebase/database");
-
-      // One-time seed: create any missing entities as assets
-      if (!seeded && !localStorage.getItem("bfo-assets-seeded-v1")) {
-        seeded = true;
-        try {
-          const snap = await get(ref(db, "assets"));
-          const existing = snap.val() || {};
-          const existingNames = new Set<string>(
-            Object.values(existing).map((a: any) => (a?.name || "").toLowerCase())
-          );
-          for (const ent of INITIAL_ENTITIES) {
-            if (!existingNames.has(ent.name.toLowerCase())) {
-              const lower = ent.name.toLowerCase();
-              const type = /\btrust\b/.test(lower) ? "Trust" : lower.includes("inc") && !lower.includes("llc") ? "C-Corp" : "LLC";
-              await push(ref(db, "assets"), {
-                name: ent.name,
-                type,
-                state: "",
-                ein: "",
-                createdAt: Date.now(),
-              });
-            }
-          }
-          localStorage.setItem("bfo-assets-seeded-v1", "1");
-        } catch (err) {
-          console.error("Estate seed error:", err);
-        }
-      }
+      const { ref, onValue } = await import("firebase/database");
 
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
         const data = snapshot.val();

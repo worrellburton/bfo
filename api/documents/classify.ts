@@ -22,7 +22,7 @@ export type DocKind = "ein_letter" | "w9" | "articles" | "operating_agreement" |
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["kind", "confidence", "entityName", "ein", "date", "state", "trustees", "grantors", "beneficiaries"],
+  required: ["kind", "confidence", "entityName", "ein", "date", "state", "trustees", "grantors", "beneficiaries", "taxClassification", "taxClassificationEvidence"],
   properties: {
     kind: { type: "string", enum: ["ein_letter", "w9", "articles", "operating_agreement", "trust_agreement", "trust_certificate", "other"] },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
@@ -33,6 +33,10 @@ const SCHEMA = {
     trustees: { type: ["string", "null"] },
     grantors: { type: ["string", "null"] },
     beneficiaries: { type: ["string", "null"] },
+    taxClassification: {
+      anyOf: [{ type: "string", enum: ["Disregarded Entity", "Partnership", "S Corporation", "C Corporation"] }, { type: "null" }],
+    },
+    taxClassificationEvidence: { type: ["string", "null"] },
   },
 } as const;
 
@@ -52,6 +56,14 @@ const SYSTEM = [
   "For trust documents (agreement, certification, appointment of trustees, amendments), also list the trustees, the grantors / settlors / trustors,",
   "and the beneficiaries as named in the document, comma-separated (people or entities). Use null when not stated.",
   "A document that appoints successor trustees or assigns property to the trust is 'other' — but still report the names it states.",
+  "Federal tax classification (taxClassification) — report it only when this document states it, else null:",
+  "- EIN letter (CP 575 / 147C): the return it says the entity must file decides it — Form 1065 = Partnership, Form 1120-S = S Corporation, Form 1120 = C Corporation;",
+  "  a letter assigning the EIN to a single-member LLC 'disregarded as separate from its owner' (or naming Form 1040 / the owner's return) = Disregarded Entity.",
+  "- W-9 line 3: the LLC box with tax classification P = Partnership, S = S Corporation, C = C Corporation; 'Individual/sole proprietor or single-member LLC' checked,",
+  "  or the W-9 filed in the owner's name with the LLC on line 2 = Disregarded Entity. Boxes for C Corporation / S Corporation / Partnership map directly.",
+  "- Form 2553 (S election) = S Corporation; Form 8832 = whichever classification it elects.",
+  "- An operating agreement naming two or more members, with no election, = Partnership; exactly one member = Disregarded Entity.",
+  "taxClassificationEvidence: one short phrase quoting what you read (e.g. 'CP 575: required to file Form 1065', 'W-9: LLC box, P').",
   "confidence: high when the document's title or form number makes the type unambiguous.",
 ].join("\n");
 
@@ -133,6 +145,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       trustees: string | null;
       grantors: string | null;
       beneficiaries: string | null;
+      taxClassification: "Disregarded Entity" | "Partnership" | "S Corporation" | "C Corporation" | null;
+      taxClassificationEvidence: string | null;
     };
     const ein = parsed.ein && /^\d{2}-?\d{7}$/.test(parsed.ein.trim())
       ? parsed.ein.trim().replace(/^(\d{2})-?(\d{7})$/, "$1-$2")

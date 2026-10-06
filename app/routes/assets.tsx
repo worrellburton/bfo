@@ -11,7 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
-import { EstateMapView, INITIAL_ENTITIES } from "./estate-map";
+import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
 import {
   BTN_BASE,
@@ -52,7 +52,11 @@ interface Asset {
   ein: string;
   createdAt: number;
   ownerId?: string;
-  llcType?: "Disregarded Entity" | "Partnership" | "C Corporation" | "";
+  /** Trusts: the people who act for it — shown where an LLC shows its owner. */
+  trustees?: string;
+  llcType?: "Disregarded Entity" | "Partnership" | "S Corporation" | "C Corporation" | "";
+  /** Where the tax class came from — e.g. "EIN letter: required to file Form 1065". */
+  llcTypeSource?: string;
   initials?: string;
   stateLink?: string;
   operatingAgreementDate?: string;
@@ -72,36 +76,6 @@ type SortDir = "asc" | "desc";
 type EntView = "list" | "cards" | "map";
 type Score = { score: number; items: CompletenessItem[]; missing: CompletenessItem[] };
 
-// ── Seed tables (unchanged from the original page) ──────────────────────────
-// Ownership hierarchy from the estate map: child name (lowercased) → parent name.
-const OWNERSHIP_MAP: Record<string, string> = (() => {
-  const map: Record<string, string> = {};
-  for (const ent of INITIAL_ENTITIES) {
-    if (ent.parentId) {
-      const parent = INITIAL_ENTITIES.find((e) => e.id === ent.parentId);
-      if (parent) map[ent.name.toLowerCase()] = parent.name;
-    }
-  }
-  return map;
-})();
-
-// LLC type mapping based on known entity data
-const LLC_TYPE_MAP: Record<string, "Disregarded Entity" | "Partnership" | "C Corporation"> = {
-  "ledger louise, llc": "Disregarded Entity",
-  "swisshelm mountain ventures, llc": "Disregarded Entity",
-  "sundown investments, llc": "Disregarded Entity",
-  "ledger burton, llc": "Disregarded Entity",
-  "worrell burton, llc": "Disregarded Entity",
-  "fdj hesperia, llc (100%)": "Disregarded Entity",
-  "fdj cfs, llc (100%)": "Disregarded Entity",
-  "palomino ranch on the bend, llc (100%)": "Disregarded Entity",
-  "persons lodge llc (100%)": "Disregarded Entity",
-  "breezewood (100%)": "Disregarded Entity",
-  "arizona center for recovery - a new direction, llc": "Disregarded Entity",
-  "quail lakes apartments, llc": "Partnership",
-  "hsl tp hotel, llc": "Partnership",
-  "hsl placita west ltd partnership": "Partnership",
-};
 
 const FILING_KEYS = ["einLetter", "w9", "articles", "operatingAgreement"] as const;
 
@@ -174,7 +148,30 @@ function missingSummary(s: Score, max = 2): string {
   if (!s.missing.length) return "All requirements on file";
   const names = s.missing.slice(0, max).map((m) => m.label);
   const more = s.missing.length - max;
-  return `Missing: ${names.join(", ")}${more > 0 ? ` +${more} more` : ""} (+${100 - s.score})`;
+  return `Missing: ${names.join(", ")}${more > 0 ? ` +${more} more` : ""} (+${100 - s.score} pts)`;
+}
+
+const PERSON_PATH =
+  "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z";
+
+/**
+ * A trust isn't owned the way an LLC is — trustees act for it. Where an LLC
+ * row offers an "Owned by" picker, a trust row names its trustees (edited on
+ * the entity page, where the trust agreement fills them in).
+ */
+function TrusteesCell({ a, t3, onOpen }: { a: Asset; t3: string; onOpen: () => void }) {
+  const names = (a.trustees ?? "").trim();
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={names ? `Trustees: ${names}` : "Add trustees on the entity page"}
+      className={`inline-flex max-w-full min-h-[32px] items-center gap-1.5 rounded-md text-left text-sm lg:text-xs cursor-pointer hover:underline decoration-dotted underline-offset-2 ${names ? "" : t3}`}
+    >
+      <Icon d={PERSON_PATH} className="w-3.5 h-3.5 shrink-0 opacity-60" />
+      <span className="truncate">{names ? `Trustees: ${names}` : "No trustees yet"}</span>
+    </button>
+  );
 }
 
 /** The compliance ring's colour — the entity page's scale (emerald ≥ 90, indigo ≥ 60, amber below). */
@@ -947,115 +944,12 @@ export default function Assets() {
     async function setup() {
       const { db, authReady } = await import("../firebase");
       await authReady;
-      const { ref, onValue, get, update, push } = await import("firebase/database");
+      const { ref, onValue, get, update } = await import("firebase/database");
 
-      // One-time seed: create any Estate Map entities that don't exist yet
-      if (!localStorage.getItem("bfo-assets-seeded-v1")) {
-        try {
-          const snap = await get(ref(db, "assets"));
-          const existing = snap.val() || {};
-          const existingNames = new Set<string>(
-            Object.values(existing).map((a: any) => (a?.name || "").toLowerCase())
-          );
-          for (const ent of INITIAL_ENTITIES) {
-            if (!existingNames.has(ent.name.toLowerCase())) {
-              const lower = ent.name.toLowerCase();
-              const type = /\btrust\b/.test(lower) ? "Trust" : lower.includes("inc") && !lower.includes("llc") ? "C-Corp" : "LLC";
-              await push(ref(db, "assets"), {
-                name: ent.name,
-                type,
-                state: "",
-                ein: "",
-                createdAt: Date.now(),
-              });
-            }
-          }
-          localStorage.setItem("bfo-assets-seeded-v1", "1");
-        } catch (err) {
-          console.error("Estate seed error:", err);
-        }
-      }
-
-      // One-time seed: populate entity details from spreadsheet data
-      if (!localStorage.getItem("bfo-entity-details-seeded-v1")) {
-        try {
-          const snap2 = await get(ref(db, "assets"));
-          const all = snap2.val() || {};
-          const entityData: Record<string, { state?: string; ein?: string; type?: string; address?: string; formationDate?: string }> = {
-            "burton family revocable trust": { type: "Trust", state: "", address: "" },
-            "ledger burton, llc": { state: "Delaware", ein: "93-3749778", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-17" },
-            "ledger louise, llc": { state: "Nevada", ein: "93-3776895", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-11" },
-            "sundown investments, llc": { state: "Arizona", ein: "93-3965064", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-16" },
-            "swisshelm mountain ventures, llc": { state: "Arizona", ein: "93-3788576", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-30" },
-            "worrell burton, llc": { state: "Nevada", ein: "93-3856277", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2023-08-28" },
-            "arizona center for recovery - a new direction, llc": { state: "Arizona", ein: "85-3388398", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2019-06-25" },
-            "fdj hesperia, llc (100%)": { state: "Arizona", ein: "81-0625880", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2016-06-09" },
-            "palomino ranch on the bend, llc (100%)": { state: "Arizona", ein: "45-2077575", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2011-05-11" },
-            "breezewood (100%)": { state: "Arizona", ein: "27-0298583", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2000-06-04" },
-            "persons lodge llc (100%)": { state: "Arizona", ein: "83-0788287", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028", formationDate: "2016-06-09" },
-            "vq national": { state: "Arizona", ein: "86-0278038", type: "C-Corp", address: "11201 N Tatum Blvd Ste 300, PMB, Phoenix, AZ 85028" },
-            "catalog digital, inc": { state: "Delaware", ein: "92-3587849", type: "C-Corp", address: "540 Hudson #6, New York, NY 10014", formationDate: "2023-04-12" },
-            "quail lakes apartments, llc": { state: "Arizona", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028" },
-            "hsl tp hotel, llc": { state: "Arizona", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028" },
-            "hsl placita west ltd partnership": { state: "Arizona", address: "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028" },
-            "fdj cfs, llc (100%)": { state: "Delaware", formationDate: "2017-01-24" },
-            "atlas hydration, inc": { type: "C-Corp" },
-          };
-          for (const [fbId, fbVal] of Object.entries(all)) {
-            const name = ((fbVal as any)?.name || "").toLowerCase();
-            const seed = entityData[name];
-            if (seed) {
-              const updates: Record<string, string> = {};
-              if (seed.state && !(fbVal as any).state) updates.state = seed.state;
-              if (seed.ein && !(fbVal as any).ein) updates.ein = seed.ein;
-              if (seed.type && (fbVal as any).type !== seed.type) updates.type = seed.type;
-              if (seed.address && !(fbVal as any).address) updates.address = seed.address;
-              if (seed.formationDate && !(fbVal as any).formationDate) updates.formationDate = seed.formationDate;
-              if (Object.keys(updates).length > 0) {
-                await update(ref(db, `assets/${fbId}`), updates);
-              }
-            }
-          }
-          localStorage.setItem("bfo-entity-details-seeded-v1", "1");
-        } catch (err) {
-          console.error("Entity details seed error:", err);
-        }
-      }
-
-      // One-time seed: populate ownership and LLC type
-      if (!localStorage.getItem("bfo-ownership-seeded-v1")) {
-        try {
-          const snap3 = await get(ref(db, "assets"));
-          const all3 = snap3.val() || {};
-          // Build name-to-id lookup
-          const nameToId: Record<string, string> = {};
-          for (const [fbId, fbVal] of Object.entries(all3)) {
-            const name = ((fbVal as any)?.name || "").toLowerCase();
-            nameToId[name] = fbId;
-          }
-          for (const [fbId, fbVal] of Object.entries(all3)) {
-            const name = ((fbVal as any)?.name || "").toLowerCase();
-            const updates: Record<string, string> = {};
-            // Set ownerId from estate map hierarchy
-            const ownerName = OWNERSHIP_MAP[name];
-            if (ownerName && !(fbVal as any).ownerId) {
-              const ownerId = nameToId[ownerName.toLowerCase()];
-              if (ownerId) updates.ownerId = ownerId;
-            }
-            // Set llcType
-            const llcType = LLC_TYPE_MAP[name];
-            if (llcType && !(fbVal as any).llcType) {
-              updates.llcType = llcType;
-            }
-            if (Object.keys(updates).length > 0) {
-              await update(ref(db, `assets/${fbId}`), updates);
-            }
-          }
-          localStorage.setItem("bfo-ownership-seeded-v1", "1");
-        } catch (err) {
-          console.error("Ownership seed error:", err);
-        }
-      }
+      // (The browser used to seed entities, EINs, owners and tax classes
+      // from hard-coded tables on first load. Those were guesses — every
+      // LLC was stamped "Disregarded Entity" — so the record now comes only
+      // from people and from the documents on file.)
 
       // One-time fix: early seeding saved every non-Inc entity as an "LLC",
       // the family trust included. Store trusts as trusts.
@@ -1972,6 +1866,9 @@ export default function Assets() {
                       )}
                     </td>
                     <td className={`${cell} ${COLS.owner} ${mute}`}>
+                      {entityType(a) === "Trust" ? (
+                        <TrusteesCell a={a} t3={t3} onOpen={() => navigate(`/assets/${a.id}`)} />
+                      ) : (
                       <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
                         <Menu
                           value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
@@ -1985,6 +1882,7 @@ export default function Assets() {
                           label="Owned by"
                         />
                       </div>
+                      )}
                     </td>
                     <td className={`${cell} ${COLS.filings} ${mute}`}>{filingPips(a, s)}</td>
                     <td className={`${cell} ${COLS.score} ${mute}`}>
@@ -2064,10 +1962,15 @@ export default function Assets() {
                   ) : (
                     <p className={`flex items-baseline gap-1 min-w-0 text-sm lg:text-xs ${t2}`} title={missingSummary(s, 99)}>
                       <span className="truncate">Missing: {s.missing.map((m) => m.label).join(", ")}</span>
-                      <span className={`shrink-0 ${amberTone(isDark)}`}>+{100 - s.score}</span>
+                      <span className={`shrink-0 ${amberTone(isDark)}`} title="Points the record gains once these are on file">+{100 - s.score} pts</span>
                     </p>
                   )}
                   <div className="mt-auto flex items-center gap-3 min-w-0">
+                    {entityType(a) === "Trust" ? (
+                      <div className="min-w-0">
+                        <TrusteesCell a={a} t3={t3} onOpen={() => navigate(`/assets/${a.id}`)} />
+                      </div>
+                    ) : (
                     <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
                       <Menu
                         value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
@@ -2081,6 +1984,7 @@ export default function Assets() {
                         leading={<Icon d={PATHS.building} className="w-3.5 h-3.5 shrink-0 opacity-60" />}
                       />
                     </div>
+                    )}
                     <span className="shrink-0">{filingPips(a, s)}</span>
                     <RowMenu
                       isDark={isDark}
