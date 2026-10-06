@@ -40,9 +40,20 @@ export default function BooksVendorDetail() {
   const [nameDraft, setNameDraft] = useState("");
   const [mergeTarget, setMergeTarget] = useState<string | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
+  const nameDone = useRef(false);
+  function commitName(save: boolean) {
+    if (nameDone.current) return;
+    nameDone.current = true;
+    setEditingName(false);
+    const next = nameDraft.trim();
+    if (save && next && next !== name) void saveSettings({ vendor_name: next });
+  }
 
   async function load() {
-    if (!name) return;
+    if (!name) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -171,12 +182,12 @@ export default function BooksVendorDetail() {
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   const border = isDark ? "border-white/10" : "border-gray-200";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const head = `text-[11px] uppercase tracking-[0.12em] ${subtle}`;
+  const head = `text-xs ${subtle}`;
   const num = "px-3 py-2 text-right whitespace-nowrap tabular-nums";
 
   return (
     <div className="w-full">
-      <Link to="/books/vendors" className={`text-sm ${subtle} hover:underline`}>← Vendors</Link>
+      <Link to="/books/vendors" className={`inline-flex items-center min-h-[40px] sm:min-h-0 -my-[12px] sm:my-0 text-sm ${subtle} hover:underline`}>← Vendors</Link>
 
       <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-3 mt-2 mb-7">
         <div className="min-w-0 max-w-3xl">
@@ -184,18 +195,21 @@ export default function BooksVendorDetail() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                setEditingName(false);
-                if (nameDraft.trim() && nameDraft.trim() !== name) void saveSettings({ vendor_name: nameDraft.trim() });
+                commitName(true);
               }}
             >
               <input
                 ref={nameInput}
                 value={nameDraft}
                 onChange={(e) => setNameDraft(e.target.value)}
-                onBlur={() => {
-                  setEditingName(false);
-                  if (nameDraft.trim() && nameDraft.trim() !== name) void saveSettings({ vendor_name: nameDraft.trim() });
+                onBlur={() => commitName(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    commitName(false);
+                  }
                 }}
+                aria-label="Vendor name"
                 maxLength={80}
                 className={`w-full bg-transparent border-b text-2xl font-bold tracking-tight focus:outline-none ${
                   isDark ? "border-white/25 focus:border-white/60 text-white" : "border-gray-300 focus:border-gray-500 text-gray-900"
@@ -206,10 +220,12 @@ export default function BooksVendorDetail() {
             <button
               onClick={() => {
                 setNameDraft(name);
+                nameDone.current = false;
                 setEditingName(true);
               }}
+              disabled={!name}
               title="Rename this vendor"
-              className="group flex items-center gap-2.5 text-left cursor-pointer max-w-full"
+              className="group flex items-center gap-2.5 min-h-[40px] text-left cursor-pointer max-w-full disabled:cursor-default"
             >
               <h1 className={`text-2xl font-bold tracking-tight truncate ${isDark ? "" : "text-gray-900"}`}>
                 {name || "Vendor"}
@@ -225,10 +241,13 @@ export default function BooksVendorDetail() {
           {/* The account and type new arrivals from this vendor default into. */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-2">
             <span className="inline-flex items-center gap-2">
-              <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Default account</span>
+              <span className={`text-xs ${subtle}`}>Default account</span>
               <Menu
                 value={defaultAccount}
                 isDark={isDark}
+                touch
+                label="Default account"
+                placeholder="Choose account…"
                 disabled={saving || loading}
                 onChange={(v) => void saveSettings({ book_category: v })}
                 options={categories.map((c) => ({
@@ -241,10 +260,12 @@ export default function BooksVendorDetail() {
               />
             </span>
             <span className="inline-flex items-center gap-2">
-              <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Default type</span>
+              <span className={`text-xs ${subtle}`}>Default type</span>
               <Menu
                 value={defaultType}
                 isDark={isDark}
+                touch
+                label="Default type"
                 disabled={saving || loading}
                 onChange={(v) => void saveSettings({ type_override: v })}
                 options={[
@@ -256,10 +277,12 @@ export default function BooksVendorDetail() {
             </span>
             {/* Fold this vendor's whole history into another vendor. */}
             <span className="inline-flex items-center gap-2">
-              <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Merge into</span>
+              <span className={`text-xs ${subtle}`}>Merge into</span>
               <Menu
                 value=""
                 isDark={isDark}
+                touch
+                label="Merge into"
                 disabled={saving || loading || vendors.length < 2}
                 placeholder="Choose vendor…"
                 onChange={(target) => {
@@ -285,7 +308,7 @@ export default function BooksVendorDetail() {
               ] as const
             ).map(([label, value, tone]) => (
               <div key={label}>
-                <p className={`text-[11px] uppercase tracking-wider mb-0.5 ${subtle}`}>{label}</p>
+                <p className={`text-xs mb-0.5 ${subtle}`}>{label}</p>
                 <p className={`text-lg font-semibold tabular-nums tracking-tight ${tone}`}>{value}</p>
               </div>
             ))}
@@ -306,7 +329,9 @@ export default function BooksVendorDetail() {
           ))}
         </div>
       ) : txns.length === 0 ? (
-        <p className={`text-sm ${subtle}`}>No transactions found for this vendor.</p>
+        error ? null : <p className={`text-sm ${subtle}`}>
+          {name ? "No transactions found for this vendor." : "No vendor chosen — pick one from the Vendors list."}
+        </p>
       ) : (
         <>
           {/* Monthly shape, one row per year. */}

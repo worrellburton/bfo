@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 import { TxnTable, money, type Txn } from "../books-shared";
@@ -41,6 +41,11 @@ function TxnFinder({
   const [results, setResults] = useState<Txn[]>([]);
   const [searching, setSearching] = useState(false);
   const [attaching, setAttaching] = useState<string | null>(null);
+  // The parent hands a fresh Set every render; key the search on its
+  // contents so an unrelated parent re-render doesn't re-run the query.
+  const attachedRef = useRef(attached);
+  attachedRef.current = attached;
+  const attachedKey = [...attached].sort().join("|");
 
   useEffect(() => {
     if (!q.trim()) {
@@ -55,14 +60,14 @@ function TxnFinder({
             `/api/books/data?report=transactions&limit=25&q=${encodeURIComponent(q.trim())}`
           );
           const data = await res.json().catch(() => ({}));
-          if (res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attached.has(r.transaction_id)));
+          if (res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attachedRef.current.has(r.transaction_id)));
         } finally {
           setSearching(false);
         }
       })();
     }, 300);
     return () => clearTimeout(t);
-  }, [q, attached]);
+  }, [q, attachedKey]);
 
   async function attach(t: Txn) {
     setAttaching(t.transaction_id);
@@ -89,7 +94,8 @@ function TxnFinder({
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Find transactions to attach — search any description…"
-        className={`w-full max-w-md px-3 py-2 rounded-lg text-sm border ${
+        aria-label="Find transactions to attach"
+        className={`w-full max-w-md px-3 h-[40px] sm:h-9 rounded-lg text-sm border ${
           isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
         }`}
       />
@@ -103,15 +109,15 @@ function TxnFinder({
             results.map((t) => (
               <div
                 key={t.transaction_id}
-                className={`flex items-center gap-3 px-3 py-2 border-t first:border-t-0 text-sm ${
+                className={`flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 px-3 py-2 border-t first:border-t-0 text-sm ${
                   isDark ? "border-white/5" : "border-gray-100"
                 }`}
               >
                 <span className={`tabular-nums text-xs whitespace-nowrap ${subtle}`}>{t.date}</span>
-                <span className="truncate flex-1 min-w-0">
+                <span className="truncate flex-1 min-w-[60%] sm:min-w-0">
                   {t.merchant_name || t.name || "—"}
                   {t.loan_id && (
-                    <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>on another loan</span>
+                    <span className={`ml-2 text-xs ${subtle}`}>· on another loan</span>
                   )}
                 </span>
                 <span className={`text-xs whitespace-nowrap ${subtle}`}>{t.entity_name ?? "Unmapped"}</span>
@@ -121,7 +127,8 @@ function TxnFinder({
                 <button
                   onClick={() => void attach(t)}
                   disabled={attaching === t.transaction_id}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer disabled:opacity-50 ${
+                  aria-label={`Attach ${t.merchant_name || t.name || "transaction"}`}
+                  className={`ml-auto sm:ml-0 px-3 h-[40px] sm:h-auto sm:px-2.5 sm:py-1 rounded-md text-xs font-medium cursor-pointer disabled:opacity-50 ${
                     isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
                   }`}
                 >
@@ -252,7 +259,8 @@ export default function BooksLoans() {
         </div>
         <button
           onClick={() => setAdding((v) => !v)}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+          aria-expanded={adding}
+          className={`px-4 h-[40px] sm:h-9 rounded-full text-sm font-medium transition-colors cursor-pointer ${
             isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
           }`}
         >
@@ -269,30 +277,30 @@ export default function BooksLoans() {
           }}
           className={`rounded-2xl border p-4 mb-6 flex flex-wrap items-end gap-3 ${card}`}
         >
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wider min-w-[220px]">
+          <label className="flex flex-col gap-1 text-xs w-full sm:w-auto sm:min-w-[220px]">
             <span className={subtle}>Who owes it</span>
             <input
               autoFocus
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Seven Arrows Recovery"
-              className={`${field} normal-case tracking-normal`}
+              className={`${field} h-[40px] sm:h-auto`}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wider min-w-[180px]">
+          <label className="flex flex-col gap-1 text-xs w-full sm:w-auto sm:min-w-[180px]">
             <span className={subtle}>Starting balance</span>
             <input
               value={newBalance}
               onChange={(e) => setNewBalance(e.target.value)}
               inputMode="decimal"
               placeholder="$0"
-              className={`${field} normal-case tracking-normal`}
+              className={`${field} h-[40px] sm:h-auto`}
             />
           </label>
           <button
             type="submit"
             disabled={saving || !newName.trim()}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+            className={`px-4 h-[40px] sm:h-auto sm:py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
               isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
             }`}
           >
@@ -314,7 +322,7 @@ export default function BooksLoans() {
       {!loading && loans.length > 0 && (
         <div className={`rounded-2xl border p-5 mb-6 flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
           <div>
-            <p className={`text-[11px] uppercase tracking-wider ${subtle}`}>Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}</p>
+            <p className={`text-xs ${subtle}`}>Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}</p>
             <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
           </div>
           <div className={`text-sm ${subtle}`}>
@@ -327,7 +335,7 @@ export default function BooksLoans() {
       {loading ? (
         <p className={`text-sm ${subtle}`}>Loading…</p>
       ) : loans.length === 0 ? (
-        <div className={`rounded-2xl border p-10 text-center ${card}`}>
+        error ? null : <div className={`rounded-2xl border p-10 text-center ${card}`}>
           <p className="text-sm font-medium">No loans yet</p>
           <p className={`text-xs mt-1 ${subtle}`}>
             Add one above, or set a transaction's category to “Name (loan)” and it shows up here.
@@ -362,7 +370,7 @@ export default function BooksLoans() {
                   <p className="text-sm font-semibold">
                     {loan.name}
                     {!loan.id && (
-                      <span className={`ml-2 text-[10px] uppercase tracking-wider font-normal ${subtle}`}>
+                      <span className={`ml-2 text-xs font-normal ${subtle}`}>
                         from categories
                       </span>
                     )}
@@ -372,7 +380,7 @@ export default function BooksLoans() {
                     {loan.last_date && ` · last activity ${loan.last_date}`}
                   </p>
                 </div>
-                <div className={`flex gap-6 text-sm tabular-nums ${subtle}`}>
+                <div className={`order-last sm:order-none basis-full sm:basis-auto pl-[30px] sm:pl-0 flex gap-x-6 gap-y-1 flex-wrap text-sm tabular-nums ${subtle}`}>
                   <span>Start {money(loan.starting_balance)}</span>
                   <span>Advanced {money(loan.advanced)}</span>
                 </div>
@@ -429,19 +437,20 @@ export default function BooksLoans() {
                             }
                           })();
                         }}
-                        className="flex items-center gap-2"
+                        className="flex flex-wrap items-center gap-2"
                       >
-                        <span className={`text-xs ${subtle}`}>Auto-attach descriptions containing</span>
+                        <label htmlFor={`loan-rule-${key}`} className={`text-xs w-full sm:w-auto ${subtle}`}>Auto-attach descriptions containing</label>
                         <input
+                          id={`loan-rule-${key}`}
                           value={ruleDraft[key] ?? ""}
                           onChange={(e) => setRuleDraft((prev) => ({ ...prev, [key]: e.target.value }))}
                           placeholder="VISIONQUEST"
-                          className={`${field} w-44 py-1.5 text-xs`}
+                          className={`${field} flex-1 min-w-0 sm:flex-none sm:w-44 h-[40px] sm:h-auto sm:py-1.5 text-xs`}
                         />
                         <button
                           type="submit"
                           disabled={saving || (ruleDraft[key] ?? "").trim().length < 3}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
+                          className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
                             isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
                           }`}
                         >
@@ -471,7 +480,8 @@ export default function BooksLoans() {
                                 })();
                               }}
                               title="Remove rule"
-                              className={`cursor-pointer ${subtle} hover:text-red-400`}
+                              aria-label={`Remove rule “${r.match}”`}
+                              className={`cursor-pointer w-[40px] h-[40px] -my-[14px] -mr-[12px] sm:w-auto sm:h-auto sm:m-0 inline-flex items-center justify-center ${subtle} hover:text-red-400`}
                             >
                               ✕
                             </button>
@@ -486,14 +496,18 @@ export default function BooksLoans() {
                           autoFocus
                           value={balanceDraft}
                           onChange={(e) => setBalanceDraft(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && void saveBalance(loan)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void saveBalance(loan);
+                            else if (e.key === "Escape") setEditingBalance(null);
+                          }}
                           inputMode="decimal"
+                          aria-label={`Starting balance for ${loan.name}`}
                           className={`${field} w-36`}
                         />
                         <button
                           onClick={() => void saveBalance(loan)}
                           disabled={saving}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                          className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
                             isDark ? "bg-white/10 text-white" : "bg-gray-900 text-white"
                           }`}
                         >
@@ -501,7 +515,7 @@ export default function BooksLoans() {
                         </button>
                         <button
                           onClick={() => setEditingBalance(null)}
-                          className={`text-xs cursor-pointer ${subtle}`}
+                          className={`text-xs cursor-pointer px-2 h-[40px] sm:h-auto ${subtle}`}
                         >
                           Cancel
                         </button>
@@ -512,7 +526,7 @@ export default function BooksLoans() {
                           setEditingBalance(key);
                           setBalanceDraft(String(loan.starting_balance || ""));
                         }}
-                        className={`text-xs underline cursor-pointer ${subtle} hover:no-underline`}
+                        className={`text-xs underline cursor-pointer py-[14px] -my-[14px] sm:py-0 sm:my-0 ${subtle} hover:no-underline`}
                       >
                         {loan.id ? "Edit starting balance" : "Set starting balance"}
                       </button>

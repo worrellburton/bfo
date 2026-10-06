@@ -30,7 +30,7 @@ function fmt(n: number) {
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-      <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{label}</div>
+      <div className="text-[11px] text-gray-500 mb-1">{label}</div>
       <div className="text-lg font-bold tabular-nums" style={color ? { color } : undefined}>{value}</div>
       {sub && <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>}
     </div>
@@ -49,7 +49,7 @@ function StatusBadge({ status, label }: { status: "green" | "amber" | "red"; lab
     red: "bg-red-400",
   };
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${colors[status]}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${colors[status]}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${dots[status]}`} />
       {label}
     </span>
@@ -98,7 +98,7 @@ function EntityMap() {
   return (
     <div className="flex flex-col items-center gap-0">
       <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-5 py-2.5 text-center">
-        <div className="text-[9px] text-gray-500 uppercase tracking-wider">Principals</div>
+        <div className="text-[11px] text-gray-500">Principals</div>
         <div className="text-sm font-semibold text-indigo-300">Robert & Claire Burton</div>
       </div>
 
@@ -106,7 +106,7 @@ function EntityMap() {
       <svg className="w-3 h-3 text-white/20 -mt-1" fill="currentColor" viewBox="0 0 12 12"><path d="M6 9L1 4h10L6 9z" /></svg>
 
       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-5 py-2.5 text-center -mt-1">
-        <div className="text-[9px] text-gray-500 uppercase tracking-wider">Holding Entity</div>
+        <div className="text-[11px] text-gray-500">Holding entity</div>
         <div className="text-sm font-semibold text-emerald-300">FDJ Hesperia, LLC</div>
       </div>
 
@@ -117,7 +117,7 @@ function EntityMap() {
           <div className="w-px h-4 bg-white/20" />
           <svg className="w-3 h-3 text-white/20 -mt-1" fill="currentColor" viewBox="0 0 12 12"><path d="M6 9L1 4h10L6 9z" /></svg>
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-center -mt-1">
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Owner</div>
+            <div className="text-[11px] text-gray-500">Owner</div>
             <div className="text-xs font-semibold text-emerald-300">FDJ ELD, LLC</div>
             <div className="text-[10px] text-gray-500 mt-0.5">El Dorado Apartments</div>
           </div>
@@ -128,7 +128,7 @@ function EntityMap() {
           <div className="w-px h-4 bg-white/20" />
           <svg className="w-3 h-3 text-white/20 -mt-1" fill="currentColor" viewBox="0 0 12 12"><path d="M6 9L1 4h10L6 9z" /></svg>
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-center -mt-1">
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Owner</div>
+            <div className="text-[11px] text-gray-500">Owner</div>
             <div className="text-xs font-semibold text-emerald-300">FDJ CFS, LLC</div>
             <div className="text-[10px] text-gray-500 mt-0.5">Comfort Suites Tucson</div>
           </div>
@@ -152,13 +152,13 @@ function EntityMap() {
       <svg className="w-3 h-3 text-white/20 -mt-1" fill="currentColor" viewBox="0 0 12 12"><path d="M6 9L1 4h10L6 9z" /></svg>
 
       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-center -mt-1">
-        <div className="text-[9px] text-gray-500 uppercase tracking-wider">Tenant / Operator</div>
+        <div className="text-[11px] text-gray-500">Tenant / operator</div>
         <div className="text-sm font-semibold text-amber-300">BWL Investments, LLC</div>
         <div className="text-[10px] text-gray-500 mt-0.5">Randal G. Dix / Transwest Properties</div>
       </div>
 
       <div className="mt-6 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-center">
-        <div className="text-[9px] text-gray-500 uppercase tracking-wider">Separate Investment</div>
+        <div className="text-[11px] text-gray-500">Separate investment</div>
         <div className="text-xs font-semibold text-gray-300">TownePlace Suites by Marriott</div>
         <div className="text-[10px] text-gray-500 mt-0.5">30% ownership (15% Bob + 15% Claire)</div>
       </div>
@@ -196,7 +196,7 @@ function PropertyCard({
     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <div className="text-[9px] text-gray-500 uppercase tracking-wider">{type}</div>
+          <div className="text-[11px] text-gray-500">{type}</div>
           <div className="text-base font-bold text-gray-100">{name}</div>
           <div className="text-[10px] text-gray-500">{address}</div>
         </div>
@@ -206,19 +206,19 @@ function PropertyCard({
       <div className="space-y-3 flex-1">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Purchase Price</div>
+            <div className="text-[11px] text-gray-500">Purchase price</div>
             <div className="text-sm font-semibold tabular-nums text-gray-200">${fmt(purchasePrice)}</div>
           </div>
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Outstanding Debt</div>
+            <div className="text-[11px] text-gray-500">Outstanding debt</div>
             <div className="text-sm font-semibold tabular-nums text-amber-400">${fmt(debt)}</div>
           </div>
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Monthly Lease</div>
+            <div className="text-[11px] text-gray-500">Monthly lease</div>
             <div className="text-sm font-semibold tabular-nums text-emerald-400">${fmt(monthlyLease)}</div>
           </div>
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Annual Lease</div>
+            <div className="text-[11px] text-gray-500">Annual lease</div>
             <div className="text-sm font-semibold tabular-nums text-gray-200">${fmt(monthlyLease * 12)}</div>
           </div>
         </div>
@@ -235,15 +235,15 @@ function PropertyCard({
 
         <div className="grid grid-cols-2 gap-3 pt-1 border-t border-white/5">
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Interest Rate</div>
+            <div className="text-[11px] text-gray-500">Interest rate</div>
             <div className="text-xs font-semibold tabular-nums text-gray-300">{debtRate}</div>
           </div>
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Maturity</div>
+            <div className="text-[11px] text-gray-500">Maturity</div>
             <div className="text-xs font-semibold text-gray-300">{debtDue}</div>
           </div>
           <div>
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Equity</div>
+            <div className="text-[11px] text-gray-500">Equity</div>
             <div className="text-xs font-semibold tabular-nums text-emerald-400">${fmt(equity)}</div>
           </div>
         </div>
@@ -280,8 +280,9 @@ export default function FDJHesperiaPublic() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
       {/* Confidential Badge - Fixed */}
-      <div className="fixed top-4 right-4 z-50">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border bg-amber-500/15 text-amber-400 border-amber-500/30">
+      {/* Phones: in the flow above the header (fixed, it sat on the wordmark). */}
+      <div className="px-4 pt-4 sm:p-0 sm:fixed sm:top-4 sm:right-4 z-50">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border bg-amber-500/15 text-amber-400 border-amber-500/30 backdrop-blur">
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
@@ -291,15 +292,15 @@ export default function FDJHesperiaPublic() {
 
       {/* Header */}
       <header className="border-b border-white/10 bg-[#0a0a0a]">
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="flex items-center gap-3 mb-6">
             <span className="text-2xl font-bold tracking-tight">BFO</span>
             <div className="h-5 w-px bg-white/20" />
-            <span className="text-xs text-gray-500 uppercase tracking-wider">Burton Family Office</span>
+            <span className="text-xs text-gray-500">Burton Family Office</span>
           </div>
-          <h1 className="text-3xl font-bold mb-2">Burton Family Investment Summary</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2">Burton Family Investment Summary</h1>
           <p className="text-gray-500 text-sm">FDJ Hesperia, LLC - Real Estate Portfolio Overview</p>
-          <div className="flex items-center gap-3 mt-4">
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             <StatusBadge status="amber" label="Monitoring" />
             <div className="text-[10px] text-gray-500">
               Master leases expire <span className="text-amber-400 font-medium">Apr 30, 2027</span>
@@ -309,42 +310,42 @@ export default function FDJHesperiaPublic() {
       </header>
 
       {/* Content */}
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         {/* Deal Health Status Bar */}
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-8 flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Deal Health</div>
+            <div className="text-[11px] text-gray-500">Deal health</div>
             <StatusBadge status="green" label="Active" />
           </div>
           <div className="h-4 w-px bg-white/10 hidden sm:block" />
           <div className="flex items-center gap-2">
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Cash Flow</div>
+            <div className="text-[11px] text-gray-500">Cash flow</div>
             <StatusBadge status="green" label="Current" />
           </div>
           <div className="h-4 w-px bg-white/10 hidden sm:block" />
           <div className="flex items-center gap-2">
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">EDA Sale</div>
+            <div className="text-[11px] text-gray-500">EDA sale</div>
             <StatusBadge status="amber" label="Pending" />
           </div>
           <div className="h-4 w-px bg-white/10 hidden sm:block" />
           <div className="flex items-center gap-2">
-            <div className="text-[9px] text-gray-500 uppercase tracking-wider">Debt</div>
+            <div className="text-[11px] text-gray-500">Debt</div>
             <StatusBadge status="amber" label="Review" />
           </div>
         </div>
 
         {/* Key Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-          <StatCard label="Total Investment" value="$12,848,000" sub="Both properties combined" />
-          <StatCard label="Net Cash Invested" value="$2,600,000" sub="After $4.4M loan back" color="#6366f1" />
-          <StatCard label="Total Cash Received" value="$1,577,042" sub="As of April 2022" color="#10b981" />
-          <StatCard label="Monthly Income" value="$33,333" sub="$17,333 on net investment" color="#10b981" />
-          <StatCard label="Tax Savings" value="~$3,200,000" sub="1031 exchange benefit" color="#10b981" />
-          <StatCard label="Marriott Ownership" value="30%" sub="15% Bob + 15% Claire" color="#6366f1" />
+          <StatCard label="Total investment" value="$12,848,000" sub="Both properties combined" />
+          <StatCard label="Net cash invested" value="$2,600,000" sub="After $4.4M loan back" color="#6366f1" />
+          <StatCard label="Total cash received" value="$1,577,042" sub="As of April 2022" color="#10b981" />
+          <StatCard label="Monthly income" value="$33,333" sub="$17,333 on net investment" color="#10b981" />
+          <StatCard label="Tax savings" value="~$3,200,000" sub="1031 exchange benefit" color="#10b981" />
+          <StatCard label="Marriott ownership" value="30%" sub="15% Bob + 15% Claire" color="#6366f1" />
         </div>
 
         {/* Properties */}
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Properties</h2>
+        <h2 className="text-sm font-semibold text-gray-300 mb-4">Properties</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
           <PropertyCard
             name="El Dorado Apartments"
@@ -373,22 +374,22 @@ export default function FDJHesperiaPublic() {
         {/* Deal Structure + Timeline */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">Deal Structure</h3>
+            <h3 className="text-sm font-semibold text-gray-300 mb-5">Deal structure</h3>
             <EntityMap />
           </div>
 
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">Key Timeline</h3>
+            <h3 className="text-sm font-semibold text-gray-300 mb-5">Key timeline</h3>
             <Timeline />
           </div>
         </div>
 
         {/* Cash Flow Summary */}
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Cash Flow Received (as of April 2022)</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-4">Cash flow received (as of April 2022)</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Comfort Suites</div>
+              <div className="text-[11px] text-gray-500 mb-1">Comfort Suites</div>
               <div className="text-lg font-bold tabular-nums text-emerald-400">$771,460</div>
               <div className="mt-2 h-2 bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600" style={{ width: `${(771460 / 1577042) * 100}%` }} />
@@ -396,7 +397,7 @@ export default function FDJHesperiaPublic() {
               <div className="text-[10px] text-gray-500 mt-1 tabular-nums">48.9% of total</div>
             </div>
             <div>
-              <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">El Dorado</div>
+              <div className="text-[11px] text-gray-500 mb-1">El Dorado</div>
               <div className="text-lg font-bold tabular-nums text-emerald-400">$535,582</div>
               <div className="mt-2 h-2 bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-indigo-600" style={{ width: `${(535582 / 1577042) * 100}%` }} />
@@ -404,7 +405,7 @@ export default function FDJHesperiaPublic() {
               <div className="text-[10px] text-gray-500 mt-1 tabular-nums">34.0% of total</div>
             </div>
             <div>
-              <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Marriott Distribution</div>
+              <div className="text-[11px] text-gray-500 mb-1">Marriott distribution</div>
               <div className="text-lg font-bold tabular-nums text-emerald-400">$270,000</div>
               <div className="mt-2 h-2 bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-600" style={{ width: `${(270000 / 1577042) * 100}%` }} />
@@ -416,22 +417,22 @@ export default function FDJHesperiaPublic() {
 
         {/* Key Parties */}
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Key Parties</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-4">Key parties</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Buyers / Investors</div>
+              <div className="text-[11px] text-gray-500 mb-1">Buyers / investors</div>
               <div className="text-sm font-semibold text-gray-200">Robert L. Burton</div>
               <div className="text-sm font-semibold text-gray-200">Claire Burton</div>
               <div className="text-[10px] text-gray-500 mt-1">Via FDJ Hesperia, LLC</div>
             </div>
             <div>
-              <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Operator / Tenant</div>
+              <div className="text-[11px] text-gray-500 mb-1">Operator / tenant</div>
               <div className="text-sm font-semibold text-gray-200">Randal G. Dix</div>
               <div className="text-[10px] text-gray-500 mt-1">BWL Investments, LLC</div>
               <div className="text-[10px] text-gray-500">Transwest Properties</div>
             </div>
             <div>
-              <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Key Agreements</div>
+              <div className="text-[11px] text-gray-500 mb-1">Key agreements</div>
               <div className="text-xs text-gray-300">Master Leases (exp. Apr 30, 2027)</div>
               <div className="text-xs text-gray-300">Option Agreements</div>
               <div className="text-xs text-gray-300">Promissory Notes ($4.4M)</div>
@@ -443,7 +444,7 @@ export default function FDJHesperiaPublic() {
 
       {/* Footer */}
       <footer className="border-t border-white/10 bg-[#0a0a0a]">
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">

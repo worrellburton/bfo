@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ParticleCanvas } from "../particles";
 
 export function meta() {
@@ -8,6 +9,12 @@ export function meta() {
 }
 
 export default function Landing() {
+  // The orbs and wordmark already stop under reduced motion (app.css); the
+  // particle field is a JS animation loop, so leave it out entirely.
+  const [still, setStill] = useState(false);
+  useEffect(() => {
+    setStill(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+  }, []);
   return (
     <div className="min-h-dvh bg-black relative overflow-hidden flex items-center justify-center">
       {/* Drifting aurora orbs */}
@@ -18,7 +25,7 @@ export default function Landing() {
       </div>
 
       {/* Particle field */}
-      <ParticleCanvas
+      {!still && <ParticleCanvas
         count={70}
         speed={0.25}
         maxRadius={1.6}
@@ -26,7 +33,7 @@ export default function Landing() {
         dotOpacity={0.25}
         lineOpacity={0.04}
         className="absolute inset-0 w-full h-full"
-      />
+      />}
 
       {/* Wordmark */}
       <div className="relative z-10 text-center select-none px-6">

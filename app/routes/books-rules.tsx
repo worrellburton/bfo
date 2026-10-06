@@ -28,11 +28,15 @@ export default function BooksRules() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [error, setError] = useState("");
 
   async function load() {
     try {
       const res = await authFetch("/api/books/data?report=rules");
-      if (res.ok) setRules((await res.json()).rules ?? []);
+      if (!res.ok) throw new Error();
+      setRules((await res.json()).rules ?? []);
+    } catch {
+      setError("Couldn't load the rules. Refresh to try again.");
     } finally {
       setLoading(false);
     }
@@ -40,18 +44,27 @@ export default function BooksRules() {
   useEffect(() => { void load(); }, []);
 
   async function remove(id: string) {
+    const before = rules;
+    setError("");
     setRules((prev) => prev.filter((r) => r.id !== id));
-    await authFetch("/api/books/data", {
-      method: "POST",
-      body: JSON.stringify({ action: "delete_rule", rule_id: id }),
-    });
+    try {
+      const res = await authFetch("/api/books/data", {
+        method: "POST",
+        body: JSON.stringify({ action: "delete_rule", rule_id: id }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      // Put it back — the rule is still live on the server.
+      setRules(before);
+      setError("Couldn't delete that rule.");
+    }
   }
 
   const subtle = "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   const border = isDark ? "border-white/10" : "border-gray-200";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const head = `text-[11px] uppercase tracking-[0.12em] ${subtle}`;
+  const head = `text-xs ${subtle}`;
   const chip = isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700";
 
   const needle = q.trim().toLowerCase();
@@ -74,14 +87,22 @@ export default function BooksRules() {
           <p className={`text-sm mt-0.5 ${subtle}`}>What the books have learned — {rules.length} rule{rules.length === 1 ? "" : "s"}. New ones are created whenever you choose “apply to all”.</p>
         </div>
         <input
+          type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search rules…"
-          className={`px-3.5 py-2 rounded-full text-sm border focus:outline-none w-56 ${
+          aria-label="Search rules"
+          className={`px-3.5 h-[40px] sm:h-9 rounded-full text-sm border focus:outline-none w-full sm:w-56 ${
             isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400"
           }`}
         />
       </div>
+
+      {error && (
+        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className={`rounded-2xl border p-4 space-y-2.5 rise-in ${card}`}>
@@ -90,6 +111,7 @@ export default function BooksRules() {
           ))}
         </div>
       ) : shown.length === 0 ? (
+        error && rules.length === 0 ? null :
         <p className={`text-sm ${subtle}`}>{rules.length === 0 ? "No rules yet. Categorize a vendor with “apply to all” to teach your first one." : "No rules match that search."}</p>
       ) : (
         <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
@@ -118,7 +140,8 @@ export default function BooksRules() {
                     <button
                       onClick={() => void remove(r.id)}
                       title="Delete this rule"
-                      className={`text-xs cursor-pointer ${subtle} hover:text-red-500`}
+                      aria-label={`Delete rule “${r.match}”`}
+                      className={`text-xs cursor-pointer px-3 py-[14px] -my-[14px] -mr-3 sm:p-0 sm:m-0 ${subtle} hover:text-red-500`}
                     >
                       Delete
                     </button>

@@ -126,7 +126,7 @@ export default function BooksVendors() {
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
   const drawerBg = isDark ? "bg-white/[0.015]" : "bg-gray-50/70";
-  const field = `px-4 py-2 rounded-full text-sm border ${
+  const field = `px-4 h-[40px] sm:h-9 rounded-full text-sm border ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
   const num = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
@@ -154,12 +154,14 @@ export default function BooksVendors() {
             setSearchParams(e.target.value ? { q: e.target.value } : {}, { replace: true });
           }}
           placeholder="Search vendors…"
-          className={`${field} min-w-[220px]`}
+          aria-label="Search vendors"
+          className={`${field} w-full sm:w-auto sm:min-w-[220px]`}
         />
         <Menu
           value={entity}
           isDark={isDark}
           size="md"
+          label="Entity"
           onChange={setEntity}
           options={[
             { value: "all", label: "All entities" },
@@ -170,10 +172,11 @@ export default function BooksVendors() {
           value={year}
           isDark={isDark}
           size="md"
+          label="Year"
           onChange={setYear}
           options={years.map((y) => ({ value: y, label: y }))}
         />
-        {!loading && <span className={`text-xs ml-auto ${subtle}`}>{shown.length} vendors</span>}
+        {!loading && !error && <span className={`text-xs ml-auto ${subtle}`}>{shown.length} vendor{shown.length === 1 ? "" : "s"}</span>}
       </div>
 
       {error && (
@@ -182,10 +185,16 @@ export default function BooksVendors() {
         </div>
       )}
 
+      {/* Empty: a plain card — inside the 1050px table the message sat off-screen on phones. */}
+      {!loading && !error && shown.length === 0 ? (
+        <div className={`rounded-2xl border px-4 py-8 text-center text-sm rise-in ${card} ${subtle}`}>
+          {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
+        </div>
+      ) : (
       <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
         <table className="text-sm min-w-[1050px] w-full">
           <thead className={`sticky top-0 z-10 ${stickyBg}`}>
-            <tr className={`text-[11px] uppercase tracking-[0.12em] ${subtle} border-b ${border}`}>
+            <tr className={`text-xs ${subtle} border-b ${border}`}>
               <th className={`px-3 py-3 text-left font-medium sticky left-0 ${stickyBg}`}>Vendor</th>
               {MONTHS.map((m) => (
                 <th key={m} className="px-2.5 py-3 text-right font-medium">{m}</th>
@@ -206,9 +215,9 @@ export default function BooksVendors() {
                 </td>
               </tr>
             ) : shown.length === 0 ? (
-              <tr>
+              error ? null : <tr>
                 <td colSpan={15} className={`px-4 py-8 text-center ${subtle}`}>
-                  No vendors match — sync transactions on the Transactions page first.
+                  {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
                 </td>
               </tr>
             ) : (
@@ -227,8 +236,8 @@ export default function BooksVendors() {
                             <button
                               onClick={() => void toggleVendor(v.vendor)}
                               aria-expanded={isOpen}
-                              aria-label="Show transactions inline"
-                              className="cursor-pointer shrink-0"
+                              aria-label={`Show ${v.vendor} transactions inline`}
+                              className="cursor-pointer shrink-0 w-[32px] h-[40px] -my-[12px] -ml-2 sm:w-6 sm:h-6 sm:my-0 sm:-ml-1 flex items-center justify-center rounded-md"
                             >
                               <svg
                                 className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`}
@@ -239,7 +248,7 @@ export default function BooksVendors() {
                             </button>
                             <Link
                               to={`/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`}
-                              className="font-medium truncate hover:underline"
+                              className="font-medium truncate hover:underline py-[13px] -my-[13px] sm:py-0 sm:my-0"
                             >
                               {v.vendor}
                             </Link>
@@ -262,7 +271,7 @@ export default function BooksVendors() {
                               <div className={`rounded-lg border overflow-x-auto ${border} ${stickyBg}`}>
                                 <table className="w-full text-sm min-w-[720px]">
                                   <thead>
-                                    <tr className={`text-xs uppercase tracking-wider ${subtle} border-b ${border}`}>
+                                    <tr className={`text-xs ${subtle} border-b ${border}`}>
                                       <th className="px-3 py-2 text-left font-medium">Date</th>
                                       <th className="px-3 py-2 text-left font-medium">Description</th>
                                       <th className="px-3 py-2 text-left font-medium">Account</th>
@@ -293,7 +302,7 @@ export default function BooksVendors() {
                                               {t.entity_name ? (
                                                 <EntityTag name={t.entity_name} isDark={isDark} />
                                               ) : (
-                                                <span className="text-amber-500 text-xs">—</span>
+                                                <span className={`text-xs ${subtle}`}>—</span>
                                               )}
                                             </td>
                                             <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${inflow ? "text-emerald-500" : ""}`}>
@@ -331,6 +340,7 @@ export default function BooksVendors() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

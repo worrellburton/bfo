@@ -9,6 +9,8 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { alertDialog } from "../confirm-dialog";
+import { useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 import { normalizeCsv, parseCsv, type CsvRow } from "../books-csv";
@@ -29,7 +31,6 @@ import {
   type Txn,
   type TxnView,
   tiers,
-  MICRO,
   incomeTone,
   popoverSurface,
   primaryBtn,
@@ -151,7 +152,9 @@ export default function BooksTransactions() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
 
-  const [q, setQ] = useState("");
+  // ?q= (e.g. from the command palette) seeds the search on open.
+  const [searchParams] = useSearchParams();
+  const [q, setQ] = useState(() => searchParams.get("q")?.trim() ?? "");
   const [entity, setEntity] = useState("all");
   const [type, setType] = useState<"all" | "revenue" | "expenses" | "transfers" | "intercompany" | "uncategorized">("all");
   const [year, setYear] = useState("all");
@@ -465,7 +468,7 @@ export default function BooksTransactions() {
       if (!res.ok) throw new Error(data?.message || "Mercury backfill failed.");
       setError("");
       await load();
-      alert(`Mercury backfill: ${data.backfilled} transactions added.`);
+      await alertDialog("Mercury backfill finished", `${data.backfilled} transaction${data.backfilled === 1 ? "" : "s"} added.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mercury backfill failed.");
     } finally {
@@ -948,7 +951,9 @@ export default function BooksTransactions() {
 
         <div
           aria-busy={refreshing || undefined}
-          className={`transition-opacity ${refreshing ? "opacity-60 delay-150 pointer-events-none" : "delay-0"}`}
+          // The list head sticks to the viewport; below lg it clears the
+          // fixed mobile top bar (h-14 + safe area) instead of hiding under it.
+          className={`transition-opacity [&_thead]:top-[calc(3.5rem+env(safe-area-inset-top))] lg:[&_thead]:top-0 ${refreshing ? "opacity-60 delay-150 pointer-events-none" : "delay-0"}`}
         >
           {firstLoad ? (
             <TxnTableSkeleton isDark={isDark} view={view} selection />
@@ -1219,7 +1224,7 @@ function ImportCsvDialog({
           bank's site, pick the account it belongs to, and import — duplicates are skipped.
         </p>
 
-        <label htmlFor="import-account" className={`block ${MICRO} ${t2} mb-1`}>Account</label>
+        <label htmlFor="import-account" className={`block text-xs font-semibold ${t2} mb-1`}>Account</label>
         <select
           id="import-account"
           value={importAccount}
@@ -1234,7 +1239,7 @@ function ImportCsvDialog({
           ))}
         </select>
 
-        <span id="import-file-label" className={`block ${MICRO} ${t2} mb-1`}>CSV file</span>
+        <span id="import-file-label" className={`block text-xs font-semibold ${t2} mb-1`}>CSV file</span>
         <div className="flex items-center min-w-0 mb-3">
           <input
             id="import-file"

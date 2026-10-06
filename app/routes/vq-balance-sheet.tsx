@@ -48,7 +48,7 @@ function Metric({ label, value, sub, color = accent, trend }: { label: string; v
   const isDark = theme === "dark";
   return (
     <Card>
-      <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"} uppercase tracking-wider mb-1`}>{label}</p>
+      <p className="text-[11px] text-gray-500 mb-1">{label}</p>
       <p className="text-xl font-bold" style={{ color }}>{value}</p>
       {sub && <p className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"} mt-1`}>{sub}</p>}
     </Card>
@@ -84,7 +84,7 @@ function SectionHeader({ label, indent = 0 }: { label: string; indent?: number }
   const { theme } = useTheme();
   const isDark = theme === "dark";
   return (
-    <div className={`py-2 text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-600"}`} style={{ paddingLeft: `${0.5 + indent * 1}rem` }}>
+    <div className={`py-2 text-[11px] font-bold ${isDark ? "text-gray-500" : "text-gray-600"}`} style={{ paddingLeft: `${0.5 + indent * 1}rem` }}>
       {label}
     </div>
   );
@@ -94,7 +94,7 @@ function Collapsible({ title, color, defaultOpen = true, children }: { title: st
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Card className="mb-4">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between mb-3">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="w-full min-h-[40px] flex items-center justify-between mb-3 cursor-pointer">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${color}15` }}>
             <svg className="w-4 h-4" style={{ color }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -274,7 +274,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
       </Card>
 
       {/* Balance Sheet Detail */}
-      <Collapsible title="ASSETS" color="#8b5cf6">
+      <Collapsible title="Assets" color="#8b5cf6">
         <SectionHeader label="Current Assets" />
         <SectionHeader label="Bank Accounts" indent={1} />
         {bankAccounts.map((a) => <LineItem key={a.code} code={a.code} name={a.name} value={a.value} indent={2} />)}
@@ -299,12 +299,12 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
         <SubTotal label="Total Other Assets" value={totalOther} />
 
         <div className="flex items-center justify-between py-3 mt-2 border-t-2 border-purple-500/30 bg-purple-500/5 px-2 rounded">
-          <span className="text-sm font-bold text-purple-300">TOTAL ASSETS</span>
-          <span className="font-mono tabular-nums text-sm font-bold text-purple-300">{fmt(totalAssets)}</span>
+          <span className={`text-sm font-bold ${isDark ? "text-purple-300" : "text-purple-700"}`}>Total assets</span>
+          <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-purple-300" : "text-purple-700"}`}>{fmt(totalAssets)}</span>
         </div>
       </Collapsible>
 
-      <Collapsible title="LIABILITIES" color="#ef4444" defaultOpen={true}>
+      <Collapsible title="Liabilities" color="#ef4444" defaultOpen={true}>
         <SectionHeader label="Current Liabilities" />
         <SectionHeader label="Accounts Payable" indent={1} />
         {accountsPayable.map((a) => <LineItem key={a.code} code={a.code} name={a.name} value={a.value} indent={2} />)}
@@ -321,23 +321,23 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
         <SubTotal label="Total Long-Term Liabilities" value={totalLongTermLiab} />
 
         <div className="flex items-center justify-between py-3 mt-2 border-t-2 border-red-500/30 bg-red-500/5 px-2 rounded">
-          <span className="text-sm font-bold text-red-300">TOTAL LIABILITIES</span>
-          <span className="font-mono tabular-nums text-sm font-bold text-red-300">{fmt(totalLiabilities)}</span>
+          <span className={`text-sm font-bold ${isDark ? "text-red-300" : "text-red-700"}`}>Total liabilities</span>
+          <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-red-300" : "text-red-700"}`}>{fmt(totalLiabilities)}</span>
         </div>
       </Collapsible>
 
-      <Collapsible title="EQUITY" color="#22c55e" defaultOpen={true}>
+      <Collapsible title="Equity" color="#22c55e" defaultOpen={true}>
         {equity.map((a, i) => <LineItem key={i} code={a.code} name={a.name} value={a.value} indent={1} />)}
         <div className="flex items-center justify-between py-3 mt-2 border-t-2 border-green-500/30 bg-green-500/5 px-2 rounded">
-          <span className="text-sm font-bold text-green-300">TOTAL EQUITY</span>
-          <span className="font-mono tabular-nums text-sm font-bold text-green-300">{fmt(totalEquity)}</span>
+          <span className={`text-sm font-bold ${isDark ? "text-green-300" : "text-green-700"}`}>Total equity</span>
+          <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-green-300" : "text-green-700"}`}>{fmt(totalEquity)}</span>
         </div>
       </Collapsible>
 
       {/* Grand Total */}
       <Card className="mt-6" >
         <div className="flex items-center justify-between">
-          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>TOTAL LIABILITIES AND EQUITY</span>
+          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Total liabilities and equity</span>
           <span className="font-mono tabular-nums text-lg font-bold" style={{ color: accent }}>{fmt(totalLiabilitiesEquity)}</span>
         </div>
       </Card>
@@ -346,7 +346,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
       <div className="mt-10 mb-4">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-500/15">
-            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <svg className={`w-4 h-4 ${isDark ? "text-green-400" : "text-green-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4" />
             </svg>
           </div>
@@ -363,7 +363,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
               <span className={`font-mono text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>31110</span>
               <h3 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Common Stock</h3>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$1,444,543.33</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-green-400" : "text-green-600"}`}>$1,444,543.33</span>
           </div>
           <p className={`text-xs leading-relaxed mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>
             <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The <em>par value</em> of all shares VQ has issued to shareholders. Par value is a nominal
@@ -382,7 +382,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
               <span className={`font-mono text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>31120</span>
               <h3 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Additional Paid-In Capital (APIC)</h3>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$160,014.69</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-green-400" : "text-green-600"}`}>$160,014.69</span>
           </div>
           <p className={`text-xs leading-relaxed mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>
             <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The amount shareholders paid <em>above</em> par value when buying stock directly from the company.
@@ -401,7 +401,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
               <span className={`font-mono text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>31210</span>
               <h3 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Retained Earnings</h3>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$466.42</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-red-400" : "text-red-600"}`}>-$466.42</span>
           </div>
           <p className={`text-xs leading-relaxed mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>
             <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The cumulative net profits (or losses) the company has kept <em>from prior years</em>, after
@@ -418,16 +418,16 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className={`font-mono text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>31300</span>
-              <h3 className="text-sm font-bold text-yellow-300">Treasury Stock</h3>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border bg-yellow-500/15 text-yellow-400 border-yellow-500/30">
-                Largest Item
+              <h3 className={`text-sm font-bold ${isDark ? "text-yellow-300" : "text-yellow-700"}`}>Treasury Stock</h3>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold border bg-yellow-500/15 border-yellow-500/30 ${isDark ? "text-yellow-400" : "text-yellow-700"}`}>
+                Largest item
               </span>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$5,836,850.09</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-red-400" : "text-red-600"}`}>-$5,836,850.09</span>
           </div>
           <div className="space-y-3">
             <div>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">What It Is</p>
+              <p className="text-[10px] text-gray-500 mb-1">What it is</p>
               <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 Treasury stock is <strong>VQ's own shares that the company bought back from shareholders</strong>. When a company repurchases its own stock,
                 those shares aren't cancelled — they're held "in the treasury" and recorded as a negative number that reduces total equity. This is called a
@@ -435,14 +435,14 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
               </p>
             </div>
             <div>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Why It's Negative</p>
+              <p className="text-[10px] text-gray-500 mb-1">Why it's negative</p>
               <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 The company used $5.84M of its cash to buy back shares. That cash left the company (reducing assets) and in exchange the company got
                 back its own stock (which doesn't count as an asset — you can't own yourself). The result is a permanent reduction in equity of $5.84M.
               </p>
             </div>
             <div>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Why Companies Do This</p>
+              <p className="text-[10px] text-gray-500 mb-1">Why companies do this</p>
               <ul className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed space-y-1 list-disc pl-5`}>
                 <li><strong>Buying out departing shareholders</strong> — a co-founder or early investor wants to exit, the company buys their shares.</li>
                 <li><strong>Estate planning / succession</strong> — common in family businesses when ownership is being consolidated.</li>
@@ -452,19 +452,19 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
               </ul>
             </div>
             <div>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">What This Means for VQ</p>
+              <p className="text-[10px] text-gray-500 mb-1">What this means for VQ</p>
               <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
-                VQ has spent <strong className="text-yellow-300">$5.84M of its cash</strong> to repurchase shares at some point in the past. This is 4x the size of total
+                VQ has spent <strong className={`${isDark ? "text-yellow-300" : "text-yellow-700"}`}>$5.84M of its cash</strong> to repurchase shares at some point in the past. This is 4x the size of total
                 contributed capital ($1.6M), which means the buybacks were funded by retained earnings from prior profitable years or by taking on debt (note
                 the $2.09M related-party note to Bob Burton). The Grace Dix Stock Repurchase line ($5,277 in current liabilities) suggests stock repurchase
                 activity is ongoing.
               </p>
             </div>
             <div>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Impact on Equity</p>
+              <p className="text-[10px] text-gray-500 mb-1">Impact on equity</p>
               <p className={`text-xs ${isDark ? "text-gray-300" : "text-gray-700"} leading-relaxed`}>
                 Without the treasury stock position, VQ's total equity would be approximately
-                <strong className="text-green-400"> $7.46M</strong> instead of $1.62M. The buybacks account for 78% of the gap between contributed capital
+                <strong className={`${isDark ? "text-green-400" : "text-green-600"}`}> $7.46M</strong> instead of $1.62M. The buybacks account for 78% of the gap between contributed capital
                 and current equity. Combined with the $1.64M current year loss, they leave VQ with minimal equity cushion against liabilities.
               </p>
             </div>
@@ -478,7 +478,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
               <span className={`font-mono text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>31500</span>
               <h3 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Deferred Compensation Obligation</h3>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$936,472.43</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-green-400" : "text-green-600"}`}>$936,472.43</span>
           </div>
           <p className={`text-xs leading-relaxed mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>
             <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> Compensation that has been earned by employees or executives but isn't paid until a future
@@ -501,11 +501,11 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">
               <h3 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Opening Balance Equity</h3>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border bg-orange-500/15 text-orange-400 border-orange-500/30">
-                Cleanup Needed
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold border bg-orange-500/15 border-orange-500/30 ${isDark ? "text-orange-400" : "text-orange-700"}`}>
+                Cleanup needed
               </span>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-green-400">$6,557,006.86</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-green-400" : "text-green-600"}`}>$6,557,006.86</span>
           </div>
           <p className={`text-xs leading-relaxed mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>
             <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> A <em>QuickBooks-generated temporary account</em> that holds offsetting entries when
@@ -529,7 +529,7 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
             <div className="flex items-center gap-2">
               <h3 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-900"}`}>Net Income (Current Period)</h3>
             </div>
-            <span className="font-mono tabular-nums text-sm font-bold text-red-400">-$1,639,698.50</span>
+            <span className={`font-mono tabular-nums text-sm font-bold ${isDark ? "text-red-400" : "text-red-600"}`}>-$1,639,698.50</span>
           </div>
           <p className={`text-xs leading-relaxed mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>
             <strong className={isDark ? "text-gray-300" : "text-gray-700"}>What it is:</strong> The profit or loss from the current accounting period (year-to-date or full year). This
@@ -549,22 +549,22 @@ export function VQBalanceSheetContent({ showShare = true }: { showShare?: boolea
         <Card className="border-purple-500/30 bg-purple-500/[0.03]">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-purple-500/15 shrink-0">
-              <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <svg className={`w-5 h-5 ${isDark ? "text-purple-400" : "text-purple-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
               </svg>
             </div>
             <div>
-              <h3 className="text-sm font-bold text-purple-300 mb-2">How Equity Actually Got to $1.62M</h3>
+              <h3 className={`text-sm font-bold mb-2 ${isDark ? "text-purple-300" : "text-purple-700"}`}>How Equity Actually Got to $1.62M</h3>
               <div className={`space-y-1 text-xs ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                <div className="flex justify-between"><span>Common stock + APIC (money from shareholders)</span><span className="font-mono text-green-400">+$1,604,558</span></div>
-                <div className="flex justify-between"><span>Retained earnings (historical profit/loss)</span><span className="font-mono text-red-400">-$466</span></div>
-                <div className="flex justify-between"><span>Treasury stock (buybacks)</span><span className="font-mono text-red-400">-$5,836,850</span></div>
-                <div className="flex justify-between"><span>Deferred comp obligation</span><span className="font-mono text-green-400">+$936,472</span></div>
-                <div className="flex justify-between"><span>Opening balance equity (QB cleanup)</span><span className="font-mono text-green-400">+$6,557,007</span></div>
-                <div className="flex justify-between"><span>Net income (current period loss)</span><span className="font-mono text-red-400">-$1,639,699</span></div>
+                <div className="flex justify-between gap-3"><span>Common stock + APIC (money from shareholders)</span><span className={`font-mono ${isDark ? "text-green-400" : "text-green-600"}`}>+$1,604,558</span></div>
+                <div className="flex justify-between gap-3"><span>Retained earnings (historical profit/loss)</span><span className={`font-mono ${isDark ? "text-red-400" : "text-red-600"}`}>-$466</span></div>
+                <div className="flex justify-between gap-3"><span>Treasury stock (buybacks)</span><span className={`font-mono ${isDark ? "text-red-400" : "text-red-600"}`}>-$5,836,850</span></div>
+                <div className="flex justify-between gap-3"><span>Deferred comp obligation</span><span className={`font-mono ${isDark ? "text-green-400" : "text-green-600"}`}>+$936,472</span></div>
+                <div className="flex justify-between gap-3"><span>Opening balance equity (QB cleanup)</span><span className={`font-mono ${isDark ? "text-green-400" : "text-green-600"}`}>+$6,557,007</span></div>
+                <div className="flex justify-between gap-3"><span>Net income (current period loss)</span><span className={`font-mono ${isDark ? "text-red-400" : "text-red-600"}`}>-$1,639,699</span></div>
                 <div className={`flex justify-between pt-2 border-t font-bold ${isDark ? "border-white/10" : "border-gray-200"}`}>
-                  <span className="text-purple-300">Total Equity</span>
-                  <span className="font-mono text-purple-300">$1,621,022</span>
+                  <span className={`${isDark ? "text-purple-300" : "text-purple-700"}`}>Total Equity</span>
+                  <span className={`font-mono ${isDark ? "text-purple-300" : "text-purple-700"}`}>$1,621,022</span>
                 </div>
               </div>
             </div>
@@ -582,7 +582,7 @@ export default function VQBalanceSheet() {
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
-        <Link to="/tools" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Tools</Link>
+        <Link to="/home" className={`${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors`}>Home</Link>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>

@@ -25,6 +25,7 @@ export default function BooksReview() {
   const [review, setReview] = useState<any | null>(null);
   const [recon, setRecon] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -35,6 +36,9 @@ export default function BooksReview() {
         ]);
         if (r.ok) setReview(await r.json());
         if (c.ok) setRecon(await c.json());
+        if (!r.ok && !c.ok) setFailed(true);
+      } catch {
+        setFailed(true);
       } finally {
         setLoading(false);
       }
@@ -45,7 +49,7 @@ export default function BooksReview() {
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   const border = isDark ? "border-white/10" : "border-gray-200";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const head = `text-[11px] uppercase tracking-[0.12em] ${subtle}`;
+  const head = `text-xs ${subtle}`;
   const who = (t: any) => t.merchant_name || t.name || "—";
 
   if (loading) {
@@ -58,7 +62,19 @@ export default function BooksReview() {
     );
   }
 
+  if (failed) {
+    return (
+      <div className="w-full max-w-4xl">
+        <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Review</h1>
+        <div className={`mt-5 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
+          Couldn't load the review. Refresh to try again.
+        </div>
+      </div>
+    );
+  }
+
   const c = review?.counts ?? { uncategorized: 0, low_confidence: 0, duplicate_groups: 0 };
+  const amber = isDark ? "text-amber-400" : "text-amber-700";
 
   return (
     <div className="w-full max-w-4xl space-y-8">
@@ -76,7 +92,7 @@ export default function BooksReview() {
         ] as const).map(([label, n, href]) => {
           const inner = (
             <>
-              <p className={`text-[11px] uppercase tracking-wider ${subtle}`}>{label}</p>
+              <p className={`text-xs leading-snug ${subtle}`}>{label}</p>
               <p className={`text-2xl font-semibold tabular-nums mt-1 ${n ? (isDark ? "text-white" : "text-gray-900") : subtle}`}>{n}</p>
             </>
           );
@@ -87,6 +103,10 @@ export default function BooksReview() {
           );
         })}
       </div>
+
+      {!recon?.accounts?.length && !review?.duplicates?.length && !review?.outliers?.length && (
+        <p className={`text-sm ${subtle}`}>Nothing needs a second look right now.</p>
+      )}
 
       {/* Reconciliation */}
       {recon?.accounts?.length > 0 && (
@@ -113,7 +133,7 @@ export default function BooksReview() {
                     <td className="px-4 py-2 text-right tabular-nums">{money(a.bank_balance)}</td>
                     <td className="px-4 py-2 text-right">
                       {!a.has_ledger ? (
-                        <span className="text-amber-500 text-xs">No ledger rows</span>
+                        <span className={`text-xs ${amber}`}>No ledger rows</span>
                       ) : (
                         <span className={`text-xs ${subtle}`}>—</span>
                       )}
@@ -141,7 +161,7 @@ export default function BooksReview() {
                   <span className="tabular-nums text-sm">{money(-g.amount)}</span>
                 </div>
                 <div className={`text-xs mt-0.5 ${subtle}`}>
-                  {shortDate(g.date)} · {g.count}× {g.cross_source && <span className="text-amber-500">· across feeds (likely real)</span>}
+                  {shortDate(g.date)} · {g.count}× {g.cross_source && <span className={amber}>· across feeds (likely real)</span>}
                 </div>
               </div>
             ))}
@@ -153,15 +173,19 @@ export default function BooksReview() {
       {review?.outliers?.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold mb-2">Largest items — sanity check</h2>
-          <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
+          <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
             <table className="w-full text-sm">
               <tbody>
                 {review.outliers.map((t: any) => (
                   <tr key={t.transaction_id} className={`border-t first:border-t-0 ${rowBorder}`}>
-                    <td className={`px-4 py-2 whitespace-nowrap ${subtle}`}>{shortDate(t.date)}</td>
-                    <td className="px-4 py-2 truncate max-w-[240px]">{who(t)}</td>
-                    <td className={`px-4 py-2 text-xs ${subtle}`}>{(t.book_category ?? "Uncategorized").replace(/^\d{4}\s+/, "")}</td>
-                    <td className="px-4 py-2 text-right tabular-nums font-medium">{money(-t.amount)}</td>
+                    <td className={`pl-4 pr-2 sm:px-4 py-2 whitespace-nowrap ${subtle}`}>{shortDate(t.date)}</td>
+                    {/* w-full + max-w-0 lets the name take the slack and truncate instead of pushing the amount off a phone. */}
+                    <td className="px-2 sm:px-4 py-2 w-full max-w-0" title={who(t)}>
+                      <span className="block truncate">{who(t)}</span>
+                      <span className={`block truncate text-xs sm:hidden ${subtle}`}>{(t.book_category ?? "Uncategorized").replace(/^\d{4}\s+/, "")}</span>
+                    </td>
+                    <td className={`hidden sm:table-cell px-4 py-2 text-xs whitespace-nowrap ${subtle}`}>{(t.book_category ?? "Uncategorized").replace(/^\d{4}\s+/, "")}</td>
+                    <td className="pl-2 pr-4 sm:px-4 py-2 text-right tabular-nums font-medium whitespace-nowrap">{money(-t.amount)}</td>
                   </tr>
                 ))}
               </tbody>

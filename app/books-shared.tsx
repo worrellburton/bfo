@@ -121,6 +121,8 @@ export function tiers(isDark: boolean): { t1: string; t2: string; t3: string } {
 
 /** The only uppercase, tracked style on the page (callers add a tier colour). */
 export const MICRO = "text-xs font-semibold uppercase tracking-[0.08em]";
+/** Sentence-case small label — what the Books surfaces use (no all-caps). */
+const LABEL = "text-xs font-semibold";
 
 export function incomeTone(isDark: boolean): string {
   return isDark ? "text-emerald-400" : "text-emerald-700";
@@ -1119,7 +1121,7 @@ export function Menu({
   }`;
   // Group heads stick to the top of the scrolling list in both the popover
   // and the sheet, on the surface colour so rows slide underneath.
-  const groupHead = `${MICRO} ${t2} px-2 pt-2 pb-1 sticky top-0 z-10 ${
+  const groupHead = `${LABEL} ${t2} px-2 pt-2 pb-1 sticky top-0 z-10 ${
     sheet ? (isDark ? "bg-[#161616]/95" : "bg-white/95") : isDark ? "bg-[#161616]" : "bg-white"
   }`;
   const enter = sheet ? "sheet-in" : box?.above ? "pop-in-up origin-bottom" : "pop-in origin-top";
@@ -1672,7 +1674,7 @@ export function TxnHistoryPanel({
   return (
     <div className={`mt-5 pt-4 border-t grid gap-x-8 gap-y-4 sm:grid-cols-2 ${ruleBorder(isDark)}`}>
       <div className="min-w-0">
-        <span className={`${MICRO} ${t2} block mb-2`}>Receipts & documents</span>
+        <span className={`${LABEL} ${t2} block mb-2`}>Receipts & documents</span>
         {receipts.length > 0 ? (
           <ul className="space-y-1 mb-2">
             {receipts.map((r) => (
@@ -1740,7 +1742,7 @@ export function TxnHistoryPanel({
         {uploadErr && <p className="text-xs text-red-500 mt-1.5">{uploadErr}</p>}
       </div>
       <div className="min-w-0">
-        <span className={`${MICRO} ${t2} block mb-2`}>History</span>
+        <span className={`${LABEL} ${t2} block mb-2`}>History</span>
         {loading ? (
           <p className={`text-sm lg:text-xs ${t2}`}>Loading…</p>
         ) : log.length === 0 ? (
@@ -2491,7 +2493,7 @@ export function TxnTable({
         const ids = g.title === "Identifiers";
         return (
           <div key={g.title} className={`min-w-0 ${ids ? "sm:col-span-2 lg:col-span-1" : ""}`}>
-            <p className={`${MICRO} ${t2} mb-2`}>{g.title}</p>
+            <p className={`${LABEL} ${t2} mb-2`}>{g.title}</p>
             <dl className={`grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 items-baseline ${ids ? "sm:grid-cols-[7rem_1fr_7rem_1fr] lg:grid-cols-[7rem_1fr]" : ""}`}>
               {g.pairs.map((p) => (
                 <Fragment key={p.k}>

@@ -92,7 +92,7 @@ export default function BooksCell() {
           ...(entity !== "all" ? { entity } : {}),
           ...(year !== String(new Date().getFullYear()) ? { year } : {}),
         })}`}
-        className={`text-sm ${subtle} hover:underline`}
+        className={`inline-flex items-center min-h-[40px] sm:min-h-0 -my-[12px] sm:my-0 text-sm ${subtle} hover:underline`}
       >
         ← Profit &amp; loss
       </Link>
@@ -127,7 +127,7 @@ export default function BooksCell() {
         {loading ? (
           <p className={`px-4 py-8 text-center text-sm ${subtle}`}>Loading…</p>
         ) : rows.length === 0 ? (
-          <p className={`px-4 py-8 text-center text-sm ${subtle}`}>Nothing behind this cell.</p>
+          <p className={`px-4 py-8 text-center text-sm ${subtle}`}>{error ? "Nothing to show." : "Nothing behind this cell."}</p>
         ) : (
           <TxnTable
             rows={rows}

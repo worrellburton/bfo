@@ -59,7 +59,10 @@ export function normalizeCsv(rows: string[][]): CsvRow[] {
   }
   return body.flatMap((r) => {
     const date = toIsoDate(r[di] ?? "");
-    const amount = Number(String(r[ai] ?? "").replace(/[$,]/g, ""));
+    // "$1,234.50", "-12.00" and accounting-style "(12.00)" all parse.
+    const raw = String(r[ai] ?? "").trim().replace(/[$,\s]/g, "");
+    const paren = /^\((.*)\)$/.exec(raw);
+    const amount = paren ? -Number(paren[1]) : Number(raw);
     const description = (r[ti] ?? "").trim();
     if (!date || !Number.isFinite(amount) || amount === 0) return [];
     return [{ date, description, amount }];
