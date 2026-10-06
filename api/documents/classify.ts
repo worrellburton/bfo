@@ -4,9 +4,10 @@ import { canWrite, currentUser } from "../../lib/auth.js";
 import { fetchDocument } from "../../lib/fetch-document.js";
 
 /**
- * Reads an uploaded entity document and says which formation filing it is,
- * so the entity page can file it in the right slot (EIN letter, W-9,
- * Articles/Certificate, Operating Agreement) and fill blank key facts.
+ * Reads an uploaded entity document and says which piece of paperwork it is
+ * — formation filing, IRS letter or election, governance document, state
+ * annual filing, trust document — so the entity page can file it in the
+ * right slot and fill or check the record's key facts.
  */
 
 const MODEL = "claude-opus-5-5";
@@ -17,14 +18,35 @@ function outOfCredit(err: unknown): boolean {
   return err instanceof Anthropic.APIError && /credit balance/i.test(err.message);
 }
 
-export type DocKind = "ein_letter" | "w9" | "articles" | "operating_agreement" | "trust_agreement" | "trust_certificate" | "other";
+const KINDS = [
+  "ein_letter",
+  "w9",
+  "articles",
+  "operating_agreement",
+  "trust_agreement",
+  "trust_certificate",
+  "trust_schedule",
+  "s_election",
+  "s_election_accepted",
+  "classification_election",
+  "annual_report",
+  "foreign_registration",
+  "good_standing",
+  "ownership_ledger",
+  "minutes",
+  "other",
+] as const;
+export type DocKind = (typeof KINDS)[number];
 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["kind", "confidence", "entityName", "ein", "date", "state", "trustees", "grantors", "beneficiaries", "taxClassification", "taxClassificationEvidence"],
+  required: [
+    "kind", "confidence", "entityName", "ein", "date", "state", "trustees", "grantors", "beneficiaries",
+    "taxClassification", "taxClassificationEvidence", "filingYear", "registeredAgent", "principalAddress", "members",
+  ],
   properties: {
-    kind: { type: "string", enum: ["ein_letter", "w9", "articles", "operating_agreement", "trust_agreement", "trust_certificate", "other"] },
+    kind: { type: "string", enum: [...KINDS] },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
     entityName: { type: ["string", "null"] },
     ein: { type: ["string", "null"] },
@@ -37,33 +59,66 @@ const SCHEMA = {
       anyOf: [{ type: "string", enum: ["Disregarded Entity", "Partnership", "S Corporation", "C Corporation"] }, { type: "null" }],
     },
     taxClassificationEvidence: { type: ["string", "null"] },
+    filingYear: { type: ["integer", "null"] },
+    registeredAgent: { type: ["string", "null"] },
+    principalAddress: { type: ["string", "null"] },
+    members: {
+      anyOf: [
+        {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["name", "percent", "role"],
+            properties: {
+              name: { type: "string" },
+              percent: { type: ["number", "null"] },
+              role: { type: ["string", "null"] },
+            },
+          },
+        },
+        { type: "null" },
+      ],
+    },
   },
 } as const;
 
 const SYSTEM = [
-  "You sort a family office's entity documents into formation filings.",
+  "You sort a family office's entity documents (LLCs, corporations, limited partnerships, trusts) and read their key facts.",
   "Decide which one document type this is:",
-  "- ein_letter: the IRS letter assigning an Employer Identification Number (CP 575, 147C), or an SS-4 confirmation.",
+  "- ein_letter: the IRS notice assigning an Employer Identification Number (CP 575 any version, a digital CP 575, Letter 147C), or an SS-4 confirmation.",
   "- w9: IRS Form W-9, Request for Taxpayer Identification Number.",
-  "- articles: the state formation filing — Articles of Organization, Articles of Incorporation, Certificate of Formation, Certificate of Incorporation, Certificate of Organization.",
-  "- operating_agreement: an LLC Operating Agreement or corporate Bylaws.",
-  "- trust_agreement: a trust instrument — trust agreement, declaration of trust, or an amended and restated trust.",
+  "- articles: the state formation filing — Articles of Organization, Certificate of Formation, Articles/Certificate of Incorporation, Certificate of Organization, Certificate of Limited Partnership (an Arizona corporation's Certificate of Disclosure filed with it counts too).",
+  "- operating_agreement: the governing agreement — LLC Operating Agreement / LLC Agreement, corporate Bylaws, or a Limited Partnership Agreement.",
+  "- trust_agreement: a trust instrument — trust agreement, declaration of trust, an amendment or an amended and restated trust.",
   "- trust_certificate: a certification / certificate / abstract / memorandum of trust (the short summary banks ask for).",
-  "- other: anything else (contracts, statements, invoices, tax returns, amendments, annual reports).",
-  "Also extract, only when printed in the document: the entity's legal name, its EIN (format NN-NNNNNNN),",
-  "the key date as YYYY-MM-DD (EIN letter: date issued; articles: filing/effective date; operating agreement: effective date; trust agreement or certificate: the date the trust was made; w9: signature date),",
-  "and the state of formation (for a trust: the state whose law governs it) as a full state name. Use null for anything not visible. Never guess.",
-  "For trust documents (agreement, certification, appointment of trustees, amendments), also list the trustees, the grantors / settlors / trustors,",
-  "and the beneficiaries as named in the document, comma-separated (people or entities). Use null when not stated.",
-  "A document that appoints successor trustees or assigns property to the trust is 'other' — but still report the names it states.",
-  "Federal tax classification (taxClassification) — report it only when this document states it, else null:",
-  "- EIN letter (CP 575 / 147C): the return it says the entity must file decides it — Form 1065 = Partnership, Form 1120-S = S Corporation, Form 1120 = C Corporation;",
-  "  a letter assigning the EIN to a single-member LLC 'disregarded as separate from its owner' (or naming Form 1040 / the owner's return) = Disregarded Entity.",
-  "- W-9 line 3: the LLC box with tax classification P = Partnership, S = S Corporation, C = C Corporation; 'Individual/sole proprietor or single-member LLC' checked,",
-  "  or the W-9 filed in the owner's name with the LLC on line 2 = Disregarded Entity. Boxes for C Corporation / S Corporation / Partnership map directly.",
-  "- Form 2553 (S election) = S Corporation; Form 8832 = whichever classification it elects.",
-  "- An operating agreement naming two or more members, with no election, = Partnership; exactly one member = Disregarded Entity.",
-  "taxClassificationEvidence: one short phrase quoting what you read (e.g. 'CP 575: required to file Form 1065', 'W-9: LLC box, P').",
+  "- trust_schedule: a trust's Schedule A of assets, or an assignment / deed transferring property or membership interests into the trust.",
+  "- s_election: IRS Form 2553, Election by a Small Business Corporation.",
+  "- s_election_accepted: IRS notice CP261 (or other letter) accepting an S corporation election.",
+  "- classification_election: IRS Form 8832 (entity classification election) or the IRS letter accepting it.",
+  "- annual_report: a state's recurring filing or its receipt — Arizona corporation Annual Report, Nevada Annual List (and State Business License), Delaware Annual Franchise Tax Report, Delaware LLC/LP annual tax receipt, a New York Biennial Statement.",
+  "- foreign_registration: registration to do business in another state — Arizona Foreign Registration Statement (L025), Application for Registration / for Authority to Transact Business, NY Application for Authority.",
+  "- good_standing: a Certificate of Good Standing / Certificate of Existence / Certificate of Status from a state.",
+  "- ownership_ledger: a membership ledger, member list, cap table, stock ledger, stock certificate or partner register.",
+  "- minutes: meeting minutes, written consents or resolutions of members, managers, directors or shareholders (including organizational minutes).",
+  "- other: anything else (contracts, statements, invoices, tax returns, statements of change, amendments to articles).",
+  "Also extract, only when printed in the document (null otherwise — never guess):",
+  "- entityName: the entity's legal name. ein: format NN-NNNNNNN.",
+  "- date as YYYY-MM-DD: EIN letter — date issued; articles — filing/effective date; operating agreement or bylaws — effective date; trust documents — the date the trust was made; w9 — signature date; annual report — filing date; good standing — date issued; elections — effective date.",
+  "- state: the state of formation as a full state name (for a trust: the state whose law governs it).",
+  "- filingYear: for an annual report, list, franchise tax report or tax receipt, the year it covers.",
+  "- registeredAgent: the statutory / registered agent's name, when the document names one.",
+  "- principalAddress: the entity's principal office / known place of business, as printed.",
+  "- members: the owners the document lists with their ownership — LLC members and percentages (operating agreement schedule, ledger, articles' member list), shareholders and shares percent, general/limited partners. role: 'member', 'manager', 'shareholder', 'general partner', 'limited partner', 'director' or 'officer'. Managers, directors and officers have percent null.",
+  "For trust documents (agreement, certification, appointment of trustees, amendments, schedules), also list the trustees, the grantors / settlors / trustors,",
+  "and the beneficiaries as named, comma-separated (people or entities). Use null when not stated.",
+  "Federal tax classification (taxClassification) — report it only when this document states or proves it, else null:",
+  "- EIN letter: CP 575 versions A/B list 'you must file the following form(s)' — Form 1065 = Partnership, Form 1120-S = S Corporation, Form 1120 = C Corporation.",
+  "  The single-member version (CP 575 G, name line ending 'SOLE MBR', no filing requirement, explaining Form 8832/2553) = Disregarded Entity.",
+  "- W-9 line 3a: LLC box with P = Partnership, S = S Corporation, C = C Corporation. A W-9 in the owner's name with the LLC on line 2, or 'Individual/sole proprietor or single-member LLC' checked = Disregarded Entity. Partnership / C corporation / S corporation boxes map directly.",
+  "- Form 2553 or CP261 = S Corporation; Form 8832 = whichever classification it elects.",
+  "- An operating agreement naming two or more members with no election = Partnership; exactly one member = Disregarded Entity.",
+  "taxClassificationEvidence: one short phrase quoting what you read (e.g. 'CP 575: required to file Form 1065', 'W-9: LLC box, P', 'Operating agreement: 2 members').",
   "confidence: high when the document's title or form number makes the type unambiguous.",
 ].join("\n");
 
@@ -147,6 +202,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       beneficiaries: string | null;
       taxClassification: "Disregarded Entity" | "Partnership" | "S Corporation" | "C Corporation" | null;
       taxClassificationEvidence: string | null;
+      filingYear: number | null;
+      registeredAgent: string | null;
+      principalAddress: string | null;
+      members: { name: string; percent: number | null; role: string | null }[] | null;
     };
     const ein = parsed.ein && /^\d{2}-?\d{7}$/.test(parsed.ein.trim())
       ? parsed.ein.trim().replace(/^(\d{2})-?(\d{7})$/, "$1-$2")

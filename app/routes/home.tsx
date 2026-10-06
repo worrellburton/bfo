@@ -17,7 +17,7 @@ export function meta() {
 interface Asset {
   id: string;
   name: string;
-  type: "LLC" | "C-Corp" | "Trust";
+  type: "LLC" | "C-Corp" | "LP" | "Trust";
   state?: string;
   ein?: string;
   ownerId?: string;
@@ -696,7 +696,10 @@ export default function Home() {
   const structure = useMemo(() => buildStructure(scored, byId, childrenOf), [scored, byId, childrenOf]);
   const avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length) : 0;
   const completeCount = scored.filter((a) => a.score === 100).length;
-  const missingEin = scored.filter((a) => !a.ein?.trim());
+  // A revocable (grantor) trust uses the grantor's SSN — it has no EIN to miss.
+  const missingEin = scored.filter(
+    (a) => !a.ein?.trim() && !(entityType(a) === "Trust" && !/non-grantor/i.test(a.llcType ?? ""))
+  );
   const lowest = scored
     .filter((a) => a.score < 100)
     .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))

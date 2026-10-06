@@ -88,7 +88,7 @@ const SYSTEM = [
   "- mismatch: the documents clearly state a different value.",
   "- missing_on_record: the record is blank but the documents state a value.",
   "- not_found: no document states this field.",
-  "Field meanings: name = legal name; type = LLC, C-Corp or Trust; state = state of formation (full name); ein = NN-NNNNNNN;",
+  "Field meanings: name = legal name; type = LLC, C-Corp, LP (limited partnership) or Trust; state = state of formation (full name); ein = NN-NNNNNNN;",
   "formationDate = date the entity was formed/filed with the state (YYYY-MM-DD); address = principal/mailing address;",
   "registeredAgent = statutory/registered agent name; llcType = federal tax classification, one of 'Disregarded Entity', 'Partnership', 'S Corporation', 'C Corporation'",
   "(decide it from the EIN letter's required return — 1065 Partnership, 1120-S S Corporation, 1120 C Corporation — the W-9 line 3 box, a Form 2553/8832 election, or the number of members in the operating agreement; say which in the note);",

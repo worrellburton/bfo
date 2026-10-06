@@ -47,7 +47,7 @@ export function meta() {
 interface Asset {
   id: string;
   name: string;
-  type: "LLC" | "C-Corp" | "Trust";
+  type: "LLC" | "C-Corp" | "LP" | "Trust";
   state: string;
   ein: string;
   createdAt: number;
@@ -918,7 +918,7 @@ export default function Assets() {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
-  const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp" | "Trust">("all");
+  const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp" | "LP" | "Trust">("all");
   const [stateF, setStateF] = useState<string[]>([]);
   const [attention, setAttention] = useState(false);
   const [editingTag, setEditingTag] = useState<string | null>(null);
@@ -1006,7 +1006,7 @@ export default function Assets() {
     };
   }, []);
 
-  async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp" | "Trust"; state: string; ein: string }) {
+  async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp" | "LP" | "Trust"; state: string; ein: string }) {
     const { db } = await import("../firebase");
     const { push, ref } = await import("firebase/database");
     await push(ref(db, "assets"), {
@@ -1308,7 +1308,7 @@ export default function Assets() {
     <span
       title={a.type === "LLC" && a.llcType ? `LLC · ${a.llcType}` : a.type}
       className={`inline-flex items-center shrink-0 h-5 px-1.5 rounded-md text-xs font-medium leading-none ${
-        a.type === "C-Corp" || a.type === "Trust"
+        a.type === "C-Corp" || a.type === "Trust" || a.type === "LP"
           ? isDark ? "border border-white/15 text-gray-300" : "border border-gray-300 text-gray-700"
           : isDark ? "bg-white/[0.05] text-gray-400" : "bg-gray-100 text-gray-500/100"
       }`}
@@ -1336,7 +1336,7 @@ export default function Assets() {
           </ul>
         </>
       ) : (
-        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>Every requirement for {a.type === "C-Corp" ? "a C-Corp" : a.type === "Trust" ? "a trust" : "an LLC"} is on file.</p>
+        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>Every requirement for {a.type === "C-Corp" ? "a C-Corp" : a.type === "Trust" ? "a trust" : a.type === "LP" ? "a limited partnership" : "an LLC"} is on file.</p>
       )}
     </>
   );
@@ -1460,6 +1460,7 @@ export default function Assets() {
           ["all", "All"],
           ["LLC", "LLC"],
           ["C-Corp", "C-Corp"],
+          ["LP", "LP"],
           ["Trust", "Trust"],
         ] as const
       ).map(([value, label]) => (
@@ -2032,12 +2033,12 @@ function NewEntityDialog({
   isDark: boolean;
   open: boolean;
   onClose: () => void;
-  onCreate: (fields: { name: string; type: "LLC" | "C-Corp" | "Trust"; state: string; ein: string }) => Promise<void>;
+  onCreate: (fields: { name: string; type: "LLC" | "C-Corp" | "LP" | "Trust"; state: string; ein: string }) => Promise<void>;
 }) {
   const { t1, t2 } = tiers(isDark);
   const ref = useRef<HTMLFormElement>(null);
   const [name, setName] = useState("");
-  const [type, setType] = useState<"LLC" | "C-Corp" | "Trust">("LLC");
+  const [type, setType] = useState<"LLC" | "C-Corp" | "LP" | "Trust">("LLC");
   const [state, setState] = useState("");
   const [ein, setEin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2112,7 +2113,7 @@ function NewEntityDialog({
           Type
         </span>
         <div role="group" aria-labelledby="new-entity-type" className={`${segContainer} mb-3`}>
-          {(["LLC", "C-Corp", "Trust"] as const).map((t) => (
+          {(["LLC", "C-Corp", "LP", "Trust"] as const).map((t) => (
             <button
               key={t}
               type="button"
