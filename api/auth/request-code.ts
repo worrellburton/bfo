@@ -27,7 +27,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raw = (req.body?.identifier ?? req.body?.phone ?? req.body?.email ?? "") as string;
     const identifier = normalizeIdentifier(raw);
     if (!identifier) {
-      return fail(res, 400, "invalid_identifier", "Enter a valid phone number or email address.");
+      return fail(res, 400, "invalid_identifier", "Enter a valid phone number.");
+    }
+    // Sign-in is by phone only; an email stays on the profile as contact info.
+    if (identifier.kind !== "phone") {
+      return fail(res, 400, "phone_only", "Sign in with your phone number.");
     }
 
     const column = identifier.kind === "phone" ? "phone" : "email";

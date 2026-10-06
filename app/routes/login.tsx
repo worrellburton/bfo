@@ -11,7 +11,6 @@ const RESEND_SECONDS = 45;
 const CODE_LEN = 6;
 
 type Step = "identifier" | "code" | "pending";
-type Mode = "phone" | "email";
 
 function formatPhone(raw: string): string {
   if (raw.trim().startsWith("+")) return `+${raw.replace(/\D/g, "")}`;
@@ -26,10 +25,6 @@ function formatPhone(raw: string): string {
 function isValidPhone(value: string): boolean {
   const digits = value.replace(/\D/g, "");
   return value.trim().startsWith("+") ? digits.length >= 8 : digits.length === 10;
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
 }
 
 /**
@@ -55,7 +50,6 @@ function Spinner() {
 export default function Login() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("identifier");
-  const [mode, setMode] = useState<Mode>("phone");
   const [identifier, setIdentifier] = useState("");
   const [masked, setMasked] = useState("");
   const [sentTo, setSentTo] = useState("");
@@ -100,8 +94,8 @@ export default function Login() {
   }, [step]);
 
   const valid = useMemo(
-    () => (mode === "phone" ? isValidPhone(identifier) : isValidEmail(identifier)),
-    [mode, identifier]
+    () => isValidPhone(identifier),
+    [identifier]
   );
 
   function shakeOut(message: string) {
@@ -112,21 +106,7 @@ export default function Login() {
 
   function onIdentifierChange(raw: string) {
     setError("");
-    // Letters or @ mean an email is being typed, whatever the chip says.
-    if (mode === "phone" && /[a-zA-Z@]/.test(raw)) {
-      setMode("email");
-      setIdentifier(raw);
-      return;
-    }
-    setIdentifier(mode === "phone" ? formatPhone(raw) : raw);
-  }
-
-  function switchMode(next: Mode) {
-    if (next === mode) return;
-    setMode(next);
-    setIdentifier("");
-    setError("");
-    idInput.current?.focus();
+    setIdentifier(formatPhone(raw));
   }
 
   async function send(value: string) {
@@ -211,21 +191,7 @@ export default function Login() {
                 >
                   Sign in
                 </label>
-                {/* Keyboard-correct entry modes, not one field guessing */}
-                <div className="flex rounded-full border border-white/10 p-0.5">
-                  {(["phone", "email"] as Mode[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => switchMode(m)}
-                      className={`px-3 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
-                        mode === m ? "bg-white text-black" : "text-white/45 hover:text-white/80"
-                      }`}
-                    >
-                      {m === "phone" ? "Phone" : "Email"}
-                    </button>
-                  ))}
-                </div>
+                <span className="text-[11px] text-white/35">Phone number</span>
               </div>
 
               <div className="relative">
@@ -233,14 +199,14 @@ export default function Login() {
                   ref={idInput}
                   id="identifier"
                   name="identifier"
-                  type={mode === "email" ? "email" : "text"}
-                  inputMode={mode === "phone" ? "tel" : "email"}
-                  autoComplete={mode === "phone" ? "tel" : "email"}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   autoFocus
                   required
                   value={identifier}
                   onChange={(e) => onIdentifierChange(e.target.value)}
-                  placeholder={mode === "phone" ? "(555) 123-4567" : "you@example.com"}
+                  placeholder="(555) 123-4567"
                   className={`auth-field auth-delay-1 auth-field-ghost text-[16px] ${error ? "auth-field-error" : ""}`}
                 />
                 <AnimatedValue value={identifier} />
