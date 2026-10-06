@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { Link, useParams } from "react-router";
 import { useTheme } from "../theme";
 
@@ -699,8 +700,8 @@ export default function ContractPDF() {
                   </button>
                 )}
                 <button
-                  onClick={() => {
-                    if (confirm(`Remove the signature request for ${sig.signerName}?`)) void removeSigRequest(sig.id);
+                  onClick={async () => {
+                    if (await confirmDialog({ title: `Remove the signature request for ${sig.signerName}?`, tone: "danger", confirmLabel: "Remove" })) void removeSigRequest(sig.id);
                   }}
                   className={`text-xs cursor-pointer transition-opacity max-sm:min-h-[40px] max-sm:px-2 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-red-400 hover:text-red-300" : "text-red-600 hover:text-red-700"}`}
                 >

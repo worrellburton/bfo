@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useTheme } from "../theme";
 import { authFetch } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 
 export function meta() {
   return [{ title: "BFO - Asset" }];
@@ -21,6 +22,10 @@ interface Asset {
   notes?: string;
   ownerId?: string;
   llcType?: string; // tax classification (LLC/corp options, or grantor / non-grantor for a trust)
+  /** Where the tax class came from: a document's evidence, or "Entered by hand". Absent = never confirmed. */
+  llcTypeSource?: string;
+  /** A document states a different tax class than the record. */
+  llcTypeConflict?: { value: string; evidence: string; docName: string; at: number } | null;
   trustees?: string;
   grantors?: string;
   beneficiaries?: string;
@@ -112,6 +117,7 @@ interface AssetDoc {
   size?: number;
   contentType?: string;
   factsCheckedAt?: number; // key facts already read from this document
+  classReadAt?: number; // tax classification already read from this document
   autoFileSkip?: boolean; // removed from a filing slot by hand — don't auto-file again
 }
 
@@ -302,7 +308,15 @@ type Classified = {
   trustees?: string | null;
   grantors?: string | null;
   beneficiaries?: string | null;
+  taxClassification?: string | null;
+  taxClassificationEvidence?: string | null;
 };
+
+/** Filings that state an entity's federal tax classification. */
+const TAX_CLASS_KINDS: ReadonlySet<string> = new Set(["einLetter", "w9", "operatingAgreement"]);
+
+/** A tax class source written by a person rather than read off a document. */
+const BY_HAND = "Entered by hand";
 
 // Services Included: dropdown with a per-service toggle, plus a reorderable
 // selected list — the order here is the order services appear in the contract PDF.
@@ -645,7 +659,18 @@ export default function AssetDetail() {
     const pick = <K extends keyof Asset>(k: K) => ((form[k] ?? "") !== (base[k] ?? "") ? form[k] : live[k] ?? form[k]);
     const { db } = await import("../firebase");
     const { ref, update } = await import("firebase/database");
+    // Changing the tax class by hand records that it came from a person; a
+    // pending document conflict is settled when the hand value matches it.
+    const classChanged = (form.llcType ?? "") !== (base.llcType ?? "");
+    const conflict = live.llcTypeConflict;
+    const provenance = classChanged
+      ? {
+          llcTypeSource: form.llcType ? BY_HAND : null,
+          llcTypeConflict: conflict && conflict.value !== form.llcType ? conflict : null,
+        }
+      : {};
     await update(ref(db, `assets/${id}`), {
+      ...provenance,
       name: String(pick("name") ?? "").trim(),
       type: form.type,
       state: pick("state") || "",
@@ -684,7 +709,16 @@ export default function AssetDetail() {
   async function handleDeleteDoc(docId: string) {
     const doc = docs.find((d) => d.id === docId);
     const filedAs = FILING_KINDS.filter((k) => asset?.[k]?.docId === docId);
-    if (!confirm(`Delete “${doc?.name ?? "this document"}”?${filedAs.length ? ` It is filed as ${filedAs.map((k) => filingTitle(k, asset?.type)).join(", ")} — that slot will be emptied.` : ""}`)) return;
+    if (
+      !(await confirmDialog({
+        title: `Delete “${doc?.name ?? "this document"}”?`,
+        message: filedAs.length
+          ? `It is filed as ${filedAs.map((k) => filingTitle(k, asset?.type)).join(", ")} — that slot will be emptied.`
+          : "This can't be undone.",
+        tone: "danger",
+      }))
+    )
+      return;
     if (doc?.storagePath) {
       if (doc.storageProvider === "supabase") {
         try {
@@ -694,7 +728,7 @@ export default function AssetDetail() {
             body: JSON.stringify({ path: doc.storagePath }),
           });
           if (r.status === 401 || r.status === 403) {
-            alert("You don't have permission to delete documents.");
+            await alertDialog("You don't have permission to delete documents.");
             return;
           }
         } catch {
@@ -851,6 +885,68 @@ export default function AssetDetail() {
   }
 
   /** Work out what a document is (name first, then Claude reads it) and file it. */
+  /**
+   * The federal tax class, from any document that states it (EIN letter's
+   * required return, W-9 box, 2553/8832 election, member count in the
+   * operating agreement). Fills a blank record and marks it confirmed; when
+   * the record says something else, it is flagged — never overwritten.
+   */
+  async function applyTaxClass(facts: Classified, doc: AssetDoc) {
+    const current = assetRef.current;
+    const tc = facts.taxClassification?.trim();
+    if (!current || !tc) return;
+    const etype = entityType(current);
+    if (etype === "Trust" || !TAX_CLASSES[etype].includes(tc)) return;
+    const evidence = facts.taxClassificationEvidence?.trim() || "stated in the document";
+    const source = `${evidence} (${doc.name})`;
+    const patch: Record<string, unknown> = {};
+    let note = "";
+    if (!current.llcType) {
+      patch.llcType = tc;
+      patch.llcTypeSource = source;
+      patch.llcTypeConflict = null;
+      note = `tax class ${tc}`;
+    } else if (current.llcType === tc) {
+      if (current.llcTypeSource === source) return;
+      patch.llcTypeSource = source;
+      patch.llcTypeConflict = null;
+      note = `confirmed ${tc}`;
+    } else {
+      if (current.llcTypeConflict?.value === tc && current.llcTypeConflict.docName === doc.name) return;
+      patch.llcTypeConflict = { value: tc, evidence, docName: doc.name, at: Date.now() };
+      note = `says ${tc}, record says ${current.llcType} — check it`;
+    }
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), patch);
+    const line = `Read “${doc.name}” · ${note}`;
+    setFilingNotes((n) => [...n, line]);
+    setScan((sc) => (sc && !sc.finished ? { ...sc, notes: [...sc.notes, line] } : sc));
+  }
+
+  /** Use the tax class a document states, settling the conflict. */
+  async function acceptDocumentTaxClass() {
+    const c = assetRef.current?.llcTypeConflict;
+    if (!c) return;
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), {
+      llcType: c.value,
+      llcTypeSource: `${c.evidence} (${c.docName})`,
+      llcTypeConflict: null,
+    });
+  }
+
+  /** Keep the record's tax class and dismiss the document's disagreement. */
+  async function dismissTaxClassConflict() {
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), { llcTypeConflict: null, llcTypeSource: assetRef.current?.llcTypeSource || BY_HAND });
+  }
+
   /** A trust's trustees, grantors and beneficiaries, from any trust document that names them. */
   async function fillTrustPeople(facts: Classified, doc: AssetDoc) {
     const current = assetRef.current;
@@ -893,6 +989,7 @@ export default function AssetDetail() {
           if (read && facts.confidence !== "low") kind = read;
           setAiDown(null);
           await fillTrustPeople(facts, doc);
+          await applyTaxClass(facts, doc);
         } else if (r.status === 503) {
           const body = await r.json().catch(() => ({}));
           setAiDown(body?.message || "Document reading is unavailable right now.");
@@ -945,11 +1042,18 @@ export default function AssetDetail() {
       trustAgreement: !asset.formationDate || !asset.state?.trim(),
       trustCertificate: !asset.formationDate,
     };
+    // The tax class is read again until a document confirms it — older
+    // reads didn't look for it, and a seeded or hand-entered value can be wrong.
+    const classUnconfirmed =
+      entityType(asset) !== "Trust" && (!asset.llcTypeSource || asset.llcTypeSource === BY_HAND) && !asset.llcTypeConflict;
     for (const kind of kindsFor(asset)) {
       const docId = asset[kind]?.docId;
-      if (!docId || !blankFor[kind] || enriching.current.has(docId)) continue;
+      if (!docId || enriching.current.has(docId)) continue;
       const doc = docs.find((d) => d.id === docId);
-      if (!doc || doc.factsCheckedAt || !doc.storagePath) continue;
+      if (!doc || !doc.storagePath) continue;
+      const needsFacts = blankFor[kind] && !doc.factsCheckedAt;
+      const needsClass = classUnconfirmed && TAX_CLASS_KINDS.has(kind) && !doc.classReadAt;
+      if (!needsFacts && !needsClass) continue;
       enriching.current.add(docId);
       void enrichFromDocument(kind, doc);
     }
@@ -973,6 +1077,7 @@ export default function AssetDetail() {
       const facts = (await r.json()) as Classified;
       setAiDown(null);
       await fillTrustPeople(facts, doc);
+          await applyTaxClass(facts, doc);
       const current = assetRef.current;
       if (!current) return;
       const patch: Record<string, unknown> = {};
@@ -981,7 +1086,7 @@ export default function AssetDetail() {
         const { db, authReady } = await import("../firebase");
         await authReady;
         const { ref, update } = await import("firebase/database");
-        await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now() });
+        await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now(), classReadAt: Date.now() });
         return;
       }
       const filled: string[] = [];
@@ -1013,7 +1118,7 @@ export default function AssetDetail() {
       await authReady;
       const { ref, update } = await import("firebase/database");
       if (Object.keys(patch).length) await update(ref(db, `assets/${id}`), patch);
-      await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now() });
+      await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now(), classReadAt: Date.now() });
       if (filled.length) setFilingNotes((n) => [...n, `Read “${doc.name}” · added ${filled.join(", ")}`]);
     } catch (err) {
       console.error("reading filed document failed", err);
@@ -1105,7 +1210,15 @@ export default function AssetDetail() {
         ? "Non-grantor trust"
         : /grantor|revocable/i.test(v)
           ? "Grantor trust"
-          : /partner/i.test(v) ? "Partnership" : /corp/i.test(v) ? "C Corporation" : /disregard|single/i.test(v) ? "Disregarded Entity" : "";
+          : /partner|1065/i.test(v)
+            ? "Partnership"
+            : /\bs[- ]?corp|1120-?s|2553/i.test(v)
+              ? "S Corporation"
+              : /corp|1120/i.test(v)
+                ? "C Corporation"
+                : /disregard|single/i.test(v)
+                  ? "Disregarded Entity"
+                  : "";
       if (!m) return;
       v = m;
     }
@@ -1113,7 +1226,11 @@ export default function AssetDetail() {
     const { db, authReady } = await import("../firebase");
     await authReady;
     const { ref, update } = await import("firebase/database");
-    await update(ref(db, `assets/${id}`), { [field]: v });
+    await update(ref(db, `assets/${id}`), {
+      [field]: v,
+      // A tax class taken from the document check counts as confirmed.
+      ...(field === "llcType" ? { llcTypeSource: "Matched by the document check", llcTypeConflict: null } : {}),
+    });
   }
 
   async function applyOwner(ownerId: string) {
@@ -1238,7 +1355,7 @@ export default function AssetDetail() {
       });
       const data = await res.json();
       if (!res.ok || !data?.name) {
-        alert(`Rename failed: ${data?.error || res.statusText}`);
+        await alertDialog("Rename failed", String(data?.error || res.statusText));
         return;
       }
       const suggested: string = String(data.name).trim();
@@ -1254,7 +1371,7 @@ export default function AssetDetail() {
       await update(ref(db, `assets/${id}/documents/${doc.id}`), { name: confirmed.trim() });
     } catch (err) {
       console.error("rename failed:", err);
-      alert(`Rename failed: ${err instanceof Error ? err.message : "unknown"}`);
+      await alertDialog("Rename failed", err instanceof Error ? err.message : "Unknown error");
     } finally {
       setRenamingDocId(null);
     }
@@ -1346,7 +1463,7 @@ export default function AssetDetail() {
     const label = filingTitle(kind, asset?.type);
     // Filed from Documents: just unfile it — the document stays in the library.
     if (file.docId) {
-      if (!confirm(`Unfile “${file.fileName}” from ${label}? It stays in Documents.`)) return;
+      if (!(await confirmDialog({ title: `Unfile “${file.fileName}”?`, message: `It comes out of ${label} and stays in Documents.`, confirmLabel: "Unfile" }))) return;
       const { db, authReady } = await import("../firebase");
       await authReady;
       const { ref: dbRef, update } = await import("firebase/database");
@@ -1354,7 +1471,7 @@ export default function AssetDetail() {
       await update(dbRef(db, `assets/${id}/documents/${file.docId}`), { autoFileSkip: true });
       return;
     }
-    if (!confirm(`Remove the uploaded ${label}?`)) return;
+    if (!(await confirmDialog({ title: `Remove the uploaded ${label}?`, message: "The file is deleted.", tone: "danger", confirmLabel: "Remove" }))) return;
     try {
       const { db, storage, authReady } = await import("../firebase");
       await authReady;
@@ -1372,12 +1489,96 @@ export default function AssetDetail() {
     }
   }
 
+  const [deleting, setDeleting] = useState(false);
+
+  /**
+   * Delete the entity everywhere it lives: its record (filings, contracts,
+   * document list), its uploaded files, its place on the Estate Map, and any
+   * entities it owned (they move up to its own owner rather than vanish).
+   */
   async function handleDeleteAsset() {
-    if (!confirm("Delete this entity? This cannot be undone.")) return;
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
-    await remove(ref(db, `assets/${id}`));
-    navigate("/assets");
+    const current = assetRef.current;
+    if (!current || deleting) return;
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, get, update, remove, set } = await import("firebase/database");
+
+    const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string; ownerId?: string }>;
+    const children = Object.entries(all).filter(([cid, a]) => cid !== id && a?.ownerId === id);
+    const parentName = current.ownerId ? all[current.ownerId]?.name : undefined;
+    const files = docs.filter((d) => d.storagePath);
+
+    const details = [
+      `Its key facts, filings${contracts.length ? `, ${contracts.length} contract${contracts.length === 1 ? "" : "s"}` : ""} and notes are removed.`,
+      files.length ? `${files.length} uploaded document${files.length === 1 ? " is" : "s are"} deleted from storage.` : "",
+      children.length
+        ? `${children.map(([, a]) => a.name).join(", ")} ${children.length === 1 ? "moves" : "move"} up to ${parentName ?? "the top level"}.`
+        : "",
+      "It is removed from the Estate Map.",
+    ].filter(Boolean);
+    const ok = await confirmDialog({
+      title: `Delete ${current.name}?`,
+      message: "This can't be undone.",
+      details,
+      tone: "danger",
+      confirmLabel: "Delete entity",
+      requireText: files.length || children.length ? current.name : undefined,
+    });
+    if (!ok) return;
+
+    setDeleting(true);
+    try {
+      // Children first, so nothing is left pointing at a missing owner.
+      for (const [cid] of children) {
+        await update(ref(db, `assets/${cid}`), { ownerId: current.ownerId || "" });
+      }
+
+      // The Estate Map keeps its own tree by name; lift this node's children
+      // to its parent and drop the node.
+      const mapSnap = await get(ref(db, "estate-map/entities"));
+      const raw = mapSnap.val();
+      if (raw) {
+        const nodes: Array<{ id: string; name: string; parentId: string | null }> = (Array.isArray(raw) ? raw : Object.values(raw)).filter(Boolean);
+        const node = nodes.find((n) => n.name?.trim().toLowerCase() === current.name.trim().toLowerCase());
+        if (node) {
+          const next = nodes
+            .filter((n) => n.id !== node.id)
+            .map((n) => (n.parentId === node.id ? { ...n, parentId: node.parentId ?? null } : n));
+          await set(ref(db, "estate-map/entities"), next);
+        }
+      }
+
+      // Uploaded files — best effort; the record goes either way.
+      for (const d of files) {
+        try {
+          if (d.storageProvider === "supabase") {
+            await authFetch("/api/documents/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: d.storagePath }),
+            });
+          } else {
+            const { storage } = await import("../firebase");
+            const { ref: storageRef, deleteObject } = await import("firebase/storage");
+            await deleteObject(storageRef(storage, d.storagePath!));
+          }
+        } catch (err) {
+          console.warn("couldn't delete stored file", d.storagePath, err);
+        }
+      }
+
+      await remove(ref(db, `assets/${id}`));
+      navigate("/assets");
+    } catch (err) {
+      console.error("delete entity failed", err);
+      setDeleting(false);
+      await alertDialog(
+        "Couldn't delete this entity",
+        err instanceof Error && /permission/i.test(err.message)
+          ? "The database refused the change. Sign out and back in, then try again."
+          : "Something went wrong while deleting. Nothing was removed from the entity itself — try again."
+      );
+    }
   }
 
   async function updateCorpField(field: string, value: unknown) {
@@ -1913,6 +2114,50 @@ export default function AssetDetail() {
     </div>
   );
 
+  // The tax class with where it came from: a document (green), a person,
+  // nothing at all (amber "not confirmed"), or a document that disagrees.
+  const taxClassFact = () => {
+    if (!asset.llcType && !asset.llcTypeConflict) return null;
+    const c = asset.llcTypeConflict;
+    const src = asset.llcTypeSource;
+    const fromDoc = !!src && src !== BY_HAND;
+    return (
+      <div className="space-y-1.5">
+        {asset.llcType && <div>{asset.llcType}</div>}
+        {c ? (
+          <div className={`rounded-lg border px-2.5 py-2 text-[12px] leading-snug ${isDark ? "border-amber-400/30 bg-amber-400/[0.07] text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
+            <p>
+              <span className="font-semibold">{c.docName}</span> says <span className="font-semibold">{c.value}</span>
+              {c.evidence ? ` — ${c.evidence}` : ""}.
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              <button type="button" onClick={() => void acceptDocumentTaxClass()} className={`rounded-full px-2.5 py-1 font-medium max-sm:min-h-[36px] ${isDark ? "bg-amber-300 text-black hover:bg-amber-200" : "bg-amber-600 text-white hover:bg-amber-700"}`}>
+                Use {c.value}
+              </button>
+              <button type="button" onClick={() => void dismissTaxClassConflict()} className="rounded-full px-2.5 py-1 underline-offset-2 hover:underline max-sm:min-h-[36px]">
+                Keep {asset.llcType || "blank"}
+              </button>
+            </div>
+          </div>
+        ) : fromDoc ? (
+          <p className={`text-[11.5px] ${isDark ? "text-emerald-400" : "text-emerald-700"}`} title={src}>✓ {src}</p>
+        ) : src === BY_HAND ? (
+          <p className={`text-[11.5px] text-gray-500`}>Entered by hand · not yet matched to a document</p>
+        ) : (
+          <p className={`text-[11.5px] ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+            {asset.einLetter || asset.w9
+              ? sorting > 0
+                ? "Checking it against the EIN letter and W-9…"
+                : aiDown
+                  ? "Not confirmed yet — document reading is paused"
+                  : "Not confirmed by the EIN letter or W-9 on file — check them, or run Verify"
+              : "Not confirmed by a document — upload the EIN letter or W-9"}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const field = (label: string, control: React.ReactNode, wide = false) => (
     <div className={wide ? "md:col-span-2" : ""}>
       <p className={`mb-1.5 ${kicker}`}>{label}</p>
@@ -2161,7 +2406,7 @@ export default function AssetDetail() {
             {factCell("Registered agent", asset.registeredAgent)}
             {factCell("Principal address", asset.address)}
             {factCell("Formation date", fmtDate(asset.formationDate) ? <span className="tabular-nums">{fmtDate(asset.formationDate)}</span> : null)}
-            {factCell(etype === "C-Corp" ? "Classification" : "LLC type", asset.llcType)}
+            {factCell(etype === "C-Corp" ? "Classification" : "Tax classification", taxClassFact())}
             {factCell(etype === "C-Corp" ? "Bylaws" : "Operating agreement", filedFact("operatingAgreement", asset.operatingAgreementDate))}
             {factCell(etype === "C-Corp" ? "Certificate" : "Articles of org", filedFact("articles", asset.articlesOfOrgDate))}
               </>
@@ -2227,7 +2472,7 @@ export default function AssetDetail() {
                               <p className="text-[13px] font-medium">{d.name}</p>
                               <p className={`text-[11px] ${textMuted}`}>{d.title}{d.since ? ` — Since ${d.since}` : ""}</p>
                             </div>
-                            <button onClick={() => confirm(`Remove ${d.name} from the board?`) && removeDirector(d.id)} className={corpRemoveCls}>Remove</button>
+                            <button onClick={async () => { if (await confirmDialog({ title: `Remove ${d.name} from the board?`, tone: "danger", confirmLabel: "Remove" })) void removeDirector(d.id); }} className={corpRemoveCls}>Remove</button>
                           </div>
                         ))}
                       </div>
@@ -2263,7 +2508,7 @@ export default function AssetDetail() {
                               <p className="text-[13px] font-medium">{o.name}</p>
                               <p className={`text-[11px] ${textMuted}`}>{o.title}{o.since ? ` — Since ${o.since}` : ""}</p>
                             </div>
-                            <button onClick={() => confirm(`Remove ${o.name} as ${o.title}?`) && removeOfficer(o.id)} className={corpRemoveCls}>Remove</button>
+                            <button onClick={async () => { if (await confirmDialog({ title: `Remove ${o.name} as ${o.title}?`, tone: "danger", confirmLabel: "Remove" })) void removeOfficer(o.id); }} className={corpRemoveCls}>Remove</button>
                           </div>
                         ))}
                       </div>
@@ -2311,7 +2556,7 @@ export default function AssetDetail() {
                                 <td className={`py-2 pr-3 ${textSoft}`}>{s.class}</td>
                                 <td className={`py-2 pr-3 tabular-nums ${textSoft}`}>{s.percentage}%</td>
                                 <td className="py-2">
-                                  <button onClick={() => confirm(`Remove ${s.name} from the shareholders?`) && removeShareholder(s.id)} className={corpRemoveCls}>Remove</button>
+                                  <button onClick={async () => { if (await confirmDialog({ title: `Remove ${s.name} from the shareholders?`, tone: "danger", confirmLabel: "Remove" })) void removeShareholder(s.id); }} className={corpRemoveCls}>Remove</button>
                                 </td>
                               </tr>
                             ))}
@@ -2542,7 +2787,9 @@ export default function AssetDetail() {
                                   </button>
                                   <button
                                     onClick={() => {
-                                      if (confirm(`Delete the MSA with ${contract.counterparty}?`)) deleteContract(contract.id);
+                                      void confirmDialog({ title: `Delete the MSA with ${contract.counterparty}?`, tone: "danger" }).then((ok) => {
+                                        if (ok) void deleteContract(contract.id);
+                                      });
                                     }}
                                     className={iconBtnDanger}
                                     title="Delete"

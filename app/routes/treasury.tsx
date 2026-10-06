@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { useNavigate } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
@@ -310,7 +311,7 @@ export default function Treasury() {
   }
 
   async function disconnect(conn: Connection) {
-    if (!confirm(`Disconnect ${conn.institution_name}?`)) return;
+    if (!(await confirmDialog({ title: `Disconnect ${conn.institution_name}?`, message: "Its accounts stop syncing until you connect the bank again.", tone: "danger", confirmLabel: "Disconnect" }))) return;
     try {
       await call(`/api/plaid/disconnect?item_id=${conn.item_id}`, { method: "POST" });
       await call("/api/plaid/prune-accounts", { method: "POST", body: "{}" }).catch(() => {});
@@ -431,10 +432,11 @@ export default function Treasury() {
 
   async function hideDormant() {
     if (
-      !confirm(
-        `Hide ${dormant.length} empty account${dormant.length === 1 ? "" : "s"} with no activity in ${DORMANT_DAYS} days?\n\n` +
-          "They stay out of Treasury totals and the report. To remove them for good, use Refresh and deselect them at the bank."
-      )
+      !(await confirmDialog({
+        title: `Hide ${dormant.length} empty account${dormant.length === 1 ? "" : "s"}?`,
+        message: `No activity in ${DORMANT_DAYS} days. They stay out of Treasury totals and the report. To remove them for good, use Refresh and deselect them at the bank.`,
+        confirmLabel: "Hide",
+      }))
     ) {
       return;
     }

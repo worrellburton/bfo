@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -69,7 +70,7 @@ export default function Notes() {
 
   async function handleDelete(id: string) {
     const note = notes.find((n) => n.id === id);
-    if (!confirm(`Delete “${note?.title ?? "this note"}”?`)) return;
+    if (!(await confirmDialog({ title: `Delete “${note?.title ?? "this note"}”?`, message: "This can't be undone.", tone: "danger" }))) return;
     const { db } = await import("../firebase");
     const { ref, remove } = await import("firebase/database");
     await remove(ref(db, "notes/" + id));

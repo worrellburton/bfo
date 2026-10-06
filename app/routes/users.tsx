@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { useNavigate } from "react-router";
 import { authFetch, getUser, isAdmin, type Role, type Status, type User } from "../auth";
 import { useTheme } from "../theme";
@@ -418,8 +419,15 @@ export default function Users() {
                         )}
                         <button
                           disabled={busyId === user.id || self}
-                          onClick={() => {
-                            if (confirm(`Remove ${user.name || user.email || user.phoneFormatted} entirely?`)) {
+                          onClick={async () => {
+                            if (
+                              await confirmDialog({
+                                title: `Remove ${user.name || user.email || user.phoneFormatted}?`,
+                                message: "They lose access and their account is deleted.",
+                                tone: "danger",
+                                confirmLabel: "Remove user",
+                              })
+                            ) {
                               void mutate("DELETE", user);
                             }
                           }}

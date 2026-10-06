@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { authFetch, getUser, type User } from "../auth";
 import { useTheme } from "../theme";
 
@@ -81,7 +82,7 @@ export default function Notifications() {
 
   async function sendNow() {
     const count = 1 + recipients.length;
-    if (!confirm(`Send the report now to ${count} recipient${count === 1 ? "" : "s"}?`)) return;
+    if (!(await confirmDialog({ title: "Send the report now?", message: `It goes to ${count} recipient${count === 1 ? "" : "s"} immediately.`, confirmLabel: "Send now" }))) return;
     setBroadcastState("sending");
     setError("");
     try {

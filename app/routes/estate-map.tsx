@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
 import { entityCompleteness, type CompletenessInput } from "../entity-completeness";
@@ -816,20 +817,20 @@ export function EstateMapView({
     setEditName("New Entity");
   }
 
-  function handleDeleteEntity(id: string) {
+  async function handleDeleteEntity(id: string) {
     const ent = entityById.get(id);
     if (!ent) return;
     const kids = layout.childrenOf.get(id)?.length ?? 0;
     const note = kids ? ` Its ${kids} ${kids === 1 ? "subsidiary" : "subsidiaries"} will move to Unlinked.` : "";
-    if (!confirm(`Remove ${ent.name} from the estate map?${note}`)) return;
+    if (!(await confirmDialog({ title: `Remove ${ent.name} from the estate map?`, message: `The entity's own record is kept.${note}`, tone: "danger", confirmLabel: "Remove" }))) return;
     setEntities((prev) =>
       prev.filter((e) => e.id !== id).map((e) => (e.parentId === id ? { ...e, parentId: null } : e))
     );
     setHoveredId(null);
   }
 
-  function handleReset() {
-    if (confirm("Reset the estate map to the default structure? This replaces the current links and names for everyone.")) {
+  async function handleReset() {
+    if (await confirmDialog({ title: "Reset the estate map?", message: "This replaces the current links and names with the default structure, for everyone.", tone: "danger", confirmLabel: "Reset map" })) {
       setEntities(INITIAL_ENTITIES);
       refit();
     }
