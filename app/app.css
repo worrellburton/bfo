@@ -21,6 +21,18 @@ body {
   color-scheme: light dark;
 }
 
+/* The page behind the app follows the app's theme, not the phone's: Safari
+   tints its status bar and bottom toolbar from this colour, so a dark app
+   on a light-mode phone was framed by white bars. */
+html,
+html body {
+  background-color: #000;
+}
+html.light,
+html.light body {
+  background-color: rgb(249 250 251);
+}
+
 /* ──────────────────────────────────────────────────────────────────────
    Global light-mode rescue layer.
 

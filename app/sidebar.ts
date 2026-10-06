@@ -17,6 +17,14 @@ export const SIDEBAR_BOOT_SCRIPT = `
   try {
     document.documentElement.style.setProperty("--sidebar-w", "${SIDEBAR_RAIL_W}px");
   } catch (e) {}
+  try {
+    // Apply the saved theme before first paint so the page and the browser
+    // chrome (theme-color) never flash the other colour.
+    var light = localStorage.getItem("bfo-theme") === "light";
+    document.documentElement.classList.toggle("light", light);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", light ? "#f9fafb" : "#000000");
+  } catch (e) {}
 })();
 `.trim();
 

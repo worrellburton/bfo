@@ -35,8 +35,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         {/* Phone browser chrome matches the app instead of flashing white. */}
-        <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
+        {/* Browser chrome colour — follows the app's theme (set before paint
+            by the boot script and on every toggle), not the phone's. */}
+        <meta name="theme-color" content="#000000" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="BFO" />

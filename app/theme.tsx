@@ -28,6 +28,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.setItem("bfo-theme", theme);
     document.documentElement.classList.toggle("light", theme === "light");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f9fafb" : "#000000");
   }, [theme]);
 
   function toggle() {
