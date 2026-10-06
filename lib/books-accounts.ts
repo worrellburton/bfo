@@ -58,6 +58,10 @@ export const CHART: Account[] = [
   { code: "9210", name: "Trustee Draws — Amanda", section: "flow" },
   { code: "9220", name: "Trustee Draws — Bobby", section: "flow" },
   { code: "9300", name: "Loans", section: "flow" },
+  // Money spent improving property (roofs, remodels, landscaping that adds
+  // value). It becomes part of the property's cost basis rather than an
+  // expense, so it stays off the P&L like the other 9000s.
+  { code: "9400", name: "Capital Improvements", section: "flow" },
 ];
 
 export const acctLabel = (a: Account) => `${a.code} ${a.name}`;

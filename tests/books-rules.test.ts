@@ -30,6 +30,7 @@ describe("typeForCategory", () => {
     expect(typeForCategory("4000 Rental Income")).toBe("normal");
     expect(typeForCategory("9000 Intercompany")).toBe("intercompany");
     expect(typeForCategory("9100 Internal Transfers")).toBe("transfer");
+    expect(typeForCategory("9400 Capital Improvements")).toBe("transfer");
     expect(typeForCategory(null)).toBeNull();
   });
 });
