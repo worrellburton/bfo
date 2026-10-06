@@ -33,7 +33,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        {/* Phone browser chrome matches the app instead of flashing white. */}
+        <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="BFO" />
         <Meta />
         <Links />
         {/* Applies the saved sidebar width before first paint. */}
@@ -57,30 +63,40 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
-  let stack: string | undefined;
-
-  if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
-  } else if (import.meta.env.DEV && error && error instanceof Error) {
-    details = error.message;
-    stack = error.stack;
-  }
+  const notFound = isRouteErrorResponse(error) && error.status === 404;
+  const title = notFound ? "This page isn't here" : "Something went wrong";
+  const details = notFound
+    ? "The address doesn't match any page."
+    : isRouteErrorResponse(error)
+      ? error.statusText || "The page failed to load."
+      : "The page hit an unexpected error. Reloading usually fixes it — if it keeps happening, tell us what you were doing.";
+  const stack = import.meta.env.DEV && error instanceof Error ? error.stack : undefined;
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
+    <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
+      <div className="w-full max-w-md text-center">
+        <p className="text-[22px] font-bold tracking-[0.16em]">BFO</p>
+        <h1 className="mt-8 text-[20px] font-semibold">{title}</h1>
+        <p className="mt-2 text-sm text-gray-400">{details}</p>
+        <div className="mt-6 flex justify-center gap-2">
+          {!notFound && (
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black hover:bg-gray-200"
+            >
+              Reload
+            </button>
+          )}
+          <a href="/home" className="rounded-full border border-white/15 px-5 py-2 text-sm text-gray-200 hover:bg-white/10">
+            Go home
+          </a>
+        </div>
+        {stack && (
+          <pre className="mt-8 max-h-64 overflow-auto rounded-xl bg-white/5 p-4 text-left text-xs text-gray-400">
+            <code>{stack}</code>
+          </pre>
+        )}
+      </div>
     </main>
   );
 }

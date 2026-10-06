@@ -740,3 +740,52 @@ html.light :is(button, a, select, input, textarea, [role="option"]):focus-visibl
 @keyframes bfo-fade{from{opacity:0}to{opacity:1}}
 .fade-out{animation:bfo-fade 140ms ease-in reverse both}
 @media (prefers-reduced-motion:reduce){.pop-in,.pop-in-up,.pop-out,.pop-out-up,.sheet-in,.sheet-out,.fade-in,.fade-out{animation:none}.shimmer::after{animation:none;transform:none;opacity:.5}}
+
+/* ── App shell: palette, route progress, toasts, skip link ───────────── */
+
+.palette-backdrop { animation: palette-fade 140ms ease-out both; }
+.palette-panel { animation: palette-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes palette-fade { from { opacity: 0; } }
+@keyframes palette-in { from { opacity: 0; transform: translateY(-6px) scale(0.98); } }
+
+.toast-in { animation: palette-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+.route-progress {
+  background: linear-gradient(90deg, transparent, #818cf8 30%, #34d399 70%, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: route-progress 1s ease-in-out infinite;
+}
+@keyframes route-progress {
+  from { background-position: -50% 0; }
+  to { background-position: 150% 0; }
+}
+
+/* Visible only when tabbed to — jumps past the nav to the page itself. */
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: calc(env(safe-area-inset-top) + 8px);
+  z-index: 110;
+  transform: translateY(-200%);
+  border-radius: 9999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: #000;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+}
+.skip-link:focus { transform: none; }
+
+/* Phones: no grey tap flash, no rubber-band scroll chaining behind sheets. */
+html { -webkit-tap-highlight-color: transparent; }
+body { overscroll-behavior-y: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .palette-backdrop, .palette-panel, .toast-in { animation: none; }
+  .route-progress { animation-duration: 2.5s; }
+}
+
+/* The palette field is the whole dialog; the panel itself shows focus. */
+.palette-input:focus-visible { outline: none; }

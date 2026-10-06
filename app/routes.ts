@@ -33,5 +33,6 @@ export default [
     route("treasury/:accountId", "./routes/treasury-account.tsx"),
     route("notifications", "./routes/notifications.tsx"),
     route("estate-map", "./routes/estate-map.tsx"),
+    route("*", "./routes/not-found.tsx"),
   ]),
 ] satisfies RouteConfig;

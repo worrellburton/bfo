@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CommandPalette, ShortcutSheet, useGlobalShortcuts, useTrackRecent, type PageLink } from "../command-palette";
+import { OfflineBanner, RouteProgress } from "../shell-status";
 import {
   authFetch,
   displayName,
@@ -159,6 +161,10 @@ export default function AppLayout() {
   const [user, setUser] = useState(() => getUser());
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [hovering, setHovering] = useState(false);
   const [pending, setPending] = useState(0);
 
@@ -223,6 +229,52 @@ export default function AppLayout() {
     };
   }, [userMenuOpen]);
 
+  // Every destination the palette can jump to, in nav order.
+  const pages = useMemo<PageLink[]>(() => {
+    const list: PageLink[] = [];
+    for (const item of navItems as any[]) {
+      if (item.children) {
+        for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label });
+      } else {
+        list.push({ to: item.to, label: item.label });
+      }
+    }
+    list.push(
+      { to: "/estate-map", label: "Estate map", section: "Entities", keywords: "structure ownership tree" },
+      { to: "/treasury/mappings", label: "Account mappings", section: "Treasury" },
+      { to: "/notes", label: "Notes" },
+      { to: "/notifications", label: "Notifications", keywords: "alerts email report" },
+      { to: "/settings", label: "Settings", keywords: "profile preferences" }
+    );
+    if (isAdmin(user)) list.push({ to: "/users", label: "Users", keywords: "people access approve" });
+    return list;
+  }, [user]);
+
+  const openPalette = useCallback(() => {
+    setDrawerOpen(false);
+    setSheetOpen(false);
+    setPaletteOpen(true);
+  }, []);
+  const openSheet = useCallback(() => setSheetOpen(true), []);
+  useGlobalShortcuts({ openPalette, openSheet });
+  useTrackRecent(pages);
+
+  // The drawer behaves like a sheet: Escape closes it, focus moves into it,
+  // and the page behind stops scrolling.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const first = drawerRef.current?.querySelector<HTMLElement>("a[href], button");
+    first?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [drawerOpen]);
+
   if (!isAuthenticated()) return null;
 
   const isDark = theme === "dark";
@@ -265,6 +317,9 @@ export default function AppLayout() {
       className={`min-h-screen relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
       style={{ ["--rail" as any]: `${railWidth}px`, ["--inset" as any]: `${contentInset}px` }}
     >
+      <a href="#main" className="skip-link">Skip to content</a>
+      <RouteProgress />
+
       {/* Drifting aurora — the app shell shares the landing atmosphere and the
           glass surfaces let it show through. */}
       <div aria-hidden className="app-aurora fixed inset-0 pointer-events-none">
@@ -279,6 +334,20 @@ export default function AppLayout() {
       )}
 
       <aside
+        ref={drawerRef}
+        aria-label="Navigation"
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          swipeStart.current = drawerOpen ? { x: t.clientX, y: t.clientY } : null;
+        }}
+        onTouchEnd={(e) => {
+          const start = swipeStart.current;
+          swipeStart.current = null;
+          if (!start) return;
+          const t = e.changedTouches[0];
+          // A leftward flick closes the drawer, like the native sheet.
+          if (start.x - t.clientX > 60 && Math.abs(t.clientY - start.y) < 50) setDrawerOpen(false);
+        }}
         onMouseEnter={() => hoverCapable && setHovering(true)}
         onMouseLeave={() => setHovering(false)}
         className={`
@@ -291,6 +360,42 @@ export default function AppLayout() {
         {/* Top: width control, then the wordmark */}
         <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
           <span className={`sidebar-brand ${showLabels ? "" : "sidebar-brand-sm"}`}>BFO</span>
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(false)}
+            aria-label="Close menu"
+            className={`ml-auto flex h-10 w-10 items-center justify-center rounded-full lg:hidden ${
+              isDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Jump to anything — the palette's front door in the rail. */}
+        <div className="px-3 pb-2">
+          <button
+            type="button"
+            onClick={openPalette}
+            title={showLabels ? undefined : "Search (⌘K)"}
+            aria-label="Search and jump to"
+            className={`flex w-full items-center rounded-lg border text-sm transition-colors cursor-pointer px-3 py-2 ${
+              labelsVisible ? "" : "lg:justify-center lg:px-0 lg:border-transparent"
+            } ${
+              isDark
+                ? "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/5"
+                : "border-gray-200 bg-white/60 text-gray-500 hover:text-black hover:bg-black/5"
+            }`}
+          >
+            <svg className="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
+              </svg>
+            <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "lg:hidden"}`}>Search</span>
+            <kbd className={`hidden text-[11px] ${labelsVisible ? "lg:inline" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
+          </button>
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
@@ -519,12 +624,39 @@ export default function AppLayout() {
           <NavLink to="/home" aria-label="BFO home" className="mobile-brand">
             BFO
           </NavLink>
+          <button
+            type="button"
+            onClick={openPalette}
+            aria-label="Search and jump to"
+            className={`absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full transition-colors ${
+              isDark ? "text-gray-200 hover:bg-white/10" : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <svg className="h-[20px] w-[20px] shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
+              </svg>
+          </button>
         </div>
       </header>
 
-      <main className="sidebar-content relative z-10 p-4 pt-[calc(4.5rem+env(safe-area-inset-top))] sm:p-6 sm:pt-[calc(5rem+env(safe-area-inset-top))] lg:p-8 lg:ml-[var(--inset)]">
+      <main id="main" tabIndex={-1} className="sidebar-content outline-none relative z-10 p-4 pt-[calc(4.5rem+env(safe-area-inset-top))] sm:p-6 sm:pt-[calc(5rem+env(safe-area-inset-top))] lg:p-8 lg:ml-[var(--inset)]">
         <Outlet />
       </main>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        pages={pages}
+        isDark={isDark}
+        actions={[
+          { id: "theme", label: isDark ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
+          { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", run: () => { setPaletteOpen(false); setSheetOpen(true); } },
+          { id: "logout", label: "Log out", run: () => { setPaletteOpen(false); logout(); navigate("/login"); } },
+        ]}
+      />
+      <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} isDark={isDark} />
+      <OfflineBanner isDark={isDark} />
 
 
     </div>
