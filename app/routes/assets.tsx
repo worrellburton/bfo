@@ -11,7 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
-import EstateMap, { INITIAL_ENTITIES } from "./estate-map";
+import { EstateMapView, INITIAL_ENTITIES } from "./estate-map";
 import { entityCompleteness, type CompletenessItem } from "../entity-completeness";
 import {
   BTN_BASE,
@@ -105,10 +105,36 @@ const LLC_TYPE_MAP: Record<string, "Disregarded Entity" | "Partnership" | "C Cor
 
 const FILING_KEYS = ["einLetter", "w9", "articles", "operatingAgreement"] as const;
 
+// ── States ──────────────────────────────────────────────────────────────────
+// The fifty states plus DC, for the state filter's mega menu. Records may hold
+// a name ("Arizona") or a postal code ("AZ"); both fold to the name.
+const US_STATES: ReadonlyArray<readonly [string, string]> = [
+  ["AL", "Alabama"], ["AK", "Alaska"], ["AZ", "Arizona"], ["AR", "Arkansas"], ["CA", "California"],
+  ["CO", "Colorado"], ["CT", "Connecticut"], ["DE", "Delaware"], ["DC", "District of Columbia"], ["FL", "Florida"],
+  ["GA", "Georgia"], ["HI", "Hawaii"], ["ID", "Idaho"], ["IL", "Illinois"], ["IN", "Indiana"],
+  ["IA", "Iowa"], ["KS", "Kansas"], ["KY", "Kentucky"], ["LA", "Louisiana"], ["ME", "Maine"],
+  ["MD", "Maryland"], ["MA", "Massachusetts"], ["MI", "Michigan"], ["MN", "Minnesota"], ["MS", "Mississippi"],
+  ["MO", "Missouri"], ["MT", "Montana"], ["NE", "Nebraska"], ["NV", "Nevada"], ["NH", "New Hampshire"],
+  ["NJ", "New Jersey"], ["NM", "New Mexico"], ["NY", "New York"], ["NC", "North Carolina"], ["ND", "North Dakota"],
+  ["OH", "Ohio"], ["OK", "Oklahoma"], ["OR", "Oregon"], ["PA", "Pennsylvania"], ["RI", "Rhode Island"],
+  ["SC", "South Carolina"], ["SD", "South Dakota"], ["TN", "Tennessee"], ["TX", "Texas"], ["UT", "Utah"],
+  ["VT", "Vermont"], ["VA", "Virginia"], ["WA", "Washington"], ["WV", "West Virginia"], ["WI", "Wisconsin"],
+  ["WY", "Wyoming"],
+];
+const STATE_KEY = new Map<string, string>(US_STATES.flatMap(([abbr, name]) => [[abbr.toLowerCase(), name], [name.toLowerCase(), name]]));
+const STATE_ABBR = new Map<string, string>(US_STATES.map(([abbr, name]) => [name, abbr]));
+/** The value the "No state" choice stands for in the filter. */
+const NO_STATE = "__none";
+/** A record's state as the filter sees it: the full name for US states, else the trimmed text ("" when blank). */
+function canonState(raw: string | undefined): string {
+  const s = (raw || "").trim();
+  return s ? STATE_KEY.get(s.toLowerCase()) ?? s : "";
+}
+
 /**
- * List ⇄ cards ⇄ map. Desktop defaults to the list, phones to cards; an
- * explicit choice is remembered per browser and wins over the device default
- * (the same contract as the Books ledger).
+ * List ⇄ cards ⇄ map. Every screen defaults to the map; an explicit choice
+ * is remembered per browser and wins over the default (the same contract as
+ * the Books ledger).
  */
 const VIEW_KEY = "bfo-entities-view";
 function readStoredView(): EntView | null {
@@ -139,7 +165,7 @@ const COLS = {
   ein: "w-[108px] hidden xl:table-cell",
   owner: "w-[180px] hidden md:table-cell",
   filings: "w-[80px] hidden md:table-cell",
-  score: "w-[96px]",
+  score: "w-[116px]",
   menu: "w-[44px]",
 };
 
@@ -151,10 +177,15 @@ function missingSummary(s: Score, max = 2): string {
   return `Missing: ${names.join(", ")}${more > 0 ? ` +${more} more` : ""} (+${100 - s.score})`;
 }
 
+/** The compliance ring's colour — the entity page's scale (emerald ≥ 90, indigo ≥ 60, amber below). */
 function scoreTone(score: number, isDark: boolean): string {
-  if (score >= 100) return isDark ? "text-emerald-400" : "text-emerald-600";
-  if (score < 60) return isDark ? "text-amber-400" : "text-amber-600";
-  return isDark ? "text-gray-300" : "text-gray-600/100";
+  if (score >= 90) return isDark ? "text-emerald-400" : "text-emerald-600";
+  if (score >= 60) return isDark ? "text-indigo-400" : "text-indigo-600";
+  return isDark ? "text-amber-400" : "text-amber-600";
+}
+/** The score number beside a ring: green when there, amber when far off, plain between. */
+function scoreText(score: number, isDark: boolean, plain: string): string {
+  return score >= 90 ? incomeTone(isDark) : score < 60 ? amberTone(isDark) : plain;
 }
 
 // ── Small pieces ────────────────────────────────────────────────────────────
@@ -492,6 +523,390 @@ function RowMenu({
   );
 }
 
+// ── State filter: a mega menu ───────────────────────────────────────────────
+type StateChoice = { value: string; label: string; abbr?: string; count: number };
+
+/**
+ * The toolbar's state filter. A wide panel under the trigger (a bottom sheet
+ * on phones): a search field, the states in use with their entity counts,
+ * then every other state in an alphabetical grid, plus "No state". Several
+ * can be picked; the list shows entities in any of them. Arrow keys move
+ * through the grid (up / down by row), typing jumps to a state, Space or
+ * Enter toggles, Escape closes; focus stays inside until it does.
+ */
+function StateMegaMenu({
+  isDark,
+  value,
+  onChange,
+  counts,
+  noState,
+}: {
+  isDark: boolean;
+  value: string[];
+  onChange: (v: string[]) => void;
+  /** Entities per state in use (canonical names). */
+  counts: Map<string, number>;
+  /** Entities with no state recorded. */
+  noState: number;
+}) {
+  const { t1, t2, t3 } = tiers(isDark);
+  const smUp = useMedia("(min-width: 640px)");
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [q, setQ] = useState("");
+  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const typed = useRef({ buf: "", at: 0 });
+  const titleId = useId();
+  const selected = useMemo(() => new Set(value), [value]);
+
+  const inUse: StateChoice[] = useMemo(
+    () => [
+      ...[...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([name, count]) => ({ value: name, label: name, abbr: STATE_ABBR.get(name), count })),
+      ...(noState ? [{ value: NO_STATE, label: "No state", count: noState }] : []),
+    ],
+    [counts, noState]
+  );
+  const others: StateChoice[] = useMemo(
+    () => US_STATES.filter(([, name]) => !counts.has(name)).map(([abbr, name]) => ({ value: name, label: name, abbr, count: 0 })),
+    [counts]
+  );
+  const needle = q.trim().toLowerCase();
+  const hit = (c: StateChoice) =>
+    !needle || c.label.toLowerCase().includes(needle) || c.abbr?.toLowerCase() === needle || (c.value === NO_STATE && "none".startsWith(needle));
+  const shownInUse = inUse.filter(hit);
+  const shownOthers = others.filter(hit);
+
+  const text =
+    value.length === 0 ? "All states" : value.length === 1 ? (value[0] === NO_STATE ? "No state" : value[0]) : `${value.length} states`;
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+
+  function finishClose() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setClosing(false);
+    setOpen(false);
+    setBox(null);
+    setQ("");
+  }
+  // The exit animation plays before unmount. Focus goes back to the trigger
+  // for every close the keyboard could have caused, not for a click elsewhere.
+  function requestClose(refocus: boolean) {
+    if (!open || closing) return;
+    setClosing(true);
+    if (refocus) btnRef.current?.focus({ preventScroll: true });
+    closeTimer.current = window.setTimeout(finishClose, 220);
+  }
+  function openPanel() {
+    if (closing) return;
+    setSheet(!smUp);
+    setOpen(true);
+  }
+  const toggle = (v: string) => onChange(selected.has(v) ? value.filter((x) => x !== v) : [...value, v]);
+
+  // The sheet is modal (scroll lock + trap); the popover wraps Tab itself.
+  // (The sheet takes focus on its container so the phone keyboard stays down.)
+  useFocusTrap(panelRef, open && sheet, { initial: "container" });
+  useEffect(() => {
+    if (open && !sheet) requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
+  }, [open, sheet]);
+
+  useLayoutEffect(() => {
+    if (!open || sheet || closing) return;
+    function place() {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const width = Math.min(window.innerWidth - 16, 600);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      const below = window.innerHeight - r.bottom - 16;
+      const above = r.top - 16;
+      setBox(
+        below < 360 && above > below
+          ? { left, bottom: window.innerHeight - r.top + 8, width, maxH: Math.min(560, above - 8) }
+          : { left, top: r.bottom + 8, width, maxH: Math.max(240, Math.min(560, below - 8)) }
+      );
+    }
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, sheet, closing]);
+
+  useEffect(() => {
+    if (!open || closing) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      requestClose(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, closing]);
+
+  const options = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>("[data-state-opt]") ?? []);
+  /** Up / down move by row through the grids (and across the two groups); left / right step. */
+  function moveFrom(cur: HTMLElement, dir: "up" | "down"): HTMLElement | undefined {
+    const r = cur.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cands = options()
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r: o }) => (dir === "down" ? o.top >= r.bottom - 2 : o.bottom <= r.top + 2));
+    if (!cands.length) return undefined;
+    const rowY = dir === "down" ? Math.min(...cands.map((c) => c.r.top)) : Math.max(...cands.map((c) => c.r.top));
+    const row = cands.filter((c) => Math.abs(c.r.top - rowY) < 4);
+    row.sort((a, b) => Math.abs(a.r.left + a.r.width / 2 - cx) - Math.abs(b.r.left + b.r.width / 2 - cx));
+    return row[0]?.el;
+  }
+
+  function onPanelKey(e: ReactKeyboardEvent<HTMLDivElement>) {
+    // Keys typed here never reach the map's window shortcuts (F fits, +/− zoom).
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      e.preventDefault();
+      requestClose(true);
+      return;
+    }
+    if (e.key === "Tab" && !sheet) {
+      const list = Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>("input, button:not([disabled])") ?? []
+      ).filter((el) => el.offsetParent !== null);
+      if (!list.length) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+      return;
+    }
+    const active = document.activeElement as HTMLElement | null;
+    const list = options();
+    if (active === searchRef.current) {
+      if (e.key === "ArrowDown" && list.length) {
+        e.preventDefault();
+        list[0].focus();
+      } else if (e.key === "Enter" && needle && list.length) {
+        e.preventDefault();
+        list[0].click();
+      }
+      return;
+    }
+    const i = active ? list.indexOf(active) : -1;
+    if (i < 0) return;
+    let next: HTMLElement | undefined;
+    if (e.key === "ArrowRight") next = list[Math.min(i + 1, list.length - 1)];
+    else if (e.key === "ArrowLeft") next = list[Math.max(i - 1, 0)];
+    else if (e.key === "ArrowDown") next = moveFrom(active!, "down");
+    else if (e.key === "ArrowUp") {
+      next = moveFrom(active!, "up");
+      if (!next) next = searchRef.current ?? undefined;
+    } else if (e.key === "Home") next = list[0];
+    else if (e.key === "End") next = list[list.length - 1];
+    else if (e.key.length === 1 && /\S/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Typeahead: letters build a prefix for a moment, then reset.
+      const now = Date.now();
+      const t = typed.current;
+      t.buf = now - t.at > 700 ? e.key.toLowerCase() : t.buf + e.key.toLowerCase();
+      t.at = now;
+      const label = (el: HTMLElement) => (el.dataset.label ?? "").toLowerCase();
+      const start = t.buf.length === 1 ? i + 1 : i;
+      next = [...list.slice(start), ...list.slice(0, start)].find((el) => label(el).startsWith(t.buf));
+    } else return;
+    e.preventDefault();
+    next?.focus();
+    next?.scrollIntoView({ block: "nearest" });
+  }
+
+  // ── Skins ──
+  const trigger = `group/menu inline-flex items-center gap-1.5 h-[40px] sm:h-9 pl-4 pr-3 rounded-full border text-sm font-medium whitespace-nowrap cursor-pointer transition-colors max-w-[240px] ${TAP.md} ${
+    isDark
+      ? "bg-white/[0.04] border-white/10 text-gray-200 hover:bg-white/[0.08] hover:border-white/15 aria-expanded:bg-white/[0.1] aria-expanded:border-white/20"
+      : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50 hover:border-gray-300 aria-expanded:bg-gray-100 aria-expanded:border-gray-300"
+  }`;
+  const hl = isDark ? "hover:bg-white/[0.08] focus-visible:bg-white/[0.08]" : "hover:bg-gray-100 focus-visible:bg-gray-100";
+  const optCls = `group/opt w-full min-w-0 flex items-center rounded-lg text-left cursor-pointer transition-colors focus-visible:outline-0! ${
+    isDark ? "focus-visible:ring-1 focus-visible:ring-white/25" : "focus-visible:ring-1 focus-visible:ring-gray-300"
+  } ${hl} ${sheet ? "min-h-[44px] px-2.5 gap-2.5 text-[15px]" : "h-8 px-2 gap-2 text-xs"}`;
+  const check = (on: boolean) => (
+    <span
+      aria-hidden
+      className={`shrink-0 inline-flex items-center justify-center rounded-[4px] border transition-colors ${sheet ? "w-[18px] h-[18px]" : "w-[14px] h-[14px]"} ${
+        on
+          ? isDark ? "bg-indigo-500 border-indigo-500 text-white" : "bg-indigo-600 border-indigo-600 text-white"
+          : isDark ? "border-white/25 group-hover/opt:border-white/40" : "border-gray-300 group-hover/opt:border-gray-400"
+      }`}
+    >
+      {on && <Icon d={PATHS.check} strokeWidth={3} className={sheet ? "w-3 h-3" : "w-2.5 h-2.5"} />}
+    </span>
+  );
+  const option = (c: StateChoice, withCount: boolean) => {
+    const on = selected.has(c.value);
+    return (
+      <button
+        key={c.value}
+        type="button"
+        role="checkbox"
+        aria-checked={on}
+        data-state-opt
+        data-label={c.label}
+        onClick={() => toggle(c.value)}
+        title={c.label}
+        className={`${optCls} ${on ? `font-medium ${t1}` : isDark ? "text-gray-300" : "text-gray-700"}`}
+      >
+        {check(on)}
+        <span className={`truncate flex-1 ${c.value === NO_STATE && !on ? t2 : ""}`}>{c.label}</span>
+        {withCount && <span className={`shrink-0 tabular-nums ${on ? t2 : t3}`}>{c.count}</span>}
+      </button>
+    );
+  };
+  const head = (label: string, note?: string) => (
+    <p className={`flex items-baseline gap-2 px-2 pt-2 pb-1 text-xs font-medium ${t2}`}>
+      {label}
+      {note && <span className={`font-normal ${t3}`}>{note}</span>}
+    </p>
+  );
+  const smallBtn = `${BTN_BASE} ${sheet ? "h-[40px] px-5 text-sm" : "h-7 px-3 text-xs"}`;
+
+  const panelBody = (
+    <>
+      <div className={`shrink-0 border-b ${sheet ? "px-3 pt-1 pb-2.5" : "p-2.5"} ${hairline(isDark)}`}>
+        <div className="relative">
+          <Icon d={PATHS.search} strokeWidth={2} className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${t3}`} />
+          <input
+            ref={searchRef}
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search states…"
+            aria-label="Search states"
+            className={`w-full rounded-full border pl-8 [&::-webkit-search-cancel-button]:appearance-none ${
+              sheet ? "h-[40px] pr-3.5 text-[16px] placeholder:text-base" : "h-8 pr-3 text-xs focus-visible:outline-0!"
+            } ${textInput(isDark)}`}
+          />
+        </div>
+      </div>
+      <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain ${sheet ? "px-2 pb-2" : "px-1.5 pb-1.5"}`}>
+        {shownInUse.length === 0 && shownOthers.length === 0 && <p className={`px-2 py-3 text-xs ${t2}`}>No states match.</p>}
+        {shownInUse.length > 0 && (
+          <div role="group" aria-label="States in use">
+            {head("States in use", "entities")}
+            <div className={`grid gap-x-1 ${sheet ? "grid-cols-1" : "grid-cols-3"}`}>{shownInUse.map((c) => option(c, true))}</div>
+          </div>
+        )}
+        {shownOthers.length > 0 && (
+          <div role="group" aria-label="Other states" className={shownInUse.length ? `mt-1.5 border-t pt-0.5 ${hairline(isDark)}` : ""}>
+            {head(shownInUse.length ? "Other states" : "States")}
+            <div className={`grid gap-x-1 ${sheet ? "grid-cols-2" : "grid-cols-4"}`}>{shownOthers.map((c) => option(c, false))}</div>
+          </div>
+        )}
+      </div>
+      <div className={`shrink-0 flex items-center gap-2 border-t ${sheet ? "px-4 pt-2.5" : "px-3 py-2"} ${hairline(isDark)}`}>
+        <p className={`flex-1 min-w-0 truncate text-xs ${t2}`} aria-live="polite">
+          {value.length === 0 ? "Showing every state" : `${value.length} selected · entities in any of them`}
+        </p>
+        <button type="button" onClick={() => onChange([])} disabled={value.length === 0} className={`${smallBtn} ${ghostBtn(isDark)}`}>
+          Clear
+        </button>
+        <button type="button" onClick={() => requestClose(true)} className={`${smallBtn} ${primaryBtn(isDark)}`}>
+          Done
+        </button>
+      </div>
+    </>
+  );
+
+  const enter = sheet ? "sheet-in" : box?.bottom !== undefined ? "pop-in-up origin-bottom" : "pop-in origin-top";
+  const exit = sheet ? "sheet-out" : box?.bottom !== undefined ? "pop-out-up" : "pop-out";
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? requestClose(false) : openPanel())}
+        onKeyDown={(e) => {
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            openPanel();
+          }
+        }}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`State: ${text}`}
+        className={trigger}
+      >
+        {value.length > 0 && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? "bg-indigo-400" : "bg-indigo-600"}`} />}
+        <span className="truncate">{text}</span>
+        <Icon
+          d={PATHS.chevron}
+          strokeWidth={2}
+          className={`w-3 h-3 shrink-0 opacity-50 transition-[rotate] motion-reduce:transition-none ${open && !closing ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open &&
+        (sheet || box) &&
+        createPortal(
+          <>
+            {sheet && (
+              <div
+                className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`}
+                onClick={() => requestClose(true)}
+                aria-hidden
+              />
+            )}
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-modal={sheet || undefined}
+              aria-label={sheet ? undefined : "Filter by state"}
+              aria-labelledby={sheet ? titleId : undefined}
+              onKeyDown={onPanelKey}
+              onAnimationEnd={(e) => {
+                if (closing && e.target === e.currentTarget) finishClose();
+              }}
+              style={
+                sheet
+                  ? { position: "fixed", left: 0, right: 0, bottom: 0 }
+                  : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width, maxHeight: box!.maxH }
+              }
+              className={`z-[70] border overflow-hidden flex flex-col tabular-nums ${
+                sheet ? "rounded-t-2xl max-h-[82vh] pb-[max(env(safe-area-inset-bottom),12px)]" : "rounded-xl"
+              } ${closing ? `${exit} pointer-events-none` : enter} ${popoverSurface(isDark)}`}
+            >
+              {sheet && (
+                <>
+                  <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
+                  <p id={titleId} className={`px-4 pt-2 pb-1.5 text-base font-semibold ${t1}`}>
+                    State
+                  </p>
+                </>
+              )}
+              {panelBody}
+            </div>
+          </>,
+          document.body
+        )}
+    </>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function Assets() {
@@ -507,7 +922,7 @@ export default function Assets() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
   const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp">("all");
-  const [stateF, setStateF] = useState("all");
+  const [stateF, setStateF] = useState<string[]>([]);
   const [attention, setAttention] = useState(false);
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState("");
@@ -515,8 +930,7 @@ export default function Assets() {
   const [menuRow, setMenuRow] = useState<string | null>(null);
 
   const [choice, setChoice] = useState<EntView | null>(readStoredView);
-  const lgUp = useMedia("(min-width: 1024px)");
-  const view: EntView = choice ?? (lgUp ? "list" : "cards");
+  const view: EntView = choice ?? "map";
   const pickView = (v: EntView) => {
     setChoice(v);
     try {
@@ -750,20 +1164,26 @@ export default function Assets() {
     return out;
   }
 
-  const states = useMemo(
-    () => [...new Set(assets.map((a) => (a.state || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [assets]
-  );
-  const hasStateless = assets.some((a) => !(a.state || "").trim());
+  // Entities per state (US states folded to their names) for the state menu.
+  const stateCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of assets) {
+      const st = canonState(a.state);
+      if (st) m.set(st, (m.get(st) ?? 0) + 1);
+    }
+    return m;
+  }, [assets]);
+  const statelessCount = assets.filter((a) => !canonState(a.state)).length;
+  const inStates = (a: Asset) => !stateF.length || stateF.includes(canonState(a.state) || NO_STATE);
 
   // ── Filtering ────────────────────────────────────────────────────────────
   const needle = q.trim().toLowerCase();
   const digits = needle.replace(/\D/g, "");
-  const filtered = Boolean(needle) || typeF !== "all" || stateF !== "all" || attention;
+  const filtered = Boolean(needle) || typeF !== "all" || stateF.length > 0 || attention;
   const matches = (a: Asset) => {
     if (typeF !== "all" && a.type !== typeF) return false;
     const st = (a.state || "").trim();
-    if (stateF === "__none" ? !!st : stateF !== "all" && st !== stateF) return false;
+    if (!inStates(a)) return false;
     if (attention && scoreOf(a).score >= 100) return false;
     if (!needle) return true;
     return (
@@ -779,7 +1199,7 @@ export default function Assets() {
   function clearFilters() {
     setQ("");
     setTypeF("all");
-    setStateF("all");
+    setStateF([]);
     setAttention(false);
   }
 
@@ -982,7 +1402,7 @@ export default function Assets() {
   const scoreCard = (a: Asset, s: Score) => (
     <>
       <div className="flex items-baseline justify-between gap-3">
-        <p className={`text-sm font-semibold ${t1}`}>{s.score}% complete</p>
+        <p className={`text-sm font-semibold ${t1}`}>Compliance {s.score}</p>
         {s.missing.length > 0 && <p className={`text-xs ${t2}`}>+{100 - s.score} available</p>}
       </div>
       {s.missing.length > 0 ? (
@@ -1135,25 +1555,20 @@ export default function Assets() {
     </div>
   );
   const stateMenu = () => (
-    <Menu
-      value={stateF}
-      isDark={isDark}
-      size="md"
-      label="State"
-      onChange={setStateF}
-      options={[
-        { value: "all", label: "All states" },
-        ...states.map((s) => ({ value: s, label: s })),
-        ...(hasStateless ? [{ value: "__none", label: "No state" }] : []),
-      ]}
-    />
+    <StateMegaMenu isDark={isDark} value={stateF} onChange={setStateF} counts={stateCounts} noState={statelessCount} />
+  );
+  // On the map the state filter lights the matching entities (by name).
+  const mapHighlight = useMemo(
+    () => (stateF.length ? new Set(assets.filter(inStates).map((a) => a.name.toLowerCase())) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [assets, stateF]
   );
   const attentionToggle = () => (
     <button
       type="button"
       aria-pressed={attention}
       onClick={() => setAttention((v) => !v)}
-      title="Records below 100% complete"
+      title="Compliance below 100"
       className={`${BTN_BASE} h-[40px] sm:h-9 px-3.5 gap-2 text-sm whitespace-nowrap ${TAP.md} ${
         attention
           ? isDark
@@ -1208,7 +1623,7 @@ export default function Assets() {
     { label: "C-Corps", value: String(corps) },
     { label: "States", value: String(stateCount) },
     {
-      label: "Avg completeness",
+      label: "Avg compliance",
       value: total ? `${avg}%` : "—",
       tone: total && avg >= 100 ? incomeTone(isDark) : "",
       sub: !total ? (
@@ -1248,7 +1663,7 @@ export default function Assets() {
           <th scope="col" className={`${COLS.ein} px-2 py-2.5 font-medium`}>EIN</th>
           <th scope="col" className={`${COLS.owner} px-2 py-2.5 font-medium`}>Owned by</th>
           <th scope="col" className={`${COLS.filings} px-2 py-2.5 font-medium`}>Filings</th>
-          <th scope="col" className={`${COLS.score} px-2 py-2.5 font-medium`}>Complete</th>
+          <th scope="col" className={`${COLS.score} px-2 py-2.5 font-medium`}>Compliance</th>
           <th scope="col" className={COLS.menu}><span className="sr-only">Actions</span></th>
         </tr>
       </thead>
@@ -1368,11 +1783,13 @@ export default function Assets() {
             toggle, then the filters in a scrolling strip. */}
         <div className={`px-4 py-3 ${view === "map" ? "" : `border-b ${rule}`}`}>
           {view === "map" ? (
-            <div className="flex items-center gap-3">
-              <p className={`flex-1 min-w-0 text-sm ${t2}`}>
-                Ownership map <span className="hidden sm:inline">— drag to pan, scroll to zoom. Filters apply to the list and cards.</span>
+            <div className="flex items-center gap-2">
+              <div className="shrink-0">{stateMenu()}</div>
+              <p className={`flex-1 min-w-0 truncate text-sm ${t2} hidden sm:block sm:ml-1`}>
+                {stateF.length ? "Entities in the chosen states are lit" : "Ownership map"}
+                <span className="hidden lg:inline"> — drag to pan, scroll to zoom</span>
               </p>
-              <div className="shrink-0">{viewToggle()}</div>
+              <div className="shrink-0 ml-auto">{viewToggle()}</div>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -1447,7 +1864,7 @@ export default function Assets() {
                 {th("EIN", "ein", COLS.ein)}
                 {th("Owned by", "owner", COLS.owner)}
                 {th("Filings", "filings", COLS.filings)}
-                {th("Complete", "score", COLS.score)}
+                {th("Compliance", "score", COLS.score)}
                 <th scope="col" className={COLS.menu}>
                   <span className="sr-only">Actions</span>
                 </th>
@@ -1546,12 +1963,12 @@ export default function Assets() {
                     <td className={`${cell} ${COLS.score} ${mute}`}>
                       <Tip
                         isDark={isDark}
-                        label={`${s.score}% complete. ${missingSummary(s, 99)}`}
+                        label={`Compliance ${s.score}. ${missingSummary(s, 99)}`}
                         content={scoreCard(a, s)}
                         className={`h-7 px-1.5 -mx-1.5 gap-2 ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
                       >
                         <Ring score={s.score} size={16} isDark={isDark} />
-                        <span className={`text-sm font-medium tabular-nums ${s.score >= 100 ? incomeTone(isDark) : s.score < 60 ? amberTone(isDark) : t1}`}>
+                        <span className={`text-sm font-medium tabular-nums ${scoreText(s.score, isDark, t1)}`}>
                           {s.score}
                         </span>
                       </Tip>
@@ -1606,12 +2023,12 @@ export default function Assets() {
                     </div>
                     <Tip
                       isDark={isDark}
-                      label={`${s.score}% complete. ${missingSummary(s, 99)}`}
+                      label={`Compliance ${s.score}. ${missingSummary(s, 99)}`}
                       content={scoreCard(a, s)}
                       className="rounded-full shrink-0"
                     >
                       <Ring score={s.score} size={34} stroke={2.5} isDark={isDark}>
-                        <span className={`text-[11px] font-semibold tabular-nums ${s.score >= 100 ? "" : t1}`}>{s.score}</span>
+                        <span className={`text-[11px] font-semibold tabular-nums ${scoreText(s.score, isDark, t1)}`}>{s.score}</span>
                       </Ring>
                     </Tip>
                   </div>
@@ -1664,7 +2081,7 @@ export default function Assets() {
 
       {view === "map" && (
         <div className="mt-5">
-          <EstateMap embedded />
+          <EstateMapView embedded highlight={mapHighlight} />
         </div>
       )}
 

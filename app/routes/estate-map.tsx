@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
+import { entityCompleteness, type CompletenessInput } from "../entity-completeness";
 
 export function meta() {
   return [{ title: "BFO - Estate Map" }];
@@ -20,6 +21,78 @@ type Entity = {
 };
 
 type QBCompany = { realm_id: string; company_name: string };
+
+/** The `assets` record an estate-map entity matches by (lowercased) name. */
+type AssetRec = { id: string; data: CompletenessInput };
+type Compliance = { score: number; missing: string[] };
+
+// Compliance ring colours — the entity page's scale: emerald ≥ 90, indigo ≥ 60, amber below.
+function complianceColor(score: number, isDark: boolean): string {
+  if (score >= 90) return isDark ? "#34d399" : "#059669";
+  if (score >= 60) return isDark ? "#818cf8" : "#4f46e5";
+  return isDark ? "#fbbf24" : "#d97706";
+}
+
+function complianceTitle(c: Compliance): string {
+  return c.missing.length ? `Compliance ${c.score} — missing: ${c.missing.join(", ")}` : `Compliance ${c.score} — every requirement on file`;
+}
+
+/**
+ * A compliance score as a small ring with the number inside. Without a
+ * matching entity record it is a dashed, muted ring with a dash, so every
+ * card keeps the same right-hand column.
+ */
+function ComplianceRing({ c, size, isDark }: { c: Compliance | null; size: number; isDark: boolean }) {
+  const stroke = size >= 30 ? 2.5 : 2;
+  const r = (size - stroke) / 2;
+  const len = 2 * Math.PI * r;
+  const track = isDark ? "rgba(255,255,255,0.1)" : "#e5e7eb";
+  const font = size >= 30 ? 10.5 : size >= 26 ? 9.5 : 8.5;
+  if (!c) {
+    return (
+      <span
+        className="relative grid shrink-0 place-items-center"
+        style={{ width: size, height: size }}
+        title="No entity record with this name, so no compliance score"
+      >
+        <svg width={size} height={size} className="absolute inset-0" aria-hidden>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={1.25} strokeDasharray="2 2.5" />
+        </svg>
+        <span className={isDark ? "text-gray-600" : "text-gray-400"} style={{ fontSize: font }} aria-label="No compliance score">
+          —
+        </span>
+      </span>
+    );
+  }
+  const color = complianceColor(c.score, isDark);
+  return (
+    <span className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }} title={complianceTitle(c)}>
+      <svg width={size} height={size} className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
+        {c.score > 0 && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={len}
+            strokeDashoffset={len * (1 - Math.min(100, c.score) / 100)}
+          />
+        )}
+      </svg>
+      <span
+        className="relative font-semibold tabular-nums leading-none tracking-[-0.02em]"
+        style={{ fontSize: font, color: c.score >= 90 || c.score < 60 ? color : undefined }}
+        aria-label={`Compliance ${c.score}`}
+      >
+        {c.score}
+      </span>
+    </span>
+  );
+}
 
 export const INITIAL_ENTITIES: Entity[] = [
   // Root
@@ -51,8 +124,8 @@ export const INITIAL_ENTITIES: Entity[] = [
 ];
 
 // ── Geometry (scene px — the whole scene is scaled to fit the canvas) ─────
-const CARD_W = 248;
-const ROOT_W = 320; // the trust gets room for its full name
+const CARD_W = 264; // room for the name, the QuickBooks chip and the compliance ring
+const ROOT_W = 344; // the trust gets room for its full name
 const CARD_H = 60;
 const LEAF_H = 46;
 const INDENT = 26; // stacked children sit this far right of their parent
@@ -164,7 +237,7 @@ function layoutEstate(entities: Entity[], compact = false): Layout {
     if (!ch.length) {
       m = { w: own, h: cardH, stack: false, own, cardH };
     } else if (compact || ch.every((c) => !kids(c.id).length)) {
-      const childOwn = Math.max(204, own - INDENT);
+      const childOwn = Math.max(224, own - INDENT);
       let cursor = cardH + STACK_TOP;
       let w = own;
       for (const c of ch) {
@@ -359,7 +432,23 @@ function describe(name: string) {
 
 type DragState = { id: string; x: number; y: number; target: string | null };
 
-export default function EstateMap({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * The /estate-map route. React Router wraps a route's default export and
+ * hands it route props only, so the Entities page embeds the named
+ * `EstateMapView` below to pass its own.
+ */
+export default function EstateMapRoute() {
+  return <EstateMapView />;
+}
+
+export function EstateMapView({
+  embedded = false,
+  highlight = null,
+}: {
+  embedded?: boolean;
+  /** Lowercased entity names to light (the Entities page's state filter); the rest dim. */
+  highlight?: Set<string> | null;
+} = {}) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const navigate = useNavigate();
@@ -373,7 +462,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
   const [editName, setEditName] = useState("");
   const [qbCompanies, setQbCompanies] = useState<QBCompany[]>([]);
   const [attachingId, setAttachingId] = useState<string | null>(null);
-  const [assetIdByName, setAssetIdByName] = useState<Record<string, string>>({});
+  const [assetByName, setAssetByName] = useState<Record<string, AssetRec>>({});
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -467,7 +556,8 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
     loadQB();
   }, []);
 
-  // Subscribe to Firebase assets and build a name -> id lookup.
+  // Subscribe to Firebase assets and build a name -> record lookup (the id
+  // opens the entity page; the record scores the paperwork).
   // Seed any Estate Map entities that don't exist as assets yet.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -507,14 +597,14 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
 
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
         const data = snapshot.val();
-        const map: Record<string, string> = {};
+        const map: Record<string, AssetRec> = {};
         if (data) {
           for (const [id, value] of Object.entries(data)) {
             const name = (value as any)?.name;
-            if (name) map[name.toLowerCase()] = id;
+            if (typeof name === "string" && name) map[name.toLowerCase()] = { id, data: value as CompletenessInput };
           }
         }
-        setAssetIdByName(map);
+        setAssetByName(map);
       });
     }
     setup();
@@ -720,9 +810,24 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
     window.addEventListener("pointercancel", up);
   }
 
+  // Compliance per matched record, scored once per assets snapshot.
+  const complianceByName = useMemo(() => {
+    const m = new Map<string, Compliance>();
+    for (const [name, rec] of Object.entries(assetByName)) {
+      const r = entityCompleteness(rec.data);
+      m.set(name, { score: r.score, missing: r.missing.map((i) => i.label) });
+    }
+    return m;
+  }, [assetByName]);
+
   function assetIdFor(id: string): string | undefined {
     const ent = entityById.get(id);
-    return ent ? assetIdByName[ent.name.toLowerCase()] : undefined;
+    return ent ? assetByName[ent.name.toLowerCase()]?.id : undefined;
+  }
+
+  function complianceFor(id: string): Compliance | null {
+    const ent = entityById.get(id);
+    return (ent && complianceByName.get(ent.name.toLowerCase())) ?? null;
   }
 
   function openEntity(id: string) {
@@ -879,10 +984,12 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
     const hovered = hoveredId === box.id && !drag;
     const isTarget = drag?.target === box.id;
     const on = !!lit?.has(box.id);
-    const dim = (!!lit && !on) || (drag && drag.id === box.id && !opts.ghost);
+    const unlit = !!highlight && !highlight.has(ent.name.toLowerCase());
+    const dim = (lit ? !on : unlit && !opts.ghost) || (drag && drag.id === box.id && !opts.ghost);
     const glyph = leaf ? 24 : root ? 34 : 30;
     const editing = editingId === box.id && !opts.ghost;
     const qb = !!ent.quickBooksRealmId;
+    const ringSize = leaf ? 24 : root ? 32 : 28;
 
     const ring = isTarget
       ? `0 0 0 1.5px ${c}, 0 0 28px -2px ${c}aa`
@@ -954,7 +1061,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
               {info.display}
             </div>
           )}
-          <div className={`mt-0.5 truncate font-mono text-[9px] uppercase tracking-[0.13em] ${muted}`}>
+          <div className={`mt-0.5 truncate text-[10.5px] ${muted}`}>
             {metaFor(box, info)}
           </div>
         </div>
@@ -969,6 +1076,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
             QB
           </span>
         )}
+        <ComplianceRing c={complianceFor(box.id)} size={ringSize} isDark={isDark} />
       </div>
     );
   }
@@ -1009,7 +1117,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
             </svg>
           </Link>
           <div>
-            <div className={`font-mono text-[10px] uppercase tracking-[0.18em] ${muted}`}>Burton Family Office</div>
+            <div className={`text-[11.5px] font-medium ${muted}`}>Burton Family Office</div>
             <h1 className={`text-[22px] font-semibold leading-tight tracking-[-0.02em] ${ink}`}>Estate Map</h1>
           </div>
         </div>
@@ -1064,7 +1172,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
               }`}
               style={{ left: layout.tray.x, top: layout.tray.y, width: layout.tray.w, height: layout.tray.h }}
             >
-              <div className={`absolute left-4 top-3 flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.16em] ${muted}`}>
+              <div className={`absolute left-4 top-3 flex items-center gap-2 text-[11px] font-medium ${muted}`}>
                 <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                 Unlinked · {layout.tray.count}
                 <span className="normal-case tracking-normal opacity-70">— drag onto an entity to place it in the structure</span>
@@ -1163,7 +1271,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
                 // moving the pointer up onto the toolbar keeps it open.
                 <div
                   data-hud
-                  className="absolute bottom-full right-0 z-30 pb-1.5"
+                  className="absolute bottom-full right-0 z-30 w-max pb-1.5"
                   onPointerDown={(e) => e.stopPropagation()}
                   onDoubleClick={(e) => e.stopPropagation()}
                 >
@@ -1172,6 +1280,21 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
                     isDark ? "border-white/10 bg-[#11131c]/95 shadow-black/50" : "border-gray-200 bg-white/95 shadow-gray-900/10"
                   }`}
                 >
+                  {(() => {
+                    const c = complianceFor(box.id);
+                    if (!c) return null;
+                    return (
+                      <span
+                        title={complianceTitle(c)}
+                        className={`h-7 pl-2 pr-2.5 mr-0.5 inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-medium tabular-nums whitespace-nowrap ${
+                          isDark ? "bg-white/[0.04] text-gray-300" : "bg-gray-50 text-gray-700"
+                        }`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: complianceColor(c.score, isDark) }} />
+                        {c.missing.length ? `${c.missing.length} missing` : "All on file"}
+                      </span>
+                    );
+                  })()}
                   <button
                     onClick={() => openEntity(box.id)}
                     disabled={!assetIdFor(box.id)}
@@ -1235,7 +1358,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
           {selEdge && (
             <button
               data-hud
-              className={`estate-in absolute z-30 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] shadow-lg cursor-pointer ${
+              className={`estate-in absolute z-30 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-lg cursor-pointer ${
                 isDark ? "border-red-400/40 bg-[#1a0d10] text-red-300 hover:bg-[#2a1015]" : "border-red-200 bg-white text-red-600 hover:bg-red-50"
               }`}
               style={{ left: selEdge.mx, top: selEdge.my }}
@@ -1250,7 +1373,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
         </div>
 
         {/* HUD: status + stats */}
-        <div data-hud className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em]">
+        <div data-hud className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5 text-[11px]">
           <span className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 backdrop-blur-md ${hudChip}`}>
             <span className="estate-live h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
             Live
@@ -1317,7 +1440,7 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
         {/* HUD: hint */}
         <div
           data-hud
-          className={`absolute bottom-3 left-3 hidden items-center gap-3 rounded-lg border px-2.5 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] backdrop-blur-md md:inline-flex ${hudChip}`}
+          className={`absolute bottom-3 left-3 hidden items-center gap-3 rounded-lg border px-2.5 py-1.5 text-[11px] backdrop-blur-md md:inline-flex ${hudChip}`}
         >
           <span>Hover · actions</span>
           <span className="opacity-40">/</span>
@@ -1354,20 +1477,14 @@ export default function EstateMap({ embedded = false }: { embedded?: boolean } =
             >
               <span className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent" />
               <div className={`p-5 border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
-                <div className={`font-mono text-[9.5px] uppercase tracking-[0.16em] ${muted}`}>QuickBooks</div>
+                <div className={`text-[11px] font-medium ${muted}`}>QuickBooks</div>
                 <h3 className={`mt-1 font-semibold text-sm ${isDark ? "text-white" : "text-gray-900"}`}>Attach a company file</h3>
                 <p className={`text-xs mt-1 ${muted}`}>{entity.name}</p>
               </div>
               <div className="p-5">
                 {qbCompanies.length === 0 ? (
                   <div className={`text-center py-6 ${muted}`}>
-                    <p className="text-xs mb-3">No QuickBooks accounts connected.</p>
-                    <Link
-                      to="/tools/quickbooks"
-                      className={`text-xs underline ${isDark ? "text-blue-400" : "text-blue-600"}`}
-                    >
-                      Connect QuickBooks
-                    </Link>
+                    <p className="text-xs">No QuickBooks accounts connected.</p>
                   </div>
                 ) : (
                   <div className="space-y-1 max-h-80 overflow-y-auto">
