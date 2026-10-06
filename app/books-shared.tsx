@@ -1484,7 +1484,7 @@ export function BatchBar({
     </button>
   );
   // The bar lives in the content column (it inherits --inset and centres on
-  // it); the sheet goes to body so it stacks above the phone dock.
+  // it); the sheet goes to body so it stacks above the page chrome.
   const host = document.querySelector<HTMLElement>("main.sidebar-content") ?? document.body;
   return (
     <>
@@ -1492,7 +1492,7 @@ export function BatchBar({
       <div
         role="toolbar"
         aria-label="Batch edit"
-        className={`fixed z-[60] left-2 right-2 bottom-[calc(7.25rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max sm:max-w-[calc(100vw-2rem)] lg:left-[calc(50%+var(--inset)/2)] lg:bottom-6 rounded-xl border tabular-nums grid grid-cols-[auto_1fr_40px] items-center gap-2 p-3 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 ${
+        className={`fixed z-[60] left-2 right-2 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max sm:max-w-[calc(100vw-2rem)] lg:left-[calc(50%+var(--inset)/2)] lg:bottom-6 rounded-xl border tabular-nums grid grid-cols-[auto_1fr_40px] items-center gap-2 p-3 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 ${
           count > 0 ? "pop-in-up" : "pop-out-up pointer-events-none"
         } ${glass}`}
       >

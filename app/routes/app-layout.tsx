@@ -494,47 +494,38 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="sidebar-content relative z-10 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-8 lg:pb-8 lg:ml-[var(--inset)]">
+      {/* Mobile top bar — menu upper-left, the wordmark centred. The drawer
+          holds every destination, so there is no bottom dock. */}
+      <header
+        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl lg:hidden ${
+          isDark ? "border-white/10 bg-black/60" : "border-gray-200 bg-white/70"
+        }`}
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="relative flex h-14 items-center justify-center px-2">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={drawerOpen}
+            className={`absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full transition-colors ${
+              isDark ? "text-gray-200 hover:bg-white/10" : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <svg className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
+          <NavLink to="/home" aria-label="BFO home" className="mobile-brand">
+            BFO
+          </NavLink>
+        </div>
+      </header>
+
+      <main className="sidebar-content relative z-10 p-4 pt-[calc(4.5rem+env(safe-area-inset-top))] sm:p-6 sm:pt-[calc(5rem+env(safe-area-inset-top))] lg:p-8 lg:ml-[var(--inset)]">
         <Outlet />
       </main>
 
-      {/* Mobile dock — floating glass pill, primary destinations only */}
-      <nav
-        aria-label="Quick navigation"
-        className="mobile-dock fixed left-1/2 -translate-x-1/2 z-40 lg:hidden"
-        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
-        {["Entities", "Treasury", "Home", "Books", "Investments"].map((label) => {
-          const item = navItems.find((n) => n.label === label);
-          if (!item) return null;
-          const active =
-            item.to === "/home"
-              ? location.pathname === "/home"
-              : item.label === "Books"
-                ? location.pathname.startsWith("/books")
-                : location.pathname.startsWith(item.to);
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              aria-label={item.label}
-              aria-current={active ? "page" : undefined}
-              className={`mobile-dock-item ${active ? "mobile-dock-item-active" : ""} ${
-                isDark ? "text-gray-300" : "text-gray-600"
-              }`}
-            >
-              {item.icon}
-            </NavLink>
-          );
-        })}
-        <button
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Open menu"
-          className={`mobile-dock-item text-[11px] font-bold ${isDark ? "text-gray-300" : "text-gray-600"}`}
-        >
-          {initials(user)}
-        </button>
-      </nav>
 
     </div>
   );
