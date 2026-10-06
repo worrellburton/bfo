@@ -320,6 +320,12 @@ export function HomeBackground({ isDark }: { isDark: boolean }) {
       start();
     };
 
+    // The still (reduced-motion) frame cuts the cards out where they were when
+    // it was drawn; redraw it when the page reflows (data arriving, a card
+    // growing) so the grid never shows through a card.
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => reduced && draw(t0)) : null;
+    ro?.observe(document.body);
+
     resize();
     start();
     window.addEventListener("resize", onResize);
@@ -328,6 +334,7 @@ export function HomeBackground({ isDark }: { isDark: boolean }) {
     reduceMq.addEventListener("change", onMotion);
     return () => {
       cancelAnimationFrame(raf);
+      ro?.disconnect();
       redrawRef.current = () => {};
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onScroll);

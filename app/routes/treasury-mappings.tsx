@@ -66,10 +66,12 @@ export default function TreasuryMappings() {
     })();
 
     let unsub: (() => void) | undefined;
+    let cancelled = false;
     void (async () => {
       const { db, authReady } = await import("../firebase");
       await authReady;
       const { ref, onValue } = await import("firebase/database");
+      if (cancelled) return;
       unsub = onValue(ref(db, "assets"), (snap) => {
         const data = snap.val() || {};
         const list: Entity[] = Object.entries<any>(data)
@@ -77,8 +79,13 @@ export default function TreasuryMappings() {
           .sort((a, b) => a.name.localeCompare(b.name));
         setEntities(list);
       });
-    })();
-    return () => unsub?.();
+    })().catch(() => {
+      /* the pickers just stay empty */
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, []);
 
   async function assign(account: Account, entityId: string) {
@@ -127,9 +134,9 @@ export default function TreasuryMappings() {
 
   return (
     <div className="max-w-4xl">
-      <Link to="/treasury" className={`text-sm ${subtle} hover:underline`}>← Treasury</Link>
+      <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>← Treasury</Link>
       <div className="flex items-start justify-between gap-4 mt-2 mb-6">
-        <div>
+        <div className="min-w-0">
           <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Account mappings</h1>
           <p className={`text-sm mt-1 ${subtle}`}>
             Which entity each bank account and card belongs to — Books and the entity P&amp;Ls are
@@ -158,16 +165,16 @@ export default function TreasuryMappings() {
           const rgb = tint(list[0].institution_color);
           return (
             <section key={bank} className={`rounded-xl border overflow-hidden mb-4 ${card}`}>
-              <div className={`flex items-center gap-2.5 px-5 py-3 border-b ${rowBorder}`}>
+              <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3">
                 {list[0].institution_logo ? (
                   <img
                     src={`data:image/png;base64,${list[0].institution_logo}`}
                     alt=""
-                    className="w-6 h-6 rounded object-contain bg-white/90 p-0.5"
+                    className="w-6 h-6 shrink-0 rounded object-contain bg-white/90 p-0.5"
                   />
                 ) : (
                   <span
-                    className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white"
+                    className="w-6 h-6 shrink-0 rounded flex items-center justify-center text-[10px] font-bold text-white"
                     style={{ background: `rgba(${rgb}, 0.55)` }}
                   >
                     {bank.slice(0, 1)}
@@ -180,9 +187,9 @@ export default function TreasuryMappings() {
               {list.map((account) => (
                 <div
                   key={account.account_id}
-                  className={`flex flex-wrap items-center gap-3 px-5 py-3 border-t first:border-t-0 ${rowBorder}`}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-5 py-3 border-t ${rowBorder}`}
                 >
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-[10rem] flex-1">
                     <p className="text-sm font-medium truncate">
                       {label(account)}
                       {account.hidden && (
@@ -196,10 +203,12 @@ export default function TreasuryMappings() {
                     <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="Not mapped yet" />
                   )}
                   <select
+                    aria-label={`Entity for ${label(account)}`}
+                    style={{ colorScheme: isDark ? "dark" : "light" }}
                     value={account.entity_id ?? ""}
                     disabled={busyId === account.account_id || entities.length === 0}
                     onChange={(e) => void assign(account, e.target.value)}
-                    className={`px-3 py-2 rounded-lg text-sm border transition-colors cursor-pointer disabled:opacity-50 min-w-[220px] ${
+                    className={`px-3 py-2 rounded-lg text-sm border transition-colors cursor-pointer disabled:opacity-50 w-full min-h-[40px] lg:min-h-0 sm:w-auto sm:min-w-[220px] sm:max-w-[320px] ${
                       account.entity_id
                         ? isDark
                           ? "bg-white/[0.04] border-white/10 text-white"

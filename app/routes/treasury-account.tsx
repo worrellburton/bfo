@@ -166,6 +166,8 @@ export default function TreasuryAccount() {
   const [status, setStatus] = useState<"online" | "reconnect" | "offline">("online");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // A failed save is reported beside the controls; `error` is for a page that couldn't load.
+  const [saveError, setSaveError] = useState("");
 
   const [txns, setTxns] = useState<Txn[]>([]);
   const [txnState, setTxnState] = useState<"loading" | "idle" | "error">("loading");
@@ -181,6 +183,10 @@ export default function TreasuryAccount() {
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
+    setError("");
+    setSaveError("");
+    setEditingName(false);
+    setSearch("");
     void (async () => {
       try {
         const res = await authFetch("/api/plaid/data?report=treasury");
@@ -224,10 +230,12 @@ export default function TreasuryAccount() {
   useEffect(() => {
     // Entities come from the Firebase assets tree, same source as the mappings page.
     let unsub: (() => void) | undefined;
+    let cancelled = false;
     void (async () => {
       const { db, authReady } = await import("../firebase");
       await authReady;
       const { ref, onValue } = await import("firebase/database");
+      if (cancelled) return;
       unsub = onValue(ref(db, "assets"), (snap) => {
         const data = snap.val() || {};
         setEntities(
@@ -236,8 +244,13 @@ export default function TreasuryAccount() {
             .sort((a, b) => a.name.localeCompare(b.name))
         );
       });
-    })();
-    return () => unsub?.();
+    })().catch(() => {
+      /* the entity picker just stays empty */
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -251,9 +264,10 @@ export default function TreasuryAccount() {
       body: JSON.stringify({ account_id: account.account_id, ...patch }),
     });
     if (!res.ok) {
-      setError("Couldn't save that.");
+      setSaveError("Couldn't save that.");
       return;
     }
+    setSaveError("");
     setAccount({ ...account, ...("nickname" in patch ? { nickname: patch.nickname || null } : {}), ...("hidden" in patch ? { hidden: !!patch.hidden } : {}) });
   }
 
@@ -269,9 +283,10 @@ export default function TreasuryAccount() {
       }),
     });
     if (!res.ok) {
-      setError("Couldn't save that mapping.");
+      setSaveError("Couldn't save that mapping.");
       return;
     }
+    setSaveError("");
     setAccount({ ...account, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null });
   }
 
@@ -328,7 +343,7 @@ export default function TreasuryAccount() {
   if (error || !account) {
     return (
       <div>
-        <Link to="/treasury" className={`text-sm ${subtle} hover:underline`}>← Treasury</Link>
+        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>← Treasury</Link>
         <p className={`mt-4 text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>
       </div>
     );
@@ -342,14 +357,14 @@ export default function TreasuryAccount() {
   const count = siblings.length;
   const prevAcct = count > 1 ? siblings[(idx - 1 + count) % count] : null;
   const nextAcct = count > 1 ? siblings[(idx + 1) % count] : null;
-  const navBtn = `w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
+  const navBtn = `w-[40px] h-[40px] lg:w-8 lg:h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
     isDark ? "border-white/10 text-gray-400 hover:bg-white/10 hover:text-white" : "border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
   }`;
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <Link to="/treasury" className={`text-sm ${subtle} hover:underline`}>← Treasury</Link>
+        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>← Treasury</Link>
         {count > 1 && (
           <div className="flex items-center gap-2">
             <button
@@ -425,7 +440,7 @@ export default function TreasuryAccount() {
                     setEditingName(true);
                   }}
                   title="Rename this account"
-                  className="group flex items-center gap-2 text-left cursor-pointer"
+                  className="group relative flex max-w-full items-center gap-2 text-left cursor-pointer after:absolute after:inset-x-0 after:-inset-y-[10px] after:content-[''] lg:after:inset-0"
                 >
                   <span className="text-white text-xl font-semibold truncate">{displayName}</span>
                   <svg
@@ -456,7 +471,7 @@ export default function TreasuryAccount() {
                 void savePrefs({ hidden: !account.hidden });
                 if (!account.hidden) navigate("/treasury");
               }}
-              className="px-3 py-1.5 rounded-lg text-xs text-white/60 border border-white/15 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              className="min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs text-white/60 border border-white/15 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
             >
               {account.hidden ? "Unhide" : "Hide account"}
             </button>
@@ -464,15 +479,15 @@ export default function TreasuryAccount() {
         </div>
 
         <div className="relative mt-6">
-          <p className="text-white text-[34px] font-semibold tracking-tight">
+          <p className="text-white text-[28px] sm:text-[34px] font-semibold tracking-tight break-words">
             {money(account.balance_current, account.currency ?? "USD")}
           </p>
-          <div className="flex items-center gap-3 mt-1 text-xs">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
             {account.balance_available != null && (
               <span className="text-white/45">{money(account.balance_available, account.currency ?? "USD")} available</span>
             )}
             {account.change != null && account.change !== 0 && (
-              <span className={account.change > 0 ? "text-emerald-300" : "text-rose-300"}>
+              <span className={account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"}>
                 {signed(account.change, account.currency ?? "USD")} since last visit
               </span>
             )}
@@ -482,13 +497,15 @@ export default function TreasuryAccount() {
 
       {/* Entity mapping */}
       <div className="flex items-center gap-2 mb-6 -mt-1">
-        <span className={`text-[11px] uppercase tracking-wider ${subtle}`}>Entity</span>
-        <span className="relative inline-flex items-center">
+        <span id="account-entity-label" className={`shrink-0 text-[11px] uppercase tracking-wider ${subtle}`}>Entity</span>
+        <span className="relative inline-flex min-w-0 items-center">
           <select
+            aria-labelledby="account-entity-label"
+            style={{ colorScheme: isDark ? "dark" : "light" }}
             value={account.entity_id ?? ""}
             disabled={entities.length === 0}
             onChange={(e) => void assignEntity(e.target.value)}
-            className={`appearance-none pl-3.5 pr-9 py-1.5 rounded-full text-sm border cursor-pointer disabled:opacity-50 ${
+            className={`appearance-none max-w-full truncate min-h-[40px] lg:min-h-0 pl-3.5 pr-9 py-1.5 rounded-full text-sm border cursor-pointer disabled:opacity-50 ${
               account.entity_id
                 ? isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-700"
                 : isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
@@ -505,10 +522,16 @@ export default function TreasuryAccount() {
         </span>
       </div>
 
+      {saveError && (
+        <div role="alert" className={`mb-4 -mt-2 rounded-lg px-4 py-2.5 text-xs ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
+          {saveError}
+        </div>
+      )}
+
       {/* Transactions */}
-      <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-3">
         <h2 className={`text-sm font-semibold ${isDark ? "" : "text-gray-900"}`}>Transactions</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           <input
             ref={fileInput}
             type="file"
@@ -523,7 +546,7 @@ export default function TreasuryAccount() {
             onClick={() => fileInput.current?.click()}
             disabled={importing}
             title="Import a bank CSV export — history older than Plaid serves"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border cursor-pointer disabled:opacity-50 transition-colors ${
+            className={`shrink-0 inline-flex items-center gap-1.5 min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs border cursor-pointer disabled:opacity-50 transition-colors ${
               isDark ? "bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/10" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
             }`}
           >
@@ -536,7 +559,9 @@ export default function TreasuryAccount() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter…"
-            className={`px-3 py-1.5 rounded-lg text-xs border focus:outline-none w-48 ${
+            aria-label="Filter transactions"
+            type="search"
+            className={`min-w-0 flex-1 sm:flex-none sm:w-48 min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-[16px] sm:text-xs border focus:outline-none ${
               isDark
                 ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
                 : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
@@ -563,10 +588,37 @@ export default function TreasuryAccount() {
           <p className={`text-sm p-5 ${isDark ? "text-red-400" : "text-red-600"}`}>{txnError}</p>
         )}
         {txnState === "idle" && filtered.length === 0 && (
-          <p className={`text-sm p-5 ${subtle}`}>No transactions in the last 180 days.</p>
+          <p className={`text-sm p-5 ${subtle}`}>
+            {txns.length ? "No transactions match that filter." : "No transactions in the last 180 days."}
+          </p>
         )}
         {txnState === "idle" && filtered.length > 0 && (
-          <div className="overflow-x-auto">
+          <ul className="sm:hidden">
+            {filtered.map((t, i) => (
+              <li key={`${t.date}-${t.description}-${i}`} className={`flex items-start justify-between gap-3 px-4 py-3 ${i ? `border-t ${rowBorder}` : ""}`}>
+                <span className="min-w-0">
+                  <span className="block text-sm break-words">
+                    {t.name}
+                    {t.pending && <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>}
+                  </span>
+                  <span className={`block text-xs tabular-nums ${subtle}`}>
+                    {t.date}
+                    {t.category ? ` · ${t.category}` : ""}
+                  </span>
+                </span>
+                <span
+                  className={`shrink-0 text-sm text-right tabular-nums font-medium ${
+                    t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"
+                  }`}
+                >
+                  {signed(-t.amount, t.currency ?? "USD")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {txnState === "idle" && filtered.length > 0 && (
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm border-collapse min-w-[640px]">
               <thead>
                 <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>

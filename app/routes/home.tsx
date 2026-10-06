@@ -586,6 +586,9 @@ function Masonry<T>({
 
 const groupWeight = (g: TreeGroup) => 2.2 + g.rows.length;
 
+/** Invisible vertical hit-area extension so short controls reach ~40px on touch screens. */
+const TAP_Y = "relative after:absolute after:inset-x-0 after:-inset-y-[12px] after:content-[''] lg:after:inset-0";
+
 // ── Page ─────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -942,7 +945,7 @@ export default function Home() {
                           setHover(null);
                         }}
                         aria-pressed={range === r.key}
-                        className={`h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+                        className={`${TAP_Y} h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
                           range === r.key
                             ? isDark
                               ? "bg-white/[0.09] text-white"
@@ -1012,7 +1015,7 @@ export default function Home() {
               <p className={kicker}>Needs attention</p>
               {attentionReady && attention.length > 0 && <span className={`${chipBase} ${warnChip}`}>{attention.length}</span>}
             </div>
-            <Link to="/books/review" className={`text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
+            <Link to="/books/review" className={`${TAP_Y} shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
               Review desk →
             </Link>
           </div>
@@ -1072,7 +1075,7 @@ export default function Home() {
                   </span>
                 )}
               </div>
-              <Link to="/books/calendar" className={`shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
+              <Link to="/books/calendar" className={`${TAP_Y} shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
                 Calendar →
               </Link>
             </div>
@@ -1147,7 +1150,7 @@ export default function Home() {
               </span>
             )}
             {!assetsLoading && scored.length > 0 && (
-              <Link to="/assets" className={`inline-flex items-center gap-1.5 text-[11px] tabular-nums ${textMuted} hover:underline`} title="Average record completeness">
+              <Link to="/assets" className={`${TAP_Y} inline-flex items-center gap-1.5 text-[11px] tabular-nums ${textMuted} hover:underline`} title="Average record completeness">
                 <Ring score={avgScore} size={16} stroke={2} isDark={isDark} label={false} />
                 {avgScore}/100 complete
               </Link>
@@ -1158,7 +1161,7 @@ export default function Home() {
               <Link
                 key={q.to}
                 to={q.to}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${hairline} ${
+                className={`inline-flex h-[40px] sm:h-7 items-center gap-1.5 rounded-lg border px-3 sm:px-2.5 text-[12px] sm:text-[11px] font-medium transition-colors ${hairline} ${
                   isDark ? "text-gray-300 hover:border-white/20 hover:bg-white/[0.04] hover:text-white" : "text-gray-700 hover:border-gray-300 hover:bg-gray-50"
                 }`}
               >
@@ -1197,7 +1200,7 @@ export default function Home() {
                       <Link
                         to={`/assets/${e.id}`}
                         title={`${e.name} · ${e.score}% complete`}
-                        className={`flex min-w-0 items-center gap-2 rounded-full border py-1 pl-1 pr-3 transition-colors ${hairline} ${
+                        className={`flex min-w-0 items-center gap-2 rounded-full border py-[8px] sm:py-1 pl-1.5 sm:pl-1 pr-3 transition-colors ${hairline} ${
                           isDark ? "bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.05]" : "bg-gray-50/80 hover:border-gray-300 hover:bg-white"
                         }`}
                       >
@@ -1257,7 +1260,7 @@ export default function Home() {
                           <Link
                             to={`/assets/${e.id}`}
                             title={`${e.name} · ${e.score}% complete`}
-                            className={`group relative flex min-w-0 items-center gap-2 rounded-lg py-[5px] pl-2 pr-1.5 transition-colors ${
+                            className={`group relative flex min-w-0 items-center gap-2 rounded-lg py-[11px] sm:py-[5px] pl-2 pr-1.5 transition-colors ${
                               isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"
                             }`}
                           >

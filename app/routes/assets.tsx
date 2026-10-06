@@ -1100,7 +1100,12 @@ export default function Assets() {
       );
     }
 
-    void setup();
+    setup().catch((err) => {
+      console.error("Assets load error:", err);
+      if (!alive) return;
+      setLoadError("Couldn't load entities.");
+      setLoading(false);
+    });
     return () => {
       alive = false;
       unsubscribe?.();
@@ -1361,7 +1366,7 @@ export default function Assets() {
   const noOwner = isDark
     ? "[&>button]:text-gray-500 [&>button:not(:hover):not([aria-expanded=true])]:bg-transparent"
     : "[&>button]:text-gray-500/100 [&>button:not(:hover):not([aria-expanded=true])]:bg-transparent";
-  const chevBtn = `w-5 h-5 rounded-md inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors ${TAP.box} ${t3} ${
+  const chevBtn = `relative after:content-[''] after:absolute after:-inset-x-[10px] after:-inset-y-[13px] lg:after:inset-0 w-5 h-5 rounded-md inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors ${t3} ${
     isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"
   }`;
   const kpiSize = "text-xl lg:text-3xl leading-none";
@@ -1399,7 +1404,7 @@ export default function Assets() {
         }}
         title="Edit initials"
         aria-label={`Initials ${tagOf(a)} — edit`}
-        className={`${TAG_PILL} ${touch ? "h-6 px-2 lg:h-5 lg:px-1.5" : ""} cursor-pointer transition-[filter] hover:brightness-110 ${entityTagClass(a.name, isDark)}`}
+        className={`${TAG_PILL} ${touch ? "h-6 px-2 lg:h-5 lg:px-1.5" : ""} ${TAP.line} cursor-pointer transition-[filter] hover:brightness-110 ${entityTagClass(a.name, isDark)}`}
       >
         {tagOf(a)}
       </button>
@@ -1470,12 +1475,14 @@ export default function Assets() {
   const filingPips = (a: Asset, s: Score) => {
     const filings = s.items.filter((i) => (FILING_KEYS as readonly string[]).includes(i.key));
     const on = filings.filter((f) => f.done);
+    // Trusts carry no filing slots, so there is nothing to show.
+    if (!filings.length) return null;
     return (
       <Tip
         isDark={isDark}
         label={`Filings: ${on.length} of ${filings.length} on file${on.length < filings.length ? ` — missing ${filings.filter((f) => !f.done).map((f) => f.label).join(", ")}` : ""}`}
         content={filingsCard(a, s)}
-        className={`h-7 px-1.5 -mx-1.5 gap-[4px] ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+        className={`h-7 px-1.5 -mx-1.5 gap-[4px] ${TAP.head} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
       >
         {filings.map((f) => (
           <span
@@ -1849,7 +1856,7 @@ export default function Assets() {
         ) : view === "list" ? (
           /* ── List: the ownership tree, one calm line per entity ── */
           <table aria-label="Entities" className="w-full table-fixed text-sm tabular-nums">
-            <thead className="sticky top-0 z-10">
+            <thead className="sticky top-[calc(3.5rem+1px+env(safe-area-inset-top))] lg:top-0 z-10">
               <tr className={`text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
                 {th(
                   "Entity",
@@ -1934,7 +1941,7 @@ export default function Assets() {
                         <Link
                           to={`/assets/${a.id}`}
                           title={a.name}
-                          className={`min-w-0 truncate text-sm hover:underline underline-offset-2 ${context ? `font-normal ${t2}` : `font-medium ${t1}`}`}
+                          className={`min-w-0 truncate text-sm hover:underline underline-offset-2 py-[13px] -my-[13px] lg:py-0 lg:my-0 ${context ? `font-normal ${t2}` : `font-medium ${t1}`}`}
                         >
                           {a.name}
                         </Link>
@@ -1985,7 +1992,7 @@ export default function Assets() {
                         isDark={isDark}
                         label={`Compliance ${s.score}. ${missingSummary(s, 99)}`}
                         content={scoreCard(a, s)}
-                        className={`h-7 px-1.5 -mx-1.5 gap-2 ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+                        className={`h-7 px-1.5 -mx-1.5 gap-2 ${TAP.head} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
                       >
                         <Ring score={s.score} size={16} isDark={isDark} />
                         <span className={`text-sm font-medium tabular-nums ${scoreText(s.score, isDark, t1)}`}>
@@ -2024,7 +2031,7 @@ export default function Assets() {
                       <Link
                         to={`/assets/${a.id}`}
                         title={a.name}
-                        className={`block truncate text-base lg:text-sm font-medium leading-5 hover:underline underline-offset-2 ${t1}`}
+                        className={`block truncate text-base lg:text-sm font-medium leading-5 hover:underline underline-offset-2 py-[13px] -my-[13px] lg:py-0 lg:my-0 ${t1}`}
                       >
                         {a.name}
                       </Link>
@@ -2045,7 +2052,7 @@ export default function Assets() {
                       isDark={isDark}
                       label={`Compliance ${s.score}. ${missingSummary(s, 99)}`}
                       content={scoreCard(a, s)}
-                      className="rounded-full shrink-0"
+                      className="rounded-full shrink-0 relative after:content-[''] after:absolute after:-inset-[4px] lg:after:inset-0"
                     >
                       <Ring score={s.score} size={34} stroke={2.5} isDark={isDark}>
                         <span className={`text-[11px] font-semibold tabular-nums ${scoreText(s.score, isDark, t1)}`}>{s.score}</span>
@@ -2175,9 +2182,11 @@ function NewEntityDialog({
   const segOff = isDark ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]" : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
   const label = `block ${MICRO} ${t2} mb-1`;
 
-  return (
+  // Portalled to <body>: inside <main> (its own stacking context) the overlay
+  // would sit beneath the sidebar and the phone top bar.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] fade-in"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] fade-in"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -2268,6 +2277,7 @@ function NewEntityDialog({
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body
   );
 }

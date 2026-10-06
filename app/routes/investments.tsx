@@ -151,6 +151,9 @@ const accountValue = (a: InvAccount) => (a.holdings_count > 0 ? a.holdings_value
 
 // ── Primitives ───────────────────────────────────────────────────────────
 
+/** Invisible vertical hit-area extension so short controls reach ~40px on touch screens. */
+const TAP_Y = "relative after:absolute after:inset-x-0 after:-inset-y-[12px] after:content-[''] lg:after:inset-0";
+
 function Bone({ className = "", style }: { className?: string; style?: CSSProperties }) {
   return <div className={`shimmer ${className}`} style={style} aria-hidden />;
 }
@@ -361,7 +364,8 @@ export default function Investments() {
     try {
       const r = await authFetch("/api/plaid/data?report=investments");
       const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body?.error || body?.message || "Couldn't load investments.");
+      // The API's `message` is written for people; `error` is often a bare code.
+      if (!r.ok) throw new Error(body?.message || (r.status >= 500 ? "The server didn't respond. Try again in a moment." : body?.error) || "Couldn't load investments.");
       setData({
         asOf: body.asOf ?? new Date().toISOString(),
         accounts: body.accounts ?? [],
@@ -575,10 +579,10 @@ export default function Investments() {
   const posChip = isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700";
   const negChip = isDark ? "border-rose-500/20 bg-rose-500/10 text-rose-300" : "border-rose-200 bg-rose-50 text-rose-700";
   const chipBase = "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums whitespace-nowrap";
-  const linkQuiet = `text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`;
+  const linkQuiet = `${TAP_Y} text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`;
   const segWrap = `flex rounded-lg border p-0.5 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`;
   const segBtn = (on: boolean) =>
-    `h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+    `${TAP_Y} h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
       on ? (isDark ? "bg-white/[0.09] text-white" : "bg-white text-gray-900 shadow-sm") : `${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`
     }`;
   const tickerBadge = `inline-block h-5 min-w-[44px] max-w-[76px] shrink-0 truncate rounded-md px-1.5 text-center leading-5 font-mono text-[10.5px] font-medium tracking-[0.02em] ${
@@ -657,7 +661,7 @@ export default function Investments() {
         </div>
         <Link
           to="/treasury"
-          className={`shrink-0 self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto ${
+          className={`shrink-0 self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto relative after:absolute after:inset-x-0 after:-inset-y-[8px] after:content-[''] lg:after:inset-0 ${
             isDark ? "border-amber-500/25 text-amber-200 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
           }`}
         >
@@ -703,7 +707,7 @@ export default function Investments() {
           <button
             type="button"
             onClick={() => void load()}
-            className={`mt-4 inline-flex h-8 cursor-pointer items-center rounded-full border px-4 text-[12px] font-medium ${hairline} ${
+            className={`mt-4 inline-flex h-[40px] sm:h-8 cursor-pointer items-center rounded-full border px-4 text-[12px] font-medium ${hairline} ${
               isDark ? "hover:bg-white/[0.05]" : "hover:bg-gray-50"
             }`}
           >
@@ -1148,7 +1152,7 @@ export default function Investments() {
                         type="button"
                         onClick={() => onSort(k)}
                         aria-pressed={sort.key === k}
-                        className={`inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-full border px-3 text-[12px] font-medium ${hairline} ${
+                        className={`inline-flex h-[40px] shrink-0 cursor-pointer items-center gap-1 rounded-full border px-3.5 text-[12px] font-medium ${hairline} ${
                           sort.key === k ? (isDark ? "bg-white/[0.08] text-white" : "bg-gray-900 text-white") : t2
                         }`}
                       >
@@ -1263,7 +1267,7 @@ export default function Investments() {
                           {e.reconnect ? "Needs reconnecting" : "Temporarily unavailable"}
                         </span>
                       </span>
-                      <Link to="/treasury" className={`shrink-0 text-[11.5px] font-medium ${accentText} hover:underline`}>
+                      <Link to="/treasury" className={`${TAP_Y} shrink-0 text-[11.5px] font-medium ${accentText} hover:underline`}>
                         Reconnect →
                       </Link>
                     </li>

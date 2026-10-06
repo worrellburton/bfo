@@ -356,7 +356,7 @@ export default function Treasury() {
     });
   })();
 
-  const Chevron = ({ open }: { open: boolean }) => (
+  const chevron = (open: boolean) => (
     <svg
       className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
       fill="none"
@@ -369,7 +369,7 @@ export default function Treasury() {
     </svg>
   );
 
-  const GroupHeader = ({ group }: { group: (typeof entityGroups)[number] }) => {
+  const groupHeader = (group: (typeof entityGroups)[number]) => {
     const unmapped = group.key === "__unmapped__";
     const open = !collapsed.has(group.key);
     return (
@@ -377,11 +377,11 @@ export default function Treasury() {
         <button
           onClick={() => toggleGroup(group.key)}
           aria-expanded={open}
-          className={`flex items-center gap-2 min-w-0 text-sm font-semibold cursor-pointer transition-colors ${
+          className={`flex items-center gap-2 min-w-0 min-h-[40px] lg:min-h-0 text-sm font-semibold cursor-pointer transition-colors ${
             unmapped ? "text-amber-500" : isDark ? "text-white hover:text-white/70" : "text-gray-900 hover:text-gray-600"
           }`}
         >
-          <Chevron open={open} />
+          {chevron(open)}
           <span className="truncate">{group.name}</span>
           <span className={`text-xs font-normal shrink-0 ${subtle}`}>
             {group.accounts.length} account{group.accounts.length === 1 ? "" : "s"}
@@ -456,8 +456,8 @@ export default function Treasury() {
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 mb-8">
+        <div className="min-w-0">
           <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Treasury</h1>
           <p className={`text-sm mt-1 ${subtle}`}>Bank accounts, balances and history</p>
         </div>
@@ -465,7 +465,7 @@ export default function Treasury() {
           <button
             onClick={() => navigate("/treasury/mappings")}
             title="Map accounts to entities"
-            className={`px-3 py-2 rounded-lg border text-sm transition-colors cursor-pointer ${
+            className={`inline-flex items-center min-h-[40px] lg:min-h-0 px-3 py-2 rounded-lg border text-sm transition-colors cursor-pointer ${
               isDark
                 ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
                 : "border-gray-200 text-gray-500 hover:text-black hover:border-gray-400"
@@ -483,7 +483,8 @@ export default function Treasury() {
                 onClick={() => setView(value)}
                 title={value === "grid" ? "Grid view" : "List view"}
                 aria-pressed={view === value}
-                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                aria-label={value === "grid" ? "Grid view" : "List view"}
+                className={`flex items-center justify-center min-w-[40px] min-h-[40px] lg:min-w-0 lg:min-h-0 p-1.5 rounded-md transition-colors cursor-pointer ${
                   view === value
                     ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
                     : isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-black"
@@ -498,7 +499,7 @@ export default function Treasury() {
           <button
             onClick={() => void connect()}
             disabled={linking}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+            className={`inline-flex items-center min-h-[40px] lg:min-h-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
               isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
             }`}
           >
@@ -616,7 +617,7 @@ export default function Treasury() {
                   <span className={isDark ? "text-white/15" : "text-gray-300"}>·</span>
                   <button
                     onClick={() => void hideDormant()}
-                    className="text-amber-500 hover:underline cursor-pointer"
+                    className="relative text-amber-500 hover:underline cursor-pointer after:absolute after:inset-x-0 after:-inset-y-[14px] after:content-[''] lg:after:inset-0"
                   >
                     {dormant.length} dormant
                   </button>
@@ -627,7 +628,7 @@ export default function Treasury() {
                   <span className={isDark ? "text-white/15" : "text-gray-300"}>·</span>
                   <button
                     onClick={() => navigate("/treasury/mappings")}
-                    className="text-amber-500 hover:underline cursor-pointer"
+                    className="relative text-amber-500 hover:underline cursor-pointer after:absolute after:inset-x-0 after:-inset-y-[14px] after:content-[''] lg:after:inset-0"
                   >
                     {entityGroups.find((g) => g.key === "__unmapped__")!.accounts.length} unmapped
                   </button>
@@ -640,7 +641,7 @@ export default function Treasury() {
 
       {loading && <p className={`text-sm ${subtle}`}>Loading…</p>}
 
-      {!loading && accounts.length === 0 && (
+      {!loading && !error && accounts.length === 0 && (
         <div className={`rounded-xl border p-10 text-center ${card}`}>
           <div className={`mx-auto w-11 h-11 rounded-xl flex items-center justify-center mb-4 ${isDark ? "bg-white/5" : "bg-gray-100"}`}>
             <svg className={`w-5 h-5 ${subtle}`} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -656,7 +657,7 @@ export default function Treasury() {
 
       {view === "grid" && entityGroups.map((group) => (
       <section key={group.key} className="mb-8 last:mb-0">
-        <GroupHeader group={group} />
+        {groupHeader(group)}
         {!collapsed.has(group.key) && (
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {group.accounts.map((account) => {
@@ -724,7 +725,7 @@ export default function Treasury() {
                     <>
                       <span
                         className={`text-xs font-medium ${
-                          account.change > 0 ? "text-emerald-300" : "text-rose-300"
+                          account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"
                         }`}
                       >
                         {signed(account.change, account.currency ?? "USD")}
@@ -742,11 +743,12 @@ export default function Treasury() {
                   {account.subtype || account.type}
                   {account.hidden && <span className="ml-2 text-amber-300/70 normal-case tracking-normal">hidden</span>}
                 </span>
-                <span className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                   <span
                     role="button"
                     tabIndex={0}
                     title={account.hidden ? "Unhide account" : "Hide account"}
+                    aria-label={account.hidden ? "Unhide account" : "Hide account"}
                     onClick={(e) => {
                       e.stopPropagation();
                       void setHidden(account, !account.hidden);
@@ -758,7 +760,7 @@ export default function Treasury() {
                         void setHidden(account, !account.hidden);
                       }
                     }}
-                    className="p-1 rounded text-white/45 hover:text-white cursor-pointer"
+                    className="relative p-1 rounded text-white/45 hover:text-white cursor-pointer after:absolute after:-inset-[12px] after:content-[''] lg:after:inset-0"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
                       {account.hidden ? (
@@ -781,7 +783,76 @@ export default function Treasury() {
 
       {view === "list" && !loading && accounts.length > 0 && (
         <div className={`rounded-xl border overflow-hidden ${card}`}>
-          <div className="overflow-x-auto">
+          {/* Phones: stacked rows — the six-column table would scroll sideways. */}
+          <div className="sm:hidden">
+            {entityGroups.map((group, gi) => {
+              const open = !collapsed.has(group.key);
+              return (
+                <section key={group.key} className={gi ? `border-t ${isDark ? "border-white/10" : "border-gray-200"}` : ""}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={open}
+                    className={`w-full min-h-[44px] flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer ${
+                      isDark ? "bg-white/[0.04]" : "bg-gray-50"
+                    }`}
+                  >
+                    <span
+                      className={`flex min-w-0 items-center gap-2 text-xs font-semibold ${
+                        group.key === "__unmapped__" ? "text-amber-500" : isDark ? "text-white" : "text-gray-900"
+                      }`}
+                    >
+                      {chevron(open)}
+                      <span className="truncate">{group.name}</span>
+                      <span className={`shrink-0 font-normal ${subtle}`}>{group.accounts.length}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold tabular-nums">{money(group.total)}</span>
+                  </button>
+                  {open && (
+                    <ul>
+                      {group.accounts.map((account) => {
+                        const state = accountState(account);
+                        return (
+                          <li key={account.account_id} className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`}>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/treasury/${account.account_id}`)}
+                              className={`w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer ${isDark ? "active:bg-white/[0.04]" : "active:bg-gray-50"}`}
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium">{accountLabel(account)}</span>
+                                <span className={`flex items-center gap-1.5 text-xs ${subtle}`}>
+                                  <span
+                                    className={
+                                      state.tone === "live" ? "treasury-dot treasury-dot-live" : state.tone === "down" ? "treasury-dot treasury-dot-down" : "treasury-dot"
+                                    }
+                                    style={state.tone === "dormant" ? { background: isDark ? "rgba(255,255,255,0.25)" : "rgb(203,213,225)" } : undefined}
+                                  />
+                                  <span className="truncate">
+                                    {account.institution_name} · <span className="capitalize">{account.subtype || account.type}</span>
+                                    {account.hidden ? " · hidden" : ""}
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-right tabular-nums">
+                                <span className="block text-sm font-semibold">{money(account.balance_current, account.currency ?? "USD")}</span>
+                                {account.change != null && account.change !== 0 && (
+                                  <span className={`block text-xs ${account.change > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                    {signed(account.change, account.currency ?? "USD")}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm border-collapse min-w-[760px]">
               <thead>
                 <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>
@@ -800,20 +871,23 @@ export default function Treasury() {
               {entityGroups.map((group) => (
               <tbody key={group.key}>
                 <tr
-                  onClick={() => toggleGroup(group.key)}
-                  className={`cursor-pointer transition-colors ${
+                  className={`transition-colors ${
                     isDark ? "bg-white/[0.04] hover:bg-white/[0.07]" : "bg-gray-50 hover:bg-gray-100"
                   }`}
                 >
                   <th
                     colSpan={6}
                     scope="colgroup"
-                    aria-expanded={!collapsed.has(group.key)}
-                    className={`text-left px-4 py-2.5 border-t ${
+                    className={`text-left p-0 border-t ${
                       isDark ? "border-white/10" : "border-gray-200"
                     }`}
                   >
-                    <span className="flex items-center justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.key)}
+                      aria-expanded={!collapsed.has(group.key)}
+                      className="w-full flex items-center justify-between gap-4 px-4 py-2.5 text-left cursor-pointer"
+                    >
                       <span
                         className={`flex items-center gap-2 text-xs font-semibold ${
                           group.key === "__unmapped__"
@@ -823,14 +897,14 @@ export default function Treasury() {
                               : "text-gray-900"
                         }`}
                       >
-                        <Chevron open={!collapsed.has(group.key)} />
+                        {chevron(!collapsed.has(group.key))}
                         {group.name}
                         <span className={`font-normal ${subtle}`}>
                           {group.accounts.length} account{group.accounts.length === 1 ? "" : "s"}
                         </span>
                       </span>
                       <span className="text-xs font-semibold tabular-nums">{money(group.total)}</span>
-                    </span>
+                    </button>
                   </th>
                 </tr>
                 {!collapsed.has(group.key) && group.accounts.map((account) => {
@@ -839,7 +913,11 @@ export default function Treasury() {
                   return (
                     <tr
                       key={account.account_id}
+                      tabIndex={0}
                       onClick={() => navigate(`/treasury/${account.account_id}`)}
+                      onKeyDown={(e) => {
+                        if (e.target === e.currentTarget && e.key === "Enter") navigate(`/treasury/${account.account_id}`);
+                      }}
                       className={`cursor-pointer transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
                     >
                       <td className={`px-4 py-3 border-t whitespace-nowrap ${isDark ? "border-white/5" : "border-gray-100"}`}>
@@ -907,6 +985,7 @@ export default function Treasury() {
                           {money(account.balance_current, account.currency ?? "USD")}
                           <button
                             title={account.hidden ? "Unhide account" : "Hide account"}
+                            aria-label={account.hidden ? "Unhide account" : "Hide account"}
                             onClick={(e) => {
                               e.stopPropagation();
                               void setHidden(account, !account.hidden);
@@ -935,7 +1014,7 @@ export default function Treasury() {
             <button
               onClick={() => void hideDormant()}
               title={`Hide ${dormant.length} empty accounts with no activity in ${DORMANT_DAYS} days`}
-              className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+              className={`min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
                 isDark
                   ? "border-amber-400/25 text-amber-400/80 hover:text-amber-300 hover:border-amber-400/50"
                   : "border-amber-300 text-amber-700 hover:border-amber-500"
@@ -947,7 +1026,7 @@ export default function Treasury() {
           {hiddenCount > 0 && (
             <button
               onClick={() => setShowHidden((v) => !v)}
-              className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+              className={`min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
                 isDark
                   ? "border-white/10 text-gray-500 hover:text-white hover:border-white/25"
                   : "border-gray-200 text-gray-500 hover:text-black hover:border-gray-400"
@@ -968,7 +1047,7 @@ export default function Treasury() {
                 onClick={() => void refreshAll()}
                 disabled={linking}
                 title="Re-pick accounts for every connection in turn, and pull the full history"
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
+                className={`inline-flex items-center gap-1.5 min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-full border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
                   isDark
                     ? "border-white/10 text-gray-300 hover:text-white hover:border-white/25"
                     : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
@@ -1003,7 +1082,7 @@ export default function Treasury() {
                     i ? `border-t ${isDark ? "border-white/5" : "border-gray-100"}` : ""
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
                     {conn.institution_logo ? (
                       <img
                         src={`data:image/png;base64,${conn.institution_logo}`}
@@ -1019,7 +1098,7 @@ export default function Treasury() {
                       </span>
                     )}
                     <div className="min-w-0">
-                      <p className="text-sm font-medium flex items-center gap-2">
+                      <p className="text-sm font-medium flex flex-wrap items-center gap-x-2">
                         {conn.institution_name}
                         {duplicate && (
                           <span
@@ -1051,14 +1130,14 @@ export default function Treasury() {
                     </div>
                   </div>
 
-                  <span className="text-sm font-semibold tabular-nums shrink-0">{money(total)}</span>
+                  <span className="text-sm font-semibold tabular-nums shrink-0 mr-auto sm:mr-0 pl-11 sm:pl-0">{money(total)}</span>
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => void refreshConnection(conn)}
                       disabled={linking}
                       title="Re-pick which accounts this connection shares — closed ones drop off"
-                      className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
+                      className={`min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
                         isDark
                           ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
                           : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
@@ -1069,7 +1148,7 @@ export default function Treasury() {
                     <button
                       onClick={() => void disconnect(conn)}
                       title="Disconnect this connection"
-                      className={`px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                      className={`min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
                         isDark
                           ? "border-white/10 text-gray-500 hover:text-red-400 hover:border-red-400/30"
                           : "border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300"
