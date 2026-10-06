@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { authFetch, getUser } from "../auth";
 import { entityCompleteness } from "../entity-completeness";
+import { HomeBackground } from "../home-background";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -109,6 +110,39 @@ function Icon({ name, className = "h-4 w-4", strokeWidth = 1.7 }: { name: keyof 
   );
 }
 
+// ── Motion ───────────────────────────────────────────────────────────────
+
+/**
+ * One entrance for the whole page: every `.home-in` element starts a touch
+ * small and transparent, and all of them ease to rest together the moment the
+ * root gains `.home-ready`. Content that only arrives after the entrance has
+ * played gets `.home-late` instead — a plain fade, so nothing pops in twice.
+ */
+const HOME_CSS = `
+.home-in{opacity:0;transform:scale(.96);transform-origin:50% 35%}
+.home-ready .home-in{opacity:1;transform:none;transition:opacity .6s cubic-bezier(.22,1,.36,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.home-late{animation:home-fade .45s ease-out both}
+@keyframes home-fade{from{opacity:0}to{opacity:1}}
+@keyframes home-draw{to{stroke-dashoffset:0}}
+@keyframes home-area{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes home-dot{0%{opacity:0;transform:scale(.2)}55%{opacity:1;transform:scale(1.5)}100%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){
+  .home-in,.home-ready .home-in{opacity:1;transform:none;transition:none}
+  .home-late{animation:none}
+}`;
+
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const on = () => setReduced(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return reduced;
+}
+
 // ── Small visual primitives ──────────────────────────────────────────────
 
 /** Score colour: emerald when done-ish, indigo mid-way, amber when thin. */
@@ -166,14 +200,44 @@ function TrendChart({
   isDark,
   hover,
   setHover,
+  play,
+  drawKey,
+  reduced,
 }: {
   points: { day: string; value: number; cash: number; invested: number; credit: number }[];
   isDark: boolean;
   hover: number | null;
   setHover: (i: number | null) => void;
+  /** Start the draw-in (the page entrance has begun). */
+  play: boolean;
+  /** Changing this redraws the line (e.g. a new range). */
+  drawKey: string;
+  reduced: boolean;
 }) {
-  const W = 1000;
-  const H = 200;
+  // Drawn in real pixels (not a stretched viewBox) so the stroke's length is
+  // exact and the dash-offset draw-in runs at an even speed end to end.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<SVGPathElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [len, setLen] = useState(0);
+  const [drawnKey, setDrawnKey] = useState<string | null>(null);
+  const drawn = reduced || drawnKey === drawKey;
+
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setSize((s) => (s && Math.abs(s.w - r.width) < 0.5 && Math.abs(s.h - r.height) < 0.5 ? s : { w: r.width, h: r.height }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const W = size?.w || 1000;
+  const H = size?.h || 200;
   const { line, area, xy, gridYs } = useMemo(() => {
     const vals = points.map((p) => p.value);
     let lo = Math.min(...vals);
@@ -189,9 +253,13 @@ function TrendChart({
     const xy = points.map((p, i) => [n === 1 ? W / 2 : (i / (n - 1)) * W, H - ((p.value - lo) / (hi - lo)) * H] as const);
     const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
     const area = `${line} L${W},${H} L0,${H} Z`;
-    const gridYs = [0.25, 0.5, 0.75].map((f) => f * H);
+    const gridYs = [0.25, 0.5, 0.75].map((f) => Math.round(f * H) + 0.5);
     return { line, area, xy, gridYs };
-  }, [points]);
+  }, [points, W, H]);
+
+  useLayoutEffect(() => {
+    if (lineRef.current) setLen(lineRef.current.getTotalLength());
+  }, [line]);
 
   const accent = isDark ? "#818cf8" : "#4f46e5";
   const last = xy[xy.length - 1];
@@ -204,8 +272,22 @@ function TrendChart({
     setHover(Math.round(f * (points.length - 1)));
   };
 
+  // Until it has drawn, the line is one dash pushed fully off its own length.
+  const lineStyle: CSSProperties = drawn
+    ? {}
+    : {
+        strokeDasharray: len || 1,
+        strokeDashoffset: len || 1,
+        opacity: len ? 1 : 0,
+        animation: play && len ? "home-draw 1.1s cubic-bezier(0.3, 0, 0.15, 1) 120ms forwards" : "none",
+      };
+  const areaStyle: CSSProperties = reduced
+    ? {}
+    : { opacity: 0, animation: play ? "home-area 1s cubic-bezier(0.16, 1, 0.3, 1) 380ms forwards" : "none" };
+
   return (
     <div
+      ref={boxRef}
       className="relative h-[96px] w-full cursor-crosshair touch-pan-y select-none sm:h-[120px]"
       onPointerMove={onMove}
       onPointerDown={onMove}
@@ -213,34 +295,48 @@ function TrendChart({
       role="img"
       aria-label={`Cash plus invested over the last ${points.length} days`}
     >
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible">
-        <defs>
-          <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={accent} stopOpacity={isDark ? 0.32 : 0.18} />
-            <stop offset="100%" stopColor={accent} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        {gridYs.map((y) => (
-          <line
-            key={y}
-            x1={0}
-            x2={W}
-            y1={y}
-            y2={y}
-            stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(17,24,39,0.06)"}
-            strokeDasharray="3 5"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        <path d={area} fill={`url(#${gid})`} className="motion-safe:animate-[bfo-fade_0.9s_ease-out_both]" />
-        <path d={line} fill="none" stroke={accent} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      </svg>
+      {size && (
+        <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={accent} stopOpacity={isDark ? 0.32 : 0.18} />
+              <stop offset="100%" stopColor={accent} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {gridYs.map((y) => (
+            <line key={y} x1={0} x2={W} y1={y} y2={y} stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(17,24,39,0.06)"} strokeDasharray="3 5" />
+          ))}
+          <g key={drawKey}>
+            <path d={area} fill={`url(#${gid})`} style={areaStyle} />
+            <path
+              ref={lineRef}
+              d={line}
+              fill="none"
+              stroke={accent}
+              strokeWidth={1.75}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              style={lineStyle}
+              onAnimationEnd={(e) => {
+                if (e.animationName === "home-draw") setDrawnKey(drawKey);
+              }}
+            />
+          </g>
+        </svg>
+      )}
 
-      {/* Live endpoint */}
-      {last && hover == null && (
-        <span className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${(last[0] / W) * 100}%`, top: `${(last[1] / H) * 100}%` }}>
+      {/* Live endpoint: lands once the line reaches it. */}
+      {last && hover == null && drawn && (
+        <span
+          key={`dot-${drawKey}`}
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+          style={{ left: `${(last[0] / W) * 100}%`, top: `${(last[1] / H) * 100}%` }}
+        >
           <span className="absolute inset-0 rounded-full motion-safe:animate-ping" style={{ background: accent, opacity: 0.35 }} />
-          <span className="relative block h-2 w-2 rounded-full" style={{ background: accent, boxShadow: `0 0 12px ${accent}` }} />
+          <span
+            className="relative block h-2 w-2 rounded-full"
+            style={{ background: accent, boxShadow: `0 0 12px ${accent}`, animation: reduced ? undefined : "home-dot 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}
+          />
         </span>
       )}
 
@@ -346,6 +442,150 @@ function PointCard({
   );
 }
 
+// ── Holding structure: the whole tree, folded to fit one card ────────────
+
+type Scored = Asset & ReturnType<typeof entityCompleteness>;
+type TreeRow = { e: Scored; depth: number };
+type TreeGroup = { key: string; head: Scored | null; title: string; caption: string; rows: TreeRow[] };
+
+/**
+ * Folds the ownership tree into something that sits well in a card:
+ *  - chains: each top-level owner walked down while it has a single holding
+ *    child (Trust → Ledger Louise), drawn as one breadcrumb;
+ *  - groups: every company under the end of a chain becomes its own block with
+ *    its subsidiaries indented beneath; companies held directly with nothing
+ *    below them share one block, and entities with no parent on file share
+ *    another.
+ */
+function buildStructure(scored: Scored[], byId: Map<string, Scored>, childrenOf: Map<string, string[]>) {
+  const byName = (a: Scored, b: Scored) => a.name.localeCompare(b.name);
+  const kids = (id: string) =>
+    (childrenOf.get(id) ?? [])
+      .map((k) => byId.get(k)!)
+      .filter(Boolean)
+      .sort(byName);
+  const seen = new Set<string>();
+  const subtree = (id: string, depth: number, out: TreeRow[]) => {
+    for (const k of kids(id)) {
+      if (seen.has(k.id)) continue;
+      seen.add(k.id);
+      out.push({ e: k, depth });
+      subtree(k.id, depth + 1, out);
+    }
+    return out;
+  };
+  const count = (id: string, s = new Set<string>()): number =>
+    kids(id).reduce((n, k) => (s.has(k.id) ? n : (s.add(k.id), n + 1 + count(k.id, s))), 0);
+
+  const roots = scored.filter((a) => !a.ownerId || !byId.has(a.ownerId));
+  const owners = roots.filter((r) => kids(r.id).length > 0).sort((a, b) => count(b.id) - count(a.id) || byName(a, b));
+  const loose: Scored[] = roots.filter((r) => kids(r.id).length === 0);
+
+  const chains: { links: Scored[]; holds: number; total: number }[] = [];
+  const groups: TreeGroup[] = [];
+  for (const root of owners) {
+    seen.add(root.id);
+    const links = [root];
+    let end = root;
+    for (;;) {
+      const k = kids(end.id);
+      if (k.length !== 1 || kids(k[0].id).length === 0 || seen.has(k[0].id)) break;
+      end = k[0];
+      seen.add(end.id);
+      links.push(end);
+    }
+    const direct: TreeRow[] = [];
+    const children = kids(end.id).filter((c) => !seen.has(c.id));
+    for (const c of children) {
+      seen.add(c.id);
+      if (kids(c.id).length) {
+        const rows = subtree(c.id, 0, []);
+        groups.push({
+          key: c.id,
+          head: c,
+          title: c.name,
+          caption: [c.type, c.state, `${rows.length} held`].filter(Boolean).join(" · "),
+          rows,
+        });
+      } else direct.push({ e: c, depth: 0 });
+    }
+    if (direct.length) {
+      groups.push({ key: `direct-${end.id}`, head: null, title: "Held directly", caption: `by ${end.name}`, rows: direct });
+    }
+    chains.push({ links, holds: children.length, total: count(root.id) });
+  }
+  // Anything a cycle kept out of the tree still deserves a place.
+  for (const a of scored) if (!seen.has(a.id) && !loose.includes(a)) loose.push(a);
+  if (loose.length) {
+    groups.push({
+      key: "unlinked",
+      head: null,
+      title: "Unlinked",
+      caption: `${loose.length} with no parent on file`,
+      rows: loose.sort((a, b) => (a.type === b.type ? byName(a, b) : a.type === "LLC" ? -1 : 1)).map((e) => ({ e, depth: 0 })),
+    });
+  }
+  return { chains, groups };
+}
+
+/**
+ * Balanced columns: as many as fit at `minWidth`, never more than there are
+ * items; each item goes to the currently shortest column (by `weight`) and the
+ * last card in each column stretches, so the bottoms line up.
+ */
+function Masonry<T>({
+  items,
+  weight,
+  minWidth,
+  gap,
+  render,
+}: {
+  items: T[];
+  weight: (item: T) => number;
+  minWidth: number;
+  gap: number;
+  render: (item: T, stretch: boolean) => ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(1);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setFit(Math.max(1, Math.floor((el.getBoundingClientRect().width + gap) / (minWidth + gap))));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [minWidth, gap]);
+  const count = Math.max(1, Math.min(fit, items.length));
+  const columns = useMemo(() => {
+    // Largest first onto the shortest column balances well; then each column
+    // shows its items back in the original order.
+    const cols = Array.from({ length: count }, () => ({ h: 0, idx: [] as number[] }));
+    const order = items.map((_, i) => i).sort((a, b) => weight(items[b]) - weight(items[a]) || a - b);
+    for (const i of order) {
+      const target = cols.reduce((a, b) => (b.h < a.h - 0.01 ? b : a));
+      target.idx.push(i);
+      target.h += weight(items[i]);
+    }
+    return cols
+      .map((c) => c.idx.sort((a, b) => a - b))
+      .sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))
+      .map((idx) => ({ items: idx.map((i) => items[i]) }));
+  }, [items, count, weight]);
+  return (
+    <div ref={ref} className="flex items-stretch" style={{ gap }}>
+      {columns.map((c, i) => (
+        <div key={i} className="flex min-w-0 flex-1 flex-col" style={{ gap }}>
+          {c.items.map((it, j) => render(it, j === c.items.length - 1))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const groupWeight = (g: TreeGroup) => 2.2 + g.rows.length;
+
 // ── Page ─────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -408,6 +648,34 @@ export default function Home() {
     };
   }, []);
 
+  // ── Entrance ───────────────────────────────────────────────────────────
+  // Hold the page (invisible) until the data is in — or ~0.7s, whichever is
+  // first — then let every card ease in at once. Anything still loading at
+  // that point fades in on its own when it lands.
+  const reduced = useReducedMotion();
+  const [entered, setEntered] = useState(false);
+  const [late, setLate] = useState({ home: false, assets: false });
+  const loadingRef = useRef({ home: homeLoading, assets: assetsLoading });
+  loadingRef.current = { home: homeLoading, assets: assetsLoading };
+  const dataReady = !homeLoading && !assetsLoading;
+  useEffect(() => {
+    if (entered) return;
+    let raf = 0;
+    const go = () => {
+      setLate({ ...loadingRef.current });
+      setEntered(true);
+    };
+    if (dataReady) {
+      // Two frames so the resting-small state is painted before it eases out.
+      raf = requestAnimationFrame(() => (raf = requestAnimationFrame(go)));
+      return () => cancelAnimationFrame(raf);
+    }
+    const t = window.setTimeout(go, 700);
+    return () => window.clearTimeout(t);
+  }, [dataReady, entered]);
+  const lateHome = late.home ? "home-late" : "";
+  const lateAssets = late.assets ? "home-late" : "";
+
   // ── Derived: entities ──────────────────────────────────────────────────
   const scored = useMemo(
     () => assets.map((a) => ({ ...a, ...entityCompleteness(a) })),
@@ -419,19 +687,7 @@ export default function Home() {
     for (const a of scored) if (a.ownerId && byId.has(a.ownerId)) (m.get(a.ownerId) ?? m.set(a.ownerId, []).get(a.ownerId)!).push(a.id);
     return m;
   }, [scored, byId]);
-  const descendants = (id: string, seen = new Set<string>()): number => {
-    let n = 0;
-    for (const c of childrenOf.get(id) ?? []) {
-      if (seen.has(c)) continue;
-      seen.add(c);
-      n += 1 + descendants(c, seen);
-    }
-    return n;
-  };
-  const roots = scored
-    .filter((a) => !a.ownerId || !byId.has(a.ownerId))
-    .map((a) => ({ ...a, subs: descendants(a.id) }))
-    .sort((a, b) => b.subs - a.subs || a.name.localeCompare(b.name));
+  const structure = useMemo(() => buildStructure(scored, byId, childrenOf), [scored, byId, childrenOf]);
   const avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length) : 0;
   const completeCount = scored.filter((a) => a.score === 100).length;
   const missingEin = scored.filter((a) => !a.ein?.trim());
@@ -548,8 +804,8 @@ export default function Home() {
     indigo: isDark ? "bg-[#818cf8]/10 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]",
     neutral: isDark ? "bg-white/[0.04] text-gray-400" : "bg-gray-100 text-gray-500",
   } as const;
-  const rise = "motion-safe:animate-[bfo-rise_0.5s_cubic-bezier(0.16,1,0.3,1)_both]";
-  const delay = (i: number) => ({ animationDelay: `${i * 60}ms` });
+  const enter = "home-in";
+  const guide = isDark ? "border-white/[0.12]" : "border-gray-300/80";
 
   // ── Header copy ────────────────────────────────────────────────────────
   const now = new Date();
@@ -572,9 +828,12 @@ export default function Home() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1120px] space-y-3 px-2 sm:space-y-4 sm:px-8 lg:px-20 xl:px-24">
+    <div className={`mx-auto max-w-[1120px] space-y-3 px-2 sm:space-y-4 sm:px-8 lg:px-20 xl:px-24 ${entered ? "home-ready" : ""}`}>
+      <style>{HOME_CSS}</style>
+      <HomeBackground isDark={isDark} />
+
       {/* ── Greeting ─────────────────────────────────────────────────── */}
-      <header className={`flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between ${rise}`}>
+      <header className={`flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between ${enter}`}>
         <div className="min-w-0">
           <p className={kicker}>{dateLine}</p>
           <h1 className="mt-1 text-[18px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[20px]">
@@ -619,7 +878,7 @@ export default function Home() {
       {/* ── Hero + KPI tiles ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         {showHero && (
-          <section className={`relative order-last overflow-hidden rounded-2xl lg:col-span-12 ${surface} ${rise}`} style={delay(1)}>
+          <section data-bg-solid className={`relative order-last overflow-hidden rounded-2xl lg:col-span-12 ${surface} ${enter}`}>
             <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent ${isDark ? "via-[#818cf8]/70" : "via-[#4f46e5]/50"} to-transparent`} />
             <div className={`pointer-events-none absolute -top-28 left-1/3 h-48 w-1/2 rounded-full blur-3xl ${isDark ? "bg-[#818cf8]/[0.09]" : "bg-[#4f46e5]/[0.05]"}`} />
             <div
@@ -643,8 +902,8 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="relative">
-                <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
+              <div className={`relative ${lateHome}`}>
+                <div className={`flex flex-wrap items-start justify-between gap-3 px-5 pt-4 ${enter}`}>
                   <div className="min-w-0">
                     <p className={kicker}>
                       Net position
@@ -695,7 +954,7 @@ export default function Home() {
                 </div>
 
                 <div className="mt-2 px-1 sm:px-2">
-                  <TrendChart points={series} isDark={isDark} hover={hover} setHover={setHover} />
+                  <TrendChart points={series} isDark={isDark} hover={hover} setHover={setHover} play={entered} drawKey={range} reduced={reduced} />
                 </div>
                 <div className={`flex justify-between px-5 pb-1 pt-1.5 text-[11px] ${textMuted}`}>
                   <span>{shortDay(first.day)}</span>
@@ -713,7 +972,7 @@ export default function Home() {
                     { label: "Credit owed", value: latest.credit, dot: isDark ? "rgba(255,255,255,0.25)" : "rgba(17,24,39,0.2)" },
                   ];
                   return (
-                    <div className={`mt-2 border-t px-5 pb-4 pt-3 ${hairline}`}>
+                    <div className={`mt-2 border-t px-5 pb-4 pt-3 ${hairline} ${enter}`}>
                       <div className="flex h-1.5 overflow-hidden rounded-full">
                         <span style={{ width: `${cashPct}%`, background: cashColor }} />
                         <span className="ml-[2px] flex-1" style={{ background: invColor }} />
@@ -744,7 +1003,7 @@ export default function Home() {
 
       {/* ── Needs attention + Coming in ──────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
-        <section className={`overflow-hidden rounded-2xl ${showComing ? "lg:col-span-7" : "lg:col-span-12"} ${surface} ${rise}`} style={delay(6)}>
+        <section data-bg-solid className={`overflow-hidden rounded-2xl ${showComing ? "lg:col-span-7" : "lg:col-span-12"} ${surface} ${enter}`}>
           <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
             <div className="flex items-center gap-2.5">
               <p className={kicker}>Needs attention</p>
@@ -767,7 +1026,7 @@ export default function Home() {
               ))}
             </div>
           ) : attention.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 px-5 py-10 text-center">
+            <div className={`flex flex-col items-center justify-center gap-2 px-5 py-10 text-center ${late.home || late.assets ? "home-late" : ""}`}>
               <span className={`flex h-10 w-10 items-center justify-center rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}>
                 <Icon name="check" className="h-5 w-5" />
               </span>
@@ -775,7 +1034,7 @@ export default function Home() {
               <p className={`text-[12px] ${textMuted}`}>Books are categorized, inflows on time and records complete.</p>
             </div>
           ) : (
-            <ul className={`divide-y ${rowBorder}`}>
+            <ul className={`divide-y ${rowBorder} ${late.home || late.assets ? "home-late" : ""}`}>
               {attention.map((a) => (
                 <li key={a.key}>
                   <Link to={a.to} className={`group flex items-center gap-3 px-5 py-3 transition-colors ${rowHover}`}>
@@ -800,7 +1059,7 @@ export default function Home() {
         </section>
 
         {showComing && (
-          <section className={`overflow-hidden rounded-2xl lg:col-span-5 ${surface} ${rise}`} style={delay(7)}>
+          <section data-bg-solid className={`overflow-hidden rounded-2xl lg:col-span-5 ${surface} ${enter}`}>
             <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
               <div className="flex min-w-0 items-baseline gap-2.5">
                 <p className={kicker}>Coming in</p>
@@ -832,7 +1091,7 @@ export default function Home() {
                 <p className={`text-[12px] ${textMuted}`}>No recurring inflows detected yet.</p>
               </div>
             ) : (
-              <ul className={`divide-y ${rowBorder}`}>
+              <ul className={`divide-y ${rowBorder} ${lateHome}`}>
                 {upcoming.map((s) => {
                   const d = s.nextExpected ? dayDate(s.nextExpected) : null;
                   return (
@@ -875,7 +1134,7 @@ export default function Home() {
       </div>
 
       {/* ── Entities ─────────────────────────────────────────────────── */}
-      <section className={`rounded-2xl ${surface} ${rise}`} style={delay(8)}>
+      <section data-bg-solid className={`rounded-2xl ${surface} ${enter}`}>
         <div className={`flex flex-col gap-3 border-b px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between ${hairline}`}>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <p className={kicker}>Holding structure</p>
@@ -910,10 +1169,10 @@ export default function Home() {
           {assetsLoading ? (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
-                <Bone key={i} className="h-[62px]" />
+                <Bone key={i} className="h-[112px]" />
               ))}
             </div>
-          ) : roots.length === 0 ? (
+          ) : scored.length === 0 ? (
             <p className={`px-2 py-6 text-center text-[12px] ${textMuted}`}>
               No entities yet.{" "}
               <Link to="/assets" className={accentText}>
@@ -921,45 +1180,110 @@ export default function Home() {
               </Link>
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-              {roots.map((e) => (
-                <Link
-                  key={e.id}
-                  to={`/assets/${e.id}`}
-                  className={`group flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${hairline} ${
-                    isDark ? "bg-white/[0.015] hover:border-white/[0.16] hover:bg-white/[0.04]" : "bg-white hover:border-gray-300 hover:bg-gray-50/70"
-                  }`}
-                >
-                  <Ring score={e.score} size={36} stroke={2.75} isDark={isDark} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px] font-medium">{e.name}</span>
-                    <span className={`mt-0.5 flex items-center gap-1.5 text-[11px] ${textMuted}`}>
-                      <span
-                        className={`rounded px-1 py-px font-mono text-[9.5px] tracking-[0.04em] ${
-                          e.type === "C-Corp"
-                            ? isDark
-                              ? "bg-[#818cf8]/12 text-[#a5b4fc]"
-                              : "bg-[#4f46e5]/[0.07] text-[#4f46e5]"
-                            : isDark
-                              ? "bg-white/[0.06] text-gray-300"
-                              : "bg-gray-100 text-gray-600"
+            <div className={lateAssets}>
+              {structure.chains.map((c) => (
+                <div key={c.links[0].id} className={`mb-3 flex flex-col items-start gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-y-2 ${enter}`}>
+                  {c.links.map((e, i) => (
+                    <span
+                      key={e.id}
+                      className="flex min-w-0 max-w-full items-center gap-1.5 pl-[calc(var(--i)*16px)] sm:pl-0"
+                      style={{ ["--i" as string]: Math.max(0, i - 1) } as CSSProperties}
+                    >
+                      {i > 0 && <Icon name="chevron" className={`hidden h-3 w-3 shrink-0 sm:block ${textMuted}`} strokeWidth={2} />}
+                      {i > 0 && <span aria-hidden className={`ml-[9px] h-3 w-2.5 shrink-0 -translate-y-1.5 rounded-bl-[5px] border-b border-l sm:hidden ${guide}`} />}
+                      <Link
+                        to={`/assets/${e.id}`}
+                        title={`${e.name} · ${e.score}% complete`}
+                        className={`flex min-w-0 items-center gap-2 rounded-full border py-1 pl-1 pr-3 transition-colors ${hairline} ${
+                          isDark ? "bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.05]" : "bg-gray-50/80 hover:border-gray-300 hover:bg-white"
                         }`}
                       >
-                        {e.type}
-                      </span>
-                      <span className="truncate">
-                        {e.state || "No state"}
-                        {e.subs ? ` · ${e.subs} sub${e.subs === 1 ? "" : "s"}` : ""}
-                      </span>
+                        <Ring score={e.score} size={22} stroke={2} isDark={isDark} label={false} />
+                        <span className="truncate text-[12px] font-medium">{e.name}</span>
+                      </Link>
                     </span>
+                  ))}
+                  <span className={`pl-1 text-[11px] sm:pl-1.5 ${textMuted}`}>
+                    holds {c.holds} {c.holds === 1 ? "company" : "companies"} · {c.total} entities in all
                   </span>
-                  <Icon
-                    name="arrowUpRight"
-                    className={`h-3.5 w-3.5 shrink-0 ${textMuted} opacity-0 transition-opacity group-hover:opacity-100`}
-                    strokeWidth={2}
-                  />
-                </Link>
+                </div>
               ))}
+              <Masonry
+                items={structure.groups}
+                weight={groupWeight}
+                minWidth={240}
+                gap={12}
+                render={(g, stretch) => (
+                  <div
+                    key={g.key}
+                    className={`flex flex-col overflow-hidden rounded-xl border ${stretch ? "flex-1" : ""} ${hairline} ${isDark ? "bg-white/[0.015]" : "bg-white"} ${enter}`}
+                  >
+                    {g.head ? (
+                      <Link
+                        to={`/assets/${g.head.id}`}
+                        className={`group flex min-w-0 items-center gap-2.5 px-3 py-2.5 transition-colors ${rowHover}`}
+                      >
+                        <Ring score={g.head.score} size={30} stroke={2.5} isDark={isDark} />
+                        <span className="min-w-0 flex-1">
+                          <span className="line-clamp-2 text-[12.5px] font-medium leading-[1.3]">{g.head.name}</span>
+                          <span className={`block truncate text-[11px] ${textMuted}`}>{g.caption}</span>
+                        </span>
+                        <Icon
+                          name="arrowUpRight"
+                          className={`h-3.5 w-3.5 shrink-0 ${textMuted} opacity-0 transition-opacity group-hover:opacity-100`}
+                          strokeWidth={2}
+                        />
+                      </Link>
+                    ) : (
+                      <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
+                        <span className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full ${toneTile.neutral}`}>
+                          <Icon name="building" className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[12.5px] font-medium">{g.title}</span>
+                          <span className={`block truncate text-[11px] ${textMuted}`}>{g.caption}</span>
+                        </span>
+                      </div>
+                    )}
+                    <ul className={`border-t px-1.5 py-1.5 ${hairline}`}>
+                      {g.rows.map(({ e, depth }, i) => {
+                        const next = g.rows.slice(i + 1).find((r) => r.depth <= depth);
+                        const lastSibling = !next || next.depth < depth;
+                        return (
+                        <li key={e.id} style={{ paddingLeft: depth * 14 }}>
+                          <Link
+                            to={`/assets/${e.id}`}
+                            title={`${e.name} · ${e.score}% complete`}
+                            className={`group relative flex min-w-0 items-center gap-2 rounded-lg py-[5px] pl-2 pr-1.5 transition-colors ${
+                              isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            {depth > 0 && (
+                              <>
+                                <span aria-hidden className={`absolute -left-[5px] top-0 h-1/2 w-[9px] rounded-bl-[5px] border-b border-l ${guide}`} />
+                                {!lastSibling && <span aria-hidden className={`absolute -left-[5px] top-1/2 bottom-0 border-l ${guide}`} />}
+                              </>
+                            )}
+                            <Ring score={e.score} size={16} stroke={2} isDark={isDark} label={false} />
+                            <span className="min-w-0 flex-1 truncate text-[12px]">{e.name}</span>
+                            {e.type === "C-Corp" && (
+                              <span
+                                className={`shrink-0 rounded px-1 py-px text-[10px] font-medium ${
+                                  isDark ? "bg-[#818cf8]/12 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]"
+                                }`}
+                              >
+                                C-Corp
+                              </span>
+                            )}
+                            <span className={`w-6 shrink-0 text-right text-[10.5px] tabular-nums ${textMuted}`}>{e.score}</span>
+                          </Link>
+                        </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              />
             </div>
           )}
         </div>
