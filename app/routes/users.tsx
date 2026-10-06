@@ -159,7 +159,7 @@ export default function Users() {
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const input = `px-3 py-2 rounded-lg text-sm border transition-colors focus:outline-none ${
+  const input = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border transition-colors focus:outline-none ${
     isDark
       ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
       : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
@@ -168,9 +168,11 @@ export default function Users() {
     isDark ? "text-gray-400" : "text-gray-500"
   }`;
   const td = `px-4 py-3 border-t ${rowBorder}`;
+  // Phones: each user is a stacked card; cells show their column name.
+  const stack = "max-sm:block max-sm:border-t-0 max-sm:px-0 max-sm:py-1 max-sm:before:block max-sm:before:text-[11px] max-sm:before:uppercase max-sm:before:tracking-wider max-sm:before:text-gray-500 max-sm:before:content-[attr(data-label)]";
 
   const tabCls = (active: boolean) =>
-    `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+    `flex items-center gap-2 px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer ${
       active
         ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
         : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
@@ -187,7 +189,8 @@ export default function Users() {
         </div>
         <button
           onClick={() => setAdding((v) => !v)}
-          className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+          aria-expanded={adding}
+          className={`shrink-0 px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer ${
             isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
           }`}
         >
@@ -205,13 +208,13 @@ export default function Users() {
       {tab === "all" && incoming.length > 0 && (
         <button
           onClick={() => setTab("incoming")}
-          className={`w-full flex items-center gap-3 rounded-lg px-4 py-3 mb-4 text-sm text-left transition-colors cursor-pointer ${
+          className={`w-full flex items-center gap-3 rounded-lg px-4 py-3 max-sm:min-h-[44px] mb-4 text-sm text-left transition-colors cursor-pointer ${
             isDark
               ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15"
               : "bg-amber-50 text-amber-800 hover:bg-amber-100"
           }`}
         >
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-amber-400 motion-safe:animate-pulse shrink-0" />
           <span className="flex-1">
             {incoming.length} {incoming.length === 1 ? "person is" : "people are"} waiting for approval
           </span>
@@ -222,13 +225,13 @@ export default function Users() {
       {adding && (
         <form onSubmit={addUser} className={`rounded-xl border p-5 mb-4 ${card}`}>
           <div className="grid gap-3 sm:grid-cols-4">
-            <input className={input} value={draft.name} placeholder="Name"
+            <input className={input} value={draft.name} placeholder="Name" aria-label="Name" autoComplete="off"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            <input className={input} value={draft.phone} placeholder="Phone"
+            <input className={input} value={draft.phone} placeholder="Phone" aria-label="Phone" type="tel" inputMode="tel"
               onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
-            <input className={input} value={draft.email} placeholder="Email"
+            <input className={input} value={draft.email} placeholder="Email" aria-label="Email" type="email"
               onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
-            <select className={`${input} cursor-pointer`} value={draft.role}
+            <select className={`${input} cursor-pointer`} value={draft.role} aria-label="Role"
               onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}>
               {(["admin", "member", "viewer", ...(canSetOwner ? ["owner"] : [])] as Role[]).map((r) => (
                 <option key={r} value={r}>{ROLE_LABELS[r]}</option>
@@ -236,7 +239,7 @@ export default function Users() {
             </select>
           </div>
           <button type="submit" disabled={busyId === "new"}
-            className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+            className={`mt-3 px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
               isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
             }`}>
             {busyId === "new" ? "Adding…" : "Add user"}
@@ -258,20 +261,22 @@ export default function Users() {
             </span>
           )}
         </button>
-        <div className="flex-1" />
+        <div className="flex-1 max-sm:hidden" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search name, email, phone…"
-          className={`${input} w-56`}
+          aria-label="Search users"
+          type="search"
+          className={`${input} w-56 max-sm:w-full`}
         />
       </div>
 
       {/* The spreadsheet */}
       <div className={`rounded-xl border overflow-hidden ${card}`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse min-w-[860px]">
-            <thead>
+        <div className="sm:overflow-x-auto">
+          <table className="w-full text-sm border-collapse max-sm:block sm:min-w-[860px]">
+            <thead className="max-sm:hidden">
               <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>
                 <th className={th}>Name</th>
                 <th className={th}>Email</th>
@@ -283,13 +288,13 @@ export default function Users() {
                 <th className={`${th} text-right`}>Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="max-sm:block">
               {loading && (
-                <tr><td colSpan={8} className={`${td} ${subtle}`}>Loading…</td></tr>
+                <tr className="max-sm:block"><td colSpan={8} className={`${td} ${subtle} max-sm:block max-sm:border-t-0`}>Loading…</td></tr>
               )}
               {!loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className={`${td} ${subtle}`}>
+                <tr className="max-sm:block">
+                  <td colSpan={8} className={`${td} ${subtle} max-sm:block max-sm:border-t-0`}>
                     {tab === "incoming" ? "No one is waiting for approval." : "No users match."}
                   </td>
                 </tr>
@@ -298,8 +303,11 @@ export default function Users() {
                 const self = user.id === me?.id;
                 const lockRole = busyId === user.id || self || (user.role === "owner" && !canSetOwner);
                 return (
-                  <tr key={user.id} className={isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/60"}>
-                    <td className={`${td} whitespace-nowrap`}>
+                  <tr
+                    key={user.id}
+                    className={`${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/60"} max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:gap-y-1 max-sm:border-t max-sm:first:border-t-0 max-sm:px-4 max-sm:py-3 ${rowBorder}`}
+                  >
+                    <td className={`${td} whitespace-nowrap max-sm:col-span-2 max-sm:block max-sm:border-t-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal`}>
                       <span className="flex items-center gap-2.5">
                         <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${isDark ? "bg-white/10" : "bg-black/5 text-gray-700"}`}>
                           {initialsFor(user)}
@@ -317,7 +325,7 @@ export default function Users() {
                             }}
                             placeholder="Full name"
                             aria-label={`Name for ${user.email ?? user.phoneFormatted ?? "user"}`}
-                            className={`h-7 w-60 max-w-full rounded-md border px-2 text-[13px] font-medium outline-none ${
+                            className={`h-7 w-60 max-w-full max-sm:h-[40px] max-sm:text-[16px] rounded-md border px-2 text-[13px] font-medium outline-none ${
                               isDark ? "border-white/20 bg-white/[0.04] text-white focus:border-white/40" : "border-gray-300 bg-white text-gray-900 focus:border-gray-500"
                             }`}
                           />
@@ -327,7 +335,7 @@ export default function Users() {
                             onClick={() => setRenaming({ id: user.id, name: user.name ?? "" })}
                             disabled={busyId === user.id || (user.role === "owner" && !canSetOwner && !self)}
                             title="Rename"
-                            className={`group inline-flex items-center gap-1.5 rounded-md text-left font-medium cursor-pointer disabled:cursor-default ${
+                            className={`group inline-flex items-center gap-1.5 max-sm:min-h-[40px] rounded-md text-left font-medium cursor-pointer disabled:cursor-default ${
                               isDark ? "hover:text-white" : "hover:text-gray-900"
                             }`}
                           >
@@ -340,16 +348,17 @@ export default function Users() {
                         )}
                       </span>
                     </td>
-                    <td className={`${td} whitespace-nowrap ${user.email ? "" : subtle}`}>{user.email ?? "—"}</td>
-                    <td className={`${td} whitespace-nowrap tabular-nums ${user.phone ? "" : subtle}`}>
+                    <td data-label="Email" className={`${td} whitespace-nowrap ${user.email ? "" : subtle} ${stack} max-sm:col-span-2 max-sm:whitespace-normal max-sm:break-all`}>{user.email ?? "—"}</td>
+                    <td data-label="Phone" className={`${td} whitespace-nowrap tabular-nums ${user.phone ? "" : subtle} ${stack}`}>
                       {user.phoneFormatted || user.phone || "—"}
                     </td>
-                    <td className={`${td} whitespace-nowrap`}>
+                    <td data-label="Role" className={`${td} whitespace-nowrap ${stack}`}>
                       <select
+                        aria-label={`Role for ${user.name || user.email || user.phoneFormatted || "user"}`}
                         value={user.role}
                         disabled={lockRole}
                         onChange={(e) => void mutate("PATCH", user, { role: e.target.value })}
-                        className={`px-2 py-1 rounded-md text-xs border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                        className={`px-2 py-1 max-sm:min-h-[40px] max-sm:text-[16px] rounded-md text-xs border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                           isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
                         }`}
                       >
@@ -358,28 +367,28 @@ export default function Users() {
                         ))}
                       </select>
                     </td>
-                    <td className={`${td} whitespace-nowrap`}>
+                    <td data-label="Status" className={`${td} whitespace-nowrap ${stack} max-sm:before:mb-1`}>
                       <span className={`px-2 py-1 rounded-md text-[11px] font-medium ${statusChip(user.status, isDark)}`}>
                         {user.status === "approved" ? "Active" : user.status === "denied" ? "Denied" : "Incoming"}
                       </span>
                     </td>
-                    <td className={`${td} whitespace-nowrap tabular-nums ${subtle}`}>{when(user.lastSeenAt ?? user.lastLoginAt)}</td>
-                    <td className={`${td} whitespace-nowrap tabular-nums ${subtle}`}>{when(user.createdAt)}</td>
-                    <td className={`${td} whitespace-nowrap text-right`}>
+                    <td data-label="Last active" className={`${td} whitespace-nowrap tabular-nums ${subtle} ${stack}`}>{when(user.lastSeenAt ?? user.lastLoginAt)}</td>
+                    <td data-label="Added" className={`${td} whitespace-nowrap tabular-nums ${subtle} ${stack}`}>{when(user.createdAt)}</td>
+                    <td className={`${td} whitespace-nowrap text-right max-sm:col-span-2 max-sm:block max-sm:border-t-0 max-sm:px-0 max-sm:pt-2 max-sm:pb-0 max-sm:text-left`}>
                       <span className="inline-flex items-center gap-1.5">
                         {user.status === "incoming" && (
                           <>
                             <button
                               disabled={busyId === user.id}
                               onClick={() => void mutate("PATCH", user, { status: "approved" })}
-                              className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors cursor-pointer disabled:opacity-50"
+                              className={`px-2.5 py-1 max-sm:min-h-[40px] max-sm:px-3.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${isDark ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
                             >
                               Approve
                             </button>
                             <button
                               disabled={busyId === user.id}
                               onClick={() => void mutate("PATCH", user, { status: "denied" })}
-                              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                              className={`px-2.5 py-1 max-sm:min-h-[40px] max-sm:px-3.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
                                 isDark ? "bg-white/5 text-gray-400 hover:bg-white/10" : "bg-black/5 text-gray-600 hover:bg-black/10"
                               }`}
                             >
@@ -391,7 +400,7 @@ export default function Users() {
                           <button
                             disabled={busyId === user.id || self}
                             onClick={() => void mutate("PATCH", user, { status: "denied" })}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                            className={`px-2.5 py-1 max-sm:min-h-[40px] max-sm:px-3.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                               isDark ? "bg-white/5 text-gray-400 hover:bg-white/10" : "bg-black/5 text-gray-600 hover:bg-black/10"
                             }`}
                           >
@@ -402,7 +411,7 @@ export default function Users() {
                           <button
                             disabled={busyId === user.id}
                             onClick={() => void mutate("PATCH", user, { status: "approved" })}
-                            className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors cursor-pointer disabled:opacity-50"
+                            className={`px-2.5 py-1 max-sm:min-h-[40px] max-sm:px-3.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${isDark ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
                           >
                             Restore
                           </button>
@@ -415,7 +424,8 @@ export default function Users() {
                             }
                           }}
                           title="Remove user"
-                          className={`p-1.5 rounded-md transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                          aria-label={`Remove ${user.name || user.email || user.phoneFormatted || "user"}`}
+                          className={`p-1.5 max-sm:inline-flex max-sm:min-h-[44px] max-sm:min-w-[44px] max-sm:items-center max-sm:justify-center rounded-md transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
                             isDark ? "text-gray-500 hover:text-red-400 hover:bg-white/5" : "text-gray-400 hover:text-red-600 hover:bg-black/5"
                           }`}
                         >

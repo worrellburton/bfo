@@ -307,7 +307,7 @@ export default function Login() {
                     setCode("");
                     setError("");
                   }}
-                  className="text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                  className="text-white/50 hover:text-white/80 transition-colors cursor-pointer min-h-[40px] -ml-1 px-1"
                 >
                   ← Change
                 </button>
@@ -315,7 +315,7 @@ export default function Login() {
                   type="button"
                   disabled={cooldown > 0 || busy}
                   onClick={() => void send(sentTo)}
-                  className="relative overflow-hidden px-3 py-1.5 rounded-full border border-white/10 text-white/40 hover:text-white/70 transition-colors cursor-pointer disabled:hover:text-white/40 disabled:cursor-not-allowed"
+                  className="relative overflow-hidden px-3 py-1.5 min-h-[40px] rounded-full border border-white/10 text-white/50 hover:text-white/80 transition-colors cursor-pointer disabled:hover:text-white/40 disabled:cursor-not-allowed"
                 >
                   {cooldown > 0 && (
                     <span
@@ -349,14 +349,14 @@ export default function Login() {
                   setCode("");
                   setError("");
                 }}
-                className="mt-5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                className="mt-3 min-h-[40px] px-2 text-xs text-white/50 hover:text-white/80 transition-colors cursor-pointer"
               >
                 ← Start over
               </button>
             </div>
           )}
 
-          {error && <p className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
+          {error && <p role="alert" className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
         </div>
       </div>
     </div>

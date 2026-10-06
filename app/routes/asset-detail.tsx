@@ -333,7 +333,7 @@ function ServicesDropdown({
     setOverIndex(null);
   };
   const sw = (on: boolean) =>
-    `relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${on ? (isDark ? "bg-[#818cf8]" : "bg-[#4f46e5]") : isDark ? "bg-white/15" : "bg-gray-300"}`;
+    `relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer max-sm:after:absolute max-sm:after:-inset-[15px] max-sm:after:content-[''] ${on ? (isDark ? "bg-[#818cf8]" : "bg-[#4f46e5]") : isDark ? "bg-white/15" : "bg-gray-300"}`;
   const knob = (on: boolean) =>
     `inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${on ? "translate-x-3.5" : "translate-x-0.5"}`;
   return (
@@ -342,7 +342,8 @@ function ServicesDropdown({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-2 text-xs h-7 px-3 rounded-lg border cursor-pointer transition-colors ${isDark ? "bg-white/[0.03] border-white/[0.12] text-gray-200 hover:bg-white/[0.06]" : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+        aria-expanded={open}
+        className={`flex items-center gap-2 text-xs h-7 max-sm:h-[40px] px-3 rounded-lg border cursor-pointer transition-colors ${isDark ? "bg-white/[0.03] border-white/[0.12] text-gray-200 hover:bg-white/[0.06]" : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
       >
         <span>{selected.length} service{selected.length === 1 ? "" : "s"} selected</span>
         <svg className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -406,7 +407,7 @@ export default function AssetDetail() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const inputCls = `${isDark ? "bg-white/[0.03] border-white/10 text-white focus:border-[#818cf8]/60" : "bg-white border-gray-200 text-gray-900 focus:border-[#4f46e5]/50"} border rounded-lg placeholder-gray-500 focus:outline-none transition-colors`;
+  const inputCls = `${isDark ? "bg-white/[0.03] border-white/10 text-white focus:border-[#818cf8]/60" : "bg-white border-gray-200 text-gray-900 focus:border-[#4f46e5]/50"} border rounded-lg placeholder-gray-500 focus:outline-none transition-colors max-sm:text-[16px]`;
   const cardCls = `${isDark ? "bg-white/[0.02] border-white/[0.08]" : "bg-white border-gray-200"} border rounded-lg`;
 
   // Design tokens: hairline surfaces, mono kickers, indigo accent used sparingly.
@@ -424,16 +425,19 @@ export default function AssetDetail() {
   const neutralTile = isDark ? "bg-white/[0.04] text-gray-400" : "bg-gray-100 text-gray-500";
   const rowBorder = isDark ? "border-white/[0.06]" : "border-gray-100";
   const rowHover = isDark ? "hover:bg-white/[0.025]" : "hover:bg-gray-50/80";
-  const btnBase = "inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed";
+  // Mobile hit areas: the root font is 11.9px, so mobile minimums are in px.
+  const hit = "relative max-sm:after:absolute max-sm:after:-inset-[15px] max-sm:after:content-['']";
+  const hitY = "relative max-sm:after:absolute max-sm:after:inset-x-0 max-sm:after:-inset-y-[13px] max-sm:after:content-['']";
+  const btnBase = "inline-flex items-center justify-center gap-1.5 h-8 max-sm:h-[40px] px-3 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed";
   const btnPrimary = `${btnBase} ${isDark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`;
   const btnOutline = `${btnBase} border ${isDark ? "border-white/[0.12] text-gray-200 hover:bg-white/[0.06]" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`;
   const btnGhostDanger = `${btnBase} ${isDark ? "text-red-400/90 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"}`;
-  const btnXs = "inline-flex items-center justify-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-40";
+  const btnXs = "inline-flex items-center justify-center gap-1 h-7 max-sm:h-[40px] px-2 max-sm:px-3 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer disabled:opacity-40";
   const btnXsPrimary = `${btnXs} ${isDark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`;
   const btnXsOutline = `${btnXs} border ${isDark ? "border-white/[0.1] text-gray-300 hover:bg-white/[0.06]" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`;
   const btnXsGhost = `${btnXs} ${isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"}`;
-  const iconBtn = `inline-flex items-center justify-center h-7 w-7 rounded-md transition-colors cursor-pointer disabled:opacity-40 ${isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"}`;
-  const iconBtnDanger = `inline-flex items-center justify-center h-7 w-7 rounded-md transition-colors cursor-pointer disabled:opacity-40 ${isDark ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-600 hover:bg-red-50"}`;
+  const iconBtn = `inline-flex items-center justify-center h-7 w-7 max-sm:h-[40px] max-sm:w-[40px] rounded-md transition-colors cursor-pointer disabled:opacity-40 ${isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.06]" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"}`;
+  const iconBtnDanger = `inline-flex items-center justify-center h-7 w-7 max-sm:h-[40px] max-sm:w-[40px] rounded-md transition-colors cursor-pointer disabled:opacity-40 ${isDark ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-600 hover:bg-red-50"}`;
   const switchOn = accentBg;
   const switchOff = isDark ? "bg-white/15" : "bg-gray-300";
   const [asset, setAsset] = useState<Asset | null>(null);
@@ -485,7 +489,13 @@ export default function AssetDetail() {
   const [filingNotes, setFilingNotes] = useState<string[]>([]);
   const [sorting, setSorting] = useState(0);
   // Set when the document reader is unavailable (e.g. the AI account is out of credit).
-  const [aiDown, setAiDown] = useState<string | null>(null);
+  const [aiDown, setAiDownState] = useState<string | null>(null);
+  // Mirrors aiDown so a running scan can tell, at the end, whether it could read anything.
+  const aiDownRef = useRef<string | null>(null);
+  const setAiDown = (v: string | null) => {
+    aiDownRef.current = v;
+    setAiDownState(v);
+  };
   // Live progress for "Scan existing documents", shown as a toast at the bottom.
   const [scan, setScan] = useState<{ total: number; done: number; current: string | null; notes: string[]; finished: boolean } | null>(null);
   const scanHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -550,10 +560,9 @@ export default function AssetDetail() {
 
       unsub1 = onValue(ref(db, `assets/${id}`), (snapshot) => {
         const data = snapshot.val();
-        if (data) {
-          setAsset(data as Asset);
-          setForm(data as Asset);
-        }
+        // The edit form is seeded when editing starts (startEditing), so a
+        // background write (auto-filing, enrichment) never wipes what's typed.
+        if (data) setAsset(data as Asset);
         setLoading(false);
       });
 
@@ -616,26 +625,43 @@ export default function AssetDetail() {
     };
   }, [id]);
 
+  // What the form started from — so Save only overrides fields the user
+  // changed, and keeps anything filled in the background meanwhile.
+  const editBaseRef = useRef<Partial<Asset>>({});
+  function startEditing() {
+    if (!asset) return;
+    // Edit with the entity's real type selected (old records say "LLC" for the trust).
+    const seed = { ...asset, type: entityType(asset) };
+    editBaseRef.current = seed;
+    setForm(seed);
+    setEditing(true);
+    setTimeout(() => document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
   async function handleSave() {
+    if (!form.name?.trim()) return;
+    const base = editBaseRef.current;
+    const live = assetRef.current ?? ({} as Partial<Asset>);
+    const pick = <K extends keyof Asset>(k: K) => ((form[k] ?? "") !== (base[k] ?? "") ? form[k] : live[k] ?? form[k]);
     const { db } = await import("../firebase");
     const { ref, update } = await import("firebase/database");
     await update(ref(db, `assets/${id}`), {
-      name: form.name,
+      name: String(pick("name") ?? "").trim(),
       type: form.type,
-      state: form.state,
-      ein: form.ein,
-      registeredAgent: form.registeredAgent || "",
-      address: form.address || "",
-      formationDate: form.formationDate || "",
-      status: form.status || "Active",
-      notes: form.notes || "",
-      llcType: form.llcType || "",
-      trustees: form.trustees || "",
-      grantors: form.grantors || "",
-      beneficiaries: form.beneficiaries || "",
-      stateLink: form.stateLink || "",
-      operatingAgreementDate: form.operatingAgreementDate || "",
-      articlesOfOrgDate: form.articlesOfOrgDate || "",
+      state: pick("state") || "",
+      ein: pick("ein") || "",
+      registeredAgent: pick("registeredAgent") || "",
+      address: pick("address") || "",
+      formationDate: pick("formationDate") || "",
+      status: pick("status") || "Active",
+      notes: pick("notes") || "",
+      llcType: pick("llcType") || "",
+      trustees: pick("trustees") || "",
+      grantors: pick("grantors") || "",
+      beneficiaries: pick("beneficiaries") || "",
+      stateLink: pick("stateLink") || "",
+      operatingAgreementDate: pick("operatingAgreementDate") || "",
+      articlesOfOrgDate: pick("articlesOfOrgDate") || "",
     });
     setEditing(false);
   }
@@ -659,20 +685,18 @@ export default function AssetDetail() {
     const doc = docs.find((d) => d.id === docId);
     const filedAs = FILING_KINDS.filter((k) => asset?.[k]?.docId === docId);
     if (!confirm(`Delete “${doc?.name ?? "this document"}”?${filedAs.length ? ` It is filed as ${filedAs.map((k) => filingTitle(k, asset?.type)).join(", ")} — that slot will be emptied.` : ""}`)) return;
-    if (filedAs.length) {
-      const { db, authReady } = await import("../firebase");
-      await authReady;
-      const { ref, update } = await import("firebase/database");
-      await update(ref(db, `assets/${id}`), Object.fromEntries(filedAs.map((k) => [k, null])));
-    }
     if (doc?.storagePath) {
       if (doc.storageProvider === "supabase") {
         try {
-          await authFetch("/api/documents/delete", {
+          const r = await authFetch("/api/documents/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: doc.storagePath }),
           });
+          if (r.status === 401 || r.status === 403) {
+            alert("You don't have permission to delete documents.");
+            return;
+          }
         } catch {
           // ignore
         }
@@ -690,7 +714,8 @@ export default function AssetDetail() {
     }
     const { db, authReady } = await import("../firebase");
     await authReady;
-    const { ref, remove } = await import("firebase/database");
+    const { ref, remove, update } = await import("firebase/database");
+    if (filedAs.length) await update(ref(db, `assets/${id}`), Object.fromEntries(filedAs.map((k) => [k, null])));
     await remove(ref(db, `assets/${id}/documents/${docId}`));
   }
 
@@ -1054,7 +1079,11 @@ export default function AssetDetail() {
             ? "None of the documents could be read (PDF or image needed)."
             : data?.error === "ai_unavailable"
               ? "Document reading is paused — the Anthropic account behind BFO is out of credit."
-              : "The check didn't finish — try again.",
+              : data?.error === "forbidden"
+                ? "Your role can view this entity but not run the check."
+                : data?.error === "rate_limited"
+                  ? "Too many checks at once — wait a minute and try again."
+                  : "The check didn't finish — try again.",
         );
       const result: Verification = { ...(data as Verification), recordAtCheck: record };
       const { db, authReady } = await import("../firebase");
@@ -1113,7 +1142,11 @@ export default function AssetDetail() {
     }
     setScan((sc) => (sc ? { ...sc, current: null, finished: true } : sc));
     scanHideTimer.current = setTimeout(() => setScan(null), 12000);
-    setFilingNotes(notes.length ? notes : ["Nothing new to file — no unfiled document matched an empty slot."]);
+    setFilingNotes(
+      notes.length
+        ? notes
+        : [aiDownRef.current ? "Couldn't read the documents — document reading is paused. Nothing new matched by name." : "Nothing new to file — no unfiled document matched an empty slot."],
+    );
   }
 
   // Upload several documents one after another. If a batch is already
@@ -1344,7 +1377,7 @@ export default function AssetDetail() {
     const { db } = await import("../firebase");
     const { ref, remove } = await import("firebase/database");
     await remove(ref(db, `assets/${id}`));
-    window.location.href = "/bfo/assets";
+    navigate("/assets");
   }
 
   async function updateCorpField(field: string, value: unknown) {
@@ -1514,9 +1547,9 @@ export default function AssetDetail() {
 
   const breadcrumb = (
     <nav aria-label="Breadcrumb" className={`flex items-center gap-2 ${kicker}`}>
-      <Link to="/assets" className={`inline-flex items-center gap-1 transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>
+      <Link to="/assets" className={`inline-flex items-center gap-1 max-sm:min-h-[40px] max-sm:pr-2 transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>
         <Icon name="chevronLeft" className="w-3 h-3" strokeWidth={2.25} />
-        Assets
+        Entities
       </Link>
       <span className={isDark ? "text-gray-700" : "text-gray-300"}>/</span>
       <span className={isDark ? "text-gray-400" : "text-gray-700"}>Entity</span>
@@ -1528,7 +1561,7 @@ export default function AssetDetail() {
       <div className="mx-auto max-w-[1400px]">
         <div className={`rounded-2xl ${surface} px-5 py-5 sm:px-6`}>
           <div className="flex items-center gap-2.5">
-            <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${accentBg}`} />
+            <span className={`h-1.5 w-1.5 rounded-full motion-safe:animate-pulse ${accentBg}`} />
             <span className={kicker}>Loading entity…</span>
           </div>
         </div>
@@ -1582,7 +1615,7 @@ export default function AssetDetail() {
     const slot = uploadState[kind];
     const typesLabel = accepted.map((t) => t.split("/")[1].toUpperCase()).join(", ");
     const picker = (
-      <input type="file" accept={accept} className="hidden" disabled={slot.uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadFile(kind, f); e.target.value = ""; }} />
+      <input type="file" accept={accept} className="sr-only" tabIndex={0} aria-label={`Upload ${title}`} disabled={slot.uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadFile(kind, f); e.target.value = ""; }} />
     );
     if (file) {
       // On file: one compact row.
@@ -1599,7 +1632,7 @@ export default function AssetDetail() {
                 href={file.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`mt-0.5 block truncate font-mono text-[10px] hover:underline ${textMuted}`}
+                className={`${hitY} mt-0.5 block truncate font-mono text-[10px] hover:underline ${textMuted}`}
                 title={file.fileName}
               >
                 {file.fileName}
@@ -1609,7 +1642,7 @@ export default function AssetDetail() {
               <a href={file.url} target="_blank" rel="noopener noreferrer" className={iconBtn} title="View" aria-label={`View ${title}`}>
                 <Icon name="external" />
               </a>
-              <label className={`${iconBtn} ${slot.uploading ? "opacity-40 pointer-events-none" : ""}`} title="Replace" aria-label={`Replace ${title}`}>
+              <label className={`${iconBtn} focus-within:ring-2 ${isDark ? "focus-within:ring-[#818cf8]/60" : "focus-within:ring-[#4f46e5]/50"} ${slot.uploading ? "opacity-40 pointer-events-none" : ""}`} title="Replace" aria-label={`Replace ${title}`}>
                 <Icon name="replace" />
                 {picker}
               </label>
@@ -1658,7 +1691,7 @@ export default function AssetDetail() {
                 }
                 handleUploadFile(kind, f);
               }}
-              className={`flex h-[56px] cursor-pointer items-center gap-3 rounded-lg border border-dashed px-3 transition-colors ${
+              className={`flex h-[56px] cursor-pointer items-center gap-3 rounded-lg border border-dashed px-3 transition-colors focus-within:ring-2 ${isDark ? "focus-within:ring-[#818cf8]/50" : "focus-within:ring-[#4f46e5]/40"} ${
                 slot.dragOver
                   ? isDark ? "border-[#818cf8]/70 bg-[#818cf8]/[0.08]" : "border-[#4f46e5]/60 bg-indigo-50"
                   : isDark ? "border-white/[0.12] hover:border-white/25 hover:bg-white/[0.02]" : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
@@ -1688,6 +1721,8 @@ export default function AssetDetail() {
   }
 
   type ContractForm = typeof contractForm;
+  // On phones the contracts table becomes stacked cards; each cell shows its column name.
+  const stackTd = "max-sm:block max-sm:px-4 max-sm:py-1.5 max-sm:before:mb-1 max-sm:before:block max-sm:before:text-[11px] max-sm:before:font-medium max-sm:before:text-gray-500 max-sm:before:content-[attr(data-label)]";
 
   function renderTermToggle(term: string, onChange: (next: string) => void) {
     const isAuto = term.toLowerCase().includes("auto-renew");
@@ -1698,7 +1733,7 @@ export default function AssetDetail() {
           role="switch"
           aria-checked={isAuto}
           onClick={() => onChange(isAuto ? "Annual, fixed term" : "Annual, auto-renewing")}
-          className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${isAuto ? switchOn : switchOff}`}
+          className={`${hit} inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${isAuto ? switchOn : switchOff}`}
         >
           <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isAuto ? "translate-x-3.5" : "translate-x-0.5"}`} />
         </button>
@@ -1718,7 +1753,7 @@ export default function AssetDetail() {
           role="switch"
           aria-checked={on}
           onClick={onToggle}
-          className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${on ? switchOn : switchOff}`}
+          className={`${hit} mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${on ? switchOn : switchOff}`}
         >
           <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}`} />
         </button>
@@ -1732,12 +1767,12 @@ export default function AssetDetail() {
 
   // Inline editor rows for a contract — shared by "New contract" and row edit.
   function renderContractFormRows(f: ContractForm, setF: (next: ContractForm) => void, onSave: () => void, onCancel: () => void, isNew: boolean) {
-    const cellInputCls = `w-full h-7 px-2 text-xs ${inputCls}`;
+    const cellInputCls = `w-full h-7 max-sm:h-[44px] px-2 text-xs ${inputCls}`;
     const editBg = isDark ? "bg-[#818cf8]/[0.04]" : "bg-indigo-50/40";
     return (
       <>
-        <tr className={`${isNew ? `border-t ${rowBorder}` : ""} ${editBg}`}>
-          <td className="px-4 py-2">
+        <tr className={`${isNew ? `border-t ${rowBorder}` : ""} ${editBg} max-sm:block max-sm:pt-2`}>
+          <td data-label="Counterparty" className={`px-4 py-2 ${stackTd}`}>
             <input
               value={f.counterparty}
               onChange={(e) => setF({ ...f, counterparty: e.target.value })}
@@ -1746,10 +1781,10 @@ export default function AssetDetail() {
               className={cellInputCls}
             />
           </td>
-          <td className="px-4 py-2">
+          <td data-label="Fee" className={`px-4 py-2 ${stackTd}`}>
             <input value={f.fee} onChange={(e) => setF({ ...f, fee: e.target.value })} placeholder={isNew ? "$500" : undefined} className={`${cellInputCls} min-w-[72px]`} />
           </td>
-          <td className="px-4 py-2">
+          <td data-label="Frequency" className={`px-4 py-2 ${stackTd}`}>
             <select value={f.frequency} onChange={(e) => setF({ ...f, frequency: e.target.value })} className={`${cellInputCls} min-w-[96px]`}>
               <option value="Monthly">Monthly</option>
               <option value="Quarterly">Quarterly</option>
@@ -1757,18 +1792,18 @@ export default function AssetDetail() {
               <option value="One-time">One-time</option>
             </select>
           </td>
-          <td className="px-4 py-2">
+          <td data-label="Effective" className={`px-4 py-2 ${stackTd}`}>
             <input type="date" value={f.effectiveDate} onChange={(e) => setF({ ...f, effectiveDate: e.target.value })} className={`${cellInputCls} min-w-[124px]`} />
           </td>
-          <td className="px-4 py-2">{renderTermToggle(f.term, (term) => setF({ ...f, term }))}</td>
-          <td className="px-4 py-2">
+          <td data-label="Term" className={`px-4 py-2 ${stackTd}`}>{renderTermToggle(f.term, (term) => setF({ ...f, term }))}</td>
+          <td data-label="Status" className={`px-4 py-2 ${stackTd}`}>
             <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as "draft" | "active" | "terminated" })} className={cellInputCls}>
               <option value="draft">draft</option>
               <option value="active">active</option>
               <option value="terminated">terminated</option>
             </select>
           </td>
-          <td className="px-4 py-2 text-right">
+          <td className="px-4 py-2 text-right max-sm:hidden">
             <div className="inline-flex items-center gap-1">
               <button onClick={onSave} disabled={!f.counterparty.trim()} className={btnXsPrimary}>
                 Save
@@ -1779,8 +1814,8 @@ export default function AssetDetail() {
             </div>
           </td>
         </tr>
-        <tr className={`${isNew ? "" : `border-b ${rowBorder}`} ${editBg}`}>
-          <td colSpan={7} className="px-4 pb-4 pt-1">
+        <tr className={`${isNew ? "" : `border-b ${rowBorder}`} ${editBg} max-sm:block`}>
+          <td colSpan={7} className="px-4 pb-4 pt-1 max-sm:block">
             <ServicesDropdown selected={f.services} onChange={(next) => setF({ ...f, services: next })} isDark={isDark} />
             {renderSwitchRow(
               f.referralCredit,
@@ -1794,6 +1829,15 @@ export default function AssetDetail() {
               `Letterhead: ${f.letterhead === "robert" ? "Robert Burton" : "BFO"}`,
               "Switches the contract masthead between BFO and Robert Burton.",
             )}
+            {/* Phones: Save sits after the services, at the end of the stacked form. */}
+            <div className="mt-4 flex items-center gap-2 sm:hidden">
+              <button onClick={onSave} disabled={!f.counterparty.trim()} className={btnXsPrimary}>
+                Save
+              </button>
+              <button onClick={onCancel} className={btnXsGhost}>
+                Cancel
+              </button>
+            </div>
           </td>
         </tr>
       </>
@@ -1837,6 +1881,8 @@ export default function AssetDetail() {
     value: asset.createdAt ? new Date(asset.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—",
   });
 
+  // Visible on hover, keyboard focus, and always on touch-size screens.
+  const corpRemoveCls = `${hit} text-xs cursor-pointer transition-opacity sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-gray-400 hover:text-red-400" : "text-gray-500 hover:text-red-600"}`;
   const chipBase = "inline-flex items-center gap-1.5 h-6 px-2 rounded-md border text-[11px] whitespace-nowrap";
   const chipNeutral = `${chipBase} ${isDark ? "border-white/[0.08] bg-white/[0.03] text-gray-300" : "border-gray-200 bg-gray-50 text-gray-600"}`;
   const statusIsActive = asset.status === "Active";
@@ -1850,7 +1896,7 @@ export default function AssetDetail() {
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
         {fmtDate(date) ? <span className="tabular-nums">{fmtDate(date)}</span> : <span className={textMuted}>Date not on record</span>}
         {file ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 text-[11px]  ${isDark ? "text-emerald-400" : "text-emerald-600"} hover:underline`}>
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className={`${hitY} inline-flex items-center gap-1 text-[11px]  ${isDark ? "text-emerald-400" : "text-emerald-600"} hover:underline`}>
             <Icon name="check" className="h-2.5 w-2.5" strokeWidth={2.5} />
             On file
           </a>
@@ -1873,7 +1919,7 @@ export default function AssetDetail() {
       {control}
     </div>
   );
-  const fieldInput = `w-full h-9 px-3 text-[13px] ${inputCls}`;
+  const fieldInput = `w-full h-9 max-sm:h-[44px] px-3 text-[13px] ${inputCls}`;
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">
@@ -1905,7 +1951,7 @@ export default function AssetDetail() {
                   )}
                   <span className={`${chipNeutral} ${asset.state ? "" : textMuted}`}>{asset.state || "No state"}</span>
                   {asset.ownerId && assetNames[asset.ownerId] && (
-                    <Link to={`/assets/${asset.ownerId}`} className={`${chipNeutral} transition-colors ${isDark ? "hover:border-white/20" : "hover:border-gray-300"}`}>
+                    <Link to={`/assets/${asset.ownerId}`} className={`${chipNeutral} ${hitY} transition-colors ${isDark ? "hover:border-white/20" : "hover:border-gray-300"}`}>
                       <span className={textMuted}>Owned by</span>
                       {assetNames[asset.ownerId]}
                     </Link>
@@ -1927,11 +1973,8 @@ export default function AssetDetail() {
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:pt-1">
               <button
-                onClick={() => {
-                  // Edit with the entity's real type selected (old records say "LLC" for the trust).
-                  if (!editing) setForm({ ...asset, type: entityType(asset) });
-                  setEditing(!editing);
-                }}
+                onClick={() => (editing ? setEditing(false) : startEditing())}
+                aria-expanded={editing}
                 className={btnOutline}
               >
                 <Icon name="edit" />
@@ -1962,7 +2005,7 @@ export default function AssetDetail() {
 
       {/* Key facts / Edit form */}
       {editing ? (
-        <section className={`rounded-2xl ${surface}`}>
+        <section id="entity-edit" className={`scroll-mt-20 lg:scroll-mt-6 rounded-2xl ${surface}`}>
           <header className={`flex items-center gap-2 border-b px-5 py-3.5 ${hairline}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${accentBg}`} />
             <span className={kicker}>Editing entity</span>
@@ -1981,7 +2024,8 @@ export default function AssetDetail() {
                     key={t}
                     type="button"
                     onClick={() => setForm({ ...form, type: t })}
-                    className={`h-7 rounded-md text-[12px] font-medium transition-colors cursor-pointer ${
+                    aria-pressed={form.type === t}
+                    className={`h-7 max-sm:h-[40px] rounded-md text-[12px] font-medium transition-colors cursor-pointer ${
                       form.type === t
                         ? isDark ? "bg-white text-gray-950" : "bg-gray-900 text-white"
                         : isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
@@ -2003,7 +2047,7 @@ export default function AssetDetail() {
             )}
             {field(
               entityType(form) === "Trust" ? "Governing law (state)" : "State of formation",
-              <input value={form.state || ""} onChange={(e) => setForm({ ...form, state: e.target.value })} placeholder="State of formation" className={fieldInput} />,
+              <input value={form.state || ""} onChange={(e) => setForm({ ...form, state: e.target.value })} placeholder={entityType(form) === "Trust" ? "e.g. Arizona" : "State of formation"} className={fieldInput} />,
             )}
             {field(
               "EIN",
@@ -2015,7 +2059,7 @@ export default function AssetDetail() {
             )}
             {field(
               entityType(form) === "Trust" ? "Mailing address" : "Principal address",
-              <input value={form.address || ""} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Principal address" className={fieldInput} />,
+              <input value={form.address || ""} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={entityType(form) === "Trust" ? "Mailing address" : "Principal address"} className={fieldInput} />,
             )}
             {field(
               entityType(form) === "Trust" ? "Trust date" : "Formation date",
@@ -2070,7 +2114,7 @@ export default function AssetDetail() {
             <button onClick={() => setEditing(false)} className={btnOutline}>
               Cancel
             </button>
-            <button onClick={handleSave} className={btnPrimary}>
+            <button onClick={handleSave} disabled={!form.name?.trim()} title={form.name?.trim() ? undefined : "The entity needs a name"} className={btnPrimary}>
               <Icon name="check" strokeWidth={2.25} />
               Save changes
             </button>
@@ -2090,7 +2134,7 @@ export default function AssetDetail() {
                   <button
                     type="button"
                     onClick={handleCopyEin}
-                    className={`inline-flex h-5 w-5 items-center justify-center rounded transition-colors cursor-pointer ${
+                    className={`${hit} inline-flex h-5 w-5 items-center justify-center rounded transition-colors cursor-pointer ${
                       copiedEin ? (isDark ? "text-emerald-400" : "text-emerald-600") : isDark ? "text-gray-500 hover:text-white hover:bg-white/[0.06]" : "text-gray-400 hover:text-gray-900 hover:bg-gray-100"
                     }`}
                     title={copiedEin ? "Copied" : "Copy EIN"}
@@ -2110,7 +2154,7 @@ export default function AssetDetail() {
                 {factCell("Tax classification", asset.llcType)}
                 {factCell("Beneficiaries", asset.beneficiaries)}
                 {factCell("Trust agreement", filedFact("trustAgreement", asset.formationDate))}
-                {factCell("Mailing address", asset.address)}
+                {factCell("Mailing address", asset.address, "col-span-2 md:col-span-4")}
               </>
             ) : (
               <>
@@ -2158,7 +2202,8 @@ export default function AssetDetail() {
                     <button
                       key={key}
                       onClick={() => setCorpTab(key)}
-                      className={`h-7 whitespace-nowrap rounded-md px-3 text-[12px] font-medium transition-colors cursor-pointer ${
+                      aria-pressed={corpTab === key}
+                      className={`h-7 max-sm:h-[40px] whitespace-nowrap rounded-md px-3 text-[12px] font-medium transition-colors cursor-pointer ${
                         corpTab === key
                           ? isDark ? "bg-white text-gray-950" : "bg-gray-900 text-white"
                           : isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.04]" : "text-gray-500 hover:text-gray-900 hover:bg-white"
@@ -2182,7 +2227,7 @@ export default function AssetDetail() {
                               <p className="text-[13px] font-medium">{d.name}</p>
                               <p className={`text-[11px] ${textMuted}`}>{d.title}{d.since ? ` — Since ${d.since}` : ""}</p>
                             </div>
-                            <button onClick={() => removeDirector(d.id)} className="text-gray-500 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">Remove</button>
+                            <button onClick={() => confirm(`Remove ${d.name} from the board?`) && removeDirector(d.id)} className={corpRemoveCls}>Remove</button>
                           </div>
                         ))}
                       </div>
@@ -2200,7 +2245,7 @@ export default function AssetDetail() {
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => setAddingDirector(true)} className={`inline-flex items-center gap-1 text-[12px] font-medium transition-opacity hover:opacity-80 cursor-pointer ${accentText}`}>
+                      <button onClick={() => setAddingDirector(true)} className={`inline-flex items-center gap-1 max-sm:min-h-[40px] text-[12px] font-medium transition-opacity hover:opacity-80 cursor-pointer ${accentText}`}>
                         <Icon name="plus" className="w-3 h-3" strokeWidth={2.25} /> Add Director
                       </button>
                     )}
@@ -2218,7 +2263,7 @@ export default function AssetDetail() {
                               <p className="text-[13px] font-medium">{o.name}</p>
                               <p className={`text-[11px] ${textMuted}`}>{o.title}{o.since ? ` — Since ${o.since}` : ""}</p>
                             </div>
-                            <button onClick={() => removeOfficer(o.id)} className="text-gray-500 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">Remove</button>
+                            <button onClick={() => confirm(`Remove ${o.name} as ${o.title}?`) && removeOfficer(o.id)} className={corpRemoveCls}>Remove</button>
                           </div>
                         ))}
                       </div>
@@ -2236,7 +2281,7 @@ export default function AssetDetail() {
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => setAddingOfficer(true)} className={`inline-flex items-center gap-1 text-[12px] font-medium transition-opacity hover:opacity-80 cursor-pointer ${accentText}`}>
+                      <button onClick={() => setAddingOfficer(true)} className={`inline-flex items-center gap-1 max-sm:min-h-[40px] text-[12px] font-medium transition-opacity hover:opacity-80 cursor-pointer ${accentText}`}>
                         <Icon name="plus" className="w-3 h-3" strokeWidth={2.25} /> Add Officer
                       </button>
                     )}
@@ -2266,7 +2311,7 @@ export default function AssetDetail() {
                                 <td className={`py-2 pr-3 ${textSoft}`}>{s.class}</td>
                                 <td className={`py-2 pr-3 tabular-nums ${textSoft}`}>{s.percentage}%</td>
                                 <td className="py-2">
-                                  <button onClick={() => removeShareholder(s.id)} className="text-gray-500 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">Remove</button>
+                                  <button onClick={() => confirm(`Remove ${s.name} from the shareholders?`) && removeShareholder(s.id)} className={corpRemoveCls}>Remove</button>
                                 </td>
                               </tr>
                             ))}
@@ -2294,7 +2339,7 @@ export default function AssetDetail() {
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => setAddingShareholder(true)} className={`inline-flex items-center gap-1 text-[12px] font-medium transition-opacity hover:opacity-80 cursor-pointer ${accentText}`}>
+                      <button onClick={() => setAddingShareholder(true)} className={`inline-flex items-center gap-1 max-sm:min-h-[40px] text-[12px] font-medium transition-opacity hover:opacity-80 cursor-pointer ${accentText}`}>
                         <Icon name="plus" className="w-3 h-3" strokeWidth={2.25} /> Add Shareholder
                       </button>
                     )}
@@ -2371,7 +2416,7 @@ export default function AssetDetail() {
                           {corpData.annualReportDue && (
                             <div className="flex justify-between text-xs">
                               <span className={textSoft}>Annual Report</span>
-                              <span className={`tabular-nums ${new Date(corpData.annualReportDue) < new Date() ? "text-red-400" : "text-green-400"}`}>
+                              <span className={`tabular-nums ${new Date(corpData.annualReportDue) < new Date() ? (isDark ? "text-red-400" : "text-red-600") : isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                                 {corpData.annualReportDue}
                               </span>
                             </div>
@@ -2379,7 +2424,7 @@ export default function AssetDetail() {
                           {corpData.nextBoardMeeting && (
                             <div className="flex justify-between text-xs">
                               <span className={textSoft}>Board Meeting</span>
-                              <span className={`tabular-nums ${new Date(corpData.nextBoardMeeting) < new Date() ? "text-red-400" : "text-green-400"}`}>
+                              <span className={`tabular-nums ${new Date(corpData.nextBoardMeeting) < new Date() ? (isDark ? "text-red-400" : "text-red-600") : isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                                 {corpData.nextBoardMeeting}
                               </span>
                             </div>
@@ -2432,9 +2477,9 @@ export default function AssetDetail() {
                     </button>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[960px] text-sm">
-                      <thead>
+                  <div className="sm:overflow-x-auto">
+                    <table className="w-full text-sm max-sm:block sm:min-w-[960px]">
+                      <thead className="max-sm:hidden">
                         <tr className={`border-b ${hairline} ${isDark ? "bg-white/[0.015]" : "bg-gray-50/60"}`}>
                           <th className={`w-[28%] px-4 py-2.5 text-left font-normal ${kicker}`}>Counterparty</th>
                           <th className={`px-4 py-2.5 text-left font-normal ${kicker}`}>Fee</th>
@@ -2445,30 +2490,31 @@ export default function AssetDetail() {
                           <th className={`px-4 py-2.5 text-right font-normal ${kicker}`}>Actions</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="max-sm:block">
                         {contracts.map((contract) =>
                           editingContractId === contract.id ? (
                             <Fragment key={contract.id}>
                               {renderContractFormRows(editContractForm, setEditContractForm, saveEditContract, () => setEditingContractId(null), false)}
                             </Fragment>
                           ) : (
-                            <tr key={contract.id} className={`border-b last:border-b-0 ${rowBorder} ${rowHover} transition-colors`}>
-                              <td className="px-4 py-3">
+                            <tr key={contract.id} className={`border-b last:border-b-0 ${rowBorder} ${rowHover} transition-colors max-sm:grid max-sm:grid-cols-2 max-sm:py-2`}>
+                              <td className="px-4 py-3 max-sm:col-span-2 max-sm:pb-1">
                                 <p className="text-[13px] font-medium leading-tight">{contract.counterparty}</p>
                                 <p className={`mt-0.5 text-[11px] ${textMuted}`}>
                                   MSA — {asset.name} &rarr; {contract.counterparty}
                                 </p>
                               </td>
-                              <td className="px-4 py-3 text-[13px] tabular-nums">{contract.fee}</td>
-                              <td className={`px-4 py-3 text-[13px] ${textSoft}`}>{contract.frequency}</td>
-                              <td className={`whitespace-nowrap px-4 py-3 text-[12px] tabular-nums ${textSoft}`}>{fmtDate(contract.effectiveDate)}</td>
-                              <td className={`px-4 py-3 text-[12px] ${textSoft}`}>{contract.term}</td>
-                              <td className="px-4 py-3">
+                              <td data-label="Fee" className={`px-4 py-3 text-[13px] tabular-nums ${stackTd}`}>{contract.fee}</td>
+                              <td data-label="Frequency" className={`px-4 py-3 text-[13px] ${textSoft} ${stackTd}`}>{contract.frequency}</td>
+                              <td data-label="Effective" className={`whitespace-nowrap px-4 py-3 text-[12px] tabular-nums ${textSoft} ${stackTd}`}>{fmtDate(contract.effectiveDate)}</td>
+                              <td data-label="Term" className={`px-4 py-3 text-[12px] ${textSoft} ${stackTd}`}>{contract.term}</td>
+                              <td data-label="Status" className={`px-4 py-3 ${stackTd} max-sm:col-span-2`}>
                                 <div className="relative inline-flex">
                                   <select
                                     value={contract.status}
                                     onChange={(e) => updateContractStatus(contract.id, e.target.value as "draft" | "active" | "terminated")}
-                                    className={`h-6 appearance-none rounded-full border pl-2.5 pr-6 text-[11px]  outline-none cursor-pointer ${statusPillCls(contract.status)} ${
+                                    aria-label={`Status of the MSA with ${contract.counterparty}`}
+                                    className={`h-6 max-sm:h-[40px] max-sm:text-[16px] appearance-none rounded-full border pl-2.5 pr-6 max-sm:pl-3.5 max-sm:pr-8 text-[11px]  outline-none cursor-pointer ${statusPillCls(contract.status)} ${
                                       isDark ? "[&_option]:bg-[#111118] [&_option]:text-gray-200" : "[&_option]:bg-white [&_option]:text-gray-900"
                                     }`}
                                   >
@@ -2481,8 +2527,8 @@ export default function AssetDetail() {
                                   </span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-right">
-                                <div className="inline-flex items-center gap-1">
+                              <td className="px-4 py-3 text-right max-sm:col-span-2 max-sm:pt-2 max-sm:text-left">
+                                <div className="inline-flex items-center gap-1 max-sm:gap-2">
                                   <button onClick={() => startEditContract(contract)} className={btnXsOutline} title="Edit">
                                     <Icon name="edit" className="w-3 h-3" />
                                     Edit
@@ -2535,7 +2581,7 @@ export default function AssetDetail() {
                   setDocDrop((s) => ({ ...s, dragOver: false }));
                   handleUploadDocs(Array.from(e.dataTransfer.files ?? []));
                 }}
-                className={`flex min-h-[60px] cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-2.5 transition-colors ${
+                className={`flex min-h-[60px] cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-2.5 transition-colors focus-within:ring-2 ${isDark ? "focus-within:ring-[#818cf8]/50" : "focus-within:ring-[#4f46e5]/40"} ${
                   docDrop.dragOver
                     ? isDark ? "border-[#818cf8]/70 bg-[#818cf8]/[0.08]" : "border-[#4f46e5]/60 bg-indigo-50"
                     : isDark ? "border-white/[0.12] hover:border-white/25 hover:bg-white/[0.02]" : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
@@ -2544,7 +2590,8 @@ export default function AssetDetail() {
                 <input
                   type="file"
                   multiple
-                  className="hidden"
+                  aria-label="Upload documents"
+                  className="sr-only"
                   onChange={(e) => {
                     // Copy before resetting the input — the FileList is live.
                     const files = Array.from(e.target.files ?? []);
@@ -2589,7 +2636,7 @@ export default function AssetDetail() {
                 <div className={`mt-2.5 rounded-lg border px-3 py-2 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50/70"}`}>
                   {sorting > 0 && (
                     <p className={`flex items-center gap-2 text-[11px] ${textMuted}`}>
-                      <span className={`h-1.5 w-1.5 animate-pulse rounded-full ${accentBg}`} />
+                      <span className={`h-1.5 w-1.5 motion-safe:animate-pulse rounded-full ${accentBg}`} />
                       Reading {sorting} document{sorting === 1 ? "" : "s"} to file {sorting === 1 ? "it" : "them"}…
                     </p>
                   )}
@@ -2600,7 +2647,7 @@ export default function AssetDetail() {
                     </p>
                   ))}
                   {sorting === 0 && filingNotes.length > 0 && (
-                    <button type="button" onClick={() => setFilingNotes([])} className={`mt-1 cursor-pointer text-[10.5px] ${textMuted} hover:underline`}>
+                    <button type="button" onClick={() => setFilingNotes([])} className={`mt-1 cursor-pointer text-[10.5px] max-sm:min-h-[40px] max-sm:pr-3 ${textMuted} hover:underline`}>
                       Dismiss
                     </button>
                   )}
@@ -2612,7 +2659,7 @@ export default function AssetDetail() {
                 type="button"
                 onClick={() => setShowLinkForm((v) => !v)}
                 aria-expanded={showLinkForm}
-                className={`mt-2.5 inline-flex items-center gap-1.5 text-[11px] transition-colors cursor-pointer ${isDark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"}`}
+                className={`mt-2.5 inline-flex items-center gap-1.5 max-sm:mt-1 max-sm:min-h-[40px] text-[11px] transition-colors cursor-pointer ${isDark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"}`}
               >
                 <Icon name="link" className="w-3 h-3" />
                 {showLinkForm ? "Hide external link" : "Or add an external link instead"}
@@ -2653,7 +2700,7 @@ export default function AssetDetail() {
                             href={doc.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`block truncate text-[13px] font-medium transition-colors ${isDark ? "text-gray-100 hover:text-[#a5b4fc]" : "text-gray-900 hover:text-[#4f46e5]"}`}
+                            className={`${hitY} block truncate text-[13px] font-medium transition-colors ${isDark ? "text-gray-100 hover:text-[#a5b4fc]" : "text-gray-900 hover:text-[#4f46e5]"}`}
                             title={doc.name}
                           >
                             {doc.name}
@@ -2745,9 +2792,10 @@ export default function AssetDetail() {
                     onClick={() => {
                       if (item.done) return;
                       if (item.filing) document.getElementById(`filing-${item.key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      else setEditing(true);
+                      else if (!editing) startEditing();
+                      else document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
-                    className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-[12px] transition-colors ${
+                    className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 max-sm:min-h-[40px] text-left text-[12px] transition-colors ${
                       item.done ? "cursor-default" : `cursor-pointer ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"}`
                     }`}
                   >
@@ -2770,7 +2818,7 @@ export default function AssetDetail() {
                   <button
                     type="button"
                     onClick={() => setShowDone((v) => !v)}
-                    className={`w-full cursor-pointer rounded-md px-3 py-1.5 text-left text-[11px]  transition-colors ${textMuted} ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+                    className={`w-full cursor-pointer rounded-md px-3 py-1.5 max-sm:min-h-[40px] text-left text-[11px]  transition-colors ${textMuted} ${isDark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
                   >
                     {showDone ? "Hide completed" : `Show ${checklist.length - missing.length} completed`}
                   </button>
@@ -2826,7 +2874,7 @@ export default function AssetDetail() {
                 {verifying && (
                   <div className="px-5 py-4">
                     <div className={`h-1 overflow-hidden rounded-full ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
-                      <div className={`h-full w-1/3 animate-[verify-scan_1.4s_ease-in-out_infinite] rounded-full ${accentBg}`} />
+                      <div className={`h-full w-1/3 motion-safe:animate-[verify-scan_1.4s_ease-in-out_infinite] rounded-full ${accentBg}`} />
                     </div>
                     <p className={`mt-2.5 text-[11px] leading-snug ${textMuted}`}>
                       Claude is reading the filings and comparing them with this record — ownership, EIN, dates, addresses. This can take a minute.
@@ -2918,7 +2966,7 @@ export default function AssetDetail() {
                         <button
                           type="button"
                           onClick={() => setShowMatches((x) => !x)}
-                          className={`inline-flex cursor-pointer items-center gap-1.5 text-[11px]  ${isDark ? "text-emerald-400" : "text-emerald-600"}`}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 max-sm:min-h-[40px] text-[11px]  ${isDark ? "text-emerald-400" : "text-emerald-600"}`}
                         >
                           <Icon name="check" className="h-3 w-3" strokeWidth={2.5} />
                           {matched.length} field{matched.length === 1 ? "" : "s"} confirmed
@@ -2966,10 +3014,10 @@ export default function AssetDetail() {
                     <button
                       type="button"
                       onClick={() => void scanLibrary()}
-                      disabled={sorting > 0}
-                      className={`cursor-pointer font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
+                      disabled={sorting > 0 || (!!scan && !scan.finished)}
+                      className={`${hitY} cursor-pointer font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
                     >
-                      {sorting > 0 ? "Reading documents…" : "Scan existing documents"}
+                      {sorting > 0 || (scan && !scan.finished) ? "Reading documents…" : "Scan existing documents"}
                     </button>
                   </>
                 )}
@@ -2990,7 +3038,7 @@ export default function AssetDetail() {
           <div
             role="status"
             aria-live="polite"
-            className="fixed inset-x-0 z-50 flex justify-center px-4 pointer-events-none bottom-[calc(6.5rem+env(safe-area-inset-bottom))] lg:bottom-6"
+            className="fixed inset-x-0 z-50 flex justify-center px-4 pointer-events-none bottom-[calc(1rem+env(safe-area-inset-bottom))] lg:bottom-6"
           >
             <div
               className={`pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-xl motion-safe:animate-[scan-toast-in_320ms_cubic-bezier(0.16,1,0.3,1)_both] ${
@@ -3011,7 +3059,9 @@ export default function AssetDetail() {
                     {finished
                       ? filed.length
                         ? `Done — ${filed.length} update${filed.length === 1 ? "" : "s"}`
-                        : "Done — nothing new found"
+                        : aiDown
+                          ? "Paused — nothing filed"
+                          : "Done — nothing new found"
                       : scan
                         ? `Reading documents · ${Math.min(done + 1, total)} of ${total}`
                         : `Reading ${sorting} document${sorting === 1 ? "" : "s"}…`}
@@ -3031,7 +3081,7 @@ export default function AssetDetail() {
                     type="button"
                     onClick={() => setScan(null)}
                     aria-label="Dismiss"
-                    className={`-mr-1 grid h-6 w-6 place-items-center rounded-md transition-colors cursor-pointer ${isDark ? "text-gray-500 hover:bg-white/10 hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"}`}
+                    className={`-mr-1 grid h-6 w-6 max-sm:-my-2 max-sm:-mr-2.5 max-sm:h-[40px] max-sm:w-[40px] place-items-center rounded-md transition-colors cursor-pointer ${isDark ? "text-gray-500 hover:bg-white/10 hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"}`}
                   >
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>

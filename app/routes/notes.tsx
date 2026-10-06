@@ -68,6 +68,8 @@ export default function Notes() {
   }
 
   async function handleDelete(id: string) {
+    const note = notes.find((n) => n.id === id);
+    if (!confirm(`Delete “${note?.title ?? "this note"}”?`)) return;
     const { db } = await import("../firebase");
     const { ref, remove } = await import("firebase/database");
     await remove(ref(db, "notes/" + id));
@@ -83,20 +85,22 @@ export default function Notes() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title"
+          aria-label="Note title"
           required
-          className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"}`}
+          className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg max-sm:min-h-[44px] max-sm:text-[16px] ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"}`}
         />
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="Write your note..."
+          aria-label="Note"
           required
           rows={3}
-          className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"} resize-none`}
+          className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg max-sm:min-h-[44px] max-sm:text-[16px] ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"} resize-none`}
         />
         <button
           type="submit"
-          className={`px-5 py-2 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"} font-medium rounded-lg transition-colors cursor-pointer`}
+          className={`px-5 py-2 max-sm:min-h-[40px] ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"} font-medium rounded-lg transition-colors cursor-pointer`}
         >
           Add Note
         </button>
@@ -110,17 +114,18 @@ export default function Notes() {
         <div className="space-y-3 max-w-lg">
           {notes.map((note) => (
             <div key={note.id} className={`p-4 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg`}>
-              <div className="flex justify-between items-start">
-                <h3 className="font-semibold">{note.title}</h3>
+              <div className="flex justify-between items-start gap-3">
+                <h3 className="font-semibold min-w-0 break-words">{note.title}</h3>
                 <button
                   onClick={() => handleDelete(note.id)}
-                  className="text-gray-500 hover:text-red-400 text-sm cursor-pointer"
+                  aria-label={`Delete ${note.title}`}
+                  className={`shrink-0 text-sm cursor-pointer max-sm:-my-2.5 max-sm:-mr-2 max-sm:min-h-[40px] max-sm:px-2 ${isDark ? "text-gray-400 hover:text-red-400" : "text-gray-500 hover:text-red-600"}`}
                 >
                   Delete
                 </button>
               </div>
-              {note.body && <p className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm mt-1`}>{note.body}</p>}
-              <small className="text-gray-600 text-xs mt-2 block">
+              {note.body && <p className={`${isDark ? "text-gray-400" : "text-gray-600"} text-sm mt-1 whitespace-pre-wrap break-words`}>{note.body}</p>}
+              <small className={`text-xs mt-2 block ${isDark ? "text-gray-500" : "text-gray-500"}`}>
                 {new Date(note.createdAt).toLocaleDateString()}
               </small>
             </div>

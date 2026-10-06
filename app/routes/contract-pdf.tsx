@@ -541,44 +541,47 @@ export default function ContractPDF() {
   return (
     <div className="h-full flex flex-col">
       {/* Header bar */}
-      <div className={`flex items-center justify-between mb-4`}>
-        <div className="flex items-center gap-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
           <Link
             to={`/assets/${id}`}
-            className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm inline-flex items-center gap-1`}
+            className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm inline-flex shrink-0 items-center gap-1 max-sm:min-h-[40px] max-sm:pr-1`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Back
           </Link>
-          <div>
-            <h1 className="text-lg font-bold">MSA — {asset.name} &rarr; {contract.counterparty}</h1>
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold break-words">MSA — {asset.name} &rarr; {contract.counterparty}</h1>
             <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
               {contract.fee}/{contract.frequency} &middot; {contract.status}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className={`flex rounded-lg overflow-hidden border mr-1 ${isDark ? "border-white/10" : "border-gray-200"}`}>
             <button
               onClick={() => setBrand("bfo")}
               title="Present the document as Burton Family Office"
-              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
+              aria-pressed={brand === "bfo"}
+              className={`px-3 py-2 max-sm:min-h-[40px] max-sm:min-w-[48px] text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
             >
               BFO
             </button>
             <button
               onClick={() => setBrand("robert")}
               title="Present the document as Robert Burton"
-              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${brand === "robert" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
+              aria-pressed={brand === "robert"}
+              className={`px-3 py-2 max-sm:min-h-[40px] text-sm cursor-pointer transition-colors ${brand === "robert" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
             >
               Robert Burton
             </button>
           </div>
           <button
             onClick={() => setShowSigForm(!showSigForm)}
-            className={`px-4 py-2 font-medium rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2 ${
+            aria-expanded={showSigForm}
+            className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2 ${
               isDark ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
             }`}
           >
@@ -590,7 +593,9 @@ export default function ContractPDF() {
           <button
             onClick={handleDownload}
             disabled={!pdfUrl}
-            className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm disabled:opacity-50 inline-flex items-center gap-2"
+            className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm disabled:opacity-50 inline-flex items-center gap-2 ${
+              isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
+            }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -607,7 +612,7 @@ export default function ContractPDF() {
           className={`mb-4 p-4 rounded-lg border ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}
         >
           <h3 className="text-sm font-semibold mb-3">Send for Signature</h3>
-          <div className="flex gap-3 items-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1">
               <label className={`text-xs block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Signer Name</label>
               <input
@@ -616,7 +621,7 @@ export default function ContractPDF() {
                 onChange={(e) => setSigName(e.target.value)}
                 placeholder="Full name"
                 required
-                className={`w-full px-3 py-2 text-sm rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`}
+                className={`w-full px-3 py-2 text-sm max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`}
               />
             </div>
             <div className="flex-1">
@@ -627,23 +632,27 @@ export default function ContractPDF() {
                 onChange={(e) => setSigEmail(e.target.value)}
                 placeholder="signer@email.com"
                 required
-                className={`w-full px-3 py-2 text-sm rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`}
+                className={`w-full px-3 py-2 text-sm max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`}
               />
             </div>
-            <button
-              type="submit"
-              disabled={sigSending}
-              className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer text-sm disabled:opacity-50 whitespace-nowrap"
-            >
-              {sigSending ? "Sending..." : "Send Request"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSigForm(false)}
-              className={`px-3 py-2 text-sm ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} cursor-pointer`}
-            >
-              Cancel
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={sigSending}
+                className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm disabled:opacity-50 whitespace-nowrap ${
+                  isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
+                }`}
+              >
+                {sigSending ? "Sending..." : "Send Request"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSigForm(false)}
+                className={`px-3 py-2 max-sm:min-h-[40px] text-sm ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} cursor-pointer`}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </form>
       )}
@@ -657,41 +666,43 @@ export default function ContractPDF() {
           {sigRequests.map((sig) => (
             <div
               key={sig.id}
-              className={`flex items-center justify-between px-4 py-3 border-b last:border-b-0 ${isDark ? "border-white/5" : "border-gray-100"} group`}
+              className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b last:border-b-0 ${isDark ? "border-white/5" : "border-gray-100"} group`}
             >
-              <div className="flex items-center gap-3">
-                <span className={`w-2 h-2 rounded-full ${
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`w-2 h-2 shrink-0 rounded-full ${
                   sig.status === "signed" ? "bg-green-400" : sig.status === "declined" ? "bg-red-400" : "bg-yellow-400"
                 }`} />
                 <div>
                   <p className="text-sm font-medium">{sig.signerName}</p>
-                  <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>{sig.email}</p>
+                  <p className={`text-xs break-all ${isDark ? "text-gray-500" : "text-gray-500"}`}>{sig.email}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-1 rounded font-medium ${
                   sig.status === "signed"
-                    ? "bg-green-500/20 text-green-400"
+                    ? isDark ? "bg-green-500/20 text-green-400" : "bg-green-50 text-green-700"
                     : sig.status === "declined"
-                    ? "bg-red-500/20 text-red-400"
+                    ? isDark ? "bg-red-500/20 text-red-400" : "bg-red-50 text-red-700"
                     : isDark ? "bg-yellow-500/20 text-yellow-400" : "bg-yellow-50 text-yellow-700"
                 }`}>
                   {sig.status}
                 </span>
-                <span className={`text-xs ${isDark ? "text-gray-600" : "text-gray-400"}`}>
+                <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>
                   {new Date(sig.sentAt).toLocaleDateString()}
                 </span>
                 {sig.status === "pending" && (
                   <button
                     onClick={() => updateSigStatus(sig.id, "signed")}
-                    className="text-xs text-green-400 hover:text-green-300 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                    className={`text-xs cursor-pointer transition-opacity max-sm:min-h-[40px] max-sm:px-2 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-green-400 hover:text-green-300" : "text-green-700 hover:text-green-800"}`}
                   >
                     Mark Signed
                   </button>
                 )}
                 <button
-                  onClick={() => removeSigRequest(sig.id)}
-                  className="text-xs text-red-400 hover:text-red-300 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => {
+                    if (confirm(`Remove the signature request for ${sig.signerName}?`)) void removeSigRequest(sig.id);
+                  }}
+                  className={`text-xs cursor-pointer transition-opacity max-sm:min-h-[40px] max-sm:px-2 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-red-400 hover:text-red-300" : "text-red-600 hover:text-red-700"}`}
                 >
                   Remove
                 </button>
@@ -702,8 +713,21 @@ export default function ContractPDF() {
       )}
 
       {/* PDF Viewer */}
+      {pdfUrl && (
+        <div className={`sm:hidden flex flex-col items-center gap-3 rounded-lg border px-5 py-8 text-center ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
+          <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>Phones can't preview the agreement inline.</p>
+          <a
+            href={pdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex min-h-[40px] items-center rounded-lg px-4 text-sm font-medium ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}`}
+          >
+            Open PDF
+          </a>
+        </div>
+      )}
       {pdfUrl ? (
-        <div className={`flex-1 rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`} style={{ minHeight: "700px" }}>
+        <div className={`max-sm:hidden flex-1 rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`} style={{ minHeight: "700px" }}>
           <iframe
             src={pdfUrl}
             className="w-full h-full"
@@ -712,7 +736,7 @@ export default function ContractPDF() {
           />
         </div>
       ) : (
-        <div className={`flex-1 flex items-center justify-center rounded-lg border ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`} style={{ minHeight: "700px" }}>
+        <div className={`flex-1 flex items-center justify-center rounded-lg border min-h-[240px] sm:min-h-[700px] ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
           <p className="text-gray-500">Generating PDF...</p>
         </div>
       )}

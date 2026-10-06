@@ -136,31 +136,35 @@ export default function MSAs() {
   const subText = isDark ? "text-gray-500" : "text-gray-500";
   const rowHover = isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50";
   const btn = isDark
-    ? "text-xs px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1.5"
-    : "text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-400 text-gray-600 hover:text-gray-900 transition-colors cursor-pointer inline-flex items-center gap-1.5";
+    ? "text-xs px-3 py-1.5 max-sm:min-h-[40px] rounded-lg border border-white/10 hover:border-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1.5"
+    : "text-xs px-3 py-1.5 max-sm:min-h-[40px] rounded-lg border border-gray-200 hover:border-gray-400 text-gray-600 hover:text-gray-900 transition-colors cursor-pointer inline-flex items-center gap-1.5";
   const btnActive = isDark
-    ? "text-xs px-3 py-1.5 rounded-lg border border-white/40 bg-white/10 text-white transition-colors cursor-pointer"
-    : "text-xs px-3 py-1.5 rounded-lg border border-gray-900 bg-gray-900 text-white transition-colors cursor-pointer";
+    ? "text-xs px-3 py-1.5 max-sm:min-h-[40px] rounded-lg border border-white/40 bg-white/10 text-white transition-colors cursor-pointer"
+    : "text-xs px-3 py-1.5 max-sm:min-h-[40px] rounded-lg border border-gray-900 bg-gray-900 text-white transition-colors cursor-pointer";
   const selectCls = isDark
-    ? "text-xs bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 focus:outline-none cursor-pointer"
-    : "text-xs bg-gray-100 border border-gray-300 text-gray-900 rounded-lg px-3 py-1.5 focus:outline-none cursor-pointer";
+    ? "text-xs max-sm:min-h-[40px] max-sm:text-[16px] bg-white/5 border border-white/10 text-white rounded-lg px-3 py-1.5 focus:outline-none cursor-pointer"
+    : "text-xs max-sm:min-h-[40px] max-sm:text-[16px] bg-gray-100 border border-gray-300 text-gray-900 rounded-lg px-3 py-1.5 focus:outline-none cursor-pointer";
   const th = `text-right py-2.5 px-3 font-semibold uppercase tracking-wider text-[10px] ${subText} whitespace-nowrap`;
-  const stickyCell = `sticky left-0 z-10 ${cardBg}`;
+  // Opaque so months scrolling underneath don't show through; narrower on phones.
+  const stickyBase = "sticky left-0 z-10 min-w-[150px] sm:min-w-[240px]";
+  const stickyCell = `${stickyBase} ${cardBg}`;
+  // Same tint as the header/footer rows, but opaque.
+  const stickyHead = `${stickyBase} ${isDark ? "bg-[#151515]" : "bg-gray-50"}`;
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <h1 className="text-3xl font-bold">MSAs</h1>
-        <div className="flex items-center gap-2">
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Year" value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
             {years.map((y) => (
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
-          <button onClick={() => setActiveOnly((v) => !v)} className={activeOnly ? btnActive : btn}>
+          <button onClick={() => setActiveOnly((v) => !v)} aria-pressed={activeOnly} className={activeOnly ? btnActive : btn}>
             {activeOnly ? "Active only" : "All statuses"}
           </button>
-          <button onClick={handleExportCSV} disabled={rows.length === 0} className={`${btn} disabled:opacity-50`}>
+          <button onClick={handleExportCSV} disabled={rows.length === 0} aria-label="Export CSV" className={`${btn} disabled:opacity-50 disabled:cursor-not-allowed`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
@@ -188,7 +192,7 @@ export default function MSAs() {
             <table className="w-full text-xs">
               <thead>
                 <tr className={`${headBg} border-b ${cardBorder}`}>
-                  <th className={`text-left py-2.5 px-4 font-semibold uppercase tracking-wider text-[10px] ${subText} ${stickyCell} ${headBg}`} style={{ minWidth: "240px" }}>
+                  <th className={`text-left py-2.5 px-4 font-semibold uppercase tracking-wider text-[10px] ${subText} ${stickyHead}`}>
                     MSA
                   </th>
                   {MONTHS.map((mo) => (
@@ -200,7 +204,7 @@ export default function MSAs() {
               <tbody>
                 {rows.map((m, ri) => (
                   <tr key={m.id} className={`border-b last:border-b-0 ${cardBorder} ${rowHover} transition-colors`}>
-                    <td className={`py-2.5 px-4 ${stickyCell}`} style={{ minWidth: "240px" }}>
+                    <td className={`py-2.5 px-4 ${stickyCell}`}>
                       <div className="font-medium leading-tight">{m.client}</div>
                       <div className={`text-[10px] mt-0.5 ${subText}`}>
                         {m.feeRaw || fmtMoney(m.fee)}{m.frequency ? ` / ${m.frequency}` : ""}
@@ -223,7 +227,7 @@ export default function MSAs() {
               </tbody>
               <tfoot>
                 <tr className={`${headBg} border-t-2 ${cardBorder} font-semibold`}>
-                  <td className={`py-2.5 px-4 ${stickyCell} ${headBg}`} style={{ minWidth: "240px" }}>Total</td>
+                  <td className={`py-2.5 px-4 ${stickyHead}`}>Total</td>
                   {colTotals.map((t, i) => (
                     <td key={i} className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">{fmtMoney(t)}</td>
                   ))}

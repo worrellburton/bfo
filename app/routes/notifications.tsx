@@ -155,7 +155,7 @@ export default function Notifications() {
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
   const divider = isDark ? "border-white/5" : "border-gray-100";
-  const field = `px-3 py-2 rounded-lg text-sm border cursor-pointer focus:outline-none ${
+  const field = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border cursor-pointer focus:outline-none ${
     isDark
       ? "bg-white/[0.04] border-white/10 text-white"
       : "bg-white border-gray-200 text-gray-900"
@@ -248,13 +248,13 @@ export default function Notifications() {
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
                   {/* You always get your own report */}
-                  <span className={`px-3 py-1.5 rounded-full text-xs ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"}`}>
+                  <span className={`px-3 py-1.5 rounded-full text-xs break-all ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"}`}>
                     {getUser()?.email} <span className={subtle}>(you)</span>
                   </span>
                   {recipients.map((email) => (
                     <span
                       key={email}
-                      className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs border ${
+                      className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 max-sm:py-1.5 max-sm:pr-2.5 rounded-full text-xs border break-all ${
                         isDark ? "border-white/15 text-gray-300" : "border-gray-300 text-gray-700"
                       }`}
                     >
@@ -262,7 +262,8 @@ export default function Notifications() {
                       <button
                         onClick={() => removeRecipient(email)}
                         title="Remove"
-                        className={`p-0.5 rounded-full cursor-pointer ${isDark ? "hover:bg-white/10 text-gray-500 hover:text-white" : "hover:bg-black/10 text-gray-400 hover:text-black"}`}
+                        aria-label={`Remove ${email}`}
+                        className={`relative p-0.5 rounded-full cursor-pointer max-sm:after:absolute max-sm:after:-inset-[16px] max-sm:after:content-[''] ${isDark ? "hover:bg-white/10 text-gray-500 hover:text-white" : "hover:bg-black/10 text-gray-400 hover:text-black"}`}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -275,7 +276,8 @@ export default function Notifications() {
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   {team.filter((u) => u.email !== getUser()?.email && !recipients.includes(u.email!)).length > 0 && (
                     <select
-                      className={field}
+                      className={`${field} max-sm:w-full`}
+                      aria-label="Add a user as a recipient"
                       value=""
                       onChange={(e) => {
                         if (e.target.value) addRecipient(e.target.value);
@@ -292,7 +294,7 @@ export default function Notifications() {
                     </select>
                   )}
                   <form
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 max-sm:w-full"
                     onSubmit={(e) => {
                       e.preventDefault();
                       addRecipient(manualEmail);
@@ -306,12 +308,13 @@ export default function Notifications() {
                         setError("");
                       }}
                       placeholder="or add any email…"
-                      className={`${field} cursor-text w-56`}
+                      aria-label="Add a recipient by email"
+                      className={`${field} cursor-text w-56 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1`}
                     />
                     <button
                       type="submit"
                       disabled={!manualEmail.trim()}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 ${
+                      className={`px-3 py-2 max-sm:min-h-[44px] max-sm:px-4 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 ${
                         isDark ? "bg-white/10 text-white hover:bg-white/15" : "bg-black/5 text-gray-800 hover:bg-black/10"
                       }`}
                     >
@@ -326,11 +329,11 @@ export default function Notifications() {
               </div>
             )}
 
-            <div className={`mt-5 pt-4 border-t ${divider} flex items-center gap-3`}>
+            <div className={`mt-5 pt-4 border-t ${divider} flex flex-wrap items-center gap-3`}>
               <button
                 onClick={() => void sendSample()}
                 disabled={sampleState === "sending"}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                className={`px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
                   isDark
                     ? "border border-white/15 text-gray-200 hover:bg-white/10"
                     : "border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -341,7 +344,7 @@ export default function Notifications() {
               <button
                 onClick={() => void sendNow()}
                 disabled={broadcastState === "sending"}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                className={`px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
                   isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
                 }`}
               >
@@ -352,7 +355,7 @@ export default function Notifications() {
                     : `Send now${recipients.length ? ` (${recipients.length + 1})` : ""}`}
               </button>
               {sampleState === "sent" && (
-                <span className="text-xs text-emerald-400">
+                <span role="status" className={`text-xs ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                   Sent to {getUser()?.email} — check your inbox
                 </span>
               )}

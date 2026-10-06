@@ -271,14 +271,14 @@ export default function CompleteProfile() {
                   setCode("");
                   setError("");
                 }}
-                className="mt-4 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                className="mt-2 min-h-[40px] text-xs text-white/50 hover:text-white/80 transition-colors cursor-pointer"
               >
                 ← Change
               </button>
             </form>
           )}
 
-          {error && <p className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
+          {error && <p role="alert" className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
         </div>
       </div>
     </div>

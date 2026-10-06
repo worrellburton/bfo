@@ -13,7 +13,7 @@ export default function Settings() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-1">
-        <Link to="/home" className={`${isDark ? "text-gray-500 hover:text-white" : "text-gray-400 hover:text-gray-900"} transition-colors`}>
+        <Link to="/home" aria-label="Back to Home" className={`${isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-gray-900"} transition-colors max-sm:-ml-2.5 max-sm:inline-flex max-sm:h-[40px] max-sm:w-[40px] max-sm:items-center max-sm:justify-center`}>
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
@@ -42,7 +42,8 @@ export default function Settings() {
           <div className="flex gap-2">
             <button
               onClick={() => { if (isDark) toggle(); }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium transition-all ${
+              aria-pressed={!isDark}
+              className={`flex items-center gap-2 px-4 py-2.5 max-sm:min-h-[44px] rounded-lg text-xs font-medium transition-all ${
                 !isDark
                   ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
                   : isDark ? "border border-white/10 text-gray-400 hover:border-white/20" : "border border-gray-200 text-gray-500 hover:border-gray-400"
@@ -53,7 +54,8 @@ export default function Settings() {
             </button>
             <button
               onClick={() => { if (!isDark) toggle(); }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium transition-all ${
+              aria-pressed={isDark}
+              className={`flex items-center gap-2 px-4 py-2.5 max-sm:min-h-[44px] rounded-lg text-xs font-medium transition-all ${
                 isDark
                   ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                   : "border border-gray-200 text-gray-500 hover:border-gray-400"
@@ -70,7 +72,7 @@ export default function Settings() {
           <label className={`text-xs font-medium uppercase tracking-wider mb-3 block ${isDark ? "text-gray-400" : "text-gray-500"}`}>
             BF Access Background
           </label>
-          <p className={`text-xs mb-4 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+          <p className={`text-xs mb-4 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
             Choose a dynamic background for the public BF Access portal pages
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -80,7 +82,8 @@ export default function Settings() {
                 <button
                   key={bg.id}
                   onClick={() => setBackgroundId(bg.id)}
-                  className={`group relative rounded-xl overflow-hidden transition-all ${
+                  aria-pressed={selected}
+                  className={`group relative rounded-xl text-left overflow-hidden transition-all ${
                     selected
                       ? isDark
                         ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-black"
@@ -100,7 +103,7 @@ export default function Settings() {
                   </div>
                   <div className={`px-2.5 py-2 ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
                     <div className={`text-xs font-medium ${isDark ? "" : "text-gray-900"}`}>{bg.label}</div>
-                    <div className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>{bg.description}</div>
+                    <div className={`text-[10px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{bg.description}</div>
                   </div>
                 </button>
               );

@@ -535,6 +535,8 @@ export default function Office() {
   const animRef = useRef<number>(0);
   const posRef = useRef<Record<string, AgentPos>>({});
   const toastIdRef = useRef(0);
+  const agentsRef = useRef<Agent[]>([]);
+  agentsRef.current = agents;
 
   // Autonomous agent chatter
   const [chatters, setChatters] = useState<AgentChatter[]>([]);
@@ -629,7 +631,8 @@ export default function Office() {
       const pos = posRef.current;
       let changed = false;
       // Check which IDs are dogs
-      const dogIds = new Set(agents.filter(a => isDog(a)).map(a => a.id));
+      // Read through the ref: this loop is set up once, and `agents` loads later.
+      const dogIds = new Set(agentsRef.current.filter(a => isDog(a)).map(a => a.id));
       for (const id of Object.keys(pos)) {
         const p = pos[id];
         const isDogAgent = dogIds.has(id);
@@ -691,6 +694,8 @@ export default function Office() {
       if (changed || frameCount % 4 === 0) setPositions({ ...pos });
       animRef.current = requestAnimationFrame(tick);
     }
+    // Reduced motion: everyone stays at their desk.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     animRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animRef.current);
   }, []);
@@ -1048,14 +1053,14 @@ export default function Office() {
   if (loading) return <p className="text-gray-500">Loading...</p>;
 
   return (
-    <div className="flex flex-col items-center h-[calc(100vh-4rem)]">
+    <div className="flex flex-col items-center lg:h-[calc(100vh-4rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3 shrink-0 w-full max-w-[1200px] px-4">
+      <div className="flex items-center justify-between mb-3 shrink-0 w-full max-w-[1200px] px-0 sm:px-4">
         <h1 className="text-2xl font-bold">{inMeeting ? "Meeting Room" : "Office"}</h1>
         {agents.length >= 2 && (
           <button
             onClick={inMeeting ? leaveMeeting : callMeeting}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+            className={`px-3 py-1.5 max-sm:min-h-[40px] text-xs font-medium rounded-lg cursor-pointer transition-colors ${
               inMeeting
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
                 : `${isDark ? "bg-white/10 text-white hover:bg-white/15 border-white/10" : "bg-black/5 text-gray-900 hover:bg-gray-100 border-gray-200"} border`
@@ -1066,7 +1071,7 @@ export default function Office() {
         )}
       </div>
 
-      <div className="flex gap-4 flex-1 min-h-0 w-full max-w-[1200px] px-4">
+      <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 w-full max-w-[1200px] px-0 sm:px-4">
       {/* Room */}
       <div className="flex-1 flex flex-col items-center min-w-0">
         <div className="relative w-full rounded-lg overflow-visible" style={{
@@ -1383,8 +1388,20 @@ export default function Office() {
                       marginRight: pos.facing === "left" ? "-2px" : undefined,
                     }}
                     onClick={() => isActive ? closeChat() : openChat(agent)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        if (isActive) closeChat();
+                        else openChat(agent);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={isActive ? `Close chat with ${agent.name}` : `Talk to ${agent.name}`}
                     title={`Talk to ${agent.name}`}
                   >
+                    {/* Larger invisible hit area for fingers */}
+                    <span aria-hidden className="absolute -inset-2.5 sm:hidden" />
                     <svg viewBox="0 0 20 16" className="w-6 h-5" style={{ imageRendering: "auto" }}>
                       <path
                         d="M2 1 h14 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-4 l-3 3 l-1 -3 h-6 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2z"
@@ -1582,7 +1599,7 @@ export default function Office() {
 
       {/* Right: Meeting log panel */}
       {inMeeting && (
-        <div className={`w-80 shrink-0 flex flex-col border-l ${isDark ? "border-white/10" : "border-gray-200"} pl-4`}>
+        <div className={`w-full lg:w-80 shrink-0 flex flex-col border-t pt-4 lg:border-t-0 lg:pt-0 lg:border-l ${isDark ? "border-white/10" : "border-gray-200"} lg:pl-4 max-lg:h-[60vh]`}>
           <div className={`flex items-center justify-between pb-3 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-3 shrink-0`}>
             <div>
               <h2 className="font-bold text-sm">Meeting</h2>
@@ -1623,12 +1640,12 @@ export default function Office() {
               onKeyDown={handleMeetingKeyDown}
               placeholder={meetingRunning ? "Meeting in progress..." : "Meeting topic..."}
               disabled={meetingRunning}
-              className={`flex-1 px-3 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none text-xs`}
+              className={`flex-1 px-3 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none text-xs max-sm:min-h-[44px] max-sm:text-[16px]`}
             />
             <button
               type="submit"
               disabled={meetingRunning || !meetingInput.trim()}
-              className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs"
+              className={`px-3 py-2 max-sm:min-h-[44px] max-sm:px-4 font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
             >
               Start
             </button>
@@ -1638,7 +1655,7 @@ export default function Office() {
 
       {/* Right: Conversation panel */}
       {!inMeeting && chatAgent && (
-        <div className={`w-80 shrink-0 flex flex-col border-l ${isDark ? "border-white/10" : "border-gray-200"} pl-4`}>
+        <div className={`w-full lg:w-80 shrink-0 flex flex-col border-t pt-4 lg:border-t-0 lg:pt-0 lg:border-l ${isDark ? "border-white/10" : "border-gray-200"} lg:pl-4 max-lg:h-[60vh]`}>
           {/* Header */}
           <div className={`flex items-center justify-between pb-3 border-b ${isDark ? "border-white/10" : "border-gray-200"} mb-3 shrink-0`}>
             <div>
@@ -1649,12 +1666,12 @@ export default function Office() {
               {messages.length > 0 && (
                 <button
                   onClick={() => { setMessages([]); saveConversation(chatAgent.id, []); }}
-                  className={`text-[10px] text-gray-500 ${isDark ? "hover:text-white hover:bg-white/5" : "hover:text-gray-900 hover:bg-gray-100"} cursor-pointer px-1.5 py-0.5 rounded`}
+                  className={`text-[10px] text-gray-500 ${isDark ? "hover:text-white hover:bg-white/5" : "hover:text-gray-900 hover:bg-gray-100"} cursor-pointer px-1.5 py-0.5 max-sm:min-h-[40px] max-sm:px-3 rounded`}
                 >
                   Clear
                 </button>
               )}
-              <button onClick={closeChat} className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer p-0.5`}>
+              <button onClick={closeChat} aria-label="Close chat" className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer p-0.5 max-sm:p-3 max-sm:-m-2.5`}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1724,7 +1741,7 @@ export default function Office() {
                 </svg>
               )}
               <span className={`text-[10px] ${isDark ? "text-gray-300" : "text-gray-700"} truncate flex-1`}>{pendingFile.name}</span>
-              <button onClick={() => setPendingFile(null)} className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer`}>
+              <button onClick={() => setPendingFile(null)} aria-label="Remove attachment" className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} cursor-pointer max-sm:p-3 max-sm:-m-3`}>
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1739,7 +1756,7 @@ export default function Office() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={streaming}
-              className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors cursor-pointer disabled:opacity-30 shrink-0`}
+              className={`text-gray-500 ${isDark ? "hover:text-white" : "hover:text-gray-900"} transition-colors cursor-pointer disabled:opacity-30 shrink-0 max-sm:p-3 max-sm:-mx-2`}
               title="Attach file"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1753,12 +1770,12 @@ export default function Office() {
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               disabled={streaming}
-              className={`flex-1 px-3 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none text-xs`}
+              className={`flex-1 px-3 py-2 ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-black/5 border-gray-200 text-gray-900 focus:border-gray-400"} border rounded-lg placeholder-gray-500 focus:outline-none text-xs max-sm:min-h-[44px] max-sm:text-[16px]`}
             />
             <button
               type="submit"
               disabled={streaming || (!input.trim() && !pendingFile)}
-              className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs"
+              className={`px-3 py-2 max-sm:min-h-[44px] max-sm:px-4 font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0 text-xs ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
             >
               {streaming ? "..." : "Send"}
             </button>
@@ -1769,21 +1786,22 @@ export default function Office() {
       </div>{/* end flex wrapper */}
 
       {/* Toast notifications — fixed bottom center, liquid glass */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+      <div role="status" aria-live="polite" className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 flex w-[calc(100%-2rem)] max-w-sm flex-col items-center gap-2 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
             className="animate-toast-in pointer-events-auto rounded-2xl px-5 py-3 text-xs text-white/90 max-w-sm shadow-2xl"
             style={{
-              background: "linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.07) 100%)",
+              // Dark glass in both themes so the white text stays readable on a light page.
+              background: "linear-gradient(135deg, rgba(20,20,28,0.88) 0%, rgba(20,20,28,0.8) 50%, rgba(20,20,28,0.85) 100%)",
               backdropFilter: "blur(24px) saturate(1.5)",
               WebkitBackdropFilter: "blur(24px) saturate(1.5)",
               border: "1px solid rgba(255,255,255,0.12)",
               boxShadow: "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)",
             }}
           >
-            <span className="font-medium text-white/70">{toast.agent}</span>{" "}
-            <span className="text-white/60">{toast.text.split(": ").slice(1).join(": ")}</span>
+            <span className="font-medium text-white/80">{toast.agent}</span>{" "}
+            <span className="text-white/75">{toast.text.split(": ").slice(1).join(": ")}</span>
           </div>
         ))}
       </div>
@@ -1806,6 +1824,10 @@ export default function Office() {
         }
         .animate-chatter-in {
           animation: chatter-in 0.3s ease-out forwards;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-toast-in { animation: none; }
+          .animate-chatter-in { animation: none; transform: translateX(-50%); }
         }
       `}</style>
     </div>
