@@ -3,6 +3,7 @@
   "outputDirectory": "build/client",
   "framework": null,
   "functions": {
+    "api/documents/profile.ts": { "memory": 1024, "maxDuration": 300 },
     "api/documents/verify.ts": {
       "memory": 1024,
       "maxDuration": 300

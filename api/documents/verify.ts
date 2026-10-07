@@ -10,7 +10,7 @@ import { fetchDocument } from "../../lib/fetch-document.js";
  * owns the entity. Read-only: the page decides what to apply.
  */
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 const MAX_DOCS = 8;
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 

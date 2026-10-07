@@ -13,6 +13,8 @@ import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
 import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
+import { scanAllEntities, type ScanProgress } from "../entity-scan";
+import { confirmDialog } from "../confirm-dialog";
 import {
   BTN_BASE,
   Icon,
@@ -915,6 +917,28 @@ export default function Assets() {
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [scan, setScan] = useState<ScanProgress | null>(null);
+
+  /** Read every entity's documents and operating agreement, entity by entity. */
+  async function scanAll() {
+    const ok = await confirmDialog({
+      title: "Scan every entity's documents?",
+      message: "Each document not read yet is read once and filed into its empty slot; blank facts are filled, the tax class is checked, and each operating agreement is read into the entity's profile. Nothing already on record is overwritten — disagreements are flagged.",
+      confirmLabel: "Scan all",
+    });
+    if (!ok) return;
+    const { db, authReady } = await import("../firebase");
+    await authReady;
+    const { ref, get, update } = await import("firebase/database");
+    const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, any>;
+    setScan({ entity: "", index: 0, total: Object.keys(all).length, step: "Starting", notes: [], done: false });
+    try {
+      await scanAllEntities(all, (path, patch) => update(ref(db, path), patch), setScan);
+    } catch (err) {
+      console.error("scan failed", err);
+      setScan((s) => (s ? { ...s, done: true, paused: "The scan stopped on an error — run it again to pick up where it left off." } : s));
+    }
+  }
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
@@ -1657,6 +1681,18 @@ export default function Assets() {
             )}
           </p>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void scanAll()}
+          disabled={!!scan && !scan.done}
+          title="Read every entity's documents: file them, fill blank facts, check the tax class, and read each operating agreement"
+          className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
+            isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+          }`}
+        >
+          {scan && !scan.done ? `Scanning ${scan.index}/${scan.total}…` : "Scan all documents"}
+        </button>
         <button
           type="button"
           onClick={() => setShowForm(true)}
@@ -1665,7 +1701,44 @@ export default function Assets() {
           <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className="w-3.5 h-3.5" />
           New entity
         </button>
+        </div>
       </div>
+
+      {scan &&
+        createPortal(
+          <div className="pointer-events-none fixed inset-x-0 z-[80] flex justify-center px-4" style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
+            <div
+              role="status"
+              aria-live="polite"
+              className={`toast-in pointer-events-auto w-full max-w-[440px] rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-xl ${
+                isDark ? "border-white/10 bg-[#111113]/95 text-white" : "border-gray-200 bg-white/95 text-gray-900"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[13px] font-medium">
+                  {scan.paused ? "Scan paused" : scan.done ? "Scan complete" : `Scanning ${scan.index} of ${scan.total}`}
+                </p>
+                {scan.done && (
+                  <button type="button" onClick={() => setScan(null)} className={`text-[12px] ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"}`}>
+                    Close
+                  </button>
+                )}
+              </div>
+              <p className={`mt-0.5 truncate text-[12px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                {scan.paused ?? (scan.done ? `${scan.notes.length} change${scan.notes.length === 1 ? "" : "s"} across ${scan.total} entities` : `${scan.entity} · ${scan.step}`)}
+              </p>
+              <div className={`mt-2 h-1 overflow-hidden rounded-full ${isDark ? "bg-white/10" : "bg-gray-100"}`}>
+                <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.round(((scan.done ? scan.total : scan.index - 1) / Math.max(1, scan.total)) * 100)}%` }} />
+              </div>
+              {scan.done && scan.notes.length > 0 && (
+                <ul className={`mt-2 max-h-40 space-y-0.5 overflow-y-auto text-[11.5px] ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                  {scan.notes.map((n, i) => <li key={i}>{n}</li>)}
+                </ul>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
 
       <NewEntityDialog isDark={isDark} open={showForm} onClose={() => setShowForm(false)} onCreate={handleCreate} />
 

@@ -64,10 +64,30 @@ interface Asset {
   membersSource?: string;
   /** Year the latest annual report / tax receipt on file covers. */
   annualReportYear?: number;
+  /** What the entity is, read from its governing documents. */
+  profile?: EntityProfile;
   verification?: Verification;
 }
 
 type Member = { name: string; percent: number | null; role: string | null };
+
+type EntityProfile = {
+  whatItIs: string;
+  purpose: string | null;
+  properties: { description: string; state: string | null; status: string | null }[];
+  management: string | null;
+  managers: string[];
+  members: { name: string; percent: number | null; since: string | null }[];
+  taxTreatment: string | null;
+  taxEvidence: string | null;
+  governingLaw: string | null;
+  partnershipRepresentative: string | null;
+  keyTerms: string[];
+  issues: string[];
+  sources: string[];
+  documentsRead?: string[];
+  checkedAt: number;
+};
 
 type VerifyField =
   | "name" | "type" | "state" | "ein" | "formationDate" | "address"
@@ -1245,21 +1265,115 @@ export default function AssetDetail() {
     };
   }
 
-  async function runVerification() {
-    if (!asset) return;
+  // ── What the entity is, from its governing documents ──────────────────
+  const [profiling, setProfiling] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const profileTried = useRef(false);
+
+  async function buildProfile() {
+    const current = assetRef.current;
+    if (!current || profiling) return;
+    const documents = documentsForReading(current);
+    if (!documents.length) {
+      setProfileError("Upload the operating agreement (or bylaws / trust agreement) first.");
+      return;
+    }
+    setProfiling(true);
+    setProfileError("");
+    try {
+      const r = await authFetch("/api/documents/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity: { name: current.name, type: entityType(current), state: current.state }, documents }),
+      });
+      if (r.status === 503) {
+        const body = await r.json().catch(() => ({}));
+        setAiDown(body?.message || "Document reading is unavailable right now.");
+        setProfileError("Document reading is paused right now.");
+        return;
+      }
+      if (!r.ok) {
+        setProfileError(r.status === 422 ? "None of the documents could be read." : "Couldn't read the documents — try again.");
+        return;
+      }
+      const raw = (await r.json()) as Partial<EntityProfile>;
+      if (typeof raw.whatItIs !== "string") {
+        setProfileError("The reader returned nothing usable — try again.");
+        return;
+      }
+      const profile: EntityProfile = {
+        whatItIs: raw.whatItIs,
+        purpose: raw.purpose ?? null,
+        properties: raw.properties ?? [],
+        management: raw.management ?? null,
+        managers: raw.managers ?? [],
+        members: raw.members ?? [],
+        taxTreatment: raw.taxTreatment ?? null,
+        taxEvidence: raw.taxEvidence ?? null,
+        governingLaw: raw.governingLaw ?? null,
+        partnershipRepresentative: raw.partnershipRepresentative ?? null,
+        keyTerms: raw.keyTerms ?? [],
+        issues: raw.issues ?? [],
+        sources: raw.sources ?? [],
+        documentsRead: raw.documentsRead ?? [],
+        checkedAt: raw.checkedAt ?? Date.now(),
+      };
+      setAiDown(null);
+      const { db, authReady } = await import("../firebase");
+      await authReady;
+      const { ref, update } = await import("firebase/database");
+      const patch: Record<string, unknown> = { profile: JSON.parse(JSON.stringify(profile)) };
+      // The owners the governing documents list feed the paperwork checks,
+      // unless a more specific document already supplied them.
+      const owners = profile.members.filter((m) => m.name?.trim());
+      if (owners.length && (!current.members?.length || current.membersSource === "governing documents")) {
+        patch.members = owners.map((m) => ({ name: m.name, percent: m.percent ?? null, role: "member" }));
+        patch.membersSource = "governing documents";
+      }
+      await update(ref(db, `assets/${id}`), patch);
+      if (profile.taxTreatment) {
+        await applyTaxClass(
+          { kind: "operating_agreement", confidence: "high", ein: null, date: null, state: null, taxClassification: profile.taxTreatment, taxClassificationEvidence: profile.taxEvidence },
+          { id: "profile", name: profile.sources[0] ?? "the governing documents", url: "", createdAt: 0 }
+        );
+      }
+    } catch (err) {
+      console.error("profile failed", err);
+      setProfileError("Couldn't read the documents — try again.");
+    } finally {
+      setProfiling(false);
+    }
+  }
+
+  // Build the profile once, the first time an entity with documents is opened.
+  useEffect(() => {
+    if (!asset || asset.profile || profileTried.current || aiDown) return;
+    if (!documentsForReading(asset).length) return;
+    profileTried.current = true;
+    void buildProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset, docs, aiDown]);
+
+  /** Every readable document on the entity — library files plus slot-only uploads — labelled with its filing. */
+  function documentsForReading(a: Asset) {
     const readable = docs.filter((d) => d.storagePath && /pdf|image\//i.test(d.contentType || ""));
     // Filing slots uploaded straight to a slot (not via Documents) count too.
-    const slotOnly = FILING_KINDS.filter((k) => asset[k] && !asset[k]!.docId).map((k) => ({
-      name: asset[k]!.fileName,
-      url: asset[k]!.url,
-      contentType: asset[k]!.contentType,
-      filedAs: filingTitle(k, asset),
+    const slotOnly = FILING_KINDS.filter((k) => a[k] && !a[k]!.docId).map((k) => ({
+      name: a[k]!.fileName,
+      url: a[k]!.url,
+      contentType: a[k]!.contentType,
+      filedAs: k as string | null,
     }));
-    const filedAs = new Map(FILING_KINDS.filter((k) => asset[k]?.docId).map((k) => [asset[k]!.docId!, filingTitle(k, asset)]));
-    const documents = [
+    const filedAs = new Map(FILING_KINDS.filter((k) => a[k]?.docId).map((k) => [a[k]!.docId!, k as string]));
+    return [
       ...slotOnly,
       ...readable.map((d) => ({ name: d.name, url: d.url, contentType: d.contentType, filedAs: filedAs.get(d.id) ?? null })),
     ];
+  }
+
+  async function runVerification() {
+    if (!asset) return;
+    const documents = documentsForReading(asset).map((d) => ({ ...d, filedAs: d.filedAs ? filingTitle(d.filedAs as FileKind, asset) : null }));
     if (!documents.length) {
       setVerifyError("Upload the entity's documents first — there's nothing to check against.");
       return;
@@ -2178,7 +2292,7 @@ export default function AssetDetail() {
   // What the rule book reads: the record, plus its owner and the owners its
   // documents list.
   const ownerRec = asset.ownerId ? allAssets[asset.ownerId] : undefined;
-  const docOwners = (asset.members ?? []).filter((m) => !/manager|director|officer/i.test(m.role ?? "") && (m.percent == null || m.percent > 0));
+  const docOwners = (asset.members?.length ? asset.members : (asset.profile?.members ?? []).map((m) => ({ ...m, role: "member" }))).filter((m) => !/manager|director|officer/i.test(m.role ?? "") && (m.percent == null || m.percent > 0));
   const paper: PaperworkInput = {
     ...asset,
     owner: ownerRec ? { name: ownerRec.name, type: ownerRec.type, llcType: ownerRec.llcType } : null,
@@ -2571,6 +2685,107 @@ export default function AssetDetail() {
       {/* Main column + rail */}
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
+          {/* What this entity is — read from its governing documents */}
+          <section className={`overflow-hidden rounded-2xl ${surface}`}>
+            {sectionHeader(
+              "From its documents",
+              "What this entity is",
+              undefined,
+              <button
+                type="button"
+                onClick={() => void buildProfile()}
+                disabled={profiling}
+                className={`${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
+              >
+                <Icon name="sparkle" className="h-3 w-3" />
+                {profiling ? "Reading…" : asset.profile ? "Re-read" : "Read documents"}
+              </button>,
+            )}
+            {asset.profile ? (
+              <div className="space-y-4 px-5 py-4">
+                <p className="text-[13.5px] leading-relaxed">{asset.profile.whatItIs}</p>
+                <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+                  {asset.profile.members.length > 0 && (
+                    <div>
+                      <p className={kicker}>Owners</p>
+                      <ul className="mt-1.5 space-y-1 text-[12.5px]">
+                        {asset.profile.members.map((m, i) => (
+                          <li key={i} className="flex justify-between gap-3">
+                            <span className="min-w-0 truncate">{m.name}</span>
+                            <span className={`shrink-0 tabular-nums ${textMuted}`}>{m.percent != null ? `${m.percent}%` : "—"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="space-y-2.5">
+                    {asset.profile.management && (
+                      <div>
+                        <p className={kicker}>Run by</p>
+                        <p className="mt-0.5 text-[12.5px]">
+                          {asset.profile.managers.length ? asset.profile.managers.join(", ") : "—"}
+                          <span className={textMuted}> · {asset.profile.management}</span>
+                        </p>
+                      </div>
+                    )}
+                    {asset.profile.taxTreatment && (
+                      <div>
+                        <p className={kicker}>Taxed as</p>
+                        <p className="mt-0.5 text-[12.5px]">{asset.profile.taxTreatment}</p>
+                        {asset.profile.taxEvidence && <p className={`mt-0.5 text-[11px] leading-snug ${textMuted}`}>{asset.profile.taxEvidence}</p>}
+                      </div>
+                    )}
+                    {asset.profile.governingLaw && (
+                      <div>
+                        <p className={kicker}>Governing law</p>
+                        <p className="mt-0.5 text-[12.5px]">{asset.profile.governingLaw}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {asset.profile.properties.length > 0 && (
+                  <div>
+                    <p className={kicker}>Property and businesses</p>
+                    <ul className="mt-1.5 space-y-1 text-[12.5px]">
+                      {asset.profile.properties.map((p, i) => (
+                        <li key={i} className="flex justify-between gap-3">
+                          <span className="min-w-0">{p.description}{p.state ? `, ${p.state}` : ""}</span>
+                          {p.status && <span className={`shrink-0 text-[11px] ${/sold/i.test(p.status) ? textMuted : isDark ? "text-emerald-400" : "text-emerald-700"}`}>{p.status}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {asset.profile.keyTerms.length > 0 && (
+                  <div>
+                    <p className={kicker}>Terms that matter</p>
+                    <ul className={`mt-1.5 list-disc space-y-0.5 pl-4 text-[12px] leading-snug ${textSoft}`}>
+                      {asset.profile.keyTerms.map((t, i) => <li key={i}>{t}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {asset.profile.issues.length > 0 && (
+                  <div className={`rounded-lg border px-3 py-2.5 ${isDark ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-200 bg-amber-50"}`}>
+                    <p className={`text-[11.5px] font-medium ${isDark ? "text-amber-300" : "text-amber-800"}`}>Worth a look</p>
+                    <ul className={`mt-1 list-disc space-y-0.5 pl-4 text-[12px] leading-snug ${isDark ? "text-amber-100/90" : "text-amber-900"}`}>
+                      {asset.profile.issues.map((t, i) => <li key={i}>{t}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <p className={`text-[11px] leading-snug ${textMuted}`}>
+                  Read {fmtDate(new Date(asset.profile.checkedAt).toISOString().slice(0, 10))} from {asset.profile.sources.length ? asset.profile.sources.join(", ") : "the documents on file"}.
+                </p>
+              </div>
+            ) : (
+              <p className={`px-5 py-4 text-[12.5px] leading-snug ${textMuted}`}>
+                {profiling
+                  ? "Reading the operating agreement and the other documents on file…"
+                  : profileError || (aiDown ? "Document reading is paused right now." : "Upload the operating agreement (or bylaws / trust agreement) and this fills in: what the entity is for, what it owns, who runs and owns it, and how it's taxed.")}
+              </p>
+            )}
+            {asset.profile && profileError && <p className="px-5 pb-3 text-[11px] text-red-400">{profileError}</p>}
+          </section>
+
           {/* C-Corp Management */}
           {asset.type === "C-Corp" && (
             <section className={`overflow-hidden rounded-2xl ${surface}`}>

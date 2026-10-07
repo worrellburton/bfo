@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { canWrite, currentUser } from "../lib/auth.js";
 import { fetchDocument } from "../lib/fetch-document.js";
 
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = "claude-sonnet-5-5";
 const MAX_FETCH_BYTES = 5 * 1024 * 1024; // 5 MB cap on the document we send to Claude
 
 function sanitizeName(raw: string): string {
@@ -96,7 +96,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: 120,
+      // Thinking counts toward max_tokens, so leave room beyond the short name.
+      max_tokens: 2000,
+      output_config: { effort: "low" },
       system: instructions,
       messages: [{ role: "user", content }],
     });

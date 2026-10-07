@@ -10,7 +10,7 @@ import { fetchDocument } from "../../lib/fetch-document.js";
  * right slot and fill or check the record's key facts.
  */
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 const MAX_FETCH_BYTES = 20 * 1024 * 1024;
 
 /** Anthropic refused because the account behind ANTHROPIC_API_KEY has no credit. */
