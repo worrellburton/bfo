@@ -177,6 +177,13 @@ export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
 
 export class PalmUnavailable extends Error {}
 
+/** A refused Palm action, with the server's error code (e.g. "mode_changed", "business_mismatch"). */
+export class PalmCallError extends Error {
+  constructor(message: string, public code?: string, public status?: number) {
+    super(message);
+  }
+}
+
 /** One action against /api/palm. Throws with Palm's explanation on failure. */
 export async function palmCall<T = Record<string, unknown>>(action: string, body: Record<string, unknown> = {}): Promise<T> {
   const r = await authFetch("/api/palm", {
@@ -186,7 +193,7 @@ export async function palmCall<T = Record<string, unknown>>(action: string, body
   });
   const json = await r.json().catch(() => ({}));
   if (r.status === 503 && json?.error === "not_connected") throw new PalmUnavailable(json.message);
-  if (!r.ok) throw new Error(json?.message || `Palm request failed (${r.status}).`);
+  if (!r.ok) throw new PalmCallError(json?.message || `Palm request failed (${r.status}).`, json?.error, r.status);
   return json as T;
 }
 

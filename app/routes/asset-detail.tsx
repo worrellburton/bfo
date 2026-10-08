@@ -12,6 +12,7 @@ import {
   normalizeName,
   openPalmDocument,
   palmCall,
+  PalmCallError,
   palmJurisdiction,
   PalmUnavailable,
   pickRegistryMatch,
@@ -286,6 +287,11 @@ function fmtDate(value?: string): string {
   if (!m) return value;
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// A moment as a local calendar date ("Oct 7, 2026") — not the UTC day.
+function fmtStamp(ms?: number): string {
+  return ms ? new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
 }
 
 // Short file-kind label for the document list tile.
@@ -1335,13 +1341,18 @@ export default function AssetDetail() {
   const profileTried = useRef(false);
 
   // ── Palm: the state's record, and Palm as registered agent ─────────────
-  const [palmStatus, setPalmStatus] = useState<{ configured: boolean; mode: PalmMode | null } | null>(null);
+  const [palmStatus, setPalmStatus] = useState<{ configured: boolean; mode: PalmMode | null; error?: string } | null>(null);
   const [palmRa, setPalmRa] = useState<RaService | null | undefined>(undefined);
   const [palmDocs, setPalmDocs] = useState<PalmDocument[] | null>(null);
   const [palmBusy, setPalmBusy] = useState<"record" | "move" | "refresh" | null>(null);
   const [palmError, setPalmError] = useState("");
   const [registryChoices, setRegistryChoices] = useState<RegistryRecord[] | null>(null);
   const palmMode = palmStatus?.mode ?? null;
+  /** Bumped by every read or change of Palm's agent service; an older response is dropped. */
+  const palmSeq = useRef(0);
+  /** Bumped when the page moves to another entity; work started for the last one stops touching the card. */
+  const palmEpoch = useRef(0);
+  const palmMoving = useRef(false);
 
   async function patchAsset(patch: Record<string, unknown>) {
     const { db } = await import("../firebase");
@@ -1349,51 +1360,95 @@ export default function AssetDetail() {
     await update(ref(db, `assets/${id}`), patch);
   }
 
+  async function loadPalmStatus(): Promise<{ configured: boolean; mode: PalmMode | null; error?: string }> {
+    try {
+      const s = await palmCall<{ configured: boolean; mode: PalmMode | null }>("status");
+      setPalmStatus(s);
+      return s;
+    } catch (err) {
+      const s = { configured: false, mode: null, error: err instanceof Error ? err.message : "Couldn't reach Palm." };
+      setPalmStatus(s);
+      return s;
+    }
+  }
+
+  function showPalmError(err: unknown) {
+    const msg = err instanceof Error ? err.message : "Couldn't reach Palm.";
+    setPalmError(msg);
+    if (err instanceof PalmCallError && err.code === "mode_changed") void loadPalmStatus();
+    if (err instanceof PalmUnavailable) setPalmStatus({ configured: false, mode: null });
+  }
+
   useEffect(() => {
-    let live = true;
-    palmCall<{ configured: boolean; mode: PalmMode | null }>("status")
-      .then((s) => live && setPalmStatus(s))
-      .catch(() => live && setPalmStatus({ configured: false, mode: null }));
-    return () => {
-      live = false;
-    };
+    void loadPalmStatus();
   }, []);
+
+  // Another entity: start the card clean.
+  useEffect(() => {
+    palmEpoch.current++;
+    palmSeq.current++;
+    setPalmRa(undefined);
+    setPalmDocs(null);
+    setRegistryChoices(null);
+    setPalmError("");
+    setPalmBusy(null);
+  }, [id]);
 
   const palmBusinessId = palmMode ? asset?.palm?.[palmMode]?.businessId : undefined;
   useEffect(() => {
-    if (!palmBusinessId) return;
-    void refreshPalm(palmBusinessId, false);
+    if (!palmMode) return;
+    if (!palmBusinessId) {
+      // Never added to Palm in this mode, so Palm isn't its agent.
+      setPalmRa(null);
+      setPalmDocs(null);
+      return;
+    }
+    if (palmMoving.current) return; // the move refreshes once it's done
+    void refreshPalm(palmBusinessId, { busy: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [palmBusinessId]);
+  }, [palmBusinessId, palmMode]);
 
-  /** Palm's agent service and mail for this entity; keeps the record in step once Palm is the agent. */
-  async function refreshPalm(businessId: string, showBusy = true) {
+  /** Palm's agent service and mail for this entity; the record follows when the agent actually changes. */
+  async function refreshPalm(businessId: string, opts: { busy?: boolean; keepError?: boolean } = {}) {
     const mode = palmMode;
     if (!mode) return;
-    if (showBusy) setPalmBusy("refresh");
-    setPalmError("");
+    const seq = ++palmSeq.current;
+    const busy = opts.busy ?? true;
+    if (busy) setPalmBusy("refresh");
+    if (!opts.keepError) setPalmError("");
     try {
-      const [{ service }, { documents }] = await Promise.all([
-        palmCall<{ service: RaService | null }>("ra", { businessId }),
-        palmCall<{ documents: PalmDocument[] }>("documents", { businessId }),
+      const [raR, docsR] = await Promise.allSettled([
+        palmCall<{ service: RaService | null }>("ra", { businessId, mode }),
+        palmCall<{ documents: PalmDocument[] }>("documents", { businessId, mode }),
       ]);
+      if (seq !== palmSeq.current) return;
+      if (docsR.status === "fulfilled") setPalmDocs(sortDocuments(docsR.value.documents));
+      if (raR.status === "rejected") {
+        if (!opts.keepError) showPalmError(raR.reason);
+        return;
+      }
+      const service = raR.value.service;
       setPalmRa(service);
-      setPalmDocs(sortDocuments(documents));
       const current = assetRef.current;
       if (!current) return;
+      const before = current.palm?.[mode]?.ra?.status ?? null;
       const patch: Record<string, unknown> = {
         [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, checkedAt: Date.now() },
       };
-      // Palm became the agent of record — the record follows (live only; the sandbox files nothing).
-      if (mode === "live" && service?.status === "active" && service.name && normalizeName(service.name) !== normalizeName(current.registeredAgent)) {
-        patch.registeredAgent = service.name;
-        patch.registeredAgentSource = `Palm, active since ${(service.started_at ?? new Date().toISOString()).slice(0, 10)}`;
+      if (mode === "live") {
+        // Only on the change itself, so a later hand edit isn't overwritten on every visit.
+        if (service?.status === "active" && before !== "active" && service.name) {
+          patch.registeredAgent = service.name;
+          patch.registeredAgentSource = `Palm, active since ${(service.started_at ?? new Date().toISOString()).slice(0, 10)}`;
+        }
+        if ((service?.status === "terminated" || service?.status === "canceled") && before === "active" && current.registeredAgentSource?.startsWith("Palm")) {
+          patch.registeredAgentSource = `Palm stopped serving ${(service.ended_at ?? new Date().toISOString()).slice(0, 10)} — confirm the current agent`;
+        }
       }
       await patchAsset(patch);
-    } catch (err) {
-      setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
+      if (docsR.status === "rejected" && !opts.keepError) showPalmError(docsR.reason);
     } finally {
-      if (showBusy) setPalmBusy(null);
+      if (busy) setPalmBusy(null);
     }
   }
 
@@ -1407,45 +1462,63 @@ export default function AssetDetail() {
       setPalmError("Set the entity's state first.");
       return;
     }
+    const epoch = palmEpoch.current;
     setPalmBusy("record");
     setPalmError("");
     try {
-      let number = choice?.registration_number || current.fileNumber;
+      let number = choice ? choice.registration_number : current.fileNumber;
       let where = choice?.registration_jurisdiction || jurisdiction;
+      if (choice && !number && choice.palm_id) {
+        // A picked entry without its number: look that exact entry up by its Palm ID.
+        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { palmId: choice.palm_id, mode });
+        number = results.find((r) => r.palm_id === choice.palm_id)?.registration_number;
+        where = results[0]?.registration_jurisdiction || where;
+      }
+      if (choice && !number) {
+        if (epoch === palmEpoch.current) setPalmError("That registry entry has no file number. Add it by hand under Edit, then check again.");
+        return;
+      }
       if (!number) {
-        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: current.name, jurisdiction });
+        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: current.name, jurisdiction, mode });
+        if (epoch !== palmEpoch.current) return;
         const match = pickRegistryMatch(results, current.name, jurisdiction);
         if (!match) {
           setRegistryChoices(results);
-          if (!results.length) setPalmError(`No ${current.state} registry entry matched “${current.name}”. Add the state file number and try again.`);
+          if (!results.length) setPalmError(`No ${current.state} registry entry matched “${current.name}”. Add the state file number under Edit and try again.`);
           return;
         }
         number = match.registration_number;
         where = match.registration_jurisdiction || jurisdiction;
       }
       if (!number) {
-        setPalmError("The registry result had no file number.");
+        setPalmError("The registry result had no file number. Add it by hand under Edit.");
         return;
       }
-      const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number });
+      const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number, mode });
       const snapshot = toStateRecord(record, mode);
       const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
       if (mode === "live" && !current.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
       await patchAsset(patch);
-      setRegistryChoices(null);
+      if (epoch === palmEpoch.current) setRegistryChoices(null);
     } catch (err) {
-      if (err instanceof PalmUnavailable) setPalmStatus({ configured: false, mode: null });
-      setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
+      if (epoch === palmEpoch.current) showPalmError(err);
     } finally {
-      setPalmBusy(null);
+      if (epoch === palmEpoch.current) setPalmBusy(null);
     }
   }
 
   /** Move the registered agent onto Palm: add the business to Palm if needed, then request the change. */
   async function moveAgentToPalm() {
     const current = assetRef.current;
-    const mode = palmMode;
-    if (!current || !mode) return;
+    if (!current || !palmMode) return;
+    // The key may have switched between test and live since the page loaded.
+    const fresh = await loadPalmStatus();
+    const mode = fresh.mode;
+    if (!mode) return;
+    if (mode !== palmMode) {
+      setPalmError(`Palm is now in ${mode} mode. Check the card again before going on.`);
+      return;
+    }
     const jurisdiction = palmJurisdiction(current.state);
     if (!jurisdiction) {
       await alertDialog("Set the state first", "Palm files the change in the state the entity was formed in.");
@@ -1461,36 +1534,49 @@ export default function AssetDetail() {
       );
       return;
     }
-    const oldAgent = current.registeredAgent?.replace(/\.+$/, "");
+    const live = mode === "live";
+    const oldAgent = current.registeredAgentSource?.startsWith("Palm") ? undefined : current.registeredAgent?.replace(/\.+$/, "");
     const lapsed = rec && ((rec.status && rec.status !== "active") || rec.standing?.registration === "not_compliant");
     const ok = await confirmDialog({
-      title: "Make Palm the registered agent?",
-      message: (
+      title: live ? "Make Palm the registered agent?" : "Try the agent change in test mode?",
+      message: live ? (
         <>
           Palm will file the change with the {current.state} Secretary of State for <b>{current.name}</b> and become its agent of record.
         </>
+      ) : (
+        <>
+          Palm's sandbox will walk <b>{current.name}</b> through the change. Nothing is filed with the state and nothing is billed.
+        </>
       ),
-      details: [
-        mode === "live" ? "This is a live state filing, billed to the Palm account." : "Test mode: nothing is filed with the state and nothing is billed.",
-        `The current agent${oldAgent ? ` (${oldAgent})` : ""} stays on file until the state accepts the change. If it fails, nothing changes.`,
-        "Once Palm is active, state mail and any legal papers served on the entity arrive here.",
-        ...(lapsed ? [`The state's record shows ${rec?.status !== "active" ? rec?.status : "it isn't in good standing"}. The state may refuse the change until the overdue filing and fees are paid.`] : []),
-        ...(oldAgent ? [`Afterwards, cancel ${oldAgent}'s service so it isn't billed twice.`] : []),
-      ],
-      confirmLabel: "Make Palm the agent",
-      requireText: mode === "live" ? current.name : undefined,
+      details: live
+        ? [
+            "This is a live state filing, billed to the Palm account. State fees are passed through at cost.",
+            `The current agent${oldAgent ? ` (${oldAgent})` : ""} stays on file until the state accepts the change. If it fails, nothing changes.`,
+            "Once Palm is active, state mail and any legal papers served on the entity arrive here.",
+            ...(lapsed
+              ? [`The state's record shows ${rec?.status && rec.status !== "active" ? rec.status : "it isn't in good standing"}. The state may refuse the change until the overdue filing and fees are paid.`]
+              : []),
+            ...(oldAgent ? [`Afterwards, once the state shows Palm, cancel ${oldAgent}'s service so it isn't billed twice.`] : []),
+          ]
+        : ["The entity's record here isn't changed by a test.", "Switch PALM_API_KEY to a live key to make the real change."],
+      confirmLabel: live ? "Make Palm the agent" : "Run the test",
+      requireText: live ? current.name : undefined,
     });
     if (!ok) return;
+    const epoch = palmEpoch.current;
+    palmMoving.current = true;
+    palmSeq.current++; // anything already in flight is now stale
     setPalmBusy("move");
     setPalmError("");
-    let linkedId: string | undefined;
+    let linkedId: string | undefined = current.palm?.[mode]?.businessId;
     try {
-      let businessId = current.palm?.[mode]?.businessId;
-      if (!businessId) {
+      if (!linkedId) {
         const linked = await palmCall<{ businessId: string; palmId: string | null }>("link", {
+          mode,
           assetId: id,
           entity: {
             name: current.name,
+            ein: current.ein,
             type: entityType(current),
             jurisdiction,
             formationDate: current.formationDate,
@@ -1498,20 +1584,21 @@ export default function AssetDetail() {
             address: current.address,
           },
         });
-        businessId = linked.businessId;
-        const link: PalmLink = { businessId, palmId: linked.palmId ?? null, linkedAt: Date.now() };
+        linkedId = linked.businessId;
+        const link: PalmLink = { businessId: linkedId, palmId: linked.palmId ?? null, linkedAt: Date.now() };
         await patchAsset({ [`palm/${mode}`]: link });
       }
-      linkedId = businessId;
-      const { service } = await palmCall<{ service: RaService }>("ra-change", { businessId, assetId: id });
-      setPalmRa(service);
+      const { service } = await palmCall<{ service: RaService }>("ra-change", { mode, businessId: linkedId, assetId: id });
+      palmSeq.current++;
+      if (epoch === palmEpoch.current) setPalmRa(service);
       await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, checkedAt: Date.now() } });
     } catch (err) {
-      setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
-      // The request may have gone through before the error: show Palm's actual state rather than guess.
-      if (linkedId) void refreshPalm(linkedId, false);
+      // The request may have gone through before the error: show Palm's actual state, then the error.
+      if (linkedId && epoch === palmEpoch.current) await refreshPalm(linkedId, { busy: false, keepError: true });
+      if (epoch === palmEpoch.current) showPalmError(err);
     } finally {
-      setPalmBusy(null);
+      palmMoving.current = false;
+      if (epoch === palmEpoch.current) setPalmBusy(null);
     }
   }
 
@@ -3073,7 +3160,7 @@ export default function AssetDetail() {
                   </div>
                 )}
                 <p className={`text-[11px] leading-snug ${textMuted}`}>
-                  Read {fmtDate(new Date(asset.profile.checkedAt).toISOString().slice(0, 10))} from {asset.profile.sources.length ? asset.profile.sources.join(", ") : "the documents on file"}.
+                  Read {fmtStamp(asset.profile.checkedAt)} from {asset.profile.sources.length ? asset.profile.sources.join(", ") : "the documents on file"}.
                 </p>
               </div>
             ) : (
@@ -3089,7 +3176,6 @@ export default function AssetDetail() {
           {/* State record and registered agent — through Palm */}
           {!isTrust && (() => {
             const svc = palmRa;
-            const st = svc?.status ? RA_STATUS[svc.status] : null;
             const toneChip = (tone: "good" | "wait" | "bad" | "muted") =>
               `${chipBase} ${
                 tone === "good"
@@ -3100,12 +3186,17 @@ export default function AssetDetail() {
                       ? isDark ? "border-red-400/25 bg-red-400/10 text-red-300" : "border-red-200 bg-red-50 text-red-700"
                       : chipNeutral
               }`;
-            const palmIsAgent = svc?.status === "active";
-            const inFlight = svc?.status === "pending" || svc?.status === "termination_requested";
-            const canMove = userIsAdmin() && !palmIsAgent && !inFlight;
+            // Until Palm answers, go by what was last seen, and don't offer the move.
+            const known = svc !== undefined;
+            const cachedStatus = palmMode ? asset.palm?.[palmMode]?.ra?.status ?? null : null;
+            const status = known ? svc?.status ?? null : cachedStatus;
+            const palmIsAgent = status === "active";
+            const inFlight = status === "pending" || status === "termination_requested";
+            const canMove = known && userIsAdmin() && !palmIsAgent && !inFlight;
+            const st = status ? RA_STATUS[status] : null;
             const rec = asset.stateRecord;
             const findings = rec ? stateFindings(rec, asset) : [];
-            const agentShown = palmIsAgent ? svc?.name : asset.registeredAgent;
+            const agentShown = palmIsAgent ? svc?.name ?? (palmMode ? asset.palm?.[palmMode]?.ra?.name : null) ?? asset.registeredAgent : asset.registeredAgent;
             const agentAddress = palmIsAgent ? formatPalmAddress(svc?.address) : null;
             const linkBtn = `${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`;
             return (
@@ -3126,6 +3217,13 @@ export default function AssetDetail() {
                 )}
                 {!palmStatus ? (
                   <p className={`px-5 py-4 text-[12.5px] ${textMuted}`}>Checking the Palm connection…</p>
+                ) : palmStatus.error ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-[12.5px]">
+                    <p className={textSoft}>Couldn't reach Palm just now.</p>
+                    <button type="button" onClick={() => void loadPalmStatus()} className={btnXsOutline}>
+                      Try again
+                    </button>
+                  </div>
                 ) : !palmStatus.configured ? (
                   <div className="space-y-3 px-5 py-4 text-[12.5px] leading-snug">
                     <p className={textSoft}>
@@ -3168,8 +3266,11 @@ export default function AssetDetail() {
                             Palm is filing the change with the state. It can take a few business days; this updates when the state accepts it.
                           </p>
                         )}
-                        {svc?.rejection_reason && (svc.status === "failed" || svc.status === "active") && (
-                          <p className={`max-w-[60ch] text-[11.5px] leading-snug ${isDark ? "text-red-300" : "text-red-700"}`}>The state didn't accept it: {svc.rejection_reason}</p>
+                        {svc?.status === "failed" && (
+                          <p className={`max-w-[60ch] text-[11.5px] leading-snug ${isDark ? "text-red-300" : "text-red-700"}`}>
+                            {svc.rejection_reason ? `The state didn't accept it: ${svc.rejection_reason}. ` : "Palm couldn't complete the change. "}
+                            Palm Console shows the reason under this business; sort that out before trying again.
+                          </p>
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
@@ -3194,12 +3295,14 @@ export default function AssetDetail() {
                         <p className={kicker}>Which of these is {asset.name}?</p>
                         <ul className="mt-2 space-y-1.5">
                           {registryChoices.slice(0, 6).map((r, i) => (
-                            <li key={`${r.registration_number}-${i}`} className="flex items-center justify-between gap-3 text-[12.5px]">
-                              <span className="min-w-0 truncate">
-                                {r.name}
-                                <span className={textMuted}> · {r.registration_jurisdiction} {r.registration_number} · {r.status}</span>
+                            <li key={`${r.registration_number ?? r.palm_id}-${i}`} className="flex items-start justify-between gap-3 text-[12.5px]">
+                              <span className="min-w-0">
+                                <span className="block">{r.name}</span>
+                                <span className={`block text-[11.5px] ${textMuted}`}>
+                                  {[r.registration_jurisdiction, r.registration_number, r.status, r.formation_date ? `formed ${r.formation_date.slice(0, 10)}` : null].filter(Boolean).join(" · ")}
+                                </span>
                               </span>
-                              <button type="button" onClick={() => void checkStateRecord(r)} disabled={!!palmBusy} className={btnXsOutline}>
+                              <button type="button" onClick={() => void checkStateRecord(r)} disabled={!!palmBusy} className={`${btnXsOutline} shrink-0`}>
                                 This one
                               </button>
                             </li>
@@ -3265,7 +3368,7 @@ export default function AssetDetail() {
                           </ul>
                         )}
                         <p className={`text-[11px] ${textMuted}`}>
-                          Read from the state through Palm, {fmtDate(new Date(rec.checkedAt).toISOString().slice(0, 10))}.
+                          Read from the state through Palm, {fmtStamp(rec.checkedAt)}.
                           {palmIsAgent && svc?.started_at && rec.checkedAt < Date.parse(svc.started_at) ? " That was before Palm became the agent — re-check to see the change on the state's side." : ""}
                         </p>
                       </div>

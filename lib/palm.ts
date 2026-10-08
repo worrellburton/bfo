@@ -62,6 +62,22 @@ export function problemMessage(status: number, body: unknown): string {
   return `Palm returned ${status}.`;
 }
 
+/** Names compared the way registries write them: case, punctuation and "L.L.C." vs "LLC" don't matter. */
+export function normalizeLegalName(name?: string | null): string {
+  return (name ?? "")
+    .toLowerCase()
+    .replace(/\(.*?\)/g, " ")
+    .replace(/l\.\s*l\.\s*c\.?/g, "llc")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** "123456789" or "12-3456789" → "12-3456789"; anything else → null. */
+export function normalizeEin(ein?: string | null): string | null {
+  const m = /^(\d{2})-?(\d{7})$/.exec((ein ?? "").trim());
+  return m ? `${m[1]}-${m[2]}` : null;
+}
+
 /** "US-NV" — Palm's jurisdiction format. */
 export function isJurisdiction(v: unknown): v is string {
   return typeof v === "string" && /^US-[A-Z]{2}$/.test(v);

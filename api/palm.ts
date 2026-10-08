@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, isAdmin } from "../lib/auth.js";
 import {
   isJurisdiction,
+  normalizeEin,
+  normalizeLegalName,
   palm,
   PalmError,
   palmEntityType,
@@ -14,7 +16,7 @@ import {
  * Palm, for one entity at a time. POST { action, … }:
  *
  *   status            → { configured, mode }
- *   registry-search   { name, jurisdiction? }          → matches on the state registries
+ *   registry-search   { name | palmId, jurisdiction? } → matches on the state registries
  *   registry-detail   { jurisdiction, number }         → the state's record: status, standing, agent, people
  *   link              { assetId, entity }              → the entity's Palm business (found or added)
  *   ra                { businessId }                   → Palm's registered agent service for it
@@ -24,6 +26,10 @@ import {
  *
  * Reads need a signed-in user; adding a business needs write access; moving
  * the agent — a state filing billed to the Palm account — needs an owner or admin.
+ *
+ * Every call may carry the `mode` the page believes it's in; link and
+ * ra-change must. If the key has since switched between test and live, the
+ * call is refused (409 mode_changed) rather than acting in the other mode.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,6 +37,7 @@ const DOC_ID = /^[\w-]{1,128}$/;
 
 type Entity = {
   name?: string;
+  ein?: string;
   type?: string;
   jurisdiction?: string;
   formationDate?: string;
@@ -53,16 +60,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
+  const mustMatchMode = action === "link" || action === "ra-change";
+  if ((body.mode !== undefined || mustMatchMode) && body.mode !== mode) {
+    return res.status(409).json({ error: "mode_changed", mode, message: `Palm is now in ${mode} mode. Reload the page and check again before going on.` });
+  }
 
   try {
     switch (action) {
       case "registry-search": {
         const name = String(body.name || "").trim();
-        if (!name) return res.status(400).json({ error: "missing_name" });
+        const palmId = String(body.palmId || "").trim();
+        if (!name && !palmId) return res.status(400).json({ error: "missing_name" });
+        if (palmId && !/^[\w-]{1,128}$/.test(palmId)) return res.status(400).json({ error: "bad_palm_id" });
         const jurisdiction = isJurisdiction(body.jurisdiction) ? body.jurisdiction : undefined;
         const r = await palm<{ data: unknown[] }>("/v1/business/registry/search", {
           method: "POST",
-          body: { name, ...(jurisdiction ? { registration_jurisdiction: jurisdiction } : {}) },
+          body: palmId ? { palm_id: palmId } : { name, ...(jurisdiction ? { registration_jurisdiction: jurisdiction } : {}) },
         });
         return res.status(200).json({ mode, results: (r?.data ?? []).slice(0, 10) });
       }
@@ -80,14 +93,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const e = (body.entity || {}) as Entity;
         if (!assetId || !e.name || !isJurisdiction(e.jurisdiction)) return res.status(400).json({ error: "missing_params", message: "The entity needs a name and a state." });
 
-        // Already added (this mode)? Match on our own id first, then the exact legal name.
-        const found = await palm<{ data: Business[] }>("/v1/business/search", {
-          method: "POST",
-          body: { vault: { "business.legal_name": e.name }, limit: 25 },
-        });
-        const mine = (found?.data ?? []).find((b) => b.metadata?.bfo_asset_id === assetId)
-          ?? (found?.data ?? []).find((b) => String(b.vault?.["business.legal_name"] ?? b.display_name ?? "").toLowerCase() === e.name!.toLowerCase());
-        if (mine) return res.status(200).json({ mode, businessId: mine.id, palmId: mine.palm_id, created: false });
+        const ein = normalizeEin(e.ein);
+        const search = async (q: Record<string, unknown>) =>
+          (await palm<{ data: Business[] }>("/v1/business/search", { method: "POST", body: { ...q, limit: 50 } }))?.data ?? [];
+        const ours = (b: Business) => b.metadata?.bfo_asset_id === assetId;
+        const unclaimed = (b: Business) => !b.metadata?.bfo_asset_id;
+        const sameState = (b: Business) => {
+          const v = b.vault ?? {};
+          return v["business.formation_jurisdiction"] === e.jurisdiction || v["business.registration_jurisdiction"] === e.jurisdiction;
+        };
+        const adopt = async (b: Business) => {
+          if (!ours(b)) await palm(`/v1/business/${b.id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } });
+          return res.status(200).json({ mode, businessId: b.id, palmId: b.palm_id, created: false });
+        };
+
+        // 1. This entity's own business, by the id we stamped on it.
+        const byId = (await search({ metadata: { bfo_asset_id: assetId } })).filter(ours);
+        if (byId.length === 1) return adopt(byId[0]);
+        if (byId.length > 1) return res.status(409).json({ error: "ambiguous", message: "Palm has more than one business linked to this entity. Sort it out in Palm Console first." });
+
+        // 2. The same EIN — an exact match — not claimed by another entity.
+        if (ein) {
+          const byEin = await search({ ein });
+          const other = byEin.find((b) => !unclaimed(b) && !ours(b));
+          if (other) return res.status(409).json({ error: "claimed", message: "A business with this EIN is already linked to another BFO entity in Palm." });
+          if (byEin.length === 1) return adopt(byEin[0]);
+          if (byEin.length > 1) return res.status(409).json({ error: "ambiguous", message: "Palm has more than one business with this EIN. Sort it out in Palm Console first." });
+        }
+
+        // 3. Same legal name in the same state, and not claimed by another entity.
+        const want = normalizeLegalName(e.name);
+        const byName = (await search({ vault: { "business.legal_name": e.name } })).filter(
+          (b) => unclaimed(b) && sameState(b) && normalizeLegalName(String(b.vault?.["business.legal_name"] ?? b.display_name ?? "")) === want,
+        );
+        if (byName.length === 1) return adopt(byName[0]);
+        if (byName.length > 1) return res.status(409).json({ error: "ambiguous", message: "Palm has more than one unlinked business with this name in this state. Sort it out in Palm Console first." });
 
         const vault: Record<string, string> = {
           "business.legal_name": e.name,
@@ -96,6 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           "business.registration_jurisdiction": e.jurisdiction,
           ...(e.formationDate && /^\d{4}-\d{2}-\d{2}$/.test(e.formationDate) ? { "business.formation_date": e.formationDate } : {}),
           ...(e.fileNumber ? { "business.registration_number": e.fileNumber.trim() } : {}),
+          ...(ein ? { "business.ein": ein } : {}),
           ...vaultAddress(e.address),
         };
         const created = await palm<Business>("/v1/business", {
@@ -121,11 +162,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "ra-change": {
         if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin can change a registered agent." });
         const id = String(body.businessId || "");
-        if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
+        const assetId = String(body.assetId || "");
+        if (!UUID.test(id) || !assetId) return res.status(400).json({ error: "missing_params" });
+        // The filing goes only to the business linked to the entity the admin confirmed.
+        const business = await palm<Business>(`/v1/business/${id}`);
+        if (business?.metadata?.bfo_asset_id !== assetId) {
+          return res.status(409).json({ error: "business_mismatch", message: "That Palm business isn't linked to this entity. Reload and check the state record again." });
+        }
         // Omitting registered_agent moves the business onto Palm-provided service.
         const ra = await palm<RegisteredAgentService>(`/v1/business/${id}/registered-agent`, {
           method: "PATCH",
-          body: { status: "change_requested", metadata: { source: "bfo", bfo_asset_id: String(body.assetId || ""), requested_by: user.id } },
+          body: { status: "change_requested", metadata: { source: "bfo", bfo_asset_id: assetId, requested_by: user.id } },
         });
         return res.status(200).json({ mode, service: ra });
       }
@@ -133,8 +180,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "documents": {
         const id = String(body.businessId || "");
         if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
-        const r = await palm<{ data: unknown[] }>(`/v1/business/${id}/document?limit=100`);
-        return res.status(200).json({ mode, documents: r?.data ?? [] });
+        // Follow the pages so nothing — legal papers above all — is cut off.
+        const documents: unknown[] = [];
+        let cursor: string | null = null;
+        for (let page = 0; page < 10; page++) {
+          const q: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+          const r: { data?: unknown[]; has_more?: boolean; next_cursor?: string | null } = await palm(`/v1/business/${id}/document?limit=100${q}`);
+          documents.push(...(r?.data ?? []));
+          if (!r?.has_more || !r.next_cursor) break;
+          cursor = r.next_cursor;
+        }
+        return res.status(200).json({ mode, documents });
       }
 
       case "document": {

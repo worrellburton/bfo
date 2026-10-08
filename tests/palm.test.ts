@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isJurisdiction, palmMode, problemMessage, vaultAddress } from "../lib/palm";
+import { isJurisdiction, normalizeEin, palmMode, problemMessage, vaultAddress } from "../lib/palm";
 import { normalizeName, palmJurisdiction, pickRegistryMatch, sortDocuments, stateFindings, toStateRecord } from "../app/palm";
 
 describe("palm server helpers", () => {
@@ -25,6 +25,12 @@ describe("palm server helpers", () => {
   it("explains Palm's problems in one line", () => {
     expect(problemMessage(400, { title: "Validation Error", detail: "formation_jurisdiction is required" })).toBe("formation_jurisdiction is required");
     expect(problemMessage(409, null)).toMatch(/already working/);
+  });
+
+  it("normalizes EINs and drops anything else", () => {
+    expect(normalizeEin("933776895")).toBe("93-3776895");
+    expect(normalizeEin("93-3776895")).toBe("93-3776895");
+    expect(normalizeEin("93377689")).toBeNull();
   });
 
   it("only accepts US-XX jurisdictions", () => {
@@ -147,14 +153,19 @@ describe("/api/palm", () => {
     expect(r.json.service).toBeNull();
   });
 
-  it("only lets an owner or admin move the agent", async () => {
+  it("only lets an owner or admin move the agent, in the mode the page saw", async () => {
     role = "member";
-    expect((await call({ action: "ra-change", businessId: BID })).status).toBe(403);
+    expect((await call({ action: "ra-change", mode: "test", businessId: BID, assetId: "a1" })).status).toBe(403);
     role = "owner";
-    fetchMock.mockResolvedValueOnce(reply(200, { object: "registered_agent", status: "pending", provider: "palm" }));
-    const r = await call({ action: "ra-change", businessId: BID, assetId: "a1" });
+    expect((await call({ action: "ra-change", mode: "live", businessId: BID, assetId: "a1" })).json.error).toBe("mode_changed");
+    expect((await call({ action: "ra-change", businessId: BID, assetId: "a1" })).status).toBe(409);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { id: BID, metadata: { bfo_asset_id: "a1" } }))
+      .mockResolvedValueOnce(reply(200, { object: "registered_agent", status: "pending", provider: "palm" }));
+    const r = await call({ action: "ra-change", mode: "test", businessId: BID, assetId: "a1" });
     expect(r.json.service.status).toBe("pending");
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe(`https://api.getpalm.com/v1/business/${BID}/registered-agent`);
     expect(init.method).toBe("PATCH");
     const sent = JSON.parse(init.body);
@@ -162,29 +173,82 @@ describe("/api/palm", () => {
     expect(sent.registered_agent).toBeUndefined();
   });
 
-  it("reuses the entity's Palm business instead of adding it twice", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, { data: [{ id: BID, palm_id: "p1", display_name: "X", metadata: { bfo_asset_id: "a1" } }] }));
-    const r = await call({ action: "link", assetId: "a1", entity: { name: "Ledger Louise, LLC", jurisdiction: "US-NV" } });
-    expect(r.json).toMatchObject({ businessId: BID, created: false });
+  it("refuses to file for a Palm business linked to another entity", async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { id: BID, metadata: { bfo_asset_id: "someone-else" } }));
+    const r = await call({ action: "ra-change", mode: "test", businessId: BID, assetId: "a1" });
+    expect(r.json.error).toBe("business_mismatch");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("adds the business with its formation state", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, { data: [] })).mockResolvedValueOnce(reply(201, { id: BID, palm_id: null }));
+  it("finds the entity's own Palm business by its id first", async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { data: [{ id: BID, palm_id: "p1", metadata: { bfo_asset_id: "a1" } }] }));
+    const r = await call({ action: "link", mode: "test", assetId: "a1", entity: { name: "Ledger Louise, LLC", jurisdiction: "US-NV" } });
+    expect(r.json).toMatchObject({ businessId: BID, created: false });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).metadata).toEqual({ bfo_asset_id: "a1" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches on the EIN next, and claims the business for this entity", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { data: [] }))
+      .mockResolvedValueOnce(reply(200, { data: [{ id: BID, palm_id: "p1", metadata: {} }] }))
+      .mockResolvedValueOnce(reply(200, { id: BID }));
+    const r = await call({ action: "link", mode: "test", assetId: "a1", entity: { name: "Ledger Louise, LLC", ein: "933776895", jurisdiction: "US-NV" } });
+    expect(r.json).toMatchObject({ businessId: BID, created: false });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).ein).toBe("93-3776895");
+    expect(fetchMock.mock.calls[2][1].method).toBe("PATCH");
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).metadata).toEqual({ bfo_asset_id: "a1" });
+  });
+
+  it("never takes another entity's business on a name match", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { data: [] }))
+      .mockResolvedValueOnce(reply(200, { data: [{ id: "x", metadata: { bfo_asset_id: "other" }, vault: { "business.legal_name": "Acme LLC", "business.formation_jurisdiction": "US-NV" } }] }))
+      .mockResolvedValueOnce(reply(201, { id: BID, palm_id: null }));
+    const r = await call({ action: "link", mode: "test", assetId: "a1", entity: { name: "Acme, LLC", jurisdiction: "US-NV", fileNumber: "E1" } });
+    expect(r.json).toMatchObject({ businessId: BID, created: true });
+  });
+
+  it("refuses an EIN already linked to another entity", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { data: [] }))
+      .mockResolvedValueOnce(reply(200, { data: [{ id: "x", metadata: { bfo_asset_id: "other" } }] }));
+    const r = await call({ action: "link", mode: "test", assetId: "a1", entity: { name: "Acme, LLC", ein: "12-3456789", jurisdiction: "US-NV" } });
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("claimed");
+  });
+
+  it("adds the business with its formation state and EIN", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { data: [] }))
+      .mockResolvedValueOnce(reply(200, { data: [] }))
+      .mockResolvedValueOnce(reply(200, { data: [] }))
+      .mockResolvedValueOnce(reply(201, { id: BID, palm_id: null }));
     const r = await call({
       action: "link",
+      mode: "test",
       assetId: "a1",
-      entity: { name: "Ledger Louise, LLC", type: "LLC", jurisdiction: "US-NV", formationDate: "2023-08-11", fileNumber: "E34087392023-1", address: "11201 N Tatum Blvd Ste 300, Phoenix, AZ 85028" },
+      entity: { name: "Ledger Louise, LLC", ein: "933776895", type: "LLC", jurisdiction: "US-NV", formationDate: "2023-08-11", fileNumber: "E34087392023-1", address: "11201 N Tatum Blvd Ste 300, Phoenix, AZ 85028" },
     });
     expect(r.json).toMatchObject({ businessId: BID, created: true });
-    const sent = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const sent = JSON.parse(fetchMock.mock.calls[3][1].body);
+    expect(sent.metadata).toEqual({ bfo_asset_id: "a1" });
     expect(sent.vault).toMatchObject({
       "business.formation_jurisdiction": "US-NV",
       "business.entity_type": "llc",
       "business.registration_number": "E34087392023-1",
+      "business.ein": "93-3776895",
       "business.city": "Phoenix",
     });
-    expect(sent.vault["business.ein"]).toBeUndefined();
+  });
+
+  it("follows document pages", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { data: [{ id: "1" }], has_more: true, next_cursor: "c2" }))
+      .mockResolvedValueOnce(reply(200, { data: [{ id: "2" }], has_more: false, next_cursor: null }));
+    const r = await call({ action: "documents", businessId: BID });
+    expect(r.json.documents.map((d: { id: string }) => d.id)).toEqual(["1", "2"]);
+    expect(fetchMock.mock.calls[1][0]).toContain("cursor=c2");
   });
 
   it("rejects malformed ids before calling Palm", async () => {
