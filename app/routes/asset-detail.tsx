@@ -7,6 +7,7 @@ import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { isAdmin as userIsAdmin } from "../auth";
 import {
   DOC_LABEL,
+  docKindOf,
   formatAddress as formatPalmAddress,
   normalizeName,
   openPalmDocument,
@@ -1421,6 +1422,15 @@ export default function AssetDetail() {
       return;
     }
     const rec = current.stateRecord;
+    // Palm can't take the file number after the business is added, so it must be known first.
+    const fileNumber = current.fileNumber || (rec?.mode === mode ? rec.registrationNumber : undefined);
+    if (!current.palm?.[mode]?.businessId && !fileNumber) {
+      await alertDialog(
+        "Check the state record first",
+        "Palm needs the state's file number for this entity, and it can't be added later. Click “Check state record”, then try again.",
+      );
+      return;
+    }
     const oldAgent = current.registeredAgent?.replace(/\.+$/, "");
     const lapsed = rec && ((rec.status && rec.status !== "active") || rec.standing?.registration === "not_compliant");
     const ok = await confirmDialog({
@@ -1443,6 +1453,7 @@ export default function AssetDetail() {
     if (!ok) return;
     setPalmBusy("move");
     setPalmError("");
+    let linkedId: string | undefined;
     try {
       let businessId = current.palm?.[mode]?.businessId;
       if (!businessId) {
@@ -1453,7 +1464,7 @@ export default function AssetDetail() {
             type: entityType(current),
             jurisdiction,
             formationDate: current.formationDate,
-            fileNumber: current.fileNumber || (rec?.mode === mode ? rec.registrationNumber : undefined),
+            fileNumber,
             address: current.address,
           },
         });
@@ -1461,11 +1472,14 @@ export default function AssetDetail() {
         const link: PalmLink = { businessId, palmId: linked.palmId ?? null, linkedAt: Date.now() };
         await patchAsset({ [`palm/${mode}`]: link });
       }
+      linkedId = businessId;
       const { service } = await palmCall<{ service: RaService }>("ra-change", { businessId, assetId: id });
       setPalmRa(service);
       await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, checkedAt: Date.now() } });
     } catch (err) {
       setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
+      // The request may have gone through before the error: show Palm's actual state rather than guess.
+      if (linkedId) void refreshPalm(linkedId, false);
     } finally {
       setPalmBusy(null);
     }
@@ -3235,8 +3249,8 @@ export default function AssetDetail() {
                           {palmDocs.map((d) => (
                             <li key={d.id} className="flex items-center justify-between gap-3 text-[12.5px]">
                               <span className="min-w-0 truncate">
-                                <span className={d.type === "service_of_process" ? `font-medium ${isDark ? "text-red-300" : "text-red-700"}` : ""}>
-                                  {DOC_LABEL[d.type ?? ""] ?? (d.type ?? "Document").replace(/_/g, " ")}
+                                <span className={docKindOf(d) === "service_of_process" ? `font-medium ${isDark ? "text-red-300" : "text-red-700"}` : ""}>
+                                  {DOC_LABEL[docKindOf(d)] ?? (docKindOf(d) || "Document").replace(/_/g, " ")}
                                 </span>
                                 <span className={textMuted}>
                                   {d.filename ? ` · ${d.filename}` : ""}

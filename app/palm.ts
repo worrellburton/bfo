@@ -165,8 +165,13 @@ export const DOC_LABEL: Record<string, string> = {
   welcome_letter: "Welcome letter",
 };
 
+/** A document's kind: `types` is current, `type` is Palm's deprecated single value. */
+export function docKindOf(d: PalmDocument): string {
+  return d.types?.find((t) => t === "service_of_process") ?? d.types?.[0] ?? d.type ?? "";
+}
+
 export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
-  const rank = (d: PalmDocument) => (d.type === "service_of_process" ? 0 : d.type === "notice" ? 1 : 2);
+  const rank = (d: PalmDocument) => (docKindOf(d) === "service_of_process" ? 0 : docKindOf(d) === "notice" ? 1 : 2);
   return [...docs].sort((a, b) => rank(a) - rank(b) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
 }
 
