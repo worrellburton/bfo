@@ -146,9 +146,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         if (!r.ok) return res.status(r.status === 404 ? 404 : 502).json({ error: "document_unavailable" });
         const buf = Buffer.from(await r.arrayBuffer());
-        res.setHeader("Content-Type", r.headers.get("content-type") || "application/octet-stream");
+        // Only PDFs and images are shown inline; anything else is a download, never a page on our origin.
+        const ct = (r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+        const safe = ct === "application/pdf" || /^image\/(png|jpeg|gif|webp)$/.test(ct);
+        res.setHeader("Content-Type", safe ? ct : "application/octet-stream");
+        res.setHeader("X-Content-Type-Options", "nosniff");
         const cd = r.headers.get("content-disposition");
-        if (cd) res.setHeader("Content-Disposition", cd);
+        if (cd && !/[\r\n]/.test(cd)) res.setHeader("Content-Disposition", safe ? cd : cd.replace(/^\s*inline/i, "attachment"));
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).send(buf);
       }

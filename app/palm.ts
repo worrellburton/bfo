@@ -197,8 +197,18 @@ export async function openPalmDocument(doc: PalmDocument): Promise<void> {
     win?.close();
     throw new Error("Couldn't open that document.");
   }
-  const url = URL.createObjectURL(await r.blob());
-  if (win) win.location.href = url;
-  else window.location.href = url;
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  if (blob.type === "application/pdf" || blob.type.startsWith("image/")) {
+    if (win) win.location.href = url;
+    else window.location.href = url;
+  } else {
+    // Not something to render on our origin: save it instead.
+    win?.close();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = doc.filename || "document";
+    a.click();
+  }
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
