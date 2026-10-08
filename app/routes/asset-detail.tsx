@@ -517,6 +517,36 @@ function ServicesDropdown({
   );
 }
 
+/**
+ * Firebase drops empty arrays (and objects) on write, so a stored profile with
+ * no properties or issues comes back without those keys. Restore them on read.
+ */
+function fromDatabase(raw: Asset): Asset {
+  const list = <T,>(v: T[] | Record<string, T> | undefined | null): T[] => (Array.isArray(v) ? v : v && typeof v === "object" ? Object.values(v) : []);
+  const a: Asset = { ...raw };
+  if (a.profile) {
+    const p = a.profile;
+    a.profile = {
+      ...p,
+      whatItIs: p.whatItIs ?? "",
+      properties: list(p.properties),
+      managers: list(p.managers),
+      members: list(p.members),
+      keyTerms: list(p.keyTerms),
+      issues: list(p.issues),
+      sources: list(p.sources),
+      checkedAt: p.checkedAt ?? 0,
+    };
+  }
+  if (a.stateRecord) a.stateRecord = { ...a.stateRecord, managers: list(a.stateRecord.managers) };
+  if (a.members) a.members = list(a.members);
+  if (a.verification) {
+    const v = a.verification;
+    a.verification = { ...v, fields: list(v.fields), owners: list(v.owners), issues: list(v.issues), documentsRead: list(v.documentsRead) };
+  }
+  return a;
+}
+
 export default function AssetDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -682,7 +712,7 @@ export default function AssetDetail() {
         const data = snapshot.val();
         // The edit form is seeded when editing starts (startEditing), so a
         // background write (auto-filing, enrichment) never wipes what's typed.
-        if (data) setAsset(data as Asset);
+        if (data) setAsset(fromDatabase(data as Asset));
         setLoading(false);
       });
 
