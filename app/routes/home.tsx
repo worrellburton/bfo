@@ -796,7 +796,7 @@ export default function Home() {
               .slice(0, 2)
               .map((d) => `${d.entity} · ${d.title.replace(/^(Arizona|Nevada|Delaware) /, "")} ${relDay(d.due)}`)
               .join("; ") + (dueSoon.length > 2 ? ` +${dueSoon.length - 2} more` : ""),
-      to: `/assets/${first.id}`,
+      to: `/assets/${first.id}/compliance`,
     });
   }
   if (!assetsLoading && missingEin.length > 0) {

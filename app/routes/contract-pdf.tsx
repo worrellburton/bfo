@@ -531,7 +531,7 @@ export default function ContractPDF() {
   if (!asset || !contract) {
     return (
       <div>
-        <Link to={`/assets/${id}`} className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm mb-4 inline-block`}>
+        <Link to={`/assets/${id}/agreements`} className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm mb-4 inline-block`}>
           &larr; Back to Entity
         </Link>
         <p className="text-gray-500">Contract not found.</p>
@@ -545,7 +545,7 @@ export default function ContractPDF() {
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <Link
-            to={`/assets/${id}`}
+            to={`/assets/${id}/agreements`}
             className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm inline-flex shrink-0 items-center gap-1 max-sm:min-h-[40px] max-sm:pr-1`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

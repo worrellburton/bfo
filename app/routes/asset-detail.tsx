@@ -603,10 +603,15 @@ export default function AssetDetail() {
   // After switching, scroll to the part that was asked for once it has rendered.
   const pendingScroll = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
   const activeTabRef = useRef<HTMLAnchorElement | null>(null);
-  // On a phone the menu scrolls sideways: keep the current category in view.
+  // On a phone the menu scrolls sideways: keep the current category in view
+  // (moving only the menu, never the page), including once it first appears.
   useEffect(() => {
-    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }, [tabParam]);
+    const el = activeTabRef.current;
+    const box = el?.parentElement;
+    if (!el || !box) return;
+    const left = el.offsetLeft - box.offsetLeft;
+    if (left < box.scrollLeft || left + el.offsetWidth > box.scrollLeft + box.clientWidth) box.scrollTo({ left: Math.max(0, left - 8) });
+  }, [tabParam, loading]);
   useEffect(() => {
     const p = pendingScroll.current;
     if (!p) return;
@@ -624,7 +629,6 @@ export default function AssetDetail() {
     }
     pendingScroll.current = anchor ? { id: anchor, block } : null;
     navigate(tabPath(t));
-    if (!anchor) window.scrollTo({ top: 0 });
   }
 
   // Corp management
@@ -1416,6 +1420,8 @@ export default function AssetDetail() {
 
   // Another entity: start the card clean.
   useEffect(() => {
+    setEditing(false);
+    setForm({});
     palmEpoch.current++;
     palmSeq.current++;
     setPalmRa(undefined);
@@ -2785,8 +2791,22 @@ export default function AssetDetail() {
                 ? "Checking it against the EIN letter and W-9…"
                 : aiDown
                   ? "Not confirmed yet — document reading is paused"
-                  : "Not confirmed by the EIN letter or W-9 on file — check them, or run Verify"
-              : "Not confirmed by a document — upload the EIN letter or W-9"}
+                  : (
+                    <>
+                      Not confirmed by the EIN letter or W-9 on file —{" "}
+                      <Link to={tabPath("documents")} className="underline underline-offset-2">
+                        check them, or run Verify
+                      </Link>
+                    </>
+                  )
+              : (
+                <>
+                  Not confirmed by a document —{" "}
+                  <button type="button" onClick={() => goToTab("documents", "filing-einLetter", "center")} className="cursor-pointer underline underline-offset-2">
+                    upload the EIN letter or W-9
+                  </button>
+                </>
+              )}
           </p>
         )}
       </div>
@@ -2895,7 +2915,6 @@ export default function AssetDetail() {
                 <Link
                   key={m.key}
                   to={tabPath(m.to)}
-                  onClick={() => window.scrollTo({ top: 0 })}
                   className={`block transition-colors ${cell} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
                 >
                   <p className={kicker}>{m.label}</p>
@@ -2943,7 +2962,7 @@ export default function AssetDetail() {
       {/* Category menu */}
       <nav aria-label="Entity sections" className="sticky top-[calc(3.5rem+env(safe-area-inset-top)+8px)] z-20 lg:top-3">
         <div
-          className={`flex gap-1 overflow-x-auto rounded-xl border p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          className={`flex gap-1 rounded-xl border p-1 [overflow-x:auto] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
             isDark ? "border-white/[0.08] bg-[#0b0b0f]/95 backdrop-blur-xl" : "border-gray-200 bg-white/95 shadow-[0_1px_2px_rgba(16,24,40,0.04)] backdrop-blur-xl"
           }`}
         >
@@ -2954,7 +2973,6 @@ export default function AssetDetail() {
                 key={t.key}
                 to={tabPath(t.key)}
                 aria-current={on ? "page" : undefined}
-                onClick={() => window.scrollTo({ top: 0 })}
                 ref={on ? activeTabRef : undefined}
                 className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-2.5 ${
                   on
@@ -2982,7 +3000,7 @@ export default function AssetDetail() {
 
       {/* Key facts / Edit form */}
       {tab === "overview" && (editing ? (
-        <section id="entity-edit" className={`scroll-mt-32 lg:scroll-mt-20 rounded-2xl ${surface}`}>
+        <section id="entity-edit" className={`scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20 rounded-2xl ${surface}`}>
           <header className={`flex items-center gap-2 border-b px-5 py-3.5 ${hairline}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${accentBg}`} />
             <span className={kicker}>Editing entity</span>
@@ -3143,7 +3161,7 @@ export default function AssetDetail() {
               "Registered agent",
               <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 {asset.registeredAgent && <span>{asset.registeredAgent}</span>}
-                <Link to={tabPath("compliance")} onClick={() => window.scrollTo({ top: 0 })} className={`text-[11.5px] hover:underline ${accentText}`}>
+                <Link to={tabPath("compliance")} className={`text-[11.5px] hover:underline ${accentText}`}>
                   {asset.palm?.live?.ra?.status === "active" ? "Palm →" : "Change with Palm →"}
                 </Link>
               </span>,
@@ -3205,7 +3223,7 @@ export default function AssetDetail() {
             const agentAddress = palmIsAgent ? formatPalmAddress(svc?.address) : null;
             const linkBtn = `${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`;
             return (
-              <section id="registered-agent" className={`scroll-mt-32 overflow-hidden rounded-2xl lg:scroll-mt-20 ${surface}`}>
+              <section id="registered-agent" className={`scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] overflow-hidden rounded-2xl lg:scroll-mt-20 ${surface}`}>
                 {sectionHeader(
                   "State record · Palm",
                   "Registered agent",
