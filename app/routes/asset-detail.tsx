@@ -611,7 +611,8 @@ export default function AssetDetail() {
   const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
   const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
   const [showLinkForm, setShowLinkForm] = useState(false);
-  const [copiedEin, setCopiedEin] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const copiedEin = copied === "ein";
   const [showDone, setShowDone] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState("");
@@ -1994,15 +1995,28 @@ export default function AssetDetail() {
     );
   }
 
-  async function handleCopyEin() {
-    if (!asset?.ein) return;
+  async function copyValue(key: string, text: string) {
     try {
-      await navigator.clipboard.writeText(asset.ein);
-      setCopiedEin(true);
-      setTimeout(() => setCopiedEin(false), 1500);
+      await navigator.clipboard.writeText(text);
     } catch {
-      // clipboard unavailable — nothing to do
+      // Older browsers and non-secure contexts: copy through a hidden field.
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand("copy");
+      el.remove();
+      if (!ok) return;
     }
+    setCopied(key);
+    setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
+  }
+
+  function handleCopyEin() {
+    if (asset?.ein) copyValue("ein", asset.ein);
   }
 
   function sectionHeader(kickerText: string, title: string, count?: number, actions?: React.ReactNode) {
@@ -2318,20 +2332,23 @@ export default function AssetDetail() {
   }[scoreTone];
   const docFiledAs = new Map<string, FileKind>();
   for (const k of FILING_KINDS) if (asset[k]?.docId) docFiledAs.set(asset[k]!.docId!, k);
-  const activeContracts = contracts.filter((c) => c.status === "active").length;
-  const metrics: { label: string; value: string; sub?: string }[] = [];
-  if (isTrust) {
+  // The two facts people reach for most lead the strip, one click to copy.
+  const metrics: { key: string; label: string; value: string; sub?: string; copy?: string; mono?: boolean }[] = [];
+  const formed = fmtDate(asset.formationDate);
+  if (isTrust && !asset.ein) {
     const trustees = (asset.trustees ?? "").split(/[,;\n]/).map((t) => t.trim()).filter(Boolean);
-    metrics.push({ label: "Trustees", value: String(trustees.length), sub: trustees.length ? trustees[0] : "none recorded" });
+    metrics.push({ key: "trustees", label: "Trustees", value: String(trustees.length), sub: trustees.length ? trustees[0] : "none recorded" });
+  } else {
+    metrics.push({ key: "ein", label: "EIN", value: asset.ein || "—", copy: asset.ein || undefined, mono: true });
   }
-  if (etype === "LLC") metrics.push({ label: "Contracts", value: String(contracts.length), sub: `${activeContracts} active` });
-  if (etype === "C-Corp") metrics.push({ label: "Directors", value: String(directors.length), sub: `${shareholders.length} holder${shareholders.length === 1 ? "" : "s"}` });
-  metrics.push({ label: "Completeness", value: `${score}`, sub: "/ 100" });
-  metrics.push({ label: "Paperwork", value: `${filedCount}/${scoredKinds.length}`, sub: filedCount === scoredKinds.length ? "complete" : "on file" });
   metrics.push({
-    label: "On record since",
-    value: asset.createdAt ? new Date(asset.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "—",
+    key: "formed",
+    label: isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : etype === "LP" ? "Formed" : "Formation date",
+    value: formed || "—",
+    copy: formed || undefined,
   });
+  metrics.push({ key: "score", label: "Completeness", value: `${score}`, sub: "/ 100" });
+  metrics.push({ key: "paper", label: "Paperwork", value: `${filedCount}/${scoredKinds.length}`, sub: filedCount === scoredKinds.length ? "complete" : "on file" });
 
   // Visible on hover, keyboard focus, and always on touch-size screens.
   const corpRemoveCls = `${hit} text-xs cursor-pointer transition-opacity sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-gray-400 hover:text-red-400" : "text-gray-500 hover:text-red-600"}`;
@@ -2489,18 +2506,48 @@ export default function AssetDetail() {
           </div>
         </div>
         <div className={`relative grid grid-cols-2 border-t sm:grid-cols-4 ${hairline}`}>
-          {metrics.map((m, i) => (
-            <div
-              key={m.label}
-              className={`min-w-0 px-5 py-3.5 sm:px-6 ${divider} ${i % 2 === 1 ? "border-l" : ""} ${i === 2 ? "sm:border-l" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""}`}
-            >
-              <p className={kicker}>{m.label}</p>
-              <p className="mt-1 truncate text-[15px] font-medium tabular-nums">
+          {metrics.map((m, i) => {
+            const cell = `min-w-0 px-5 py-3.5 sm:px-6 ${divider} ${i % 2 === 1 ? "border-l" : ""} ${i === 2 ? "sm:border-l" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""}`;
+            const value = (
+              <p className={`mt-1 truncate text-[15px] font-medium tabular-nums ${m.mono ? "font-mono tracking-[0.02em]" : ""}`}>
                 {m.value}
                 {m.sub && <span className={`ml-1.5 text-[11px] font-normal ${textMuted}`}>{m.sub}</span>}
               </p>
-            </div>
-          ))}
+            );
+            if (!m.copy) {
+              return (
+                <div key={m.key} className={cell}>
+                  <p className={kicker}>{m.label}</p>
+                  {value}
+                </div>
+              );
+            }
+            const done = copied === m.key;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => copyValue(m.key, m.copy!)}
+                title={`Copy ${m.label.toLowerCase() === "ein" ? "EIN" : m.label.toLowerCase()}`}
+                aria-label={`${m.label} ${m.value}. Copy`}
+                className={`group/copy text-left cursor-pointer transition-colors ${cell} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
+              >
+                <p className={`${kicker} flex items-center gap-1.5`}>
+                  {m.label}
+                  <span
+                    aria-live="polite"
+                    className={`inline-flex items-center gap-1 transition-opacity ${
+                      done ? (isDark ? "text-emerald-400" : "text-emerald-600") : `${isDark ? "text-gray-600" : "text-gray-400"} sm:opacity-0 sm:group-hover/copy:opacity-100 group-focus-visible/copy:opacity-100`
+                    }`}
+                  >
+                    <Icon name={done ? "check" : "copy"} className="w-3 h-3" strokeWidth={2} />
+                    {done ? "Copied" : ""}
+                  </span>
+                </p>
+                {value}
+              </button>
+            );
+          })}
         </div>
       </section>
 
