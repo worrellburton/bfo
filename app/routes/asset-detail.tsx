@@ -4,6 +4,27 @@ import { useTheme } from "../theme";
 import { authFetch } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { isAdmin as userIsAdmin } from "../auth";
+import {
+  DOC_LABEL,
+  formatAddress as formatPalmAddress,
+  normalizeName,
+  openPalmDocument,
+  palmCall,
+  palmJurisdiction,
+  PalmUnavailable,
+  pickRegistryMatch,
+  RA_STATUS,
+  sortDocuments,
+  stateFindings,
+  toStateRecord,
+  type PalmDocument,
+  type PalmLink,
+  type PalmMode,
+  type RaService,
+  type RegistryRecord,
+  type StateRecord,
+} from "../palm";
 import {
   BOI_NOTE,
   DOC_KEYS,
@@ -42,6 +63,14 @@ interface Asset {
   grantors?: string;
   beneficiaries?: string;
   stateLink?: string;
+  /** The state's file / registration number for the entity. */
+  fileNumber?: string;
+  /** Where the registered agent value came from, when not typed by hand. */
+  registeredAgentSource?: string;
+  /** Palm links, one per mode — test and live data never mix. */
+  palm?: Partial<Record<PalmMode, PalmLink>>;
+  /** The state's record as last read through Palm. */
+  stateRecord?: StateRecord;
   operatingAgreementDate?: string;
   articlesOfOrgDate?: string;
   w9?: UploadedFile;
@@ -746,8 +775,10 @@ export default function AssetDetail() {
           llcTypeConflict: conflict && conflict.value !== form.llcType ? conflict : null,
         }
       : {};
+    const agentChanged = (form.registeredAgent ?? "") !== (base.registeredAgent ?? "");
     await update(ref(db, `assets/${id}`), {
       ...provenance,
+      ...(agentChanged ? { registeredAgentSource: null } : {}),
       name: String(pick("name") ?? "").trim(),
       type: form.type,
       state: pick("state") || "",
@@ -762,6 +793,7 @@ export default function AssetDetail() {
       grantors: pick("grantors") || "",
       beneficiaries: pick("beneficiaries") || "",
       stateLink: pick("stateLink") || "",
+      fileNumber: String(pick("fileNumber") ?? "").trim(),
       operatingAgreementDate: pick("operatingAgreementDate") || "",
       articlesOfOrgDate: pick("articlesOfOrgDate") || "",
     });
@@ -1270,6 +1302,174 @@ export default function AssetDetail() {
   const [profiling, setProfiling] = useState(false);
   const [profileError, setProfileError] = useState("");
   const profileTried = useRef(false);
+
+  // ── Palm: the state's record, and Palm as registered agent ─────────────
+  const [palmStatus, setPalmStatus] = useState<{ configured: boolean; mode: PalmMode | null } | null>(null);
+  const [palmRa, setPalmRa] = useState<RaService | null | undefined>(undefined);
+  const [palmDocs, setPalmDocs] = useState<PalmDocument[] | null>(null);
+  const [palmBusy, setPalmBusy] = useState<"record" | "move" | "refresh" | null>(null);
+  const [palmError, setPalmError] = useState("");
+  const [registryChoices, setRegistryChoices] = useState<RegistryRecord[] | null>(null);
+  const palmMode = palmStatus?.mode ?? null;
+
+  async function patchAsset(patch: Record<string, unknown>) {
+    const { db } = await import("../firebase");
+    const { ref, update } = await import("firebase/database");
+    await update(ref(db, `assets/${id}`), patch);
+  }
+
+  useEffect(() => {
+    let live = true;
+    palmCall<{ configured: boolean; mode: PalmMode | null }>("status")
+      .then((s) => live && setPalmStatus(s))
+      .catch(() => live && setPalmStatus({ configured: false, mode: null }));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const palmBusinessId = palmMode ? asset?.palm?.[palmMode]?.businessId : undefined;
+  useEffect(() => {
+    if (!palmBusinessId) return;
+    void refreshPalm(palmBusinessId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [palmBusinessId]);
+
+  /** Palm's agent service and mail for this entity; keeps the record in step once Palm is the agent. */
+  async function refreshPalm(businessId: string, showBusy = true) {
+    const mode = palmMode;
+    if (!mode) return;
+    if (showBusy) setPalmBusy("refresh");
+    setPalmError("");
+    try {
+      const [{ service }, { documents }] = await Promise.all([
+        palmCall<{ service: RaService | null }>("ra", { businessId }),
+        palmCall<{ documents: PalmDocument[] }>("documents", { businessId }),
+      ]);
+      setPalmRa(service);
+      setPalmDocs(sortDocuments(documents));
+      const current = assetRef.current;
+      if (!current) return;
+      const patch: Record<string, unknown> = {
+        [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, checkedAt: Date.now() },
+      };
+      // Palm became the agent of record — the record follows (live only; the sandbox files nothing).
+      if (mode === "live" && service?.status === "active" && service.name && normalizeName(service.name) !== normalizeName(current.registeredAgent)) {
+        patch.registeredAgent = service.name;
+        patch.registeredAgentSource = `Palm, active since ${(service.started_at ?? new Date().toISOString()).slice(0, 10)}`;
+      }
+      await patchAsset(patch);
+    } catch (err) {
+      setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
+    } finally {
+      if (showBusy) setPalmBusy(null);
+    }
+  }
+
+  /** Read the state's record: by file number when we have it, otherwise find the entity by name. */
+  async function checkStateRecord(choice?: RegistryRecord) {
+    const current = assetRef.current;
+    const mode = palmMode;
+    if (!current || !mode) return;
+    const jurisdiction = palmJurisdiction(current.state);
+    if (!jurisdiction) {
+      setPalmError("Set the entity's state first.");
+      return;
+    }
+    setPalmBusy("record");
+    setPalmError("");
+    try {
+      let number = choice?.registration_number || current.fileNumber;
+      let where = choice?.registration_jurisdiction || jurisdiction;
+      if (!number) {
+        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: current.name, jurisdiction });
+        const match = pickRegistryMatch(results, current.name, jurisdiction);
+        if (!match) {
+          setRegistryChoices(results);
+          if (!results.length) setPalmError(`No ${current.state} registry entry matched “${current.name}”. Add the state file number and try again.`);
+          return;
+        }
+        number = match.registration_number;
+        where = match.registration_jurisdiction || jurisdiction;
+      }
+      if (!number) {
+        setPalmError("The registry result had no file number.");
+        return;
+      }
+      const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number });
+      const snapshot = toStateRecord(record, mode);
+      const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
+      if (mode === "live" && !current.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
+      await patchAsset(patch);
+      setRegistryChoices(null);
+    } catch (err) {
+      if (err instanceof PalmUnavailable) setPalmStatus({ configured: false, mode: null });
+      setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
+    } finally {
+      setPalmBusy(null);
+    }
+  }
+
+  /** Move the registered agent onto Palm: add the business to Palm if needed, then request the change. */
+  async function moveAgentToPalm() {
+    const current = assetRef.current;
+    const mode = palmMode;
+    if (!current || !mode) return;
+    const jurisdiction = palmJurisdiction(current.state);
+    if (!jurisdiction) {
+      await alertDialog("Set the state first", "Palm files the change in the state the entity was formed in.");
+      return;
+    }
+    const rec = current.stateRecord;
+    const oldAgent = current.registeredAgent?.replace(/\.+$/, "");
+    const lapsed = rec && ((rec.status && rec.status !== "active") || rec.standing?.registration === "not_compliant");
+    const ok = await confirmDialog({
+      title: "Make Palm the registered agent?",
+      message: (
+        <>
+          Palm will file the change with the {current.state} Secretary of State for <b>{current.name}</b> and become its agent of record.
+        </>
+      ),
+      details: [
+        mode === "live" ? "This is a live state filing, billed to the Palm account." : "Test mode: nothing is filed with the state and nothing is billed.",
+        `The current agent${oldAgent ? ` (${oldAgent})` : ""} stays on file until the state accepts the change. If it fails, nothing changes.`,
+        "Once Palm is active, state mail and any legal papers served on the entity arrive here.",
+        ...(lapsed ? [`The state's record shows ${rec?.status !== "active" ? rec?.status : "it isn't in good standing"}. The state may refuse the change until the overdue filing and fees are paid.`] : []),
+        ...(oldAgent ? [`Afterwards, cancel ${oldAgent}'s service so it isn't billed twice.`] : []),
+      ],
+      confirmLabel: "Make Palm the agent",
+      requireText: mode === "live" ? current.name : undefined,
+    });
+    if (!ok) return;
+    setPalmBusy("move");
+    setPalmError("");
+    try {
+      let businessId = current.palm?.[mode]?.businessId;
+      if (!businessId) {
+        const linked = await palmCall<{ businessId: string; palmId: string | null }>("link", {
+          assetId: id,
+          entity: {
+            name: current.name,
+            type: entityType(current),
+            jurisdiction,
+            formationDate: current.formationDate,
+            fileNumber: current.fileNumber || (rec?.mode === mode ? rec.registrationNumber : undefined),
+            address: current.address,
+          },
+        });
+        businessId = linked.businessId;
+        const link: PalmLink = { businessId, palmId: linked.palmId ?? null, linkedAt: Date.now() };
+        await patchAsset({ [`palm/${mode}`]: link });
+      }
+      const { service } = await palmCall<{ service: RaService }>("ra-change", { businessId, assetId: id });
+      setPalmRa(service);
+      await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, checkedAt: Date.now() } });
+    } catch (err) {
+      setPalmError(err instanceof Error ? err.message : "Couldn't reach Palm.");
+    } finally {
+      setPalmBusy(null);
+    }
+  }
 
   async function buildProfile() {
     const current = assetRef.current;
@@ -2641,6 +2841,10 @@ export default function AssetDetail() {
               </>
             )}
             {entityType(form) !== "Trust" && field(
+              "State file number",
+              <input value={form.fileNumber || ""} onChange={(e) => setForm({ ...form, fileNumber: e.target.value })} placeholder="e.g. E34087392023-1" className={fieldInput} />,
+            )}
+            {entityType(form) !== "Trust" && field(
               "State filing link",
               <input value={form.stateLink || ""} onChange={(e) => setForm({ ...form, stateLink: e.target.value })} placeholder="https://..." type="url" className={fieldInput} />,
             )}
@@ -2715,12 +2919,17 @@ export default function AssetDetail() {
               </>
             )}
             {!isTrust && factCell(
-              "State link",
-              asset.stateLink ? (
-                <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${accentText}`}>
-                  View filing
-                  <Icon name="external" className="w-3 h-3" />
-                </a>
+              asset.fileNumber ? "State file number" : "State link",
+              asset.fileNumber || asset.stateLink ? (
+                <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {asset.fileNumber && <span className="font-mono tabular-nums tracking-[0.02em]">{asset.fileNumber}</span>}
+                  {asset.stateLink && (
+                    <a href={asset.stateLink} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${accentText}`}>
+                      View filing
+                      <Icon name="external" className="w-3 h-3" />
+                    </a>
+                  )}
+                </span>
               ) : null,
             )}
             {asset.notes &&
@@ -2832,6 +3041,227 @@ export default function AssetDetail() {
             )}
             {asset.profile && profileError && <p className="px-5 pb-3 text-[11px] text-red-400">{profileError}</p>}
           </section>
+
+          {/* State record and registered agent — through Palm */}
+          {!isTrust && (() => {
+            const svc = palmRa;
+            const st = svc?.status ? RA_STATUS[svc.status] : null;
+            const toneChip = (tone: "good" | "wait" | "bad" | "muted") =>
+              `${chipBase} ${
+                tone === "good"
+                  ? isDark ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : tone === "wait"
+                    ? isDark ? "border-amber-400/25 bg-amber-400/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"
+                    : tone === "bad"
+                      ? isDark ? "border-red-400/25 bg-red-400/10 text-red-300" : "border-red-200 bg-red-50 text-red-700"
+                      : chipNeutral
+              }`;
+            const palmIsAgent = svc?.status === "active";
+            const inFlight = svc?.status === "pending" || svc?.status === "termination_requested";
+            const canMove = userIsAdmin() && !palmIsAgent && !inFlight;
+            const rec = asset.stateRecord;
+            const findings = rec ? stateFindings(rec, asset) : [];
+            const agentShown = palmIsAgent ? svc?.name : asset.registeredAgent;
+            const agentAddress = palmIsAgent ? formatPalmAddress(svc?.address) : null;
+            const linkBtn = `${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`;
+            return (
+              <section className={`overflow-hidden rounded-2xl ${surface}`}>
+                {sectionHeader(
+                  "State record · Palm",
+                  "Registered agent",
+                  undefined,
+                  palmStatus?.configured ? (
+                    <div className="flex items-center gap-3">
+                      {palmMode === "test" && <span className={toneChip("wait")}>Test mode</span>}
+                      <button type="button" onClick={() => void checkStateRecord()} disabled={!!palmBusy} className={linkBtn}>
+                        <Icon name="replace" className="h-3 w-3" />
+                        {palmBusy === "record" ? "Checking…" : rec ? "Re-check state record" : "Check state record"}
+                      </button>
+                    </div>
+                  ) : undefined,
+                )}
+                {!palmStatus ? (
+                  <p className={`px-5 py-4 text-[12.5px] ${textMuted}`}>Checking the Palm connection…</p>
+                ) : !palmStatus.configured ? (
+                  <div className="space-y-3 px-5 py-4 text-[12.5px] leading-snug">
+                    <p className={textSoft}>
+                      Connect Palm to read this entity's record straight from the state and to have Palm act as its registered agent, with state mail and any legal papers delivered here.
+                    </p>
+                    <ol className={`list-decimal space-y-1 pl-4 ${textSoft}`}>
+                      <li>
+                        In Palm Console, open <b>API Keys</b> and generate a key. Start with a test key (<code>sk_test_…</code>): nothing is filed or billed.
+                      </li>
+                      <li>
+                        In Vercel, add it to the <b>bfo</b> project as <code>PALM_API_KEY</code> (mark it Sensitive), then redeploy.
+                      </li>
+                    </ol>
+                    <a href="https://platform.getpalm.com" target="_blank" rel="noopener noreferrer" className={btnXsOutline}>
+                      Open Palm Console
+                      <Icon name="external" className="h-3 w-3" />
+                    </a>
+                  </div>
+                ) : (
+                  <div className={`divide-y ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>
+                    {/* The agent of record, and Palm's service */}
+                    <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+                      <div className="min-w-0 space-y-1">
+                        <p className={kicker}>Agent of record</p>
+                        <p className="text-[13.5px]">{agentShown || emptyValue}</p>
+                        {agentAddress && <p className={`text-[11.5px] ${textMuted}`}>{agentAddress}</p>}
+                        {!palmIsAgent && asset.registeredAgentSource && <p className={`text-[11px] ${textMuted}`}>{asset.registeredAgentSource}</p>}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {st ? (
+                            <span className={toneChip(st.tone)}>
+                              {st.label}
+                              {svc?.status === "active" && svc.started_at ? ` · since ${fmtDate(svc.started_at.slice(0, 10))}` : ""}
+                            </span>
+                          ) : (
+                            palmBusinessId && svc === null && <span className={chipNeutral}>Palm isn't the agent</span>
+                          )}
+                        </div>
+                        {svc?.status === "pending" && (
+                          <p className={`max-w-[52ch] text-[11.5px] leading-snug ${textMuted}`}>
+                            Palm is filing the change with the state. It can take a few business days; this updates when the state accepts it.
+                          </p>
+                        )}
+                        {svc?.rejection_reason && (svc.status === "failed" || svc.status === "active") && (
+                          <p className={`max-w-[60ch] text-[11.5px] leading-snug ${isDark ? "text-red-300" : "text-red-700"}`}>The state didn't accept it: {svc.rejection_reason}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {palmBusinessId && (
+                          <button type="button" onClick={() => void refreshPalm(palmBusinessId)} disabled={!!palmBusy} className={btnXsOutline}>
+                            {palmBusy === "refresh" ? "Refreshing…" : "Refresh"}
+                          </button>
+                        )}
+                        {canMove ? (
+                          <button type="button" onClick={() => void moveAgentToPalm()} disabled={!!palmBusy} className={btnXsPrimary}>
+                            {palmBusy === "move" ? "Requesting…" : svc?.status === "failed" ? "Try again" : "Make Palm the agent"}
+                          </button>
+                        ) : (
+                          !palmIsAgent && !inFlight && <span className={`text-[11px] ${textMuted}`}>An owner or admin can change the agent.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Which registry entry is this entity? */}
+                    {registryChoices && registryChoices.length > 0 && (
+                      <div className="px-5 py-4">
+                        <p className={kicker}>Which of these is {asset.name}?</p>
+                        <ul className="mt-2 space-y-1.5">
+                          {registryChoices.slice(0, 6).map((r, i) => (
+                            <li key={`${r.registration_number}-${i}`} className="flex items-center justify-between gap-3 text-[12.5px]">
+                              <span className="min-w-0 truncate">
+                                {r.name}
+                                <span className={textMuted}> · {r.registration_jurisdiction} {r.registration_number} · {r.status}</span>
+                              </span>
+                              <button type="button" onClick={() => void checkStateRecord(r)} disabled={!!palmBusy} className={btnXsOutline}>
+                                This one
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* What the state's record says */}
+                    {rec && (
+                      <div className="space-y-3 px-5 py-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className={kicker}>State record</p>
+                          {rec.status && <span className={toneChip(rec.status === "active" ? "good" : "bad")}>{rec.status}</span>}
+                          {(["registration", "tax", "agent"] as const).map((k) =>
+                            rec.standing?.[k] ? (
+                              <span key={k} className={toneChip(rec.standing[k] === "compliant" ? "good" : "bad")}>
+                                {k === "registration" ? "Filings" : k === "tax" ? "Tax" : "Agent"} {rec.standing[k] === "compliant" ? "current" : "behind"}
+                              </span>
+                            ) : null,
+                          )}
+                          {rec.mode === "test" && <span className={chipNeutral}>sandbox data</span>}
+                        </div>
+                        <dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-[12.5px] sm:grid-cols-2">
+                          {rec.registrationNumber && (
+                            <div>
+                              <dt className={kicker}>File number</dt>
+                              <dd className="mt-0.5 font-mono tabular-nums">{rec.registrationNumber}</dd>
+                            </div>
+                          )}
+                          {rec.agent && (
+                            <div>
+                              <dt className={kicker}>Agent the state has</dt>
+                              <dd className="mt-0.5">{rec.agent}</dd>
+                              {rec.agentAddress && <dd className={`text-[11px] ${textMuted}`}>{rec.agentAddress}</dd>}
+                            </div>
+                          )}
+                          {rec.managers && rec.managers.length > 0 && (
+                            <div>
+                              <dt className={kicker}>People on file</dt>
+                              <dd className="mt-0.5">{rec.managers.join(", ")}</dd>
+                            </div>
+                          )}
+                          {rec.formationDate && (
+                            <div>
+                              <dt className={kicker}>Formed</dt>
+                              <dd className="mt-0.5 tabular-nums">{fmtDate(rec.formationDate.slice(0, 10))}</dd>
+                            </div>
+                          )}
+                        </dl>
+                        {findings.length > 0 && (
+                          <ul className="space-y-1">
+                            {findings.map((f, i) => (
+                              <li
+                                key={i}
+                                className={`text-[12px] leading-snug ${
+                                  f.tone === "bad" ? (isDark ? "text-red-300" : "text-red-700") : f.tone === "warn" ? (isDark ? "text-amber-300" : "text-amber-800") : textSoft
+                                }`}
+                              >
+                                {f.text}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <p className={`text-[11px] ${textMuted}`}>
+                          Read from the state through Palm, {fmtDate(new Date(rec.checkedAt).toISOString().slice(0, 10))}.
+                          {palmIsAgent && svc?.started_at && rec.checkedAt < Date.parse(svc.started_at) ? " That was before Palm became the agent — re-check to see the change on the state's side." : ""}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* State mail and agent paperwork */}
+                    {palmDocs && palmDocs.length > 0 && (
+                      <div className="px-5 py-4">
+                        <p className={kicker}>From the state, through Palm</p>
+                        <ul className="mt-2 space-y-1.5">
+                          {palmDocs.map((d) => (
+                            <li key={d.id} className="flex items-center justify-between gap-3 text-[12.5px]">
+                              <span className="min-w-0 truncate">
+                                <span className={d.type === "service_of_process" ? `font-medium ${isDark ? "text-red-300" : "text-red-700"}` : ""}>
+                                  {DOC_LABEL[d.type ?? ""] ?? (d.type ?? "Document").replace(/_/g, " ")}
+                                </span>
+                                <span className={textMuted}>
+                                  {d.filename ? ` · ${d.filename}` : ""}
+                                  {d.created_at ? ` · ${fmtDate(d.created_at.slice(0, 10))}` : ""}
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void openPalmDocument(d).catch((e) => setPalmError(e instanceof Error ? e.message : "Couldn't open it."))}
+                                className={btnXsOutline}
+                              >
+                                Open
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {palmError && <p className={`px-5 py-3 text-[12px] leading-snug ${isDark ? "text-red-300" : "text-red-700"}`}>{palmError}</p>}
+                  </div>
+                )}
+              </section>
+            );
+          })()}
 
           {/* C-Corp Management */}
           {asset.type === "C-Corp" && (
