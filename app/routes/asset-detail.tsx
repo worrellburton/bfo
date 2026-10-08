@@ -289,6 +289,8 @@ function fmtDate(value?: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+type EntityTab = "overview" | "documents" | "compliance" | "agreements" | "governance";
+
 // A moment as a local calendar date ("Oct 7, 2026") — not the UTC day.
 function fmtStamp(ms?: number): string {
   return ms ? new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
@@ -554,7 +556,7 @@ function fromDatabase(raw: Asset): Asset {
 }
 
 export default function AssetDetail() {
-  const { id } = useParams();
+  const { id, tab: tabParam } = useParams();
   const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -596,6 +598,34 @@ export default function AssetDetail() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Asset>>({});
+
+  // Sub-pages: the entity card stays on top; a category menu switches what's below.
+  // After switching, scroll to the part that was asked for once it has rendered.
+  const pendingScroll = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
+  const activeTabRef = useRef<HTMLAnchorElement | null>(null);
+  // On a phone the menu scrolls sideways: keep the current category in view.
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [tabParam]);
+  useEffect(() => {
+    const p = pendingScroll.current;
+    if (!p) return;
+    pendingScroll.current = null;
+    requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(p.id)?.scrollIntoView({ behavior: "smooth", block: p.block })));
+  }, [tabParam]);
+  function tabPath(t: EntityTab) {
+    return t === "overview" ? `/assets/${id}` : `/assets/${id}/${t}`;
+  }
+  function goToTab(t: EntityTab, anchor?: string, block: ScrollLogicalPosition = "start") {
+    const current = (tabParam ?? "overview") as EntityTab;
+    if (current === t) {
+      if (anchor) document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block });
+      return;
+    }
+    pendingScroll.current = anchor ? { id: anchor, block } : null;
+    navigate(tabPath(t));
+    if (!anchor) window.scrollTo({ top: 0 });
+  }
 
   // Corp management
   const [corpData, setCorpData] = useState<CorpData>({});
@@ -792,7 +822,8 @@ export default function AssetDetail() {
     editBaseRef.current = seed;
     setForm(seed);
     setEditing(true);
-    setTimeout(() => document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    if ((tabParam ?? "overview") === "overview") setTimeout(() => document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    else goToTab("overview", "entity-edit");
   }
 
   async function handleSave() {
@@ -2664,7 +2695,7 @@ export default function AssetDetail() {
   const docFiledAs = new Map<string, FileKind>();
   for (const k of FILING_KINDS) if (asset[k]?.docId) docFiledAs.set(asset[k]!.docId!, k);
   // The two facts people reach for most lead the strip, one click to copy.
-  const metrics: { key: string; label: string; value: string; sub?: string; copy?: string; mono?: boolean }[] = [];
+  const metrics: { key: string; label: string; value: string; sub?: string; copy?: string; mono?: boolean; to?: EntityTab }[] = [];
   const formed = fmtDate(asset.formationDate);
   if (isTrust && !asset.ein) {
     const trustees = (asset.trustees ?? "").split(/[,;\n]/).map((t) => t.trim()).filter(Boolean);
@@ -2679,7 +2710,7 @@ export default function AssetDetail() {
     copy: formed || undefined,
   });
   metrics.push({ key: "score", label: "Completeness", value: `${score}`, sub: "/ 100" });
-  metrics.push({ key: "paper", label: "Paperwork", value: `${filedCount}/${scoredKinds.length}`, sub: filedCount === scoredKinds.length ? "complete" : "on file" });
+  metrics.push({ key: "paper", label: "Paperwork", value: `${filedCount}/${scoredKinds.length}`, sub: filedCount === scoredKinds.length ? "complete" : "on file", to: "documents" });
 
   // Visible on hover, keyboard focus, and always on touch-size screens.
   const corpRemoveCls = `${hit} text-xs cursor-pointer transition-opacity sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-gray-400 hover:text-red-400" : "text-gray-500 hover:text-red-600"}`;
@@ -2761,6 +2792,20 @@ export default function AssetDetail() {
       </div>
     );
   };
+
+  // The category menu. Agreements for an LLC's operating contracts, Governance for a corporation's board.
+  const complianceAlerts = issues.filter((i) => i.severity !== "info").length + (asset.stateRecord ? stateFindings(asset.stateRecord, asset).filter((f) => f.tone === "bad").length : 0);
+  const tabs: { key: EntityTab; label: string; count?: number; alert?: boolean }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "documents", label: "Documents", count: docs.length },
+    { key: "compliance", label: "Compliance", count: complianceAlerts || undefined, alert: complianceAlerts > 0 },
+    ...(etype === "LLC" ? [{ key: "agreements" as const, label: "Agreements", count: contracts.length }] : []),
+    ...(asset.type === "C-Corp" ? [{ key: "governance" as const, label: "Governance" }] : []),
+  ];
+  const tab: EntityTab = tabs.some((t) => t.key === tabParam) ? (tabParam as EntityTab) : "overview";
+  const mainHasContent = tab !== "compliance" || !isTrust;
+  const railHasContent = tab === "overview" || tab === "documents" || tab === "compliance";
+  const twoCol = mainHasContent && railHasContent;
 
   const field = (label: string, control: React.ReactNode, wide = false) => (
     <div className={wide ? "md:col-span-2" : ""}>
@@ -2845,6 +2890,19 @@ export default function AssetDetail() {
                 {m.sub && <span className={`ml-1.5 text-[11px] font-normal ${textMuted}`}>{m.sub}</span>}
               </p>
             );
+            if (m.to) {
+              return (
+                <Link
+                  key={m.key}
+                  to={tabPath(m.to)}
+                  onClick={() => window.scrollTo({ top: 0 })}
+                  className={`block transition-colors ${cell} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
+                >
+                  <p className={kicker}>{m.label}</p>
+                  {value}
+                </Link>
+              );
+            }
             if (!m.copy) {
               return (
                 <div key={m.key} className={cell}>
@@ -2882,9 +2940,49 @@ export default function AssetDetail() {
         </div>
       </section>
 
+      {/* Category menu */}
+      <nav aria-label="Entity sections" className="sticky top-[calc(3.5rem+env(safe-area-inset-top)+8px)] z-20 lg:top-3">
+        <div
+          className={`flex gap-1 overflow-x-auto rounded-xl border p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+            isDark ? "border-white/[0.08] bg-[#0b0b0f]/95 backdrop-blur-xl" : "border-gray-200 bg-white/95 shadow-[0_1px_2px_rgba(16,24,40,0.04)] backdrop-blur-xl"
+          }`}
+        >
+          {tabs.map((t) => {
+            const on = t.key === tab;
+            return (
+              <Link
+                key={t.key}
+                to={tabPath(t.key)}
+                aria-current={on ? "page" : undefined}
+                onClick={() => window.scrollTo({ top: 0 })}
+                ref={on ? activeTabRef : undefined}
+                className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-2.5 ${
+                  on
+                    ? isDark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white"
+                    : isDark ? "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                }`}
+              >
+                {t.label}
+                {!!t.count && (
+                  <span
+                    className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${
+                      t.alert
+                        ? isDark ? "bg-red-400/15 text-red-300" : "bg-red-50 text-red-700"
+                        : on ? (isDark ? "bg-white/10 text-gray-200" : "bg-white/20 text-white") : isDark ? "bg-white/[0.06] text-gray-400" : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+
       {/* Key facts / Edit form */}
-      {editing ? (
-        <section id="entity-edit" className={`scroll-mt-20 lg:scroll-mt-6 rounded-2xl ${surface}`}>
+      {tab === "overview" && (editing ? (
+        <section id="entity-edit" className={`scroll-mt-32 lg:scroll-mt-20 rounded-2xl ${surface}`}>
           <header className={`flex items-center gap-2 border-b px-5 py-3.5 ${hairline}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${accentBg}`} />
             <span className={kicker}>Editing entity</span>
@@ -3045,16 +3143,9 @@ export default function AssetDetail() {
               "Registered agent",
               <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 {asset.registeredAgent && <span>{asset.registeredAgent}</span>}
-                <a
-                  href="#registered-agent"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    document.getElementById("registered-agent")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className={`text-[11.5px] hover:underline ${accentText}`}
-                >
-                  {asset.palm?.live?.ra?.status === "active" ? "Palm ↓" : "Change with Palm ↓"}
-                </a>
+                <Link to={tabPath("compliance")} onClick={() => window.scrollTo({ top: 0 })} className={`text-[11.5px] hover:underline ${accentText}`}>
+                  {asset.palm?.live?.ra?.status === "active" ? "Palm →" : "Change with Palm →"}
+                </Link>
               </span>,
             )}
             {factCell("Principal address", asset.address)}
@@ -3082,13 +3173,13 @@ export default function AssetDetail() {
               factCell("Notes", <span className={`whitespace-pre-wrap ${textSoft}`}>{asset.notes}</span>, "col-span-2 md:col-span-4")}
           </dl>
         </section>
-      )}
+      ))}
 
       {/* Main column + rail */}
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-5">
+      <div className={`grid grid-cols-1 items-start gap-5 ${twoCol ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}>
+        <div className={`min-w-0 space-y-5 ${mainHasContent ? "" : "hidden"}`}>
           {/* State record and registered agent — through Palm */}
-          {!isTrust && (() => {
+          {tab === "compliance" && !isTrust && (() => {
             const svc = palmRa;
             const toneChip = (tone: "good" | "wait" | "bad" | "muted") =>
               `${chipBase} ${
@@ -3114,7 +3205,7 @@ export default function AssetDetail() {
             const agentAddress = palmIsAgent ? formatPalmAddress(svc?.address) : null;
             const linkBtn = `${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`;
             return (
-              <section id="registered-agent" className={`scroll-mt-20 overflow-hidden rounded-2xl lg:scroll-mt-6 ${surface}`}>
+              <section id="registered-agent" className={`scroll-mt-32 overflow-hidden rounded-2xl lg:scroll-mt-20 ${surface}`}>
                 {sectionHeader(
                   "State record · Palm",
                   "Registered agent",
@@ -3325,6 +3416,7 @@ export default function AssetDetail() {
           })()}
 
           {/* What this entity is — read from its governing documents */}
+          {tab === "overview" && (
           <section className={`overflow-hidden rounded-2xl ${surface}`}>
             {sectionHeader(
               "From its documents",
@@ -3424,9 +3516,10 @@ export default function AssetDetail() {
             )}
             {asset.profile && profileError && <p className="px-5 pb-3 text-[11px] text-red-400">{profileError}</p>}
           </section>
+          )}
 
           {/* C-Corp Management */}
-          {asset.type === "C-Corp" && (
+          {tab === "governance" && asset.type === "C-Corp" && (
             <section className={`overflow-hidden rounded-2xl ${surface}`}>
               {sectionHeader("Governance", "Corporate Management")}
 
@@ -3680,7 +3773,7 @@ export default function AssetDetail() {
           )}
 
           {/* Operating Contracts */}
-          {etype === "LLC" && (() => {
+          {tab === "agreements" && etype === "LLC" && (() => {
             const showEmpty = contracts.length === 0 && !addingContract;
             return (
               <section className={`overflow-hidden rounded-2xl ${surface}`}>
@@ -3807,7 +3900,83 @@ export default function AssetDetail() {
             );
           })()}
 
+          {/* Paperwork: each filing this entity should have, in its slot */}
+          {tab === "documents" && (
+          <section className={`overflow-hidden rounded-2xl ${surface}`}>
+            {sectionHeader(
+              isTrust ? "Trust documents" : stateCode(asset.state) ? `${stateCode(asset.state)} ${etype === "C-Corp" ? "corporation" : etype}` : "Paperwork",
+              "Paperwork",
+              undefined,
+              <span className={`text-[11px] tabular-nums ${filedCount === scoredKinds.length ? (isDark ? "text-emerald-400" : "text-emerald-600") : textMuted}`}>
+                {filedCount}/{scoredKinds.length} on file
+              </span>,
+            )}
+            {(() => {
+              const ruleOf = new Map(rules.map((r) => [r.key, r] as const));
+              const main = kinds.filter((k) => ruleOf.get(k)?.level !== "recommended");
+              const extra = kinds.filter((k) => ruleOf.get(k)?.level === "recommended");
+              const order = ["Trust", "Formation", "IRS", "Governance", "Elections", "State"];
+              const groups = order
+                .map((cat) => ({ cat, keys: main.filter((k) => (ruleOf.get(k)?.category ?? "Formation") === cat) }))
+                .filter((g) => g.keys.length);
+              const slot = (k: FileKind) => {
+                const r = ruleOf.get(k);
+                return (
+                  <Fragment key={k}>
+                    {renderFileSlot(k, filingTitle(k, asset), r?.why ?? "On file.", "application/pdf,image/png,image/jpeg", ["application/pdf", "image/png", "image/jpeg"], r)}
+                  </Fragment>
+                );
+              };
+              return (
+                <>
+                  {groups.map((g) => (
+                    <div key={g.cat}>
+                      <p className={`border-t px-5 pb-1 pt-3 text-[11px] font-medium first:border-t-0 ${hairline} ${textMuted}`}>{g.cat}</p>
+                      <div className={`divide-y ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>{g.keys.map(slot)}</div>
+                    </div>
+                  ))}
+                  {extra.length > 0 && (
+                    <div className={`border-t ${hairline}`}>
+                      <button
+                        type="button"
+                        onClick={() => setShowRecommended((v) => !v)}
+                        aria-expanded={showRecommended}
+                        className={`flex w-full cursor-pointer items-center justify-between px-5 py-3 text-left text-[12px] max-sm:min-h-[44px] ${textMuted}`}
+                      >
+                        <span>
+                          Good to keep · {extra.filter((k) => asset[k]).length}/{extra.length} on file
+                        </span>
+                        <Icon name="chevronDown" className={`h-3.5 w-3.5 transition-transform ${showRecommended ? "rotate-180" : ""}`} />
+                      </button>
+                      {showRecommended && <div className={`divide-y border-t ${hairline} ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>{extra.map(slot)}</div>}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            <div className={`border-t px-5 py-3 ${hairline}`}>
+              <p className={`text-[11px] leading-snug ${textMuted}`}>
+                Documents you upload are read and filed here automatically.
+                {docs.length > 0 && filedCount < scoredKinds.length && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() => void scanLibrary()}
+                      disabled={sorting > 0 || (!!scan && !scan.finished)}
+                      className={`${hitY} cursor-pointer font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
+                    >
+                      {sorting > 0 || (scan && !scan.finished) ? "Reading documents…" : "Scan existing documents"}
+                    </button>
+                  </>
+                )}
+              </p>
+            </div>
+          </section>
+          )}
+
           {/* Documents */}
+          {tab === "documents" && (
           <section className={`overflow-hidden rounded-2xl ${surface}`}>
             {sectionHeader("Library", "Documents", docs.length)}
 
@@ -3990,11 +4159,13 @@ export default function AssetDetail() {
               </ul>
             )}
           </section>
+          )}
         </div>
 
         {/* Right rail */}
-        <aside className="order-first min-w-0 space-y-5 lg:order-none">
+        <aside className={`${tab === "overview" ? "order-first" : ""} min-w-0 space-y-5 lg:order-none ${railHasContent ? "" : "hidden"}`}>
           {/* Completeness */}
+          {tab === "overview" && (
           <section className={`overflow-hidden rounded-2xl ${surface}`}>
             <div className="flex items-center gap-4 px-5 py-4">
               <div className="relative h-[72px] w-[72px] shrink-0">
@@ -4034,7 +4205,7 @@ export default function AssetDetail() {
                     type="button"
                     onClick={() => {
                       if (item.done) return;
-                      if (item.filing) document.getElementById(`filing-${item.key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      if (item.filing) goToTab("documents", `filing-${item.key}`, "center");
                       else if (!editing) startEditing();
                       else document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
@@ -4069,9 +4240,10 @@ export default function AssetDetail() {
               )}
             </ul>
           </section>
+          )}
 
           {/* Document check */}
-          {(() => {
+          {tab === "documents" && (() => {
             const v = asset.verification;
             const current = recordValues(asset);
             const findings = (v?.fields ?? []).map((f) => {
@@ -4233,7 +4405,7 @@ export default function AssetDetail() {
           })()}
 
           {/* Deadlines: what this entity files, and when next */}
-          {deadlines.length > 0 && (
+          {tab === "compliance" && deadlines.length > 0 && (
             <section className={`overflow-hidden rounded-2xl ${surface}`}>
               {sectionHeader("Compliance", "Deadlines")}
               <ul className={`divide-y ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>
@@ -4277,7 +4449,7 @@ export default function AssetDetail() {
           )}
 
           {/* Paperwork checks: where the records disagree with each other or the rules */}
-          {(issues.length > 0 || docOwners.length > 0) && (
+          {tab === "compliance" && (issues.length > 0 || docOwners.length > 0) && (
             <section className={`overflow-hidden rounded-2xl ${surface}`}>
               {sectionHeader("Compliance", "Checks", issues.filter((i) => i.severity !== "info").length || undefined)}
               {docOwners.length > 0 && (
@@ -4317,77 +4489,9 @@ export default function AssetDetail() {
             </section>
           )}
 
-          <section className={`overflow-hidden rounded-2xl ${surface}`}>
-            {sectionHeader(
-              isTrust ? "Trust documents" : stateCode(asset.state) ? `${stateCode(asset.state)} ${etype === "C-Corp" ? "corporation" : etype}` : "Paperwork",
-              "Paperwork",
-              undefined,
-              <span className={`text-[11px] tabular-nums ${filedCount === scoredKinds.length ? (isDark ? "text-emerald-400" : "text-emerald-600") : textMuted}`}>
-                {filedCount}/{scoredKinds.length} on file
-              </span>,
-            )}
-            {(() => {
-              const ruleOf = new Map(rules.map((r) => [r.key, r] as const));
-              const main = kinds.filter((k) => ruleOf.get(k)?.level !== "recommended");
-              const extra = kinds.filter((k) => ruleOf.get(k)?.level === "recommended");
-              const order = ["Trust", "Formation", "IRS", "Governance", "Elections", "State"];
-              const groups = order
-                .map((cat) => ({ cat, keys: main.filter((k) => (ruleOf.get(k)?.category ?? "Formation") === cat) }))
-                .filter((g) => g.keys.length);
-              const slot = (k: FileKind) => {
-                const r = ruleOf.get(k);
-                return (
-                  <Fragment key={k}>
-                    {renderFileSlot(k, filingTitle(k, asset), r?.why ?? "On file.", "application/pdf,image/png,image/jpeg", ["application/pdf", "image/png", "image/jpeg"], r)}
-                  </Fragment>
-                );
-              };
-              return (
-                <>
-                  {groups.map((g) => (
-                    <div key={g.cat}>
-                      <p className={`border-t px-5 pb-1 pt-3 text-[11px] font-medium first:border-t-0 ${hairline} ${textMuted}`}>{g.cat}</p>
-                      <div className={`divide-y ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>{g.keys.map(slot)}</div>
-                    </div>
-                  ))}
-                  {extra.length > 0 && (
-                    <div className={`border-t ${hairline}`}>
-                      <button
-                        type="button"
-                        onClick={() => setShowRecommended((v) => !v)}
-                        aria-expanded={showRecommended}
-                        className={`flex w-full cursor-pointer items-center justify-between px-5 py-3 text-left text-[12px] max-sm:min-h-[44px] ${textMuted}`}
-                      >
-                        <span>
-                          Good to keep · {extra.filter((k) => asset[k]).length}/{extra.length} on file
-                        </span>
-                        <Icon name="chevronDown" className={`h-3.5 w-3.5 transition-transform ${showRecommended ? "rotate-180" : ""}`} />
-                      </button>
-                      {showRecommended && <div className={`divide-y border-t ${hairline} ${isDark ? "divide-white/[0.06]" : "divide-gray-100"}`}>{extra.map(slot)}</div>}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-            <div className={`border-t px-5 py-3 ${hairline}`}>
-              <p className={`text-[11px] leading-snug ${textMuted}`}>
-                Documents you upload are read and filed here automatically.
-                {docs.length > 0 && filedCount < scoredKinds.length && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => void scanLibrary()}
-                      disabled={sorting > 0 || (!!scan && !scan.finished)}
-                      className={`${hitY} cursor-pointer font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
-                    >
-                      {sorting > 0 || (scan && !scan.finished) ? "Reading documents…" : "Scan existing documents"}
-                    </button>
-                  </>
-                )}
-              </p>
-            </div>
-          </section>
+          {tab === "compliance" && isTrust && deadlines.length === 0 && issues.length === 0 && docOwners.length === 0 && (
+            <section className={`rounded-2xl px-5 py-4 text-[12.5px] ${surface} ${textMuted}`}>Nothing due and nothing to fix for this trust.</section>
+          )}
         </aside>
       </div>
 

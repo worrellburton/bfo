@@ -11,7 +11,7 @@ export default [
   layout("routes/app-layout.tsx", [
     route("home", "routes/home.tsx"),
     route("assets", "routes/assets.tsx"),
-    route("assets/:id", "routes/asset-detail.tsx"),
+    route("assets/:id/:tab?", "routes/asset-detail.tsx"),
     route("assets/:id/contract/:contractId", "routes/contract-pdf.tsx"),
     route("msas", "routes/msas.tsx"),
     route("notes", "routes/notes.tsx"),
