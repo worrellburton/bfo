@@ -3041,7 +3041,22 @@ export default function AssetDetail() {
               </>
             ) : (
               <>
-            {factCell("Registered agent", asset.registeredAgent)}
+            {factCell(
+              "Registered agent",
+              <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                {asset.registeredAgent && <span>{asset.registeredAgent}</span>}
+                <a
+                  href="#registered-agent"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById("registered-agent")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className={`text-[11.5px] hover:underline ${accentText}`}
+                >
+                  {asset.palm?.live?.ra?.status === "active" ? "Palm ↓" : "Change with Palm ↓"}
+                </a>
+              </span>,
+            )}
             {factCell("Principal address", asset.address)}
             {factCell("Formation date", fmtDate(asset.formationDate) ? <span className="tabular-nums">{fmtDate(asset.formationDate)}</span> : null)}
             {factCell(etype === "C-Corp" ? "Classification" : "Tax classification", taxClassFact())}
@@ -3072,107 +3087,6 @@ export default function AssetDetail() {
       {/* Main column + rail */}
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
-          {/* What this entity is — read from its governing documents */}
-          <section className={`overflow-hidden rounded-2xl ${surface}`}>
-            {sectionHeader(
-              "From its documents",
-              "What this entity is",
-              undefined,
-              <button
-                type="button"
-                onClick={() => void buildProfile()}
-                disabled={profiling}
-                className={`${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
-              >
-                <Icon name="sparkle" className="h-3 w-3" />
-                {profiling ? "Reading…" : asset.profile ? "Re-read" : "Read documents"}
-              </button>,
-            )}
-            {asset.profile ? (
-              <div className="space-y-4 px-5 py-4">
-                <p className="text-[13.5px] leading-relaxed">{asset.profile.whatItIs}</p>
-                <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
-                  {asset.profile.members.length > 0 && (
-                    <div>
-                      <p className={kicker}>Owners</p>
-                      <ul className="mt-1.5 space-y-1 text-[12.5px]">
-                        {asset.profile.members.map((m, i) => (
-                          <li key={i} className="flex justify-between gap-3">
-                            <span className="min-w-0 truncate">{m.name}</span>
-                            <span className={`shrink-0 tabular-nums ${textMuted}`}>{m.percent != null ? `${m.percent}%` : "—"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <div className="space-y-2.5">
-                    {asset.profile.management && (
-                      <div>
-                        <p className={kicker}>Run by</p>
-                        <p className="mt-0.5 text-[12.5px]">
-                          {asset.profile.managers.length ? asset.profile.managers.join(", ") : "—"}
-                          <span className={textMuted}> · {asset.profile.management}</span>
-                        </p>
-                      </div>
-                    )}
-                    {asset.profile.taxTreatment && (
-                      <div>
-                        <p className={kicker}>Taxed as</p>
-                        <p className="mt-0.5 text-[12.5px]">{asset.profile.taxTreatment}</p>
-                        {asset.profile.taxEvidence && <p className={`mt-0.5 text-[11px] leading-snug ${textMuted}`}>{asset.profile.taxEvidence}</p>}
-                      </div>
-                    )}
-                    {asset.profile.governingLaw && (
-                      <div>
-                        <p className={kicker}>Governing law</p>
-                        <p className="mt-0.5 text-[12.5px]">{asset.profile.governingLaw}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {asset.profile.properties.length > 0 && (
-                  <div>
-                    <p className={kicker}>Property and businesses</p>
-                    <ul className="mt-1.5 space-y-1 text-[12.5px]">
-                      {asset.profile.properties.map((p, i) => (
-                        <li key={i} className="flex justify-between gap-3">
-                          <span className="min-w-0">{p.description}{p.state ? `, ${p.state}` : ""}</span>
-                          {p.status && <span className={`shrink-0 text-[11px] ${/sold/i.test(p.status) ? textMuted : isDark ? "text-emerald-400" : "text-emerald-700"}`}>{p.status}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {asset.profile.keyTerms.length > 0 && (
-                  <div>
-                    <p className={kicker}>Terms that matter</p>
-                    <ul className={`mt-1.5 list-disc space-y-0.5 pl-4 text-[12px] leading-snug ${textSoft}`}>
-                      {asset.profile.keyTerms.map((t, i) => <li key={i}>{t}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {asset.profile.issues.length > 0 && (
-                  <div className={`rounded-lg border px-3 py-2.5 ${isDark ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-200 bg-amber-50"}`}>
-                    <p className={`text-[11.5px] font-medium ${isDark ? "text-amber-300" : "text-amber-800"}`}>Worth a look</p>
-                    <ul className={`mt-1 list-disc space-y-0.5 pl-4 text-[12px] leading-snug ${isDark ? "text-amber-100/90" : "text-amber-900"}`}>
-                      {asset.profile.issues.map((t, i) => <li key={i}>{t}</li>)}
-                    </ul>
-                  </div>
-                )}
-                <p className={`text-[11px] leading-snug ${textMuted}`}>
-                  Read {fmtStamp(asset.profile.checkedAt)} from {asset.profile.sources.length ? asset.profile.sources.join(", ") : "the documents on file"}.
-                </p>
-              </div>
-            ) : (
-              <p className={`px-5 py-4 text-[12.5px] leading-snug ${textMuted}`}>
-                {profiling
-                  ? "Reading the operating agreement and the other documents on file…"
-                  : profileError || (aiDown ? "Document reading is paused right now." : "Upload the operating agreement (or bylaws / trust agreement) and this fills in: what the entity is for, what it owns, who runs and owns it, and how it's taxed.")}
-              </p>
-            )}
-            {asset.profile && profileError && <p className="px-5 pb-3 text-[11px] text-red-400">{profileError}</p>}
-          </section>
-
           {/* State record and registered agent — through Palm */}
           {!isTrust && (() => {
             const svc = palmRa;
@@ -3200,7 +3114,7 @@ export default function AssetDetail() {
             const agentAddress = palmIsAgent ? formatPalmAddress(svc?.address) : null;
             const linkBtn = `${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`;
             return (
-              <section className={`overflow-hidden rounded-2xl ${surface}`}>
+              <section id="registered-agent" className={`scroll-mt-20 overflow-hidden rounded-2xl lg:scroll-mt-6 ${surface}`}>
                 {sectionHeader(
                   "State record · Palm",
                   "Registered agent",
@@ -3409,6 +3323,107 @@ export default function AssetDetail() {
               </section>
             );
           })()}
+
+          {/* What this entity is — read from its governing documents */}
+          <section className={`overflow-hidden rounded-2xl ${surface}`}>
+            {sectionHeader(
+              "From its documents",
+              "What this entity is",
+              undefined,
+              <button
+                type="button"
+                onClick={() => void buildProfile()}
+                disabled={profiling}
+                className={`${hitY} inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium disabled:cursor-wait disabled:opacity-60 ${accentText}`}
+              >
+                <Icon name="sparkle" className="h-3 w-3" />
+                {profiling ? "Reading…" : asset.profile ? "Re-read" : "Read documents"}
+              </button>,
+            )}
+            {asset.profile ? (
+              <div className="space-y-4 px-5 py-4">
+                <p className="text-[13.5px] leading-relaxed">{asset.profile.whatItIs}</p>
+                <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+                  {asset.profile.members.length > 0 && (
+                    <div>
+                      <p className={kicker}>Owners</p>
+                      <ul className="mt-1.5 space-y-1 text-[12.5px]">
+                        {asset.profile.members.map((m, i) => (
+                          <li key={i} className="flex justify-between gap-3">
+                            <span className="min-w-0 truncate">{m.name}</span>
+                            <span className={`shrink-0 tabular-nums ${textMuted}`}>{m.percent != null ? `${m.percent}%` : "—"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="space-y-2.5">
+                    {asset.profile.management && (
+                      <div>
+                        <p className={kicker}>Run by</p>
+                        <p className="mt-0.5 text-[12.5px]">
+                          {asset.profile.managers.length ? asset.profile.managers.join(", ") : "—"}
+                          <span className={textMuted}> · {asset.profile.management}</span>
+                        </p>
+                      </div>
+                    )}
+                    {asset.profile.taxTreatment && (
+                      <div>
+                        <p className={kicker}>Taxed as</p>
+                        <p className="mt-0.5 text-[12.5px]">{asset.profile.taxTreatment}</p>
+                        {asset.profile.taxEvidence && <p className={`mt-0.5 text-[11px] leading-snug ${textMuted}`}>{asset.profile.taxEvidence}</p>}
+                      </div>
+                    )}
+                    {asset.profile.governingLaw && (
+                      <div>
+                        <p className={kicker}>Governing law</p>
+                        <p className="mt-0.5 text-[12.5px]">{asset.profile.governingLaw}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {asset.profile.properties.length > 0 && (
+                  <div>
+                    <p className={kicker}>Property and businesses</p>
+                    <ul className="mt-1.5 space-y-1 text-[12.5px]">
+                      {asset.profile.properties.map((p, i) => (
+                        <li key={i} className="flex justify-between gap-3">
+                          <span className="min-w-0">{p.description}{p.state ? `, ${p.state}` : ""}</span>
+                          {p.status && <span className={`shrink-0 text-[11px] ${/sold/i.test(p.status) ? textMuted : isDark ? "text-emerald-400" : "text-emerald-700"}`}>{p.status}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {asset.profile.keyTerms.length > 0 && (
+                  <div>
+                    <p className={kicker}>Terms that matter</p>
+                    <ul className={`mt-1.5 list-disc space-y-0.5 pl-4 text-[12px] leading-snug ${textSoft}`}>
+                      {asset.profile.keyTerms.map((t, i) => <li key={i}>{t}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {asset.profile.issues.length > 0 && (
+                  <div className={`rounded-lg border px-3 py-2.5 ${isDark ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-200 bg-amber-50"}`}>
+                    <p className={`text-[11.5px] font-medium ${isDark ? "text-amber-300" : "text-amber-800"}`}>Worth a look</p>
+                    <ul className={`mt-1 list-disc space-y-0.5 pl-4 text-[12px] leading-snug ${isDark ? "text-amber-100/90" : "text-amber-900"}`}>
+                      {asset.profile.issues.map((t, i) => <li key={i}>{t}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <p className={`text-[11px] leading-snug ${textMuted}`}>
+                  Read {fmtStamp(asset.profile.checkedAt)} from {asset.profile.sources.length ? asset.profile.sources.join(", ") : "the documents on file"}.
+                </p>
+              </div>
+            ) : (
+              <p className={`px-5 py-4 text-[12.5px] leading-snug ${textMuted}`}>
+                {profiling
+                  ? "Reading the operating agreement and the other documents on file…"
+                  : profileError || (aiDown ? "Document reading is paused right now." : "Upload the operating agreement (or bylaws / trust agreement) and this fills in: what the entity is for, what it owns, who runs and owns it, and how it's taxed.")}
+              </p>
+            )}
+            {asset.profile && profileError && <p className="px-5 pb-3 text-[11px] text-red-400">{profileError}</p>}
+          </section>
 
           {/* C-Corp Management */}
           {asset.type === "C-Corp" && (
