@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { canWrite, currentUser, isAdmin } from "../lib/auth.js";
+import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
 import {
   isJurisdiction,
   normalizeEin,
@@ -23,6 +23,8 @@ import {
  *   ra-change         { businessId, assetId }          → move the registered agent to Palm (files with the state)
  *   documents         { businessId }                   → mail and filings Palm holds for it
  *   document          { documentId }                   → one document's file
+ *   inbox             { assetId?, unread? }            → mail and agent events Palm has sent (webhook)
+ *   inbox-read        { ids } | { assetId }            → mark them read
  *
  * Reads need a signed-in user; adding a business needs write access; moving
  * the agent — a state filing billed to the Palm account — needs an owner or admin.
@@ -211,6 +213,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (cd && !/[\r\n]/.test(cd)) res.setHeader("Content-Disposition", safe ? cd : cd.replace(/^\s*inline/i, "attachment"));
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).send(buf);
+      }
+
+      case "inbox": {
+        const assetId = String(body.assetId || "");
+        if (assetId && !/^[\w-]{1,128}$/.test(assetId)) return res.status(400).json({ error: "bad_asset_id" });
+        const q = [
+          `mode=eq.${mode}`,
+          assetId ? `asset_id=eq.${encodeURIComponent(assetId)}` : "",
+          body.unread ? "read_at=is.null" : "",
+          "select=id,type,asset_id,business_id,document_id,document_type,filename,status,rejection_reason,occurred_at,read_at",
+          "order=occurred_at.desc",
+          "limit=100",
+        ].filter(Boolean).join("&");
+        const events = await sb<unknown[]>(`palm_events?${q}`);
+        return res.status(200).json({ mode, events });
+      }
+
+      case "inbox-read": {
+        if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
+        const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).filter((x): x is string => typeof x === "string" && /^[\w-]{1,128}$/.test(x)).slice(0, 200) : [];
+        const assetId = String(body.assetId || "");
+        if (!ids.length && !/^[\w-]{1,128}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
+        const where = ids.length ? `id=in.(${ids.map((i) => `"${i}"`).join(",")})` : `asset_id=eq.${encodeURIComponent(assetId)}`;
+        await sb(`palm_events?${where}&read_at=is.null`, { method: "PATCH", body: { read_at: new Date().toISOString(), read_by: user.id }, prefer: "return=minimal" });
+        return res.status(200).json({ ok: true });
       }
 
       default:

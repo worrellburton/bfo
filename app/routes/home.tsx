@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { authFetch, getUser } from "../auth";
 import { entityCompleteness, entityType } from "../entity-completeness";
 import { obligations } from "../entity-paperwork";
+import { DOC_LABEL, palmCall } from "../palm";
 import { HomeBackground } from "../home-background";
 import { useTheme } from "../theme";
 
@@ -655,6 +656,20 @@ export default function Home() {
     };
   }, []);
 
+  // Mail Palm received as registered agent and hasn't been opened in BFO yet.
+  const [palmMail, setPalmMail] = useState<{ id: string; asset_id: string | null; document_type: string | null; occurred_at: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    palmCall<{ events: { id: string; type: string; asset_id: string | null; document_type: string | null; occurred_at: string }[] }>("inbox", { unread: true })
+      .then((r) => !cancelled && setPalmMail(r.events.filter((e) => e.type === "document.created")))
+      .catch(() => {
+        /* Palm not connected: nothing to show */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Entrance ───────────────────────────────────────────────────────────
   // Hold the page (invisible) until the data is in — or ~0.7s, whichever is
   // first — then let every card ease in at once. Anything still loading at
@@ -743,6 +758,22 @@ export default function Home() {
   // ── Needs attention ────────────────────────────────────────────────────
   type Attn = { key: string; icon: keyof typeof ICONS; tone: "amber" | "indigo" | "neutral"; title: ReactNode; detail: ReactNode; to: string; aside?: ReactNode };
   const attention: Attn[] = [];
+  if (palmMail.length > 0) {
+    const legal = palmMail.filter((m) => m.document_type === "service_of_process");
+    const first = legal[0] ?? palmMail[0];
+    const nameOf = (id: string | null) => assets.find((a) => a.id === id)?.name ?? "An entity";
+    attention.push({
+      key: "palm-mail",
+      icon: "doc",
+      tone: legal.length ? "amber" : "indigo",
+      title:
+        palmMail.length === 1
+          ? `${nameOf(first.asset_id)}: ${DOC_LABEL[first.document_type ?? ""] ?? "New mail"}`
+          : `${palmMail.length} new letters from the registered agent${legal.length ? ` · ${legal.length} legal` : ""}`,
+      detail: legal.length ? "Received by Palm · legal papers usually have a deadline to respond" : "Received by Palm, your registered agent",
+      to: first.asset_id ? `/assets/${first.asset_id}/compliance` : "/assets",
+    });
+  }
   if (review && review.uncategorized > 0) {
     attention.push({
       key: "review",

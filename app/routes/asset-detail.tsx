@@ -1383,6 +1383,23 @@ export default function AssetDetail() {
   const [palmError, setPalmError] = useState("");
   const [registryChoices, setRegistryChoices] = useState<RegistryRecord[] | null>(null);
   const palmMode = palmStatus?.mode ?? null;
+  /** What Palm pushed for this entity (webhook): mail, and agent changes with their reasons. */
+  const [palmInbox, setPalmInbox] = useState<{ id: string; type: string; document_id: string | null; rejection_reason: string | null; read_at: string | null }[]>([]);
+  useEffect(() => {
+    if (!palmMode || !id || tabParam !== "compliance") return;
+    let live = true;
+    palmCall<{ events: typeof palmInbox }>("inbox", { assetId: id, mode: palmMode })
+      .then((r) => {
+        if (!live) return;
+        setPalmInbox(r.events);
+        // Seen here: mark read after a moment (the "New" marks stay for this visit).
+        if (r.events.some((e) => !e.read_at)) setTimeout(() => void palmCall("inbox-read", { assetId: id, mode: palmMode }).catch(() => {}), 1500);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [palmMode, id, tabParam]);
   /** Bumped by every read or change of Palm's agent service; an older response is dropped. */
   const palmSeq = useRef(0);
   /** Bumped when the page moves to another entity; work started for the last one stops touching the card. */
@@ -3300,7 +3317,10 @@ export default function AssetDetail() {
                         )}
                         {svc?.status === "failed" && (
                           <p className={`max-w-[60ch] text-[11.5px] leading-snug ${isDark ? "text-red-300" : "text-red-700"}`}>
-                            {svc.rejection_reason ? `The state didn't accept it: ${svc.rejection_reason}. ` : "Palm couldn't complete the change. "}
+                            {(() => {
+                              const reason = svc.rejection_reason ?? palmInbox.find((e) => e.rejection_reason)?.rejection_reason;
+                              return reason ? `The state didn't accept it: ${reason}. ` : "Palm couldn't complete the change. ";
+                            })()}
                             Palm Console shows the reason under this business; sort that out before trying again.
                           </p>
                         )}
@@ -3417,6 +3437,9 @@ export default function AssetDetail() {
                                 <span className={docKindOf(d) === "service_of_process" ? `font-medium ${isDark ? "text-red-300" : "text-red-700"}` : ""}>
                                   {DOC_LABEL[docKindOf(d)] ?? (docKindOf(d) || "Document").replace(/_/g, " ")}
                                 </span>
+                                {palmInbox.some((e) => !e.read_at && e.document_id === d.id) && (
+                                  <span className={`ml-1.5 rounded px-1 py-px text-[10px] font-medium ${isDark ? "bg-[#818cf8]/15 text-[#a5b4fc]" : "bg-indigo-50 text-indigo-700"}`}>New</span>
+                                )}
                                 <span className={textMuted}>
                                   {d.filename ? ` · ${d.filename}` : ""}
                                   {d.created_at ? ` · ${fmtDate(d.created_at.slice(0, 10))}` : ""}
