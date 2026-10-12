@@ -61,7 +61,8 @@ export default function AssetDetail() {
 
   return (
     <EntityProvider value={{ page, view, asset, tabPath: page.tabPath, goToTab: page.goToTab }}>
-      <div className="mx-auto max-w-[1400px] space-y-4">
+      {/* Keyed by entity, so local view state (open lists, errors) starts fresh on another entity. */}
+      <div key={page.id} className="mx-auto max-w-[1400px] space-y-4">
         <EntityHeader />
         <CategoryMenu />
         {view.tab === "overview" && <OverviewTab />}

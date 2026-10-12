@@ -53,8 +53,12 @@ const STUCK = "Upload is stuck.";
 const REVEAL = "";
 
 export function DocumentsTab() {
+  // A file dropped anywhere else on the tab must not make the browser open it (and leave the app).
+  const swallow = (e: DragEvent<HTMLDivElement>) => {
+    if (Array.from(e.dataTransfer.types).includes("Files")) e.preventDefault();
+  };
   return (
-    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div onDragOver={swallow} onDrop={swallow} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
         <Filings />
         <Library />
@@ -145,11 +149,9 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
     e.stopPropagation();
     if (!slot.uploading && !slot.dragOver) page.setSlot(kind, { dragOver: true });
   };
-  const dropHandlers = file
-    ? {}
-    : {
-        onDragOver: dragOn,
-        onDragEnter: dragOn,
+  // A filled slot takes no drop, but still clears the highlight if it was filed mid-drag.
+  const dropHandlers = {
+        ...(file ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
         onDragLeave: (e: DragEvent<HTMLDivElement>) => {
           e.preventDefault();
           e.stopPropagation();
@@ -160,7 +162,7 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
           e.preventDefault();
           e.stopPropagation();
           page.setSlot(kind, { dragOver: false });
-          if (slot.uploading) return;
+          if (file || slot.uploading) return;
           const f = e.dataTransfer.files?.[0];
           if (!f) return;
           if (!ACCEPTED.includes(f.type)) {
@@ -387,7 +389,7 @@ function FilingNotes() {
         {notes.length === 1 ? (
           <div className="py-1">{lines}</div>
         ) : (
-          <Disclosure label={filed === notes.length ? "Filed" : "Filing notes"} count={notes.length}>
+          <Disclosure label={filed === notes.length ? "Filed" : "Filing notes"} count={notes.length} defaultOpen={notes.length <= 3}>
             <div className="pb-1">{lines}</div>
           </Disclosure>
         )}
@@ -404,7 +406,7 @@ function DocRow({ doc }: { doc: AssetDoc }) {
   const filedAs = view.docFiledAs.get(doc.id);
   const renaming = page.renamingDocId === doc.id;
   const copied = page.copiedDocId === doc.id;
-  const meta = [kind === "LINK" || kind === "FILE" ? null : kind, doc.storagePath ? formatBytes(doc.size) : "External link", fmtStamp(doc.createdAt)]
+  const meta = [kind === "LINK" || kind === "FILE" ? null : kind, doc.storagePath ? page.formatBytes(doc.size) : "External link", fmtStamp(doc.createdAt)]
     .filter(Boolean)
     .join(" · ");
 

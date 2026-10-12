@@ -164,10 +164,9 @@ function RegisteredAgent() {
           {page.palmBusy === "move" ? "Requesting…" : svc?.status === "failed" ? "Try again" : "Make Palm the agent"}
         </Button>
       )}
+      {known && !isAdmin() && !palmIsAgent && !inFlight && <span className={`text-[12px] ${t.muted}`}>Owner or admin can change it</span>}
     </>
   ) : undefined;
-
-  const permissionNote = configured && !canMove && !palmIsAgent && !inFlight ? "An owner or admin can change the agent." : undefined;
 
   let body: ReactNode;
   if (!status) body = <Empty>Checking the Palm connection…</Empty>;
@@ -240,7 +239,7 @@ function RegisteredAgent() {
   }
 
   return (
-    <Section id="registered-agent" title={title} actions={actions} info={permissionNote} className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20">
+    <Section id="registered-agent" title={title} actions={actions} className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20">
       {body}
     </Section>
   );
@@ -486,7 +485,8 @@ function Deadlines() {
 function DeadlineRow({ d }: { d: Obligation }) {
   const t = useTone();
   const [open, setOpen] = useState(false);
-  const days = d.due ? Math.round((Date.parse(d.due) - Date.parse(new Date().toISOString().slice(0, 10))) / 86400000) : null;
+  // Calendar days in local time, so "today" is today wherever you are.
+  const days = d.due ? localDayDiff(d.due) : null;
   const soon = days != null && days <= 45;
   const warn = toneText("warn", t.dark);
   return (
@@ -505,17 +505,17 @@ function DeadlineRow({ d }: { d: Obligation }) {
           </div>
         )}
       </div>
+      {(d.fee || d.url) && (
+        <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] ${t.muted}`}>
+          {d.fee && <span>{d.fee}</span>}
+          {d.url && <ExtLink href={d.url}>{d.urlLabel ?? "File online"}</ExtLink>}
+        </div>
+      )}
       <InfoText open={open}>
         <span className="block">
           {d.agency} · {d.rule}
-          {d.fee ? ` · ${d.fee}` : ""}
         </span>
         {d.note && <span className="mt-1 block">{d.note}</span>}
-        {d.url && (
-          <span className="mt-1.5 block">
-            <ExtLink href={d.url}>{d.urlLabel ?? "File online"}</ExtLink>
-          </span>
-        )}
       </InfoText>
     </div>
   );
@@ -557,4 +557,14 @@ function Checks() {
       )}
     </Section>
   );
+}
+
+/** Whole days from today to a YYYY-MM-DD date, both in local time. */
+function localDayDiff(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return Math.round((Date.parse(iso) - Date.now()) / 86400000);
+  const due = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((due.getTime() - today.getTime()) / 86400000);
 }

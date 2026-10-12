@@ -153,7 +153,7 @@ function AgentRow() {
   const listedAs = ra?.name || asset.registeredAgent;
 
   return (
-    <Row label="Registered agent" info={val(source)} actions={<TextLink to={tabPath("compliance")}>Manage</TextLink>}>
+    <Row label="Registered agent" info={val(source)} actions={<TextLink to={tabPath("compliance")}>{palmActive ? "Manage" : "Move to Palm"}</TextLink>}>
       {palmActive ? (
         <span>
           Palm
@@ -304,7 +304,7 @@ function TaxClassRows() {
         status = <Dot tone="muted">Checking…</Dot>;
         hint = "Checking it against the EIN letter and W-9.";
       } else if (page.aiDown) {
-        status = <Dot tone="warn">Unconfirmed</Dot>;
+        status = <Dot tone="muted">Reading paused</Dot>;
         hint = "Not confirmed yet — document reading is paused.";
       } else {
         status = <Dot tone="warn">Unconfirmed</Dot>;
@@ -317,22 +317,20 @@ function TaxClassRows() {
       action = <TextButton onClick={() => goToTab("documents", "filing-einLetter", "center")}>Upload EIN letter or W-9</TextButton>;
     }
   }
-  const info =
-    homeLine || hint ? (
-      <>
-        {homeLine && <p>{homeLine}</p>}
-        {hint && <p className="break-words">{hint}</p>}
-      </>
-    ) : undefined;
+  // Whose return it lands on is a fact, so it shows; only the hint waits behind (i).
+  const info = hint ? <p className="break-words">{hint}</p> : undefined;
 
   return (
     <>
       <Row label={label} info={info} actions={action ?? undefined}>
         {asset.llcType ? (
-          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-            {asset.llcType}
-            {status}
-          </span>
+          <>
+            <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+              {asset.llcType}
+              {status}
+            </span>
+            {homeLine && <span className="mt-0.5 block text-[12px] text-gray-500">{homeLine.replace(/\.$/, "")}</span>}
+          </>
         ) : undefined}
       </Row>
       {c && (

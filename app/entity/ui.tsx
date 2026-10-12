@@ -250,7 +250,7 @@ export function Section({
             <h2 className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] font-semibold tracking-[-0.005em] ${t.text}`}>
               {title}
               <Count n={count} alert={alert} />
-              {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} />}
+              {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} label={typeof title === "string" ? `About ${title}` : undefined} />}
             </h2>
             {info && <InfoText open={open}>{info}</InfoText>}
           </div>
@@ -300,7 +300,7 @@ export function Row({
         {label !== undefined && (
           <div className={`flex shrink-0 items-center gap-1.5 text-[12px] ${t.muted} ${stacked ? "" : labelWidth}`}>
             {label}
-            {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} />}
+            {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} label={typeof label === "string" ? `About ${label}` : undefined} />}
           </div>
         )}
         <div className={`min-w-0 flex-1 text-[13px] leading-snug ${t.text}`}>

@@ -3,7 +3,7 @@
  * corporate compliance dates. All state and actions come from useEntity().
  */
 
-import type { FormEvent, ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { confirmDialog } from "../confirm-dialog";
 import { useEntity } from "./context";
 import { fmtDate } from "./model";
@@ -105,18 +105,26 @@ function Person({ name, detail, onRemove }: { name: string; detail: string; onRe
 const since = (title: string, date: string) => [title, date && `Since ${fmtDate(date)}`].filter(Boolean).join(" · ");
 
 /** An inline add form: fields, then Add / Cancel. Enter submits. */
-function AddForm({ children, canAdd, onAdd, onCancel }: { children: ReactNode; canAdd: boolean; onAdd: () => void; onCancel: () => void }) {
+function AddForm({ children, canAdd, onAdd, onCancel }: { children: ReactNode; canAdd: boolean; onAdd: () => void | Promise<void>; onCancel: () => void }) {
   const t = useTone();
-  const submit = (e: FormEvent) => {
+  // One add at a time: a second Enter while saving must not add the same person twice.
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    onAdd();
+    if (busy || !canAdd) return;
+    setBusy(true);
+    try {
+      await onAdd();
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <form noValidate onSubmit={submit} className={`border-t px-5 py-4 ${t.line}`}>
       {children}
       <div className="mt-3 flex gap-2">
-        <Button kind="primary" type="submit" disabled={!canAdd}>
-          Add
+        <Button kind="primary" type="submit" disabled={!canAdd || busy}>
+          {busy ? "Adding…" : "Add"}
         </Button>
         <Button kind="ghost" onClick={onCancel}>
           Cancel
@@ -158,13 +166,13 @@ function Board() {
       </Rows>
       {page.directors.length === 0 && <Empty>No directors added yet.</Empty>}
       {page.addingDirector && (
-        <AddForm canAdd={!!f.name.trim()} onAdd={() => void page.addDirector()} onCancel={() => page.setAddingDirector(false)}>
+        <AddForm canAdd={!!f.name.trim()} onAdd={() => page.addDirector()} onCancel={() => page.setAddingDirector(false)}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Name">
               <Input autoFocus value={f.name} onChange={(e) => page.setDirForm({ ...f, name: e.target.value })} />
             </Field>
             <Field label="Title">
-              <Input value={f.title} onChange={(e) => page.setDirForm({ ...f, title: e.target.value })} />
+              <Input value={f.title} placeholder="e.g. Director, Chairman" onChange={(e) => page.setDirForm({ ...f, title: e.target.value })} />
             </Field>
             <Field label="Since">
               <Input type="date" value={f.since} onChange={(e) => page.setDirForm({ ...f, since: e.target.value })} />
@@ -197,13 +205,13 @@ function Officers() {
       </Rows>
       {page.officers.length === 0 && <Empty>No officers added yet.</Empty>}
       {page.addingOfficer && (
-        <AddForm canAdd={!!f.name.trim() && !!f.title.trim()} onAdd={() => void page.addOfficer()} onCancel={() => page.setAddingOfficer(false)}>
+        <AddForm canAdd={!!f.name.trim() && !!f.title.trim()} onAdd={() => page.addOfficer()} onCancel={() => page.setAddingOfficer(false)}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Name">
               <Input autoFocus value={f.name} onChange={(e) => page.setOffForm({ ...f, name: e.target.value })} />
             </Field>
             <Field label="Title">
-              <Input value={f.title} onChange={(e) => page.setOffForm({ ...f, title: e.target.value })} />
+              <Input value={f.title} placeholder="e.g. CEO, CFO, Secretary" onChange={(e) => page.setOffForm({ ...f, title: e.target.value })} />
             </Field>
             <Field label="Since">
               <Input type="date" value={f.since} onChange={(e) => page.setOffForm({ ...f, since: e.target.value })} />
@@ -264,7 +272,7 @@ function Shareholders() {
       </Rows>
       {page.shareholders.length === 0 && <Empty>No shareholders added yet.</Empty>}
       {page.addingShareholder && (
-        <AddForm canAdd={!!f.name.trim()} onAdd={() => void page.addShareholder()} onCancel={() => page.setAddingShareholder(false)}>
+        <AddForm canAdd={!!f.name.trim()} onAdd={() => page.addShareholder()} onCancel={() => page.setAddingShareholder(false)}>
           {/* Phone: name, then Shares | %, then Class on its own row so "Preferred A/B" never clips. */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_11rem_5rem]">
             <div className="col-span-2 sm:col-span-1">
@@ -370,7 +378,7 @@ function Compliance() {
             {upcoming.map(([label, date]) =>
               date ? (
                 <Row key={label} label={label}>
-                  <Dot tone={new Date(date) < new Date() ? "bad" : "good"}>
+                  <Dot tone={isPastLocal(date) ? "bad" : "good"}>
                     <span className="tabular-nums">{fmtDate(date)}</span>
                   </Dot>
                 </Row>
@@ -381,4 +389,12 @@ function Compliance() {
       )}
     </>
   );
+}
+
+/** Before today, comparing calendar days in local time (YYYY-MM-DD dates). */
+function isPastLocal(iso: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
+  const now = new Date();
+  return d.getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }

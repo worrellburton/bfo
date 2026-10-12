@@ -18,10 +18,12 @@ export function EntityHeader() {
   return (
     <section className={`overflow-hidden rounded-2xl border ${t.surface}`}>
       <div className="px-5 pb-4 pt-4 sm:px-6 sm:pt-5">
-        <Link to="/assets" className={`inline-flex items-center gap-1 text-[12px] transition-colors max-sm:min-h-[40px] ${t.muted} ${t.dark ? "hover:text-white" : "hover:text-gray-900"}`}>
-          <Icon name="chevronLeft" className="h-3 w-3" strokeWidth={2.25} />
-          Entities
-        </Link>
+        <nav aria-label="Breadcrumb">
+          <Link to="/assets" className={`inline-flex items-center gap-1 text-[12px] transition-colors max-sm:min-h-[40px] ${t.muted} ${t.dark ? "hover:text-white" : "hover:text-gray-900"}`}>
+            <Icon name="chevronLeft" className="h-3 w-3" strokeWidth={2.25} />
+            Entities
+          </Link>
+        </nav>
         <div className="mt-3 flex items-start gap-3.5">
           <div
             aria-hidden="true"
@@ -44,7 +46,10 @@ export function EntityHeader() {
               {owner && (
                 <span className="whitespace-nowrap">
                   Owned by{" "}
-                  <Link to={`/assets/${asset.ownerId}`} className={`hover:underline ${t.soft}`}>
+                  <Link
+                    to={`/assets/${asset.ownerId}`}
+                    className={`relative hover:underline max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.soft}`}
+                  >
                     {owner}
                   </Link>
                 </span>
@@ -65,18 +70,22 @@ export function EntityHeader() {
         </div>
       </div>
 
-      <dl className={`grid grid-cols-2 border-t sm:grid-cols-4 ${t.line}`}>
+      <div className={`grid grid-cols-2 border-t sm:grid-cols-4 ${t.line}`}>
         {isTrust && !asset.ein ? (
-          <Metric label="Trustees" value={String(trustees.length)} sub={trustees[0]} />
+          <Metric label="Trustees" value={String(trustees.length)} sub={trustees[0] ?? "none recorded"} />
         ) : (
           <CopyMetric id="ein" label="EIN" value={asset.ein} mono />
         )}
-        <CopyMetric id="formed" label={isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : "Formed"} value={formed} />
+        <CopyMetric
+          id="formed"
+          label={isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : etype === "LP" ? "Formed" : "Formation date"}
+          value={formed}
+        />
         <Metric label="Completeness" value={`${score}`} sub="/ 100" />
         <Link to={tabPath("documents")} className={`block transition-colors ${t.hover}`}>
           <Metric label="Paperwork" value={`${filedCount}/${scoredKinds.length}`} sub={filedCount === scoredKinds.length ? "complete" : "on file"} />
         </Link>
-      </dl>
+      </div>
     </section>
   );
 }
@@ -85,11 +94,11 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
   const t = useTone();
   return (
     <div className="min-w-0 px-5 py-3 sm:px-6">
-      <dt className={`text-[11.5px] ${t.muted}`}>{label}</dt>
-      <dd className={`mt-0.5 truncate text-[15px] font-medium tabular-nums ${t.text}`}>
+      <p className={`text-[11.5px] ${t.muted}`}>{label}</p>
+      <p className={`mt-0.5 truncate text-[15px] font-medium tabular-nums ${t.text}`}>
         {value}
         {sub && <span className={`ml-1.5 text-[11px] font-normal ${t.muted}`}>{sub}</span>}
-      </dd>
+      </p>
     </div>
   );
 }
@@ -104,13 +113,13 @@ function CopyMetric({ id, label, value, mono = false }: { id: string; label: str
     <button
       type="button"
       onClick={() => page.copyValue(id, value)}
-      title={`Copy ${label}`}
+      title={label === "EIN" ? "Copy EIN" : `Copy ${label.toLowerCase()}`}
       aria-label={`${label} ${value}. Copy`}
       className={`group/copy block min-w-0 cursor-pointer px-5 py-3 text-left transition-colors sm:px-6 ${t.hover}`}
     >
       <span className={`flex items-center gap-1.5 text-[11.5px] ${t.muted}`}>
         {label}
-        <span aria-live="polite" className={`inline-flex items-center gap-1 ${done ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100"}`}>
+        <span aria-live="polite" className={`inline-flex items-center gap-1 ${done ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
           <Icon name={done ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
           {done ? "Copied" : ""}
         </span>
@@ -140,17 +149,15 @@ function MoreMenu() {
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <IconButton icon="more" label="More actions" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
+      <IconButton icon="more" label="More actions" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
       {open && (
         <div
-          role="menu"
           className={`absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-xl border py-1 shadow-lg ${
             t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"
           }`}
         >
           <button
             type="button"
-            role="menuitem"
             disabled={page.deleting}
             onClick={() => {
               setOpen(false);

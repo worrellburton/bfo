@@ -18,7 +18,8 @@ export function ScanToast() {
   // Once Results is opened, keep the toast until it is dismissed.
   const [held, setHeld] = useState(false);
   useEffect(() => {
-    if (!scan) setHeld(false);
+    // A new scan (nothing done yet) starts un-held, so it auto-hides again.
+    if (!scan || (!scan.finished && scan.done === 0)) setHeld(false);
     else if (held && scanHideTimer.current) clearTimeout(scanHideTimer.current);
   }, [scan, held, scanHideTimer]);
   if (!scan && sorting <= 0) return null;
