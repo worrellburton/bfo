@@ -3270,9 +3270,18 @@ export default function AssetDetail() {
                     {/* The agent of record, and Palm's service */}
                     <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
                       <div className="min-w-0 space-y-1">
-                        <p className={kicker}>Agent of record</p>
-                        <p className="text-[13.5px]">{agentShown || emptyValue}</p>
-                        {agentAddress && <p className={`text-[11.5px] ${textMuted}`}>{agentAddress}</p>}
+                        <p className={kicker}>Registered agent</p>
+                        {palmIsAgent ? (
+                          <>
+                            <p className="text-[13.5px] font-medium">Palm</p>
+                            <p className={`text-[11.5px] ${textMuted}`}>
+                              Listed with the state as {agentShown || "Palm's agent"}
+                              {agentAddress ? ` · ${agentAddress}` : ""}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-[13.5px]">{agentShown || emptyValue}</p>
+                        )}
                         {!palmIsAgent && asset.registeredAgentSource && <p className={`text-[11px] ${textMuted}`}>{asset.registeredAgentSource}</p>}
                         <div className="flex flex-wrap items-center gap-2 pt-1">
                           {st ? (
