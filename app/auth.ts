@@ -1,4 +1,5 @@
-export type Role = "owner" | "admin" | "member" | "viewer";
+/** "email" = Email only: signs in to their own inbox and nothing else. */
+export type Role = "owner" | "admin" | "member" | "viewer" | "email";
 export type Status = "incoming" | "approved" | "denied";
 
 export type User = {
@@ -13,6 +14,8 @@ export type User = {
   approvedAt: string | null;
   lastLoginAt: string | null;
   lastSeenAt?: string | null;
+  /** Their address on the family domain, once assigned. */
+  mailAddress?: string | null;
 };
 
 type Session = {
@@ -74,6 +77,24 @@ export function getToken(): string | null {
 
 export function isAdmin(user: User | null = getUser()): boolean {
   return user?.role === "owner" || user?.role === "admin";
+}
+
+export function isEmailOnly(user: User | null = getUser()): boolean {
+  return user?.role === "email";
+}
+
+/** Where a signed-in user lands: the inbox for "Email only", Home for everyone else. */
+export function homePath(user: User | null = getUser()): string {
+  return isEmailOnly(user) ? "/inbox" : "/home";
+}
+
+/**
+ * True once the account has what sign-in needs: a name and a phone, plus a
+ * personal email for everyone but "Email only" members.
+ */
+export function profileComplete(user: User | null | undefined): boolean {
+  if (!user?.name || !user.phone) return false;
+  return isEmailOnly(user) || !!user.email;
 }
 
 export function initials(user: User | null = getUser()): string {

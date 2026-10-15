@@ -1,7 +1,7 @@
 /**
- * Supabase Storage helpers for the private "receipts" bucket. Everything runs
- * server-side with the service key, so the bucket stays private and reads go
- * through short-lived signed URLs.
+ * Supabase Storage helpers for the private buckets ("receipts" by default,
+ * "mail" for mail attachments). Everything runs server-side with the service
+ * key, so the buckets stay private and reads go through short-lived signed URLs.
  */
 
 const BUCKET = "receipts";
@@ -13,10 +13,10 @@ function cfg() {
   return { url: url.replace(/\/$/, ""), key };
 }
 
-/** Upload bytes to receipts/<path>. Returns the stored object path. */
-export async function storageUpload(path: string, bytes: Uint8Array, contentType: string): Promise<string> {
+/** Upload bytes to <bucket>/<path> (overwriting). Returns the stored object path. */
+export async function storageUpload(path: string, bytes: Uint8Array, contentType: string, bucket = BUCKET): Promise<string> {
   const { url, key } = cfg();
-  const r = await fetch(`${url}/storage/v1/object/${BUCKET}/${encodeURI(path)}`, {
+  const r = await fetch(`${url}/storage/v1/object/${bucket}/${encodeURI(path)}`, {
     method: "POST",
     headers: {
       apikey: key,
@@ -30,28 +30,44 @@ export async function storageUpload(path: string, bytes: Uint8Array, contentType
   return path;
 }
 
-/** A time-limited signed download URL for a stored object (default 1 hour). */
-export async function storageSignedUrl(path: string, expiresIn = 3600): Promise<string | null> {
+/**
+ * A time-limited signed download URL for a stored object (default 1 hour).
+ * With `download`, the browser saves it under that filename.
+ */
+export async function storageSignedUrl(path: string, expiresIn = 3600, bucket = BUCKET, download?: string): Promise<string | null> {
   try {
     const { url, key } = cfg();
-    const r = await fetch(`${url}/storage/v1/object/sign/${BUCKET}/${encodeURI(path)}`, {
+    const r = await fetch(`${url}/storage/v1/object/sign/${bucket}/${encodeURI(path)}`, {
       method: "POST",
       headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ expiresIn }),
     });
     if (!r.ok) return null;
     const data = (await r.json()) as { signedURL?: string };
-    return data.signedURL ? `${url}/storage/v1${data.signedURL}` : null;
+    if (!data.signedURL) return null;
+    const signed = `${url}/storage/v1${data.signedURL}`;
+    return download ? `${signed}${signed.includes("?") ? "&" : "?"}download=${encodeURIComponent(download)}` : signed;
   } catch {
     return null;
   }
 }
 
+/** The bytes of a stored object, or null when it isn't there. */
+export async function storageDownload(path: string, bucket = BUCKET): Promise<Uint8Array | null> {
+  const { url, key } = cfg();
+  const r = await fetch(`${url}/storage/v1/object/${bucket}/${encodeURI(path)}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  });
+  if (r.status === 404 || r.status === 400) return null; // Storage answers a missing object with either
+  if (!r.ok) throw new Error(`storage download failed: ${r.status} ${(await r.text()).slice(0, 200)}`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
 /** Delete a stored object (best-effort). */
-export async function storageRemove(path: string): Promise<void> {
+export async function storageRemove(path: string, bucket = BUCKET): Promise<void> {
   try {
     const { url, key } = cfg();
-    await fetch(`${url}/storage/v1/object/${BUCKET}/${encodeURI(path)}`, {
+    await fetch(`${url}/storage/v1/object/${bucket}/${encodeURI(path)}`, {
       method: "DELETE",
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     });

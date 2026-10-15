@@ -13,7 +13,8 @@ import {
 } from "../../lib/auth.js";
 
 /**
- * Every account needs both an email and a phone number. Whichever one is
+ * Every account needs both an email and a phone number ("Email only" members
+ * just a phone — their address is on the family domain). Whichever one is
  * missing gets collected here after sign-in — and verified with a code before
  * it attaches, because an unverified address on an account could sign in as
  * that account.
@@ -26,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["POST"])) return;
 
   try {
-    const me = await currentUser(req);
+    const me = await currentUser(req, { allowEmailOnly: true });
     if (!me) return fail(res, 401, "unauthorized");
 
     if (req.body?.name !== undefined && req.body?.identifier === undefined) {

@@ -13,8 +13,9 @@ import {
   type Role,
   type Status,
 } from "../../lib/auth.js";
+import { ensureMailAddress, parseMailAddress } from "../../lib/mail-address.js";
 
-const ROLES: Role[] = ["owner", "admin", "member", "viewer"];
+const ROLES: Role[] = ["owner", "admin", "member", "viewer", "email"];
 const STATUSES: Status[] = ["incoming", "approved", "denied"];
 
 /** Build the column patch shared by create and update, validating as it goes. */
@@ -46,6 +47,16 @@ function fields(body: any): { patch: Record<string, unknown> } | { error: string
     }
   }
 
+  // Their address on the family domain: a local part or a full address; empty clears it.
+  if (body.mailAddress !== undefined) {
+    if (body.mailAddress === null || String(body.mailAddress).trim() === "") patch.mail_address = null;
+    else {
+      const parsed = parseMailAddress(String(body.mailAddress));
+      if ("error" in parsed) return { error: "invalid_mail_address", message: parsed.error };
+      patch.mail_address = parsed.address;
+    }
+  }
+
   if (body.role !== undefined) {
     if (!ROLES.includes(body.role)) return { error: "invalid_role", message: "Unknown role." };
     patch.role = body.role;
@@ -60,6 +71,19 @@ function fields(body: any): { patch: Record<string, unknown> } | { error: string
   }
 
   return { patch };
+}
+
+/** Which unique column a write ran into, if it was a duplicate. */
+function duplicate(err: unknown): "mail_address" | "identity" | null {
+  if (!(err instanceof Error) || !err.message.includes("duplicate key")) return null;
+  return err.message.includes("mail_address") ? "mail_address" : "identity";
+}
+
+function failDuplicate(res: VercelResponse, err: unknown, patch: Record<string, unknown>) {
+  const hit = duplicate(err);
+  if (hit === "mail_address") return fail(res, 409, "address_taken", `${patch.mail_address} is taken.`);
+  if (hit) return fail(res, 409, "already_exists", "That phone number or email is already a user.");
+  throw err;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -95,19 +119,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (patch.role === undefined) patch.role = "member";
 
+      let user: AppUser;
       try {
         const created = await sb<AppUser[]>("app_users", {
           method: "POST",
           prefer: "return=representation",
           body: [patch],
         });
-        return res.status(201).json({ user: publicUser(created[0]) });
+        user = created[0];
       } catch (err) {
-        if (err instanceof Error && err.message.includes("duplicate key")) {
-          return fail(res, 409, "already_exists", "That phone number or email is already a user.");
-        }
-        throw err;
+        return failDuplicate(res, err, patch);
       }
+      // Assign their address now, from the name the admin typed, so the admin
+      // sees it straight away. The user exists either way; an admin can set it.
+      await ensureMailAddress(user, { trustName: true }).catch((err) => console.error("users: no mail address yet", err));
+      return res.status(201).json({ user: publicUser(user) });
     }
 
     const id = String(req.method === "DELETE" ? req.query.id ?? "" : req.body?.id ?? "");
@@ -145,23 +171,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Keep approved_at when a status update isn't actually a status change.
     if (patch.status === target.status) delete patch.approved_at;
 
+    let updated: AppUser[];
     try {
-      const updated = await sb<AppUser[]>(`app_users?id=eq.${target.id}`, {
+      updated = await sb<AppUser[]>(`app_users?id=eq.${target.id}`, {
         method: "PATCH",
         prefer: "return=representation",
         body: patch,
       });
-      // Losing access kills any live sessions.
-      if (patch.status !== undefined && patch.status !== "approved") {
+      // Losing access kills any live sessions, and so does moving in or out of
+      // Email only, so a cached session can't keep the old role.
+      const emailFlip = patch.role !== undefined && patch.role !== target.role && (patch.role === "email" || target.role === "email");
+      if ((patch.status !== undefined && patch.status !== "approved") || emailFlip) {
         await sb(`app_sessions?user_id=eq.${target.id}`, { method: "DELETE" });
       }
-      return res.status(200).json({ user: publicUser(updated[0]) });
     } catch (err) {
-      if (err instanceof Error && err.message.includes("duplicate key")) {
-        return fail(res, 409, "already_exists", "That phone number or email is already a user.");
-      }
-      throw err;
+      return failDuplicate(res, err, patch);
     }
+    const user = updated[0];
+    // Give an approved user an address now, before they can pick the name it
+    // would come from. Not from that name (they may have chosen it): user-xxxxxx,
+    // which an admin can rename. An admin clearing it on purpose is left alone.
+    if (user?.status === "approved" && !user.mail_address && patch.mail_address === undefined) {
+      await ensureMailAddress(user).catch((err) => console.error("users: no mail address yet", err));
+    }
+    return res.status(200).json({ user: publicUser(user) });
   } catch (err) {
     return handleError(res, err);
   }

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 
-export type Role = "owner" | "admin" | "member" | "viewer";
+export type Role = "owner" | "admin" | "member" | "viewer" | "email";
 export type Status = "incoming" | "approved" | "denied";
 
 export type AppUser = {
@@ -16,6 +16,8 @@ export type AppUser = {
   verified_at: string | null;
   last_login_at: string | null;
   last_seen_at: string | null;
+  /** Their address on the family domain (lowercase), once assigned. */
+  mail_address: string | null;
 };
 
 /** Don't rewrite the last-seen stamp more than once per this window. */
@@ -366,14 +368,26 @@ async function birdVerifyFetch(
   body: unknown,
   requestHeaders: Record<string, string> = {}
 ): Promise<Response> {
+  return birdPlatformFetch(path, { method: "POST", body, headers: requestHeaders });
+}
+
+/**
+ * Any call to Bird's platform API (https://{region}.platform.bird.com) with
+ * the workspace key — email, inbound mail, domains. Returns the raw Response.
+ */
+export async function birdPlatformFetch(
+  path: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}
+): Promise<Response> {
   return fetch(`${birdVerifyBase()}${path}`, {
-    method: "POST",
+    method: init.method ?? "GET",
     headers: {
       Authorization: `Bearer ${birdKey()}`,
-      "Content-Type": "application/json",
-      ...requestHeaders,
+      ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers ?? {}),
     },
-    body: JSON.stringify(body),
+    ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+    ...(init.signal ? { signal: init.signal } : {}),
   });
 }
 
@@ -461,8 +475,17 @@ export function bearerToken(req: VercelRequest): string | null {
   return match ? match[1].trim() : null;
 }
 
-/** Resolve the caller's session token to a user, or null if it's dead. */
-export async function currentUser(req: VercelRequest): Promise<AppUser | null> {
+/**
+ * Resolve the caller's session token to a user, or null if it's dead.
+ *
+ * "Email only" users resolve to null everywhere except the few endpoints that
+ * opt in with `allowEmailOnly` (their session, profile and mail), so every
+ * other endpoint refuses them without needing its own check.
+ */
+export async function currentUser(
+  req: VercelRequest,
+  opts: { allowEmailOnly?: boolean } = {}
+): Promise<AppUser | null> {
   const token = bearerToken(req);
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return null;
 
@@ -476,6 +499,7 @@ export async function currentUser(req: VercelRequest): Promise<AppUser | null> {
   const users = await sb<AppUser[]>(`app_users?id=eq.${session.user_id}&select=*&limit=1`);
   const user = users?.[0];
   if (!user || user.status !== "approved") return null;
+  if (isEmailOnly(user) && !opts.allowEmailOnly) return null;
 
   // Sessions last 30 days, so last_login_at (written only when a code is
   // entered) goes stale while someone is actively using the app. Touch a
@@ -495,9 +519,14 @@ export function isAdmin(user: AppUser): boolean {
   return user.role === "owner" || user.role === "admin";
 }
 
-/** Viewers can look but not change anything. */
+/** Viewers can look but not change anything; email-only users can't touch shared data. */
 export function canWrite(user: AppUser): boolean {
-  return user.role !== "viewer";
+  return user.role === "owner" || user.role === "admin" || user.role === "member";
+}
+
+/** Signs in to use their own inbox and nothing else. */
+export function isEmailOnly(user: Pick<AppUser, "role">): boolean {
+  return user.role === "email";
 }
 
 /** True when `presented` is exactly `secret`, compared in constant time. */
@@ -520,6 +549,7 @@ export function publicUser(user: AppUser) {
     approvedAt: user.approved_at,
     lastLoginAt: user.last_login_at,
     lastSeenAt: user.last_seen_at,
+    mailAddress: user.mail_address ?? null,
   };
 }
 

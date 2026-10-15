@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, adoptToken, isAuthenticated, requestCode, verifyCode } from "../auth";
+import { ApiError, adoptToken, homePath, isAuthenticated, profileComplete, requestCode, verifyCode } from "../auth";
 import { ParticleCanvas } from "../particles";
 
 export function meta() {
@@ -67,7 +67,7 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate("/home");
+      navigate(homePath());
       return;
     }
     const handoff = params.get("t");
@@ -75,7 +75,7 @@ export default function Login() {
       setBusy(true);
       adoptToken(handoff).then((ok) => {
         setBusy(false);
-        if (ok) navigate("/home");
+        if (ok) navigate(homePath());
         else shakeOut("That sign-in link is no longer valid.");
       });
     }
@@ -136,8 +136,8 @@ export default function Login() {
       const res = await verifyCode(sentTo, value);
       if (res.token) {
         setSuccess(true);
-        const complete = res.user?.name && res.user?.email && res.user?.phone;
-        setTimeout(() => navigate(complete ? "/home" : "/complete-profile"), 700);
+        const next = profileComplete(res.user) ? homePath(res.user) : "/complete-profile";
+        setTimeout(() => navigate(next), 700);
       } else setStep("pending");
     } catch (err) {
       setCode("");

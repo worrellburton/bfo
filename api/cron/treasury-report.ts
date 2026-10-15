@@ -1170,8 +1170,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // "Email only" members can't see Treasury, so they never get the report.
     const users = await sb<Array<AppUser & { notification_prefs: Prefs }>>(
-      "app_users?status=eq.approved&select=id,name,email,phone,role,status,notification_prefs"
+      "app_users?status=eq.approved&role=neq.email&select=id,name,email,phone,role,status,notification_prefs"
     );
     let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
     if (due.length === 0) return res.status(200).json({ sent: 0, considered: users.length });

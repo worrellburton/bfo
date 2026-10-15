@@ -1,0 +1,156 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import createDOMPurify, { type DOMPurify } from "dompurify";
+import { TextButton, useTone } from "./entity/ui";
+
+/**
+ * An HTML email, rendered safely: sanitized with DOMPurify, then shown in a
+ * sandboxed iframe that cannot run scripts, under a CSP that blocks every
+ * network load except (once allowed) https images. Links open in a new tab.
+ * The frame grows to its content's height, so the reader scrolls as one page.
+ */
+
+let purifier: DOMPurify | null = null;
+
+function getPurifier(): DOMPurify {
+  // A private instance, so our hooks never touch anyone else's sanitizing.
+  if (!purifier) purifier = createDOMPurify(window);
+  return purifier;
+}
+
+const REMOTE = /^\s*(https?:)?\/\//i;
+const REMOTE_IN_SRCSET = /(^|,)\s*(https?:)?\/\//i;
+const REMOTE_URL_IN_CSS = /url\(\s*['"]?\s*(https?:)?\/\//i;
+
+/** Sanitizes mail HTML. Remote images are dropped unless `images` is true. */
+export function sanitizeMail(html: string, images: boolean): { html: string; remoteImages: boolean } {
+  const purify = getPurifier();
+  let remoteImages = false;
+  purify.addHook("afterSanitizeAttributes", (node) => {
+    const el = node as Element;
+    // Any link: HTML <a>, SVG <a> (href or xlink:href) and image-map <area>.
+    if (el.hasAttribute("href") || el.hasAttribute("xlink:href")) {
+      el.setAttribute("target", "_blank");
+      el.setAttribute("rel", "noopener noreferrer");
+    }
+    for (const attr of ["src", "srcset", "background", "poster"]) {
+      const v = el.getAttribute(attr);
+      if (v && (attr === "srcset" ? REMOTE_IN_SRCSET : REMOTE).test(v)) {
+        remoteImages = true;
+        if (!images) el.removeAttribute(attr);
+      }
+    }
+    const style = el.getAttribute("style");
+    if (style && REMOTE_URL_IN_CSS.test(style)) remoteImages = true;
+  });
+  purify.addHook("uponSanitizeElement", (node, data) => {
+    // <style> blocks stay (most mail depends on them); the CSP decides what they may load.
+    if (data.tagName === "style" && REMOTE_URL_IN_CSS.test(node.textContent ?? "")) remoteImages = true;
+  });
+  try {
+    const clean = purify.sanitize(html, {
+      // Parse as body content so <style> from the mail's <head> survives.
+      FORCE_BODY: true,
+      FORBID_TAGS: ["form", "input", "button", "select", "textarea", "meta", "link", "base"],
+    });
+    return { html: String(clean), remoteImages };
+  } finally {
+    purify.removeAllHooks();
+  }
+}
+
+function frameDocument(body: string, images: boolean): string {
+  const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? " https:" : ""}; font-src data:`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>
+html,body{margin:0;padding:0;background:#fff;color:#111;}
+body{padding:20px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-wrap:anywhere;}
+img{max-width:100%;height:auto;}
+a{color:#4f46e5;}
+blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #ddd;color:#555;}
+pre{white-space:pre-wrap;}
+</style></head><body>${body}</body></html>`;
+}
+
+/** The message body. Shows "Show images" when the mail asks for remote images. */
+export function MailFrame({ html, title = "Message" }: { html: string; title?: string }) {
+  const t = useTone();
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [images, setImages] = useState(false);
+  const { srcDoc, remoteImages } = useMemo(() => {
+    const clean = sanitizeMail(html, images);
+    return { srcDoc: frameDocument(clean.html, images), remoteImages: clean.remoteImages };
+  }, [html, images]);
+
+  useEffect(() => {
+    const frame = ref.current;
+    if (!frame) return;
+    let observer: ResizeObserver | null = null;
+    let stuck = false;
+    const measure = () => {
+      const body = frame.contentDocument?.body;
+      if (!body) return 0;
+      const cs = frame.contentWindow?.getComputedStyle(body);
+      const margin = cs ? parseFloat(cs.marginTop) + parseFloat(cs.marginBottom) : 0;
+      return Math.min(20000, Math.ceil(body.scrollHeight + (margin || 0)));
+    };
+    const fit = () => {
+      if (stuck) return;
+      const h = measure();
+      if (!h || `${h}px` === frame.style.height) return;
+      frame.style.height = `${h}px`;
+      // Mail sized off the viewport (100vh, html,body{height:100%}) outgrows any height we give it: stop following it.
+      if (measure() > h) stuck = true;
+    };
+    const onLoad = () => {
+      fit();
+      observer?.disconnect();
+      const body = frame.contentDocument?.body;
+      if (body && typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(fit);
+        observer.observe(body);
+      }
+    };
+    frame.addEventListener("load", onLoad);
+    // srcdoc may have finished loading before this effect ran.
+    if (frame.contentDocument?.readyState === "complete" && frame.contentDocument.body?.childNodes.length) onLoad();
+    return () => {
+      frame.removeEventListener("load", onLoad);
+      observer?.disconnect();
+    };
+  }, [srcDoc]);
+
+  return (
+    <div>
+      {remoteImages && !images && (
+        <div className={`mb-2 flex items-center gap-2 text-[12px] ${t.muted}`}>
+          Images hidden
+          <span aria-hidden="true">·</span>
+          <TextButton onClick={() => setImages(true)}>Show images</TextButton>
+        </div>
+      )}
+      <div className={`overflow-hidden rounded-xl border ${t.dark ? "border-white/[0.07]" : "border-gray-200"}`}>
+        <iframe
+          ref={ref}
+          title={title}
+          srcDoc={srcDoc}
+          sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+          referrerPolicy="no-referrer"
+          className="block h-[120px] w-full border-0 bg-white"
+        />
+      </div>
+    </div>
+  );
+}
+
+/** HTML → plain text, for quoting a message that has no text part. */
+export function htmlToText(html: string): string {
+  const marked = sanitizeMail(html, false)
+    .html.replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|table)>/gi, "$&\n");
+  const doc = new DOMParser().parseFromString(marked, "text/html");
+  doc.querySelectorAll("style").forEach((s) => s.remove());
+  return (doc.body.textContent ?? "")
+    .replace(/ /g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
-    const user = await currentUser(req);
+    const user = await currentUser(req, { allowEmailOnly: true });
     if (!user) return fail(res, 401, "unauthorized");
 
     const token = bearerToken(req)!;

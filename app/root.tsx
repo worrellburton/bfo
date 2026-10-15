@@ -9,6 +9,7 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { homePath } from "./auth";
 import { ThemeProvider } from "./theme";
 import { SIDEBAR_BOOT_SCRIPT } from "./sidebar";
 
@@ -88,7 +89,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
               Reload
             </button>
           )}
-          <a href="/home" className="rounded-full border border-white/15 px-5 py-2 text-sm text-gray-200 hover:bg-white/10">
+          <a href={homePath()} className="rounded-full border border-white/15 px-5 py-2 text-sm text-gray-200 hover:bg-white/10">
             Go home
           </a>
         </div>

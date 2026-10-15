@@ -53,14 +53,34 @@ Set these in the Vercel project:
 | `PLAID_REDIRECT_URI` | *optional* — required for Production OAuth banks; must match an Allowed redirect URI in the Plaid dashboard |
 | `ANTHROPIC_API_KEY` | reading, filing and verifying entity documents |
 | `CRON_SECRET` | authenticates the scheduled Books sync and Treasury report |
+| `BIRD_WEBHOOK_SECRET` | *optional* — signing secret of the Bird webhook that delivers new mail to `/api/mail-webhook`; without it, the inbox fetches new mail when it checks |
+| `MAIL_DOMAIN` | *optional* — the domain inboxes live on (default `burtonfamilyoffice.com`) |
 
 ### Sign-in
 
 `/login` takes a phone number, sends a 6-digit code through
 Bird, and exchanges it for a 30-day session stored in `app_sessions`. Anyone who
 verifies a code lands in `app_users` as `incoming` — an owner or admin approves
-them from `/users` before they can get in. Roles are `owner`, `admin`, `member`
-and `viewer`; owners and admins can manage users.
+them from `/users` before they can get in. Roles are `owner`, `admin`, `member`,
+`viewer` and `email` ("Email only": their own inbox and nothing else); owners and
+admins can manage users.
+
+### Mail
+
+Every user has an address on the family domain (assigned from their first name;
+admins can change it on `/users`) and an inbox at `/inbox`. Bird receives the
+mail and BFO keeps each mailbox's copy in Supabase (`mail_messages`, attachments
+in the private `mail` bucket). Mail to an address nobody has lands in "Other",
+which owners and admins see.
+
+To set it up in Bird:
+
+1. Email → Domains → burtonfamilyoffice.com: turn on **Receiving** (the MX
+   records already point at Bird).
+2. Developers → API keys: let the `BIRD_ACCESS_KEY` key read received mail.
+3. Optional, for instant delivery: add a webhook to
+   `https://burtonfamilyoffice.com/api/mail-webhook` for `email.received`, and
+   save its signing secret as `BIRD_WEBHOOK_SECRET`.
 
 ## Building for Production
 

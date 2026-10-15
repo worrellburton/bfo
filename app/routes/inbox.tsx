@@ -1,0 +1,1161 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
+import { getUser, isAdmin } from "../auth";
+import { confirmDialog } from "../confirm-dialog";
+import { Button, Dot, ErrorLine, Icon, IconButton, TextButton, buttonClass, formatBytes, useTone } from "../entity/ui";
+import { MailFrame, htmlToText } from "../mail-frame";
+import {
+  attachmentUrl,
+  deleteMail,
+  getMessage,
+  listMail,
+  moveMail,
+  notifyMailChanged,
+  sendMail,
+  useMailCount,
+  type MailAddress,
+  type MailAttachment,
+  type MailFolder,
+  type MailMessage,
+  type MailSummary,
+  type OutgoingAttachment,
+} from "../mail-client";
+
+export function meta() {
+  return [{ title: "BFO - Inbox" }];
+}
+
+// ── Small helpers ────────────────────────────────────────────────────────
+
+const GLYPHS = {
+  reply: "M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3",
+  replyAll: "M7.5 15l-6-6 6-6M12 15L6 9l6-6M6 9h8.25a6 6 0 010 12H13.5",
+  forward: "M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3",
+  archive:
+    "M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z",
+  unarchive:
+    "M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M2.25 13.838V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z",
+  clip: "M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13",
+} as const;
+
+function Glyph({ name, className = "h-3.5 w-3.5" }: { name: keyof typeof GLYPHS; className?: string }) {
+  return (
+    <svg className={`shrink-0 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d={GLYPHS[name]} />
+    </svg>
+  );
+}
+
+/** IconButton with one of this page's glyphs. */
+function GlyphButton({ glyph, label, tone = "ghost", ...rest }: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger" } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { dark } = useTone();
+  const t =
+    tone === "danger"
+      ? dark ? "text-gray-500 hover:bg-red-500/10 hover:text-red-400" : "text-gray-400 hover:bg-red-50 hover:text-red-600"
+      : dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40 max-sm:h-[40px] max-sm:w-[40px] ${t}`}
+      {...rest}
+    >
+      <Glyph name={glyph} />
+    </button>
+  );
+}
+
+const nameOf = (a: MailAddress) => a.name?.trim() || a.email;
+const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a.email}>` : a.email);
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Time today, "Oct 3" this year, else "3/4/25". */
+function listDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
+}
+
+function fullDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const thisYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(thisYear ? {} : { year: "numeric" }),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function initialsOf(a: MailAddress): string {
+  const parts = (a.name?.trim() || a.email).split(/[\s@._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (a.name?.trim() && parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
+}
+
+const FOLDERS: { key: MailFolder; label: string }[] = [
+  { key: "inbox", label: "Inbox" },
+  { key: "sent", label: "Sent" },
+  { key: "archive", label: "Archive" },
+  { key: "other", label: "Other" },
+];
+
+const EMPTY: Record<MailFolder, string> = {
+  inbox: "No mail yet.",
+  sent: "Nothing sent yet.",
+  archive: "Nothing archived.",
+  other: "Nothing here.",
+};
+
+// ── Compose drafts ───────────────────────────────────────────────────────
+
+type Draft = {
+  title: string;
+  to: string;
+  cc: string;
+  bcc: string;
+  subject: string;
+  text: string;
+  replyToId?: string;
+  forwardId?: string;
+  /** Forward: the original's files, re-attached by the server. */
+  carried: MailAttachment[];
+  /** Where the cursor starts. */
+  focus: "to" | "body";
+};
+
+const prefixed = (prefix: "Re" | "Fwd", subject: string) => {
+  const s = subject.trim();
+  const has = prefix === "Re" ? /^re:/i.test(s) : /^(fwd?|fw):/i.test(s);
+  return has ? s : `${prefix}: ${s}`;
+};
+
+function bodyText(m: MailMessage): string {
+  return (m.text ?? (m.html ? htmlToText(m.html) : "")).replace(/\r\n/g, "\n").trimEnd();
+}
+
+function quoted(m: MailMessage): string {
+  const lines = bodyText(m)
+    .split("\n")
+    .map((l) => (l.startsWith(">") ? `>${l}` : `> ${l}`));
+  return `\n\nOn ${fullDate(m.occurredAt)}, ${nameOf(m.from)} wrote:\n${lines.join("\n")}`;
+}
+
+function uniqueEmails(list: MailAddress[], exclude: string[]): string[] {
+  const out: string[] = [];
+  for (const a of list) {
+    if (!a.email || exclude.some((e) => same(e, a.email)) || out.some((e) => same(e, a.email))) continue;
+    out.push(a.email);
+  }
+  return out;
+}
+
+function replyDraft(m: MailMessage, mode: "reply" | "all", me: string): Draft {
+  // Replying to your own sent mail goes back to the people it went to.
+  const targets = m.direction === "out" ? m.to : [m.from];
+  const to = uniqueEmails(targets, m.direction === "out" ? [me] : []);
+  const cc = mode === "all" ? uniqueEmails([...(m.direction === "out" ? [] : m.to), ...m.cc], [me, ...to]) : [];
+  return {
+    title: mode === "all" ? "Reply all" : "Reply",
+    to: to.join(", "),
+    cc: cc.join(", "),
+    bcc: "",
+    subject: prefixed("Re", m.subject),
+    text: quoted(m),
+    replyToId: m.id,
+    carried: [],
+    focus: "body",
+  };
+}
+
+function forwardDraft(m: MailMessage): Draft {
+  const head = [
+    "---------- Forwarded message ----------",
+    `From: ${fullAddress(m.from)}`,
+    `Date: ${fullDate(m.occurredAt)}`,
+    `Subject: ${m.subject}`,
+    `To: ${m.to.map(fullAddress).join(", ")}`,
+    ...(m.cc.length ? [`Cc: ${m.cc.map(fullAddress).join(", ")}`] : []),
+  ].join("\n");
+  return {
+    title: "Forward",
+    to: "",
+    cc: "",
+    bcc: "",
+    subject: prefixed("Fwd", m.subject),
+    text: `\n\n${head}\n\n${bodyText(m)}`,
+    forwardId: m.id,
+    carried: m.attachments.filter((a) => a.available),
+    focus: "to",
+  };
+}
+
+const blankDraft = (): Draft => ({ title: "New message", to: "", cc: "", bcc: "", subject: "", text: "", carried: [], focus: "to" });
+
+// ── Page ─────────────────────────────────────────────────────────────────
+
+type ListState = { folder: MailFolder; messages: MailSummary[]; hasMore: boolean };
+
+export default function Inbox() {
+  const t = useTone();
+  const me = getUser();
+  const count = useMailCount();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+
+  const canSeeOther = count ? count.canSeeOther : isAdmin(me);
+  const f = params.get("f");
+  const folder: MailFolder = f === "sent" || f === "archive" || (f === "other" && canSeeOther) ? f : "inbox";
+  const openId = params.get("m");
+  // Until the count answers, the session's copy will do. null from the server: no address yet.
+  const address = (count ? count.address : me?.mailAddress) || "";
+  const noAddress = !!count && !count.address;
+
+  const [list, setList] = useState<ListState | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const listReq = useRef(0);
+  const listRef = useRef(list);
+  listRef.current = list;
+
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
+  const loadList = useCallback(async (which: MailFolder, mode: "replace" | "refresh") => {
+    const req = ++listReq.current;
+    if (mode === "replace") {
+      setList(null);
+      setListError(null);
+    }
+    try {
+      const head = await listMail(which);
+      if (req !== listReq.current) return;
+      setListError(null);
+      setList((prev) => {
+        if (mode === "replace" || !prev || prev.folder !== which || !head.messages.length) return { folder: which, ...head };
+        const ids = new Set(head.messages.map((m) => m.id));
+        // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
+        if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return { folder: which, ...head };
+        // Keep what sorts after the head's last row, in the server's (time, id) order.
+        const last = head.messages[head.messages.length - 1];
+        const older = prev.messages.filter((m) => !ids.has(m.id) && sortsAfter(m, last));
+        return { folder: which, messages: [...head.messages, ...older], hasMore: older.length ? prev.hasMore : head.hasMore };
+      });
+    } catch (e) {
+      if (req === listReq.current && mode === "replace") setListError((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadList(folder, "replace");
+  }, [folder, loadList]);
+
+  // New mail shows up through the shared count; when it moves, re-read the list.
+  const unreadKey = count ? `${count.unread}/${count.otherUnread}` : null;
+  const lastKey = useRef(unreadKey);
+  useEffect(() => {
+    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, "refresh");
+    lastKey.current = unreadKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unreadKey]);
+
+  async function loadMore() {
+    const cur = listRef.current;
+    if (!cur || !cur.messages.length) return;
+    setLoadingMore(true);
+    try {
+      const last = cur.messages[cur.messages.length - 1];
+      const next = await listMail(cur.folder, last.occurredAt, last.id);
+      setList((prev) => {
+        if (!prev || prev.folder !== cur.folder) return prev;
+        const ids = new Set(prev.messages.map((m) => m.id));
+        return { ...prev, messages: [...prev.messages, ...next.messages.filter((m) => !ids.has(m.id))], hasMore: next.hasMore };
+      });
+    } catch (e) {
+      setListError((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  // ── The open message ──────────────────────────────────────────────────
+
+  const cache = useRef(new Map<string, MailMessage>());
+  const [open, setOpen] = useState<{ id: string; message: MailMessage | null; error: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!openId) {
+      setOpen(null);
+      return;
+    }
+    const hit = cache.current.get(openId) ?? null;
+    const row = listRef.current?.messages.find((m) => m.id === openId);
+    setOpen({ id: openId, message: hit, error: null });
+    // A cached copy will do, unless the list says it's unread again (fetching marks it read).
+    if (hit && (!row || row.read)) return;
+    let alive = true;
+    getMessage(openId)
+      .then(({ message }) => {
+        if (!alive) return;
+        cache.current.set(openId, message);
+        setOpen({ id: openId, message, error: null });
+        if (!row || !row.read) {
+          setList((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === openId ? { ...m, read: true } : m)) });
+          notifyMailChanged();
+        }
+      })
+      .catch((e) => alive && setOpen({ id: openId, message: null, error: (e as Error).message }));
+    return () => {
+      alive = false;
+    };
+  }, [openId]);
+
+  function select(id: string) {
+    const next: Record<string, string> = { m: id };
+    if (folder !== "inbox") next.f = folder;
+    // From the list: push, so Back returns to it. Between messages: replace.
+    setParams(next, openId ? { replace: true, state: location.state } : { state: { fromList: true } });
+  }
+
+  // Read through refs, so a move/delete that resolves later acts on what's open now.
+  const openIdRef = useRef(openId);
+  openIdRef.current = openId;
+  const navStateRef = useRef(location.state);
+  navStateRef.current = location.state;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  function closeMessage() {
+    if ((navStateRef.current as { fromList?: boolean } | null)?.fromList) navigate(-1);
+    else setParams(folder === "inbox" ? {} : { f: folder }, { replace: true });
+  }
+
+  function chooseFolder(next: MailFolder) {
+    if (next === folder && !openId) return;
+    setParams(next === "inbox" ? {} : { f: next });
+  }
+
+  function dropFromList(id: string) {
+    setList((prev) => prev && { ...prev, messages: prev.messages.filter((m) => m.id !== id) });
+    // Close it only if it's still the one open (and the page is still here).
+    if (mountedRef.current && openIdRef.current === id) closeMessage();
+  }
+
+  const failOn = (id: string, e: unknown) => setOpen((o) => (o && o.id === id ? { ...o, error: (e as Error).message } : o));
+
+  async function move(m: MailMessage, to: "inbox" | "archive") {
+    try {
+      await moveMail([m.id], to);
+      cache.current.set(m.id, { ...m, folder: to });
+      dropFromList(m.id);
+      notifyMailChanged();
+      setToast(to === "archive" ? "Archived" : "Moved to inbox");
+    } catch (e) {
+      failOn(m.id, e);
+    }
+  }
+
+  async function remove(m: MailMessage) {
+    const ok = await confirmDialog({ title: "Delete this message?", confirmLabel: "Delete", tone: "danger" });
+    if (!ok) return;
+    try {
+      await deleteMail([m.id]);
+      cache.current.delete(m.id);
+      dropFromList(m.id);
+      notifyMailChanged();
+      setToast("Deleted");
+    } catch (e) {
+      failOn(m.id, e);
+    }
+  }
+
+  function onSent(sent: MailSummary) {
+    setDraft(null);
+    setToast("Sent");
+    if (folder === "sent") setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
+    notifyMailChanged();
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  async function copyAddress() {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard refused; the address is on screen.
+    }
+  }
+
+  const syncError = isAdmin(me) ? count?.sync?.error : undefined;
+  const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
+  const rows = list && list.folder === folder ? list.messages : null;
+
+  return (
+    <div className="mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
+      <header className="flex items-start justify-between gap-3 pt-1">
+        <div className="min-w-0">
+          <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Inbox</h1>
+          {noAddress ? (
+            <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
+          ) : address && (
+            <button
+              type="button"
+              onClick={copyAddress}
+              title="Copy address"
+              aria-label={`${address}. Copy`}
+              className={`group/copy relative mt-1 inline-flex max-w-full cursor-pointer items-center gap-1.5 text-[12.5px] transition-colors max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.muted} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-900"}`}
+            >
+              <span className="truncate">{address}</span>
+              <span aria-live="polite" className={`inline-flex items-center gap-1 ${copied ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
+                <Icon name={copied ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
+                {copied ? "Copied" : ""}
+              </span>
+            </button>
+          )}
+        </div>
+        <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft())}>
+          New
+        </Button>
+      </header>
+
+      {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
+
+      <div className="flex min-h-0 flex-1 gap-3">
+        {/* The list */}
+        <section
+          aria-label="Messages"
+          className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[380px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
+        >
+          <nav aria-label="Folders" className={`flex shrink-0 gap-1 overflow-x-auto border-b p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${t.line}`}>
+            {folders.map((x) => {
+              const on = x.key === folder;
+              const n = x.key === "inbox" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
+              return (
+                <button
+                  key={x.key}
+                  type="button"
+                  aria-current={on ? "page" : undefined}
+                  onClick={() => chooseFolder(x.key)}
+                  className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-3 ${
+                    on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  {x.label}
+                  {!!n && (
+                    <span className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${on ? "bg-white/15 text-white" : t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600"}`}>
+                      {n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {listError && !rows ? (
+              <ErrorLine>{listError}</ErrorLine>
+            ) : !rows ? (
+              <ListSkeleton />
+            ) : rows.length === 0 ? (
+              <div className={`px-5 py-10 text-center text-[12.5px] ${t.muted}`}>
+                <p>{folder === "inbox" && noAddress ? "No address yet. Ask an admin." : EMPTY[folder]}</p>
+                {folder === "inbox" && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
+              </div>
+            ) : (
+              <>
+                <ul className={`divide-y ${t.divide}`}>
+                  {rows.map((m) => (
+                    <li key={m.id}>
+                      <ListRow m={m} sent={folder === "sent"} me={address} selected={m.id === openId} onOpen={() => select(m.id)} />
+                    </li>
+                  ))}
+                </ul>
+                {listError && <ErrorLine>{listError}</ErrorLine>}
+                {list?.hasMore && (
+                  <div className={`border-t p-2 ${t.line}`}>
+                    <Button kind="ghost" className="w-full" disabled={loadingMore} onClick={loadMore}>
+                      {loadingMore ? "Loading…" : "Load more"}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* The reader */}
+        <section
+          aria-label="Message"
+          className={`min-w-0 flex-1 rounded-2xl border lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}
+        >
+          {!open ? (
+            <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
+              <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
+              Nothing selected
+            </div>
+          ) : (
+            <Reader
+              key={open.id}
+              message={open.message}
+              error={open.error}
+              me={address}
+              onBack={closeMessage}
+              onReply={(m, mode) => setDraft(replyDraft(m, mode, address))}
+              onForward={(m) => setDraft(forwardDraft(m))}
+              onMove={move}
+              onDelete={remove}
+            />
+          )}
+        </section>
+      </div>
+
+      {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
+      {draft && createPortal(<Compose draft={draft} onClose={() => setDraft(null)} onSent={onSent} />, document.body)}
+
+      {toast &&
+        createPortal(
+          <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
+            <span className={`toast-in rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>{toast}</span>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+// ── List ─────────────────────────────────────────────────────────────────
+
+function ListSkeleton() {
+  const { dark } = useTone();
+  const bar = dark ? "bg-white/[0.06]" : "bg-gray-100";
+  return (
+    <div aria-label="Loading" className="animate-pulse">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="space-y-2 px-4 py-3.5">
+          <div className="flex justify-between gap-6">
+            <div className={`h-3 w-1/3 rounded ${bar}`} />
+            <div className={`h-3 w-10 rounded ${bar}`} />
+          </div>
+          <div className={`h-3 w-3/4 rounded ${bar}`} />
+          <div className={`h-3 w-5/6 rounded ${bar}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListRow({ m, sent, me, selected, onOpen }: { m: MailSummary; sent: boolean; me: string; selected: boolean; onOpen: () => void }) {
+  const t = useTone();
+  const unread = !m.read;
+  const who = sent ? `To: ${m.to.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ") || "—"}` : nameOf(m.from);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-current={selected ? "true" : undefined}
+      className={`relative block w-full cursor-pointer px-5 py-3 text-left transition-colors ${
+        selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
+      }`}
+    >
+      {unread && <span aria-hidden="true" className="absolute left-2 top-[18px] h-1.5 w-1.5 rounded-full bg-[#818cf8]" />}
+      {unread && <span className="sr-only">Unread. </span>}
+      <div className="flex items-baseline gap-2">
+        <span className={`min-w-0 flex-1 truncate text-[13px] ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
+        {m.attachmentCount > 0 && (
+          <span className={`self-center ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
+            <Glyph name="clip" className="h-3 w-3" />
+          </span>
+        )}
+        <span className={`shrink-0 text-[11.5px] tabular-nums ${unread ? t.text : t.muted}`}>{listDate(m.occurredAt)}</span>
+      </div>
+      <div className={`mt-0.5 truncate text-[12.5px] ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</div>
+      {m.snippet && <div className={`mt-0.5 truncate text-[12px] ${t.muted}`}>{m.snippet}</div>}
+    </button>
+  );
+}
+
+// ── Reader ───────────────────────────────────────────────────────────────
+
+function Reader({
+  message: m,
+  error,
+  me,
+  onBack,
+  onReply,
+  onForward,
+  onMove,
+  onDelete,
+}: {
+  message: MailMessage | null;
+  error: string | null;
+  me: string;
+  onBack: () => void;
+  onReply: (m: MailMessage, mode: "reply" | "all") => void;
+  onForward: (m: MailMessage) => void;
+  onMove: (m: MailMessage, to: "inbox" | "archive") => void;
+  onDelete: (m: MailMessage) => void;
+}) {
+  const t = useTone();
+  const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ");
+  const toTitle = (list: MailAddress[]) => list.map(fullAddress).join(", ");
+  const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
+
+  return (
+    <article>
+      <div
+        className={`sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl lg:top-0 ${t.line} ${
+          t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
+        } rounded-t-2xl`}
+      >
+        <IconButton icon="chevronLeft" label="Back" onClick={onBack} className="lg:hidden" />
+        {m && (
+          <>
+            <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply">
+              <Glyph name="reply" />
+              <span className="max-sm:hidden">Reply</span>
+            </Button>
+            <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all">
+              <Glyph name="replyAll" />
+              <span className="max-sm:hidden">Reply all</span>
+            </Button>
+            <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward">
+              <Glyph name="forward" />
+              <span className="max-sm:hidden">Forward</span>
+            </Button>
+            <span className="flex-1" />
+            {m.direction === "in" &&
+              (m.folder === "archive" ? (
+                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} />
+              ) : (
+                <GlyphButton glyph="archive" label="Archive" onClick={() => onMove(m, "archive")} />
+              ))}
+            <IconButton icon="trash" label="Delete" tone="danger" onClick={() => onDelete(m)} />
+          </>
+        )}
+      </div>
+
+      {error && <ErrorLine>{error}</ErrorLine>}
+
+      {!m ? (
+        !error && <ReaderSkeleton />
+      ) : (
+        <div className="px-5 pb-6 pt-4 sm:px-6">
+          <h2 className={`break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] ${t.text}`}>{m.subject || "(no subject)"}</h2>
+
+          <div className="mt-4 flex items-start gap-3">
+            <div
+              aria-hidden="true"
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600"}`}
+            >
+              {initialsOf(m.from)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className={`min-w-0 truncate text-[13px] font-semibold ${t.text}`}>{nameOf(m.from)}</span>
+                {m.from.name && <span className={`hidden min-w-0 truncate text-[12px] sm:inline ${t.muted}`}>{m.from.email}</span>}
+                <time dateTime={m.occurredAt} className={`ml-auto shrink-0 pl-2 text-[12px] tabular-nums ${t.muted}`}>
+                  {fullDate(m.occurredAt)}
+                </time>
+              </div>
+              {m.from.name && <div className={`truncate text-[12px] sm:hidden ${t.muted}`}>{m.from.email}</div>}
+              <div className={`mt-0.5 text-[12px] leading-snug ${t.muted}`}>
+                {m.to.length > 0 && <span title={toTitle(m.to)}>To {toLine(m.to)}</span>}
+                {m.cc.length > 0 && (
+                  <span title={toTitle(m.cc)}>
+                    <span aria-hidden="true" className="mx-1.5">·</span>Cc {toLine(m.cc)}
+                  </span>
+                )}
+                {m.bcc.length > 0 && (
+                  <span title={toTitle(m.bcc)}>
+                    <span aria-hidden="true" className="mx-1.5">·</span>Bcc {toLine(m.bcc)}
+                  </span>
+                )}
+              </div>
+              {(m.unverifiedSender || failed) && (
+                <div className="mt-1.5 flex flex-wrap gap-3">
+                  {m.unverifiedSender && <Dot tone="muted">Sender not verified</Dot>}
+                  {failed && <Dot tone="bad">Not delivered</Dot>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5">
+            {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
+          </div>
+
+          {m.attachments.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {m.attachments.map((a) => (
+                <AttachmentChip key={a.id} messageId={m.id} a={a} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function ReaderSkeleton() {
+  const { dark } = useTone();
+  const bar = dark ? "bg-white/[0.06]" : "bg-gray-100";
+  return (
+    <div aria-label="Loading" className="animate-pulse space-y-3 px-5 pt-5 sm:px-6">
+      <div className={`h-4 w-2/3 rounded ${bar}`} />
+      <div className={`h-3 w-1/3 rounded ${bar}`} />
+      <div className={`mt-6 h-3 w-full rounded ${bar}`} />
+      <div className={`h-3 w-5/6 rounded ${bar}`} />
+      <div className={`h-3 w-4/6 rounded ${bar}`} />
+    </div>
+  );
+}
+
+const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g;
+
+/** Plain text with links made clickable. */
+function Linkified({ text }: { text: string }) {
+  const { accent } = useTone();
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(URL_RE)) {
+    let url = match[0];
+    // Trailing punctuation belongs to the sentence, not the link.
+    const trail = /[).,;:!?\]]+$/.exec(url)?.[0] ?? "";
+    if (trail) url = url.slice(0, -trail.length);
+    const at = match.index ?? 0;
+    out.push(text.slice(last, at));
+    out.push(
+      <a key={at} href={url} target="_blank" rel="noopener noreferrer" className={`underline-offset-2 hover:underline ${accent}`}>
+        {url}
+      </a>
+    );
+    last = at + url.length;
+  }
+  out.push(text.slice(last));
+  return <>{out}</>;
+}
+
+/** A text message: quoted lines (">") sit in a quiet block. */
+function PlainBody({ text, nested = false }: { text: string; nested?: boolean }) {
+  const t = useTone();
+  const blocks = useMemo(() => {
+    const out: { quote: boolean; text: string }[] = [];
+    for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+      const quote = line.startsWith(">");
+      const body = quote ? line.replace(/^>\s?/, "") : line;
+      const prev = out[out.length - 1];
+      if (prev && prev.quote === quote) prev.text += `\n${body}`;
+      else out.push({ quote, text: body });
+    }
+    return out;
+  }, [text]);
+  if (!nested && !text.trim()) return <p className={`text-[13px] ${t.faint}`}>No text.</p>;
+  return (
+    <div className={nested ? "" : `max-w-[75ch] whitespace-pre-wrap break-words text-[13.5px] leading-relaxed ${t.text}`}>
+      {blocks.map((b, i) =>
+        b.quote ? (
+          <div key={i} className={`my-1 border-l-2 pl-3 ${t.dark ? "border-white/10" : "border-gray-200"} ${t.muted}`}>
+            <PlainBody text={b.text} nested />
+          </div>
+        ) : (
+          <span key={i}>
+            <Linkified text={b.text} />
+            {i < blocks.length - 1 ? "\n" : ""}
+          </span>
+        )
+      )}
+    </div>
+  );
+}
+
+function AttachmentChip({ messageId, a }: { messageId: string; a: MailAttachment }) {
+  const t = useTone();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  async function open() {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const { url } = await attachmentUrl(messageId, a.id);
+      // The link is signed with a download filename, so this saves the file in place.
+      const link = document.createElement("a");
+      link.href = url;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const off = !a.available;
+  return (
+    <button
+      type="button"
+      onClick={open}
+      disabled={off || busy}
+      title={off ? "No longer available" : `Download ${a.filename}`}
+      className={`inline-flex max-w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[12px] transition-colors disabled:cursor-default max-sm:min-h-[40px] ${
+        t.dark ? "border-white/[0.08] hover:bg-white/[0.04]" : "border-gray-200 hover:bg-gray-50"
+      } ${off ? "opacity-50" : ""}`}
+    >
+      <Glyph name="clip" className={`h-3.5 w-3.5 ${t.muted}`} />
+      <span className={`min-w-0 truncate ${t.text}`}>{a.filename || "attachment"}</span>
+      <span className={`shrink-0 tabular-nums ${failed ? (t.dark ? "text-red-300" : "text-red-600") : t.muted}`}>
+        {failed ? "Failed" : off ? "Expired" : busy ? "…" : formatBytes(a.size)}
+      </span>
+    </button>
+  );
+}
+
+// ── Compose ──────────────────────────────────────────────────────────────
+
+const MAX_ATTACH = 3 * 1024 * 1024;
+const MAX_RECIPIENTS = 50;
+const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
+
+/** "a@x.com, Name <b@y.com>; c@z.com" → addresses, plus anything that isn't one. */
+/** True when `m` comes after `last` in the list's newest-first (time, id) order. */
+function sortsAfter(m: MailSummary, last: MailSummary): boolean {
+  const a = Date.parse(m.occurredAt), b = Date.parse(last.occurredAt);
+  if (a !== b) return a < b;
+  if (m.occurredAt !== last.occurredAt) return m.occurredAt < last.occurredAt;
+  return m.id < last.id;
+}
+
+function parseRecipients(input: string): { ok: string[]; bad: string[] } {
+  const ok: string[] = [];
+  const bad: string[] = [];
+  // Split on , ; or newline only outside "quoted names" and <addresses>.
+  const parts: string[] = [];
+  let cur = "";
+  let quoted = false;
+  let angled = false;
+  for (const ch of input) {
+    if (ch === '"' && !angled) quoted = !quoted;
+    else if (ch === "<" && !quoted) angled = true;
+    else if (ch === ">" && !quoted) angled = false;
+    if (!quoted && !angled && /[,;\n]/.test(ch)) {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  parts.push(cur);
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i].trim();
+    if (!p) continue;
+    // Outlook style "Smith, Jane <j@x.com>": a name-only piece belongs to the next bracketed address.
+    if (!p.includes("@") && !p.includes("<") && parts[i + 1]?.includes("<")) continue;
+    // Take a bracketed address only when it ends the piece; anything else is reported, never dropped.
+    const pieces = p.includes("<") ? [p.match(/<([^>]*)>\s*$/)?.[1]?.trim() ?? p] : p.split(/\s+/);
+    for (const e of pieces) (EMAIL_RE.test(e) ? ok : bad).push(e);
+  }
+  return { ok, bad };
+}
+
+function readBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(new Error(`Couldn't read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function Compose({ draft, onClose, onSent }: { draft: Draft; onClose: () => void; onSent: (m: MailSummary) => void }) {
+  const t = useTone();
+  const [sendId] = useState(() => crypto.randomUUID());
+  const [to, setTo] = useState(draft.to);
+  const [cc, setCc] = useState(draft.cc);
+  const [bcc, setBcc] = useState(draft.bcc);
+  const [showCc, setShowCc] = useState(!!(draft.cc || draft.bcc));
+  const [subject, setSubject] = useState(draft.subject);
+  const [text, setText] = useState(draft.text);
+  const [files, setFiles] = useState<File[]>([]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const asking = useRef(false);
+
+  const dirty = to !== draft.to || cc !== draft.cc || bcc !== draft.bcc || subject !== draft.subject || text !== draft.text || files.length > 0;
+  const totalBytes = files.reduce((n, f) => n + f.size, 0);
+
+  // Leaving the page (Back, a palette jump) asks first; ?m and ?f changes inside the inbox don't.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && !sending && currentLocation.pathname !== nextLocation.pathname);
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    // Already asking (Esc): that answer decides; stay here.
+    if (asking.current) {
+      blocker.reset();
+      return;
+    }
+    asking.current = true;
+    void confirmDialog({ title: "Discard this message?", confirmLabel: "Discard", tone: "danger" }).then((ok) => {
+      asking.current = false;
+      if (ok) blocker.proceed();
+      else blocker.reset();
+    });
+  }, [blocker]);
+
+  // Reload or closing the tab: the browser's own prompt.
+  useEffect(() => {
+    if (!dirty) return;
+    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [dirty]);
+
+  async function close() {
+    if (sending || asking.current) return;
+    if (dirty) {
+      asking.current = true;
+      const ok = await confirmDialog({ title: "Discard this message?", confirmLabel: "Discard", tone: "danger" });
+      asking.current = false;
+      if (!ok) return;
+    }
+    onClose();
+  }
+
+  useEffect(() => {
+    // New / Reply / Forward: focus goes back there on close.
+    const opener = document.activeElement as HTMLElement | null;
+    if (draft.focus === "body" && bodyRef.current) {
+      bodyRef.current.focus();
+      bodyRef.current.setSelectionRange(0, 0);
+      bodyRef.current.scrollTop = 0;
+    } else toRef.current?.focus();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+      if (opener && opener !== document.body && document.contains(opener)) opener.focus({ preventScroll: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Keeps Tab inside the dialog. */
+  function trapTab(e: React.KeyboardEvent) {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const list = [
+      ...panel.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'),
+    ].filter((el) => el.offsetParent !== null);
+    if (!list.length) return;
+    const first = list[0];
+    const last = list[list.length - 1];
+    const cur = document.activeElement;
+    if (!panel.contains(cur)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    } else if (e.shiftKey && cur === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && cur === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function addFiles(list: FileList | null) {
+    const picked = Array.from(list ?? []);
+    if (!picked.length) return;
+    const next = [...files, ...picked];
+    if (next.reduce((n, f) => n + f.size, 0) > MAX_ATTACH) {
+      setError("Attachments can total 3 MB.");
+      return;
+    }
+    setError(null);
+    setFiles(next);
+  }
+
+  async function send() {
+    if (sending) return;
+    const lists = [parseRecipients(to), parseRecipients(cc), parseRecipients(bcc)];
+    const bad = lists.flatMap((l) => l.bad);
+    const total = lists.reduce((n, l) => n + l.ok.length, 0);
+    if (bad.length) return setError(`Check ${bad[0]}.`);
+    if (!total) return setError("Add a recipient.");
+    if (total > MAX_RECIPIENTS) return setError(`Up to ${MAX_RECIPIENTS} recipients.`);
+    if (totalBytes > MAX_ATTACH) return setError("Attachments can total 3 MB.");
+    setSending(true);
+    setError(null);
+    try {
+      const attachments: OutgoingAttachment[] = await Promise.all(
+        files.map(async (f) => ({ filename: f.name, contentType: f.type || "application/octet-stream", data: await readBase64(f) }))
+      );
+      const { message } = await sendMail({
+        sendId,
+        to: lists[0].ok,
+        ...(lists[1].ok.length ? { cc: lists[1].ok } : {}),
+        ...(lists[2].ok.length ? { bcc: lists[2].ok } : {}),
+        subject: subject.replace(/[\r\n]+/g, " ").trim(),
+        text,
+        ...(draft.replyToId ? { replyToId: draft.replyToId } : {}),
+        ...(draft.forwardId ? { forwardId: draft.forwardId } : {}),
+        ...(attachments.length ? { attachments } : {}),
+      });
+      onSent(message);
+    } catch (e) {
+      setError((e as Error).message);
+      setSending(false);
+    }
+  }
+
+  // The fields are borderless rows; the caret shows focus (the global focus ring would box them).
+  const field = `min-w-0 flex-1 bg-transparent py-2.5 text-[13px] placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`;
+  const noRing = { outline: "none" } as const;
+  const label = `w-[60px] shrink-0 text-[12px] ${t.muted}`;
+  const row = `flex items-center gap-2 border-b px-4 ${t.line}`;
+
+  return (
+    <div
+      // Focusable, so a click on the title or backdrop keeps focus here and Esc / ⌘↵ still work.
+      tabIndex={-1}
+      style={{ outline: "none" }}
+      className="fixed inset-0 z-[60] flex items-stretch justify-center sm:items-center sm:p-6"
+      onKeyDown={(e) => {
+        // The discard confirm is up: its keys are its own.
+        if (asking.current) return;
+        if (e.key === "Tab") trapTab(e);
+        else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          void send();
+        } else if (e.key === "Escape") {
+          // Stop here: the confirm dialog listens on window and would take this same keypress.
+          e.preventDefault();
+          e.stopPropagation();
+          void close();
+        }
+      }}
+    >
+      <div className="palette-backdrop absolute inset-0 bg-black/55 backdrop-blur-[2px] max-sm:hidden" onClick={() => !dirty && onClose()} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="compose-title"
+        className={`palette-panel relative flex w-full flex-col overflow-hidden shadow-2xl sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
+          t.dark ? "border-white/10 bg-[#111113]" : "border-gray-200 bg-white"
+        }`}
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <header className={`flex h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 max-sm:h-14 ${t.line}`}>
+          <h2 id="compose-title" className={`flex-1 truncate text-[13.5px] font-semibold ${t.text}`}>
+            {draft.title}
+          </h2>
+          <IconButton icon="x" label="Close" onClick={() => void close()} />
+        </header>
+
+        <div className={row}>
+          <label htmlFor="compose-to" className={label}>To</label>
+          <input id="compose-to" ref={toRef} value={to} onChange={(e) => setTo(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
+          {!showCc && (
+            <TextButton onClick={() => setShowCc(true)} className={t.muted}>
+              Cc/Bcc
+            </TextButton>
+          )}
+        </div>
+        {showCc && (
+          <>
+            <div className={row}>
+              <label htmlFor="compose-cc" className={label}>Cc</label>
+              <input id="compose-cc" value={cc} onChange={(e) => setCc(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
+            </div>
+            <div className={row}>
+              <label htmlFor="compose-bcc" className={label}>Bcc</label>
+              <input id="compose-bcc" value={bcc} onChange={(e) => setBcc(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
+            </div>
+          </>
+        )}
+        <div className={row}>
+          <label htmlFor="compose-subject" className={label}>Subject</label>
+          <input id="compose-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={300} className={field} style={noRing} />
+        </div>
+
+        <textarea
+          ref={bodyRef}
+          aria-label="Message"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          style={noRing}
+          className={`min-h-[220px] w-full flex-1 resize-none bg-transparent px-4 py-3 text-[13.5px] leading-relaxed placeholder:text-gray-500 max-sm:text-[16px] sm:h-[340px] sm:min-h-[120px] sm:flex-initial ${t.text}`}
+        />
+
+        {(draft.carried.length > 0 || files.length > 0) && (
+          <div className={`flex shrink-0 flex-wrap gap-1.5 border-t px-4 py-2.5 ${t.line}`}>
+            {draft.carried.map((a) => (
+              <span key={a.id} title="From the original" className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
+                <Glyph name="clip" className={`h-3 w-3 ${t.muted}`} />
+                <span className={`min-w-0 truncate ${t.text}`}>{a.filename}</span>
+                <span className={`shrink-0 ${t.muted}`}>{formatBytes(a.size)}</span>
+              </span>
+            ))}
+            {files.map((file, i) => (
+              <span key={`${file.name}-${i}`} className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border py-0.5 pl-2 pr-0.5 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
+                <Glyph name="clip" className={`h-3 w-3 ${t.muted}`} />
+                <span className={`min-w-0 truncate ${t.text}`}>{file.name}</span>
+                <span className={`shrink-0 ${t.muted}`}>{formatBytes(file.size)}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))}
+                  className={`inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md max-sm:h-[40px] max-sm:w-[40px] ${t.dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"}`}
+                >
+                  <Icon name="x" className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <div className={`shrink-0 border-t ${t.line}`}>
+            <ErrorLine>{error}</ErrorLine>
+          </div>
+        )}
+
+        <footer className={`flex shrink-0 items-center gap-1.5 border-t px-3 py-2.5 ${t.line}`} style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}>
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+          <GlyphButton glyph="clip" label="Attach files" onClick={() => fileRef.current?.click()} />
+          {totalBytes > 0 && <span className={`text-[11.5px] tabular-nums ${t.muted}`}>{formatBytes(totalBytes)}</span>}
+          <span className="flex-1" />
+          <span className={`mr-1 text-[11px] max-sm:hidden ${t.faint}`}>⌘↵</span>
+          <Button kind="ghost" onClick={() => void close()} disabled={sending}>
+            Discard
+          </Button>
+          <button type="button" onClick={() => void send()} disabled={sending} className={`${buttonClass("primary", t.dark)} min-w-[72px]`}>
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}

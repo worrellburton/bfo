@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { authFetch, getUser, isAuthenticated, revalidate } from "../auth";
+import { authFetch, getUser, homePath, isAuthenticated, isEmailOnly, profileComplete, revalidate } from "../auth";
 import { ParticleCanvas } from "../particles";
 
 export function meta() {
@@ -43,11 +43,12 @@ export default function CompleteProfile() {
     }
     const user = getUser();
     if (!user) return;
-    // Name comes first, then whichever identifier is missing.
-    if (!user.email) setMissing("email");
+    // Name comes first, then whichever identifier is missing ("Email only"
+    // members don't need a personal email).
+    if (!user.email && !isEmailOnly(user)) setMissing("email");
     else if (!user.phone) setMissing("phone");
     if (!user.name) setStep("name");
-    else if (user.email && user.phone) navigate("/home"); // nothing to collect
+    else if (profileComplete(user)) navigate(homePath(user)); // nothing to collect
   }, [navigate]);
 
   useEffect(() => {
@@ -84,7 +85,7 @@ export default function CompleteProfile() {
       if (missing) setStep("collect");
       else {
         setSuccess(true);
-        setTimeout(() => navigate("/home"), 700);
+        setTimeout(() => navigate(homePath()), 700);
       }
     } catch (err) {
       shakeOut(err instanceof Error ? err.message : "Couldn't save your name.");
@@ -116,7 +117,7 @@ export default function CompleteProfile() {
       await call({ identifier: sentTo, code: submitted });
       setSuccess(true);
       await revalidate(); // pull the updated user into the stored session
-      setTimeout(() => navigate("/home"), 700);
+      setTimeout(() => navigate(homePath()), 700);
     } catch (err) {
       setCode("");
       shakeOut(err instanceof Error ? err.message : "Couldn't verify that code.");
@@ -203,7 +204,9 @@ export default function CompleteProfile() {
                 {isEmail ? "Add your email" : "Add your phone"}
               </label>
               <p className="text-white/50 text-xs mb-3">
-                Every account needs both a phone number and an email. One more step and you're in.
+                {isEmailOnly()
+                  ? "One more step and you're in."
+                  : "Every account needs both a phone number and an email. One more step and you're in."}
               </p>
               <input
                 id="value"

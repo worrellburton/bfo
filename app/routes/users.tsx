@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { useNavigate } from "react-router";
-import { authFetch, getUser, isAdmin, type Role, type Status, type User } from "../auth";
+import { authFetch, getUser, homePath, isAdmin, type Role, type Status, type User } from "../auth";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -13,6 +13,7 @@ const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
   member: "Member",
   viewer: "Viewer",
+  email: "Email only",
 };
 
 type Tab = "all" | "incoming";
@@ -61,6 +62,43 @@ export default function Users() {
   // Inline rename: which user's name is being edited, and the text so far.
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
 
+  // Inline address edit; the server's message stays under the field until it's fixed.
+  const [readdressing, setReaddressing] = useState<{ id: string; value: string; error?: string } | null>(null);
+  const readdressingRef = useRef(readdressing);
+  readdressingRef.current = readdressing;
+  const addressCancelled = useRef(false);
+
+  async function saveAddress(user: User) {
+    if (addressCancelled.current) {
+      addressCancelled.current = false;
+      return;
+    }
+    if (!readdressing || readdressing.id !== user.id) return;
+    const value = readdressing.value.trim().toLowerCase();
+    if (value === (user.mailAddress ?? "")) {
+      setReaddressing(null);
+      return;
+    }
+    setBusyId(user.id);
+    try {
+      const res = await authFetch("/api/auth/users", {
+        method: "PATCH",
+        body: JSON.stringify({ id: user.id, mailAddress: value || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message ?? "Couldn't save that address.");
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? data.user : u)));
+      // Only this row's editor: another may have opened during the save.
+      setReaddressing((cur) => (cur?.id === user.id ? null : cur));
+    } catch (err) {
+      const error = err instanceof Error ? err.message : "Couldn't save that address.";
+      setReaddressing((cur) => (cur?.id === user.id ? { ...cur, error } : cur));
+      if (readdressingRef.current?.id !== user.id) setError(error);
+    } finally {
+      setBusyId((cur) => (cur === user.id ? null : cur));
+    }
+  }
+
   async function saveName(user: User) {
     if (!renaming || renaming.id !== user.id) return;
     const name = renaming.name.trim();
@@ -71,7 +109,7 @@ export default function Users() {
 
   useEffect(() => {
     if (!isAdmin()) {
-      navigate("/home");
+      navigate(homePath());
       return;
     }
     void load();
@@ -152,6 +190,7 @@ export default function Users() {
       (u) =>
         u.name?.toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q) ||
+        u.mailAddress?.includes(q) ||
         u.phone?.includes(q.replace(/\D/g, "") || q) ||
         u.phoneFormatted?.toLowerCase().includes(q)
     );
@@ -234,7 +273,7 @@ export default function Users() {
               onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
             <select className={`${input} cursor-pointer`} value={draft.role} aria-label="Role"
               onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}>
-              {(["admin", "member", "viewer", ...(canSetOwner ? ["owner"] : [])] as Role[]).map((r) => (
+              {(["admin", "member", "viewer", "email", ...(canSetOwner ? ["owner"] : [])] as Role[]).map((r) => (
                 <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
             </select>
@@ -313,40 +352,90 @@ export default function Users() {
                         <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${isDark ? "bg-white/10" : "bg-black/5 text-gray-700"}`}>
                           {initialsFor(user)}
                         </span>
-                        {renaming?.id === user.id ? (
-                          <input
-                            autoFocus
-                            value={renaming.name}
-                            onChange={(e) => setRenaming({ id: user.id, name: e.target.value })}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onBlur={() => void saveName(user)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur();
-                              if (e.key === "Escape") setRenaming(null);
-                            }}
-                            placeholder="Full name"
-                            aria-label={`Name for ${user.email ?? user.phoneFormatted ?? "user"}`}
-                            className={`h-7 w-60 max-w-full max-sm:h-[40px] max-sm:text-[16px] rounded-md border px-2 text-[13px] font-medium outline-none ${
-                              isDark ? "border-white/20 bg-white/[0.04] text-white focus:border-white/40" : "border-gray-300 bg-white text-gray-900 focus:border-gray-500"
-                            }`}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setRenaming({ id: user.id, name: user.name ?? "" })}
-                            disabled={busyId === user.id || (user.role === "owner" && !canSetOwner && !self)}
-                            title="Rename"
-                            className={`group inline-flex items-center gap-1.5 max-sm:min-h-[40px] rounded-md text-left font-medium cursor-pointer disabled:cursor-default ${
-                              isDark ? "hover:text-white" : "hover:text-gray-900"
-                            }`}
-                          >
-                            <span className={user.name ? "" : subtle}>{user.name || "Add a name"}</span>
-                            {self && <span className={`text-xs font-normal ${subtle}`}>you</span>}
-                            <svg className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
-                            </svg>
-                          </button>
-                        )}
+                        <span className="flex min-w-0 flex-col items-start">
+                          {renaming?.id === user.id ? (
+                            <input
+                              autoFocus
+                              value={renaming.name}
+                              onChange={(e) => setRenaming({ id: user.id, name: e.target.value })}
+                              onFocus={(e) => e.currentTarget.select()}
+                              onBlur={() => void saveName(user)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                                if (e.key === "Escape") setRenaming(null);
+                              }}
+                              placeholder="Full name"
+                              aria-label={`Name for ${user.email ?? user.phoneFormatted ?? "user"}`}
+                              className={`h-7 w-60 max-w-full max-sm:h-[40px] max-sm:text-[16px] rounded-md border px-2 text-[13px] font-medium outline-none ${
+                                isDark ? "border-white/20 bg-white/[0.04] text-white focus:border-white/40" : "border-gray-300 bg-white text-gray-900 focus:border-gray-500"
+                              }`}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setRenaming({ id: user.id, name: user.name ?? "" })}
+                              disabled={busyId === user.id || (user.role === "owner" && !canSetOwner && !self)}
+                              title="Rename"
+                              className={`group inline-flex items-center gap-1.5 max-sm:min-h-[40px] rounded-md text-left font-medium cursor-pointer disabled:cursor-default ${
+                                isDark ? "hover:text-white" : "hover:text-gray-900"
+                              }`}
+                            >
+                              <span className={user.name ? "" : subtle}>{user.name || "Add a name"}</span>
+                              {self && <span className={`text-xs font-normal ${subtle}`}>you</span>}
+                              <svg className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
+                              </svg>
+                            </button>
+                          )}
+                          {readdressing?.id === user.id ? (
+                            <span className="flex max-w-full flex-col">
+                              <input
+                                autoFocus
+                                value={readdressing.value}
+                                readOnly={busyId === user.id}
+                                onChange={(e) => setReaddressing({ id: user.id, value: e.target.value })}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onBlur={() => void saveAddress(user)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                  if (e.key === "Escape") {
+                                    addressCancelled.current = true;
+                                    setReaddressing(null);
+                                  }
+                                }}
+                                placeholder="Address"
+                                aria-label={`Mail address for ${user.name || user.email || user.phoneFormatted || "user"}`}
+                                aria-invalid={!!readdressing.error}
+                                className={`mt-0.5 h-6 w-60 max-w-full max-sm:h-[40px] max-sm:text-[16px] rounded-md border px-2 text-[12px] outline-none ${
+                                  isDark ? "border-white/20 bg-white/[0.04] text-white focus:border-white/40" : "border-gray-300 bg-white text-gray-900 focus:border-gray-500"
+                                }`}
+                              />
+                              {readdressing.error && (
+                                <span role="alert" className={`mt-0.5 w-60 max-w-full whitespace-normal text-[11px] ${isDark ? "text-red-400" : "text-red-600"}`}>
+                                  {readdressing.error}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                addressCancelled.current = false;
+                                setReaddressing({ id: user.id, value: user.mailAddress ?? "" });
+                              }}
+                              disabled={busyId === user.id || (user.role === "owner" && !canSetOwner)}
+                              title="Edit address"
+                              className={`group inline-flex items-center gap-1 max-sm:min-h-[40px] text-left text-[11px] font-normal ${subtle} cursor-pointer disabled:cursor-default ${
+                                isDark ? "hover:text-gray-300" : "hover:text-gray-700"
+                              }`}
+                            >
+                              <span>{user.mailAddress || "No address"}</span>
+                              <svg className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
+                              </svg>
+                            </button>
+                          )}
+                        </span>
                       </span>
                     </td>
                     <td data-label="Email" className={`${td} whitespace-nowrap ${user.email ? "" : subtle} ${stack} max-sm:col-span-2 max-sm:whitespace-normal max-sm:break-all`}>{user.email ?? "—"}</td>
@@ -363,7 +452,7 @@ export default function Users() {
                           isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
                         }`}
                       >
-                        {(["admin", "member", "viewer", ...(canSetOwner || user.role === "owner" ? ["owner"] : [])] as Role[]).map((r) => (
+                        {(["admin", "member", "viewer", "email", ...(canSetOwner || user.role === "owner" ? ["owner"] : [])] as Role[]).map((r) => (
                           <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                         ))}
                       </select>

@@ -225,6 +225,7 @@ export function CommandPalette({
       <div
         role="dialog"
         aria-modal="true"
+        data-shell-dialog
         aria-label="Jump to"
         className={`palette-panel relative w-full max-w-[560px] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-2xl ${surface}`}
         onKeyDown={onKeyDown}
@@ -307,6 +308,7 @@ export function ShortcutSheet({ open, onClose, isDark }: { open: boolean; onClos
       <div
         role="dialog"
         aria-modal="true"
+        data-shell-dialog
         aria-label="Keyboard shortcuts"
         className={`palette-panel relative w-full max-w-[400px] rounded-2xl border p-5 shadow-2xl ${
           isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"
@@ -349,7 +351,8 @@ export function useGlobalShortcuts(opts: { openPalette: () => void; openSheet: (
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        openPalette();
+        // Not over another dialog (compose, a confirm): a jump from there would drop it.
+        if (!document.querySelector('[aria-modal="true"]:not([data-shell-dialog])')) openPalette();
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey || typingInField(e)) return;

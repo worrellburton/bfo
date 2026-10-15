@@ -41,6 +41,7 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
   const [typed, setTyped] = useState("");
   const [closing, setClosing] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const danger = opts.tone === "danger";
   const needs = opts.requireText?.trim();
@@ -53,7 +54,8 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
   };
 
   useEffect(() => {
-    (needs ? inputRef.current : opts.alert || !danger ? confirmRef.current : null)?.focus();
+    // A danger confirm starts on Cancel, so focus (and typing) leaves whatever is behind it.
+    (needs ? inputRef.current : opts.alert || !danger ? confirmRef.current : cancelRef.current)?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -127,7 +129,7 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
         )}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           {!opts.alert && (
-            <button type="button" className={`${btn} ${cancelCls}`} onClick={() => finish(false)}>
+            <button ref={cancelRef} type="button" className={`${btn} ${cancelCls}`} onClick={() => finish(false)}>
               {opts.cancelLabel ?? "Cancel"}
             </button>
           )}

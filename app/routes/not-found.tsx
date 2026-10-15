@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router";
+import { homePath } from "../auth";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -22,7 +23,7 @@ export default function NotFound() {
         <span className="font-mono">{pathname}</span> doesn't exist — it may have moved when the tools were retired.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <Link to="/home" className={chip}>Home</Link>
+        <Link to={homePath()} className={chip}>Home</Link>
         <Link to="/assets" className={chip}>Entities</Link>
         <Link to="/books/transactions" className={chip}>Books</Link>
         <Link to="/treasury" className={chip}>Treasury</Link>
