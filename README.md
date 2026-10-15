@@ -79,7 +79,7 @@ To set it up in Bird:
    records already point at Bird).
 2. Developers → API keys: let the `BIRD_ACCESS_KEY` key read received mail.
 3. Optional, for instant delivery: add a webhook to
-   `https://burtonfamilyoffice.com/api/mail-webhook` for `email.received`, and
+   `https://www.burtonfamilyoffice.com/api/mail-webhook` (the www host; the bare domain redirects, and webhooks don't follow redirects) for `email.received`, and
    save its signing secret as `BIRD_WEBHOOK_SECRET`.
 
 ## Building for Production
