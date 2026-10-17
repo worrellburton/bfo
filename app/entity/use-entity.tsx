@@ -232,9 +232,9 @@ export function useEntityPage() {
     let unsub6: (() => void) | undefined;
 
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
 
       unsub1 = onValue(ref(db, `assets/${id}`), (snapshot) => {
         const data = snapshot.val();
@@ -259,7 +259,7 @@ export function useEntityPage() {
       });
 
       // Every entity's name — to show and set who owns this one.
-      const { get } = await import("firebase/database");
+      const { get } = await import("../store");
       get(ref(db, "assets"))
         .then((snap) => {
           const all = (snap.val() ?? {}) as Record<string, { name?: string }>;
@@ -323,8 +323,8 @@ export function useEntityPage() {
     const base = editBaseRef.current;
     const live = assetRef.current ?? ({} as Partial<Asset>);
     const pick = <K extends keyof Asset>(k: K) => ((form[k] ?? "") !== (base[k] ?? "") ? form[k] : live[k] ?? form[k]);
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     // Changing the tax class by hand records that it came from a person; a
     // pending document conflict is settled when the hand value matches it.
     const classChanged = (form.llcType ?? "") !== (base.llcType ?? "");
@@ -364,8 +364,8 @@ export function useEntityPage() {
     e.preventDefault();
     if (!docName.trim() || !docUrl.trim()) return;
 
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     await push(ref(db, `assets/${id}/documents`), {
       name: docName.trim(),
       url: docUrl.trim(),
@@ -389,75 +389,69 @@ export function useEntityPage() {
     )
       return;
     if (doc?.storagePath) {
-      if (doc.storageProvider === "supabase") {
-        try {
-          const r = await authFetch("/api/documents/delete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ path: doc.storagePath }),
-          });
-          if (r.status === 401 || r.status === 403) {
-            await alertDialog("You don't have permission to delete documents.");
-            return;
-          }
-        } catch {
-          // ignore
+      try {
+        const r = await deleteStoredFile(doc.storagePath);
+        if (r && (r.status === 401 || r.status === 403)) {
+          await alertDialog("You don't have permission to delete documents.");
+          return;
         }
-      } else {
-        // Legacy Firebase-stored docs
-        try {
-          const { storage, authReady } = await import("../firebase");
-          await authReady;
-          const { ref: storageRef, deleteObject } = await import("firebase/storage");
-          await deleteObject(storageRef(storage, doc.storagePath));
-        } catch {
-          // ignore
-        }
+      } catch {
+        // ignore
       }
     }
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, remove, update } = await import("firebase/database");
+    const { ref, remove, update } = await import("../store");
     if (filedAs.length) await update(ref(db, `assets/${id}`), Object.fromEntries(filedAs.map((k) => [k, null])));
     await remove(ref(db, `assets/${id}/documents/${docId}`));
   }
 
-  // Upload one document: signed URL → XHR PUT with progress → RTDB record.
+  // Upload one document: signed URL → PUT with progress → its record in the tree.
   // Throws on failure; progress is reported as a 0–100 fraction of this file.
   async function uploadDocFile(file: File, onProgress: (pct: number) => void) {
-    // 1. Ask the server for a signed upload URL into the Supabase
-    //    "documents" bucket.
+    const stored = await uploadToStorage(file, (pct) => {
+      setDocDrop((s) => ({ ...s, error: null }));
+      onProgress(pct);
+    }, () => setDocDrop((s) => ({ ...s, error: "Upload is stuck. Check your connection and try again." })));
+
+    const { db, ref: dbRef, push } = await import("../store");
+    const displayName = file.name.replace(/\.[^.]+$/, "");
+    const record = {
+      name: displayName,
+      url: stored.url,
+      storagePath: stored.path,
+      storageProvider: "supabase" as const,
+      size: file.size,
+      contentType: file.type || "application/octet-stream",
+      createdAt: Date.now(),
+    };
+    const pushed = await push(dbRef(db, `assets/${id}/documents`), record);
+    return { id: pushed.key as string, ...record } as AssetDoc;
+  }
+
+  /**
+   * Put a file in the "documents" bucket under this entity: a signed upload
+   * URL from the server, then a PUT straight to Supabase Storage so progress
+   * can be shown. `onStuck` fires if nothing has streamed after 15 s.
+   */
+  async function uploadToStorage(file: File, onProgress: (pct: number) => void, onStuck: () => void): Promise<{ path: string; url: string }> {
     const urlRes = await authFetch("/api/documents/upload-url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        assetId: id,
-        fileName: file.name,
-        contentType: file.type || "application/octet-stream",
-      }),
+      body: JSON.stringify({ assetId: id, fileName: file.name, contentType: file.type || "application/octet-stream" }),
     });
     const urlData = await urlRes.json();
-    if (!urlRes.ok || !urlData?.signedUrl) {
-      throw new Error(urlData?.message || "Could not get signed upload URL");
-    }
+    if (!urlRes.ok || !urlData?.signedUrl) throw new Error(urlData?.message || "Could not get signed upload URL");
 
-    // 2. PUT the file straight to Supabase Storage via XHR so we can
-    //    track progress and time out if nothing streams.
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", urlData.signedUrl, true);
       xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
       xhr.setRequestHeader("x-upsert", "false");
-      const stuckTimer = setTimeout(() => {
-        setDocDrop((s) => ({
-          ...s,
-          error: "Upload is stuck. Check your connection and try again.",
-        }));
-      }, 15000);
+      const stuckTimer = setTimeout(onStuck, 15000);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && e.loaded > 0) {
           clearTimeout(stuckTimer);
-          setDocDrop((s) => ({ ...s, error: null }));
           onProgress((e.loaded / e.total) * 100);
         }
       };
@@ -472,24 +466,17 @@ export function useEntityPage() {
       };
       xhr.send(file);
     });
+    return { path: urlData.path as string, url: urlData.publicUrl as string };
+  }
 
-    // 3. Record the document in the Firebase Realtime DB so it shows
-    //    up in the list (RTDB is still our metadata store).
-    const { db, authReady } = await import("../firebase");
-    await authReady;
-    const { ref: dbRef, push } = await import("firebase/database");
-    const displayName = file.name.replace(/\.[^.]+$/, "");
-    const record = {
-      name: displayName,
-      url: urlData.publicUrl,
-      storagePath: urlData.path,
-      storageProvider: "supabase" as const,
-      size: file.size,
-      contentType: file.type || "application/octet-stream",
-      createdAt: Date.now(),
-    };
-    const pushed = await push(dbRef(db, `assets/${id}/documents`), record);
-    return { id: pushed.key as string, ...record } as AssetDoc;
+  /** Remove a stored file (best effort). Returns the response, or null when the path isn't one of ours. */
+  async function deleteStoredFile(path: string): Promise<Response | null> {
+    if (!/^assets\//.test(path)) return null;
+    return authFetch("/api/documents/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
   }
 
   // ── Auto-filing ─────────────────────────────────────────────────────────
@@ -543,9 +530,9 @@ export function useEntityPage() {
       }
     }
     try {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, update } = await import("firebase/database");
+      const { ref, update } = await import("../store");
       await update(ref(db, `assets/${id}`), patch);
       return filled;
     } finally {
@@ -585,9 +572,9 @@ export function useEntityPage() {
       patch.llcTypeConflict = { value: tc, evidence, docName: doc.name, at: Date.now() };
       note = `says ${tc}, record says ${current.llcType} — check it`;
     }
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), patch);
     const line = `Read “${doc.name}” · ${note}`;
     setFilingNotes((n) => [...n, line]);
@@ -626,9 +613,9 @@ export function useEntityPage() {
       added.push(`annual filing for ${facts.filingYear}`);
     }
     if (!Object.keys(patch).length) return;
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), patch);
     const line = `Read “${doc.name}” · added ${added.join(", ")}`;
     setFilingNotes((n) => [...n, line]);
@@ -639,9 +626,9 @@ export function useEntityPage() {
   async function acceptDocumentTaxClass() {
     const c = assetRef.current?.llcTypeConflict;
     if (!c) return;
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), {
       llcType: c.value,
       llcTypeSource: `${c.evidence} (${c.docName})`,
@@ -651,9 +638,9 @@ export function useEntityPage() {
 
   /** Keep the record's tax class and dismiss the document's disagreement. */
   async function dismissTaxClassConflict() {
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), { llcTypeConflict: null, llcTypeSource: assetRef.current?.llcTypeSource || BY_HAND });
   }
 
@@ -671,9 +658,9 @@ export function useEntityPage() {
       }
     }
     if (!added.length) return;
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), patch);
     const note = `Read “${doc.name}” · added ${added.join("; ")}`;
     setFilingNotes((n) => [...n, note]);
@@ -795,9 +782,9 @@ export function useEntityPage() {
       const patch: Record<string, unknown> = {};
       if (CLASSIFIER_KIND[facts.kind] !== kind) {
         // The reader doesn't think this is a {kind}; don't take its facts.
-        const { db, authReady } = await import("../firebase");
+        const { db, authReady } = await import("../store");
         await authReady;
-        const { ref, update } = await import("firebase/database");
+        const { ref, update } = await import("../store");
         await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now(), classReadAt: Date.now() });
         return;
       }
@@ -826,9 +813,9 @@ export function useEntityPage() {
         patch.operatingAgreementDate = facts.date;
         filled.push(`agreement dated ${fmtDate(facts.date)}`);
       }
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, update } = await import("firebase/database");
+      const { ref, update } = await import("../store");
       if (Object.keys(patch).length) await update(ref(db, `assets/${id}`), patch);
       await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now(), classReadAt: Date.now() });
       if (filled.length) setFilingNotes((n) => [...n, `Read “${doc.name}” · added ${filled.join(", ")}`]);
@@ -895,8 +882,8 @@ export function useEntityPage() {
   const palmMoving = useRef(false);
 
   async function patchAsset(patch: Record<string, unknown>) {
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), patch);
   }
 
@@ -1193,9 +1180,9 @@ export function useEntityPage() {
         checkedAt: raw.checkedAt ?? Date.now(),
       };
       setAiDown(null);
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, update } = await import("firebase/database");
+      const { ref, update } = await import("../store");
       const patch: Record<string, unknown> = { profile: JSON.parse(JSON.stringify(profile)) };
       // The owners the governing documents list feed the paperwork checks,
       // unless a more specific document already supplied them.
@@ -1278,9 +1265,9 @@ export function useEntityPage() {
                   : "The check didn't finish — try again.",
         );
       const result: Verification = { ...(data as Verification), recordAtCheck: record };
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, update } = await import("firebase/database");
+      const { ref, update } = await import("../store");
       await update(ref(db, `assets/${id}`), { verification: JSON.parse(JSON.stringify(result)) });
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : "Verification failed.");
@@ -1310,9 +1297,9 @@ export function useEntityPage() {
       v = m;
     }
     if (field === "type") v = /trust/i.test(v) ? "Trust" : /corp|inc/i.test(v) ? "C-Corp" : /partnership|\bl\.?p\.?\b/i.test(v) && !/llc|limited liability/i.test(v) ? "LP" : "LLC";
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), {
       [field]: v,
       // A tax class taken from the document check counts as confirmed.
@@ -1321,9 +1308,9 @@ export function useEntityPage() {
   }
 
   async function applyOwner(ownerId: string) {
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, update } = await import("firebase/database");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), { ownerId });
   }
 
@@ -1452,9 +1439,9 @@ export function useEntityPage() {
         suggested,
       );
       if (!confirmed || !confirmed.trim() || confirmed.trim() === doc.name) return;
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, update } = await import("firebase/database");
+      const { ref, update } = await import("../store");
       await update(ref(db, `assets/${id}/documents/${doc.id}`), { name: confirmed.trim() });
     } catch (err) {
       console.error("rename failed:", err);
@@ -1480,60 +1467,30 @@ export function useEntityPage() {
     }
     setSlot(kind, { error: null, uploading: true, progress: 0 });
     try {
-      const { db, storage, authReady } = await import("../firebase");
-      await authReady;
-      const { ref: dbRef, update } = await import("firebase/database");
-      const { ref: storageRef, uploadBytesResumable, getDownloadURL, deleteObject } = await import("firebase/storage");
+      const { db, ref: dbRef, update } = await import("../store");
 
+      // The slot's own earlier file (not one filed from Documents) goes.
       const prior = asset?.[kind];
       if (prior?.storagePath && !prior.docId) {
         try {
-          await deleteObject(storageRef(storage, prior.storagePath));
+          await deleteStoredFile(prior.storagePath);
         } catch {
           // ignore
         }
       }
 
-      const ext = file.name.split(".").pop()?.toLowerCase() || "pdf";
-      const path = `assets/${id}/${kind}/${kind}-${Date.now()}.${ext}`;
-      const sRef = storageRef(storage, path);
-      const task = uploadBytesResumable(sRef, file, { contentType: file.type || "application/pdf" });
+      const stored = await uploadToStorage(file, (pct) => {
+        if (pct > 0) setSlot(kind, { error: null });
+        setSlot(kind, { progress: pct });
+      }, () => setSlot(kind, { error: "Upload is stuck. Check your connection and try again." }));
 
-      await new Promise<void>((resolve, reject) => {
-        const stuckTimer = setTimeout(() => {
-          setSlot(kind, {
-            error: `Upload is stuck. Check Firebase Storage rules for this bucket (authenticated writes to assets/<id>/${kind}/) and CORS.`,
-          });
-        }, 15000);
-        task.on(
-          "state_changed",
-          (snap) => {
-            const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
-            if (pct > 0) {
-              clearTimeout(stuckTimer);
-              setSlot(kind, { error: null });
-            }
-            setSlot(kind, { progress: pct });
-          },
-          (err) => {
-            clearTimeout(stuckTimer);
-            reject(err);
-          },
-          () => {
-            clearTimeout(stuckTimer);
-            resolve();
-          },
-        );
-      });
-
-      const url = await getDownloadURL(sRef);
       const meta: UploadedFile = {
-        url,
+        url: stored.url,
         fileName: file.name,
         size: file.size,
         contentType: file.type || "application/pdf",
         uploadedAt: Date.now(),
-        storagePath: path,
+        storagePath: stored.path,
       };
       await update(dbRef(db, `assets/${id}`), { [kind]: meta });
     } catch (err) {
@@ -1551,21 +1508,18 @@ export function useEntityPage() {
     // Filed from Documents: just unfile it — the document stays in the library.
     if (file.docId) {
       if (!(await confirmDialog({ title: `Unfile “${file.fileName}”?`, message: `It comes out of ${label} and stays in Documents.`, confirmLabel: "Unfile" }))) return;
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref: dbRef, update } = await import("firebase/database");
+      const { ref: dbRef, update } = await import("../store");
       await update(dbRef(db, `assets/${id}`), { [kind]: null });
       await update(dbRef(db, `assets/${id}/documents/${file.docId}`), { autoFileSkip: true });
       return;
     }
     if (!(await confirmDialog({ title: `Remove the uploaded ${label}?`, message: "The file is deleted.", tone: "danger", confirmLabel: "Remove" }))) return;
     try {
-      const { db, storage, authReady } = await import("../firebase");
-      await authReady;
-      const { ref: dbRef, update } = await import("firebase/database");
-      const { ref: storageRef, deleteObject } = await import("firebase/storage");
+      const { db, ref: dbRef, update } = await import("../store");
       try {
-        if (file.storagePath) await deleteObject(storageRef(storage, file.storagePath));
+        if (file.storagePath) await deleteStoredFile(file.storagePath);
       } catch {
         // ignore
       }
@@ -1586,9 +1540,9 @@ export function useEntityPage() {
   async function handleDeleteAsset() {
     const current = assetRef.current;
     if (!current || deleting) return;
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, get, update, remove, set } = await import("firebase/database");
+    const { ref, get, update, remove, set } = await import("../store");
 
     const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string; ownerId?: string }>;
     const children = Object.entries(all).filter(([cid, a]) => cid !== id && a?.ownerId === id);
@@ -1638,17 +1592,7 @@ export function useEntityPage() {
       // Uploaded files — best effort; the record goes either way.
       for (const d of files) {
         try {
-          if (d.storageProvider === "supabase") {
-            await authFetch("/api/documents/delete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: d.storagePath }),
-            });
-          } else {
-            const { storage } = await import("../firebase");
-            const { ref: storageRef, deleteObject } = await import("firebase/storage");
-            await deleteObject(storageRef(storage, d.storagePath!));
-          }
+          await deleteStoredFile(d.storagePath!);
         } catch (err) {
           console.warn("couldn't delete stored file", d.storagePath, err);
         }
@@ -1669,45 +1613,45 @@ export function useEntityPage() {
   }
 
   async function updateCorpField(field: string, value: unknown) {
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}/corp`), { [field]: value });
   }
 
   async function addDirector() {
     if (!dirForm.name.trim()) return;
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     await push(ref(db, `assets/${id}/corp/directors`), { ...dirForm, name: dirForm.name.trim() });
     setDirForm({ name: "", title: "Director", since: "" });
     setAddingDirector(false);
   }
 
   async function removeDirector(dirId: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, `assets/${id}/corp/directors/${dirId}`));
   }
 
   async function addOfficer() {
     if (!offForm.name.trim() || !offForm.title.trim()) return;
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     await push(ref(db, `assets/${id}/corp/officers`), { ...offForm, name: offForm.name.trim(), title: offForm.title.trim() });
     setOffForm({ name: "", title: "", since: "" });
     setAddingOfficer(false);
   }
 
   async function removeOfficer(offId: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, `assets/${id}/corp/officers/${offId}`));
   }
 
   async function addShareholder() {
     if (!shForm.name.trim()) return;
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     await push(ref(db, `assets/${id}/corp/shareholders`), {
       name: shForm.name.trim(),
       shares: Number(shForm.shares) || 0,
@@ -1719,15 +1663,15 @@ export function useEntityPage() {
   }
 
   async function removeShareholder(shId: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, `assets/${id}/corp/shareholders/${shId}`));
   }
 
   async function generateMSATemplates() {
     if (!asset) return;
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     const existingCounterparties = new Set(contracts.map((c) => c.counterparty.toLowerCase()));
     for (const sub of LEDGER_LOUISE_SUBS) {
       if (existingCounterparties.has(sub.toLowerCase())) continue;
@@ -1748,8 +1692,8 @@ export function useEntityPage() {
   async function addContract() {
     if (!contractForm.counterparty.trim()) return;
     const services = contractForm.services.length > 0 ? contractForm.services : MSA_SERVICES;
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     await push(ref(db, `assets/${id}/contracts`), {
       counterparty: contractForm.counterparty.trim(),
       role: "manager",
@@ -1778,14 +1722,14 @@ export function useEntityPage() {
   }
 
   async function deleteContract(contractId: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, `assets/${id}/contracts/${contractId}`));
   }
 
   async function updateContractStatus(contractId: string, status: "draft" | "active" | "terminated") {
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}/contracts/${contractId}`), { status });
   }
 
@@ -1809,8 +1753,8 @@ export function useEntityPage() {
     if (!editingContractId) return;
     if (!editContractForm.counterparty.trim()) return;
     const services = editContractForm.services.length > 0 ? editContractForm.services : MSA_SERVICES;
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}/contracts/${editingContractId}`), {
       counterparty: editContractForm.counterparty.trim(),
       fee: editContractForm.fee.trim() || "$0",

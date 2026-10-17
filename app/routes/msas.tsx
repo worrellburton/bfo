@@ -53,9 +53,9 @@ export default function MSAs() {
   useEffect(() => {
     let unsub: (() => void) | undefined;
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
       unsub = onValue(ref(db, "assets"), (snap) => {
         const data = snap.val() || {};
         const list: MSA[] = [];

@@ -16,6 +16,7 @@ import {
   revalidate,
 } from "../auth";
 import { useMailCount } from "../mail-client";
+import { resetStore } from "../store";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
@@ -630,6 +631,7 @@ export default function AppLayout() {
                   setUserMenuOpen(false);
                   setDrawerOpen(false);
                   logout();
+                  resetStore();
                   navigate("/login");
                 }}
                 role="menuitem"
@@ -706,7 +708,7 @@ export default function AppLayout() {
             actions={[
               { id: "theme", label: isDark ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
               { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", run: () => { setPaletteOpen(false); setSheetOpen(true); } },
-              { id: "logout", label: "Log out", run: () => { setPaletteOpen(false); logout(); navigate("/login"); } },
+              { id: "logout", label: "Log out", run: () => { setPaletteOpen(false); logout(); resetStore(); navigate("/login"); } },
             ]}
           />
           <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} isDark={isDark} />

@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { fetchDocument, isStorageUrl } from "../lib/fetch-document";
 
-const HOSTS = ["firebasestorage.googleapis.com", "abc.supabase.co"];
+const HOSTS = ["abc.supabase.co"];
 
 describe("isStorageUrl", () => {
   it("accepts our storage hosts over https", () => {
-    expect(isStorageUrl("https://firebasestorage.googleapis.com/v0/b/x/o/a.pdf?alt=media", HOSTS)).toBe(true);
+    expect(isStorageUrl("https://firebasestorage.googleapis.com/v0/b/x/o/a.pdf?alt=media", HOSTS)).toBe(false);
     expect(isStorageUrl("https://abc.supabase.co/storage/v1/object/public/documents/assets/a/b.pdf", HOSTS)).toBe(true);
   });
   it("refuses anything else", () => {
-    expect(isStorageUrl("http://firebasestorage.googleapis.com/a.pdf", HOSTS)).toBe(false);
+    expect(isStorageUrl("http://abc.supabase.co/a.pdf", HOSTS)).toBe(false);
     expect(isStorageUrl("https://169.254.169.254/latest/meta-data", HOSTS)).toBe(false);
     expect(isStorageUrl("https://evil.example/abc.supabase.co", HOSTS)).toBe(false);
     expect(isStorageUrl("https://abc.supabase.co.evil.example/x", HOSTS)).toBe(false);

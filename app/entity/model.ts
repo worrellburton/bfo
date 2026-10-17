@@ -155,7 +155,7 @@ export interface AssetDoc {
   url: string;
   createdAt: number;
   storagePath?: string;
-  storageProvider?: "supabase" | "firebase";
+  storageProvider?: "supabase";
   size?: number;
   contentType?: string;
   factsCheckedAt?: number; // key facts already read from this document
@@ -366,7 +366,7 @@ export const TAX_CLASS_KINDS: ReadonlySet<string> = new Set(["einLetter", "w9", 
 export const BY_HAND = "Entered by hand";
 
 /**
- * Firebase drops empty arrays (and objects) on write, so a stored profile with
+ * The tree drops empty arrays (and objects) on write, so a stored profile with
  * no properties or issues comes back without those keys. Restore them on read.
  */
 export function fromDatabase(raw: Asset): Asset {

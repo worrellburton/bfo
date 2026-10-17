@@ -609,9 +609,9 @@ export default function Home() {
     let cancelled = false;
     (async () => {
       try {
-        const { db, authReady } = await import("../firebase");
+        const { db, authReady } = await import("../store");
         await authReady;
-        const { ref, onValue } = await import("firebase/database");
+        const { ref, onValue } = await import("../store");
         if (cancelled) return;
         unsubscribe = onValue(
           ref(db, "assets"),

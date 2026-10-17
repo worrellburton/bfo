@@ -26,9 +26,9 @@ export default function Notes() {
     let unsubscribe: (() => void) | undefined;
 
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
 
       const notesRef = ref(db, "notes");
       unsubscribe = onValue(notesRef, (snapshot) => {
@@ -55,8 +55,8 @@ export default function Notes() {
     e.preventDefault();
     if (!title.trim() || !body.trim()) return;
 
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
 
     await push(ref(db, "notes"), {
       title: title.trim(),
@@ -71,8 +71,8 @@ export default function Notes() {
   async function handleDelete(id: string) {
     const note = notes.find((n) => n.id === id);
     if (!(await confirmDialog({ title: `Delete “${note?.title ?? "this note"}”?`, message: "This can't be undone.", tone: "danger" }))) return;
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, "notes/" + id));
   }
 

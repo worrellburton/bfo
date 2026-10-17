@@ -927,9 +927,9 @@ export default function Assets() {
       confirmLabel: "Scan all",
     });
     if (!ok) return;
-    const { db, authReady } = await import("../firebase");
+    const { db, authReady } = await import("../store");
     await authReady;
-    const { ref, get, update } = await import("firebase/database");
+    const { ref, get, update } = await import("../store");
     const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, any>;
     setScan({ entity: "", index: 0, total: Object.keys(all).length, step: "Starting", notes: [], done: false });
     try {
@@ -966,9 +966,9 @@ export default function Assets() {
     let alive = true;
 
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue, get, update } = await import("firebase/database");
+      const { ref, onValue, get, update } = await import("../store");
 
       // (The browser used to seed entities, EINs, owners and tax classes
       // from hard-coded tables on first load. Those were guesses — every
@@ -1031,8 +1031,8 @@ export default function Assets() {
   }, []);
 
   async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp" | "LP" | "Trust"; state: string; ein: string }) {
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
     await push(ref(db, "assets"), {
       name: fields.name.trim(),
       type: fields.type,
@@ -1045,8 +1045,8 @@ export default function Assets() {
   async function saveInitials(asset: Asset, raw: string) {
     const initials = raw.trim().toUpperCase().slice(0, 4);
     try {
-      const { db } = await import("../firebase");
-      const { ref, update } = await import("firebase/database");
+      const { db } = await import("../store");
+      const { ref, update } = await import("../store");
       await update(ref(db, `assets/${asset.id}`), { initials });
       // Books tags pick the change up immediately, not just next session.
       setEntityTagLocal(asset.name, initials || null);
@@ -1064,8 +1064,8 @@ export default function Assets() {
 
   async function updateOwner(assetId: string, ownerId: string) {
     try {
-      const { db } = await import("../firebase");
-      const { ref, update } = await import("firebase/database");
+      const { db } = await import("../store");
+      const { ref, update } = await import("../store");
       await update(ref(db, `assets/${assetId}`), { ownerId: ownerId || "" });
     } catch {
       setToast("Couldn't change the owner.");

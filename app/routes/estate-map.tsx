@@ -470,13 +470,13 @@ export function EstateMapView({
   const [smooth, setSmooth] = useState(false);
   const autoFit = useRef(true);
 
-  // Subscribe to Firebase for real-time shared estate map
+  // Subscribe to the shared estate map
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue, get, set } = await import("firebase/database");
+      const { ref, onValue, get, set } = await import("../store");
 
       // Seed initial entities if nothing exists yet
       try {
@@ -491,7 +491,7 @@ export function EstateMapView({
       unsubscribe = onValue(ref(db, "estate-map/entities"), (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          // Firebase may return an array or object — normalize to array
+          // The tree may hold an array or an object — normalize to array
           const arr: Entity[] = Array.isArray(data)
             ? data.filter(Boolean)
             : Object.values(data);
@@ -505,7 +505,7 @@ export function EstateMapView({
     return () => unsubscribe?.();
   }, []);
 
-  // Debounced save to Firebase — skip when echoing a remote update
+  // Debounced save — skip when echoing a remote update
   useEffect(() => {
     if (!loaded.current) return;
     if (skipNextSave.current) {
@@ -514,8 +514,8 @@ export function EstateMapView({
     }
     const timer = setTimeout(async () => {
       try {
-        const { db } = await import("../firebase");
-        const { ref, set } = await import("firebase/database");
+        const { db } = await import("../store");
+        const { ref, set } = await import("../store");
         await set(ref(db, "estate-map/entities"), entities);
       } catch (err) {
         console.error("Estate map save error:", err);
@@ -525,15 +525,15 @@ export function EstateMapView({
   }, [entities]);
 
 
-  // Subscribe to Firebase assets and build a name -> record lookup (the id
+  // Subscribe to the assets tree and build a name -> record lookup (the id
   // opens the entity page; the record scores the paperwork). Read-only: the
   // map no longer creates entity records from its built-in list.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
 
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
         const data = snapshot.val();

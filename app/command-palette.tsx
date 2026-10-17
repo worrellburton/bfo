@@ -76,7 +76,7 @@ function score(c: Command, q: string): number {
 
 type Entity = { id: string; name: string; type?: string; state?: string };
 
-/** Entities from Firebase, loaded the first time the palette opens. */
+/** Entities from the shared tree, loaded the first time the palette opens. */
 function useEntities(enabled: boolean): Entity[] {
   const [entities, setEntities] = useState<Entity[]>([]);
   const loaded = useRef(false);
@@ -85,7 +85,7 @@ function useEntities(enabled: boolean): Entity[] {
     loaded.current = true;
     void (async () => {
       try {
-        const [{ db, authReady }, { get, ref }] = await Promise.all([import("./firebase"), import("firebase/database")]);
+        const [{ db, authReady }, { get, ref }] = await Promise.all([import("./store"), import("./store")]);
         await authReady;
         const snap = await get(ref(db, "assets"));
         const val = (snap.val() ?? {}) as Record<string, { name?: string; type?: string; state?: string }>;

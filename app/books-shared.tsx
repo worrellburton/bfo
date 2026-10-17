@@ -418,9 +418,9 @@ const TAG_STOP = new Set(["llc", "trust", "the", "of", "and", "co", "inc", "lp",
 const normTagKey = (name: string) =>
   name.toLowerCase().replace(/\(.*?\)/g, "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
 
-// User-set initials (edited on the Entities page, stored on the Firebase
+// User-set initials (edited on the Entities page, stored on the entity
 // asset). Cached in localStorage so tags render right on first paint;
-// hydrateEntityTags refreshes the cache from Firebase once per session.
+// hydrateEntityTags refreshes the cache from the tree once per session.
 let CUSTOM_TAGS: Record<string, string> = {};
 try {
   CUSTOM_TAGS = JSON.parse(globalThis.localStorage?.getItem("bfo-entity-tags") ?? "{}");
@@ -441,9 +441,9 @@ export function setEntityTagLocal(name: string, initials: string | null) {
 
 export async function hydrateEntityTags(): Promise<void> {
   try {
-    const { db, authReady } = await import("./firebase");
+    const { db, authReady } = await import("./store");
     await authReady;
-    const { ref, get } = await import("firebase/database");
+    const { ref, get } = await import("./store");
     const snap = await get(ref(db, "assets"));
     const data = snap.val() || {};
     const map: Record<string, string> = {};

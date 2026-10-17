@@ -56,9 +56,9 @@ export default function ContractPDF() {
     let unsub3: (() => void) | undefined;
 
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
 
       unsub1 = onValue(ref(db, `assets/${id}`), (snapshot) => {
         const data = snapshot.val();
@@ -492,8 +492,8 @@ export default function ContractPDF() {
     if (!sigEmail.trim() || !sigName.trim()) return;
     setSigSending(true);
     try {
-      const { db } = await import("../firebase");
-      const { push, ref } = await import("firebase/database");
+      const { db } = await import("../store");
+      const { push, ref } = await import("../store");
       await push(ref(db, `assets/${id}/contracts/${contractId}/signatures`), {
         email: sigEmail.trim(),
         signerName: sigName.trim(),
@@ -511,16 +511,16 @@ export default function ContractPDF() {
   }
 
   async function updateSigStatus(sigId: string, status: "pending" | "signed" | "declined") {
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     const updates: Record<string, unknown> = { status };
     if (status === "signed") updates.signedAt = Date.now();
     await update(ref(db, `assets/${id}/contracts/${contractId}/signatures/${sigId}`), updates);
   }
 
   async function removeSigRequest(sigId: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, `assets/${id}/contracts/${contractId}/signatures/${sigId}`));
   }
 

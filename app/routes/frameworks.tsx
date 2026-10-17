@@ -93,9 +93,9 @@ export default function Frameworks() {
     let unsubscribe: (() => void) | undefined;
 
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
 
       unsubscribe = onValue(ref(db, "frameworks"), (snapshot) => {
         const data = snapshot.val();
@@ -129,9 +129,9 @@ export default function Frameworks() {
     let unsubscribe: (() => void) | undefined;
 
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
 
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
         const data = snapshot.val();
@@ -173,8 +173,8 @@ export default function Frameworks() {
     e.preventDefault();
     if (!url.trim()) return;
 
-    const { db } = await import("../firebase");
-    const { push, ref } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { push, ref } = await import("../store");
 
     const maxOrder = frameworks.length > 0 ? Math.max(...frameworks.map((f) => f.order)) : 0;
 
@@ -191,8 +191,8 @@ export default function Frameworks() {
   }
 
   async function handleDelete(id: string) {
-    const { db } = await import("../firebase");
-    const { ref, remove } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, remove } = await import("../store");
     await remove(ref(db, "frameworks/" + id));
   }
 
@@ -205,8 +205,8 @@ export default function Frameworks() {
 
   async function saveEdit() {
     if (!editingId) return;
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     await update(ref(db, `frameworks/${editingId}`), {
       title: editTitle.trim(),
       url: editUrl.trim(),
@@ -216,8 +216,8 @@ export default function Frameworks() {
   }
 
   async function updateAsset(fwId: string, assetId: string) {
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     await update(ref(db, `frameworks/${fwId}`), { assetId });
   }
 
@@ -237,9 +237,9 @@ export default function Frameworks() {
     const [moved] = oldList.splice(dragIndex, 1);
     oldList.splice(targetIndex, 0, moved);
 
-    // Update order values in Firebase
-    const { db } = await import("../firebase");
-    const { ref, update } = await import("firebase/database");
+    // Update order values in the tree
+    const { db } = await import("../store");
+    const { ref, update } = await import("../store");
     const updates: Record<string, number> = {};
     oldList.forEach((fw, i) => {
       updates[`frameworks/${fw.id}/order`] = i;

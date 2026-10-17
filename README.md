@@ -43,7 +43,7 @@ Set these in the Vercel project:
 
 | Variable | Used for |
 | --- | --- |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | users, sessions, sign-in codes, Plaid tokens, Books, entity documents |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | everything stored: users, sessions, sign-in codes, Plaid tokens, Books, mail, and the entity tree (entities, documents, estate map, notes, agents) with its files |
 | `BIRD_ACCESS_KEY` | Bird API access key (sent as `Authorization: AccessKey …`) |
 | `BIRD_WORKSPACE_ID` | Bird workspace the channels live in |
 | `BIRD_SMS_CHANNEL_ID` | *optional* — pins the SMS channel; otherwise the workspace's SMS channel is discovered automatically |
@@ -55,6 +55,23 @@ Set these in the Vercel project:
 | `CRON_SECRET` | authenticates the scheduled Books sync and Treasury report |
 | `BIRD_WEBHOOK_SECRET` | *optional* — signing secret of the Bird webhook that delivers new mail to `/api/mail-webhook`; without it, the inbox fetches new mail when it checks |
 | `MAIL_DOMAIN` | *optional* — the domain inboxes live on (default `burtonfamilyoffice.com`) |
+
+### The entity tree
+
+Entities, their documents and contracts, the estate map, notes and office
+agents are one JSON tree in Supabase (`tree_nodes`, one row per entity /
+note / … with the record as JSON; `supabase/migrations/20261017_tree_nodes.sql`).
+The browser reads and writes it through `/api/tree`, which keeps the small
+Firebase-style surface the pages were written against (`app/store.ts`:
+`ref`, `get`, `onValue`, `update`, `set`, `push`, `remove`). Other people's
+changes arrive by polling every 30 s while the tab is visible.
+
+This replaced Firebase. The first time a collection is asked for after
+deploying, the server copies it out of the old Firebase Realtime Database
+(`tree_imports` records that it happened); files kept in Firebase Storage are
+moved into the private `documents` bucket as their entities are opened
+(`lib/firebase-bridge.ts`). When every row of `tree_imports` is `done` with
+`files_done` set, Firebase is no longer read and the project can be deleted.
 
 ### Sign-in
 

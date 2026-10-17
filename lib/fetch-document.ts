@@ -1,15 +1,14 @@
 /**
  * Fetches a stored document on the server so Claude can read it. The URL
  * comes from the browser, so it is only followed when it points at our own
- * storage (Firebase Storage or the Supabase project) — never an arbitrary
- * host, an internal address, or a redirect — and the read is capped in both
- * size and time.
+ * storage (the Supabase project) — never an arbitrary host, an internal
+ * address, or a redirect — and the read is capped in both size and time.
  */
 
 const TIMEOUT_MS = 20_000;
 
 function allowedHosts(): string[] {
-  const hosts = ["firebasestorage.googleapis.com"];
+  const hosts: string[] = [];
   try {
     if (process.env.SUPABASE_URL) hosts.push(new URL(process.env.SUPABASE_URL).host);
   } catch {

@@ -228,13 +228,13 @@ export default function TreasuryAccount() {
   }, [account]);
 
   useEffect(() => {
-    // Entities come from the Firebase assets tree, same source as the mappings page.
+    // Entities come from the assets tree, same source as the mappings page.
     let unsub: (() => void) | undefined;
     let cancelled = false;
     void (async () => {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
       if (cancelled) return;
       unsub = onValue(ref(db, "assets"), (snap) => {
         const data = snap.val() || {};

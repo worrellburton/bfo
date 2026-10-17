@@ -547,9 +547,9 @@ export default function Office() {
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     async function setup() {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
       unsubscribe = onValue(ref(db, "agents"), (snapshot) => {
         const data = snapshot.val();
         if (data) {

@@ -51,7 +51,7 @@ export default function TreasuryMappings() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Accounts from the treasury API; entities from the Firebase assets tree.
+    // Accounts from the treasury API; entities from the assets tree.
     void (async () => {
       try {
         const res = await authFetch("/api/plaid/data?report=treasury");
@@ -68,9 +68,9 @@ export default function TreasuryMappings() {
     let unsub: (() => void) | undefined;
     let cancelled = false;
     void (async () => {
-      const { db, authReady } = await import("../firebase");
+      const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue } = await import("firebase/database");
+      const { ref, onValue } = await import("../store");
       if (cancelled) return;
       unsub = onValue(ref(db, "assets"), (snap) => {
         const data = snap.val() || {};
