@@ -13,6 +13,7 @@ import {
   parseSend,
   problemText,
   scopeFilter,
+  searchCondition,
   sendMail,
   SendRefused,
   SUMMARY_COLUMNS,
@@ -34,6 +35,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  *
  * GET ?view=
  *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
+ *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
  *   message&id=<uuid>                → { message }  (marks it read)
  *   count                            → { unread, otherUnread, address|null, canSeeOther, sync? }  (kicks a sync)
  *   attachment&id=<uuid>&att=<id>    → { url }  (signed, 5 minutes)
@@ -106,10 +108,16 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       if (before && (!TIMESTAMP_RE.test(before) || Number.isNaN(Date.parse(before)))) return fail(res, 400, "bad_before");
       if (beforeId && (!before || !UUID_RE.test(beforeId))) return fail(res, 400, "bad_before");
       const at = encodeURIComponent(`"${before}"`);
-      // and=(…) so it never clashes with the or=(…) an admin's archive scope uses.
-      const page = !before ? "" : beforeId ? `&and=(or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId})))` : `&occurred_at=lt.${encodeURIComponent(before)}`;
+      // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
+      const conditions = [
+        !before ? "" : beforeId ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))` : `occurred_at.lt.${at}`,
+        searchCondition(param(req, "q")),
+      ].filter(Boolean);
+      const extra = conditions.length ? `&and=(${conditions.join(",")})` : "";
+      // A search looks through everything the caller may see, whatever folder is open.
+      const where = searchCondition(param(req, "q")) ? scopeFilter(me.id, admin) : folderFilter(folder, me.id, admin);
       const rows = await sb<SummaryRow[]>(
-        `mail_messages?${folderFilter(folder, me.id, admin)}${filterClause(filter)}${page}` +
+        `mail_messages?${where}${filterClause(filter)}${extra}` +
           `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`
       );
       return res.status(200).json({ messages: (rows ?? []).slice(0, limit).map(toSummary), hasMore: (rows ?? []).length > limit });

@@ -9,6 +9,7 @@ import {
   parseSend,
   rawHeaderRecipients,
   replyHeaders,
+  searchCondition,
   snippetOf,
   storable,
   syncInbound,
@@ -720,7 +721,7 @@ describe("/api/mail", () => {
     expect(r.json.messages.map((m: any) => m.id)).toEqual([MSG, "m2"]);
     const q = sbCalls[0].path;
     // The time goes through exactly as given (microseconds kept), not re-parsed into milliseconds.
-    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&occurred_at=lt\\.2026-10-15T00:00:00\\.123456\\+00:00&select=`));
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
     expect(q).toContain("order=occurred_at.desc,id.desc&limit=3");
     expect(q).not.toContain("html_body");
     for (const bad of <Record<string, string>[]>[{ before: "yesterday" }, { before: '2026-10-15T00:00:00Z",id.gt.(' }, { beforeId: MSG }, { before: "2026-10-15T00:00:00Z", beforeId: "x" }]) {
@@ -737,6 +738,23 @@ describe("/api/mail", () => {
     expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.archive&starred_at=not\\.is\\.null&select=`));
     expect(sbCalls[0].path).toContain("starred_at");
     expect(await call("GET", { query: { view: "list", filter: "flagged" } })).toEqual({ status: 400, json: { error: "bad_filter" } });
+  });
+
+  it("searches subject, sender, summary and text across every folder", async () => {
+    sbRoutes = [[/GET mail_messages\?/, () => [row()]]];
+    expect((await call("GET", { query: { view: "list", folder: "archive", q: "Fourton, (SOW)" } })).status).toBe(200);
+    const q = sbCalls[0].path;
+    // Scope, not folder: the search covers everything the caller may see.
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&and=\\(or\\(subject\\.ilike\\."\\*Fourton, \\(SOW\\)\\*"`));
+    expect(q).toContain('text_body.ilike."*Fourton, (SOW)*")');
+    expect(q).not.toContain("folder=eq.archive");
+    // Paging and search share one and=(…).
+    sbCalls.length = 0;
+    await call("GET", { query: { view: "list", q: "sow", before: "2026-10-15T00:00:00Z", beforeId: MSG } });
+    expect(sbCalls[0].path).toMatch(/&and=\(or\(occurred_at\.lt\."2026-10-15T00:00:00Z",and\(occurred_at\.eq\."2026-10-15T00:00:00Z",id\.lt\.[-0-9a-f]+\)\),or\(subject\.ilike\."\*sow\*"/);
+    // Wildcards and quotes in the term can't change the query's shape.
+    expect(searchCondition('a*b%c"d\\e')).toContain(encodeURIComponent('"*a b c\\"d\\\\e*"'));
+    expect(searchCondition("   ")).toBe("");
   });
 
   it("stars and unstars within the caller's scope", async () => {

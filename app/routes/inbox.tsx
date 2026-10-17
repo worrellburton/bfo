@@ -302,7 +302,7 @@ const blankDraft = (): Draft => ({ title: "New message", to: "", cc: "", bcc: ""
 
 // ── Page ─────────────────────────────────────────────────────────────────
 
-type ListState = { folder: MailFolder; filter: MailFilter; messages: MailSummary[]; hasMore: boolean };
+type ListState = { folder: MailFolder; filter: MailFilter; q: string; messages: MailSummary[]; hasMore: boolean };
 
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
 type View = "table" | "columns";
@@ -337,6 +337,8 @@ export default function Inbox() {
   const folder: MailFolder = f === "sent" || f === "archive" || (f === "other" && canSeeOther) ? f : "inbox";
   const v = params.get("v");
   const filter: MailFilter = v === "unread" || v === "starred" ? v : "all";
+  /** Search text from the URL; while set, every folder is searched. */
+  const q = (params.get("q") ?? "").trim();
   const openId = params.get("m");
   // Until the count answers, the session's copy will do. null from the server: no address yet.
   const address = (count ? count.address : me?.mailAddress) || "";
@@ -365,19 +367,19 @@ export default function Inbox() {
   const [copied, setCopied] = useState(false);
 
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
-  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, mode: "replace" | "refresh") => {
+  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, mode: "replace" | "refresh") => {
     const req = ++listReq.current;
     if (mode === "replace") {
       setList(null);
       setListError(null);
     }
     try {
-      const head = await listMail(which, narrow);
+      const head = await listMail({ folder: which, filter: narrow, q: term });
       if (req !== listReq.current) return;
       setListError(null);
       setList((prev) => {
-        const fresh = { folder: which, filter: narrow, ...head };
-        if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || !head.messages.length) return fresh;
+        const fresh = { folder: which, filter: narrow, q: term, ...head };
+        if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || !head.messages.length) return fresh;
         const ids = new Set(head.messages.map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
@@ -392,14 +394,14 @@ export default function Inbox() {
   }, []);
 
   useEffect(() => {
-    void loadList(folder, filter, "replace");
-  }, [folder, filter, loadList]);
+    void loadList(folder, filter, q, "replace");
+  }, [folder, filter, q, loadList]);
 
   // New mail shows up through the shared count; when it moves, re-read the list.
   const unreadKey = count ? `${count.unread}/${count.otherUnread}` : null;
   const lastKey = useRef(unreadKey);
   useEffect(() => {
-    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, filter, "refresh");
+    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, filter, q, "refresh");
     lastKey.current = unreadKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadKey]);
@@ -410,9 +412,9 @@ export default function Inbox() {
     setLoadingMore(true);
     try {
       const last = cur.messages[cur.messages.length - 1];
-      const next = await listMail(cur.folder, cur.filter, last.occurredAt, last.id);
+      const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, before: last.occurredAt, beforeId: last.id });
       setList((prev) => {
-        if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter) return prev;
+        if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q) return prev;
         const ids = new Set(prev.messages.map((m) => m.id));
         return { ...prev, messages: [...prev.messages, ...next.messages.filter((m) => !ids.has(m.id))], hasMore: next.hasMore };
       });
@@ -464,6 +466,7 @@ export default function Inbox() {
     const next: Record<string, string> = {};
     if (folder !== "inbox") next.f = folder;
     if (filter !== "all") next.v = filter;
+    if (q) next.q = q;
     return { ...next, ...extra };
   }
 
@@ -492,20 +495,33 @@ export default function Inbox() {
     else setParams(queryRef.current(), { replace: true });
   }
 
+  /** Picking a folder ends a search; changing the filter narrows it. */
   function chooseFolder(next: MailFolder) {
-    if (next === folder && !openId) return;
-    const q: Record<string, string> = {};
-    if (next !== "inbox") q.f = next;
-    if (filter !== "all") q.v = filter;
-    setParams(q);
+    if (next === folder && !openId && !q) return;
+    const p: Record<string, string> = {};
+    if (next !== "inbox") p.f = next;
+    if (filter !== "all") p.v = filter;
+    setParams(p);
   }
 
   function chooseFilter(next: MailFilter) {
     if (next === filter && !openId) return;
-    const q: Record<string, string> = {};
-    if (folder !== "inbox") q.f = folder;
-    if (next !== "all") q.v = next;
-    setParams(q);
+    const p: Record<string, string> = {};
+    if (folder !== "inbox") p.f = folder;
+    if (next !== "all") p.v = next;
+    if (q) p.q = q;
+    setParams(p);
+  }
+
+  /** Set the search text (the URL carries it, so Back and reload keep it). */
+  function search(term: string) {
+    const clean = term.trim();
+    if (clean === q) return;
+    const p: Record<string, string> = {};
+    if (folder !== "inbox") p.f = folder;
+    if (filter !== "all") p.v = filter;
+    if (clean) p.q = clean;
+    setParams(p, { replace: true });
   }
 
   function dropFromList(id: string) {
@@ -574,7 +590,7 @@ export default function Inbox() {
   function onSent(sent: MailSummary) {
     setDraft(null);
     setToast("Sent");
-    if (folder === "sent" && filter === "all") setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
+    if (folder === "sent" && filter === "all" && !q) setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
     notifyMailChanged();
   }
 
@@ -597,12 +613,13 @@ export default function Inbox() {
 
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
   const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
-  const rows = list && list.folder === folder && list.filter === filter ? list.messages : null;
+  const rows = list && list.folder === folder && list.filter === filter && list.q === q ? list.messages : null;
   const sent = folder === "sent";
   // In the table, the open message takes the whole card; in columns, it sits beside the list.
   const tableReading = view === "table" && !!openId;
 
   const emptyText = () => {
+    if (q) return `Nothing matches “${q}”.`;
     if (folder === "inbox" && noAddress) return "No address yet. Ask an admin.";
     return NOTHING[filter] || EMPTY[folder];
   };
@@ -629,7 +646,7 @@ export default function Inbox() {
   ) : rows.length === 0 ? (
     <div className={`px-5 py-12 text-center text-[12.5px] ${t.muted}`}>
       <p>{emptyText()}</p>
-      {folder === "inbox" && filter === "all" && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
+      {folder === "inbox" && filter === "all" && !q && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
     </div>
   ) : (
     <>
@@ -666,6 +683,16 @@ export default function Inbox() {
 
   const toolbar = (
     <div className={`flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 max-md:border-0 max-md:px-0 max-md:pb-2 max-md:pt-0 ${t.line}`}>
+      {q ? (
+        <div className={`flex min-w-0 flex-1 items-center gap-2 px-2 text-[12.5px] max-md:px-1 max-md:text-[13.5px] ${t.muted}`}>
+          <span className="truncate">
+            {rows ? `${rows.length}${list?.hasMore ? "+" : ""} result${rows.length === 1 ? "" : "s"}` : "Searching"} in all mail
+          </span>
+          <TextButton onClick={() => search("")} className={`shrink-0 ${t.accent}`}>
+            Clear
+          </TextButton>
+        </div>
+      ) : (
       <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:gap-1">
         {folders.map((x) => {
           const on = x.key === folder;
@@ -690,6 +717,7 @@ export default function Inbox() {
           );
         })}
       </nav>
+      )}
       <Segmented
         label="Show"
         value={filter}
@@ -736,6 +764,7 @@ export default function Inbox() {
             </button>
           )}
         </div>
+        <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
         <div className="flex shrink-0 items-center gap-2">
           <Segmented
             label="View"
@@ -754,6 +783,7 @@ export default function Inbox() {
         </div>
       </header>
 
+      {!openId && <SearchField value={q} onSearch={search} className="md:hidden" />}
       {mobileFilter}
 
       {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
@@ -880,6 +910,77 @@ function Segmented<K extends string>({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * The search box: what's typed is searched after a short pause (or at once on
+ * Enter), and the URL keeps the term. Esc or the × clears it.
+ */
+function SearchField({ value, onSearch, className = "" }: { value: string; onSearch: (term: string) => void; className?: string }) {
+  const t = useTone();
+  const [term, setTerm] = useState(value);
+  const ref = useRef<HTMLInputElement>(null);
+  const timer = useRef<number | null>(null);
+  // Back/forward or a cleared search: the box follows the URL.
+  useEffect(() => setTerm(value), [value]);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  function change(next: string) {
+    setTerm(next);
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => onSearch(next), 350);
+  }
+  function submit(next: string) {
+    if (timer.current) window.clearTimeout(timer.current);
+    onSearch(next);
+  }
+  return (
+    <div
+      role="search"
+      className={`flex items-center gap-2 rounded-2xl border px-3.5 transition-colors max-md:h-12 md:h-9 md:rounded-xl md:px-3 ${
+        t.dark ? "border-white/[0.08] bg-white/[0.04] focus-within:border-white/20 focus-within:bg-white/[0.06]" : "border-gray-200 bg-white focus-within:border-gray-400"
+      } ${className}`}
+    >
+      <svg className={`h-[18px] w-[18px] shrink-0 md:h-4 md:w-4 ${t.muted}`} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
+      </svg>
+      <input
+        ref={ref}
+        type="search"
+        enterKeyHint="search"
+        autoComplete="off"
+        spellCheck={false}
+        aria-label="Search mail"
+        placeholder="Search mail"
+        value={term}
+        onChange={(e) => change(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit(term);
+          else if (e.key === "Escape") {
+            setTerm("");
+            submit("");
+            ref.current?.blur();
+          }
+        }}
+        style={{ outline: "none" }}
+        className={`min-w-0 flex-1 bg-transparent text-[16px] placeholder:text-gray-500 md:text-[13px] [&::-webkit-search-cancel-button]:hidden ${t.text}`}
+      />
+      {term && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => {
+            setTerm("");
+            submit("");
+            ref.current?.focus();
+          }}
+          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:h-9 max-md:w-9 ${t.dark ? "text-gray-400 hover:bg-white/[0.08] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+        >
+          <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }

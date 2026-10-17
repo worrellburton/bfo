@@ -389,6 +389,21 @@ export function filterClause(filter: MailFilter): string {
   return "";
 }
 
+export const SEARCH_MAX = 100;
+
+/**
+ * A PostgREST condition matching mail that mentions `q` in its subject,
+ * sender, summary or text — for use inside and=(…). "" when there's nothing
+ * to search for. The term is quoted (so commas and parentheses are literal)
+ * and its wildcards are dropped: `*` around it does the matching.
+ */
+export function searchCondition(q: string): string {
+  const term = q.replace(/[*%]/g, " ").replace(/\s+/g, " ").trim().slice(0, SEARCH_MAX);
+  if (!term) return "";
+  const quoted = encodeURIComponent(`"*${term.replace(/[\\"]/g, (c) => `\\${c}`)}*"`);
+  return `or(subject.ilike.${quoted},from_email.ilike.${quoted},from_name.ilike.${quoted},snippet.ilike.${quoted},text_body.ilike.${quoted})`;
+}
+
 /** Rows matching a PostgREST filter, counted without reading them. */
 export async function countRows(table: string, filter: string): Promise<number> {
   const res = await sbFetch(`${table}?${filter}&select=created_at&limit=1`, { headers: { Prefer: "count=exact" } });

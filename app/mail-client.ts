@@ -105,13 +105,25 @@ function post<T>(body: Record<string, unknown>): Promise<T> {
   return call<T>("/api/mail", { method: "POST", body: JSON.stringify(body) });
 }
 
-/** One page, newest first. `before`/`beforeId` are the last row already shown. */
-export function listMail(folder: MailFolder, filter: MailFilter = "all", before?: string, beforeId?: string, limit = 50) {
-  const q = new URLSearchParams({ view: "list", folder, limit: String(limit) });
-  if (filter !== "all") q.set("filter", filter);
-  if (before) q.set("before", before);
-  if (before && beforeId) q.set("beforeId", beforeId);
-  return call<{ messages: MailSummary[]; hasMore: boolean }>(`/api/mail?${q}`);
+export type ListQuery = {
+  folder: MailFolder;
+  filter?: MailFilter;
+  /** Search text: every folder is searched and `folder` is ignored. */
+  q?: string;
+  /** The last row already shown, for the next page. */
+  before?: string;
+  beforeId?: string;
+  limit?: number;
+};
+
+/** One page, newest first. */
+export function listMail({ folder, filter = "all", q = "", before, beforeId, limit = 50 }: ListQuery) {
+  const p = new URLSearchParams({ view: "list", folder, limit: String(limit) });
+  if (filter !== "all") p.set("filter", filter);
+  if (q.trim()) p.set("q", q.trim());
+  if (before) p.set("before", before);
+  if (before && beforeId) p.set("beforeId", beforeId);
+  return call<{ messages: MailSummary[]; hasMore: boolean }>(`/api/mail?${p}`);
 }
 
 /** Opens a message; the server marks it read. */
