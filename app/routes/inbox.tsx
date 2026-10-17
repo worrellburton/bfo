@@ -75,6 +75,57 @@ function GlyphButton({ glyph, label, tone = "ghost", ...rest }: { glyph: keyof t
 }
 
 const nameOf = (a: MailAddress) => a.name?.trim() || a.email;
+
+/** Mailboxes where the part before @ is the person, not the company. */
+const PERSONAL_MAIL = /^(gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn|icloud|me|mac|aol|proton|protonmail|pm|fastmail|hey|comcast|att|verizon|sbcglobal)\.(com|net|me|ch|org)$/i;
+
+/**
+ * Who a message is from, as a person would say it: the display name, else the
+ * person's handle for personal mailboxes, else the company from the domain
+ * ("no-reply-3ksj…@mail.anthropic.com" → "Anthropic"). The full address is
+ * always one tap away in the reader.
+ */
+function senderLabel(a: MailAddress): string {
+  const name = a.name?.trim();
+  if (name) return name;
+  const [local = "", domain = ""] = a.email.toLowerCase().split("@");
+  if (!domain) return a.email;
+  if (PERSONAL_MAIL.test(domain)) return local.split("+")[0] || a.email;
+  const parts = domain.split(".").filter(Boolean);
+  // Drop the TLD (and a country second level like .co.uk), then any mail/email/mg subdomain.
+  let labels = parts.slice(0, parts.length > 2 && parts[parts.length - 2].length <= 3 ? -2 : -1);
+  labels = labels.filter((l) => !/^(mail|email|e|mg|smtp|mailer|send|notify|notifications?|news|info|m|em|bounce|bounces)\d*$/.test(l));
+  const brand = labels[labels.length - 1] || parts[0];
+  return brand.charAt(0).toUpperCase() + brand.slice(1);
+}
+
+/** A steady hue per sender, so the same person always gets the same colour. */
+function hueOf(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+/** Initials in a tinted circle; `size` is the Tailwind box size. */
+function Avatar({ a, size = "h-10 w-10 text-[13px]" }: { a: MailAddress; size?: string }) {
+  const { dark } = useTone();
+  const hue = hueOf(a.email.toLowerCase());
+  const label = senderLabel(a);
+  const parts = label.split(/[\s@._-]+/).filter(Boolean);
+  const initials = ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold ${size}`}
+      style={{
+        background: dark ? `hsl(${hue} 40% 22%)` : `hsl(${hue} 70% 92%)`,
+        color: dark ? `hsl(${hue} 70% 80%)` : `hsl(${hue} 50% 32%)`,
+      }}
+    >
+      {initials}
+    </span>
+  );
+}
 const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a.email}>` : a.email);
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -100,11 +151,6 @@ function fullDate(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-function initialsOf(a: MailAddress): string {
-  const parts = (a.name?.trim() || a.email).split(/[\s@._-]+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? "") + (a.name?.trim() && parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
 }
 
 const FOLDERS: { key: MailFolder; label: string }[] = [
@@ -572,7 +618,7 @@ export default function Inbox() {
 
   const toolbar = (
     <div className={`flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 ${t.line}`}>
-      <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:gap-1">
         {folders.map((x) => {
           const on = x.key === folder;
           const n = x.key === "inbox" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
@@ -582,7 +628,7 @@ export default function Inbox() {
               type="button"
               aria-current={on ? "page" : undefined}
               onClick={() => chooseFolder(x.key)}
-              className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-3 ${
+              className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-md:h-[38px] max-md:rounded-[10px] max-md:px-3.5 max-md:text-[13.5px] ${
                 on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
               }`}
             >
@@ -600,14 +646,28 @@ export default function Inbox() {
         label="Show"
         value={filter}
         onChange={chooseFilter}
+        className="max-md:hidden"
         options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
       />
     </div>
   );
 
+  /** Phones: the same filter, full width under the title, each choice a thumb-sized segment. */
+  const mobileFilter = !openId && (
+    <Segmented
+      label="Show"
+      value={filter}
+      onChange={chooseFilter}
+      stretch
+      className="md:hidden"
+      options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
+    />
+  );
+
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
-      <header className="flex items-start justify-between gap-3 pt-1">
+      {/* Phones give an open message the whole screen; the reader's Back returns here. */}
+      <header className={`flex items-start justify-between gap-3 pt-1 ${openId ? "max-lg:hidden" : ""}`}>
         <div className="min-w-0">
           <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
           {noAddress ? (
@@ -640,23 +700,26 @@ export default function Inbox() {
               { key: "columns", label: "Columns", icon: <Glyph name="columns" className="h-3.5 w-3.5" /> },
             ]}
           />
-          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft())}>
+          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft())} className="max-sm:hidden">
             New
           </Button>
         </div>
       </header>
 
+      {mobileFilter}
+
       {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
 
       {view === "table" ? (
         /* One card: the table, or the open message in its place. */
-        <section aria-label={tableReading ? "Message" : "Messages"} className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border ${t.surface}`}>
+        /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
+        <section aria-label={tableReading ? "Message" : "Messages"} className={`flex min-h-0 flex-1 flex-col rounded-2xl border ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}>
           {tableReading ? (
             <div className="min-h-0 flex-1 lg:overflow-y-auto">{reader}</div>
           ) : (
             <>
               {toolbar}
-              <div className="min-h-0 flex-1 overflow-y-auto">{listBody}</div>
+              <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">{listBody}</div>
             </>
           )}
         </section>
@@ -668,7 +731,7 @@ export default function Inbox() {
             className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
-            <div className="min-h-0 flex-1 overflow-y-auto">{listBody}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">{listBody}</div>
           </section>
 
           {/* The reader */}
@@ -684,6 +747,23 @@ export default function Inbox() {
           </section>
         </div>
       )}
+
+      {/* Phones: compose floats above the list, clear of the browser's bottom bar. */}
+      {!openId && !draft && !noAddress &&
+        createPortal(
+          <button
+            type="button"
+            aria-label="New message"
+            onClick={() => setDraft(blankDraft())}
+            className={`fab-in fixed right-4 z-40 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full shadow-lg transition-transform active:scale-95 sm:hidden ${
+              t.dark ? "bg-white text-gray-950 shadow-black/40" : "bg-gray-900 text-white shadow-gray-900/30"
+            }`}
+            style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
+          >
+            <Icon name="edit" className="h-5 w-5" strokeWidth={1.9} />
+          </button>,
+          document.body
+        )}
 
       {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
       {draft && createPortal(<Compose draft={draft} onClose={() => setDraft(null)} onSent={onSent} />, document.body)}
@@ -708,6 +788,7 @@ function Segmented<K extends string>({
   options,
   onChange,
   iconsOnly = false,
+  stretch = false,
   className = "",
 }: {
   label: string;
@@ -715,11 +796,17 @@ function Segmented<K extends string>({
   options: { key: K; label: string; icon?: ReactNode }[];
   onChange: (next: K) => void;
   iconsOnly?: boolean;
+  /** Fill the row, each choice the same width (phones). */
+  stretch?: boolean;
   className?: string;
 }) {
   const t = useTone();
   return (
-    <div role="group" aria-label={label} className={`inline-flex shrink-0 items-center gap-0.5 rounded-lg p-0.5 ${t.dark ? "bg-white/[0.04]" : "bg-gray-100"} ${className}`}>
+    <div
+      role="group"
+      aria-label={label}
+      className={`${stretch ? "flex w-full" : "inline-flex shrink-0"} items-center gap-0.5 rounded-xl p-0.5 ${t.dark ? "bg-white/[0.05]" : "bg-gray-100"} ${className}`}
+    >
       {options.map((o) => {
         const on = o.key === value;
         return (
@@ -730,7 +817,9 @@ function Segmented<K extends string>({
             aria-label={iconsOnly ? o.label : undefined}
             title={iconsOnly ? o.label : undefined}
             onClick={() => onChange(o.key)}
-            className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md text-[12px] font-medium transition-colors max-sm:h-[36px] ${iconsOnly ? "w-7 justify-center max-sm:w-[40px]" : "px-2.5 max-sm:px-3"} ${
+            className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[9px] text-[12px] font-medium transition-colors max-sm:h-[38px] max-sm:text-[13.5px] ${
+              stretch ? "flex-1 justify-center px-2" : iconsOnly ? "w-7 justify-center max-sm:w-[40px]" : "px-2.5 max-sm:px-3"
+            } ${
               on ? (t.dark ? "bg-white/[0.1] text-white shadow-sm" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
             }`}
           >
@@ -812,8 +901,8 @@ function ListSkeleton({ table = false }: { table?: boolean }) {
 
 /** Who a row is from — or, in Sent, who it went to. */
 function whoOf(m: MailSummary, sent: boolean, me: string): string {
-  if (!sent) return nameOf(m.from);
-  return m.to.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ") || "—";
+  if (!sent) return senderLabel(m.from);
+  return m.to.map((a) => (same(a.email, me) ? "me" : senderLabel(a))).join(", ") || "—";
 }
 
 /** A small round mark for unread rows; invisible otherwise, so text lines up. */
@@ -928,7 +1017,8 @@ function MailTable({
 function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; sent: boolean; me: string; selected: boolean; onOpen: () => void; onStar: (on: boolean) => void }) {
   const t = useTone();
   const unread = !m.read;
-  const who = sent ? `To: ${whoOf(m, true, me)}` : nameOf(m.from);
+  const who = sent ? `To ${whoOf(m, true, me)}` : whoOf(m, false, me);
+  const face: MailAddress = sent ? (m.to.find((a) => !same(a.email, me)) ?? m.to[0] ?? m.from) : m.from;
   return (
     <div
       role="button"
@@ -941,24 +1031,37 @@ function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; se
         }
       }}
       aria-current={selected ? "true" : undefined}
-      className={`group relative block w-full cursor-pointer py-3 pl-5 pr-3 text-left transition-colors ${
+      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-3 text-left transition-colors max-md:py-3.5 ${
         selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
-      }`}
+      } ${t.dark ? "active:bg-white/[0.05]" : "active:bg-gray-100"}`}
     >
-      {unread && <span aria-hidden="true" className="absolute left-2 top-[18px] h-1.5 w-1.5 rounded-full bg-[#818cf8]" />}
-      {unread && <span className="sr-only">Unread. </span>}
-      <div className="flex items-center gap-2">
-        <span className={`min-w-0 flex-1 truncate text-[13px] ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
-        {m.attachmentCount > 0 && (
-          <span className={t.muted} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
-            <Glyph name="clip" className="h-3 w-3" />
-          </span>
+      <span className="relative mt-0.5 shrink-0">
+        <Avatar a={face} size="h-10 w-10 text-[13px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
+        {unread && (
+          <span aria-hidden="true" className={`absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
         )}
-        <span className={`shrink-0 text-[11.5px] tabular-nums ${unread ? t.text : t.muted}`}>{listDate(m.occurredAt)}</span>
-        <StarButton on={m.starred} onToggle={onStar} className="-my-1 -mr-1" />
-      </div>
-      <div className={`mt-0.5 truncate pr-8 text-[12.5px] ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</div>
-      {m.snippet && <div className={`mt-0.5 truncate pr-8 text-[12px] ${t.muted}`}>{m.snippet}</div>}
+        {unread && <span className="sr-only">Unread. </span>}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-2">
+          <span className={`min-w-0 flex-1 truncate text-[13.5px] max-md:text-[15px] ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
+          {m.attachmentCount > 0 && (
+            <span className={`self-center ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
+              <Glyph name="clip" className="h-3 w-3" />
+            </span>
+          )}
+          <time dateTime={m.occurredAt} className={`shrink-0 text-[11.5px] tabular-nums max-md:text-[12.5px] ${unread ? t.text : t.muted}`}>
+            {listDate(m.occurredAt)}
+          </time>
+        </span>
+        <span className="mt-0.5 flex items-center gap-2">
+          <span className={`min-w-0 flex-1 truncate text-[12.5px] max-md:text-[14px] ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
+          {m.starred && <Star on className="h-3.5 w-3.5 md:hidden" />}
+        </span>
+        {m.snippet && <span className={`mt-0.5 block truncate text-[12px] max-md:text-[13px] ${t.muted}`}>{m.snippet}</span>}
+      </span>
+      {/* Desktop: star on hover. Phones star from the reader (the row is for opening). */}
+      <StarButton on={m.starred} onToggle={onStar} className="-my-1 -mr-1 self-center max-md:hidden" />
     </div>
   );
 }
@@ -1052,21 +1155,16 @@ function Reader({
           <h2 className={`break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] ${t.text}`}>{m.subject || "(no subject)"}</h2>
 
           <div className="mt-4 flex items-start gap-3">
-            <div
-              aria-hidden="true"
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600"}`}
-            >
-              {initialsOf(m.from)}
-            </div>
+            <Avatar a={m.from} size="h-9 w-9 text-[12px]" />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
-                <span className={`min-w-0 truncate text-[13px] font-semibold ${t.text}`}>{nameOf(m.from)}</span>
-                {m.from.name && <span className={`hidden min-w-0 truncate text-[12px] sm:inline ${t.muted}`}>{m.from.email}</span>}
+                <span className={`min-w-0 truncate text-[13px] font-semibold max-sm:text-[14.5px] ${t.text}`}>{senderLabel(m.from)}</span>
+                {senderLabel(m.from) !== m.from.email && <span className={`hidden min-w-0 truncate text-[12px] sm:inline ${t.muted}`}>{m.from.email}</span>}
                 <time dateTime={m.occurredAt} className={`ml-auto shrink-0 pl-2 text-[12px] tabular-nums ${t.muted}`}>
                   {fullDate(m.occurredAt)}
                 </time>
               </div>
-              {m.from.name && <div className={`truncate text-[12px] sm:hidden ${t.muted}`}>{m.from.email}</div>}
+              {senderLabel(m.from) !== m.from.email && <div className={`truncate text-[12px] sm:hidden ${t.muted}`}>{m.from.email}</div>}
               <div className={`mt-0.5 text-[12px] leading-snug ${t.muted}`}>
                 {m.to.length > 0 && <span title={toTitle(m.to)}>To {toLine(m.to)}</span>}
                 {m.cc.length > 0 && (
