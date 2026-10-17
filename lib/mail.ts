@@ -349,7 +349,7 @@ export function folderFilter(folder: MailFolder, userId: string, admin: boolean)
 
 /** Rows matching a PostgREST filter, counted without reading them. */
 export async function countRows(table: string, filter: string): Promise<number> {
-  const res = await sbFetch(`${table}?${filter}&select=id&limit=1`, { headers: { Prefer: "count=exact" } });
+  const res = await sbFetch(`${table}?${filter}&select=created_at&limit=1`, { headers: { Prefer: "count=exact" } });
   if (!res.ok) throw new Error(`supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const total = Number((res.headers.get("content-range") ?? "").split("/")[1]);
   return Number.isFinite(total) ? total : 0;
