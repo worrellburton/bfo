@@ -33,11 +33,14 @@ export type MailSummary = {
   snippet: string;
   occurredAt: string;
   read: boolean;
+  starred: boolean;
   attachmentCount: number;
   status: string | null;
   /** A catch-all copy (mail for an address nobody has). */
   other: boolean;
 };
+/** Narrows a folder's list: everything, only unread, or only starred. */
+export type MailFilter = "all" | "unread" | "starred";
 export type MailMessage = MailSummary & {
   bcc: MailAddress[];
   text: string | null;
@@ -78,18 +81,19 @@ export type MailRow = {
   dkim_pass: boolean | null;
   status: string | null;
   read_at: string | null;
+  starred_at: string | null;
   occurred_at: string | null;
   created_at: string;
 };
 
 /** Columns a list needs — no bodies. */
 export const SUMMARY_COLUMNS =
-  "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,attachments,status";
+  "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,starred_at,attachments,status";
 
 export type SummaryRow = Pick<
   MailRow,
   | "id" | "user_id" | "folder" | "direction" | "from_email" | "from_name" | "to_addrs" | "cc_addrs"
-  | "subject" | "snippet" | "occurred_at" | "created_at" | "read_at" | "attachments" | "status"
+  | "subject" | "snippet" | "occurred_at" | "created_at" | "read_at" | "starred_at" | "attachments" | "status"
 >;
 
 export const BUCKET = "mail";
@@ -221,14 +225,43 @@ export function htmlToText(html: string): string {
     .replace(/<(head|style|script|title)\b[\s\S]*?<\/\1\s*>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote)\s*>/gi, "\n")
+    .replace(/<\/?(p|div|tr|li|h[1-6]|blockquote|table)\b[^>]*>/gi, "\n")
     .replace(/<[^>]*>/g, " ")
     .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, decodeEntity);
 }
 
-/** The first ~160 characters of a message, on one line. */
+/** Where a reply's quoted original starts: "On … wrote:", Outlook's separator, or a forward header. */
+const QUOTE_HEADER_RE = /(?:^|\n)[ \t]*(?:On [^\n]{0,300}?(?:\n[^\n]{0,200}?)?wrote:[ \t]*(?:\n|$)|-{3,}[ \t]*Original Message[ \t]*-{3,}|-{3,}[ \t]*Forwarded message[ \t]*-{3,}|From:[ \t][^\n]*\nSent:[ \t])/i;
+
+/** The message's own words: quoted lines and everything from the quote header on are dropped. */
+export function withoutQuotes(text: string): string {
+  const norm = text.replace(/\r\n?/g, "\n");
+  const head = QUOTE_HEADER_RE.exec(norm);
+  const own = head ? norm.slice(0, head.index) : norm;
+  return own
+    .split("\n")
+    .filter((l) => !l.startsWith(">"))
+    .join("\n");
+}
+
+/** HTML with its quoted replies (<blockquote>, Gmail's quote block) taken out. */
+export function htmlWithoutQuotes(html: string): string {
+  let out = html;
+  // Innermost first, so nested quotes come out whole.
+  for (let i = 0; i < 20; i++) {
+    const next = out.replace(/<blockquote\b(?:(?!<blockquote\b)[\s\S])*?<\/blockquote\s*>/gi, " ");
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+/** The first ~160 characters of a message's own words, on one line. */
 export function snippetOf(text: string | null | undefined, html?: string | null, max = SNIPPET_LEN): string {
-  const source = text?.trim() ? text : html ? htmlToText(html) : "";
+  const full = text?.trim() ? text : html ? htmlToText(html) : "";
+  const own = text?.trim() ? withoutQuotes(text) : html ? withoutQuotes(htmlToText(htmlWithoutQuotes(html))) : "";
+  // A reply that says nothing new: show the quote rather than nothing.
+  const source = own.trim() ? own : full;
   const flat = storable(source).replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
   let cut = flat.slice(0, max - 1);
@@ -303,6 +336,7 @@ export function toSummary(row: SummaryRow): MailSummary {
     snippet: row.snippet ?? "",
     occurredAt: row.occurred_at ?? row.created_at,
     read: !!row.read_at,
+    starred: !!row.starred_at,
     attachmentCount: row.attachments?.length ?? 0,
     status: row.status ?? null,
     other: row.user_id === null,
@@ -346,6 +380,13 @@ export function folderFilter(folder: MailFolder, userId: string, admin: boolean)
   if (folder === "other") return "user_id=is.null&folder=eq.inbox";
   if (folder === "archive") return `${scopeFilter(userId, admin)}&folder=eq.archive`;
   return `user_id=eq.${userId}&folder=eq.${folder}`;
+}
+
+/** PostgREST clause narrowing a folder to unread or starred mail; "" for everything. */
+export function filterClause(filter: MailFilter): string {
+  if (filter === "unread") return "&read_at=is.null";
+  if (filter === "starred") return "&starred_at=not.is.null";
+  return "";
 }
 
 /** Rows matching a PostgREST filter, counted without reading them. */
@@ -660,6 +701,7 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
     dkim_pass: dkim,
     status: null,
     read_at: null,
+    starred_at: null,
     occurred_at: occurredAt,
   };
   const inserted = await sb<{ id: string }[]>("mail_messages?on_conflict=dedupe_key&select=id", {
@@ -963,6 +1005,7 @@ export async function sendMail(sender: Sender, req: SendRequest, original: MailR
     dkim_pass: null,
     status: sent.status ?? null,
     read_at: now,
+    starred_at: null,
     occurred_at: now,
   };
   const inserted = await sb<MailRow[]>("mail_messages?on_conflict=dedupe_key", {

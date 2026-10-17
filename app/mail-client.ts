@@ -11,6 +11,8 @@ import { authFetch, getToken } from "./auth";
 export type MailAddress = { email: string; name?: string | null };
 export type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
 export type MailFolder = "inbox" | "sent" | "archive" | "other";
+/** Narrows a folder's list: everything, only unread, or only starred. */
+export type MailFilter = "all" | "unread" | "starred";
 
 export type MailSummary = {
   id: string;
@@ -23,6 +25,7 @@ export type MailSummary = {
   snippet: string;
   occurredAt: string;
   read: boolean;
+  starred: boolean;
   attachmentCount: number;
   status: string | null;
   /** A catch-all copy (mail to an address nobody owns). */
@@ -103,8 +106,9 @@ function post<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 /** One page, newest first. `before`/`beforeId` are the last row already shown. */
-export function listMail(folder: MailFolder, before?: string, beforeId?: string, limit = 50) {
+export function listMail(folder: MailFolder, filter: MailFilter = "all", before?: string, beforeId?: string, limit = 50) {
   const q = new URLSearchParams({ view: "list", folder, limit: String(limit) });
+  if (filter !== "all") q.set("filter", filter);
   if (before) q.set("before", before);
   if (before && beforeId) q.set("beforeId", beforeId);
   return call<{ messages: MailSummary[]; hasMore: boolean }>(`/api/mail?${q}`);
@@ -143,6 +147,10 @@ export function moveMail(ids: string[], folder: "inbox" | "archive") {
 
 export function markRead(ids: string[], read: boolean) {
   return post<{ ok: true }>({ action: "read", ids, read });
+}
+
+export function starMail(ids: string[], starred: boolean) {
+  return post<{ ok: true }>({ action: "star", ids, starred });
 }
 
 export function deleteMail(ids: string[]) {

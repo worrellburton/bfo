@@ -10,12 +10,15 @@ import {
   deleteMail,
   getMessage,
   listMail,
+  markRead,
   moveMail,
   notifyMailChanged,
   sendMail,
+  starMail,
   useMailCount,
   type MailAddress,
   type MailAttachment,
+  type MailFilter,
   type MailFolder,
   type MailMessage,
   type MailSummary,
@@ -23,7 +26,7 @@ import {
 } from "../mail-client";
 
 export function meta() {
-  return [{ title: "BFO - Inbox" }];
+  return [{ title: "BFO - Mail" }];
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -37,6 +40,10 @@ const GLYPHS = {
   unarchive:
     "M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M2.25 13.838V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z",
   clip: "M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13",
+  star: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z",
+  rows: "M3.75 5.25h16.5M3.75 9.75h16.5M3.75 14.25h16.5M3.75 18.75h16.5",
+  columns: "M9 4.5v15m6-15v15M3 6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 17.25V6.75z",
+  unread: "M21.75 9v.906a2.25 2.25 0 01-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 001.183 1.981l6.478 3.488m8.839 2.51l-4.66-2.51m0 0l-1.023-.55a2.25 2.25 0 00-2.134 0l-1.022.55m0 0l-4.661 2.51m16.5 1.615a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V8.844a2.25 2.25 0 011.183-1.981l7.5-4.039a2.25 2.25 0 012.134 0l7.5 4.039a2.25 2.25 0 011.183 1.98V19.5z",
 } as const;
 
 function Glyph({ name, className = "h-3.5 w-3.5" }: { name: keyof typeof GLYPHS; className?: string }) {
@@ -201,7 +208,27 @@ const blankDraft = (): Draft => ({ title: "New message", to: "", cc: "", bcc: ""
 
 // ── Page ─────────────────────────────────────────────────────────────────
 
-type ListState = { folder: MailFolder; messages: MailSummary[]; hasMore: boolean };
+type ListState = { folder: MailFolder; filter: MailFilter; messages: MailSummary[]; hasMore: boolean };
+
+/** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
+type View = "table" | "columns";
+const VIEW_KEY = "bfo-mail-view";
+
+function savedView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "columns" ? "columns" : "table";
+  } catch {
+    return "table";
+  }
+}
+
+const FILTERS: { key: MailFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "unread", label: "Unread" },
+  { key: "starred", label: "Starred" },
+];
+
+const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred." };
 
 export default function Inbox() {
   const t = useTone();
@@ -214,10 +241,23 @@ export default function Inbox() {
   const canSeeOther = count ? count.canSeeOther : isAdmin(me);
   const f = params.get("f");
   const folder: MailFolder = f === "sent" || f === "archive" || (f === "other" && canSeeOther) ? f : "inbox";
+  const v = params.get("v");
+  const filter: MailFilter = v === "unread" || v === "starred" ? v : "all";
   const openId = params.get("m");
   // Until the count answers, the session's copy will do. null from the server: no address yet.
   const address = (count ? count.address : me?.mailAddress) || "";
   const noAddress = !!count && !count.address;
+
+  const [view, setView] = useState<View>("table");
+  useEffect(() => setView(savedView()), []);
+  function chooseView(next: View) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // A preference that doesn't stick is no loss.
+    }
+  }
 
   const [list, setList] = useState<ListState | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -231,25 +271,26 @@ export default function Inbox() {
   const [copied, setCopied] = useState(false);
 
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
-  const loadList = useCallback(async (which: MailFolder, mode: "replace" | "refresh") => {
+  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, mode: "replace" | "refresh") => {
     const req = ++listReq.current;
     if (mode === "replace") {
       setList(null);
       setListError(null);
     }
     try {
-      const head = await listMail(which);
+      const head = await listMail(which, narrow);
       if (req !== listReq.current) return;
       setListError(null);
       setList((prev) => {
-        if (mode === "replace" || !prev || prev.folder !== which || !head.messages.length) return { folder: which, ...head };
+        const fresh = { folder: which, filter: narrow, ...head };
+        if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || !head.messages.length) return fresh;
         const ids = new Set(head.messages.map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
-        if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return { folder: which, ...head };
+        if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
         // Keep what sorts after the head's last row, in the server's (time, id) order.
         const last = head.messages[head.messages.length - 1];
         const older = prev.messages.filter((m) => !ids.has(m.id) && sortsAfter(m, last));
-        return { folder: which, messages: [...head.messages, ...older], hasMore: older.length ? prev.hasMore : head.hasMore };
+        return { ...fresh, messages: [...head.messages, ...older], hasMore: older.length ? prev.hasMore : head.hasMore };
       });
     } catch (e) {
       if (req === listReq.current && mode === "replace") setListError((e as Error).message);
@@ -257,14 +298,14 @@ export default function Inbox() {
   }, []);
 
   useEffect(() => {
-    void loadList(folder, "replace");
-  }, [folder, loadList]);
+    void loadList(folder, filter, "replace");
+  }, [folder, filter, loadList]);
 
   // New mail shows up through the shared count; when it moves, re-read the list.
   const unreadKey = count ? `${count.unread}/${count.otherUnread}` : null;
   const lastKey = useRef(unreadKey);
   useEffect(() => {
-    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, "refresh");
+    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, filter, "refresh");
     lastKey.current = unreadKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadKey]);
@@ -275,9 +316,9 @@ export default function Inbox() {
     setLoadingMore(true);
     try {
       const last = cur.messages[cur.messages.length - 1];
-      const next = await listMail(cur.folder, last.occurredAt, last.id);
+      const next = await listMail(cur.folder, cur.filter, last.occurredAt, last.id);
       setList((prev) => {
-        if (!prev || prev.folder !== cur.folder) return prev;
+        if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter) return prev;
         const ids = new Set(prev.messages.map((m) => m.id));
         return { ...prev, messages: [...prev.messages, ...next.messages.filter((m) => !ids.has(m.id))], hasMore: next.hasMore };
       });
@@ -287,6 +328,10 @@ export default function Inbox() {
       setLoadingMore(false);
     }
   }
+
+  /** Change one row in the list (if it's there). */
+  const patchRow = (id: string, patch: Partial<MailSummary>) =>
+    setList((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
 
   // ── The open message ──────────────────────────────────────────────────
 
@@ -310,7 +355,7 @@ export default function Inbox() {
         cache.current.set(openId, message);
         setOpen({ id: openId, message, error: null });
         if (!row || !row.read) {
-          setList((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === openId ? { ...m, read: true } : m)) });
+          patchRow(openId, { read: true });
           notifyMailChanged();
         }
       })
@@ -320,11 +365,17 @@ export default function Inbox() {
     };
   }, [openId]);
 
-  function select(id: string) {
-    const next: Record<string, string> = { m: id };
+  /** The page's own query string: folder and filter, plus the open message. */
+  function query(extra: Record<string, string> = {}): Record<string, string> {
+    const next: Record<string, string> = {};
     if (folder !== "inbox") next.f = folder;
+    if (filter !== "all") next.v = filter;
+    return { ...next, ...extra };
+  }
+
+  function select(id: string) {
     // From the list: push, so Back returns to it. Between messages: replace.
-    setParams(next, openId ? { replace: true, state: location.state } : { state: { fromList: true } });
+    setParams(query({ m: id }), openId ? { replace: true, state: location.state } : { state: { fromList: true } });
   }
 
   // Read through refs, so a move/delete that resolves later acts on what's open now.
@@ -332,6 +383,8 @@ export default function Inbox() {
   openIdRef.current = openId;
   const navStateRef = useRef(location.state);
   navStateRef.current = location.state;
+  const queryRef = useRef(query);
+  queryRef.current = query;
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -342,12 +395,23 @@ export default function Inbox() {
 
   function closeMessage() {
     if ((navStateRef.current as { fromList?: boolean } | null)?.fromList) navigate(-1);
-    else setParams(folder === "inbox" ? {} : { f: folder }, { replace: true });
+    else setParams(queryRef.current(), { replace: true });
   }
 
   function chooseFolder(next: MailFolder) {
     if (next === folder && !openId) return;
-    setParams(next === "inbox" ? {} : { f: next });
+    const q: Record<string, string> = {};
+    if (next !== "inbox") q.f = next;
+    if (filter !== "all") q.v = filter;
+    setParams(q);
+  }
+
+  function chooseFilter(next: MailFilter) {
+    if (next === filter && !openId) return;
+    const q: Record<string, string> = {};
+    if (folder !== "inbox") q.f = folder;
+    if (next !== "all") q.v = next;
+    setParams(q);
   }
 
   function dropFromList(id: string) {
@@ -384,10 +448,39 @@ export default function Inbox() {
     }
   }
 
+  /** Star or unstar, shown at once and undone if the server says no. */
+  async function star(m: MailSummary, starred: boolean) {
+    patchRow(m.id, { starred });
+    const hit = cache.current.get(m.id);
+    if (hit) cache.current.set(m.id, { ...hit, starred });
+    setOpen((o) => (o && o.id === m.id && o.message ? { ...o, message: { ...o.message, starred } } : o));
+    try {
+      await starMail([m.id], starred);
+    } catch (e) {
+      patchRow(m.id, { starred: !starred });
+      if (hit) cache.current.set(m.id, { ...hit, starred: !starred });
+      setOpen((o) => (o && o.id === m.id && o.message ? { ...o, message: { ...o.message, starred: !starred }, error: (e as Error).message } : o));
+    }
+  }
+
+  /** Back to unread: the list shows it bold again and the reader closes (opening marks it read). */
+  async function markUnread(m: MailMessage) {
+    try {
+      await markRead([m.id], false);
+      patchRow(m.id, { read: false });
+      cache.current.delete(m.id);
+      notifyMailChanged();
+      if (mountedRef.current && openIdRef.current === m.id) closeMessage();
+      setToast("Marked as unread");
+    } catch (e) {
+      failOn(m.id, e);
+    }
+  }
+
   function onSent(sent: MailSummary) {
     setDraft(null);
     setToast("Sent");
-    if (folder === "sent") setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
+    if (folder === "sent" && filter === "all") setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
     notifyMailChanged();
   }
 
@@ -410,13 +503,113 @@ export default function Inbox() {
 
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
   const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
-  const rows = list && list.folder === folder ? list.messages : null;
+  const rows = list && list.folder === folder && list.filter === filter ? list.messages : null;
+  const sent = folder === "sent";
+  // In the table, the open message takes the whole card; in columns, it sits beside the list.
+  const tableReading = view === "table" && !!openId;
+
+  const emptyText = () => {
+    if (folder === "inbox" && noAddress) return "No address yet. Ask an admin.";
+    return NOTHING[filter] || EMPTY[folder];
+  };
+
+  const reader = (
+    <Reader
+      key={open?.id}
+      message={open?.message ?? null}
+      error={open?.error ?? null}
+      me={address}
+      backAlways={view === "table"}
+      onBack={closeMessage}
+      onReply={(m, mode) => setDraft(replyDraft(m, mode, address))}
+      onForward={(m) => setDraft(forwardDraft(m))}
+      onMove={move}
+      onDelete={remove}
+      onStar={(m, on) => star(m, on)}
+      onUnread={markUnread}
+    />
+  );
+
+  const listBody = !rows ? (
+    listError ? <ErrorLine>{listError}</ErrorLine> : <ListSkeleton table={view === "table"} />
+  ) : rows.length === 0 ? (
+    <div className={`px-5 py-12 text-center text-[12.5px] ${t.muted}`}>
+      <p>{emptyText()}</p>
+      {folder === "inbox" && filter === "all" && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
+    </div>
+  ) : (
+    <>
+      {view === "table" ? (
+        <>
+          <MailTable rows={rows} sent={sent} me={address} onOpen={select} onStar={star} className="max-md:hidden" />
+          <ul className={`divide-y md:hidden ${t.divide}`}>
+            {rows.map((m) => (
+              <li key={m.id}>
+                <ListRow m={m} sent={sent} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} />
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <ul className={`divide-y ${t.divide}`}>
+          {rows.map((m) => (
+            <li key={m.id}>
+              <ListRow m={m} sent={sent} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {listError && <ErrorLine>{listError}</ErrorLine>}
+      {list?.hasMore && (
+        <div className={`border-t p-2 ${t.line}`}>
+          <Button kind="ghost" className="w-full" disabled={loadingMore} onClick={loadMore}>
+            {loadingMore ? "Loading…" : "Load more"}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+
+  const toolbar = (
+    <div className={`flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 ${t.line}`}>
+      <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {folders.map((x) => {
+          const on = x.key === folder;
+          const n = x.key === "inbox" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
+          return (
+            <button
+              key={x.key}
+              type="button"
+              aria-current={on ? "page" : undefined}
+              onClick={() => chooseFolder(x.key)}
+              className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-3 ${
+                on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              {x.label}
+              {!!n && (
+                <span className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${on ? "bg-white/15 text-white" : t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600"}`}>
+                  {n}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+      <Segmented
+        label="Show"
+        value={filter}
+        onChange={chooseFilter}
+        options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
+      />
+    </div>
+  );
 
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
       <header className="flex items-start justify-between gap-3 pt-1">
         <div className="min-w-0">
-          <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Inbox</h1>
+          <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
           {noAddress ? (
             <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
           ) : address && (
@@ -435,101 +628,62 @@ export default function Inbox() {
             </button>
           )}
         </div>
-        <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft())}>
-          New
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Segmented
+            label="View"
+            value={view}
+            onChange={chooseView}
+            iconsOnly
+            className="max-md:hidden"
+            options={[
+              { key: "table", label: "Table", icon: <Glyph name="rows" className="h-3.5 w-3.5" /> },
+              { key: "columns", label: "Columns", icon: <Glyph name="columns" className="h-3.5 w-3.5" /> },
+            ]}
+          />
+          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft())}>
+            New
+          </Button>
+        </div>
       </header>
 
       {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
 
-      <div className="flex min-h-0 flex-1 gap-3">
-        {/* The list */}
-        <section
-          aria-label="Messages"
-          className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[380px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
-        >
-          <nav aria-label="Folders" className={`flex shrink-0 gap-1 overflow-x-auto border-b p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${t.line}`}>
-            {folders.map((x) => {
-              const on = x.key === folder;
-              const n = x.key === "inbox" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
-              return (
-                <button
-                  key={x.key}
-                  type="button"
-                  aria-current={on ? "page" : undefined}
-                  onClick={() => chooseFolder(x.key)}
-                  className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-3 ${
-                    on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  {x.label}
-                  {!!n && (
-                    <span className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${on ? "bg-white/15 text-white" : t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600"}`}>
-                      {n}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {listError && !rows ? (
-              <ErrorLine>{listError}</ErrorLine>
-            ) : !rows ? (
-              <ListSkeleton />
-            ) : rows.length === 0 ? (
-              <div className={`px-5 py-10 text-center text-[12.5px] ${t.muted}`}>
-                <p>{folder === "inbox" && noAddress ? "No address yet. Ask an admin." : EMPTY[folder]}</p>
-                {folder === "inbox" && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
-              </div>
-            ) : (
-              <>
-                <ul className={`divide-y ${t.divide}`}>
-                  {rows.map((m) => (
-                    <li key={m.id}>
-                      <ListRow m={m} sent={folder === "sent"} me={address} selected={m.id === openId} onOpen={() => select(m.id)} />
-                    </li>
-                  ))}
-                </ul>
-                {listError && <ErrorLine>{listError}</ErrorLine>}
-                {list?.hasMore && (
-                  <div className={`border-t p-2 ${t.line}`}>
-                    <Button kind="ghost" className="w-full" disabled={loadingMore} onClick={loadMore}>
-                      {loadingMore ? "Loading…" : "Load more"}
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-
-        {/* The reader */}
-        <section
-          aria-label="Message"
-          className={`min-w-0 flex-1 rounded-2xl border lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}
-        >
-          {!open ? (
-            <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
-              <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
-              Nothing selected
-            </div>
+      {view === "table" ? (
+        /* One card: the table, or the open message in its place. */
+        <section aria-label={tableReading ? "Message" : "Messages"} className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border ${t.surface}`}>
+          {tableReading ? (
+            <div className="min-h-0 flex-1 lg:overflow-y-auto">{reader}</div>
           ) : (
-            <Reader
-              key={open.id}
-              message={open.message}
-              error={open.error}
-              me={address}
-              onBack={closeMessage}
-              onReply={(m, mode) => setDraft(replyDraft(m, mode, address))}
-              onForward={(m) => setDraft(forwardDraft(m))}
-              onMove={move}
-              onDelete={remove}
-            />
+            <>
+              {toolbar}
+              <div className="min-h-0 flex-1 overflow-y-auto">{listBody}</div>
+            </>
           )}
         </section>
-      </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 gap-3">
+          {/* The list */}
+          <section
+            aria-label="Messages"
+            className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
+          >
+            {toolbar}
+            <div className="min-h-0 flex-1 overflow-y-auto">{listBody}</div>
+          </section>
+
+          {/* The reader */}
+          <section aria-label="Message" className={`min-w-0 flex-1 rounded-2xl border lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}>
+            {!open ? (
+              <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
+                <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
+                Nothing selected
+              </div>
+            ) : (
+              reader
+            )}
+          </section>
+        </div>
+      )}
 
       {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
       {draft && createPortal(<Compose draft={draft} onClose={() => setDraft(null)} onSent={onSent} />, document.body)}
@@ -545,11 +699,101 @@ export default function Inbox() {
   );
 }
 
+// ── Controls ─────────────────────────────────────────────────────────────
+
+/** A row of pills where one is on. With `iconsOnly` the labels are tooltips. */
+function Segmented<K extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  iconsOnly = false,
+  className = "",
+}: {
+  label: string;
+  value: K;
+  options: { key: K; label: string; icon?: ReactNode }[];
+  onChange: (next: K) => void;
+  iconsOnly?: boolean;
+  className?: string;
+}) {
+  const t = useTone();
+  return (
+    <div role="group" aria-label={label} className={`inline-flex shrink-0 items-center gap-0.5 rounded-lg p-0.5 ${t.dark ? "bg-white/[0.04]" : "bg-gray-100"} ${className}`}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={on}
+            aria-label={iconsOnly ? o.label : undefined}
+            title={iconsOnly ? o.label : undefined}
+            onClick={() => onChange(o.key)}
+            className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md text-[12px] font-medium transition-colors max-sm:h-[36px] ${iconsOnly ? "w-7 justify-center max-sm:w-[40px]" : "px-2.5 max-sm:px-3"} ${
+              on ? (t.dark ? "bg-white/[0.1] text-white shadow-sm" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
+            }`}
+          >
+            {o.icon}
+            {!iconsOnly && o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The star: an outline, filled amber when on. */
+function Star({ on, className = "h-3.5 w-3.5" }: { on: boolean; className?: string }) {
+  return (
+    <svg className={`shrink-0 ${className} ${on ? "text-amber-400" : ""}`} viewBox="0 0 24 24" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d={GLYPHS.star} />
+    </svg>
+  );
+}
+
+/** Star toggle for a row: quiet until hovered, unless it's on. Stops the click reaching the row. */
+function StarButton({ on, onToggle, className = "" }: { on: boolean; onToggle: (next: boolean) => void; className?: string }) {
+  const t = useTone();
+  return (
+    <button
+      type="button"
+      aria-label={on ? "Unstar" : "Star"}
+      aria-pressed={on}
+      title={on ? "Unstar" : "Star"}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(!on);
+      }}
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-sm:h-[40px] max-sm:w-[40px] ${
+        on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
+      } ${className}`}
+    >
+      <Star on={on} />
+    </button>
+  );
+}
+
 // ── List ─────────────────────────────────────────────────────────────────
 
-function ListSkeleton() {
+function ListSkeleton({ table = false }: { table?: boolean }) {
   const { dark } = useTone();
   const bar = dark ? "bg-white/[0.06]" : "bg-gray-100";
+  if (table) {
+    return (
+      <div aria-label="Loading" className="animate-pulse">
+        {Array.from({ length: 8 }, (_, i) => (
+          <div key={i} className="flex items-center gap-4 px-4 py-3">
+            <div className={`h-3 w-3 rounded ${bar}`} />
+            <div className={`h-3 w-[160px] rounded ${bar}`} />
+            <div className={`h-3 w-[220px] rounded ${bar}`} />
+            <div className={`h-3 flex-1 rounded ${bar}`} />
+            <div className={`h-3 w-12 rounded ${bar}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div aria-label="Loading" className="animate-pulse">
       {Array.from({ length: 6 }, (_, i) => (
@@ -566,33 +810,156 @@ function ListSkeleton() {
   );
 }
 
-function ListRow({ m, sent, me, selected, onOpen }: { m: MailSummary; sent: boolean; me: string; selected: boolean; onOpen: () => void }) {
+/** Who a row is from — or, in Sent, who it went to. */
+function whoOf(m: MailSummary, sent: boolean, me: string): string {
+  if (!sent) return nameOf(m.from);
+  return m.to.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ") || "—";
+}
+
+/** A small round mark for unread rows; invisible otherwise, so text lines up. */
+function UnreadDot({ on }: { on: boolean }) {
+  return (
+    <>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-[#818cf8]" : "bg-transparent"}`} />
+      {on && <span className="sr-only">Unread. </span>}
+    </>
+  );
+}
+
+/** The spreadsheet: sender, subject, summary, attachment and time in columns, one line per message. */
+function MailTable({
+  rows,
+  sent,
+  me,
+  onOpen,
+  onStar,
+  className = "",
+}: {
+  rows: MailSummary[];
+  sent: boolean;
+  me: string;
+  onOpen: (id: string) => void;
+  onStar: (m: MailSummary, on: boolean) => void;
+  className?: string;
+}) {
+  const t = useTone();
+  const th = `px-2 pb-2 pt-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.08em] ${t.faint}`;
+  return (
+    <table className={`w-full table-fixed border-collapse text-[12.5px] ${className}`}>
+      <colgroup>
+        <col className="w-[44px]" />
+        <col className="w-[22%] lg:w-[200px] xl:w-[220px]" />
+        <col className="w-[30%]" />
+        <col />
+        <col className="w-[32px]" />
+        <col className="w-[84px]" />
+      </colgroup>
+      <thead className={`sticky top-0 z-[1] ${t.dark ? "bg-[#0b0b0f]/95" : "bg-white/95"} backdrop-blur-xl`}>
+        <tr className={`border-b ${t.line}`}>
+          <th scope="col" className={th}>
+            <span className="sr-only">Starred</span>
+          </th>
+          <th scope="col" className={th}>
+            {sent ? "To" : "From"}
+          </th>
+          <th scope="col" className={th}>
+            Subject
+          </th>
+          <th scope="col" className={th}>
+            Summary
+          </th>
+          <th scope="col" className={th}>
+            <span className="sr-only">Attachments</span>
+          </th>
+          <th scope="col" className={`${th} pr-4 text-right`}>
+            Time
+          </th>
+        </tr>
+      </thead>
+      <tbody className={`divide-y ${t.divide}`}>
+        {rows.map((m) => {
+          const unread = !m.read;
+          const who = whoOf(m, sent, me);
+          return (
+            <tr
+              key={m.id}
+              tabIndex={0}
+              onClick={() => onOpen(m.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen(m.id);
+                }
+              }}
+              className={`group cursor-pointer transition-colors ${t.hover} focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
+            >
+              <td className="py-1.5 pl-2 pr-0 align-middle">
+                <div className="flex items-center gap-1.5">
+                  <UnreadDot on={unread} />
+                  <StarButton on={m.starred} onToggle={(on) => onStar(m, on)} />
+                </div>
+              </td>
+              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`} title={sent ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
+                {who}
+              </td>
+              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</td>
+              <td className={`truncate px-2 py-2.5 align-middle ${t.muted}`}>{m.snippet}</td>
+              <td className={`px-1 py-2.5 align-middle ${t.muted}`}>
+                {m.attachmentCount > 0 && (
+                  <span className="inline-flex" title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
+                    <Glyph name="clip" className="h-3.5 w-3.5" />
+                    <span className="sr-only">{m.attachmentCount} attachments</span>
+                  </span>
+                )}
+              </td>
+              <td className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? t.text : t.muted}`}>
+                <time dateTime={m.occurredAt} title={fullDate(m.occurredAt)}>
+                  {listDate(m.occurredAt)}
+                </time>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; sent: boolean; me: string; selected: boolean; onOpen: () => void; onStar: (on: boolean) => void }) {
   const t = useTone();
   const unread = !m.read;
-  const who = sent ? `To: ${m.to.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ") || "—"}` : nameOf(m.from);
+  const who = sent ? `To: ${whoOf(m, true, me)}` : nameOf(m.from);
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
       aria-current={selected ? "true" : undefined}
-      className={`relative block w-full cursor-pointer px-5 py-3 text-left transition-colors ${
+      className={`group relative block w-full cursor-pointer py-3 pl-5 pr-3 text-left transition-colors ${
         selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
       }`}
     >
       {unread && <span aria-hidden="true" className="absolute left-2 top-[18px] h-1.5 w-1.5 rounded-full bg-[#818cf8]" />}
       {unread && <span className="sr-only">Unread. </span>}
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-center gap-2">
         <span className={`min-w-0 flex-1 truncate text-[13px] ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
         {m.attachmentCount > 0 && (
-          <span className={`self-center ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
+          <span className={t.muted} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
             <Glyph name="clip" className="h-3 w-3" />
           </span>
         )}
         <span className={`shrink-0 text-[11.5px] tabular-nums ${unread ? t.text : t.muted}`}>{listDate(m.occurredAt)}</span>
+        <StarButton on={m.starred} onToggle={onStar} className="-my-1 -mr-1" />
       </div>
-      <div className={`mt-0.5 truncate text-[12.5px] ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</div>
-      {m.snippet && <div className={`mt-0.5 truncate text-[12px] ${t.muted}`}>{m.snippet}</div>}
-    </button>
+      <div className={`mt-0.5 truncate pr-8 text-[12.5px] ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</div>
+      {m.snippet && <div className={`mt-0.5 truncate pr-8 text-[12px] ${t.muted}`}>{m.snippet}</div>}
+    </div>
   );
 }
 
@@ -602,20 +969,27 @@ function Reader({
   message: m,
   error,
   me,
+  backAlways,
   onBack,
   onReply,
   onForward,
   onMove,
   onDelete,
+  onStar,
+  onUnread,
 }: {
   message: MailMessage | null;
   error: string | null;
   me: string;
+  /** Show Back at every width (the table view gives the message the whole card). */
+  backAlways: boolean;
   onBack: () => void;
   onReply: (m: MailMessage, mode: "reply" | "all") => void;
   onForward: (m: MailMessage) => void;
   onMove: (m: MailMessage, to: "inbox" | "archive") => void;
   onDelete: (m: MailMessage) => void;
+  onStar: (m: MailMessage, on: boolean) => void;
+  onUnread: (m: MailMessage) => void;
 }) {
   const t = useTone();
   const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ");
@@ -629,7 +1003,7 @@ function Reader({
           t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
         } rounded-t-2xl`}
       >
-        <IconButton icon="chevronLeft" label="Back" onClick={onBack} className="lg:hidden" />
+        <IconButton icon="chevronLeft" label="Back" onClick={onBack} className={backAlways ? "" : "lg:hidden"} />
         {m && (
           <>
             <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply">
@@ -645,6 +1019,19 @@ function Reader({
               <span className="max-sm:hidden">Forward</span>
             </Button>
             <span className="flex-1" />
+            <button
+              type="button"
+              aria-label={m.starred ? "Unstar" : "Star"}
+              aria-pressed={m.starred}
+              title={m.starred ? "Unstar" : "Star"}
+              onClick={() => onStar(m, !m.starred)}
+              className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-sm:h-[40px] max-sm:w-[40px] ${
+                m.starred ? "hover:bg-amber-400/10" : t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+              }`}
+            >
+              <Star on={m.starred} />
+            </button>
+            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} />}
             {m.direction === "in" &&
               (m.folder === "archive" ? (
                 <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} />

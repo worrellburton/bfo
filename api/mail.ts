@@ -6,6 +6,7 @@ import {
   canSee,
   countRows,
   deleteMessages,
+  filterClause,
   folderFilter,
   lastSync,
   mailStatus,
@@ -19,6 +20,7 @@ import {
   toMessage,
   toSummary,
   UUID_RE,
+  type MailFilter,
   type MailFolder,
   type MailRow,
   type SummaryRow,
@@ -31,7 +33,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  * is for owners and admins only. Email-only users may use this endpoint.
  *
  * GET ?view=
- *   list&folder=inbox|sent|archive|other&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
+ *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
  *   message&id=<uuid>                → { message }  (marks it read)
  *   count                            → { unread, otherUnread, address|null, canSeeOther, sync? }  (kicks a sync)
  *   attachment&id=<uuid>&att=<id>    → { url }  (signed, 5 minutes)
@@ -42,6 +44,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  *   send { sendId, to, cc?, bcc?, subject, text, replyToId?, forwardId?, attachments? } → { message }
  *   move { ids, folder }             → { ok }  (inbox|archive; received mail only)
  *   read { ids, read }               → { ok }
+ *   star { ids, starred }            → { ok }
  *   delete { ids }                   → { ok }  (for good)
  *
  * "Not yours" is 403/404, never 401 — the browser signs out on 401.
@@ -50,6 +53,7 @@ import { storageSignedUrl } from "../lib/storage.js";
 export const config = { api: { bodyParser: { sizeLimit: "5mb" } } };
 
 const FOLDERS: MailFolder[] = ["inbox", "sent", "archive", "other"];
+const FILTERS: MailFilter[] = ["all", "unread", "starred"];
 /** A timestamp as the API hands it out (occurredAt), kept exact for paging. */
 const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}(:?\d{2})?)$/;
 /** Keep the badge poll quick; anything left is picked up by the next sync. */
@@ -93,6 +97,8 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       const folder = (param(req, "folder") || "inbox") as MailFolder;
       if (!FOLDERS.includes(folder)) return fail(res, 400, "bad_folder");
       if (folder === "other" && !admin) return fail(res, 403, "forbidden");
+      const filter = (param(req, "filter") || "all") as MailFilter;
+      if (!FILTERS.includes(filter)) return fail(res, 400, "bad_filter");
       const limit = Math.min(Math.max(Math.floor(Number(param(req, "limit"))) || 50, 1), 100);
       // Page on (occurred_at, id) after the last row shown, so rows sharing its time aren't skipped.
       const before = param(req, "before");
@@ -103,7 +109,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       // and=(…) so it never clashes with the or=(…) an admin's archive scope uses.
       const page = !before ? "" : beforeId ? `&and=(or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId})))` : `&occurred_at=lt.${encodeURIComponent(before)}`;
       const rows = await sb<SummaryRow[]>(
-        `mail_messages?${folderFilter(folder, me.id, admin)}${page}` +
+        `mail_messages?${folderFilter(folder, me.id, admin)}${filterClause(filter)}${page}` +
           `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`
       );
       return res.status(200).json({ messages: (rows ?? []).slice(0, limit).map(toSummary), hasMore: (rows ?? []).length > limit });
@@ -187,6 +193,17 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       await sb(`mail_messages?id=in.(${ids.join(",")})&${scope}`, {
         method: "PATCH",
         body: { read_at: body.read ? new Date().toISOString() : null },
+      });
+      return res.status(200).json({ ok: true });
+    }
+
+    case "star": {
+      const ids = idList(body.ids);
+      if (!ids) return fail(res, 400, "bad_ids");
+      if (typeof body.starred !== "boolean") return fail(res, 400, "bad_starred");
+      await sb(`mail_messages?id=in.(${ids.join(",")})&${scope}`, {
+        method: "PATCH",
+        body: { starred_at: body.starred ? new Date().toISOString() : null },
       });
       return res.status(200).json({ ok: true });
     }

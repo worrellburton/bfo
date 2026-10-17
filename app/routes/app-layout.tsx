@@ -32,6 +32,15 @@ const navItems = [
     ),
   },
   {
+    to: "/inbox",
+    label: "Mail",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+      </svg>
+    ),
+  },
+  {
     to: "/assets",
     label: "Entities",
     icon: (
@@ -156,46 +165,6 @@ const usersIcon = (
   </svg>
 );
 
-const mailIcon = (
-  <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-  </svg>
-);
-
-/** The envelope in the upper-left corner: the way into mail, with the unread count. `className` sets size and position. */
-function InboxLink({ unread, isDark, className, onClick }: { unread: number; isDark: boolean; className: string; onClick?: () => void }) {
-  return (
-    <NavLink
-      to="/inbox"
-      onClick={onClick}
-      title="Inbox"
-      aria-label={unread > 0 ? `Inbox, ${unread} unread` : "Inbox"}
-      className={({ isActive }) =>
-        `flex shrink-0 items-center justify-center transition-colors ${className} ${
-          isActive
-            ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-            : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-        }`
-      }
-    >
-      {/* The badge hangs off the icon, so it sits the same in every size of button. */}
-      <span className="relative inline-flex">
-        {mailIcon}
-        {unread > 0 && (
-          <span
-            aria-hidden
-            className={`absolute -right-[9px] -top-[7px] h-4 min-w-[16px] rounded-full px-1 text-center text-[10px] font-bold leading-4 tabular-nums ring-2 ${
-              isDark ? "bg-[#818cf8] text-black ring-black" : "bg-[#4f46e5] text-white ring-white"
-            }`}
-          >
-            {unread > 99 ? "99+" : unread}
-          </span>
-        )}
-      </span>
-    </NavLink>
-  );
-}
-
 /** The palette's keyboard shortcuts and recents — mounted only in the full shell. */
 function ShellShortcuts({ pages, openPalette, openSheet }: { pages: PageLink[]; openPalette: () => void; openSheet: () => void }) {
   useGlobalShortcuts({ openPalette, openSheet });
@@ -291,11 +260,10 @@ export default function AppLayout() {
       if (item.children) {
         for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label });
       } else {
-        list.push({ to: item.to, label: item.label });
+        list.push(item.to === "/inbox" ? { to: item.to, label: item.label, keywords: "inbox email messages" } : { to: item.to, label: item.label });
       }
     }
     list.push(
-      { to: "/inbox", label: "Inbox", keywords: "mail email messages" },
       { to: "/estate-map", label: "Estate map", section: "Entities", keywords: "structure ownership tree" },
       { to: "/treasury/mappings", label: "Account mappings", section: "Treasury" },
       { to: "/notes", label: "Notes" },
@@ -364,7 +332,9 @@ export default function AppLayout() {
   const showLabels = expanded;
   // The mobile drawer always shows labels, so drill-in navigation works there too.
   const labelsVisible = expanded || drawerOpen;
-  const items = navItems;
+  // Mail carries its unread count; "Email only" members see Mail and nothing else.
+  const unread = mail?.unread ?? 0;
+  const items = (emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) => (i.to === "/inbox" ? { ...i, badge: unread } : i));
 
   const openGroup =
     drill && drill !== "__root__" ? ((items as any[]).find((i) => i.to === drill && i.children) ?? null) : null;
@@ -425,15 +395,9 @@ export default function AppLayout() {
           ${isDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
         `}
       >
-        {/* Top: the wordmark with the inbox beside it */}
-        <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:gap-1.5 lg:px-0"}`}>
+        {/* Top: the wordmark */}
+        <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
           <span className={`sidebar-brand ${showLabels ? "" : "sidebar-brand-sm"}`}>BFO</span>
-          <InboxLink
-            unread={mail?.unread ?? 0}
-            isDark={isDark}
-            onClick={() => setDrawerOpen(false)}
-            className={`h-[40px] w-[40px] rounded-lg ${showLabels ? "lg:ml-1 lg:h-8 lg:w-8" : "lg:h-[30px] lg:w-[30px]"}`}
-          />
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
@@ -474,8 +438,7 @@ export default function AppLayout() {
           </div>
         )}
 
-        {!emailOnly && (
-          <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
+        <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
             {labelsVisible && openGroup ? (
               /* Drilled-in group: a back header, then its pages as a flat list. */
               <>
@@ -558,23 +521,26 @@ export default function AppLayout() {
                     <span className="relative inline-flex shrink-0">
                       {item.icon}
                       {"badge" in item && (item as any).badge > 0 && !showLabels && (
-                        <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
-                          {(item as any).badge}
+                        <span
+                          className={`absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ring-2 ${
+                            isDark ? "bg-[#818cf8] text-black ring-black" : "bg-[#4f46e5] text-white ring-white"
+                          }`}
+                        >
+                          {(item as any).badge > 99 ? "99+" : (item as any).badge}
                         </span>
                       )}
                     </span>
                     <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
                     {"badge" in item && (item as any).badge > 0 && showLabels && (
-                      <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
-                        {(item as any).badge}
+                      <span className={`ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ${isDark ? "bg-[#818cf8] text-black" : "bg-[#4f46e5] text-white"}`}>
+                        {(item as any).badge > 99 ? "99+" : (item as any).badge}
                       </span>
                     )}
                   </NavLink>
                 );
               })
             )}
-          </nav>
-        )}
+        </nav>
 
         {/* Bottom: the signed-in user, as the menu trigger */}
         <div className="relative mt-auto p-3" ref={userMenuRef}>
@@ -703,11 +669,6 @@ export default function AppLayout() {
               <path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" />
             </svg>
           </button>
-          <InboxLink
-            unread={mail?.unread ?? 0}
-            isDark={isDark}
-            className="absolute left-[42px] top-1/2 h-11 w-11 -translate-y-1/2 rounded-full after:absolute after:-inset-1 after:content-['']"
-          />
           <NavLink to={homePath(user)} aria-label="BFO home" className="mobile-brand">
             BFO
           </NavLink>

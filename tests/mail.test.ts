@@ -103,6 +103,7 @@ function row(over: Partial<MailRow> = {}): MailRow {
     dkim_pass: null,
     status: null,
     read_at: null,
+    starred_at: null,
     occurred_at: "2026-10-14T12:00:00.000Z",
     created_at: "2026-10-14T12:00:01.000Z",
     ...over,
@@ -239,6 +240,16 @@ describe("bodies", () => {
     expect(long.endsWith("…")).toBe(true);
   });
 
+  it("snips the message's own words, not the quoted reply under it", () => {
+    expect(snippetOf("hi!\n\nOn Sat, Oct 17, 2026 at 9:11 AM Robert Burton <robert@burtonfamilyoffice.com> wrote:\n> ttest")).toBe("hi!");
+    // Gmail wraps a long attribution line.
+    expect(snippetOf("Sounds good.\r\n\r\nOn Sat, Oct 17, 2026 at 9:11 AM Robert Burton <\r\nrobert@burtonfamilyoffice.com> wrote:\r\n> a\r\n> b")).toBe("Sounds good.");
+    expect(snippetOf("Yes\n-----Original Message-----\nFrom: Jane\nSent: Monday\nhello")).toBe("Yes");
+    expect(snippetOf("> only a quote\n> nothing new")).toBe("> only a quote > nothing new");
+    expect(snippetOf(null, '<div dir="ltr">Thanks!<div class="gmail_quote">On Sat, Robert wrote:<br><blockquote class="gmail_quote"><div>ttest<blockquote>older</blockquote></div></blockquote></div></div>')).toBe("Thanks!");
+    expect(snippetOf("Nothing quoted here")).toBe("Nothing quoted here");
+  });
+
   it("keeps only text Postgres accepts: no NULs, no lone surrogates, no half emoji", () => {
     expect(storable("a\u0000b\ud83dc\ude00d😀")).toBe("abcd😀");
     // The emoji straddles the cut: it's dropped whole, not halved.
@@ -299,7 +310,7 @@ describe("rows to the API", () => {
     const r = row({ attachments: [{ id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" }, { id: "rea_2", filename: "", contentType: "", size: 1, path: null }] });
     expect(toSummary(r)).toEqual({
       id: MSG, folder: "inbox", direction: "in", from: { email: "jane@example.com", name: "Jane" }, to: [{ email: ROBERT }], cc: [],
-      subject: "Hello", snippet: "Hi Robert", occurredAt: "2026-10-14T12:00:00.000Z", read: false, attachmentCount: 2, status: null, other: false,
+      subject: "Hello", snippet: "Hi Robert", occurredAt: "2026-10-14T12:00:00.000Z", read: false, starred: false, attachmentCount: 2, status: null, other: false,
     });
     const m = toMessage(r);
     expect(m.attachments).toEqual([
@@ -309,7 +320,7 @@ describe("rows to the API", () => {
     expect(m).toMatchObject({ bcc: [], text: "Hi Robert", html: null, deliveredTo: ROBERT, messageId: "<orig@example.com>", unverifiedSender: false });
     expect(toMessage(row({ spf_pass: false, dkim_pass: null })).unverifiedSender).toBe(true);
     expect(toMessage(row({ direction: "out", folder: "sent", spf_pass: null })).unverifiedSender).toBe(false);
-    expect(toSummary(row({ user_id: null, read_at: "2026-10-14T13:00:00Z" }))).toMatchObject({ other: true, read: true });
+    expect(toSummary(row({ user_id: null, read_at: "2026-10-14T13:00:00Z", starred_at: "2026-10-14T13:00:00Z" }))).toMatchObject({ other: true, read: true, starred: true });
   });
 });
 
@@ -715,6 +726,28 @@ describe("/api/mail", () => {
     for (const bad of <Record<string, string>[]>[{ before: "yesterday" }, { before: '2026-10-15T00:00:00Z",id.gt.(' }, { beforeId: MSG }, { before: "2026-10-15T00:00:00Z", beforeId: "x" }]) {
       expect(await call("GET", { query: { view: "list", ...bad } })).toEqual({ status: 400, json: { error: "bad_before" } });
     }
+  });
+
+  it("narrows a folder to unread or starred mail", async () => {
+    sbRoutes = [[/GET mail_messages\?/, () => [row()]]];
+    expect((await call("GET", { query: { view: "list", filter: "unread" } })).status).toBe(200);
+    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&read_at=is\\.null&select=`));
+    sbCalls.length = 0;
+    expect((await call("GET", { query: { view: "list", folder: "archive", filter: "starred" } })).status).toBe(200);
+    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.archive&starred_at=not\\.is\\.null&select=`));
+    expect(sbCalls[0].path).toContain("starred_at");
+    expect(await call("GET", { query: { view: "list", filter: "flagged" } })).toEqual({ status: 400, json: { error: "bad_filter" } });
+  });
+
+  it("stars and unstars within the caller's scope", async () => {
+    const r = await call("POST", { body: { action: "star", ids: [MSG], starred: true } });
+    expect(r).toEqual({ status: 200, json: { ok: true } });
+    expect(sbCalls[0]).toMatchObject({ method: "PATCH", path: `mail_messages?id=in.(${MSG})&user_id=eq.${U1}` });
+    expect(typeof sbCalls[0].body.starred_at).toBe("string");
+    sbCalls.length = 0;
+    await call("POST", { body: { action: "star", ids: [MSG], starred: false } });
+    expect(sbCalls[0].body).toEqual({ starred_at: null });
+    expect((await call("POST", { body: { action: "star", ids: [MSG], starred: "yes" } })).status).toBe(400);
   });
 
   it("pages on (time, id), so mail sharing a timestamp isn't skipped", async () => {
