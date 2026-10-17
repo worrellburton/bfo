@@ -106,26 +106,74 @@ function hueOf(key: string): number {
   return h % 360;
 }
 
-/** Initials in a tinted circle; `size` is the Tailwind box size. */
+/** The company's domain for a logo ("mail.anthropic.com" → "anthropic.com"), or null for a person. */
+function brandDomain(a: MailAddress): string | null {
+  const domain = a.email.toLowerCase().split("@")[1] ?? "";
+  if (!domain || PERSONAL_MAIL.test(domain)) return null;
+  const parts = domain.split(".").filter(Boolean);
+  if (parts.length < 2) return null;
+  // Keep a country second level (co.uk); otherwise the last two labels.
+  const keep = parts.length > 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
+  return parts.slice(-keep).join(".");
+}
+
+/** Logos that loaded, and domains that have none — so a list doesn't flicker as it re-renders. */
+const logoState = new Map<string, "ok" | "none">();
+
+/**
+ * Who the message is from, at a glance: a company's logo when the sender is
+ * a company (fetched by domain; falls back to initials if there is none),
+ * else initials in a colour that is always the same for that person.
+ */
 function Avatar({ a, size = "h-10 w-10 text-[13px]" }: { a: MailAddress; size?: string }) {
   const { dark } = useTone();
+  const domain = brandDomain(a);
+  const [logo, setLogo] = useState<"ok" | "none" | "loading">(() => (domain ? (logoState.get(domain) ?? "loading") : "none"));
+  useEffect(() => {
+    setLogo(domain ? (logoState.get(domain) ?? "loading") : "none");
+  }, [domain]);
   const hue = hueOf(a.email.toLowerCase());
   const label = senderLabel(a);
   const parts = label.split(/[\s@._-]+/).filter(Boolean);
   const initials = ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
+  const showLogo = domain && logo !== "none";
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold ${size}`}
-      style={{
-        background: dark ? `hsl(${hue} 40% 22%)` : `hsl(${hue} 70% 92%)`,
-        color: dark ? `hsl(${hue} 70% 80%)` : `hsl(${hue} 50% 32%)`,
-      }}
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold ${size} ${
+        showLogo ? (dark ? "bg-white ring-1 ring-white/10" : "bg-white ring-1 ring-gray-200") : ""
+      }`}
+      style={showLogo ? undefined : { background: dark ? `hsl(${hue} 40% 22%)` : `hsl(${hue} 70% 92%)`, color: dark ? `hsl(${hue} 70% 80%)` : `hsl(${hue} 50% 32%)` }}
     >
-      {initials}
+      {showLogo ? (
+        <img
+          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`}
+          alt=""
+          width={128}
+          height={128}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className={`h-[62%] w-[62%] object-contain transition-opacity ${logo === "ok" ? "opacity-100" : "opacity-0"}`}
+          onLoad={(e) => {
+            // Google answers a tiny default globe when a site has no icon; treat that as none.
+            const img = e.currentTarget;
+            const none = img.naturalWidth <= 16;
+            logoState.set(domain, none ? "none" : "ok");
+            setLogo(none ? "none" : "ok");
+          }}
+          onError={() => {
+            logoState.set(domain, "none");
+            setLogo("none");
+          }}
+        />
+      ) : (
+        initials
+      )}
+      {showLogo && logo === "loading" && <span className="absolute inset-0 animate-pulse bg-gray-200/40" />}
     </span>
   );
 }
+
 const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a.email}>` : a.email);
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -588,7 +636,7 @@ export default function Inbox() {
       {view === "table" ? (
         <>
           <MailTable rows={rows} sent={sent} me={address} onOpen={select} onStar={star} className="max-md:hidden" />
-          <ul className={`divide-y md:hidden ${t.divide}`}>
+          <ul className="md:hidden">
             {rows.map((m) => (
               <li key={m.id}>
                 <ListRow m={m} sent={sent} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} />
@@ -617,7 +665,7 @@ export default function Inbox() {
   );
 
   const toolbar = (
-    <div className={`flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 ${t.line}`}>
+    <div className={`flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 max-md:border-0 max-md:px-0 max-md:pb-2 max-md:pt-0 ${t.line}`}>
       <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:gap-1">
         {folders.map((x) => {
           const on = x.key === folder;
@@ -713,7 +761,10 @@ export default function Inbox() {
       {view === "table" ? (
         /* One card: the table, or the open message in its place. */
         /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
-        <section aria-label={tableReading ? "Message" : "Messages"} className={`flex min-h-0 flex-1 flex-col rounded-2xl border ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}>
+        <section
+          aria-label={tableReading ? "Message" : "Messages"}
+          className={`flex min-h-0 flex-1 flex-col rounded-2xl border ${tableReading ? "lg:overflow-hidden" : "overflow-hidden max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent"} ${t.surface}`}
+        >
           {tableReading ? (
             <div className="min-h-0 flex-1 lg:overflow-y-auto">{reader}</div>
           ) : (
@@ -755,12 +806,13 @@ export default function Inbox() {
             type="button"
             aria-label="New message"
             onClick={() => setDraft(blankDraft())}
-            className={`fab-in fixed right-4 z-40 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full shadow-lg transition-transform active:scale-95 sm:hidden ${
+            className={`fab-in fixed right-4 z-40 flex h-14 cursor-pointer items-center gap-2.5 rounded-2xl pl-5 pr-6 text-[15px] font-semibold shadow-lg transition-transform active:scale-95 sm:hidden ${
               t.dark ? "bg-white text-gray-950 shadow-black/40" : "bg-gray-900 text-white shadow-gray-900/30"
             }`}
             style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
           >
             <Icon name="edit" className="h-5 w-5" strokeWidth={1.9} />
+            Compose
           </button>,
           document.body
         )}
@@ -833,16 +885,16 @@ function Segmented<K extends string>({
 }
 
 /** The star: an outline, filled amber when on. */
-function Star({ on, className = "h-3.5 w-3.5" }: { on: boolean; className?: string }) {
+function Star({ on, className = "h-3.5 w-3.5", strokeWidth = 1.6 }: { on: boolean; className?: string; strokeWidth?: number }) {
   return (
-    <svg className={`shrink-0 ${className} ${on ? "text-amber-400" : ""}`} viewBox="0 0 24 24" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+    <svg className={`shrink-0 ${className} ${on ? "text-amber-400" : ""}`} viewBox="0 0 24 24" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth={strokeWidth} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d={GLYPHS.star} />
     </svg>
   );
 }
 
 /** Star toggle for a row: quiet until hovered, unless it's on. Stops the click reaching the row. */
-function StarButton({ on, onToggle, className = "" }: { on: boolean; onToggle: (next: boolean) => void; className?: string }) {
+function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { on: boolean; onToggle: (next: boolean) => void; className?: string; alwaysOnPhones?: boolean }) {
   const t = useTone();
   return (
     <button
@@ -854,11 +906,11 @@ function StarButton({ on, onToggle, className = "" }: { on: boolean; onToggle: (
         e.stopPropagation();
         onToggle(!on);
       }}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-sm:h-[40px] max-sm:w-[40px] ${
-        on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[44px] max-md:w-[44px] ${
+        on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${alwaysOnPhones ? "" : "max-md:hidden"} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
       } ${className}`}
     >
-      <Star on={on} />
+      <Star on={on} className="h-3.5 w-3.5 max-md:h-[22px] max-md:w-[22px]" strokeWidth={on ? 1.6 : 1.4} />
     </button>
   );
 }
@@ -1031,37 +1083,36 @@ function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; se
         }
       }}
       aria-current={selected ? "true" : undefined}
-      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-3 text-left transition-colors max-md:py-3.5 ${
+      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-4 max-md:rounded-2xl max-md:px-3 max-md:py-3.5 ${
         selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
       } ${t.dark ? "active:bg-white/[0.05]" : "active:bg-gray-100"}`}
     >
       <span className="relative mt-0.5 shrink-0">
-        <Avatar a={face} size="h-10 w-10 text-[13px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
+        <Avatar a={face} size="h-10 w-10 text-[13px] max-md:h-12 max-md:w-12 max-md:text-[15px]" />
         {unread && (
-          <span aria-hidden="true" className={`absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
+          <span aria-hidden="true" className={`absolute -left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 max-md:-left-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
         )}
         {unread && <span className="sr-only">Unread. </span>}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2">
-          <span className={`min-w-0 flex-1 truncate text-[13.5px] max-md:text-[15px] ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
+        <span className={`block truncate text-[13.5px] leading-5 max-md:text-[16px] max-md:leading-6 ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
+        <span className="flex items-center gap-1.5">
+          <span className={`min-w-0 flex-1 truncate text-[12.5px] leading-5 max-md:text-[14.5px] max-md:leading-6 ${unread ? `font-semibold max-md:font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
           {m.attachmentCount > 0 && (
-            <span className={`self-center ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
-              <Glyph name="clip" className="h-3 w-3" />
+            <span className={`shrink-0 ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
+              <Glyph name="clip" className="h-3 w-3 max-md:h-3.5 max-md:w-3.5" />
             </span>
           )}
-          <time dateTime={m.occurredAt} className={`shrink-0 text-[11.5px] tabular-nums max-md:text-[12.5px] ${unread ? t.text : t.muted}`}>
-            {listDate(m.occurredAt)}
-          </time>
         </span>
-        <span className="mt-0.5 flex items-center gap-2">
-          <span className={`min-w-0 flex-1 truncate text-[12.5px] max-md:text-[14px] ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
-          {m.starred && <Star on className="h-3.5 w-3.5 md:hidden" />}
-        </span>
-        {m.snippet && <span className={`mt-0.5 block truncate text-[12px] max-md:text-[13px] ${t.muted}`}>{m.snippet}</span>}
+        <span className={`block truncate text-[12px] leading-5 max-md:text-[14px] max-md:leading-6 ${t.muted}`}>{m.snippet || "\u00a0"}</span>
       </span>
-      {/* Desktop: star on hover. Phones star from the reader (the row is for opening). */}
-      <StarButton on={m.starred} onToggle={onStar} className="-my-1 -mr-1 self-center max-md:hidden" />
+      {/* Right rail: when, and the star. Desktop shows the star on hover; phones always, as Gmail does. */}
+      <span className="flex shrink-0 flex-col items-end justify-between self-stretch">
+        <time dateTime={m.occurredAt} className={`pr-1 text-[11.5px] leading-5 tabular-nums max-md:text-[12.5px] max-md:leading-6 ${unread ? `font-semibold ${t.text}` : t.muted}`}>
+          {listDate(m.occurredAt)}
+        </time>
+        <StarButton on={m.starred} onToggle={onStar} className="-mb-1.5 max-md:-mb-2 max-md:-mr-1" alwaysOnPhones />
+      </span>
     </div>
   );
 }
