@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
@@ -793,7 +793,7 @@ export default function Inbox() {
         /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
         <section
           aria-label={tableReading ? "Message" : "Messages"}
-          className={`flex min-h-0 flex-1 flex-col rounded-2xl border ${tableReading ? "lg:overflow-hidden" : "overflow-hidden max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent"} ${t.surface}`}
+          className={`flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
         >
           {tableReading ? (
             <div className="min-h-0 flex-1 lg:overflow-y-auto">{reader}</div>
@@ -816,7 +816,7 @@ export default function Inbox() {
           </section>
 
           {/* The reader */}
-          <section aria-label="Message" className={`min-w-0 flex-1 rounded-2xl border lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}>
+          <section aria-label="Message" className={`min-w-0 flex-1 rounded-2xl border max-md:rounded-none max-md:border-0 max-md:bg-transparent lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}>
             {!open ? (
               <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
                 <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
@@ -1247,53 +1247,59 @@ function Reader({
   onUnread: (m: MailMessage) => void;
 }) {
   const t = useTone();
-  const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : nameOf(a))).join(", ");
-  const toTitle = (list: MailAddress[]) => list.map(fullAddress).join(", ");
+  const [details, setDetails] = useState(false);
+  const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : senderLabel(a))).join(", ");
   const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
+  const canReplyAll = !!m && m.to.length + m.cc.length > 1;
+
+  const starButton = (m: MailMessage, className = "") => (
+    <button
+      type="button"
+      aria-label={m.starred ? "Unstar" : "Star"}
+      aria-pressed={m.starred}
+      title={m.starred ? "Unstar" : "Star"}
+      onClick={() => onStar(m, !m.starred)}
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[44px] max-md:w-[44px] ${
+        m.starred ? "hover:bg-amber-400/10" : t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+      } ${className}`}
+    >
+      <Star on={m.starred} className="h-3.5 w-3.5 max-md:h-[22px] max-md:w-[22px]" strokeWidth={m.starred ? 1.6 : 1.4} />
+    </button>
+  );
 
   return (
-    <article>
+    <article className="max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+      {/* Top bar. Phones: Back, then the message's housekeeping; Reply and Forward live in the bar at the bottom. */}
       <div
-        className={`sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl lg:top-0 ${t.line} ${
+        className={`sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl md:rounded-t-2xl lg:top-0 ${t.line} ${
           t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
-        } rounded-t-2xl`}
+        }`}
       >
-        <IconButton icon="chevronLeft" label="Back" onClick={onBack} className={backAlways ? "" : "lg:hidden"} />
+        <IconButton icon="chevronLeft" label="Back" onClick={onBack} className={`${backAlways ? "" : "lg:hidden"} max-md:h-[44px] max-md:w-[44px]`} />
         {m && (
           <>
-            <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply">
+            <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply" className="max-md:hidden">
               <Glyph name="reply" />
-              <span className="max-sm:hidden">Reply</span>
+              Reply
             </Button>
-            <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all">
+            <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all" className="max-md:hidden">
               <Glyph name="replyAll" />
-              <span className="max-sm:hidden">Reply all</span>
+              Reply all
             </Button>
-            <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward">
+            <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward" className="max-md:hidden">
               <Glyph name="forward" />
-              <span className="max-sm:hidden">Forward</span>
+              Forward
             </Button>
             <span className="flex-1" />
-            <button
-              type="button"
-              aria-label={m.starred ? "Unstar" : "Star"}
-              aria-pressed={m.starred}
-              title={m.starred ? "Unstar" : "Star"}
-              onClick={() => onStar(m, !m.starred)}
-              className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-sm:h-[40px] max-sm:w-[40px] ${
-                m.starred ? "hover:bg-amber-400/10" : t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-              }`}
-            >
-              <Star on={m.starred} />
-            </button>
-            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} />}
+            {starButton(m, "max-md:hidden")}
+            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} className="max-md:h-[44px] max-md:w-[44px]" />}
             {m.direction === "in" &&
               (m.folder === "archive" ? (
-                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} />
+                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} className="max-md:h-[44px] max-md:w-[44px]" />
               ) : (
-                <GlyphButton glyph="archive" label="Archive" onClick={() => onMove(m, "archive")} />
+                <GlyphButton glyph="archive" label="Archive" onClick={() => onMove(m, "archive")} className="max-md:h-[44px] max-md:w-[44px]" />
               ))}
-            <IconButton icon="trash" label="Delete" tone="danger" onClick={() => onDelete(m)} />
+            <IconButton icon="trash" label="Delete" tone="danger" onClick={() => onDelete(m)} className="max-md:h-[44px] max-md:w-[44px]" />
           </>
         )}
       </div>
@@ -1303,33 +1309,56 @@ function Reader({
       {!m ? (
         !error && <ReaderSkeleton />
       ) : (
-        <div className="px-5 pb-6 pt-4 sm:px-6">
-          <h2 className={`break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] ${t.text}`}>{m.subject || "(no subject)"}</h2>
+        <div className="px-5 pb-6 pt-4 sm:px-6 max-md:px-4 max-md:pt-5">
+          {/* Subject, with the star beside it on phones (as Gmail puts it). */}
+          <div className="flex items-start gap-2">
+            <h2 className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}>
+              {m.subject || "(no subject)"}
+            </h2>
+            {starButton(m, "md:hidden -mr-2 -mt-1.5")}
+          </div>
 
-          <div className="mt-4 flex items-start gap-3">
-            <Avatar a={m.from} size="h-9 w-9 text-[12px]" />
+          <div className="mt-4 flex items-start gap-3 max-md:mt-6">
+            <Avatar a={m.from} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
-                <span className={`min-w-0 truncate text-[13px] font-semibold max-sm:text-[14.5px] ${t.text}`}>{senderLabel(m.from)}</span>
-                {senderLabel(m.from) !== m.from.email && <span className={`hidden min-w-0 truncate text-[12px] sm:inline ${t.muted}`}>{m.from.email}</span>}
-                <time dateTime={m.occurredAt} className={`ml-auto shrink-0 pl-2 text-[12px] tabular-nums ${t.muted}`}>
-                  {fullDate(m.occurredAt)}
+                <span className={`min-w-0 truncate text-[13px] font-semibold max-md:text-[15px] ${t.text}`}>{senderLabel(m.from)}</span>
+                <time dateTime={m.occurredAt} className={`shrink-0 text-[12px] tabular-nums max-md:text-[13px] md:ml-auto md:pl-2 ${t.muted}`}>
+                  <span className="md:hidden">{listDate(m.occurredAt)}</span>
+                  <span className="max-md:hidden">{fullDate(m.occurredAt)}</span>
                 </time>
               </div>
-              {senderLabel(m.from) !== m.from.email && <div className={`truncate text-[12px] sm:hidden ${t.muted}`}>{m.from.email}</div>}
-              <div className={`mt-0.5 text-[12px] leading-snug ${t.muted}`}>
-                {m.to.length > 0 && <span title={toTitle(m.to)}>To {toLine(m.to)}</span>}
-                {m.cc.length > 0 && (
-                  <span title={toTitle(m.cc)}>
-                    <span aria-hidden="true" className="mx-1.5">·</span>Cc {toLine(m.cc)}
-                  </span>
-                )}
-                {m.bcc.length > 0 && (
-                  <span title={toTitle(m.bcc)}>
-                    <span aria-hidden="true" className="mx-1.5">·</span>Bcc {toLine(m.bcc)}
-                  </span>
-                )}
-              </div>
+              {/* "To me ▾" opens every address. */}
+              <button
+                type="button"
+                aria-expanded={details}
+                onClick={() => setDetails((d) => !d)}
+                className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[32px] max-md:text-[13.5px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+              >
+                <span className="truncate">
+                  {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}
+                  {m.cc.length > 0 && <span className="max-md:hidden"> · Cc {toLine(m.cc)}</span>}
+                </span>
+                <Icon name="chevronDown" className={`h-3 w-3 shrink-0 transition-transform ${details ? "rotate-180" : ""}`} strokeWidth={2} />
+              </button>
+              {details && (
+                <dl className={`mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 text-[12px] max-md:text-[13px] ${t.line} ${t.dark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
+                  {[
+                    ["From", [fullAddress(m.from)]],
+                    ["To", m.to.map(fullAddress)],
+                    ["Cc", m.cc.map(fullAddress)],
+                    ["Bcc", m.bcc.map(fullAddress)],
+                    ["Date", [fullDate(m.occurredAt)]],
+                  ]
+                    .filter(([, v]) => (v as string[]).length)
+                    .map(([k, v]) => (
+                      <Fragment key={k as string}>
+                        <dt className={t.muted}>{k}</dt>
+                        <dd className={`min-w-0 break-words ${t.soft}`}>{(v as string[]).join(", ")}</dd>
+                      </Fragment>
+                    ))}
+                </dl>
+              )}
               {(m.unverifiedSender || failed) && (
                 <div className="mt-1.5 flex flex-wrap gap-3">
                   {m.unverifiedSender && <Dot tone="muted">Sender not verified</Dot>}
@@ -1339,12 +1368,12 @@ function Reader({
             </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 max-md:mt-6">
             {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
           </div>
 
           {m.attachments.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-5 flex flex-wrap gap-2 max-md:mt-6">
               {m.attachments.map((a) => (
                 <AttachmentChip key={a.id} messageId={m.id} a={a} />
               ))}
@@ -1352,6 +1381,50 @@ function Reader({
           )}
         </div>
       )}
+
+      {/* Phones: Reply and Forward within thumb's reach, above the browser's bottom bar. */}
+      {m &&
+        createPortal(
+          <div
+            className={`fixed inset-x-0 bottom-0 z-40 flex items-center gap-2.5 border-t px-4 pt-3 backdrop-blur-xl md:hidden ${t.line} ${t.dark ? "bg-black/80" : "bg-white/90"}`}
+            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+          >
+            <button
+              type="button"
+              onClick={() => onReply(m, "reply")}
+              className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
+                t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
+              }`}
+            >
+              <Glyph name="reply" className="h-[18px] w-[18px]" />
+              Reply
+            </button>
+            <button
+              type="button"
+              onClick={() => onForward(m)}
+              className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
+                t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
+              }`}
+            >
+              <Glyph name="forward" className="h-[18px] w-[18px]" />
+              Forward
+            </button>
+            {canReplyAll && (
+              <button
+                type="button"
+                aria-label="Reply all"
+                title="Reply all"
+                onClick={() => onReply(m, "all")}
+                className={`flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors active:scale-[0.98] ${
+                  t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
+                }`}
+              >
+                <Glyph name="replyAll" className="h-[18px] w-[18px]" />
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
     </article>
   );
 }
@@ -1411,7 +1484,7 @@ function PlainBody({ text, nested = false }: { text: string; nested?: boolean })
   }, [text]);
   if (!nested && !text.trim()) return <p className={`text-[13px] ${t.faint}`}>No text.</p>;
   return (
-    <div className={nested ? "" : `max-w-[75ch] whitespace-pre-wrap break-words text-[13.5px] leading-relaxed ${t.text}`}>
+    <div className={nested ? "" : `max-w-[75ch] whitespace-pre-wrap break-words text-[13.5px] leading-relaxed max-md:text-[15.5px] max-md:leading-[1.6] ${t.text}`}>
       {blocks.map((b, i) =>
         b.quote ? (
           <div key={i} className={`my-1 border-l-2 pl-3 ${t.dark ? "border-white/10" : "border-gray-200"} ${t.muted}`}>
