@@ -266,7 +266,8 @@ function renderLines(lines: string[]): string {
 /** The HTML part for a plain-text message: escaped, line breaks kept, "> " lines quoted. */
 export function htmlFromText(text: string): string {
   const body = renderLines(text.replace(/\r\n?/g, "\n").split("\n"));
-  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">${body}</div>`;
+  // A complete, plain document: spam filters score bare HTML fragments worse.
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0"><div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">${body}</div></body></html>`;
 }
 
 // ── Threading ─────────────────────────────────────────────────────────

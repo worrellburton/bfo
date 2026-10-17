@@ -251,7 +251,7 @@ describe("bodies", () => {
   it("builds simple HTML from text: escaped, line breaks, quotes", () => {
     const html = htmlFromText("Thanks <Jane> & co\nSee you\n\nOn Tue, Jane wrote:\n> first\n>> older\n> last");
     expect(html).toContain("Thanks &lt;Jane&gt; &amp; co<br>See you<br><br>On Tue, Jane wrote:<br><blockquote");
-    expect(html).toMatch(/<blockquote[^>]*>first<br><blockquote[^>]*>older<\/blockquote>last<\/blockquote><\/div>$/);
+    expect(html).toMatch(/<blockquote[^>]*>first<br><blockquote[^>]*>older<\/blockquote>last<\/blockquote><\/div><\/body><\/html>$/);
     expect(html).not.toContain("<Jane>");
   });
 });
@@ -678,7 +678,7 @@ describe("/api/mail", () => {
     const r = await call("GET", { query: { view: "count" } });
     expect(r).toEqual({ status: 200, json: { unread: 4, otherUnread: 0, address: CLAIRE, canSeeOther: false } });
     expect(currentUserMock).toHaveBeenCalledWith(expect.anything(), { allowEmailOnly: true });
-    expect(sbCalls.filter((c) => c.method === "COUNT").map((c) => c.path)).toEqual([`mail_messages?user_id=eq.${U2}&folder=eq.inbox&read_at=is.null&select=id&limit=1`]);
+    expect(sbCalls.filter((c) => c.method === "COUNT").map((c) => c.path)).toEqual([`mail_messages?user_id=eq.${U2}&folder=eq.inbox&read_at=is.null&select=created_at&limit=1`]);
   });
 
   it("never picks an address itself: none until an admin gives one, and no sending", async () => {
