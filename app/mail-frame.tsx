@@ -58,7 +58,19 @@ export function sanitizeMail(html: string, images: boolean): { html: string; rem
   }
 }
 
-function frameDocument(body: string, images: boolean): string {
+/**
+ * In dark mode the mail is shown inverted with its hues turned back round, the
+ * way mail apps do it: white paper becomes near-black, dark text light, and
+ * blue links stay blue. Pictures are inverted a second time so they look as
+ * sent. Mail designed dark comes out light; "Original colors" undoes it.
+ */
+const DARK_CSS = `
+html{background:#0f0f14;color-scheme:dark;}
+body{background:#fff;color:#111;filter:invert(0.93) hue-rotate(180deg);}
+img,picture,video,svg,canvas,[style*="background-image"],[background]{filter:invert(1) hue-rotate(180deg);}
+`;
+
+function frameDocument(body: string, images: boolean, dark: boolean): string {
   const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? " https:" : ""}; font-src data:`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>
 html,body{margin:0;padding:0;background:#fff;color:#111;}
@@ -67,7 +79,7 @@ img{max-width:100%;height:auto;}
 a{color:#4f46e5;}
 blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #ddd;color:#555;}
 pre{white-space:pre-wrap;}
-</style></head><body>${body}</body></html>`;
+${dark ? DARK_CSS : ""}</style></head><body>${body}</body></html>`;
 }
 
 /** The message body. Shows "Show images" when the mail asks for remote images. */
@@ -75,10 +87,13 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
   const t = useTone();
   const ref = useRef<HTMLIFrameElement>(null);
   const [images, setImages] = useState(false);
+  /** Dark mode shows mail dark; this shows it as the sender designed it. */
+  const [original, setOriginal] = useState(false);
+  const dark = t.dark && !original;
   const { srcDoc, remoteImages } = useMemo(() => {
     const clean = sanitizeMail(html, images);
-    return { srcDoc: frameDocument(clean.html, images), remoteImages: clean.remoteImages };
-  }, [html, images]);
+    return { srcDoc: frameDocument(clean.html, images, dark), remoteImages: clean.remoteImages };
+  }, [html, images, dark]);
 
   useEffect(() => {
     const frame = ref.current;
@@ -120,11 +135,17 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
 
   return (
     <div>
-      {remoteImages && !images && (
-        <div className={`mb-2 flex items-center gap-2 text-[12px] ${t.muted}`}>
-          Images hidden
-          <span aria-hidden="true">·</span>
-          <TextButton onClick={() => setImages(true)}>Show images</TextButton>
+      {((remoteImages && !images) || t.dark) && (
+        <div className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${t.muted}`}>
+          {remoteImages && !images && (
+            <>
+              Images hidden
+              <span aria-hidden="true">·</span>
+              <TextButton onClick={() => setImages(true)}>Show images</TextButton>
+            </>
+          )}
+          {remoteImages && !images && t.dark && <span aria-hidden="true">·</span>}
+          {t.dark && <TextButton onClick={() => setOriginal((o) => !o)}>{original ? "Dark colors" : "Original colors"}</TextButton>}
         </div>
       )}
       <div className={`overflow-hidden rounded-xl border ${t.dark ? "border-white/[0.07]" : "border-gray-200"}`}>
@@ -134,7 +155,7 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
           srcDoc={srcDoc}
           sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
           referrerPolicy="no-referrer"
-          className="block h-[120px] w-full border-0 bg-white"
+          className={`block h-[120px] w-full border-0 ${dark ? "bg-[#0f0f14]" : "bg-white"}`}
         />
       </div>
     </div>
