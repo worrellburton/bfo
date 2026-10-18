@@ -56,6 +56,8 @@ Set these in the Vercel project:
 | `BIRD_WEBHOOK_SECRET` | *optional* — signing secret of the Bird webhook that delivers new mail to `/api/mail-webhook`; without it, the inbox fetches new mail when it checks |
 | `MAIL_DOMAIN` | *optional* — the domain inboxes live on (default `burtonfamilyoffice.com`) |
 | `PALM_API_KEY` | Palm (getpalm.com): the state's record of each entity, Palm as registered agent, and forming new entities. A `sk_test_…` key files nothing with any state; `sk_live_…` does |
+| `OPENAI_API_KEY` | drawing the logo style sheet on Settings (gpt-image) |
+| `MESHY_API_KEY` | turning the chosen logo into a 3D model (Meshy image-to-3D) |
 | `PALM_WEBHOOK_SECRET` | *optional* — signing secret of the Palm webhook at `/api/palm-webhook` (agent mail, filing progress) |
 
 ### The entity tree
@@ -83,6 +85,19 @@ verifies a code lands in `app_users` as `incoming` — an owner or admin approve
 them from `/users` before they can get in. Roles are `owner`, `admin`, `member`,
 `viewer` and `email` ("Email only": their own inbox and nothing else); owners and
 admins can manage users.
+
+### The 3D logo
+
+Settings has a logo studio for owners and admins. "Draw the style sheet" asks
+OpenAI for six takes on a "BFO" mark, each rendered as one physical object on a
+plain backdrop so it scans well (Monolith, Liquid chrome, Aurora glass, Signet,
+Three faces, Inline serif; "Adjust" adds a note before a redraw). "Make it 3D"
+sends the picture to Meshy, which returns a textured GLB in a few minutes; the
+model and its poster are copied into the public `brand` bucket (Meshy's links
+expire) and shown in the card. "Use on site" puts it on the landing page (where
+it turns and can be dragged) and in the app's corner; "Back to the wordmark"
+undoes it. State lives in `brand_settings`; `/api/brand` serves the current
+logo to anyone and the studio to admins.
 
 ### Forming an entity
 

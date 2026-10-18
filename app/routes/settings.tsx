@@ -1,6 +1,8 @@
 import { Link } from "react-router";
 import { useTheme } from "../theme";
 import { BACKGROUNDS, WebGLPreview, type BackgroundId } from "../webgl-backgrounds";
+import { getUser, isAdmin } from "../auth";
+import { BrandStudio } from "../brand-studio";
 
 export function meta() {
   return [{ title: "BFO - Settings" }];
@@ -9,6 +11,7 @@ export function meta() {
 export default function Settings() {
   const { theme, toggle, backgroundId, setBackgroundId } = useTheme();
   const isDark = theme === "dark";
+  const admin = isAdmin(getUser());
 
   return (
     <div>
@@ -111,6 +114,8 @@ export default function Settings() {
           </div>
         </div>
       </section>
+
+      {admin && <BrandStudio isDark={isDark} />}
     </div>
   );
 }
