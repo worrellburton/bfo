@@ -401,7 +401,7 @@ function EditForm() {
         {/* Not a <label>: a label would pass clicks on its text to the first type button. */}
         <div role="group" aria-label="Entity type">
           <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Entity type</span>
-          <div className={`grid grid-cols-4 gap-1 rounded-lg border p-1 ${t.dark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-gray-50"}`}>
+          <div className={`grid grid-cols-4 gap-1 rounded-lg border p-1 ${t.dark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-gray-50"}`}>
             {ENTITY_TYPES.map((type) => (
               <button
                 key={type}

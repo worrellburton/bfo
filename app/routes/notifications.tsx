@@ -154,7 +154,7 @@ export default function Notifications() {
   }
 
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
+  const card = isDark ? "glass-card" : "glass-card";
   const divider = isDark ? "border-white/5" : "border-gray-100";
   const field = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border cursor-pointer focus:outline-none ${
     isDark

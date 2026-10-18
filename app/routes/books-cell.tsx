@@ -77,7 +77,7 @@ export default function BooksCell() {
   }, []);
 
   const subtle = "text-gray-500";
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
+  const card = isDark ? "glass-card" : "glass-card";
 
   const inTotal = rows.filter((t) => t.amount < 0).reduce((s, t) => s + -t.amount, 0);
   const outTotal = rows.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);

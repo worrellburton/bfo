@@ -204,7 +204,7 @@ export default function BooksReports() {
   const subtle = "text-gray-500";
   const border = isDark ? "border-white/10" : "border-gray-200";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
+  const card = isDark ? "glass-card" : "glass-card";
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
   const faint = isDark ? "text-gray-700" : "text-gray-300";
   const colHi = isDark ? "bg-white/[0.035]" : "bg-black/[0.02]";
@@ -383,7 +383,7 @@ export default function BooksReports() {
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-        <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white"}`}>
+        <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white"}`}>
           {([["pnl", "Profit & loss"], ["balance", "Balance sheet"], ["statements", "Statements"]] as const).map(([value, label]) => (
             <button
               key={value}

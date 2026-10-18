@@ -196,7 +196,7 @@ export default function Users() {
     );
   }, [users, incoming, tab, search]);
 
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
+  const card = isDark ? "glass-card" : "glass-card";
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const input = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border transition-colors focus:outline-none ${

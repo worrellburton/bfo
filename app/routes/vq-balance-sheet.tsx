@@ -38,7 +38,7 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const base = isDark
-    ? "border-white/10 bg-white/[0.02]"
+    ? "border-white/10 bg-white/[0.02] glass-card"
     : "border-gray-200 bg-white";
   return <div className={`rounded-xl border ${base} p-5 ${className}`}>{children}</div>;
 }

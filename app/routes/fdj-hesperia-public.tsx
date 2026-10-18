@@ -29,7 +29,7 @@ function fmt(n: number) {
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-4">
       <div className="text-[11px] text-gray-500 mb-1">{label}</div>
       <div className="text-lg font-bold tabular-nums" style={color ? { color } : undefined}>{value}</div>
       {sub && <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>}
@@ -157,7 +157,7 @@ function EntityMap() {
         <div className="text-[10px] text-gray-500 mt-0.5">Randal G. Dix / Transwest Properties</div>
       </div>
 
-      <div className="mt-6 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-center">
+      <div className="mt-6 rounded-lg border border-white/10 bg-white/[0.02] glass-card px-4 py-2 text-center">
         <div className="text-[11px] text-gray-500">Separate investment</div>
         <div className="text-xs font-semibold text-gray-300">TownePlace Suites by Marriott</div>
         <div className="text-[10px] text-gray-500 mt-0.5">30% ownership (15% Bob + 15% Claire)</div>
@@ -193,7 +193,7 @@ function PropertyCard({
   const ltv = (debt / purchasePrice) * 100;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col">
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-5 flex flex-col">
       <div className="flex items-start justify-between mb-3">
         <div>
           <div className="text-[11px] text-gray-500">{type}</div>
@@ -312,7 +312,7 @@ export default function FDJHesperiaPublic() {
       {/* Content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         {/* Deal Health Status Bar */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-8 flex flex-wrap items-center gap-4">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-4 mb-8 flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <div className="text-[11px] text-gray-500">Deal health</div>
             <StatusBadge status="green" label="Active" />
@@ -373,19 +373,19 @@ export default function FDJHesperiaPublic() {
 
         {/* Deal Structure + Timeline */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-5">
             <h3 className="text-sm font-semibold text-gray-300 mb-5">Deal structure</h3>
             <EntityMap />
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-5">
             <h3 className="text-sm font-semibold text-gray-300 mb-5">Key timeline</h3>
             <Timeline />
           </div>
         </div>
 
         {/* Cash Flow Summary */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-5 mb-8">
           <h3 className="text-sm font-semibold text-gray-300 mb-4">Cash flow received (as of April 2022)</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
@@ -416,7 +416,7 @@ export default function FDJHesperiaPublic() {
         </div>
 
         {/* Key Parties */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mb-8">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] glass-card p-5 mb-8">
           <h3 className="text-sm font-semibold text-gray-300 mb-4">Key parties</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>

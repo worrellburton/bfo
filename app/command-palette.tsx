@@ -215,7 +215,7 @@ export function CommandPalette({
     }
   }
 
-  const surface = isDark ? "bg-[#111113]/95 border-white/10 text-white" : "bg-white/95 border-gray-200 text-gray-900";
+  const surface = isDark ? "glass-panel text-white" : "glass-panel text-gray-900";
   const muted = isDark ? "text-gray-500" : "text-gray-500";
   let lastGroup = "";
 

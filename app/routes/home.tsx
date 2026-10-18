@@ -862,9 +862,7 @@ export default function Home() {
   const attentionReady = !assetsLoading && !homeLoading;
 
   // ── Tokens ─────────────────────────────────────────────────────────────
-  const surface = isDark
-    ? "border border-white/[0.08] bg-white/[0.02]"
-    : "border border-gray-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_1px_3px_rgba(16,24,40,0.03)]";
+  const surface = isDark ? "border glass-card" : "border glass-card";
   const kicker = "text-[12px] font-medium text-gray-500";
   const textMuted = "text-gray-500";
   const textSoft = isDark ? "text-gray-400" : "text-gray-600";

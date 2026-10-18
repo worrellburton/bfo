@@ -561,8 +561,8 @@ html.light {
 }
 
 /* Aurora backdrop for the app shell — quieter than the landing page. */
-.app-aurora { opacity: 0.55; }
-:root:not(.dark) .app-aurora, html[data-theme="light"] .app-aurora { opacity: 0.25; }
+.app-aurora { opacity: 0.7; }
+html.light .app-aurora { opacity: 0.4; }
 
 /* Mobile top-bar wordmark, centred between the menu button and the edge. */
 .mobile-brand {
@@ -802,3 +802,69 @@ body { overscroll-behavior-y: none; }
 
 /* The palette field is the whole dialog; the panel itself shows focus. */
 .palette-input:focus-visible { outline: none; }
+
+/* ──────────────────────────────────────────────────────────────────────
+   Glass. Every card and floating panel is translucent and blurred, so the
+   aurora and the particle field show through. Two weights:
+
+   .glass-card   content surfaces (cards, tables, the mail list)
+   .glass-panel  floating things (popovers, dialogs, the palette) — denser,
+                 so what's behind never fights the text
+
+   These are unlayered, so they win over the Tailwind border/background
+   utilities a card may still carry.
+   ────────────────────────────────────────────────────────────────────── */
+.glass-card {
+  border-color: rgba(255, 255, 255, 0.09);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.028) 55%, rgba(129, 140, 248, 0.045) 100%);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 24px 60px -36px rgba(0, 0, 0, 0.85);
+}
+html.light .glass-card {
+  border-color: rgba(255, 255, 255, 0.75);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.6) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 24px 60px -36px rgba(15, 23, 42, 0.28);
+}
+
+.glass-panel {
+  border-color: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 60%),
+    rgba(12, 12, 16, 0.78);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.09) inset,
+    0 30px 80px -30px rgba(0, 0, 0, 0.9);
+}
+html.light .glass-panel {
+  border-color: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.8) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    0 30px 80px -30px rgba(15, 23, 42, 0.3);
+}
+
+/* Blur is costly to animate: while a surface moves, hold the blur steady. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-card, .glass-panel { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .glass-card { background: rgba(18, 18, 24, 0.92); }
+  .glass-panel { background: rgba(14, 14, 18, 0.98); }
+  html.light .glass-card, html.light .glass-panel { background: #fff; }
+}
+
+/* The particle field sits under everything, fixed to the viewport. */
+.particle-field {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}

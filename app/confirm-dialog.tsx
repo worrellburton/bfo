@@ -72,7 +72,7 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const panel = dark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900";
+  const panel = dark ? "glass-panel text-white" : "glass-panel text-gray-900";
   const muted = dark ? "text-gray-400" : "text-gray-600";
   const btn = "inline-flex h-10 max-sm:h-[46px] items-center justify-center rounded-full px-5 text-[14px] font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40";
   const cancelCls = dark ? "border border-white/15 text-gray-200 hover:bg-white/10" : "border border-gray-200 text-gray-700 hover:bg-gray-100";

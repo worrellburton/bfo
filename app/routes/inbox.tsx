@@ -1007,11 +1007,11 @@ function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { 
         e.stopPropagation();
         onToggle(!on);
       }}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[44px] max-md:w-[44px] ${
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[40px] max-md:w-[40px] ${
         on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${alwaysOnPhones ? "" : "max-md:hidden"} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
       } ${className}`}
     >
-      <Star on={on} className="h-3.5 w-3.5 max-md:h-[22px] max-md:w-[22px]" strokeWidth={on ? 1.6 : 1.4} />
+      <Star on={on} className="h-3.5 w-3.5 max-md:h-[18px] max-md:w-[18px]" strokeWidth={on ? 1.6 : 1.4} />
     </button>
   );
 }
@@ -1184,35 +1184,35 @@ function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; se
         }
       }}
       aria-current={selected ? "true" : undefined}
-      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-4 max-md:rounded-2xl max-md:px-3 max-md:py-3.5 ${
+      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3 max-md:rounded-2xl max-md:px-3 max-md:py-3 ${
         selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
       } ${t.dark ? "active:bg-white/[0.05]" : "active:bg-gray-100"}`}
     >
       <span className="relative mt-0.5 shrink-0">
-        <Avatar a={face} size="h-10 w-10 text-[13px] max-md:h-12 max-md:w-12 max-md:text-[15px]" />
+        <Avatar a={face} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
         {unread && (
-          <span aria-hidden="true" className={`absolute -left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 max-md:-left-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
+          <span aria-hidden="true" className={`absolute -left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
         )}
         {unread && <span className="sr-only">Unread. </span>}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={`block truncate text-[13.5px] leading-5 max-md:text-[16px] max-md:leading-6 ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
+        <span className={`block truncate text-[13.5px] leading-5 max-md:text-[13px] max-md:leading-5 ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
         <span className="flex items-center gap-1.5">
-          <span className={`min-w-0 flex-1 truncate text-[12.5px] leading-5 max-md:text-[14.5px] max-md:leading-6 ${unread ? `font-semibold max-md:font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
+          <span className={`min-w-0 flex-1 truncate text-[12.5px] leading-5 max-md:text-[12px] max-md:leading-5 ${unread ? `font-semibold max-md:font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
           {m.attachmentCount > 0 && (
             <span className={`shrink-0 ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
-              <Glyph name="clip" className="h-3 w-3 max-md:h-3.5 max-md:w-3.5" />
+              <Glyph name="clip" className="h-3 w-3" />
             </span>
           )}
         </span>
-        <span className={`block truncate text-[12px] leading-5 max-md:text-[14px] max-md:leading-6 ${t.muted}`}>{m.snippet || "\u00a0"}</span>
+        <span className={`block truncate text-[12px] leading-5 max-md:text-[11.5px] max-md:leading-5 ${t.muted}`}>{m.snippet || "\u00a0"}</span>
       </span>
       {/* Right rail: when, and the star. Desktop shows the star on hover; phones always, as Gmail does. */}
       <span className="flex shrink-0 flex-col items-end justify-between self-stretch">
-        <time dateTime={m.occurredAt} className={`pr-1 text-[11.5px] leading-5 tabular-nums max-md:text-[12.5px] max-md:leading-6 ${unread ? `font-semibold ${t.text}` : t.muted}`}>
+        <time dateTime={m.occurredAt} className={`pr-1 text-[11.5px] leading-5 tabular-nums max-md:text-[10.5px] max-md:leading-5 ${unread ? `font-semibold ${t.text}` : t.muted}`}>
           {listDate(m.occurredAt)}
         </time>
-        <StarButton on={m.starred} onToggle={onStar} className="-mb-1.5 max-md:-mb-2 max-md:-mr-1" alwaysOnPhones />
+        <StarButton on={m.starred} onToggle={onStar} className="-mb-1.5 max-md:-mr-1" alwaysOnPhones />
       </span>
     </div>
   );

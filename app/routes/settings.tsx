@@ -23,7 +23,7 @@ export default function Settings() {
       <p className={`text-sm mb-8 ${isDark ? "text-gray-500" : "text-gray-500"}`}>Customize your BFO experience</p>
 
       {/* Appearance Section */}
-      <section className={`rounded-xl border p-6 ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white"}`}>
+      <section className={`rounded-xl border p-6 ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white"}`}>
         <div className="flex items-center gap-3 mb-6">
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isDark ? "bg-purple-500/10" : "bg-purple-50"}`}>
             <svg className={`w-5 h-5 ${isDark ? "text-purple-400" : "text-purple-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

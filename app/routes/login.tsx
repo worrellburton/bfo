@@ -160,15 +160,7 @@ export default function Login() {
         <div className="landing-orb landing-orb-3" />
       </div>
 
-      <ParticleCanvas
-        count={70}
-        speed={0.25}
-        maxRadius={1.6}
-        connectionDistance={130}
-        dotOpacity={0.25}
-        lineOpacity={0.04}
-        className="absolute inset-0 w-full h-full"
-      />
+      <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
 
       <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
         <h1 className="landing-title landing-title-sm font-bold tracking-tight leading-none select-none">

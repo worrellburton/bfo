@@ -134,9 +134,7 @@ export function amberTone(isDark: boolean): string {
 
 /** Floating surfaces: popovers, kebab menus, tooltips, dialogs. */
 export function popoverSurface(isDark: boolean): string {
-  return isDark
-    ? "bg-[#161616] border-white/10 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]"
-    : "bg-white border-gray-200 shadow-xl shadow-gray-900/10";
+  return isDark ? "glass-panel" : "glass-panel";
 }
 
 /**
@@ -166,7 +164,7 @@ export function ghostBtn(isDark: boolean): string {
 
 /** Page-level card colours (callers add `rounded-2xl border`). */
 export function cardSurface(isDark: boolean): string {
-  return isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-gray-200 bg-white";
+  return isDark ? "glass-card" : "glass-card";
 }
 
 /** The quietest divider between rows and cells. */

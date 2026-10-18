@@ -121,7 +121,7 @@ export default function BooksVendors() {
   }, [shown]);
 
   const subtle = "text-gray-500";
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
+  const card = isDark ? "glass-card" : "glass-card";
   const border = isDark ? "border-white/10" : "border-gray-200";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";

@@ -23,7 +23,7 @@ export function useTone() {
   const dark = theme === "dark";
   return {
     dark,
-    surface: dark ? "border-white/[0.07] bg-white/[0.02]" : "border-gray-200/90 bg-white",
+    surface: "glass-card",
     line: dark ? "border-white/[0.06]" : "border-gray-100",
     divide: dark ? "divide-white/[0.06]" : "divide-gray-100",
     text: dark ? "text-gray-100" : "text-gray-900",

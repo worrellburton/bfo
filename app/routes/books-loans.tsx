@@ -243,7 +243,7 @@ export default function BooksLoans() {
   }
 
   const subtle = "text-gray-500";
-  const card = isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200 bg-white";
+  const card = isDark ? "glass-card" : "glass-card";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const field = `px-3 py-2 rounded-lg text-sm border ${
     isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"

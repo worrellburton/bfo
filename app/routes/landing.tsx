@@ -25,15 +25,7 @@ export default function Landing() {
       </div>
 
       {/* Particle field */}
-      {!still && <ParticleCanvas
-        count={70}
-        speed={0.25}
-        maxRadius={1.6}
-        connectionDistance={130}
-        dotOpacity={0.25}
-        lineOpacity={0.04}
-        className="absolute inset-0 w-full h-full"
-      />}
+      {!still && <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />}
 
       {/* Wordmark */}
       <div className="relative z-10 text-center select-none px-6">

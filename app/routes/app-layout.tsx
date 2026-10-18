@@ -365,7 +365,7 @@ export default function AppLayout() {
         <div className="landing-orb landing-orb-2" />
         <div className="landing-orb landing-orb-3" />
       </div>
-      <ParticleCanvas themeAware className="absolute inset-0 w-full h-full pointer-events-none" />
+      <ParticleCanvas className="particle-field" />
 
       {drawerOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setDrawerOpen(false)} />
