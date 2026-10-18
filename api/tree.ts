@@ -1,10 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, fail, handleError } from "../lib/auth.js";
-import { ensureImported, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
+import { importAll, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
 import {
   applyOps,
   collectionValue,
-  isCollection,
   MAX_BODY_BYTES,
   parseOps,
   parsePath,
@@ -25,8 +24,8 @@ import {
  * GET ?path=assets&ids=a,b         → { rows: [{ id, data, updated_at }] }
  * POST { ops: [{ op: "set"|"update", path, value }] } → { rows }  the rows touched (data null = removed)
  *
- * A collection is copied out of Firebase the first time it's asked for, and
- * an entity's old Firebase files are moved when it is read (lib/firebase-bridge.ts).
+ * Every collection is copied out of Firebase on the first request after deploy,
+ * and an entity's old Firebase files are moved when it is read (lib/firebase-bridge.ts).
  */
 
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
@@ -55,7 +54,9 @@ async function read(req: VercelRequest, res: VercelResponse) {
   const path = parsePath(param(req, "path"));
   if (!path || !path.length) return fail(res, 400, "bad_path");
   const collection = path[0] as Collection;
-  await ensureImported(collection);
+  // Every collection is copied out of Firebase on the first request of any kind, so
+  // nothing is left behind in a page nobody has opened yet. Done once, it's a few small reads.
+  await importAll();
 
   if (collection === "assets") {
     await migrateFirebaseFiles(path.length >= 2 ? { assetId: path[1], budgetMs: FILES_BUDGET_MS.one } : { budgetMs: FILES_BUDGET_MS.all }).catch((err) =>
@@ -91,7 +92,6 @@ async function write(req: VercelRequest, res: VercelResponse, allowed: boolean) 
   }
   const ops = parseOps(body);
   if (!Array.isArray(ops)) return fail(res, 400, ops.error, ops.message);
-  const collections = new Set(ops.flatMap((o) => (o.path.length ? [o.path[0]] : Object.keys(o.value as object).map((k) => k.split("/")[0]))));
-  for (const c of collections) if (isCollection(c)) await ensureImported(c);
+  await importAll();
   return res.status(200).json({ rows: await applyOps(ops) });
 }

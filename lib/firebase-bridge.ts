@@ -144,6 +144,11 @@ export async function ensureImported(collection: Collection): Promise<void> {
 /** Collections known to be copied, per instance; a read of tree_imports confirms the rest. */
 const importedCache = new Map<Collection, boolean>();
 
+/** Forget what this process knows about copies (tests). */
+export function forgetImports(): void {
+  importedCache.clear();
+}
+
 export async function importAll(): Promise<void> {
   for (const c of COLLECTIONS) await ensureImported(c);
 }

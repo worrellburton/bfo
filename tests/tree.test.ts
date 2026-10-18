@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectionValue, compareKeys, parseOps, parsePath, touchedRows, valueAt } from "../lib/tree";
-import { firebaseFilesOf } from "../lib/firebase-bridge";
+import { firebaseFilesOf, forgetImports } from "../lib/firebase-bridge";
 
 // ── Mocks: Supabase REST (sb), the session, and Firebase/Storage (global fetch) ──
 
@@ -172,7 +172,7 @@ describe("/api/tree", () => {
     expect((await call("GET", { query: { path: "notes", view: "index" } })).json).toEqual({ rows: [] });
   });
 
-  it("copies a collection out of Firebase the first time it's asked for", async () => {
+  it("copies every collection out of Firebase on the first request", async () => {
     sbRoutes = [
       [/GET tree_imports/, () => []],
       [/POST tree_imports/, () => [{ collection: "agents", status: "running" }]],
@@ -182,17 +182,21 @@ describe("/api/tree", () => {
       vi.fn(async (url: string) => {
         if (url.includes("identitytoolkit")) return new Response(JSON.stringify({ idToken: "tok" }));
         if (url.includes("/agents.json")) return new Response(JSON.stringify({ n1: { text: "hi" }, n2: { text: "there" } }));
+        // Firebase answers "null" for a node that was never written.
+        if (url.includes(".json?auth=")) return new Response("null");
         return new Response("{}", { status: 404 });
       })
     );
-    // "agents" hasn't been read in this process yet, so the import really runs.
-    expect((await call("GET", { query: { path: "agents" } })).status).toBe(200);
+    // Firebase holds only agents; the other collections come back empty and are marked done too.
+    forgetImports();
+    expect((await call("GET", { query: { path: "notes" } })).status).toBe(200);
     const inserted = sbCalls.find((c) => c.method === "POST" && c.path.startsWith("tree_nodes"));
     expect(inserted?.body).toEqual([
       { collection: "agents", id: "n1", data: { text: "hi" } },
       { collection: "agents", id: "n2", data: { text: "there" } },
     ]);
-    expect(sbCalls.find((c) => c.method === "PATCH" && c.path.startsWith("tree_imports"))?.body).toMatchObject({ status: "done", count: 2 });
+    expect(sbCalls.find((c) => c.method === "PATCH" && c.path.startsWith("tree_imports?collection=eq.agents"))?.body).toMatchObject({ status: "done", count: 2 });
+    expect(sbCalls.filter((c) => c.method === "PATCH" && c.path.startsWith("tree_imports")).map((c) => c.body.status)).toEqual(["done", "done", "done", "done", "done"]);
   });
 
   it("writes through tree_apply and hands back the rows touched", async () => {
