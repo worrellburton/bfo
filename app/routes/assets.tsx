@@ -15,6 +15,8 @@ import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
 import { scanAllEntities, type ScanProgress } from "../entity-scan";
 import { confirmDialog } from "../confirm-dialog";
+import { US_STATES } from "../formation";
+import { FormEntityWizard } from "../entity/form-wizard";
 import {
   BTN_BASE,
   Icon,
@@ -84,19 +86,6 @@ const FILING_KEYS = ["einLetter", "w9", "articles", "operatingAgreement"] as con
 // ── States ──────────────────────────────────────────────────────────────────
 // The fifty states plus DC, for the state filter's mega menu. Records may hold
 // a name ("Arizona") or a postal code ("AZ"); both fold to the name.
-const US_STATES: ReadonlyArray<readonly [string, string]> = [
-  ["AL", "Alabama"], ["AK", "Alaska"], ["AZ", "Arizona"], ["AR", "Arkansas"], ["CA", "California"],
-  ["CO", "Colorado"], ["CT", "Connecticut"], ["DE", "Delaware"], ["DC", "District of Columbia"], ["FL", "Florida"],
-  ["GA", "Georgia"], ["HI", "Hawaii"], ["ID", "Idaho"], ["IL", "Illinois"], ["IN", "Indiana"],
-  ["IA", "Iowa"], ["KS", "Kansas"], ["KY", "Kentucky"], ["LA", "Louisiana"], ["ME", "Maine"],
-  ["MD", "Maryland"], ["MA", "Massachusetts"], ["MI", "Michigan"], ["MN", "Minnesota"], ["MS", "Mississippi"],
-  ["MO", "Missouri"], ["MT", "Montana"], ["NE", "Nebraska"], ["NV", "Nevada"], ["NH", "New Hampshire"],
-  ["NJ", "New Jersey"], ["NM", "New Mexico"], ["NY", "New York"], ["NC", "North Carolina"], ["ND", "North Dakota"],
-  ["OH", "Ohio"], ["OK", "Oklahoma"], ["OR", "Oregon"], ["PA", "Pennsylvania"], ["RI", "Rhode Island"],
-  ["SC", "South Carolina"], ["SD", "South Dakota"], ["TN", "Tennessee"], ["TX", "Texas"], ["UT", "Utah"],
-  ["VT", "Vermont"], ["VA", "Virginia"], ["WA", "Washington"], ["WV", "West Virginia"], ["WI", "Wisconsin"],
-  ["WY", "Wyoming"],
-];
 const STATE_KEY = new Map<string, string>(US_STATES.flatMap(([abbr, name]) => [[abbr.toLowerCase(), name], [name.toLowerCase(), name]]));
 const STATE_ABBR = new Map<string, string>(US_STATES.map(([abbr, name]) => [name, abbr]));
 /** The value the "No state" choice stands for in the filter. */
@@ -917,6 +906,7 @@ export default function Assets() {
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [scan, setScan] = useState<ScanProgress | null>(null);
 
   /** Read every entity's documents and operating agreement, entity by entity. */
@@ -1740,7 +1730,25 @@ export default function Assets() {
           document.body
         )}
 
-      <NewEntityDialog isDark={isDark} open={showForm} onClose={() => setShowForm(false)} onCreate={handleCreate} />
+      <NewEntityDialog
+        isDark={isDark}
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        onCreate={handleCreate}
+        onFormWithPalm={() => {
+          setShowForm(false);
+          setShowWizard(true);
+        }}
+      />
+      <FormEntityWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        entities={assets.filter((a) => a.type !== "Trust").map((a) => ({ id: a.id, name: a.name })).sort((a, b) => a.name.localeCompare(b.name))}
+        onCreated={(id) => {
+          setShowWizard(false);
+          navigate(`/assets/${id}`);
+        }}
+      />
 
       {/* Summary strip */}
       <div className={`grid grid-cols-2 md:grid-cols-5 overflow-hidden mb-5 tabular-nums ${card}`}>
@@ -2102,11 +2110,14 @@ function NewEntityDialog({
   open,
   onClose,
   onCreate,
+  onFormWithPalm,
 }: {
   isDark: boolean;
   open: boolean;
   onClose: () => void;
   onCreate: (fields: { name: string; type: "LLC" | "C-Corp" | "LP" | "Trust"; state: string; ein: string }) => Promise<void>;
+  /** Hand off to the Palm formation wizard: a brand-new entity, filed with the state. */
+  onFormWithPalm: () => void;
 }) {
   const { t1, t2 } = tiers(isDark);
   const ref = useRef<HTMLFormElement>(null);
@@ -2180,7 +2191,22 @@ function NewEntityDialog({
         <h2 id="new-entity-title" className={`text-lg font-semibold tracking-tight ${t1}`}>
           New entity
         </h2>
-        <p className={`mt-1 mb-4 text-xs ${t2}`}>Add the basics now; filings and the rest live on the entity's page.</p>
+        <p className={`mt-1 mb-3 text-xs ${t2}`}>Record an entity that already exists; filings and the rest live on its page.</p>
+        <button
+          type="button"
+          onClick={onFormWithPalm}
+          className={`mb-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+            isDark ? "border-[#818cf8]/30 bg-[#818cf8]/[0.08] hover:bg-[#818cf8]/[0.14]" : "border-[#4f46e5]/25 bg-[#4f46e5]/[0.05] hover:bg-[#4f46e5]/[0.09]"
+          }`}
+        >
+          <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className={`h-4 w-4 shrink-0 ${isDark ? "text-[#a5b4fc]" : "text-[#4f46e5]"}`} />
+          <span className="min-w-0 flex-1">
+            <span className={`block text-sm font-medium ${t1}`}>Form a new entity with Palm</span>
+            <span className={`block text-xs ${t2}`}>A wizard files a new LLC or corporation with the state. Nothing is filed until you confirm.</span>
+          </span>
+          <Icon d="M9 5l7 7-7 7" className={`h-3.5 w-3.5 shrink-0 ${t2}`} />
+        </button>
+        <p className={`mb-2 ${MICRO} ${t2}`}>Or record an existing one</p>
 
         <span id="new-entity-type" className={label}>
           Type

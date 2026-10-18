@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
+import { buildFormationRequest, einPatch, extraFields, formationPatch, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
+import { applyOps, readRows } from "../lib/tree.js";
 import {
   isJurisdiction,
   normalizeEin,
@@ -25,6 +27,14 @@ import {
  *   document          { documentId }                   → one document's file
  *   inbox             { assetId?, unread? }            → mail and agent events Palm has sent (webhook)
  *   inbox-read        { ids } | { assetId }            → mark them read
+ *
+ * Forming a new entity (lib/palm-formation.ts):
+ *   form-requirements { jurisdiction, entityType }     → what the state asks for: extra fields, expedite tiers
+ *   form-name         { jurisdiction, entityType, name } → is the name compliant and available
+ *   form-fee          { jurisdiction, entityType, expeditedTier?, extra? } → the state's fee, estimated
+ *   form-validate     { draft }                        → Palm's full list of problems, filing nothing
+ *   form-submit       { draft, assetId, stateName, mode, idempotencyKey } → files with the state; owner/admin only
+ *   form-status       { assetId, filingId, mode }      → the filing now, written to the entity's record
  *
  * Reads need a signed-in user; adding a business needs write access; moving
  * the agent — a state filing billed to the Palm account — needs an owner or admin.
@@ -62,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
-  const mustMatchMode = action === "link" || action === "ra-change";
+  const mustMatchMode = action === "link" || action === "ra-change" || action === "form-submit" || action === "form-status";
   if ((body.mode !== undefined || mustMatchMode) && body.mode !== mode) {
     return res.status(409).json({ error: "mode_changed", mode, message: `Palm is now in ${mode} mode. Reload the page and check again before going on.` });
   }
@@ -240,6 +250,146 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true });
       }
 
+      // ── Forming a new entity ────────────────────────────────────────────
+      case "form-requirements": {
+        const jurisdiction = isJurisdiction(body.jurisdiction) ? body.jurisdiction : null;
+        const entityType = formationType(body.entityType);
+        if (!jurisdiction || !entityType) return res.status(400).json({ error: "missing_params" });
+        try {
+          const r = await palm<{ expedited_tiers?: string[]; schema?: unknown }>(`/v1/filing/formation/requirement?entity_type=${entityType}&jurisdiction=${jurisdiction}`);
+          return res.status(200).json({ mode, supported: true, expeditedTiers: r.expedited_tiers ?? [], extra: extraFields(r.schema) });
+        } catch (err) {
+          if (err instanceof PalmError && (err.status === 404 || err.status === 501)) return res.status(200).json({ mode, supported: false, expeditedTiers: [], extra: [] });
+          throw err;
+        }
+      }
+
+      case "form-name": {
+        const jurisdiction = isJurisdiction(body.jurisdiction) ? body.jurisdiction : null;
+        const entityType = formationType(body.entityType);
+        const name = String(body.name ?? "").trim().slice(0, 200);
+        if (!jurisdiction || !entityType || name.length < 2) return res.status(400).json({ error: "missing_params" });
+        const q = new URLSearchParams({ name, entity_type: entityType, suggest: "true" });
+        const r = await palm<{ eligible: boolean; compliant: boolean; available: boolean; violations?: { severity: string; message: string; fix?: { message?: string } }[]; alternatives?: string[] }>(
+          `/v1/business/registry/${jurisdiction}/name-eligibility?${q}`
+        );
+        return res.status(200).json({
+          eligible: !!r.eligible,
+          compliant: !!r.compliant,
+          available: !!r.available,
+          violations: (r.violations ?? []).map((v) => ({ severity: v.severity, message: v.fix?.message ? `${v.message} ${v.fix.message}` : v.message })),
+          alternatives: (r.alternatives ?? []).slice(0, 6),
+        });
+      }
+
+      case "form-fee": {
+        const jurisdiction = isJurisdiction(body.jurisdiction) ? body.jurisdiction : null;
+        const entityType = formationType(body.entityType);
+        if (!jurisdiction || !entityType) return res.status(400).json({ error: "missing_params" });
+        const q = new URLSearchParams({ jurisdiction, entity_type: entityType });
+        const tier = String(body.expeditedTier ?? "").trim();
+        if (/^[a-z0-9_]{1,30}$/.test(tier)) q.set("expedited_tier", tier);
+        // Some states price on inputs (member count, shares): pass the state-specific answers along.
+        for (const [k, v] of Object.entries((body.extra ?? {}) as Record<string, unknown>)) {
+          if (/^[a-z0-9_]{1,40}$/.test(k) && (typeof v === "number" || typeof v === "boolean" || (typeof v === "string" && v.length <= 40))) q.set(k, String(v));
+        }
+        try {
+          const r = await palm<{ fee?: { total?: { amount?: number; currency?: string }; items?: { component_type: string; name: string; amount: number; currency: string }[] }; expedited_tiers?: { tier: string; fee: { amount: number; currency: string } }[] }>(
+            `/v1/filing/formation/fee?${q}`
+          );
+          return res.status(200).json({
+            total: r.fee?.total?.amount ?? null,
+            currency: r.fee?.total?.currency ?? "USD",
+            items: (r.fee?.items ?? []).map((i) => ({ kind: i.component_type, name: i.name, amount: i.amount })),
+            expeditedTiers: (r.expedited_tiers ?? []).map((t) => ({ tier: t.tier, amount: t.fee?.amount ?? 0 })),
+          });
+        } catch (err) {
+          if (err instanceof PalmError && (err.status === 404 || err.status === 400)) return res.status(200).json({ total: null, currency: "USD", items: [], expeditedTiers: [], note: err.message });
+          throw err;
+        }
+      }
+
+      case "form-validate": {
+        const draft = body.draft as FormationDraft | undefined;
+        const entityType = formationType(draft?.entityType);
+        if (!draft || !entityType || !isJurisdiction(draft.jurisdiction)) return res.status(400).json({ error: "missing_params" });
+        try {
+          await palm(`/v1/filing/formation/${entityType}/validate`, { method: "POST", body: buildFormationRequest(draft, "pending") });
+          return res.status(200).json({ ok: true, errors: [] });
+        } catch (err) {
+          if (!(err instanceof PalmError)) throw err;
+          // Palm answers 400 with every problem at once; anything else means it couldn't check.
+          if (err.status === 400) return res.status(200).json({ ok: false, errors: palmErrors(err) });
+          if (err.status === 404 || err.status === 501) return res.status(200).json({ ok: true, errors: [], skipped: true });
+          throw err;
+        }
+      }
+
+      case "form-submit": {
+        if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin can file with the state." });
+        const draft = body.draft as FormationDraft | undefined;
+        const entityType = formationType(draft?.entityType);
+        const assetId = String(body.assetId ?? "");
+        const stateName = String(body.stateName ?? "").trim().slice(0, 40);
+        const idempotencyKey = String(body.idempotencyKey ?? "").trim();
+        if (!draft || !entityType || !isJurisdiction(draft.jurisdiction)) return res.status(400).json({ error: "missing_params" });
+        if (!/^[\w-]{8,64}$/.test(assetId) || !stateName || !/^[\w-]{8,255}$/.test(idempotencyKey)) return res.status(400).json({ error: "bad_params" });
+        const existing = await readRows("assets", [assetId]);
+        if (existing.length) return res.status(409).json({ error: "exists", message: "That entity already exists." });
+
+        let filing: PalmFiling;
+        try {
+          filing = await palm<PalmFiling>(`/v1/filing/formation/${entityType}`, {
+            method: "POST",
+            body: buildFormationRequest(draft, assetId),
+            headers: { "Idempotency-Key": idempotencyKey },
+          });
+        } catch (err) {
+          if (err instanceof PalmError && err.status === 400) return res.status(400).json({ error: "invalid", message: err.message, errors: palmErrors(err) });
+          if (err instanceof PalmError && err.status === 409) return res.status(409).json({ error: "name_taken", message: err.message });
+          throw err;
+        }
+        const state = summarizeFiling(filing);
+        // The business Palm created is this entity's: stamp it so documents, mail and the agent find their way back.
+        if (filing.business_id) await palm(`/v1/business/${filing.business_id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } }).catch(() => {});
+        const a = draft.principal;
+        const record: Record<string, unknown> = {
+          name: draft.legalName.trim(),
+          type: entityType === "llc" ? "LLC" : "C-Corp",
+          state: stateName,
+          ein: "",
+          createdAt: Date.now(),
+          formedVia: "palm",
+          address: [[a.street1, a.street2].filter((x) => x?.trim()).join(", "), a.city, `${a.region.toUpperCase()} ${a.postal}`].filter(Boolean).join(", "),
+          ...(draft.ownerId ? { ownerId: draft.ownerId } : {}),
+          ...(draft.email ? { email: draft.email.trim() } : {}),
+          palm: { [mode]: { businessId: filing.business_id ?? null, linkedAt: state.submittedAt, formation: state } },
+        };
+        Object.assign(record, Object.fromEntries(Object.entries(formationPatch(state, mode)).filter(([k]) => !k.includes("/"))));
+        await applyOps([{ op: "set", path: ["assets", assetId], value: record as never }]);
+        return res.status(200).json({ mode, assetId, businessId: filing.business_id ?? null, formation: state });
+      }
+
+      case "form-status": {
+        const assetId = String(body.assetId ?? "");
+        const filingId = String(body.filingId ?? "");
+        if (!/^[\w-]{8,64}$/.test(assetId) || !UUID.test(filingId)) return res.status(400).json({ error: "bad_params" });
+        const row = (await readRows("assets", [assetId]))[0];
+        const data = (row?.data ?? {}) as { palm?: Record<string, { formation?: import("../lib/palm-formation.js").FormationState }> };
+        const prev = data.palm?.[mode]?.formation ?? null;
+        if (!prev || prev.filingId !== filingId) return res.status(404).json({ error: "not_found" });
+        const filing = await palm<PalmFiling>(`/v1/filing/${filingId}`);
+        const state = summarizeFiling(filing, prev);
+        let patch = formationPatch(state, mode, filing.business_id ?? undefined);
+        // The EIN is its own filing; once formation is done, its number is what's left to collect.
+        if (state.ein && !state.ein.number && state.ein.status !== "canceled") {
+          const einFiling = await palm<PalmFiling>(`/v1/filing/${state.ein.filingId}`).catch(() => null);
+          if (einFiling) patch = { ...patch, ...einPatch(einFiling, mode, state) };
+        }
+        await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }]);
+        return res.status(200).json({ mode, formation: (patch[`palm/${mode}/formation`] as unknown) ?? state, patch });
+      }
+
       default:
         return res.status(400).json({ error: "unknown_action" });
     }
@@ -251,4 +401,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error("palm failed", action, err);
     return res.status(502).json({ error: "palm_failed", message: "Couldn't reach Palm. Try again." });
   }
+}
+
+/** Palm's entity_type for a formation, or null for anything else. */
+function formationType(v: unknown): "llc" | "corporation" | null {
+  return v === "llc" || v === "corporation" ? v : null;
+}
+
+/** Palm's problem list, one line each, for a form to show. */
+function palmErrors(err: PalmError): { field: string | null; message: string }[] {
+  const d = (err.detail ?? {}) as { errors?: { field?: string; path?: string; pointer?: string; message?: string; detail?: string }[]; detail?: string };
+  const list = (d.errors ?? []).map((e) => ({ field: e.field ?? e.path ?? e.pointer ?? null, message: e.message ?? e.detail ?? "Problem" }));
+  return list.length ? list : [{ field: null, message: err.message }];
 }

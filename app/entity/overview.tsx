@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, type PalmDocument } from "../palm";
+import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { useEntity } from "./context";
 import { BY_HAND, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
@@ -16,7 +17,10 @@ export function OverviewTab() {
   // Desktop: Details and About on the left, Mail and To do on the right. Phones: Details, Mail, To do, About.
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr]">
-      <div className="min-w-0 lg:col-start-1 lg:row-start-1">{page.editing ? <EditForm /> : <Details />}</div>
+      <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+        <Formation />
+        {page.editing ? <EditForm /> : <Details />}
+      </div>
       <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <Mail />
         <ToDo />
@@ -50,6 +54,63 @@ function TextLink({ children, ...where }: { children: ReactNode } & ({ to: strin
 
 /** A value, or nothing (the Row then shows a dash). */
 const val = (s?: string | null) => (s?.trim() ? s : undefined);
+
+// ── Formation (an entity BFO formed through Palm) ────────────────────────
+
+/** The filing's progress with the state, while it's under way and once it's done. */
+function Formation() {
+  const { page } = useEntity();
+  const t = useTone();
+  const f = page.formation;
+  if (!f) return null;
+  const done = f.status === "completed";
+  const canceled = f.status === "canceled";
+  const steps = FILING_STATUSES.map((s) => ({ key: s, label: FILING_LABEL[s], reached: !canceled && FILING_STATUSES.indexOf(s) <= FILING_STATUSES.indexOf(f.status as (typeof FILING_STATUSES)[number]) }));
+  const stateName = US_STATES.find(([abbr]) => `US-${abbr}` === f.jurisdiction)?.[1] ?? f.jurisdiction;
+  return (
+    <Section
+      title="Formation"
+      info={`Filed with ${stateName} through Palm${page.palmMode === "test" ? " (test mode: nothing reached the state)" : ""}.`}
+      actions={
+        <Dot tone={done ? "good" : canceled ? "bad" : f.openCases ? "warn" : "accent"}>
+          {canceled ? "Canceled" : done ? "Formed" : f.openCases ? `${f.openCases} question${f.openCases === 1 ? "" : "s"} from Palm` : "In progress"}
+        </Dot>
+      }
+    >
+      {!canceled && (
+        <ol className="flex flex-wrap gap-x-4 gap-y-2 px-4 py-3">
+          {steps.map((s, i) => (
+            <li key={s.key} className={`flex items-center gap-1.5 text-[12px] ${s.reached ? t.text : t.faint}`}>
+              <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${s.reached ? (t.dark ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-700") : t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
+                {s.reached && (done || s.key !== f.status) ? <Icon name="check" className="h-2.5 w-2.5" strokeWidth={2.5} /> : i + 1}
+              </span>
+              {s.label}
+            </li>
+          ))}
+        </ol>
+      )}
+      <Rows>
+        <Row label="Status" info={f.statusReason ?? undefined}>
+          {FILING_LABEL[f.status]}
+          {f.statusReason ? <span className={`ml-2 ${t.muted}`}>{f.statusReason}</span> : null}
+        </Row>
+        <Row label="Submitted">{fmtDate(new Date(f.submittedAt).toISOString().slice(0, 10))}</Row>
+        {f.formationDate && <Row label="Formed">{fmtDate(f.formationDate)}</Row>}
+        {f.registrationNumber && <Row label="File number">{f.registrationNumber}</Row>}
+        {f.fee && <Row label="State fee">{new Intl.NumberFormat("en-US", { style: "currency", currency: f.fee.currency }).format(f.fee.total)}</Row>}
+        {f.expeditedTier && <Row label="Processing">{f.expeditedTier.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}</Row>}
+        <Row label="Registered agent">{f.registeredAgent ? `Palm, ${f.registeredAgent.status.replace(/_/g, " ")}` : "Your own agent"}</Row>
+        <Row label="EIN">{f.ein ? (f.ein.number ? f.ein.number : `Palm is applying (${f.ein.status.replace(/_/g, " ")})`) : "Not requested"}</Row>
+        {f.openCases > 0 && (
+          <Row label="Needs an answer" actions={<TextLink href="https://app.getpalm.com">Open Palm</TextLink>}>
+            Palm has {f.openCases === 1 ? "a question" : `${f.openCases} questions`} before the state will accept the filing.
+          </Row>
+        )}
+      </Rows>
+      {page.formationError && <ErrorLine>{page.formationError}</ErrorLine>}
+    </Section>
+  );
+}
 
 // ── Details ──────────────────────────────────────────────────────────────
 

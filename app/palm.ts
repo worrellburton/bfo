@@ -6,6 +6,7 @@
 
 import { authFetch } from "./auth";
 import { stateCode } from "./entity-paperwork";
+import type { FormationState } from "./formation";
 
 export type PalmMode = "test" | "live";
 
@@ -48,7 +49,14 @@ export type PalmDocument = {
 };
 
 /** What BFO keeps on the entity: one link per Palm mode (test and live data never mix). */
-export type PalmLink = { businessId: string; palmId?: string | null; linkedAt: number; ra?: { status: RaService["status"]; name?: string | null; checkedAt: number } };
+export type PalmLink = {
+  businessId: string;
+  palmId?: string | null;
+  linkedAt: number;
+  ra?: { status: RaService["status"]; name?: string | null; checkedAt: number };
+  /** Set when BFO formed this entity through Palm (app/formation.ts). */
+  formation?: FormationState;
+};
 
 /** The state's record as last read through Palm. */
 export type StateRecord = {

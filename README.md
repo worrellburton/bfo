@@ -55,6 +55,8 @@ Set these in the Vercel project:
 | `CRON_SECRET` | authenticates the scheduled Books sync and Treasury report |
 | `BIRD_WEBHOOK_SECRET` | *optional* — signing secret of the Bird webhook that delivers new mail to `/api/mail-webhook`; without it, the inbox fetches new mail when it checks |
 | `MAIL_DOMAIN` | *optional* — the domain inboxes live on (default `burtonfamilyoffice.com`) |
+| `PALM_API_KEY` | Palm (getpalm.com): the state's record of each entity, Palm as registered agent, and forming new entities. A `sk_test_…` key files nothing with any state; `sk_live_…` does |
+| `PALM_WEBHOOK_SECRET` | *optional* — signing secret of the Palm webhook at `/api/palm-webhook` (agent mail, filing progress) |
 
 ### The entity tree
 
@@ -81,6 +83,31 @@ verifies a code lands in `app_users` as `incoming` — an owner or admin approve
 them from `/users` before they can get in. Roles are `owner`, `admin`, `member`,
 `viewer` and `email` ("Email only": their own inbox and nothing else); owners and
 admins can manage users.
+
+### Forming an entity
+
+"New entity" on `/assets` records an entity that already exists, or hands off to
+a wizard that forms a new LLC or corporation through Palm: the name is checked
+against the state as it's typed (with alternatives when it's taken), then
+addresses and contact, the people (organizers or incorporators, and optionally
+members/managers or directors/officers), Palm's services (Palm as registered
+agent or your own; an EIN application, whose responsible-party SSN goes straight
+to Palm and is never stored), whatever else the state asks for (from Palm's
+requirement schema), and a review with the state's fee, processing speed and
+Palm's own validation. Nothing is filed until the final confirmation, which
+spells out the state and the cost; in live mode it also asks you to type the
+entity's name, since a filing with the state can't be undone. In test mode the
+confirmation says so and the entity is created here as a test.
+
+The operating agreement is not part of the filing: states form an LLC from the
+articles alone, and Palm's formation request has no field for one. Draft it
+after formation and keep it on the entity's Documents tab.
+
+Submitting creates the entity (status "Forming") with the filing under
+`palm.<mode>.formation`. Palm's `filing.*` webhooks and a poll every 30 seconds
+while the page is open move it along (queued → ready to file → processing →
+filed → formed); on completion the file number, formation date, registered agent
+and, once issued, the EIN land on the record. Only owners and admins can submit.
 
 ### Mail
 

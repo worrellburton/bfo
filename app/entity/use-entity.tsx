@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isFormationDone } from "../formation";
 import { useNavigate, useParams } from "react-router";
 import { authFetch } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
@@ -922,6 +923,25 @@ export function useEntityPage() {
     setPalmError("");
     setPalmBusy(null);
   }, [id]);
+
+  // A formation under way: ask Palm every half minute (webhooks land faster; this covers the gaps).
+  const formation = palmMode ? asset?.palm?.[palmMode]?.formation : undefined;
+  const formationId = formation && !isFormationDone(formation) ? formation.filingId : null;
+  const [formationError, setFormationError] = useState("");
+  useEffect(() => {
+    if (!palmMode || !formationId || !id) return;
+    let alive = true;
+    const tick = () =>
+      palmCall<{ patch: Record<string, unknown> }>("form-status", { assetId: id, filingId: formationId, mode: palmMode })
+        .then(() => alive && setFormationError(""))
+        .catch((err) => alive && setFormationError(err instanceof PalmUnavailable ? "" : (err as Error).message));
+    void tick();
+    const timer = window.setInterval(tick, 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [palmMode, formationId, id]);
 
   const palmBusinessId = palmMode ? asset?.palm?.[palmMode]?.businessId : undefined;
   useEffect(() => {
@@ -1918,6 +1938,8 @@ export function useEntityPage() {
     profileTried,
     palmStatus,
     setPalmStatus,
+    formation,
+    formationError,
     palmRa,
     setPalmRa,
     palmDocs,

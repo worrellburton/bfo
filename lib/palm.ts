@@ -26,7 +26,7 @@ export class PalmError extends Error {
 }
 
 /** One Palm API call. Throws PalmError with Palm's own explanation on failure. */
-export async function palm<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function palm<T = unknown>(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
   const key = process.env.PALM_API_KEY;
   if (!palmMode(key)) throw new PalmError(503, "Palm isn't connected. Add PALM_API_KEY (sk_test_… or sk_live_…) in Vercel.");
   const r = await fetch(`${BASE}${path}`, {
@@ -35,6 +35,7 @@ export async function palm<T = unknown>(path: string, init: { method?: string; b
       Authorization: `Bearer ${key}`,
       Accept: "application/json",
       ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers ?? {}),
     },
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
     signal: AbortSignal.timeout(TIMEOUT_MS),

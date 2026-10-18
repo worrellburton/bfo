@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { sb, sendEmail } from "../lib/auth.js";
 import { palm, palmMode } from "../lib/palm.js";
 import { toEventRow, verifyPalmSignature, type PalmEvent } from "../lib/palm-webhook.js";
+import { einPatch, formationPatch, summarizeFiling, type FormationState, type PalmFiling } from "../lib/palm-formation.js";
+import { applyOps, readRows } from "../lib/tree.js";
 
 /**
  * Palm calls this when something happens to a business it serves: mail the
@@ -45,14 +47,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!event?.id || !event.type) return res.status(400).json({ error: "bad_event" });
 
   const row = toEventRow(event);
+  const object = (event.data?.object ?? {}) as Record<string, unknown>;
 
-  // Which BFO entity: the id BFO stamped on the Palm business (only readable with a key in the same mode).
-  let assetId: string | null = null;
+  // Which BFO entity: the id stamped on the filing, else on the Palm business (only readable with a key in the same mode).
+  let assetId: string | null = (object.metadata as Record<string, string> | undefined)?.bfo_asset_id ?? null;
   let entityName: string | null = null;
-  if (row.business_id && row.mode === palmMode()) {
+  if (!assetId && row.business_id && row.mode === palmMode()) {
     const business = await within(4000, palm<{ display_name?: string | null; metadata?: Record<string, string> }>(`/v1/business/${row.business_id}`));
     assetId = business?.metadata?.bfo_asset_id ?? null;
     entityName = business?.display_name ?? null;
+  }
+
+  // A formation (or its EIN) moving along: the entity's record follows it.
+  if (assetId && event.type.startsWith("filing.") && (object.type === "formation" || object.type === "ein")) {
+    await trackFiling(assetId, row.mode, object as unknown as PalmFiling).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
   }
 
   try {
@@ -86,4 +94,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "store_failed" }); // Palm retries
   }
   return res.status(200).json({ ok: true });
+}
+
+/** Write a filing's state onto its entity (lib/palm-formation.ts). */
+async function trackFiling(assetId: string, mode: "test" | "live", filing: PalmFiling): Promise<void> {
+  if (!/^[\w-]{8,64}$/.test(assetId)) return;
+  const row = (await readRows("assets", [assetId]))[0];
+  const prev = ((row?.data ?? {}) as { palm?: Record<string, { formation?: FormationState }> }).palm?.[mode]?.formation ?? null;
+  if (filing.type === "ein") {
+    if (!prev) return;
+    await applyOps([{ op: "update", path: ["assets", assetId], value: einPatch(filing, mode, prev) as never }]);
+    return;
+  }
+  if (prev && prev.filingId !== filing.id) return; // a different filing than the one this record tracks
+  const state = summarizeFiling(filing, prev);
+  await applyOps([{ op: "update", path: ["assets", assetId], value: formationPatch(state, mode, filing.business_id ?? undefined) as never }]);
 }
