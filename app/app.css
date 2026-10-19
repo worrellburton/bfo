@@ -1057,9 +1057,8 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
    fades through a soft blur. The landing page skips its entrance on a
    return visit (.no-intro) so the mark doesn't fade in under the glide.
 
-   On /mission, the story is one narrative; each paragraph's words fade up
-   into place as it's reached (.reveal.is-in .word, each with its own
-   delay --w).
+   On /mission, the words fade up into place (.reveal.is-in .word, each
+   with its own delay --w).
    ────────────────────────────────────────────────────────────────────── */
 .public-backdrop { view-transition-name: bfo-backdrop; }
 .vt-mark { view-transition-name: bfo-mark; }
@@ -1095,32 +1094,6 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 .mission-back:hover { color: #f4ede0; }
 
 
-/* The way in: a quiet glass pill. */
-.mission-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(244, 237, 224, 0.22);
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  color: #f4ede0;
-  font-family: var(--font-brand);
-  font-size: 13px;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: border-color 300ms ease, box-shadow 300ms ease, background 300ms ease, gap 300ms ease;
-}
-.mission-link:hover {
-  border-color: rgba(216, 181, 106, 0.7);
-  background: rgba(216, 181, 106, 0.06);
-  box-shadow: 0 0 34px -8px rgba(216, 181, 106, 0.55);
-  gap: 16px;
-}
-.mission-link:focus-visible { outline: 2px solid #d8b56a; outline-offset: 4px; }
 
 /* Words into place: each one rises out of a blur, in turn. */
 .word {
@@ -1168,12 +1141,8 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 .mission-hero { text-wrap: balance; }
 .mission-hero { font-size: clamp(42px, 7.4vw, 104px); font-weight: 500; line-height: 1.05; letter-spacing: -0.01em; }
 .mission-italic { font-style: italic; }
-/* The story: one narrative, read straight through. */
+/* The mission: two lines. */
 .narrative-title { font-size: clamp(40px, 6.2vw, 84px); }
-.narrative-p { margin-top: 1.5em; font-size: clamp(20px, 2.1vw, 27px); line-height: 1.68; color: rgba(244, 237, 224, 0.82); }
-.narrative-title + .narrative-p { margin-top: 1.8em; }
-.narrative-end { font-style: italic; font-size: clamp(24px, 2.6vw, 34px); color: #f4ede0; }
-.mission-foot { font-size: 10px; letter-spacing: 0.42em; text-transform: uppercase; color: rgba(244, 237, 224, 0.28); }
 
 
 @media (prefers-reduced-motion: reduce) {
