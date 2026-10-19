@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { brandCall, loadStudio, setLogoNow, type Logo, type ModelState, type SheetEntry, type Studio } from "./brand";
 import { BTN_BASE, ghostBtn, primaryBtn, tiers } from "./books-shared";
 import { Logo3D } from "./logo-3d";
+import { loadBrandFont } from "./brand-lockup";
 
 /**
- * The logo studio on Settings (owners and admins): OpenAI draws six styles of
- * a "BFO" mark, Meshy turns the one you like into a 3D model, and "Use on
- * site" puts it on the landing page and in the app's corner.
+ * The logo studio on Settings (owners and admins): OpenAI draws a reference
+ * sheet of six "Burton Family Office / BFO" lockups, each in its own typeface.
+ * "Use this logo" sets the site's logo in that typeface (live type, not the
+ * picture); Meshy can still turn any of them into a 3D model to use instead.
  */
 export function BrandStudio({ isDark }: { isDark: boolean }) {
   const { t1, t2, t3 } = tiers(isDark);
@@ -21,7 +23,10 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
 
   useEffect(() => {
     loadStudio()
-      .then(setStudio)
+      .then((st) => {
+        st.styles.forEach((s) => loadBrandFont(s.font));
+        setStudio(st);
+      })
       .catch((e) => setError((e as Error).message));
   }, []);
 
@@ -71,11 +76,11 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
     }
   }
 
-  async function use(id: string | null) {
+  async function use(id: string | null, as: "lockup" | "3d" = "lockup") {
     setUsing(id ?? "none");
     setError("");
     try {
-      const r = await brandCall<{ logo: Logo | null }>("use", { styleId: id });
+      const r = await brandCall<{ logo: Logo | null }>("use", { styleId: id, as });
       setStudio((s) => (s ? { ...s, logo: r.logo } : s));
       setLogoNow(r.logo);
     } catch (e) {
@@ -129,7 +134,7 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
           </div>
           <div>
             <h2 className={`text-sm font-semibold ${t1}`}>Logo</h2>
-            <p className={`text-xs ${t2}`}>Six takes on "BFO" drawn by OpenAI. Pick one, Meshy makes it 3D, and the site shows it.</p>
+            <p className={`text-xs ${t2}`}>A reference sheet: six "Burton Family Office / BFO" lockups drawn by OpenAI, each in its own typeface. Use one and the site sets its logo in that type.</p>
           </div>
         </div>
         {studio && (
@@ -147,13 +152,9 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
       </div>
 
       {!studio && !error && <p className={`text-xs ${t2}`}>Loading…</p>}
-      {studio && (!studio.configured.openai || !studio.configured.meshy) && (
+      {studio && !studio.configured.openai && (
         <p className={`mb-4 rounded-lg border px-3 py-2 text-xs ${isDark ? "border-amber-400/30 bg-amber-400/5 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
-          {!studio.configured.openai && !studio.configured.meshy
-            ? "Add OPENAI_API_KEY and MESHY_API_KEY in Vercel to draw and build."
-            : !studio.configured.openai
-              ? "Add OPENAI_API_KEY in Vercel to draw the styles."
-              : "Add MESHY_API_KEY in Vercel to build 3D models."}
+          Add OPENAI_API_KEY in Vercel to draw the lockups.
         </p>
       )}
       {error && (
@@ -168,10 +169,11 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
             const entry = studio.sheet.styles[s.id];
             const model = studio.models[s.id];
             const inUse = studio.logo?.styleId === s.id;
+            const inUse3D = inUse && !!studio.logo?.glbUrl && studio.logo.kind !== "lockup";
             const isDrawing = drawing.has(s.id);
             const building = !!model && (model.status === "PENDING" || model.status === "IN_PROGRESS");
             const built = model?.status === "SUCCEEDED" && !!model.glbUrl;
-            const showModel = built && (view[s.id] ?? "model") === "model";
+            const showModel = built && (view[s.id] ?? "picture") === "model";
             return (
               <div key={s.id} className={`overflow-hidden rounded-xl border ${inUse ? "ring-2 ring-indigo-500 ring-offset-2 " + (isDark ? "ring-offset-black border-transparent" : "ring-offset-white border-transparent") : isDark ? "border-white/10" : "border-gray-200"}`}>
                 <div className={`relative aspect-square ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
@@ -201,7 +203,7 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                       </div>
                     </div>
                   )}
-                  {inUse && <span className="absolute left-2 top-2 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">On the site</span>}
+                  {inUse && <span className="absolute left-2 top-2 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">{inUse3D ? "On the site · 3D" : "On the site"}</span>}
                   {built && (
                     <div className={`absolute right-2 top-2 inline-flex rounded-full p-0.5 text-[10px] ${isDark ? "bg-black/55" : "bg-white/85 shadow-sm"}`}>
                       {(["picture", "model"] as const).map((k) => (
@@ -209,7 +211,7 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                           key={k}
                           type="button"
                           onClick={() => setView((v) => ({ ...v, [s.id]: k }))}
-                          className={`cursor-pointer rounded-full px-2 py-0.5 font-medium ${(view[s.id] ?? "model") === k ? (isDark ? "bg-white/15 text-white" : "bg-gray-900 text-white") : t2}`}
+                          className={`cursor-pointer rounded-full px-2 py-0.5 font-medium ${(view[s.id] ?? "picture") === k ? (isDark ? "bg-white/15 text-white" : "bg-gray-900 text-white") : t2}`}
                         >
                           {k === "picture" ? "Picture" : "3D"}
                         </button>
@@ -222,6 +224,9 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                     <div className="min-w-0">
                       <div className={`text-xs font-semibold ${t1}`}>{s.name}</div>
                       <div className={`text-[11px] ${t2}`}>{s.blurb}</div>
+                      <div className={`mt-1.5 truncate text-[15px] leading-tight ${t1}`} style={{ fontFamily: `"${s.font.family}", Georgia, serif`, fontWeight: s.font.weight }} title={`Typeface: ${s.font.family}`}>
+                        {s.font.family} <span className={t3}>· Burton Family Office</span>
+                      </div>
                     </div>
                     <button type="button" onClick={() => setAdjusting(adjusting === s.id ? null : s.id)} className={`shrink-0 cursor-pointer text-[11px] font-medium ${isDark ? "text-indigo-300 hover:underline" : "text-indigo-600 hover:underline"}`}>
                       {adjusting === s.id ? "Done" : "Adjust"}
@@ -241,8 +246,13 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                     <button type="button" onClick={() => void draw(s.id)} disabled={isDrawing || !studio.configured.openai} className={`${btn} ${ghostBtn(isDark)}`}>
                       {entry ? "Redraw" : "Draw"}
                     </button>
+                    {entry && (!inUse || inUse3D) && (
+                      <button type="button" onClick={() => void use(s.id)} disabled={using !== null} className={`${btn} ${primaryBtn(isDark)}`}>
+                        {using === s.id ? "Switching…" : "Use this logo"}
+                      </button>
+                    )}
                     {entry && !built && (
-                      <button type="button" onClick={() => void build(s.id)} disabled={building || starting.has(s.id) || !studio.configured.meshy} className={`${btn} ${ghostBtn(isDark)}`}>
+                      <button type="button" onClick={() => void build(s.id)} disabled={building || starting.has(s.id) || !studio.configured.meshy} title={studio.configured.meshy ? undefined : "Add MESHY_API_KEY in Vercel to build 3D models."} className={`${btn} ${ghostBtn(isDark)}`}>
                         {building ? "Building…" : starting.has(s.id) ? "Starting…" : model?.status === "FAILED" ? "Try 3D again" : "Make it 3D"}
                       </button>
                     )}
@@ -251,9 +261,9 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                         Rebuild
                       </button>
                     )}
-                    {built && !inUse && (
-                      <button type="button" onClick={() => void use(s.id)} disabled={using !== null} className={`${btn} ${primaryBtn(isDark)}`}>
-                        {using === s.id ? "Switching…" : "Use on site"}
+                    {built && !inUse3D && (
+                      <button type="button" onClick={() => void use(s.id, "3d")} disabled={using !== null} className={`${btn} ${ghostBtn(isDark)}`}>
+                        {using === s.id ? "Switching…" : "Use in 3D"}
                       </button>
                     )}
                   </div>
@@ -264,7 +274,7 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
         </div>
       )}
       <p className={`mt-4 text-[11px] ${t3}`}>
-        Drawing takes about a minute per style; Meshy takes a few minutes per model. Models and pictures are kept in the brand bucket, so the site never depends on either service being up.
+        Drawing takes about a minute per lockup; Meshy takes a few minutes per model. The site sets the chosen logo as live type in its Google font; pictures and models are kept in the brand bucket, so the site never depends on OpenAI or Meshy being up.
       </p>
     </section>
   );

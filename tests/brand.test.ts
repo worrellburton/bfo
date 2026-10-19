@@ -11,14 +11,15 @@ vi.mock("../lib/auth.js", () => ({
 import handler from "../api/brand";
 
 describe("logo styles", () => {
-  it("has six, each a single object on a plain backdrop", () => {
+  it("has six lockups, the name above BFO, each with its own typeface", () => {
     expect(LOGO_STYLES).toHaveLength(6);
     expect(new Set(LOGO_STYLES.map((s) => s.id)).size).toBe(6);
+    expect(new Set(LOGO_STYLES.map((s) => s.font.family)).size).toBe(6);
     const p = logoPrompt(LOGO_STYLES[0], "warmer");
     expect(p).toMatch(/B, F and O/);
-    expect(p).toMatch(/studio backdrop/);
+    expect(p).toMatch(/on top, the words "BURTON FAMILY OFFICE"/);
     expect(p).toMatch(/Adjustment: warmer\./);
-    expect(styleById("chrome")?.name).toBe("Liquid chrome");
+    expect(styleById("inscription")?.font.family).toBe("Cinzel");
     expect(styleById("nope")).toBeNull();
     expect(IMAGE_MODELS[0]).toBe("gpt-image-2");
   });
@@ -89,20 +90,21 @@ describe("/api/brand", () => {
   });
 
   it("gives anyone the logo in use, cached, and only admins the studio", async () => {
-    settings.logo = { styleId: "chrome", glbUrl: "https://sb.test/x.glb" };
+    settings.logo = { styleId: "didone", kind: "lockup" };
     state.role = null;
     const r = await call("GET");
-    expect(r.json.logo.styleId).toBe("chrome");
+    expect(r.json.logo.styleId).toBe("didone");
     expect(r.headers["Cache-Control"]).toMatch(/s-maxage/);
     expect((await call("GET", {}, { studio: "1" })).status).toBe(401);
     state.role = "member";
     expect((await call("GET", {}, { studio: "1" })).status).toBe(403);
-    expect((await call("POST", { action: "generate", styleId: "chrome" })).status).toBe(403);
+    expect((await call("POST", { action: "generate", styleId: "didone" })).status).toBe(403);
     state.role = "admin";
     const s = await call("GET", {}, { studio: "1" });
     expect(s.json.configured).toEqual({ openai: true, meshy: true });
     expect(s.json.styles).toHaveLength(6);
-    expect(s.json.models.chrome).toBeNull();
+    expect(s.json.models.didone).toBeNull();
+    expect(s.json.styles[0].font.family).toBe("Bodoni Moda");
   });
 
   it("draws a style with OpenAI, falling back to an older image model, and stores it", async () => {
@@ -110,30 +112,30 @@ describe("/api/brand", () => {
       .mockResolvedValueOnce(reply(404, { error: { message: "The model `gpt-image-2` does not exist or you do not have access to it." } }))
       .mockResolvedValueOnce(reply(200, { data: [{ b64_json: Buffer.from("png!").toString("base64") }] }))
       .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "" }); // storage upload
-    settings[`model:glass`] = { taskId: "old", status: "SUCCEEDED" };
-    const r = await call("POST", { action: "generate", styleId: "glass", tweak: "cooler" });
+    settings[`model:deco`] = { taskId: "old", status: "SUCCEEDED" };
+    const r = await call("POST", { action: "generate", styleId: "deco", tweak: "cooler" });
     expect(r.status).toBe(200);
     expect(r.json.entry.model).toBe("gpt-image-1.5");
-    expect(r.json.entry.imageUrl).toMatch(/^https:\/\/sb\.test\/storage\/v1\/object\/public\/brand\/logo\/glass\/\d+\.png$/);
+    expect(r.json.entry.imageUrl).toMatch(/^https:\/\/sb\.test\/storage\/v1\/object\/public\/brand\/logo\/deco\/\d+\.png$/);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ model: "gpt-image-1.5", size: "1024x1024", quality: "high" });
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).prompt).toMatch(/Adjustment: cooler/);
-    expect(fetchMock.mock.calls[2][0]).toMatch(/\/storage\/v1\/object\/brand\/logo\/glass\//);
-    expect((settings.sheet as any).styles.glass.prompt).toMatch(/frosted glass/);
-    expect(settings["model:glass"]).toBeUndefined(); // the old model no longer matches the new picture
+    expect(fetchMock.mock.calls[2][0]).toMatch(/\/storage\/v1\/object\/brand\/logo\/deco\//);
+    expect((settings.sheet as any).styles.deco.prompt).toMatch(/Art Deco/);
+    expect(settings["model:deco"]).toBeUndefined(); // the old model no longer matches the new picture
   });
 
   it("builds the model with Meshy and copies the result in once it succeeds", async () => {
-    expect((await call("POST", { action: "model", styleId: "signet" })).status).toBe(409);
-    settings.sheet = { styles: { signet: { imageUrl: "https://sb.test/storage/v1/object/public/brand/logo/signet/1.png", imagePath: "logo/signet/1.png", prompt: "", model: "gpt-image-2", createdAt: 1 } }, generatedAt: 1 };
+    expect((await call("POST", { action: "model", styleId: "monogram" })).status).toBe(409);
+    settings.sheet = { styles: { monogram: { imageUrl: "https://sb.test/storage/v1/object/public/brand/logo/monogram/1.png", imagePath: "logo/monogram/1.png", prompt: "", model: "gpt-image-2", createdAt: 1 } }, generatedAt: 1 };
     fetchMock.mockResolvedValueOnce(reply(202, { result: "task_1" }));
-    const started = await call("POST", { action: "model", styleId: "signet" });
+    const started = await call("POST", { action: "model", styleId: "monogram" });
     expect(started.json.model).toMatchObject({ taskId: "task_1", status: "PENDING" });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://api.meshy.ai/openapi/v1/image-to-3d");
-    expect(JSON.parse(init.body)).toMatchObject({ image_url: expect.stringContaining("/signet/1.png"), should_texture: true, enable_pbr: true, target_formats: ["glb", "usdz"] });
+    expect(JSON.parse(init.body)).toMatchObject({ image_url: expect.stringContaining("/monogram/1.png"), should_texture: true, enable_pbr: true, target_formats: ["glb", "usdz"] });
 
     fetchMock.mockResolvedValueOnce(reply(200, { id: "task_1", status: "IN_PROGRESS", progress: 55 }));
-    expect((await call("POST", { action: "model-status", styleId: "signet" })).json.model).toMatchObject({ status: "IN_PROGRESS", progress: 55 });
+    expect((await call("POST", { action: "model-status", styleId: "monogram" })).json.model).toMatchObject({ status: "IN_PROGRESS", progress: 55 });
 
     fetchMock
       .mockResolvedValueOnce(reply(200, { id: "task_1", status: "SUCCEEDED", progress: 100, model_urls: { glb: "https://assets.meshy.ai/x.glb", usdz: "https://assets.meshy.ai/x.usdz" }, alpha_thumbnail_url: "https://assets.meshy.ai/x.png" }))
@@ -143,26 +145,36 @@ describe("/api/brand", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "" })
       .mockResolvedValueOnce(reply(200, {})) // poster download
       .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "" });
-    const done = await call("POST", { action: "model-status", styleId: "signet" });
+    const done = await call("POST", { action: "model-status", styleId: "monogram" });
     expect(done.json.model.status).toBe("SUCCEEDED");
-    expect(done.json.model.glbUrl).toMatch(/\/brand\/logo\/signet\/\d+\.glb$/);
+    expect(done.json.model.glbUrl).toMatch(/\/brand\/logo\/monogram\/\d+\.glb$/);
     expect(done.json.model.posterUrl).toMatch(/-poster\.png$/);
     // a finished model isn't asked about again
     const calls = fetchMock.mock.calls.length;
-    expect((await call("POST", { action: "model-status", styleId: "signet" })).json.model.status).toBe("SUCCEEDED");
+    expect((await call("POST", { action: "model-status", styleId: "monogram" })).json.model.status).toBe("SUCCEEDED");
     expect(fetchMock.mock.calls.length).toBe(calls);
 
-    // and it can go on the site, then come off
-    const used = await call("POST", { action: "use", styleId: "signet" });
-    expect(used.json.logo).toMatchObject({ styleId: "signet", glbUrl: done.json.model.glbUrl });
-    expect((await call("GET")).json.logo.styleId).toBe("signet");
+    // and it can go on the site in 3D, then come off
+    const used = await call("POST", { action: "use", styleId: "monogram", as: "3d" });
+    expect(used.json.logo).toMatchObject({ styleId: "monogram", kind: "3d", glbUrl: done.json.model.glbUrl });
+    expect((await call("GET")).json.logo.styleId).toBe("monogram");
     expect((await call("POST", { action: "use", styleId: null })).json.logo).toBeNull();
     expect(settings.logo).toBeUndefined();
   });
 
+  it("puts a drawn lockup on the site as type in its font, no model needed", async () => {
+    expect((await call("POST", { action: "use", styleId: "inscription" })).status).toBe(409);
+    settings.sheet = { styles: { inscription: { imageUrl: "https://sb.test/i.png", imagePath: "logo/inscription/1.png", prompt: "", model: "gpt-image-2", createdAt: 1 } }, generatedAt: 1 };
+    expect((await call("POST", { action: "use", styleId: "inscription", as: "3d" })).status).toBe(409);
+    const r = await call("POST", { action: "use", styleId: "inscription" });
+    expect(r.json.logo).toMatchObject({ styleId: "inscription", kind: "lockup", finish: "gold", font: { family: "Cinzel" }, imageUrl: "https://sb.test/i.png" });
+    expect(r.json.logo.glbUrl).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("says when a key is missing", async () => {
     delete process.env.OPENAI_API_KEY;
-    const r = await call("POST", { action: "generate", styleId: "cube" });
+    const r = await call("POST", { action: "generate", styleId: "geometric" });
     expect(r.status).toBe(503);
     expect(r.json.error).toBe("openai");
   });

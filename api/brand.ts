@@ -29,7 +29,8 @@ import { storageUpload } from "../lib/storage.js";
  *     generate     { styleId, tweak? }  OpenAI draws that style (≈30–60 s); replaces the sheet's entry
  *     model        { styleId }          Meshy starts turning the picture into a model
  *     model-status { styleId }          Meshy's progress; on success the GLB is copied into the bucket
- *     use          { styleId | null }   the site shows this model (null: back to the wordmark)
+ *     use          { styleId | null, as? }  the site shows this style: as "lockup" (default) its
+ *                                         type in the paired font, as "3d" its model; null: back to the wordmark
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -48,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const all = await readSettings(keys);
     return res.status(200).json({
       configured: { openai: !!process.env.OPENAI_API_KEY, meshy: !!process.env.MESHY_API_KEY },
-      styles: LOGO_STYLES.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, prompt: logoPrompt(s) })),
+      styles: LOGO_STYLES.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, font: s.font, finish: s.finish, prompt: logoPrompt(s) })),
       sheet: (all.sheet as Sheet | undefined) ?? { styles: {}, generatedAt: 0 },
       models: Object.fromEntries(LOGO_STYLES.map((s) => [s.id, (all[`model:${s.id}`] as ModelState | undefined) ?? null])),
       logo: (all.logo as Logo | undefined) ?? null,
@@ -122,8 +123,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const all = await readSettings(["sheet", `model:${style.id}`]);
         const model = all[`model:${style.id}`] as ModelState | undefined;
         const entry = (all.sheet as Sheet | undefined)?.styles?.[style.id];
-        if (!model?.glbUrl || !entry) return res.status(409).json({ error: "no_model", message: "Build the 3D model first." });
-        const logo: Logo = { styleId: style.id, glbUrl: model.glbUrl, usdzUrl: model.usdzUrl ?? null, posterUrl: model.posterUrl ?? null, imageUrl: entry.imageUrl, updatedAt: Date.now() };
+        if (!entry) return res.status(409).json({ error: "no_image", message: "Draw this style first." });
+        const base = { styleId: style.id, font: style.font, finish: style.finish, imageUrl: entry.imageUrl, updatedAt: Date.now() };
+        let logo: Logo;
+        if (body.as === "3d") {
+          if (!model?.glbUrl) return res.status(409).json({ error: "no_model", message: "Build the 3D model first." });
+          logo = { ...base, kind: "3d", glbUrl: model.glbUrl, usdzUrl: model.usdzUrl ?? null, posterUrl: model.posterUrl ?? null };
+        } else {
+          logo = { ...base, kind: "lockup" };
+        }
         await writeSetting("logo", logo);
         return res.status(200).json({ logo });
       }

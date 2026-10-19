@@ -2,6 +2,8 @@ import { useNavigate } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { authFetch, getUser, homePath, isAuthenticated, isEmailOnly, profileComplete, revalidate } from "../auth";
 import { ParticleCanvas } from "../particles";
+import { lockupOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 
 export function meta() {
   return [{ title: "Finish setup — BFO" }];
@@ -33,6 +35,7 @@ export default function CompleteProfile() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
+  const lockup = lockupOf(useBrandLogo());
   const [success, setSuccess] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
 
@@ -140,7 +143,9 @@ export default function CompleteProfile() {
       <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
 
       <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
-        <h1 className="landing-title landing-title-sm font-bold tracking-tight leading-none select-none">BFO</h1>
+        <h1 className="m-0 select-none">
+          <BrandLockup font={lockup.font} finish={lockup.finish} size="compact" />
+        </h1>
         <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
 
         <div className={`mt-10 p-6 text-left ${CARD}`}>
