@@ -6,6 +6,8 @@ import { BrandLockup } from "../brand-lockup";
 export function meta() {
   return [
     { title: "BFO - Mission" },
+    // Unlisted: reachable by its link, kept out of search results.
+    { name: "robots", content: "noindex, nofollow" },
     {
       name: "description",
       content: "The Burton Family Office builds and operates companies with a purpose, to help human beings, and shares their profits generously with the people in them.",
