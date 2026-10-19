@@ -1,7 +1,7 @@
 import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
-  layout("routes/public-layout.tsx", [index("routes/landing.tsx"), route("mission", "routes/mission.tsx")]),
+  index("routes/landing.tsx"),
   route("login", "routes/login.tsx"),
   route("complete-profile", "routes/complete-profile.tsx"),
   route("public/fdj-hesperia", "./routes/fdj-hesperia-public.tsx"),

@@ -1048,37 +1048,54 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 }
 
 /* ──────────────────────────────────────────────────────────────────────
-   Public site: / and /mission (public-layout.tsx, landing.tsx, mission.tsx).
-
-   Moving between the two is a view transition. The backdrop is its own
-   layer that doesn't animate (the orbs and particles keep going behind),
-   the BFO mark (.vt-mark) glides between its place on each page, and the
-   rest fades through a soft blur. The landing page skips its entrance on
-   a return visit (.no-intro) so the mark doesn't fade in under the glide.
+   burtonfamilyoffice.com (landing.tsx): one page. It opens on BFO; as the
+   page scrolls, the mark eases back (--hero, 0 → 1 over the first screen)
+   and the mission's words fade into place (.reveal.is-in .word, each with
+   its own delay --w). The closing statement lights up word by word with
+   the scroll itself: --p (0 → 1) on .scrub, --i on each word, --n words.
    ────────────────────────────────────────────────────────────────────── */
-.public-backdrop { view-transition-name: bfo-backdrop; }
-.vt-mark { view-transition-name: bfo-mark; }
-::view-transition-group(bfo-backdrop),
-::view-transition-old(bfo-backdrop),
-::view-transition-new(bfo-backdrop) { animation: none; }
-::view-transition-old(bfo-backdrop) { display: none; }
-::view-transition-old(root) { animation: public-out 420ms cubic-bezier(0.4, 0, 1, 1) both; }
-::view-transition-new(root) { animation: public-in 760ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
-::view-transition-group(bfo-mark) { animation-duration: 820ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
-::view-transition-old(bfo-mark),
-::view-transition-new(bfo-mark) { animation-duration: 820ms; height: 100%; object-fit: contain; }
-@keyframes public-out { to { opacity: 0; filter: blur(10px); transform: scale(0.985); } }
-@keyframes public-in { from { opacity: 0; filter: blur(12px); transform: scale(1.015); } }
-.no-intro .brand-lockup-hero,
-.no-intro .landing-sub,
-.no-intro .landing-fade-in { animation: none; }
+.site-hero { position: relative; }
+.site-hero-inner {
+  opacity: clamp(0, calc(1 - var(--hero, 0) * 1.35), 1);
+  transform: translateY(calc(var(--hero, 0) * -70px)) scale(calc(1 - var(--hero, 0) * 0.08));
+  filter: blur(calc(var(--hero, 0) * 8px));
+  will-change: transform, opacity;
+}
+.site-cue { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); opacity: clamp(0, calc(1 - var(--hero, 0) * 4), 1); }
+.site-cue span {
+  display: block;
+  width: 1px;
+  height: 56px;
+  background: linear-gradient(rgba(216, 181, 106, 0), rgba(216, 181, 106, 0.8));
+  background-size: 100% 200%;
+  animation: site-drip 2.4s ease-in-out infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) 1.2s both;
+}
+@keyframes site-drip { from { background-position: 0 100%; } to { background-position: 0 -100%; } }
 
-/* The landing page's way in: a quiet glass pill. */
+/* Past the first screen: a small mark, top left, back to the top. */
+.site-mark {
+  position: fixed;
+  top: 18px;
+  left: 22px;
+  z-index: 20;
+  padding: 8px 12px;
+  border-radius: 14px;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 500ms ease, transform 500ms ease, background 300ms ease;
+}
+.site-mark-on { opacity: 1; transform: none; pointer-events: auto; }
+.site-mark:hover { background: rgba(255, 255, 255, 0.05); }
+.site-mark .brand-lockup-mark { font-size: 22px; letter-spacing: 0.06em; }
+
+/* The way in: a quiet glass pill. */
 .mission-link {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 13px 26px 13px 30px;
+  padding: 13px 28px;
   border-radius: 999px;
   border: 1px solid rgba(244, 237, 224, 0.22);
   background: rgba(255, 255, 255, 0.03);
@@ -1089,6 +1106,7 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   font-size: 13px;
   letter-spacing: 0.32em;
   text-transform: uppercase;
+  cursor: pointer;
   transition: border-color 300ms ease, box-shadow 300ms ease, background 300ms ease, gap 300ms ease;
 }
 .mission-link:hover {
@@ -1099,25 +1117,52 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 }
 .mission-link:focus-visible { outline: 2px solid #d8b56a; outline-offset: 4px; }
 
-/* ── The mission page ─────────────────────────────────────────────── */
-.mission { color: #f4ede0; }
-.mission-mark .brand-lockup { animation: none; }
-.mission-mark .brand-lockup-name { font-size: 8px; letter-spacing: 0.36em; margin-right: -0.36em; padding-bottom: 6px; }
-.mission-mark .brand-lockup-mark { font-size: 30px; }
-.mission-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: rgba(244, 237, 224, 0.55);
-  transition: color 250ms ease;
+/* Words into place: each one rises out of a blur, in turn. */
+.word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.5em);
+  filter: blur(8px);
+  transition: opacity 1.1s cubic-bezier(0.16, 1, 0.3, 1), transform 1.1s cubic-bezier(0.16, 1, 0.3, 1), filter 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--w, 0s);
 }
-.mission-back:hover { color: #f4ede0; }
+.reveal.is-in .word { opacity: 1; transform: none; filter: none; }
+/* A gradient clipped to text paints as a box under a running filter, so shimmering words rise without the blur. */
+.word:has(> .shimmer) { filter: none; }
+.reveal-block {
+  opacity: 0;
+  transform: translateY(26px);
+  filter: blur(10px);
+  transition: opacity 1.3s cubic-bezier(0.16, 1, 0.3, 1), transform 1.3s cubic-bezier(0.16, 1, 0.3, 1), filter 1.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--d, 0s);
+}
+.reveal-block.is-in { opacity: 1; transform: none; filter: none; }
 
+/* Ivory with a band of gold light passing through. */
+.shimmer {
+  background: linear-gradient(110deg, #f4ede0 0%, #f4ede0 38%, #fff8e6 44%, #d8b56a 50%, #fff8e6 56%, #f4ede0 62%, #f4ede0 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: site-sheen 7s linear infinite;
+  animation-delay: var(--s, 0s);
+  display: inline-block;
+}
+@keyframes site-sheen { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+
+/* The statement: a tall section whose stage stays put while the words light up. */
+.scrub { height: 240vh; }
+.scrub-word {
+  opacity: clamp(0.12, calc(var(--p, 0) * (var(--n) + 6) - var(--i)), 1);
+  transition: opacity 180ms linear;
+}
+.scrub-tail { opacity: clamp(0, calc((var(--p, 0) - 0.82) * 7), 1); transform: translateY(calc((1 - clamp(0, calc((var(--p, 0) - 0.82) * 7), 1)) * 14px)); }
+
+/* ── Type ─────────────────────────────────────────────────────────── */
+.site { color: #f4ede0; }
 .mission-eyebrow {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 14px;
   font-size: 11px;
@@ -1126,56 +1171,18 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   color: rgba(216, 181, 106, 0.85);
 }
 .mission-eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; opacity: 0.6; }
-.text-center .mission-eyebrow, .mission-eyebrow.mission-word { justify-content: center; }
 .mission-hero, .mission-h2, .mission-turn, .mission-statement { text-wrap: balance; }
-.mission-hero { font-size: clamp(44px, 8vw, 112px); font-weight: 500; line-height: 1.02; letter-spacing: -0.01em; }
+.mission-hero { font-size: clamp(42px, 7.4vw, 104px); font-weight: 500; line-height: 1.05; letter-spacing: -0.01em; }
 .mission-italic { font-style: italic; }
 .mission-lede { font-size: clamp(16px, 1.9vw, 21px); line-height: 1.75; color: rgba(244, 237, 224, 0.66); }
-.mission-lede em { color: #f4ede0; font-family: var(--font-brand); font-size: 1.12em; }
 .mission-h2 { font-size: clamp(32px, 4.6vw, 58px); font-weight: 500; line-height: 1.1; color: #f4ede0; }
 .mission-h3 { margin-top: 14px; font-size: clamp(24px, 2.4vw, 30px); font-weight: 500; color: #f4ede0; }
 .mission-body { font-size: clamp(15px, 1.5vw, 17px); line-height: 1.8; color: rgba(244, 237, 224, 0.62); }
 .mission-turn { font-size: clamp(26px, 3.2vw, 40px); font-style: italic; line-height: 1.25; }
 .mission-source { font-size: 11.5px; color: rgba(244, 237, 224, 0.34); letter-spacing: 0.02em; }
-.mission-statement { font-size: clamp(26px, 3.6vw, 46px); font-weight: 500; line-height: 1.32; }
-.mission-coda { font-size: clamp(18px, 2vw, 24px); font-style: italic; color: rgba(244, 237, 224, 0.7); }
+.mission-statement { font-size: clamp(26px, 3.6vw, 46px); font-weight: 500; line-height: 1.32; color: #f4ede0; }
+.mission-coda { font-size: clamp(18px, 2vw, 24px); font-style: italic; }
 .mission-foot { font-size: 10px; letter-spacing: 0.42em; text-transform: uppercase; color: rgba(244, 237, 224, 0.28); }
-
-/* Ivory with a band of gold light passing through. */
-.mission-shimmer {
-  background: linear-gradient(110deg, #f4ede0 0%, #f4ede0 38%, #fff8e6 44%, #d8b56a 50%, #fff8e6 56%, #f4ede0 62%, #f4ede0 100%);
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: mission-sheen 7s linear infinite;
-}
-@keyframes mission-sheen { from { background-position: 100% 0; } to { background-position: -50% 0; } }
-
-/* Words in the opening fade up one by one; everything after reveals as it's reached. */
-.mission-word { display: inline-block; animation: mission-in 1.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.mission-word.mission-shimmer { animation: mission-in 1.3s cubic-bezier(0.16, 1, 0.3, 1) both, mission-sheen 7s linear infinite; }
-@keyframes mission-in { from { opacity: 0; transform: translateY(18px); filter: blur(12px); } }
-.reveal {
-  opacity: 0;
-  transform: translateY(26px);
-  filter: blur(10px);
-  transition: opacity 1.3s cubic-bezier(0.16, 1, 0.3, 1), transform 1.3s cubic-bezier(0.16, 1, 0.3, 1), filter 1.3s cubic-bezier(0.16, 1, 0.3, 1);
-  transition-delay: var(--d, 0s);
-}
-.reveal.is-in { opacity: 1; transform: none; filter: none; }
-
-.mission-scroll { margin: 72px auto 0; }
-.mission-scroll span {
-  display: block;
-  width: 1px;
-  height: 56px;
-  margin: 0 auto;
-  background: linear-gradient(rgba(216, 181, 106, 0), rgba(216, 181, 106, 0.8));
-  background-size: 100% 200%;
-  animation: mission-drip 2.4s ease-in-out infinite;
-}
-@keyframes mission-drip { from { background-position: 0 100%; } to { background-position: 0 -100%; } }
 
 .mission-stat {
   padding: 34px 30px 30px;
@@ -1204,13 +1211,15 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   background: rgba(5, 5, 8, 0.82);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  transition: background 400ms ease, opacity 1.3s cubic-bezier(0.16, 1, 0.3, 1), transform 1.3s cubic-bezier(0.16, 1, 0.3, 1), filter 1.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 400ms ease;
 }
 .mission-principle:hover { background: rgba(18, 16, 12, 0.86); }
 .mission-numeral { font-size: 15px; letter-spacing: 0.08em; color: #d8b56a; }
 
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
-  .mission-word, .mission-word.mission-shimmer, .mission-shimmer, .mission-scroll span { animation: none; }
-  .reveal { opacity: 1; transform: none; filter: none; transition: none; }
+  .site-hero-inner { opacity: 1; transform: none; filter: none; }
+  .word, .reveal-block { opacity: 1; transform: none; filter: none; transition: none; }
+  .shimmer, .site-cue span { animation: none; }
+  .scrub { height: auto; }
+  .scrub-word, .scrub-tail { opacity: 1; transform: none; }
 }
