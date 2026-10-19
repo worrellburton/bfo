@@ -23,9 +23,26 @@ import { lockupOf, modelOf, useBrandLogo } from "../brand";
 import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
+import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
 
 const iconCls = "w-[18px] h-[18px] shrink-0";
-const navItems = [
+
+/** Mail's folders all live on /inbox, told apart by ?f= (inbox when absent). */
+const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "inbox") === f;
+
+/** Shown to admins (and anyone given access): mail to addresses nobody has yet. */
+const otherMailChild: NavChild = {
+  to: "/inbox?f=other",
+  label: "Other",
+  match: mailFolder("other"),
+  icon: (
+    <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
+    </svg>
+  ),
+};
+
+const navItems: NavItem[] = [
   {
     to: "/home",
     label: "Home",
@@ -38,6 +55,38 @@ const navItems = [
   {
     to: "/inbox",
     label: "Mail",
+    children: [
+      {
+        to: "/inbox",
+        label: "Inbox",
+        match: mailFolder("inbox"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z" />
+          </svg>
+        ),
+      },
+      {
+        to: "/inbox?f=sent",
+        label: "Sent",
+        match: mailFolder("sent"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        ),
+      },
+      {
+        to: "/inbox?f=archive",
+        label: "Archive",
+        match: mailFolder("archive"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+          </svg>
+        ),
+      },
+    ] as NavChild[],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
@@ -74,6 +123,7 @@ const navItems = [
   {
     to: "/books/transactions",
     label: "Books",
+    breakBefore: true,
     children: [
       {
         to: "/books/transactions",
@@ -158,10 +208,8 @@ const navItems = [
 
 ];
 
-
-// The nav reads as two groups — what the family owns, then the work of
-// running it — separated by a little air rather than headings.
-const SECTION_BREAK = "/books/transactions";
+// The nav reads as two halves (what the family owns, then the work of
+// running it), separated by a little air at Books rather than headings.
 
 const usersIcon = (
   <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -263,11 +311,11 @@ export default function AppLayout() {
   // Every destination the palette can jump to, in nav order.
   const pages = useMemo<PageLink[]>(() => {
     const list: PageLink[] = [];
-    for (const item of navItems as any[]) {
+    for (const item of navItems) {
       if (item.children) {
-        for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label });
+        for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label, ...(item.label === "Mail" ? { keywords: "email messages" } : {}) });
       } else {
-        list.push(item.to === "/inbox" ? { to: item.to, label: item.label, keywords: "inbox email messages" } : { to: item.to, label: item.label });
+        list.push({ to: item.to, label: item.label });
       }
     }
     list.push(
@@ -304,18 +352,6 @@ export default function AppLayout() {
     };
   }, [drawerOpen]);
 
-  // Bird-style drill-in nav: a group opens into its own sub-view. `drill`
-  // holds the open group's path; "__root__" forces the top level; null follows
-  // the current route (so landing on a group's page opens that group). These
-  // hooks sit above the signed-out early return so they always run.
-  const activeGroupTo =
-    (navItems as any[]).find((i) => i.children?.some((c: any) => location.pathname.startsWith(c.to)))?.to ?? null;
-  const [drill, setDrill] = useState<string | null>(null);
-  useEffect(() => {
-    setDrill(activeGroupTo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
   // Below lg the rail is an off-canvas drawer; while it's closed its links
   // must not be reachable by Tab.
   const [isDesktop, setIsDesktop] = useState(true);
@@ -337,14 +373,24 @@ export default function AppLayout() {
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
   const contentInset = railWidth;
   const showLabels = expanded;
-  // The mobile drawer always shows labels, so drill-in navigation works there too.
+  // The mobile drawer always shows labels, so groups open there too.
   const labelsVisible = expanded || drawerOpen;
   // Mail carries its unread count; "Email only" members see Mail and nothing else.
+  // Its folders carry their own counts; Other only for those who can see it.
   const unread = mail?.unread ?? 0;
-  const items = (emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) => (i.to === "/inbox" ? { ...i, badge: unread } : i));
-
-  const openGroup =
-    drill && drill !== "__root__" ? ((items as any[]).find((i) => i.to === drill && i.children) ?? null) : null;
+  const canSeeOther = mail ? mail.canSeeOther : isAdmin(user);
+  const items: NavItem[] = (emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) =>
+    i.to === "/inbox" && i.children
+      ? {
+          ...i,
+          badge: unread,
+          children: [
+            ...i.children.map((c) => (c.to === "/inbox" ? { ...c, badge: unread } : c)),
+            ...(canSeeOther ? [{ ...otherMailChild, badge: mail?.otherUnread ?? 0 }] : []),
+          ],
+        }
+      : i
+  );
 
   function go(to: string) {
     setUserMenuOpen(false);
@@ -453,109 +499,7 @@ export default function AppLayout() {
           </div>
         )}
 
-        <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
-            {labelsVisible && openGroup ? (
-              /* Drilled-in group: a back header, then its pages as a flat list. */
-              <>
-                <button
-                  onClick={() => setDrill("__root__")}
-                  className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
-                    isDark ? "text-gray-300 hover:text-white hover:bg-white/5" : "text-gray-700 hover:text-black hover:bg-black/5"
-                  }`}
-                >
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                  </svg>
-                  <span className="truncate">{openGroup.label}</span>
-                </button>
-                <div className={`h-px mx-2 my-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
-                {openGroup.children.map((c: { to: string; label: string; icon?: React.ReactNode }) => (
-                  <NavLink
-                    key={c.to}
-                    to={c.to}
-                    onClick={() => setDrawerOpen(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                        isActive
-                          ? isDark ? "bg-white/10 text-white font-medium" : "bg-black/5 text-black font-medium"
-                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-                      }`
-                    }
-                  >
-                    {c.icon && <span className="shrink-0 inline-flex">{c.icon}</span>}
-                    <span className="truncate">{c.label}</span>
-                  </NavLink>
-                ))}
-              </>
-            ) : (
-              /* Top level: leaf items link; grouped items drill in with a chevron. */
-              items.map((item) => {
-                const children = ("children" in item ? (item as any).children : null) as
-                  | Array<{ to: string; label: string }>
-                  | null;
-                const groupActive = !!children && children.some((c) => location.pathname.startsWith(c.to));
-
-                if (labelsVisible && children) {
-                  return (
-                    <button
-                      key={item.to}
-                      onClick={() => setDrill(item.to)}
-                      className={`relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 cursor-pointer ${item.to === SECTION_BREAK ? "mt-4" : ""} ${
-                        groupActive
-                          ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-                      }`}
-                    >
-                      <span className="inline-flex shrink-0">{item.icon}</span>
-                      <span className="ml-2 flex-1 truncate text-left">{item.label}</span>
-                      <svg className="w-4 h-4 shrink-0 opacity-50" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                      </svg>
-                    </button>
-                  );
-                }
-
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.to === "/home"}
-                    onClick={() => setDrawerOpen(false)}
-                    title={showLabels ? undefined : item.label}
-                    aria-label={showLabels ? undefined : item.label}
-                    className={({ isActive }) =>
-                      `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${item.to === SECTION_BREAK ? "mt-4" : ""} ${
-                        showLabels ? "" : "lg:justify-center lg:px-0"
-                      } ${
-                        isActive || groupActive
-                          ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-                      }`
-                    }
-                  >
-                    <span className="relative inline-flex shrink-0">
-                      {item.icon}
-                      {"badge" in item && (item as any).badge > 0 && !showLabels && (
-                        <span
-                          className={`absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ring-2 ${
-                            isDark ? "bg-[#818cf8] text-black ring-black" : "bg-[#4f46e5] text-white ring-white"
-                          }`}
-                        >
-                          {(item as any).badge > 99 ? "99+" : (item as any).badge}
-                        </span>
-                      )}
-                    </span>
-                    <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
-                    {"badge" in item && (item as any).badge > 0 && showLabels && (
-                      <span className={`ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ${isDark ? "bg-[#818cf8] text-black" : "bg-[#4f46e5] text-white"}`}>
-                        {(item as any).badge > 99 ? "99+" : (item as any).badge}
-                      </span>
-                    )}
-                  </NavLink>
-                );
-              })
-            )}
-        </nav>
+        <SidebarNav items={items} isDark={isDark} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
         <div className="relative mt-auto p-3" ref={userMenuRef}>

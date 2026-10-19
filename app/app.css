@@ -471,6 +471,62 @@ html.light .app-shell-brand .brand-ivory { color: #1c1915; }
   .sidebar-rail, .sidebar-content { transition: none; }
 }
 
+/* The rail's nav tree (app/sidebar-nav.tsx). A group opens by animating its
+   row track from 0fr to 1fr; its pages hang off a thin vertical line that
+   starts under the group's icon, each with a rounded elbow into it. The last page's elbow ends the line. */
+.nav-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease;
+}
+.nav-collapse-open { grid-template-rows: 1fr; opacity: 1; }
+.nav-collapse > .nav-tree { overflow: hidden; min-height: 0; }
+.nav-tree { list-style: none; margin: 0; padding: 2px 0 4px 33px; position: relative; }
+.nav-tree-dark { --nav-line: rgba(255, 255, 255, 0.14); }
+.nav-tree-light { --nav-line: rgba(0, 0, 0, 0.13); }
+.nav-branch { position: relative; padding: 1px 0; }
+/* The elbow: down from the line, round the corner, into the row. */
+.nav-branch::before {
+  content: "";
+  position: absolute;
+  left: -15px;
+  top: 0;
+  height: 50%;
+  width: 12px;
+  border-left: 1.5px solid var(--nav-line);
+  border-bottom: 1.5px solid var(--nav-line);
+  border-bottom-left-radius: 8px;
+}
+/* The line carrying on to the next page. */
+.nav-branch:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  bottom: 0;
+  border-left: 1.5px solid var(--nav-line);
+}
+/* The current page's elbow lights up. */
+.nav-branch:has(> [aria-current="page"])::before { border-color: #818cf8; }
+html.light .nav-branch:has(> [aria-current="page"])::before { border-color: #4f46e5; }
+/* The current top-level row: a soft accent sliver at its left edge. */
+.nav-row-on::before {
+  content: "";
+  position: absolute;
+  left: -9px; /* the nav's 0.75rem padding, at this app's 11.9px rem */
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #a5b4fc, #818cf8);
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.7);
+}
+html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-collapse { transition: none; }
+}
+
 /* ──────────────────────────────────────────────────────────────────────
    Auth surfaces (/login, /complete-profile).
 
