@@ -4,6 +4,7 @@ import { CommandPalette, ShortcutSheet, useGlobalShortcuts, useTrackRecent, type
 import { OfflineBanner, RouteProgress } from "../shell-status";
 import {
   authFetch,
+  beginAddAccount,
   displayName,
   getUser,
   homePath,
@@ -12,8 +13,11 @@ import {
   isAuthenticated,
   isEmailOnly,
   logout,
+  otherAccounts,
   profileComplete,
   revalidate,
+  switchAccount,
+  type User,
 } from "../auth";
 import { useMailCount } from "../mail-client";
 import { resetStore } from "../store";
@@ -411,6 +415,30 @@ export default function AppLayout() {
       : i
   );
 
+  // Accounts: every account signed in on this browser, Gmail-style. Switching
+  // and signing out reload the app, so nothing one account loaded lingers
+  // for the next.
+  const others = userMenuOpen ? otherAccounts() : [];
+  function switchTo(u: User) {
+    if (switchAccount(u.id)) window.location.assign(homePath(u));
+  }
+  function addAccount() {
+    setUserMenuOpen(false);
+    setDrawerOpen(false);
+    beginAddAccount();
+    resetStore();
+    navigate("/login");
+  }
+  function signOut() {
+    setUserMenuOpen(false);
+    setDrawerOpen(false);
+    setPaletteOpen(false);
+    const next = logout();
+    resetStore();
+    if (next) window.location.assign(homePath(next));
+    else navigate("/login");
+  }
+
   function go(to: string) {
     setUserMenuOpen(false);
     setDrawerOpen(false);
@@ -553,10 +581,53 @@ export default function AppLayout() {
           {userMenuOpen && (
             <div
               role="menu"
-              className={`absolute bottom-full left-3 mb-2 w-56 max-w-[calc(100vw-1.5rem)] rounded-xl border shadow-lg overflow-hidden z-50 ${
+              className={`absolute bottom-full left-3 mb-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border shadow-lg overflow-hidden z-50 ${
                 isDark ? "bg-[#1a1a1a] border-white/10" : "bg-white border-gray-200"
               }`}
             >
+              {/* Accounts signed in on this browser: the current one, the others to switch to, and one more. */}
+              <div className="py-1.5">
+                <p className={`px-4 pb-1 pt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] ${isDark ? "text-gray-500" : "text-gray-400"}`}>Accounts</p>
+                {[user, ...others].filter((u): u is User => !!u).map((u, i) => {
+                  const current = i === 0;
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => (current ? setUserMenuOpen(false) : switchTo(u))}
+                      role="menuitemradio"
+                      aria-checked={current}
+                      className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors cursor-pointer ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
+                    >
+                      <span
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-bold shrink-0 ${
+                          current ? (isDark ? "bg-white text-black" : "bg-gray-900 text-white") : isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
+                        }`}
+                      >
+                        {initials(u)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-[13px] ${current ? "font-semibold" : ""} ${isDark ? "text-gray-100" : "text-gray-900"}`}>{displayName(u)}</span>
+                        <span className={`block truncate text-[11.5px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{u.mailAddress || u.email || u.phoneFormatted}</span>
+                      </span>
+                      {current && (
+                        <svg className={`w-4 h-4 shrink-0 ${isDark ? "text-indigo-300" : "text-indigo-600"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+                <button onClick={addAccount} className={menuItemCls} role="menuitem">
+                  <span className={`w-7 h-7 -ml-0.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${isDark ? "border-white/25" : "border-gray-300"}`}>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+                    </svg>
+                  </span>
+                  Add another account
+                </button>
+              </div>
+              <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
+
               <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
                 {isDark ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -604,13 +675,7 @@ export default function AppLayout() {
               <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
 
               <button
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  setDrawerOpen(false);
-                  logout();
-                  resetStore();
-                  navigate("/login");
-                }}
+                onClick={signOut}
                 role="menuitem"
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
                   isDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
@@ -691,7 +756,7 @@ export default function AppLayout() {
             actions={[
               { id: "theme", label: isDark ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
               { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", run: () => { setPaletteOpen(false); setSheetOpen(true); } },
-              { id: "logout", label: "Log out", run: () => { setPaletteOpen(false); logout(); resetStore(); navigate("/login"); } },
+              { id: "logout", label: "Log out", run: signOut },
             ]}
           />
           <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} isDark={isDark} />

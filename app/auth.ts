@@ -26,6 +26,10 @@ type Session = {
 
 const STORAGE_KEY = "bfo-session";
 const LEGACY_KEY = "bfo-authenticated";
+/** The other accounts signed in on this browser, ready to switch to (current one excluded). */
+const ACCOUNTS_KEY = "bfo-accounts";
+/** Set while signing in an extra account, so the sign-in page can offer to go back. */
+const ADDING_KEY = "bfo-adding-account";
 
 let cached: Session | null | undefined;
 
@@ -52,6 +56,79 @@ function write(session: Session | null) {
 function expired(session: Session): boolean {
   const at = Date.parse(session.expiresAt);
   return Number.isFinite(at) && at < Date.now();
+}
+
+// ── More than one account ─────────────────────────────────────────────
+//
+// Like Gmail's account switcher: every account signed in on this browser
+// keeps its own session. One is current (STORAGE_KEY); the rest wait in
+// ACCOUNTS_KEY. Switching swaps them and reloads, so nothing one account
+// loaded is shown to another.
+
+function readAccounts(): Session[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const list = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) ?? "[]") as Session[];
+    return Array.isArray(list) ? list.filter((s) => s?.token && s?.user && !expired(s)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAccounts(list: Session[]) {
+  if (typeof window === "undefined") return;
+  if (list.length) localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
+  else localStorage.removeItem(ACCOUNTS_KEY);
+}
+
+/** A session just signed in becomes current; the same person waiting in the list is dropped. */
+function signIn(session: Session) {
+  write(session);
+  writeAccounts(readAccounts().filter((s) => s.user.id !== session.user.id));
+  if (typeof window !== "undefined") sessionStorage.removeItem(ADDING_KEY);
+}
+
+/** The other accounts signed in on this browser. */
+export function otherAccounts(): User[] {
+  const me = read()?.user.id;
+  return readAccounts()
+    .filter((s) => s.user.id !== me)
+    .map((s) => s.user);
+}
+
+/** Make another signed-in account the current one. The caller reloads. */
+export function switchAccount(userId: string): boolean {
+  const list = readAccounts();
+  const target = list.find((s) => s.user.id === userId);
+  if (!target) return false;
+  const current = read();
+  writeAccounts([...(current && !expired(current) ? [current] : []), ...list.filter((s) => s.user.id !== userId)]);
+  write(target);
+  return true;
+}
+
+/** Step aside to sign in one more account; the current one waits in the list. */
+export function beginAddAccount() {
+  const current = read();
+  if (current && !expired(current)) {
+    writeAccounts([current, ...readAccounts().filter((s) => s.user.id !== current.user.id)]);
+    sessionStorage.setItem(ADDING_KEY, current.user.id);
+  }
+  write(null);
+}
+
+/** Whether the sign-in page is open to add an account (and can go back to it). */
+export function addingAccount(): User | null {
+  if (typeof window === "undefined") return null;
+  const id = sessionStorage.getItem(ADDING_KEY);
+  return (id && readAccounts().find((s) => s.user.id === id)?.user) || null;
+}
+
+/** Give up adding an account: back to the one we came from. */
+export function cancelAddAccount(): boolean {
+  const back = addingAccount();
+  sessionStorage.removeItem(ADDING_KEY);
+  return back ? switchAccount(back.id) : false;
 }
 
 /** Synchronous gate used by route guards — the server revalidates separately. */
@@ -188,7 +265,7 @@ export async function verifyCode(identifier: string, code: string) {
   }>("/api/auth/verify-code", { identifier, code });
 
   if (data.token && data.user && data.expiresAt) {
-    write({ token: data.token, expiresAt: data.expiresAt, user: data.user });
+    signIn({ token: data.token, expiresAt: data.expiresAt, user: data.user });
   }
   return data;
 }
@@ -204,7 +281,7 @@ export async function adoptToken(token: string): Promise<boolean> {
     });
     if (!res.ok) return false;
     const data = (await res.json()) as { user: User; expiresAt: string | null };
-    write({
+    signIn({
       token,
       expiresAt: data.expiresAt ?? new Date(Date.now() + 30 * 86_400_000).toISOString(),
       user: data.user,
@@ -234,7 +311,11 @@ export async function revalidate(): Promise<boolean> {
   }
 }
 
-export function logout(): void {
+/**
+ * Sign the current account out. Another account signed in on this browser,
+ * if there is one, becomes current (returns its user); otherwise null.
+ */
+export function logout(): User | null {
   const token = getToken();
   if (token) {
     void fetch("/api/auth/session", {
@@ -244,4 +325,9 @@ export function logout(): void {
   }
   write(null);
   if (typeof window !== "undefined") sessionStorage.removeItem(LEGACY_KEY);
+  const [next, ...rest] = readAccounts();
+  if (!next) return null;
+  writeAccounts(rest);
+  write(next);
+  return next.user;
 }
