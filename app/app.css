@@ -1057,10 +1057,9 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
    fades through a soft blur. The landing page skips its entrance on a
    return visit (.no-intro) so the mark doesn't fade in under the glide.
 
-   On /mission, each block's words fade up into place as it's reached
-   (.reveal.is-in .word, each with its own delay --w), and the closing
-   statement lights up word by word with the scroll itself: --p (0 → 1)
-   on .scrub, --i on each word, --n words.
+   On /mission, the story is one narrative; each paragraph's words fade up
+   into place as it's reached (.reveal.is-in .word, each with its own
+   delay --w).
    ────────────────────────────────────────────────────────────────────── */
 .public-backdrop { view-transition-name: bfo-backdrop; }
 .vt-mark { view-transition-name: bfo-mark; }
@@ -1095,16 +1094,6 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 }
 .mission-back:hover { color: #f4ede0; }
 
-.site-cue { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); }
-.site-cue span {
-  display: block;
-  width: 1px;
-  height: 56px;
-  background: linear-gradient(rgba(216, 181, 106, 0), rgba(216, 181, 106, 0.8));
-  background-size: 100% 200%;
-  animation: site-drip 2.4s ease-in-out infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) 1.2s both;
-}
-@keyframes site-drip { from { background-position: 0 100%; } to { background-position: 0 -100%; } }
 
 /* The way in: a quiet glass pill. */
 .mission-link {
@@ -1143,10 +1132,6 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   transition-delay: var(--w, 0s);
 }
 .reveal.is-in .word { opacity: 1; transform: none; filter: none; }
-/* A gradient clipped to text paints as a faint box while anything around it fades, so
-   shimmering words rise as plain ivory and the light comes on once they've settled (.is-lit). */
-.word:has(> .shimmer) { filter: none; }
-.reveal:not(.is-lit) .word > .shimmer { background: none; color: #f4ede0; animation: none; }
 .reveal-block {
   opacity: 0;
   transform: translateY(26px);
@@ -1156,61 +1141,43 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 }
 .reveal-block.is-in { opacity: 1; transform: none; filter: none; }
 
-/* Ivory with a band of gold light passing through. */
-.shimmer {
-  background: linear-gradient(110deg, #f4ede0 0%, #f4ede0 38%, #fff8e6 44%, #d8b56a 50%, #fff8e6 56%, #f4ede0 62%, #f4ede0 100%);
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: site-sheen 7s linear infinite;
+/* Ivory with a band of gold light passing through: a gold copy of the word
+   (::after, from data-text) seen through a mask whose bright band slides
+   across. Only the letters paint, so nothing shows around them. */
+.gold-sheen { position: relative; display: inline-block; }
+.gold-sheen::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: #e8c779;
+  text-shadow: 0 0 18px rgba(216, 181, 106, 0.35);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(110deg, transparent 0%, transparent 40%, #000 50%, transparent 60%, transparent 100%);
+  mask-image: linear-gradient(110deg, transparent 0%, transparent 40%, #000 50%, transparent 60%, transparent 100%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: gold-sheen 7s linear infinite;
   animation-delay: var(--s, 0s);
-  display: inline-block;
 }
-@keyframes site-sheen { from { background-position: 100% 0; } to { background-position: -50% 0; } }
-
-/* The statement: a tall section whose stage stays put while the words light up. */
-.scrub { height: 240vh; }
-.scrub-word {
-  opacity: clamp(0.12, calc(var(--p, 0) * (var(--n) + 6) - var(--i)), 1);
-  transition: opacity 180ms linear;
-}
-.scrub-tail { opacity: clamp(0, calc((var(--p, 0) - 0.82) * 7), 1); transform: translateY(calc((1 - clamp(0, calc((var(--p, 0) - 0.82) * 7), 1)) * 14px)); }
+@keyframes gold-sheen { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: -50% 0; mask-position: -50% 0; } }
 
 /* ── Type ─────────────────────────────────────────────────────────── */
 .site { color: #f4ede0; }
-.mission-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 11px;
-  letter-spacing: 0.42em;
-  text-transform: uppercase;
-  color: rgba(216, 181, 106, 0.85);
-}
-.mission-eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; opacity: 0.6; }
-.mission-hero, .mission-h2, .mission-statement { text-wrap: balance; }
+.mission-hero { text-wrap: balance; }
 .mission-hero { font-size: clamp(42px, 7.4vw, 104px); font-weight: 500; line-height: 1.05; letter-spacing: -0.01em; }
 .mission-italic { font-style: italic; }
-.mission-lede { font-size: clamp(16px, 1.9vw, 21px); line-height: 1.75; color: rgba(244, 237, 224, 0.66); }
-.mission-h2 { font-size: clamp(32px, 4.6vw, 58px); font-weight: 500; line-height: 1.1; color: #f4ede0; }
-.mission-h3 { margin-top: 14px; font-size: clamp(24px, 2.4vw, 30px); font-weight: 500; color: #f4ede0; }
-.mission-body { font-size: clamp(15px, 1.5vw, 17px); line-height: 1.8; color: rgba(244, 237, 224, 0.62); }
-.mission-statement { font-size: clamp(26px, 3.6vw, 46px); font-weight: 500; line-height: 1.32; color: #f4ede0; }
-.mission-coda { font-size: clamp(18px, 2vw, 24px); font-style: italic; color: #d8b56a; }
-/* The story: a chapter per row, its numeral and label held beside the text on wide screens. */
-.chapter { border-top: 1px solid rgba(244, 237, 224, 0.08); }
-.chapter-numeral { display: block; font-size: clamp(44px, 5vw, 64px); line-height: 1; color: #d8b56a; }
-.chapter-label { display: block; margin-top: 14px; font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: rgba(244, 237, 224, 0.5); }
-.chapter-body { font-size: clamp(17px, 1.7vw, 21px); line-height: 1.75; color: rgba(244, 237, 224, 0.7); }
-@media (min-width: 768px) { .chapter-side { position: sticky; top: 120px; align-self: start; } }
+/* The story: one narrative, read straight through. */
+.narrative-title { font-size: clamp(40px, 6.2vw, 84px); }
+.narrative-p { margin-top: 1.5em; font-size: clamp(20px, 2.1vw, 27px); line-height: 1.68; color: rgba(244, 237, 224, 0.82); }
+.narrative-title + .narrative-p { margin-top: 1.8em; }
+.narrative-end { font-style: italic; font-size: clamp(24px, 2.6vw, 34px); color: #f4ede0; }
 .mission-foot { font-size: 10px; letter-spacing: 0.42em; text-transform: uppercase; color: rgba(244, 237, 224, 0.28); }
 
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .word, .reveal-block { opacity: 1; transform: none; filter: none; transition: none; }
-  .shimmer, .site-cue span { animation: none; }
-  .scrub { height: auto; }
-  .scrub-word, .scrub-tail { opacity: 1; transform: none; }
+  .gold-sheen::after { display: none; }
 }
