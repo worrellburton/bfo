@@ -8,24 +8,27 @@ export function meta() {
     { title: "BFO - Mission" },
     {
       name: "description",
-      content: "The Burton Family Office began with people who wanted to help, and it still does. We build and operate companies that help people.",
+      content: "The Burton Family Office owns and operates companies whose work helps people, and shares their profits generously with the people who build them.",
     },
   ];
 }
 
 /**
- * The mission, told as the family office's story in one continuous
- * narrative on the public layout's backdrop. Each paragraph's words fade up
+ * The mission in one continuous narrative on the public layout's backdrop. Each paragraph's words fade up
  * into place as it scrolls into view (.reveal → .is-in), and the last line
  * catches the gold light. Reduced motion shows it all, still.
  */
 
-/** The story, start to finish: one narrative, read straight through. */
+/** The mission, start to finish: one narrative, read straight through. */
 const STORY = [
-  "The Burton Family Office didn't begin with a business plan. It began with people who were generous long before they were in business. When someone needed help, they said yes and worked out the details later. They weren't financiers. They simply believed that what you have is meant to do some good.",
-  "Generosity like that is a good place to start, but good intentions need good management to last. Over the years we learned to keep careful books, to make decisions slowly and well, and to build companies that stand on their own rather than lean on a gift. The heart was always there. The discipline came with time.",
-  "What hasn't changed is the question. Every decision still starts where theirs did: who does this help? We answer it now with more experience and over a longer horizon, but we ask it the same way, and we still mean it.",
-  "So today we own and operate companies whose work is helping people, whether that's getting well, finding a place to call home, or caring for the land and the people on it. We run them carefully, we stay for the long haul, and the people who work in them share in what we build together.",
+  "The Burton Family Office owns and operates companies that have one thing in common: their work helps people. Not as a side project or a line in a brochure, but as the reason the company exists in the first place.",
+  "Some of our companies help people get well. Some give people a safe place to live. Some take care of land, and of the people who live and work on it. They are different businesses with the same purpose. When they do well, someone's life gets a little better.",
+  "We believe the people who make that happen should share in it. So we share our profits with our employees, generously and on purpose. When one of our companies has a good year, the people who made it a good year feel it too, not just the owners.",
+  "That means a real share of what the company earns, paid to the people doing the work, on the front line and behind the scenes alike. Everyone who builds one of our companies has a stake in how it does, and a reason to be proud of it.",
+  "It isn't charity, and it isn't a perk. It's how we think a good company should work. People who share in the results take more care, stay longer, and treat the people they serve the way they'd want to be treated. Generosity turns out to be good business.",
+  "It's also where we come from. The family behind this office was generous long before it was in business. Over the years we added the discipline: careful books, patient decisions, and companies strong enough to stand on their own. The generosity never left.",
+  "So we keep it simple. We look for companies whose purpose is to help people. We run them carefully and hold them for the long haul. And we make sure the people doing the work share in what that work earns.",
+  "We measure ourselves the same way. Not only by what a company returns, but by who it helped and how its people are doing. When both are growing, we know we're doing our job.",
 ];
 
 const reduced = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -111,9 +114,9 @@ export default function Mission() {
       {/* ── The story ──────────────────────────────────────────────── */}
       <article className="narrative mx-auto max-w-[780px] px-6 pb-24 pt-[14vh] sm:px-10">
         <h1 className="mission-hero narrative-title reveal" style={serif}>
-          <Words text="It started with people" step={0.08} delay={0.3} />{" "}
+          <Words text="Companies that help people." step={0.08} delay={0.3} />{" "}
           <span className="mission-italic">
-            <Words text="who wanted to help." shimmer step={0.08} delay={0.65} />
+            <Words text="Profits shared with the people who build them." shimmer step={0.07} delay={0.65} />
           </span>
         </h1>
         {STORY.map((para, i) => (
@@ -122,7 +125,7 @@ export default function Mission() {
           </p>
         ))}
         <p className="narrative-p narrative-end reveal" style={serif}>
-          <Words text="Same heart. More business sense." shimmer step={0.09} delay={0.1} />
+          <Words text="Help people. Share generously. Do excellent work." shimmer step={0.09} delay={0.1} />
         </p>
       </article>
 
