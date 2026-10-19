@@ -10,23 +10,16 @@ export function meta() {
     { name: "robots", content: "noindex, nofollow" },
     {
       name: "description",
-      content: "The Burton Family Office builds and operates companies with a purpose, to help human beings, and shares their profits generously with the people in them.",
+      content: "Companies with purpose. Profits shared with the people behind them.",
     },
   ];
 }
 
 /**
- * The mission, short and plain, on the public layout's backdrop. Each
- * paragraph's words fade up into place as it scrolls into view (.reveal →
- * .is-in), and the last line catches the gold light. Reduced motion shows
- * it all, still.
+ * The mission, in two lines, on the public layout's backdrop. The words
+ * fade up into place (.reveal → .is-in) and the second line catches the
+ * gold light. Reduced motion shows it still.
  */
-
-/** The mission: short, read straight through. */
-const STORY = [
-  "The Burton Family Office builds and operates companies with a purpose: to help human beings.",
-  "We believe the people who do that work should share in what it earns. So we share our profits generously with the people in our companies, because a company that helps people should take care of its own people first.",
-];
 
 const reduced = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -108,8 +101,8 @@ export default function Mission() {
         </Link>
       </header>
 
-      {/* ── The story ──────────────────────────────────────────────── */}
-      <article className="narrative mx-auto max-w-[780px] px-6 pb-24 pt-[14vh] sm:px-10">
+      {/* ── The mission, in two lines ───────────────────────────── */}
+      <main className="mx-auto flex min-h-[calc(100dvh-140px)] max-w-[1180px] items-center px-6 pb-[10vh] sm:px-10">
         <h1 className="mission-hero narrative-title reveal" style={serif}>
           <Words text="Companies with purpose." step={0.08} delay={0.3} />
           <br />
@@ -117,25 +110,7 @@ export default function Mission() {
             <Words text="Profits shared with the people behind them." shimmer step={0.07} delay={0.6} />
           </span>
         </h1>
-        {STORY.map((para, i) => (
-          <p key={i} className="narrative-p reveal" style={serif}>
-            <Words text={para} step={0.012} delay={i === 0 ? 1.1 : 0.05} />
-          </p>
-        ))}
-        <p className="narrative-p narrative-end reveal" style={serif}>
-          <Words text="Help people. Share generously." shimmer step={0.09} delay={0.1} />
-        </p>
-      </article>
-
-      <footer className="flex flex-col items-center gap-6 px-6 pb-14 pt-10 text-center">
-        <Link to="/" viewTransition prefetch="render" className="mission-link">
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-          </svg>
-          <span>Home</span>
-        </Link>
-        <p className="mission-foot">Burton Family Office</p>
-      </footer>
+      </main>
     </div>
   );
 }
