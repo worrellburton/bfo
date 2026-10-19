@@ -8,17 +8,16 @@ import {
   DOC_LABEL,
   docKindOf,
   formatAddress as formatPalmAddress,
+  lookupStateRecord,
   normalizeName,
   openPalmDocument,
   palmCall,
   PalmCallError,
   palmJurisdiction,
   PalmUnavailable,
-  pickRegistryMatch,
   RA_STATUS,
   sortDocuments,
   stateFindings,
-  toStateRecord,
   type PalmDocument,
   type PalmLink,
   type PalmMode,
@@ -1015,39 +1014,18 @@ export function useEntityPage() {
     setPalmBusy("record");
     setPalmError("");
     try {
-      let number = choice ? choice.registration_number : current.fileNumber;
-      let where = choice?.registration_jurisdiction || jurisdiction;
-      if (choice && !number && choice.palm_id) {
-        // A picked entry without its number: look that exact entry up by its Palm ID.
-        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { palmId: choice.palm_id, mode });
-        number = results.find((r) => r.palm_id === choice.palm_id)?.registration_number;
-        where = results[0]?.registration_jurisdiction || where;
-      }
-      if (choice && !number) {
-        if (epoch === palmEpoch.current) setPalmError("That registry entry has no file number. Add it by hand under Edit, then check again.");
+      const found = await lookupStateRecord(current, mode, choice);
+      if (epoch !== palmEpoch.current) return;
+      if (found.kind === "error") {
+        setPalmError(found.message);
         return;
       }
-      if (!number) {
-        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: current.name, jurisdiction, mode });
-        if (epoch !== palmEpoch.current) return;
-        const match = pickRegistryMatch(results, current.name, jurisdiction);
-        if (!match) {
-          setRegistryChoices(results);
-          if (!results.length) setPalmError(`No ${current.state} registry entry matched “${current.name}”. Add the state file number under Edit and try again.`);
-          return;
-        }
-        number = match.registration_number;
-        where = match.registration_jurisdiction || jurisdiction;
-      }
-      if (!number) {
-        setPalmError("The registry result had no file number. Add it by hand under Edit.");
+      if (found.kind === "choices") {
+        setRegistryChoices(found.results);
+        if (found.message) setPalmError(found.message);
         return;
       }
-      const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number, mode });
-      const snapshot = toStateRecord(record, mode);
-      const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
-      if (mode === "live" && !current.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
-      await patchAsset(patch);
+      await patchAsset(found.patch);
       if (epoch === palmEpoch.current) setRegistryChoices(null);
     } catch (err) {
       if (epoch === palmEpoch.current) showPalmError(err);
