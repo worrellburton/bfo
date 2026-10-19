@@ -9,6 +9,8 @@ import {
   EIN_ACTIVITIES,
   EMPTY_ADDRESS,
   emptyDraft,
+  officeAddress,
+  sameAddress,
   US_STATES,
   type FormationAddress,
   type FormationDraft,
@@ -47,21 +49,32 @@ export function FormEntityWizard({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Existing entities, for "owned by". */
-  entities: { id: string; name: string }[];
+  /** Existing entities, for "owned by" (and, from their addresses, the family's office). */
+  entities: { id: string; name: string; address?: string }[];
   onCreated: (assetId: string) => void;
 }) {
   if (!open) return null;
   return <Wizard onClose={onClose} entities={entities} onCreated={onCreated} />;
 }
 
-function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entities: { id: string; name: string }[]; onCreated: (assetId: string) => void }) {
+function Wizard({
+  onClose,
+  entities,
+  onCreated,
+}: {
+  onClose: () => void;
+  entities: { id: string; name: string; address?: string }[];
+  onCreated: (assetId: string) => void;
+}) {
   const t = useTone();
   const me = getUser();
   const panelRef = useRef<HTMLDivElement>(null);
   const [step, setStep] = useState(0);
+  // The office the family's entities share starts as the new entity's principal office.
+  const [office] = useState(() => officeAddress(entities.map((e) => e.address)));
   const [draft, setDraft] = useState<FormationDraft>(() => {
     const d = emptyDraft();
+    if (office) d.principal = { ...office };
     d.contact = { name: me?.name ?? "", email: me?.email ?? "", phone: me?.phone ?? "" };
     d.email = me?.email ?? "";
     return d;
@@ -308,8 +321,23 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
         return (
           <div className="space-y-5">
             <div>
-              <h3 className={`mb-2 text-[13px] font-semibold ${t.text}`}>Principal office</h3>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className={`text-[13px] font-semibold ${t.text}`}>Principal office</h3>
+                {office && (
+                  <button
+                    type="button"
+                    onClick={() => set({ principal: { ...office } })}
+                    disabled={sameAddress(draft.principal, office)}
+                    className={`cursor-pointer text-[12px] font-medium disabled:cursor-default disabled:opacity-50 ${t.dark ? "text-indigo-300 hover:underline" : "text-indigo-600 hover:underline"}`}
+                  >
+                    {sameAddress(draft.principal, office) ? "Our office address" : "Use our office address"}
+                  </button>
+                )}
+              </div>
               {addressFields(draft.principal, (principal) => set({ principal }))}
+              {office && sameAddress(draft.principal, office) && (
+                <p className={`mt-2 text-[12px] ${t.muted}`}>The address the family's other entities use. Change it for this one if it has its own office.</p>
+              )}
             </div>
             <div>
               <label className="flex cursor-pointer items-center gap-2.5">
