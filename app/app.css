@@ -1048,20 +1048,54 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 }
 
 /* ──────────────────────────────────────────────────────────────────────
-   burtonfamilyoffice.com (landing.tsx): one page. It opens on BFO; as the
-   page scrolls, the mark eases back (--hero, 0 → 1 over the first screen)
-   and the mission's words fade into place (.reveal.is-in .word, each with
-   its own delay --w). The closing statement lights up word by word with
-   the scroll itself: --p (0 → 1) on .scrub, --i on each word, --n words.
+   The public site: / (landing.tsx) and /mission (mission.tsx), under one
+   layout (public-layout.tsx) whose backdrop mounts once.
+
+   Moving between the two is a view transition: the backdrop is its own
+   layer that doesn't animate (the orbs and particles keep going), the BFO
+   mark (.vt-mark) glides between its place on each page, and the rest
+   fades through a soft blur. The landing page skips its entrance on a
+   return visit (.no-intro) so the mark doesn't fade in under the glide.
+
+   On /mission, each block's words fade up into place as it's reached
+   (.reveal.is-in .word, each with its own delay --w), and the closing
+   statement lights up word by word with the scroll itself: --p (0 → 1)
+   on .scrub, --i on each word, --n words.
    ────────────────────────────────────────────────────────────────────── */
-.site-hero { position: relative; }
-.site-hero-inner {
-  opacity: clamp(0, calc(1 - var(--hero, 0) * 1.35), 1);
-  transform: translateY(calc(var(--hero, 0) * -70px)) scale(calc(1 - var(--hero, 0) * 0.08));
-  filter: blur(calc(var(--hero, 0) * 8px));
-  will-change: transform, opacity;
+.public-backdrop { view-transition-name: bfo-backdrop; }
+.vt-mark { view-transition-name: bfo-mark; }
+::view-transition-group(bfo-backdrop),
+::view-transition-old(bfo-backdrop),
+::view-transition-new(bfo-backdrop) { animation: none; }
+::view-transition-old(bfo-backdrop) { display: none; }
+::view-transition-old(root) { animation: public-out 420ms cubic-bezier(0.4, 0, 1, 1) both; }
+::view-transition-new(root) { animation: public-in 760ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
+::view-transition-group(bfo-mark) { animation-duration: 820ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+::view-transition-old(bfo-mark),
+::view-transition-new(bfo-mark) { animation-duration: 820ms; height: 100%; object-fit: contain; }
+@keyframes public-out { to { opacity: 0; filter: blur(10px); transform: scale(0.985); } }
+@keyframes public-in { from { opacity: 0; filter: blur(12px); transform: scale(1.015); } }
+.no-intro .brand-lockup-hero,
+.no-intro .landing-sub,
+.no-intro .landing-fade-in { animation: none; }
+
+/* The mission page's header: the small mark (home) and a Home link. */
+.mission-mark .brand-lockup { animation: none; }
+.mission-mark .brand-lockup-name { font-size: 8px; letter-spacing: 0.36em; margin-right: -0.36em; padding-bottom: 6px; }
+.mission-mark .brand-lockup-mark { font-size: 30px; }
+.mission-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(244, 237, 224, 0.55);
+  transition: color 250ms ease;
 }
-.site-cue { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); opacity: clamp(0, calc(1 - var(--hero, 0) * 4), 1); }
+.mission-back:hover { color: #f4ede0; }
+
+.site-cue { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); }
 .site-cue span {
   display: block;
   width: 1px;
@@ -1071,24 +1105,6 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   animation: site-drip 2.4s ease-in-out infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) 1.2s both;
 }
 @keyframes site-drip { from { background-position: 0 100%; } to { background-position: 0 -100%; } }
-
-/* Past the first screen: a small mark, top left, back to the top. */
-.site-mark {
-  position: fixed;
-  top: 18px;
-  left: 22px;
-  z-index: 20;
-  padding: 8px 12px;
-  border-radius: 14px;
-  opacity: 0;
-  transform: translateY(-6px);
-  pointer-events: none;
-  cursor: pointer;
-  transition: opacity 500ms ease, transform 500ms ease, background 300ms ease;
-}
-.site-mark-on { opacity: 1; transform: none; pointer-events: auto; }
-.site-mark:hover { background: rgba(255, 255, 255, 0.05); }
-.site-mark .brand-lockup-mark { font-size: 22px; letter-spacing: 0.06em; }
 
 /* The way in: a quiet glass pill. */
 .mission-link {
@@ -1127,8 +1143,10 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   transition-delay: var(--w, 0s);
 }
 .reveal.is-in .word { opacity: 1; transform: none; filter: none; }
-/* A gradient clipped to text paints as a box under a running filter, so shimmering words rise without the blur. */
+/* A gradient clipped to text paints as a faint box while anything around it fades, so
+   shimmering words rise as plain ivory and the light comes on once they've settled (.is-lit). */
 .word:has(> .shimmer) { filter: none; }
+.reveal:not(.is-lit) .word > .shimmer { background: none; color: #f4ede0; animation: none; }
 .reveal-block {
   opacity: 0;
   transform: translateY(26px);
@@ -1171,53 +1189,26 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   color: rgba(216, 181, 106, 0.85);
 }
 .mission-eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; opacity: 0.6; }
-.mission-hero, .mission-h2, .mission-turn, .mission-statement { text-wrap: balance; }
+.mission-hero, .mission-h2, .mission-statement { text-wrap: balance; }
 .mission-hero { font-size: clamp(42px, 7.4vw, 104px); font-weight: 500; line-height: 1.05; letter-spacing: -0.01em; }
 .mission-italic { font-style: italic; }
 .mission-lede { font-size: clamp(16px, 1.9vw, 21px); line-height: 1.75; color: rgba(244, 237, 224, 0.66); }
 .mission-h2 { font-size: clamp(32px, 4.6vw, 58px); font-weight: 500; line-height: 1.1; color: #f4ede0; }
 .mission-h3 { margin-top: 14px; font-size: clamp(24px, 2.4vw, 30px); font-weight: 500; color: #f4ede0; }
 .mission-body { font-size: clamp(15px, 1.5vw, 17px); line-height: 1.8; color: rgba(244, 237, 224, 0.62); }
-.mission-turn { font-size: clamp(26px, 3.2vw, 40px); font-style: italic; line-height: 1.25; }
-.mission-source { font-size: 11.5px; color: rgba(244, 237, 224, 0.34); letter-spacing: 0.02em; }
 .mission-statement { font-size: clamp(26px, 3.6vw, 46px); font-weight: 500; line-height: 1.32; color: #f4ede0; }
-.mission-coda { font-size: clamp(18px, 2vw, 24px); font-style: italic; }
+.mission-coda { font-size: clamp(18px, 2vw, 24px); font-style: italic; color: #d8b56a; }
+/* The story: a chapter per row, its numeral and label held beside the text on wide screens. */
+.chapter { border-top: 1px solid rgba(244, 237, 224, 0.08); }
+.chapter-numeral { display: block; font-size: clamp(44px, 5vw, 64px); line-height: 1; color: #d8b56a; }
+.chapter-label { display: block; margin-top: 14px; font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: rgba(244, 237, 224, 0.5); }
+.chapter-body { font-size: clamp(17px, 1.7vw, 21px); line-height: 1.75; color: rgba(244, 237, 224, 0.7); }
+@media (min-width: 768px) { .chapter-side { position: sticky; top: 120px; align-self: start; } }
 .mission-foot { font-size: 10px; letter-spacing: 0.42em; text-transform: uppercase; color: rgba(244, 237, 224, 0.28); }
 
-.mission-stat {
-  padding: 34px 30px 30px;
-  border-radius: 24px;
-  border: 1px solid rgba(244, 237, 224, 0.09);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
-.mission-figure {
-  font-size: clamp(64px, 8vw, 104px);
-  font-weight: 500;
-  line-height: 1;
-  font-variant-numeric: tabular-nums lining-nums;
-  background: linear-gradient(120deg, #a77c32, #f3dc9a 45%, #c9a24f 70%, #fff1c4);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.mission-pct { font-size: 0.5em; margin-left: 4px; vertical-align: 0.55em; }
-.mission-stat-label { margin-top: 16px; font-size: 15px; line-height: 1.6; color: rgba(244, 237, 224, 0.68); }
-
-.mission-grid { background: rgba(244, 237, 224, 0.08); border: 1px solid rgba(244, 237, 224, 0.08); }
-.mission-principle {
-  padding: 40px 36px 42px;
-  background: rgba(5, 5, 8, 0.82);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  transition: background 400ms ease;
-}
-.mission-principle:hover { background: rgba(18, 16, 12, 0.86); }
-.mission-numeral { font-size: 15px; letter-spacing: 0.08em; color: #d8b56a; }
 
 @media (prefers-reduced-motion: reduce) {
-  .site-hero-inner { opacity: 1; transform: none; filter: none; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .word, .reveal-block { opacity: 1; transform: none; filter: none; transition: none; }
   .shimmer, .site-cue span { animation: none; }
   .scrub { height: auto; }
