@@ -6,7 +6,23 @@ import { authFetch } from "./auth";
  * per page load) and the studio calls that make it (owner/admin).
  */
 
-export type Logo = { styleId: string; glbUrl: string; usdzUrl?: string | null; posterUrl: string | null; imageUrl: string; updatedAt: number };
+export type Finish = "gold" | "ivory" | "silver";
+export type BrandFont = { family: string; weight: number; css: string };
+export type Logo = {
+  styleId: string;
+  kind?: "lockup" | "3d";
+  font?: BrandFont;
+  finish?: Finish;
+  glbUrl?: string | null;
+  usdzUrl?: string | null;
+  posterUrl?: string | null;
+  imageUrl: string;
+  updatedAt: number;
+};
+
+/** The 3D model to show, if this logo is one (logos saved before lockups had no kind). */
+export const modelOf = (logo: Logo | null | undefined): { glbUrl: string; posterUrl: string | null } | null =>
+  logo?.glbUrl && logo.kind !== "lockup" ? { glbUrl: logo.glbUrl, posterUrl: logo.posterUrl ?? null } : null;
 export type SheetEntry = { imageUrl: string; imagePath: string; prompt: string; model: string; createdAt: number };
 export type ModelState = {
   taskId: string;
@@ -21,7 +37,7 @@ export type ModelState = {
 };
 export type Studio = {
   configured: { openai: boolean; meshy: boolean };
-  styles: { id: string; name: string; blurb: string; prompt: string }[];
+  styles: { id: string; name: string; blurb: string; font: BrandFont; finish: Finish; prompt: string }[];
   sheet: { styles: Record<string, SheetEntry>; generatedAt: number };
   models: Record<string, ModelState | null>;
   logo: Logo | null;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ParticleCanvas } from "../particles";
-import { useBrandLogo } from "../brand";
+import { modelOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 
 export function meta() {
@@ -15,6 +16,7 @@ export default function Landing() {
   // particle field is a JS animation loop, so leave it out entirely.
   const [still, setStill] = useState(false);
   const logo = useBrandLogo();
+  const model = modelOf(logo);
   useEffect(() => {
     setStill(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
   }, []);
@@ -32,9 +34,13 @@ export default function Landing() {
 
       {/* Wordmark */}
       <div className="relative z-10 text-center select-none px-6">
-        {logo ? (
+        {model ? (
           <h1 className="landing-logo mx-auto" aria-label="BFO">
-            <Logo3D src={logo.glbUrl} poster={logo.posterUrl} className="landing-logo-model" interactive spin={!still} exposure={1.1} />
+            <Logo3D src={model.glbUrl} poster={model.posterUrl} className="landing-logo-model" interactive spin={!still} exposure={1.1} />
+          </h1>
+        ) : logo?.font ? (
+          <h1 className="m-0">
+            <BrandLockup font={logo.font} finish={logo.finish} size="hero" />
           </h1>
         ) : (
           <h1 className="landing-title font-bold tracking-tight leading-none">BFO</h1>

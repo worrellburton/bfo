@@ -56,7 +56,7 @@ Set these in the Vercel project:
 | `BIRD_WEBHOOK_SECRET` | *optional* — signing secret of the Bird webhook that delivers new mail to `/api/mail-webhook`; without it, the inbox fetches new mail when it checks |
 | `MAIL_DOMAIN` | *optional* — the domain inboxes live on (default `burtonfamilyoffice.com`) |
 | `PALM_API_KEY` | Palm (getpalm.com): the state's record of each entity, Palm as registered agent, and forming new entities. A `sk_test_…` key files nothing with any state; `sk_live_…` does |
-| `OPENAI_API_KEY` | drawing the logo style sheet on Settings (gpt-image) |
+| `OPENAI_API_KEY` | drawing the logo reference sheet on Settings (gpt-image): six "Burton Family Office / BFO" lockups, each in a typeface the site can set |
 | `MESHY_API_KEY` | turning the chosen logo into a 3D model (Meshy image-to-3D) |
 | `PALM_WEBHOOK_SECRET` | *optional* — signing secret of the Palm webhook at `/api/palm-webhook` (agent mail, filing progress) |
 

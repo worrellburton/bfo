@@ -19,7 +19,8 @@ import { useMailCount } from "../mail-client";
 import { resetStore } from "../store";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
-import { useBrandLogo } from "../brand";
+import { modelOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
 
@@ -177,6 +178,7 @@ function ShellShortcuts({ pages, openPalette, openSheet }: { pages: PageLink[]; 
 
 export default function AppLayout() {
   const logo = useBrandLogo();
+  const logoModel = modelOf(logo);
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggle } = useTheme();
@@ -401,9 +403,13 @@ export default function AppLayout() {
       >
         {/* Top: the wordmark */}
         <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
-          {logo ? (
+          {logoModel ? (
             <span className="sidebar-logo" aria-label="BFO">
-              <Logo3D src={logo.glbUrl} poster={logo.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
+              <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
+            </span>
+          ) : logo?.font ? (
+            <span className={`app-shell-brand sidebar-lockup ${showLabels ? "" : "sidebar-lockup-sm"}`}>
+              <BrandLockup font={logo.font} finish={logo.finish} size="mark" />
             </span>
           ) : (
             <span className={`sidebar-brand ${showLabels ? "" : "sidebar-brand-sm"}`}>BFO</span>
@@ -681,7 +687,15 @@ export default function AppLayout() {
             </svg>
           </button>
           <NavLink to={homePath(user)} aria-label="BFO home" className="mobile-brand">
-            {logo?.posterUrl ? <img src={logo.posterUrl} alt="BFO" className="mobile-logo" draggable={false} /> : "BFO"}
+            {logoModel?.posterUrl ? (
+              <img src={logoModel.posterUrl} alt="BFO" className="mobile-logo" draggable={false} />
+            ) : logo?.font ? (
+              <span className="app-shell-brand mobile-lockup">
+                <BrandLockup font={logo.font} finish={logo.finish} size="mark" />
+              </span>
+            ) : (
+              "BFO"
+            )}
           </NavLink>
           {!emailOnly && (
             <button

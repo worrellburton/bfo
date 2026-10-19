@@ -255,6 +255,50 @@ html.light {
 .sidebar-logo-model { display: block; width: 96px; height: 44px; transition: width 180ms ease, height 180ms ease; }
 .sidebar-logo-model-sm { width: 44px; height: 36px; }
 .mobile-logo { display: block; height: 30px; width: auto; max-width: 110px; object-fit: contain; }
+/* The chosen lockup as live type (app/brand-lockup.tsx): name above, BFO below. */
+.brand-lockup { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; }
+.brand-lockup-name {
+  font-size: clamp(0.7rem, 2.6vw, 1.15rem);
+  letter-spacing: 0.42em;
+  margin-right: -0.42em; /* recenter after tracking */
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding-bottom: 0.9em;
+  border-bottom: 1px solid currentColor;
+  margin-bottom: 0.35em;
+  opacity: 0.85;
+}
+.brand-lockup-hero .brand-lockup-mark { font-size: clamp(6rem, 26vw, 13rem); letter-spacing: 0.04em; margin-right: -0.04em; }
+.brand-lockup-hero { animation: landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.brand-lockup-mark { white-space: nowrap; }
+/* Finishes: metal as a gradient through the letters, ivory as flat warm white.
+   The name line takes the same colour as solid text so its rule shows. */
+.brand-gold { color: #d8b56a; }
+.brand-gold .brand-lockup-mark {
+  background: linear-gradient(115deg, #a77c32 10%, #f3dc9a 38%, #c9a24f 55%, #fff1c4 68%, #a77c32 90%);
+  background-size: 220% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: landing-shimmer 12s linear infinite;
+}
+.brand-silver { color: #d4d8de; }
+.brand-silver .brand-lockup-mark {
+  background: linear-gradient(115deg, #8c939c 10%, #f4f6f8 38%, #aab1b9 55%, #ffffff 68%, #8c939c 90%);
+  background-size: 220% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: landing-shimmer 12s linear infinite;
+}
+.brand-ivory { color: #f4ede0; }
+/* On the light app shell, the same finishes in darker ink (the landing page is always black). */
+html.light .app-shell-brand .brand-gold { color: #8a6424; }
+html.light .app-shell-brand .brand-gold .brand-lockup-mark { background-image: linear-gradient(115deg, #6f4e17 10%, #b8893a 45%, #7d5a1d 90%); }
+html.light .app-shell-brand .brand-silver { color: #3a3f46; }
+html.light .app-shell-brand .brand-silver .brand-lockup-mark { background-image: linear-gradient(115deg, #2b3036 10%, #6b7380 45%, #2b3036 90%); }
+html.light .app-shell-brand .brand-ivory { color: #1c1915; }
+.sidebar-lockup .brand-lockup-mark { font-size: 26px; letter-spacing: 0.06em; transition: font-size 180ms ease; }
+@media (min-width: 1024px) { .sidebar-lockup-sm .brand-lockup-mark { font-size: 14px; } }
+.mobile-lockup .brand-lockup-mark { font-size: 19px; letter-spacing: 0.12em; }
+@media (prefers-reduced-motion: reduce) {
+  .brand-lockup-hero, .brand-gold .brand-lockup-mark, .brand-silver .brand-lockup-mark { animation: none; }
+  .sidebar-lockup .brand-lockup-mark { transition: none; }
+}
 .landing-title-sm {
   font-size: clamp(3.25rem, 13vw, 4.5rem);
 }
