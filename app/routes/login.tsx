@@ -2,6 +2,8 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, adoptToken, homePath, isAuthenticated, profileComplete, requestCode, verifyCode } from "../auth";
 import { ParticleCanvas } from "../particles";
+import { lockupOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 
 export function meta() {
   return [{ title: "Sign in — BFO" }];
@@ -57,6 +59,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(false);
+  const lockup = lockupOf(useBrandLogo());
   const [success, setSuccess] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const idInput = useRef<HTMLInputElement>(null);
@@ -163,8 +166,8 @@ export default function Login() {
       <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
 
       <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
-        <h1 className="landing-title landing-title-sm font-bold tracking-tight leading-none select-none">
-          BFO
+        <h1 className="m-0 select-none">
+          <BrandLockup font={lockup.font} finish={lockup.finish} size="compact" />
         </h1>
 
         <div className="auth-card mt-10 p-6 text-left">

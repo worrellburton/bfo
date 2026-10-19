@@ -255,6 +255,11 @@ html.light {
 .sidebar-logo-model { display: block; width: 96px; height: 44px; transition: width 180ms ease, height 180ms ease; }
 .sidebar-logo-model-sm { width: 44px; height: 36px; }
 .mobile-logo { display: block; height: 30px; width: auto; max-width: 110px; object-fit: contain; }
+/* The brand typeface: Playfair Display (the Editorial lockup) unless the
+   logo studio picks another, which overrides this from brand-lockup.tsx. */
+:root { --font-brand: "Playfair Display", Georgia, serif; }
+.font-brand { font-family: var(--font-brand); }
+
 /* The chosen lockup as live type (app/brand-lockup.tsx): name above, BFO below. */
 .brand-lockup { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; }
 .brand-lockup-name {
@@ -269,7 +274,9 @@ html.light {
   opacity: 0.85;
 }
 .brand-lockup-hero .brand-lockup-mark { font-size: clamp(6rem, 26vw, 13rem); letter-spacing: 0.04em; margin-right: -0.04em; }
-.brand-lockup-hero { animation: landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.brand-lockup-compact .brand-lockup-name { font-size: clamp(0.6rem, 2.4vw, 0.75rem); }
+.brand-lockup-compact .brand-lockup-mark { font-size: clamp(3.5rem, 15vw, 5rem); letter-spacing: 0.04em; margin-right: -0.04em; }
+.brand-lockup-hero, .brand-lockup-compact { animation: landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .brand-lockup-mark { white-space: nowrap; }
 /* Finishes: metal as a gradient through the letters, ivory as flat warm white.
    The name line takes the same colour as solid text so its rule shows. */

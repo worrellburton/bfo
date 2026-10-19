@@ -20,6 +20,16 @@ export type Logo = {
   updatedAt: number;
 };
 
+/** The house logo: the Editorial lockup (Playfair Display, ivory), shown until the studio picks another. */
+export const DEFAULT_LOCKUP: { font: BrandFont; finish: Finish } = {
+  font: { family: "Playfair Display", weight: 600, css: "Playfair+Display:ital,wght@0,400..900;1,400..900" },
+  finish: "ivory",
+};
+
+/** The lockup to set in type: the chosen one, else the house logo. */
+export const lockupOf = (logo: Logo | null | undefined): { font: BrandFont; finish: Finish } =>
+  logo?.font && logo.kind !== "3d" ? { font: logo.font, finish: logo.finish ?? "ivory" } : DEFAULT_LOCKUP;
+
 /** The 3D model to show, if this logo is one (logos saved before lockups had no kind). */
 export const modelOf = (logo: Logo | null | undefined): { glbUrl: string; posterUrl: string | null } | null =>
   logo?.glbUrl && logo.kind !== "lockup" ? { glbUrl: logo.glbUrl, posterUrl: logo.posterUrl ?? null } : null;

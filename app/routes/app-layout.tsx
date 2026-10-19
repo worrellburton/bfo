@@ -19,7 +19,7 @@ import { useMailCount } from "../mail-client";
 import { resetStore } from "../store";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
-import { modelOf, useBrandLogo } from "../brand";
+import { lockupOf, modelOf, useBrandLogo } from "../brand";
 import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
@@ -179,6 +179,7 @@ function ShellShortcuts({ pages, openPalette, openSheet }: { pages: PageLink[]; 
 export default function AppLayout() {
   const logo = useBrandLogo();
   const logoModel = modelOf(logo);
+  const lockup = lockupOf(logo);
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggle } = useTheme();
@@ -407,12 +408,10 @@ export default function AppLayout() {
             <span className="sidebar-logo" aria-label="BFO">
               <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
             </span>
-          ) : logo?.font ? (
-            <span className={`app-shell-brand sidebar-lockup ${showLabels ? "" : "sidebar-lockup-sm"}`}>
-              <BrandLockup font={logo.font} finish={logo.finish} size="mark" />
-            </span>
           ) : (
-            <span className={`sidebar-brand ${showLabels ? "" : "sidebar-brand-sm"}`}>BFO</span>
+            <span className={`app-shell-brand sidebar-lockup ${showLabels ? "" : "sidebar-lockup-sm"}`}>
+              <BrandLockup font={lockup.font} finish={lockup.finish} size="mark" />
+            </span>
           )}
           <button
             type="button"
@@ -689,12 +688,10 @@ export default function AppLayout() {
           <NavLink to={homePath(user)} aria-label="BFO home" className="mobile-brand">
             {logoModel?.posterUrl ? (
               <img src={logoModel.posterUrl} alt="BFO" className="mobile-logo" draggable={false} />
-            ) : logo?.font ? (
-              <span className="app-shell-brand mobile-lockup">
-                <BrandLockup font={logo.font} finish={logo.finish} size="mark" />
-              </span>
             ) : (
-              "BFO"
+              <span className="app-shell-brand mobile-lockup">
+                <BrandLockup font={lockup.font} finish={lockup.finish} size="mark" />
+              </span>
             )}
           </NavLink>
           {!emailOnly && (

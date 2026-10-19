@@ -35,8 +35,8 @@ export function BrandLockup({
 }: {
   font: BrandFont;
   finish?: Finish;
-  /** hero: the landing page; mark: just "BFO", sized by the caller's class. */
-  size: "hero" | "mark";
+  /** hero: the landing page; compact: above the sign-in card; mark: just "BFO", sized by the caller's class. */
+  size: "hero" | "compact" | "mark";
   name?: boolean;
   className?: string;
 }) {
@@ -44,7 +44,7 @@ export function BrandLockup({
   const family = { fontFamily: `"${font.family}", Georgia, serif`, fontWeight: font.weight };
   return (
     <span className={`brand-lockup brand-lockup-${size} brand-${finish} ${className}`} style={family} aria-label="Burton Family Office">
-      {name && size === "hero" && <span className="brand-lockup-name" aria-hidden>Burton Family Office</span>}
+      {name && size !== "mark" && <span className="brand-lockup-name" aria-hidden>Burton Family Office</span>}
       <span className="brand-lockup-mark" aria-hidden>BFO</span>
     </span>
   );
