@@ -8,27 +8,22 @@ export function meta() {
     { title: "BFO - Mission" },
     {
       name: "description",
-      content: "The Burton Family Office owns and operates companies whose work helps people, and shares their profits generously with the people who build them.",
+      content: "The Burton Family Office builds and operates companies with a purpose, to help human beings, and shares their profits generously with the people in them.",
     },
   ];
 }
 
 /**
- * The mission in one continuous narrative on the public layout's backdrop. Each paragraph's words fade up
- * into place as it scrolls into view (.reveal → .is-in), and the last line
- * catches the gold light. Reduced motion shows it all, still.
+ * The mission, short and plain, on the public layout's backdrop. Each
+ * paragraph's words fade up into place as it scrolls into view (.reveal →
+ * .is-in), and the last line catches the gold light. Reduced motion shows
+ * it all, still.
  */
 
-/** The mission, start to finish: one narrative, read straight through. */
+/** The mission: short, read straight through. */
 const STORY = [
-  "The Burton Family Office owns and operates companies that have one thing in common: their work helps people. Not as a side project or a line in a brochure, but as the reason the company exists in the first place.",
-  "Some of our companies help people get well. Some give people a safe place to live. Some take care of land, and of the people who live and work on it. They are different businesses with the same purpose. When they do well, someone's life gets a little better.",
-  "We believe the people who make that happen should share in it. So we share our profits with our employees, generously and on purpose. When one of our companies has a good year, the people who made it a good year feel it too, not just the owners.",
-  "That means a real share of what the company earns, paid to the people doing the work, on the front line and behind the scenes alike. Everyone who builds one of our companies has a stake in how it does, and a reason to be proud of it.",
-  "It isn't charity, and it isn't a perk. It's how we think a good company should work. People who share in the results take more care, stay longer, and treat the people they serve the way they'd want to be treated. Generosity turns out to be good business.",
-  "It's also where we come from. The family behind this office was generous long before it was in business. Over the years we added the discipline: careful books, patient decisions, and companies strong enough to stand on their own. The generosity never left.",
-  "So we keep it simple. We look for companies whose purpose is to help people. We run them carefully and hold them for the long haul. And we make sure the people doing the work share in what that work earns.",
-  "We measure ourselves the same way. Not only by what a company returns, but by who it helped and how its people are doing. When both are growing, we know we're doing our job.",
+  "The Burton Family Office builds and operates companies with a purpose: to help human beings.",
+  "We believe the people who do that work should share in what it earns. So we share our profits generously with the people in our companies, because a company that helps people should take care of its own people first.",
 ];
 
 const reduced = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -114,9 +109,10 @@ export default function Mission() {
       {/* ── The story ──────────────────────────────────────────────── */}
       <article className="narrative mx-auto max-w-[780px] px-6 pb-24 pt-[14vh] sm:px-10">
         <h1 className="mission-hero narrative-title reveal" style={serif}>
-          <Words text="Companies that help people." step={0.08} delay={0.3} />{" "}
+          <Words text="Companies with purpose." step={0.08} delay={0.3} />
+          <br />
           <span className="mission-italic">
-            <Words text="Profits shared with the people who build them." shimmer step={0.07} delay={0.65} />
+            <Words text="Profits shared with the people behind them." shimmer step={0.07} delay={0.6} />
           </span>
         </h1>
         {STORY.map((para, i) => (
@@ -125,7 +121,7 @@ export default function Mission() {
           </p>
         ))}
         <p className="narrative-p narrative-end reveal" style={serif}>
-          <Words text="Help people. Share generously. Do excellent work." shimmer step={0.09} delay={0.1} />
+          <Words text="Help people. Share generously." shimmer step={0.09} delay={0.1} />
         </p>
       </article>
 
