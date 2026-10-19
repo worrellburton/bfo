@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { draftProblems, emptyDraft, type FormationDraft } from "../app/formation";
+import { draftProblems, emptyDraft, officeAddress, parseAddress, sameAddress, type FormationDraft } from "../app/formation";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, redactDraft, summarizeFiling } from "../lib/palm-formation";
 
 const { state, sbMock } = vi.hoisted(() => ({ state: { role: "owner" as string | null }, sbMock: vi.fn() }));
@@ -256,5 +256,30 @@ describe("/api/palm formation actions", () => {
     expect(write![1].body.ops[0]).toMatchObject({ op: "update", path: ["assets", "-Oabcdefghijklmnopqr"] });
     // a filing the record doesn't know is refused
     expect((await call({ action: "form-status", assetId: "-Oabcdefghijklmnopqr", filingId: "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee", mode: "test" })).status).toBe(404);
+  });
+});
+
+describe("the family's office address", () => {
+  it("reads an address line into the wizard's fields, suite and PMB included", () => {
+    expect(parseAddress("11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028")).toEqual({
+      street1: "11201 N Tatum Blvd Ste 300",
+      street2: "PMB 44879",
+      city: "Phoenix",
+      region: "AZ",
+      postal: "85028",
+    });
+    expect(parseAddress("540 Hudson #6, New York, ny 10014-1234")).toEqual({ street1: "540 Hudson #6", street2: "", city: "New York", region: "NY", postal: "10014-1234" });
+    expect(parseAddress("Somewhere in Phoenix")).toBeNull();
+    expect(parseAddress(undefined)).toBeNull();
+  });
+
+  it("picks the address most entities share", () => {
+    const shared = "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028";
+    const office = officeAddress([shared, "540 Hudson #6, New York, NY 10014", shared, "", undefined, shared.toUpperCase()]);
+    expect(office?.street2).toBe("PMB 44879");
+    expect(office?.city).toBe("Phoenix");
+    expect(officeAddress(["nowhere", undefined])).toBeNull();
+    expect(sameAddress(office!, { ...office!, city: " phoenix " })).toBe(true);
+    expect(sameAddress(office!, { ...office!, postal: "85016" })).toBe(false);
   });
 });

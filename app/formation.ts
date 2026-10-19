@@ -116,6 +116,37 @@ export function emptyDraft(): FormationDraft {
   };
 }
 
+/**
+ * An address as the entity records write it ("11201 N Tatum Blvd Ste 300,
+ * PMB 44879, Phoenix, AZ 85028") as the wizard's fields: the first part is
+ * the street, anything between it and the city is the suite / unit.
+ */
+export function parseAddress(line: string | null | undefined): FormationAddress | null {
+  const m = /^(.*?),\s*([^,]+),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)\s*$/.exec((line ?? "").trim());
+  if (!m) return null;
+  const [first, ...rest] = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+  if (!first) return null;
+  return { street1: first, street2: rest.join(", "), city: m[2].trim(), region: m[3].toUpperCase(), postal: m[4] };
+}
+
+export const sameAddress = (a: FormationAddress, b: FormationAddress) =>
+  (["street1", "street2", "city", "region", "postal"] as const).every((k) => a[k].trim().toLowerCase() === b[k].trim().toLowerCase());
+
+/** The office the family's entities share: the address most of them have on record, if any. */
+export function officeAddress(addresses: (string | null | undefined)[]): FormationAddress | null {
+  const counts = new Map<string, { n: number; a: FormationAddress }>();
+  for (const line of addresses) {
+    const a = parseAddress(line);
+    if (!a) continue;
+    const key = [a.street1, a.street2, a.city, a.region, a.postal].join("|").toLowerCase();
+    const hit = counts.get(key);
+    counts.set(key, { n: (hit?.n ?? 0) + 1, a: hit?.a ?? a });
+  }
+  let best: { n: number; a: FormationAddress } | null = null;
+  for (const c of counts.values()) if (!best || c.n > best.n) best = c;
+  return best?.a ?? null;
+}
+
 /** Palm's filing lifecycle, in order. */
 export const FILING_STATUSES = ["queued", "ready_to_file", "processing", "filed", "completed"] as const;
 export type FilingStatus = (typeof FILING_STATUSES)[number] | "canceled";

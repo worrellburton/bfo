@@ -1743,7 +1743,7 @@ export default function Assets() {
       <FormEntityWizard
         open={showWizard}
         onClose={() => setShowWizard(false)}
-        entities={assets.filter((a) => a.type !== "Trust").map((a) => ({ id: a.id, name: a.name })).sort((a, b) => a.name.localeCompare(b.name))}
+        entities={assets.filter((a) => a.type !== "Trust").map((a) => ({ id: a.id, name: a.name, address: a.address })).sort((a, b) => a.name.localeCompare(b.name))}
         onCreated={(id) => {
           setShowWizard(false);
           navigate(`/assets/${id}`);
