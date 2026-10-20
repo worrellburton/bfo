@@ -907,6 +907,22 @@ describe("/api/mail", () => {
       expect(await call("POST", { body: { action: "alias-remove", address: ACCOUNTS } })).toEqual({ status: 200, json: { aliases: [] } });
     });
 
+    it("shows one mailbox at a time: mail to that address, or sent from it", async () => {
+      me = owner;
+      aliases = [{ address: ACCOUNTS, user_id: U1 }];
+      sbRoutes.push([/GET mail_messages\?/, () => []]);
+      expect((await call("GET", { query: { view: "list", to: "Accounting@BurtonFamilyOffice.com" } })).status).toBe(200);
+      const inbox = sbCalls.filter((c) => c.method === "GET" && c.path.startsWith("mail_messages?")).pop()!.path;
+      expect(decodeURIComponent(inbox)).toContain(`delivered_to.eq."${ACCOUNTS}"`);
+      await call("GET", { query: { view: "list", folder: "sent", to: ACCOUNTS } });
+      expect(decodeURIComponent(sbCalls.filter((c) => c.path.startsWith("mail_messages?")).pop()!.path)).toContain(`from_email.eq."${ACCOUNTS}"`);
+      // The main address also takes older mail with no delivered-to.
+      await call("GET", { query: { view: "list", to: ROBERT } });
+      expect(decodeURIComponent(sbCalls.filter((c) => c.path.startsWith("mail_messages?")).pop()!.path)).toContain("delivered_to.is.null");
+      // Someone else's address isn't a mailbox of mine.
+      expect((await call("GET", { query: { view: "list", to: "claire@burtonfamilyoffice.com" } })).json).toEqual({ error: "bad_mailbox" });
+    });
+
     it("refuses someone else's address, system addresses, other domains, and members", async () => {
       me = owner;
       expect(await call("POST", { body: { action: "alias-add", address: "claire" } })).toMatchObject({ status: 409, json: { error: "address_taken" } });

@@ -462,7 +462,7 @@ const blankDraft = (): Draft => ({ title: "New message", to: "", cc: "", bcc: ""
 
 // ── Page ─────────────────────────────────────────────────────────────────
 
-type ListState = { folder: MailFolder; filter: MailFilter; q: string; messages: MailSummary[]; hasMore: boolean };
+type ListState = { folder: MailFolder; filter: MailFilter; q: string; to: string; messages: MailSummary[]; hasMore: boolean };
 
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
 type View = "table" | "columns";
@@ -505,6 +505,9 @@ export default function Inbox() {
   const noAddress = !!count && !count.address;
   const aliases = useMemo(() => (address ? (count?.aliases ?? []) : []), [address, count?.aliases]);
   const mine = useMemo(() => (address ? [address, ...aliases] : []), [address, aliases]);
+  /** One mailbox (an address of mine) from the URL, or every one. */
+  const a = (params.get("a") ?? "").toLowerCase();
+  const box = mine.some((m) => m.toLowerCase() === a) ? a : "";
 
   const [view, setView] = useState<View>("table");
   useEffect(() => setView(savedView()), []);
@@ -528,19 +531,19 @@ export default function Inbox() {
   const [toast, setToast] = useState<string | null>(null);
 
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
-  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, mode: "replace" | "refresh") => {
+  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh") => {
     const req = ++listReq.current;
     if (mode === "replace") {
       setList(null);
       setListError(null);
     }
     try {
-      const head = await listMail({ folder: which, filter: narrow, q: term });
+      const head = await listMail({ folder: which, filter: narrow, q: term, to: to || undefined });
       if (req !== listReq.current) return;
       setListError(null);
       setList((prev) => {
-        const fresh = { folder: which, filter: narrow, q: term, ...head };
-        if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || !head.messages.length) return fresh;
+        const fresh = { folder: which, filter: narrow, q: term, to, ...head };
+        if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
         const ids = new Set(head.messages.map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
@@ -555,14 +558,14 @@ export default function Inbox() {
   }, []);
 
   useEffect(() => {
-    void loadList(folder, filter, q, "replace");
-  }, [folder, filter, q, loadList]);
+    void loadList(folder, filter, q, box, "replace");
+  }, [folder, filter, q, box, loadList]);
 
   // New mail shows up through the shared count; when it moves, re-read the list.
   const unreadKey = count ? `${count.unread}/${count.otherUnread}` : null;
   const lastKey = useRef(unreadKey);
   useEffect(() => {
-    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, filter, q, "refresh");
+    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, filter, q, box, "refresh");
     lastKey.current = unreadKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadKey]);
@@ -573,9 +576,9 @@ export default function Inbox() {
     setLoadingMore(true);
     try {
       const last = cur.messages[cur.messages.length - 1];
-      const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, before: last.occurredAt, beforeId: last.id });
+      const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, to: cur.to || undefined, before: last.occurredAt, beforeId: last.id });
       setList((prev) => {
-        if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q) return prev;
+        if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q || prev.to !== cur.to) return prev;
         const ids = new Set(prev.messages.map((m) => m.id));
         return { ...prev, messages: [...prev.messages, ...next.messages.filter((m) => !ids.has(m.id))], hasMore: next.hasMore };
       });
@@ -662,6 +665,7 @@ export default function Inbox() {
     const p: Record<string, string> = {};
     if (next !== "inbox") p.f = next;
     if (filter !== "all") p.v = filter;
+    if (box) p.a = box;
     setParams(p);
   }
 
@@ -671,6 +675,7 @@ export default function Inbox() {
     if (folder !== "inbox") p.f = folder;
     if (next !== "all") p.v = next;
     if (q) p.q = q;
+    if (box) p.a = box;
     setParams(p);
   }
 
@@ -682,7 +687,19 @@ export default function Inbox() {
     if (folder !== "inbox") p.f = folder;
     if (filter !== "all") p.v = filter;
     if (clean) p.q = clean;
+    if (box) p.a = box;
     setParams(p, { replace: true });
+  }
+
+  /** Show one mailbox (an address of mine), or all of them. */
+  function chooseBox(next: string) {
+    if (next === box) return;
+    const p: Record<string, string> = {};
+    if (folder !== "inbox") p.f = folder;
+    if (filter !== "all") p.v = filter;
+    if (q) p.q = q;
+    if (next) p.a = next;
+    setParams(p);
   }
 
   function dropFromList(id: string) {
@@ -763,7 +780,7 @@ export default function Inbox() {
 
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
   const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
-  const rows = list && list.folder === folder && list.filter === filter && list.q === q ? list.messages : null;
+  const rows = list && list.folder === folder && list.filter === filter && list.q === q && list.to === box ? list.messages : null;
   const sent = folder === "sent";
   // In the table, the open message takes the whole card; in columns, it sits beside the list.
   const tableReading = view === "table" && !!openId;
@@ -921,6 +938,30 @@ export default function Inbox() {
         </div>
       </header>
 
+      {/* With more than one address: which mailbox to show. */}
+      {mine.length > 1 && (
+        <div role="tablist" aria-label="Mailbox" className={`-mt-1 flex flex-wrap items-center gap-1.5 ${openId ? "max-lg:hidden" : ""}`}>
+          {["", ...mine].map((m) => {
+            const on = (m.toLowerCase() || "") === box;
+            return (
+              <button
+                key={m || "all"}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => chooseBox(m.toLowerCase())}
+                className={`inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors ${
+                  on ? (t.dark ? "border-white/20 bg-white/[0.09] text-white" : "border-gray-900 bg-gray-900 text-white") : `${t.dark ? "border-white/[0.08] text-gray-400 hover:text-gray-100" : "border-gray-200 text-gray-600 hover:text-gray-900"}`
+                }`}
+              >
+                <Icon name="mail" className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{m ? m.slice(0, m.indexOf("@")) : "All mailboxes"}</span>
+                {m && <span className={`max-sm:hidden ${on ? "opacity-60" : t.faint}`}>@{m.slice(m.indexOf("@") + 1)}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {!openId && <SearchField value={q} onSearch={search} className="md:hidden" />}
       {mobileFilter}
 
