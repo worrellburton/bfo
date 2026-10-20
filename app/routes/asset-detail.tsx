@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { ActivityTab } from "../entity/activity";
 import { AgreementsTab } from "../entity/agreements";
 import { ComplianceTab } from "../entity/compliance";
 import { EntityProvider } from "../entity/context";
@@ -74,6 +75,7 @@ export default function AssetDetail() {
         {view.tab === "compliance" && <ComplianceTab />}
         {view.tab === "agreements" && <AgreementsTab />}
         {view.tab === "governance" && <GovernanceTab />}
+        {view.tab === "activity" && <ActivityTab />}
         <ScanToast />
       </div>
     </EntityProvider>

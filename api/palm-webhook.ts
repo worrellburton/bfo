@@ -5,6 +5,8 @@ import { toEventRow, verifyPalmSignature, type PalmEvent } from "../lib/palm-web
 import { einPatch, formationPatch, summarizeFiling, type FormationState, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
 
+const PALM = { id: null, name: "Palm", source: "palm" } as const;
+
 /**
  * Palm calls this when something happens to a business it serves: mail the
  * state or a court sent to the registered agent (document.created), and the
@@ -103,10 +105,10 @@ async function trackFiling(assetId: string, mode: "test" | "live", filing: PalmF
   const prev = ((row?.data ?? {}) as { palm?: Record<string, { formation?: FormationState }> }).palm?.[mode]?.formation ?? null;
   if (filing.type === "ein") {
     if (!prev) return;
-    await applyOps([{ op: "update", path: ["assets", assetId], value: einPatch(filing, mode, prev) as never }]);
+    await applyOps([{ op: "update", path: ["assets", assetId], value: einPatch(filing, mode, prev) as never }], PALM);
     return;
   }
   if (prev && prev.filingId !== filing.id) return; // a different filing than the one this record tracks
   const state = summarizeFiling(filing, prev);
-  await applyOps([{ op: "update", path: ["assets", assetId], value: formationPatch(state, mode, filing.business_id ?? undefined) as never }]);
+  await applyOps([{ op: "update", path: ["assets", assetId], value: formationPatch(state, mode, filing.business_id ?? undefined) as never }], PALM);
 }

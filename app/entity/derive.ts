@@ -60,6 +60,7 @@ export function deriveEntity(input: {
         { key: "compliance", label: "Compliance", count: complianceAlerts || undefined, alert: complianceAlerts > 0 },
         ...(etype === "LLC" ? [{ key: "agreements" as const, label: "Agreements", count: contracts.length || undefined }] : []),
         ...(asset.type === "C-Corp" ? [{ key: "governance" as const, label: "Governance" }] : []),
+        { key: "activity", label: "Activity" },
       ];
   const tab: EntityTab = tabs.some((t) => t.key === tabParam) ? (tabParam as EntityTab) : tabs[0].key;
 

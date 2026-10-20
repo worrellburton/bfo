@@ -1,3 +1,4 @@
+import { logActivity } from "./activity.js";
 import { sb } from "./auth.js";
 import { storageUpload } from "./storage.js";
 import { readCollection } from "./tree.js";
@@ -135,6 +136,8 @@ async function keep(url: string, name: string): Promise<string | null> {
   }
 }
 
+const STABLE = { id: null, name: "Stable", source: "stable" } as const;
+
 /** Store (or refresh) pieces of mail. `entities` decides which entity each is for, unless someone chose by hand. */
 export async function saveMail(items: StableMailItem[], entities?: { id: string; name: string }[]): Promise<number> {
   if (!items.length) return 0;
@@ -171,6 +174,11 @@ export async function saveMail(items: StableMailItem[], entities?: { id: string;
     });
   }
   await sb("stable_mail?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: rows });
+  // A piece that's new here, or newly matched, shows in its entity's activity.
+  for (const r of rows) {
+    if (!r.asset_id || existing.get(r.id)?.asset_id === r.asset_id) continue;
+    await logActivity(r.asset_id, STABLE, [{ kind: "mail", summary: `Paper mail arrived from ${r.from_name || "an unknown sender"}`, detail: { mailId: r.id } }]);
+  }
   return rows.length;
 }
 

@@ -15,6 +15,9 @@ import {
   type RegisteredAgentService,
 } from "../lib/palm.js";
 
+/** Palm moving a filing along shows in the entity's activity as Palm. */
+const PALM = { id: null, name: "Palm", source: "palm" } as const;
+
 /**
  * Palm, for one entity at a time. POST { action, … }:
  *
@@ -373,7 +376,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           palm: { [mode]: { businessId: filing.business_id ?? null, linkedAt: state.submittedAt, formation: state } },
         };
         Object.assign(record, Object.fromEntries(Object.entries(formationPatch(state, mode)).filter(([k]) => !k.includes("/"))));
-        await applyOps([{ op: "set", path: ["assets", assetId], value: record as never }]);
+        await applyOps([{ op: "set", path: ["assets", assetId], value: record as never }], { id: user.id, name: user.name || user.email, source: "user" });
         return res.status(200).json({ mode, assetId, businessId: filing.business_id ?? null, formation: state });
       }
 
@@ -393,7 +396,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const einFiling = await palm<PalmFiling>(`/v1/filing/${state.ein.filingId}`).catch(() => null);
           if (einFiling) patch = { ...patch, ...einPatch(einFiling, mode, state) };
         }
-        await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }]);
+        await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }], PALM);
         return res.status(200).json({ mode, formation: (patch[`palm/${mode}/formation`] as unknown) ?? state, patch });
       }
 
