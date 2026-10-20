@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isFormationDone } from "../formation";
+import { canDraftAgreement, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
 import { authFetch } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
@@ -7,6 +8,7 @@ import { alertDialog, confirmDialog } from "../confirm-dialog";
 import {
   DOC_LABEL,
   docKindOf,
+  fetchPalmDocument,
   formatAddress as formatPalmAddress,
   lookupStateRecord,
   normalizeName,
@@ -32,6 +34,7 @@ import {
   obligations,
   paperworkChecks,
   stateCode,
+  stateName,
   taxHome,
   type DocKey,
   type DocRule,
@@ -970,7 +973,10 @@ export function useEntityPage() {
         palmCall<{ documents: PalmDocument[] }>("documents", { businessId, mode }),
       ]);
       if (seq !== palmSeq.current) return;
-      if (docsR.status === "fulfilled") setPalmDocs(sortDocuments(docsR.value.documents));
+      if (docsR.status === "fulfilled") {
+        setPalmDocs(sortDocuments(docsR.value.documents));
+        void importPalmPaperwork(docsR.value.documents);
+      }
       if (raR.status === "rejected") {
         if (!opts.keepError) showPalmError(raR.reason);
         return;
@@ -1454,6 +1460,104 @@ export function useEntityPage() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  // ── Paperwork BFO writes ────────────────────────────────────────────────
+
+  /** Put a generated PDF in Documents and file it in its slot. */
+  async function fileGenerated(kind: FileKind, blob: Blob, name: string) {
+    setSlot(kind, { error: null, uploading: true, progress: 0 });
+    try {
+      const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), (pct) => setSlot(kind, { progress: pct }));
+      await fileDocument(kind, doc);
+    } catch (err) {
+      setSlot(kind, { error: err instanceof Error ? err.message : "Couldn't save it." });
+    } finally {
+      setSlot(kind, { uploading: false, progress: 0 });
+    }
+  }
+
+  const lookupAsset = (oid: string) => allAssets[oid] as Rec | undefined;
+
+  /** Fill in the IRS's W-9 from the record (a disregarded LLC's goes in its owner's name and TIN). */
+  async function generateW9() {
+    const current = assetRef.current;
+    if (!current) return;
+    const data = w9Data({ ...current, ownerId: current.ownerId } as Rec, lookupAsset);
+    const ok = await confirmDialog({
+      title: "Fill in the W-9?",
+      message: data.business
+        ? `It's disregarded, so the W-9 is in ${data.name || "its owner"}'s name and TIN, with ${data.business} on line 2. It's left unsigned and editable.`
+        : "BFO fills in the IRS's form from the record. It's left unsigned and editable.",
+      details: data.notes.length ? data.notes : ["Everything it needs is on record."],
+      confirmLabel: "Fill it in",
+    });
+    if (!ok) return;
+    try {
+      const form = await fetch("/forms/fw9.pdf").then((r) => {
+        if (!r.ok) throw new Error("Couldn't load the IRS form.");
+        return r.arrayBuffer();
+      });
+      const blob = await fillW9(data, form);
+      await fileGenerated("w9", blob, `W-9 - ${current.name}.pdf`);
+    } catch (err) {
+      setSlot("w9", { error: err instanceof Error ? err.message : "Couldn't fill in the W-9." });
+    }
+  }
+
+  /** Draft the LLC's operating agreement from its members, state and tax class. */
+  async function generateOperatingAgreement() {
+    const current = assetRef.current;
+    if (!current) return;
+    if (!canDraftAgreement(current)) {
+      await alertDialog("Only for LLCs", "BFO drafts LLC operating agreements. Upload the bylaws or partnership agreement instead.");
+      return;
+    }
+    const input = oaInput({ ...current } as Rec & { name: string }, lookupAsset);
+    const problems = oaProblems(input);
+    if (problems.length) {
+      await alertDialog("Not enough to draft it yet", problems.join(" "));
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Draft the operating agreement?",
+      message: `A ${input.members.length === 1 ? "single-member" : `${input.members.length}-member`}, ${input.managed === "managers" ? "manager" : "member"}-managed agreement under ${stateName(input.state)} law, effective ${fmtDate(input.effective)}. Have counsel read it before it's signed.`,
+      details: input.members.map((m) => `${m.name}: ${m.percent}%`),
+      confirmLabel: "Draft it",
+    });
+    if (!ok) return;
+    try {
+      const blob = await operatingAgreementPdf(operatingAgreement(input), current.name);
+      await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`);
+      if (!current.operatingAgreementDate) await patchAsset({ operatingAgreementDate: input.effective });
+    } catch (err) {
+      setSlot("operatingAgreement", { error: err instanceof Error ? err.message : "Couldn't draft the agreement." });
+    }
+  }
+
+  /** Palm's documents that fill an empty slot (the state's certificate, the IRS's EIN letter), saved and filed once. */
+  const importingPalm = useRef(new Set<string>());
+  async function importPalmPaperwork(list: PalmDocument[]) {
+    const current = assetRef.current;
+    if (!current) return;
+    const have = new Set(docs.map((d) => (d as AssetDoc & { palmDocumentId?: string }).palmDocumentId).filter(Boolean));
+    for (const d of list) {
+      const slot = [docKindOf(d), ...(d.types ?? []), d.type ?? ""].map((k) => PALM_SLOT[k]).find(Boolean);
+      if (!slot || current[slot] || have.has(d.id) || importingPalm.current.has(d.id)) continue;
+      importingPalm.current.add(d.id);
+      try {
+        const blob = await fetchPalmDocument(d);
+        const name = d.filename || `${filingTitle(slot, current)}.pdf`;
+        const doc = await uploadDocFile(new File([blob], name, { type: blob.type || "application/pdf" }), () => {});
+        const { db, ref: dbRef, update } = await import("../store");
+        await update(dbRef(db, `assets/${id}/documents/${doc.id}`), { palmDocumentId: d.id });
+        await fileDocument(slot, doc);
+      } catch (err) {
+        console.error("Palm document import failed", d.id, err);
+      } finally {
+        importingPalm.current.delete(d.id);
+      }
+    }
   }
 
   async function handleUploadFile(kind: FileKind, file: File) {
@@ -1952,6 +2056,8 @@ export function useEntityPage() {
     handleRenameDoc,
     formatBytes,
     handleUploadFile,
+    generateW9,
+    generateOperatingAgreement,
     handleDeleteFile,
     deleting,
     setDeleting,

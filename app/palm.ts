@@ -253,6 +253,17 @@ export async function palmCall<T = Record<string, unknown>>(action: string, body
   return json as T;
 }
 
+/** A Palm document's file. */
+export async function fetchPalmDocument(doc: PalmDocument): Promise<Blob> {
+  const r = await authFetch("/api/palm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "document", documentId: doc.id }),
+  });
+  if (!r.ok) throw new Error("Couldn't fetch that document from Palm.");
+  return r.blob();
+}
+
 /** Open a Palm document in a new tab. */
 export async function openPalmDocument(doc: PalmDocument): Promise<void> {
   const win = window.open("", "_blank");

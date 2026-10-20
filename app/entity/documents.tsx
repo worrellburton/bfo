@@ -5,6 +5,7 @@
  */
 
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
+import { canDraftAgreement } from "../paperwork-generate";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
 import {
@@ -136,6 +137,13 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const slot = page.uploadState[kind];
   const title = filingTitle(kind, asset);
   const pick = () => picker.current?.click();
+  // Paperwork BFO can write itself, from the record.
+  const generate =
+    kind === "w9"
+      ? { label: "Fill in", title: "Fill in the IRS's W-9 from the record", run: page.generateW9 }
+      : kind === "operatingAgreement" && canDraftAgreement(asset)
+        ? { label: "Draft", title: "Draft the operating agreement from the members, state and tax class on record", run: page.generateOperatingAgreement }
+        : null;
 
   const need: { tone: Tone; word: string; hint?: string } =
     rule?.level === "recommended"
@@ -205,8 +213,13 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
       />
     </div>
   ) : (
-    <div className="-my-1 shrink-0">
-      <Button icon="upload" aria-label={`Upload ${title}`} title={`${TYPES_LABEL} · up to 25 MB`} disabled={slot.uploading} onClick={pick}>
+    <div className="-my-1 flex shrink-0 items-center gap-1.5">
+      {generate && (
+        <Button icon="sparkle" aria-label={`${generate.label} ${title}`} title={generate.title} disabled={slot.uploading} onClick={() => void generate.run()}>
+          {generate.label}
+        </Button>
+      )}
+      <Button icon="upload" aria-label={`Upload ${title}`} title={`${TYPES_LABEL} · up to 25 MB`} disabled={slot.uploading} onClick={pick} kind={generate ? "ghost" : undefined}>
         Upload
       </Button>
     </div>
@@ -221,6 +234,11 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
             {rule.howTo.label}
             <Icon name="external" className="h-3 w-3" />
           </a>
+        )}
+        {!file && generate && (
+          <span className={`mt-1 block ${t.muted}`}>
+            {kind === "w9" ? "BFO can fill in the IRS's form from the record, ready to sign." : "BFO can draft it from the members, shares, state and tax class on record. Have counsel read it before signing."}
+          </span>
         )}
         {!file && <span className={`mt-1 block ${t.muted}`}>Drop a file on this row or upload one. {TYPES_LABEL} · up to 25 MB.</span>}
       </>
