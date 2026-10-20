@@ -15,6 +15,10 @@
       "memory": 1024,
       "maxDuration": 300
     },
+    "api/cron/state-records.ts": {
+      "memory": 256,
+      "maxDuration": 300
+    },
     "api/**/*.ts": {
       "memory": 256,
       "maxDuration": 60
@@ -32,6 +36,10 @@
     {
       "path": "/api/stable?cron=1",
       "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/cron/state-records",
+      "schedule": "40 21 * * *"
     }
   ],
   "rewrites": [

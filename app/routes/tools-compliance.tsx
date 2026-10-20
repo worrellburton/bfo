@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { getUser } from "../auth";
+import { authFetch, getUser } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
 import {
   assessAll,
@@ -252,19 +252,37 @@ export default function EntityCompliance() {
       title: `Check ${ids.length} ${ids.length === 1 ? "entity" : "entities"} with the state?`,
       message: "Palm reads each one's record from its state registry: status, good standing, tax standing and agent. Nothing is filed and nothing changes with the state.",
       details: [
-        "Entities read in the last 45 days are skipped.",
+        "Each is read in its home state and in every state it's registered in as a foreign entity.",
         "Where the name matches more than one registry entry, it's left for you to pick on the entity's Compliance tab.",
         ...(palm.mode === "test" ? ["Palm is in test mode, so the records come from its sandbox."] : []),
       ],
       confirmLabel: "Check them",
     });
     if (!ok) return;
+    // One run on the server (api/cron/state-records.ts): the home state and each foreign state.
     setBulk({ done: 0, total: ids.length });
-    for (const id of ids) {
-      await checkOne(id);
-      setBulk((b) => (b ? { ...b, done: b.done + 1 } : b));
+    try {
+      const r = await authFetch("/api/cron/state-records", { method: "POST", body: JSON.stringify({ ids, force: true }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Couldn't check the records.");
+      const said: Record<string, { tone: "ok" | "warn" | "bad"; text: string }> = {};
+      for (const x of (j.results ?? []) as { id: string; state: string; outcome: string; detail?: string }[]) {
+        const prev = said[x.id];
+        const line =
+          x.outcome === "read" ? { tone: "ok" as const, text: `${x.state}: read just now${x.detail ? ` (${x.detail})` : ""}.` }
+          : x.outcome === "not_found" ? { tone: "warn" as const, text: `${x.state}: no registry entry matched the name. Add its file number under Edit.` }
+          : x.outcome === "ambiguous" ? { tone: "warn" as const, text: `${x.state}: more than one registry entry matched. Pick the right one on its Compliance tab.` }
+          : x.outcome === "error" ? { tone: "bad" as const, text: `${x.state}: ${x.detail ?? "couldn't reach Palm"}` }
+          : null;
+        if (!line) continue;
+        said[x.id] = prev ? { tone: prev.tone === "bad" || line.tone === "bad" ? "bad" : prev.tone === "warn" || line.tone === "warn" ? "warn" : "ok", text: `${prev.text} ${line.text}` } : line;
+      }
+      setNotes((n) => ({ ...n, ...said }));
+    } catch (err) {
+      setNotes((n) => ({ ...n, ...Object.fromEntries(ids.map((id) => [id, { tone: "bad" as const, text: (err as Error).message }])) }));
+    } finally {
+      setBulk(null);
     }
-    setBulk(null);
   }
 
   const sel = selected ? byId.get(selected) ?? null : null;
@@ -299,7 +317,7 @@ export default function EntityCompliance() {
               {bulk ? (
                 <>
                   <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  Checking {bulk.done + 1} of {bulk.total}
+                  Checking {bulk.total} with the states…
                 </>
               ) : (
                 <>
