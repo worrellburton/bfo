@@ -5,6 +5,7 @@
 
 import { entityType } from "../entity-completeness";
 import { DOC_KEYS, documentRules, type DocKey, type DocRule, type PaperworkInput } from "../entity-paperwork";
+import type { ForeignRegistration } from "../entity-addresses";
 import type { PalmLink, PalmMode, StateRecord } from "../palm";
 
 export interface Asset {
@@ -14,7 +15,14 @@ export interface Asset {
   ein: string;
   createdAt: number;
   registeredAgent?: string;
+  /** The principal office: where the business is, as the state lists it. */
   address?: string;
+  /** Where its mail goes, when not the principal office. */
+  mailingAddress?: string;
+  /** The home state's registered agent's street address. */
+  registeredAgentAddress?: string;
+  /** Each state it's registered in as a foreign entity, by two-letter code. */
+  foreign?: Record<string, ForeignRegistration>;
   formationDate?: string;
   status?: string;
   notes?: string;

@@ -13,7 +13,7 @@ describe("entityCompleteness", () => {
   it("weights an LLC to 100", () => {
     const full = entityCompleteness({
       name: "A, LLC", type: "LLC", ein: "12-3456789", state: "Nevada", formationDate: "2020-01-01",
-      address: "1 Main", registeredAgent: "Agent", llcType: "Partnership",
+      address: "1 Main", registeredAgent: "Agent", registeredAgentAddress: "2 Main, Las Vegas, NV 89101", llcType: "Partnership",
       einLetter: {}, w9: {}, articles: {}, operatingAgreement: {}, annualReport: {},
     });
     expect(full.score).toBe(100);

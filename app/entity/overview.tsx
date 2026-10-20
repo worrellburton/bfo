@@ -6,7 +6,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
+import { agentTerm, stateCode, stateName } from "../entity-paperwork";
+import { entityAddresses, foreignStates, type Check } from "../entity-addresses";
 import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
+import { STABLE_ADDRESS } from "../paper-mail";
 import { f8822bData, stateAddressStep } from "../paperwork-generate";
 import { isPartner } from "../auth";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
@@ -22,7 +25,7 @@ export function OverviewTab() {
       <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
         <AddressChange />
         <Formation />
-        {page.editing ? <EditForm /> : <Details />}
+        {page.editing ? <EditForm /> : <><Addresses /><Details /></>}
       </div>
       <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <Mail />
@@ -273,8 +276,6 @@ function Details() {
           </>
         ) : (
           <>
-            <AgentRow />
-            <Row label="Principal address">{val(asset.address)}</Row>
             <Row label="Formation date">{formed ? <span className="tabular-nums">{formed}</span> : undefined}</Row>
             <TaxClassRows />
             <Row label={corp ? "Bylaws" : "Operating agreement"}>{filedFact(asset, "operatingAgreement", asset.operatingAgreementDate)}</Row>
@@ -324,33 +325,114 @@ function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
   );
 }
 
-/** Registered agent: Palm when Palm serves (live), and a prompt to confirm the agent once Palm has stopped. */
-function AgentRow() {
-  const { asset, tabPath } = useEntity();
+// ── Addresses ────────────────────────────────────────────────────────────
+
+/**
+ * The entity's addresses, each for what it is: the principal office (what the
+ * state lists), where mail goes, and the registered agent in every state it's
+ * registered in. Each line says whether it holds up, and whether it matches
+ * the state's own record once that's been read through Palm.
+ */
+function Addresses() {
+  const { page, view, asset, tabPath } = useEntity();
   const t = useTone();
-  const ra = asset.palm?.live?.ra;
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  if (view.isTrust) return null;
+  const a = entityAddresses(asset);
+  const alerts = a.gaps.filter((g) => g.tone === "bad" || g.tone === "warn").length;
   const source = asset.registeredAgentSource ?? "";
-  // "Palm, active since …" — not "Palm stopped serving …", which also starts with "Palm".
-  const palmActive = ra?.status === "active" || /^Palm, active/.test(source);
-  const palmStopped = !palmActive && source.startsWith("Palm stopped");
-  const listedAs = ra?.name || asset.registeredAgent;
+  const palmStopped = source.startsWith("Palm stopped");
+
+  async function check(code: string) {
+    setErrors((e) => ({ ...e, [code]: "" }));
+    const why = await page.checkForeignRecord(code);
+    if (why) setErrors((e) => ({ ...e, [code]: why }));
+  }
+
+  const checks = (list: Check[]) =>
+    list.length > 0 && (
+      <span className="mt-1.5 flex flex-col gap-1">
+        {list.map((c) => (
+          <Dot key={c.text} tone={c.tone === "info" ? "muted" : c.tone}>
+            <span className="text-[12px]">{c.text}</span>
+          </Dot>
+        ))}
+      </span>
+    );
 
   return (
-    <Row label="Registered agent" info={val(source)} actions={<TextLink to={tabPath("compliance")}>{palmActive ? "Manage" : "Move to Palm"}</TextLink>}>
-      {palmActive ? (
-        <span>
-          Palm
-          {listedAs && <span className={t.muted}> · listed as {listedAs}</span>}
-        </span>
-      ) : palmStopped ? (
-        <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-          {val(asset.registeredAgent) ?? <span className={t.faint}>—</span>}
-          <Dot tone="warn">Confirm</Dot>
-        </span>
-      ) : (
-        val(asset.registeredAgent)
-      )}
-    </Row>
+    <Section
+      title="Addresses"
+      count={alerts || undefined}
+      alert={alerts > 0}
+      info={
+        <>
+          The <b>principal office</b> is where the business is: the address the state lists publicly. The <b>mailing address</b> is where its mail goes, when that's somewhere else. The{" "}
+          <b>registered agent</b> accepts lawsuits and official notices for it: one in every state it's registered in, at a street address in that state (never a PO box or mailbox),
+          open during business hours. A company formed in one state and run from another needs an agent in both.
+        </>
+      }
+      actions={
+        <TextButton onClick={page.startEditing}>
+          <Icon name="edit" className="h-3 w-3" /> Edit
+        </TextButton>
+      }
+    >
+      <Rows className="[overflow-wrap:anywhere]">
+        <Row label="Principal office">
+          {a.principal.value ?? undefined}
+          {checks(a.principal.checks)}
+        </Row>
+        <Row label="Mailing address">
+          {a.mailing.value ? (
+            <>
+              {a.mailing.same ? <span className={t.soft}>Same as the principal office</span> : a.mailing.value}
+              {sameAddressText(a.mailing.value, STABLE_ADDRESS) && (
+                <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
+                  The Stable mailbox: each piece is scanned into <Link to="/mailbox" className={t.accent}>Mailbox</Link>
+                </span>
+              )}
+            </>
+          ) : undefined}
+          {checks(a.mailing.checks)}
+        </Row>
+        {a.agents.map((g) => (
+          <Row
+            key={g.state}
+            label={
+              <span>
+                {g.term}
+                <span className={`block text-[11.5px] ${t.faint}`}>{g.home ? `${g.stateLabel} · formed here` : `${g.stateLabel} · foreign`}</span>
+              </span>
+            }
+            info={g.home && source ? source : !g.home && g.record ? `${g.stateLabel}'s record read through Palm, ${fmtStamp(g.record.checkedAt)}.` : undefined}
+            actions={
+              g.home ? (
+                <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
+              ) : page.palmStatus?.configured ? (
+                <TextButton onClick={() => void check(g.state)} disabled={page.foreignBusy === g.state}>
+                  {page.foreignBusy === g.state ? "Checking…" : g.record ? `Re-check ${g.state}` : `Check ${g.state} record`}
+                </TextButton>
+              ) : undefined
+            }
+          >
+            {g.name ? (
+              <span className="flex flex-wrap items-center gap-x-2">
+                <span className="font-medium">{g.palm ? "Palm" : g.name}</span>
+                {g.palm && g.name && !/^palm/i.test(g.name) && <span className={t.muted}>listed as {g.name}</span>}
+                {g.home && palmStopped && <Dot tone="warn">Confirm</Dot>}
+              </span>
+            ) : (
+              <span className={t.faint}>None on record</span>
+            )}
+            {g.address && <span className={`mt-0.5 block text-[12.5px] ${t.soft}`}>{g.address}</span>}
+            {g.fileNumber && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>File number <span className="font-mono tabular-nums">{g.fileNumber}</span></span>}
+            {checks(g.checks)}
+            {errors[g.state] && <span className={`mt-1 block text-[12px] ${toneText("bad", t.dark)}`}>{errors[g.state]}</span>}
+          </Row>
+        ))}
+      </Rows>
+    </Section>
   );
 }
 
@@ -551,7 +633,7 @@ function EditForm() {
     setError(""); // an old save error doesn't apply to new edits
     page.setForm((f) => ({ ...f, [k]: v }));
   };
-  const text = (k: "name" | "state" | "ein" | "registeredAgent" | "address" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink") => ({
+  const text = (k: "name" | "state" | "ein" | "registeredAgent" | "registeredAgentAddress" | "address" | "mailingAddress" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink") => ({
     value: form[k] || "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
   });
@@ -617,14 +699,57 @@ function EditForm() {
         <Field label="EIN">
           <Input {...text("ein")} className="font-mono tabular-nums" />
         </Field>
-        {!trust && (
-          <Field label="Registered agent">
-            <Input {...text("registeredAgent")} />
-          </Field>
-        )}
-        <Field label={trust ? "Mailing address" : "Principal address"}>
+        <Field label={trust ? "Mailing address" : "Principal office"} hint={trust ? undefined : "Where the business is: the address the state lists."}>
           <Input {...text("address")} />
         </Field>
+        {!trust && (
+          <Field label="Mailing address" hint="Leave blank when mail goes to the principal office.">
+            <Input {...text("mailingAddress")} placeholder={form.address || "Same as the principal office"} />
+          </Field>
+        )}
+        {!trust && (
+          <>
+            <Field label={`${agentTerm(stateCode(form.state))}${form.state ? ` (${form.state})` : ""}`}>
+              <Input {...text("registeredAgent")} />
+            </Field>
+            <Field label="Agent's street address" hint={`In ${form.state || "the state of formation"}; not a PO box or mailbox.`}>
+              <Input {...text("registeredAgentAddress")} />
+            </Field>
+            {foreignStates(form).map((code) => {
+              const f = form.foreign?.[code] ?? {};
+              const setF = (k: "agent" | "agentAddress" | "fileNumber", v: string) => set("foreign", { ...(form.foreign ?? {}), [code]: { ...f, [k]: v } });
+              return (
+                <div key={code} className={`grid grid-cols-1 gap-x-4 gap-y-4 rounded-xl border p-4 md:col-span-2 md:grid-cols-2 ${t.line}`}>
+                  <p className={`text-[12px] font-medium md:col-span-2 ${t.soft}`}>
+                    {stateName(code)}: registered as a foreign {trust ? "entity" : ft === "C-Corp" ? "corporation" : "LLC"}
+                  </p>
+                  <Field label={agentTerm(code)}>
+                    <Input value={f.agent ?? ""} onChange={(e) => setF("agent", e.target.value)} />
+                  </Field>
+                  <Field label="Agent's street address" hint={`In ${stateName(code)}; not a PO box or mailbox.`}>
+                    <Input value={f.agentAddress ?? ""} onChange={(e) => setF("agentAddress", e.target.value)} />
+                  </Field>
+                  <Field label={`${stateName(code)} file number`}>
+                    <Input value={f.fileNumber ?? ""} onChange={(e) => setF("fileNumber", e.target.value)} className="font-mono" />
+                  </Field>
+                </div>
+              );
+            })}
+            <Field label="Registered in another state too?" hint="Doing business elsewhere (an office, staff, operating property) means registering there, with an agent there.">
+              <Select
+                value=""
+                onChange={(e) => e.target.value && set("foreign", { ...(form.foreign ?? {}), [e.target.value]: {} })}
+              >
+                <option value="">Add a state…</option>
+                {US_STATES.filter(([code]) => code !== stateCode(form.state) && !foreignStates(form).includes(code)).map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </>
+        )}
         <Field label={trust ? "Trust date" : "Formation date"}>
           <Input {...date("formationDate")} />
         </Field>
