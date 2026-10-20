@@ -343,109 +343,242 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
   const W = pdf.internal.pageSize.getWidth();
   const H = pdf.internal.pageSize.getHeight();
   const M = 72;
+  const TOP = 86; // below the running header
+  const BOTTOM = H - 76; // above the footer
   const width = W - M * 2;
-  let y = M;
-
-  const room = (h: number) => {
-    if (y + h > H - M) {
-      pdf.addPage();
-      y = M;
-    }
+  // Ink, a deep navy for structure, and grays for rules and captions.
+  const INK: [number, number, number] = [26, 26, 26];
+  const NAVY: [number, number, number] = [27, 42, 74];
+  const RULE: [number, number, number] = [190, 190, 190];
+  const MUTED: [number, number, number] = [110, 110, 110];
+  const color = (c: [number, number, number]) => pdf.setTextColor(c[0], c[1], c[2]);
+  const stroke = (c: [number, number, number], w: number) => {
+    pdf.setDrawColor(c[0], c[1], c[2]);
+    pdf.setLineWidth(w);
   };
-  const para = (text: string, opts: { size?: number; style?: "normal" | "bold" | "italic"; gap?: number; indent?: number; align?: "left" | "center" | "justify" } = {}) => {
-    const size = opts.size ?? 11;
-    pdf.setFont("times", opts.style ?? "normal");
+  const font = (style: "normal" | "bold" | "italic" | "bolditalic", size: number, c: [number, number, number] = INK) => {
+    pdf.setFont("times", style);
     pdf.setFontSize(size);
-    const lines: string[] = pdf.splitTextToSize(text, width - (opts.indent ?? 0));
-    const lh = size * 1.42;
+    color(c);
+  };
+  /** Small capitals, letter-spaced: labels and headings. */
+  const caps = (text: string, x: number, yy: number, size: number, c: [number, number, number], align: "left" | "center" | "right" = "left", style: "normal" | "bold" = "bold") => {
+    font(style, size, c);
+    const spacing = size * 0.12;
+    const t = text.toUpperCase();
+    const w = pdf.getTextWidth(t) + spacing * (t.length - 1);
+    const left = align === "center" ? x - w / 2 : align === "right" ? x - w : x;
+    pdf.text(t, left, yy, { charSpace: spacing });
+  };
+
+  // Pages the body runs on get the running header and the initials line.
+  const bodyPages = new Set<number>([1]);
+  let y = TOP;
+  const newPage = (body = true) => {
+    pdf.addPage();
+    if (body) bodyPages.add(pdf.getNumberOfPages());
+    y = TOP;
+  };
+  const room = (h: number) => {
+    if (y + h > BOTTOM) newPage();
+  };
+  const para = (text: string, opts: { size?: number; style?: "normal" | "bold" | "italic"; gap?: number; indent?: number; hang?: string; align?: "left" | "center" | "justify" } = {}) => {
+    const size = opts.size ?? 11;
+    font(opts.style ?? "normal", size);
+    const indent = opts.indent ?? 0;
+    const lines: string[] = pdf.splitTextToSize(text, width - indent);
+    const lh = size * 1.45;
     for (let k = 0; k < lines.length; k++) {
       room(lh);
-      const x = opts.align === "center" ? W / 2 : M + (opts.indent ?? 0);
+      if (k === 0 && opts.hang) pdf.text(opts.hang, M + indent - 22, y);
+      const x = opts.align === "center" ? W / 2 : M + indent;
       const justify = opts.align === "justify" && k < lines.length - 1;
-      pdf.text(lines[k], x, y, { align: opts.align === "center" ? "center" : justify ? "justify" : "left", maxWidth: justify ? width - (opts.indent ?? 0) : undefined });
+      pdf.text(lines[k], x, y, { align: opts.align === "center" ? "center" : justify ? "justify" : "left", maxWidth: justify ? width - indent : undefined });
       y += lh;
     }
     y += opts.gap ?? 8;
   };
 
-  // Title
-  y += 24;
-  para(d.title.toUpperCase(), { size: 16, style: "bold", align: "center", gap: 2 });
-  para(d.subtitle, { size: 12, style: "italic", align: "center", gap: 26 });
-  para(d.preamble, { align: "justify", gap: 14 });
+  // ── Title block ──
+  y = 120;
+  caps(d.title.includes("Single") ? "Single-Member" : "Limited Liability Company", W / 2, y, 9, MUTED, "center");
+  y += 30;
+  font("bold", 22, NAVY);
+  pdf.text(d.title.replace(/^Single-Member /, "").toUpperCase(), W / 2, y, { align: "center", charSpace: 1.2 });
+  y += 26;
+  font("italic", 12.5, INK);
+  pdf.text(d.subtitle.replace(/^of /, ""), W / 2, y, { align: "center" });
+  y += 22;
+  stroke(NAVY, 1.2);
+  pdf.line(W / 2 - 36, y, W / 2 + 36, y);
+  y += 40;
+  para(d.preamble, { align: "justify", gap: 22 });
 
+  // ── Sections ──
   d.sections.forEach((sec, i) => {
-    room(40);
-    para(`${i + 1}.  ${sec.heading}`, { size: 11.5, style: "bold", gap: 4 });
-    sec.paragraphs.forEach((p, j) => para(sec.paragraphs.length > 1 ? `(${String.fromCharCode(97 + j)})  ${p}` : p, { align: "justify", gap: 8 }));
+    room(64);
     y += 4;
+    caps(`Section ${i + 1}`, M, y, 8.5, MUTED, "left");
+    y += 15;
+    font("bold", 12, NAVY);
+    pdf.text(sec.heading, M, y);
+    y += 7;
+    stroke(RULE, 0.5);
+    pdf.line(M, y, M + width, y);
+    y += 16;
+    const many = sec.paragraphs.length > 1;
+    sec.paragraphs.forEach((p, j) => {
+      font("normal", 11);
+      para(p, { align: "justify", gap: 8, indent: many ? 22 : 0, hang: many ? `(${String.fromCharCode(97 + j)})` : undefined });
+    });
+    y += 8;
   });
 
-  // Signatures
-  room(60 + d.signers.length * 90);
-  para(`IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this Agreement as of the date first written above.`, { align: "justify", gap: 26 });
-  for (const sg of d.signers) {
-    room(90);
-    pdf.setFont("times", "bold");
-    pdf.setFontSize(11);
-    pdf.text(sg.name.toUpperCase(), M, y);
-    y += 30;
-    pdf.setLineWidth(0.6);
-    pdf.line(M, y, M + 260, y);
-    y += 14;
-    pdf.setFont("times", "normal");
-    pdf.setFontSize(10);
-    const entity = /\b(llc|l\.l\.c\.|inc\.?|corp|trust|lp|ltd|company)\b/i.test(sg.name);
-    pdf.text(entity ? `By: ____________________   Its: ____________________   (${sg.capacity})` : `${sg.name}, ${sg.capacity}`, M, y);
-    y += 14;
-    pdf.text("Date: ____________________", M, y);
-    y += 30;
+  // ── Signatures: their own page, a block per signer ──
+  newPage(false);
+  const sigPage = pdf.getNumberOfPages();
+  caps("Signature Page", W / 2, y + 4, 9, MUTED, "center");
+  y += 30;
+  font("bold", 17, NAVY);
+  pdf.text(d.title.toUpperCase(), W / 2, y, { align: "center", charSpace: 0.8 });
+  y += 20;
+  font("italic", 11.5, INK);
+  pdf.text(d.subtitle.replace(/^of /, ""), W / 2, y, { align: "center" });
+  y += 34;
+  para(`IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this Agreement as of the date first written above. This Agreement may be signed in counterparts and by electronic signature.`, { align: "justify", gap: 26 });
+
+  const isEntity = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|trust|lp|l\.p\.|ltd\.?|company|partners(hip)?)\b/i.test(name);
+  const gutter = 24;
+  const colW = d.signers.length === 1 ? width * 0.62 : (width - gutter) / 2;
+  const blockH = (name: string) => (isEntity(name) ? 196 : 150);
+  /** A line to write on, with its caption under it. */
+  const field = (x: number, yy: number, w: number, caption: string, prefix?: string) => {
+    let lx = x;
+    if (prefix) {
+      font("normal", 10.5);
+      pdf.text(prefix, x, yy - 3);
+      lx = x + pdf.getTextWidth(prefix) + 6;
+    }
+    stroke([60, 60, 60], 0.6);
+    pdf.line(lx, yy, x + w, yy);
+    caps(caption, lx, yy + 11, 6.8, MUTED, "left", "normal");
+  };
+  const block = (sg: { name: string; capacity: string }, x: number, top: number) => {
+    const h = blockH(sg.name);
+    const pad = 16;
+    const inner = colW - pad * 2;
+    stroke(RULE, 0.6);
+    pdf.roundedRect(x, top, colW, h, 3, 3);
+    pdf.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
+    pdf.rect(x, top, 3, h, "F");
+    let yy = top + pad + 8;
+    caps(sg.capacity, x + pad, yy, 7.5, MUTED);
+    yy += 17;
+    font("bold", 12.5, INK);
+    const nameLines: string[] = pdf.splitTextToSize(sg.name, inner);
+    pdf.text(nameLines[0], x + pad, yy);
+    yy += 44;
+    if (isEntity(sg.name)) {
+      field(x + pad, yy, inner, "Authorized signature", "By:");
+      yy += 40;
+      const half = (inner - 14) / 2;
+      field(x + pad, yy, half, "Printed name");
+      field(x + pad + half + 14, yy, half, "Title");
+      yy += 40;
+      field(x + pad, yy, half, "Date");
+    } else {
+      field(x + pad, yy, inner, "Signature");
+      yy += 40;
+      field(x + pad, yy, (inner - 14) / 2, "Date");
+    }
+  };
+  for (let k = 0; k < d.signers.length; k += 2) {
+    const pair = d.signers.slice(k, k + 2);
+    const h = Math.max(...pair.map((sg) => blockH(sg.name)));
+    if (y + h > BOTTOM) {
+      newPage(false);
+    }
+    const left = d.signers.length === 1 ? M : M;
+    block(pair[0], left, y);
+    if (pair[1]) block(pair[1], M + colW + gutter, y);
+    y += h + 20;
   }
 
-  // Exhibit A
-  pdf.addPage();
-  y = M;
-  para(d.exhibit.heading.toUpperCase(), { size: 13, style: "bold", align: "center", gap: 20 });
-  const cols = [M, M + width * 0.42, M + width * 0.84];
-  pdf.setFont("times", "bold");
-  pdf.setFontSize(10.5);
-  pdf.text("Member", cols[0], y);
-  pdf.text("Address", cols[1], y);
-  pdf.text("Percentage Interest", W - M, y, { align: "right" });
-  y += 8;
-  pdf.setLineWidth(0.8);
-  pdf.line(M, y, W - M, y);
-  y += 16;
-  pdf.setFont("times", "normal");
+  // ── Exhibit A ──
+  newPage(false);
+  const exhibitPage = pdf.getNumberOfPages();
+  caps("Exhibit A", W / 2, y + 4, 9, MUTED, "center");
+  y += 30;
+  font("bold", 16, NAVY);
+  pdf.text(d.exhibit.heading.replace(/^Exhibit A:\s*/, ""), W / 2, y, { align: "center" });
+  y += 18;
+  font("italic", 11, INK);
+  pdf.text(`as of the effective date of the Agreement`, W / 2, y, { align: "center" });
+  y += 30;
+  const cols = [M + 10, M + width * 0.44];
+  const headH = 24;
+  pdf.setFillColor(242, 244, 248);
+  pdf.rect(M, y - 16, width, headH, "F");
+  caps("Member", cols[0], y, 7.5, NAVY);
+  caps("Address", cols[1], y, 7.5, NAVY);
+  caps("Percentage interest", W - M - 10, y, 7.5, NAVY, "right");
+  y += headH;
   for (const [name, address, share] of d.exhibit.rows) {
+    font("normal", 10.5);
     const nameLines: string[] = pdf.splitTextToSize(name, width * 0.4);
-    const addrLines: string[] = pdf.splitTextToSize(address, width * 0.4);
+    const addrLines: string[] = pdf.splitTextToSize(address, width * 0.36);
     const h = Math.max(nameLines.length, addrLines.length) * 14;
-    room(h + 10);
+    room(h + 14);
+    font("bold", 10.5);
     pdf.text(nameLines, cols[0], y);
+    font("normal", 10.5);
     pdf.text(addrLines, cols[1], y);
-    pdf.text(share, W - M, y, { align: "right" });
-    y += h + 6;
-    pdf.setLineWidth(0.3);
-    pdf.line(M, y - 8, W - M, y - 8);
-    y += 6;
+    pdf.text(share, W - M - 10, y, { align: "right" });
+    y += h + 2;
+    stroke(RULE, 0.4);
+    pdf.line(M, y - 6, W - M, y - 6);
+    y += 12;
   }
   const total = d.exhibit.rows.reduce((n, r) => n + (Number.parseFloat(r[2]) || 0), 0);
-  pdf.setFont("times", "bold");
+  stroke(NAVY, 0.8);
+  pdf.line(M, y - 10, W - M, y - 10);
+  y += 4;
+  font("bold", 10.5);
   pdf.text("Total", cols[0], y);
-  pdf.text(`${Math.round(total * 100) / 100}%`, W - M, y, { align: "right" });
+  pdf.text(`${Math.round(total * 100) / 100}%`, W - M - 10, y, { align: "right" });
 
-  // Footers
+  // ── Running header and footer ──
   const pages = pdf.getNumberOfPages();
+  const initials = d.signers.length > 1;
   for (let p = 1; p <= pages; p++) {
     pdf.setPage(p);
-    pdf.setFont("times", "italic");
-    pdf.setFontSize(9);
-    pdf.setTextColor(110);
-    pdf.text(`${d.title} of ${entityName}`, M, H - 40);
+    if (p > 1) {
+      caps(entityName, M, 48, 7, MUTED, "left", "normal");
+      caps(d.title, W - M, 48, 7, MUTED, "right", "normal");
+      stroke(RULE, 0.4);
+      pdf.line(M, 55, W - M, 55);
+    }
+    stroke(RULE, 0.4);
+    pdf.line(M, H - 54, W - M, H - 54);
+    font("normal", 8.5, MUTED);
+    pdf.text(p === sigPage ? "Signature page" : p === exhibitPage ? "Exhibit A" : `${d.title} of ${entityName}`, M, H - 40);
     pdf.text(`Page ${p} of ${pages}`, W - M, H - 40, { align: "right" });
-    pdf.setTextColor(0);
+    // Each member initials each page of the body.
+    if (initials && bodyPages.has(p) && p !== sigPage && p !== exhibitPage) {
+      font("normal", 8.5, MUTED);
+      const marks = d.signers.filter((sg) => sg.capacity !== "Manager").length;
+      const boxW = 34;
+      let x = W / 2 - ((marks * (boxW + 8)) + 40) / 2;
+      pdf.text("Initials", x, H - 40);
+      x += 34;
+      stroke([150, 150, 150], 0.5);
+      for (let k = 0; k < marks; k++) {
+        pdf.line(x, H - 39, x + boxW, H - 39);
+        x += boxW + 8;
+      }
+    }
   }
+  color(INK);
   return pdf.output("blob");
 }
 
