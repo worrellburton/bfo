@@ -304,7 +304,9 @@ function PaperMailSection() {
         onOpen={(m) => {
           if (m.readAt) return;
           setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)) ?? list);
-          void paperAction({ action: "read", id: m.id }).catch(() => {});
+          void paperAction({ action: "read", id: m.id })
+            .then(() => window.dispatchEvent(new Event("bfo-paper-mail-changed")))
+            .catch(() => {});
         }}
       />
     </Section>
