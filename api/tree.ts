@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { canWrite, currentUser, fail, handleError, isPartner } from "../lib/auth.js";
+import { readActivity } from "../lib/activity.js";
+import { canWrite, currentUser, fail, handleError, isPartner, type AppUser } from "../lib/auth.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
 import { importAll, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
 import {
@@ -24,6 +25,7 @@ import {
  * GET ?path=assets/x/documents     → { value }       any node (null when missing)
  * GET ?path=assets&view=index      → { rows: [{ id, updated_at }] }   for change polling
  * GET ?path=assets&ids=a,b         → { rows: [{ id, data, updated_at }] }
+ * GET ?path=assets/x&view=activity[&before=iso] → { activity }  what happened to it, newest first (staff only)
  * POST { ops: [{ op: "set"|"update", path, value }] } → { rows }  the rows touched (data null = removed)
  *
  * Every collection is copied out of Firebase on the first request after deploy,
@@ -47,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const me = await currentUser(req, { allowPartner: true });
     if (!me) return fail(res, 401, "unauthorized");
     const only = isPartner(me) ? new Set(await accessibleAssetIds(me.id)) : null;
-    return req.method === "GET" ? await read(req, res, only) : await write(req, res, canWrite(me));
+    return req.method === "GET" ? await read(req, res, only) : await write(req, res, me);
   } catch (err) {
     return handleError(res, err);
   }
@@ -58,6 +60,10 @@ async function read(req: VercelRequest, res: VercelResponse, only: Set<string> |
   const path = parsePath(param(req, "path"));
   if (!path || !path.length) return fail(res, 400, "bad_path");
   const collection = path[0] as Collection;
+  if (param(req, "view") === "activity") {
+    if (only || collection !== "assets" || path.length !== 2) return fail(res, only ? 403 : 400, only ? "forbidden" : "bad_path");
+    return res.status(200).json({ activity: await readActivity(path[1], param(req, "before") || undefined) });
+  }
   if (only) return readOwn(req, res, path, only);
   // Every collection is copied out of Firebase on the first request of any kind, so
   // nothing is left behind in a page nobody has opened yet. Done once, it's a few small reads.
@@ -105,8 +111,8 @@ async function readOwn(req: VercelRequest, res: VercelResponse, path: string[], 
   return res.status(200).json({ value: row ? valueAt(row.data, path.slice(2)) : null });
 }
 
-async function write(req: VercelRequest, res: VercelResponse, allowed: boolean) {
-  if (!allowed) return fail(res, 403, "forbidden");
+async function write(req: VercelRequest, res: VercelResponse, me: AppUser) {
+  if (!canWrite(me)) return fail(res, 403, "forbidden");
   let body = req.body ?? {};
   if (typeof body === "string") {
     if (body.length > MAX_BODY_BYTES) return fail(res, 413, "too_large");
@@ -119,5 +125,5 @@ async function write(req: VercelRequest, res: VercelResponse, allowed: boolean) 
   const ops = parseOps(body);
   if (!Array.isArray(ops)) return fail(res, 400, ops.error, ops.message);
   await importAll();
-  return res.status(200).json({ rows: await applyOps(ops) });
+  return res.status(200).json({ rows: await applyOps(ops, { id: me.id, name: me.name || me.email || me.phone, source: "user" }) });
 }

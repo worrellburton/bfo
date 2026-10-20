@@ -232,7 +232,7 @@ export function fmtDate(value?: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-export type EntityTab = "overview" | "documents" | "people" | "compliance" | "agreements" | "governance";
+export type EntityTab = "overview" | "documents" | "people" | "compliance" | "agreements" | "governance" | "activity";
 
 // A moment as a local calendar date ("Oct 7, 2026") — not the UTC day.
 export function fmtStamp(ms?: number): string {

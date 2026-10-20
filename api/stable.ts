@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { logActivity } from "../lib/activity.js";
 import { canWrite, currentUser, fail, guard, handleError, isPartner, sb, secretMatches } from "../lib/auth.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
 import { StableNotConfigured, syncStable, type MailRow } from "../lib/stable.js";
@@ -100,6 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         prefer: "return=representation",
         body: { asset_id: assetId, assigned: "hand" },
       });
+      if (assetId && updated) await logActivity(assetId, { id: me.id, name: me.name || me.email, source: "user" }, [{ kind: "mail", summary: `Filed paper mail from ${updated.from_name || "an unknown sender"} here`, detail: { mailId: id } }]);
       return res.status(200).json({ mail: await present(updated) });
     }
     return fail(res, 400, "unknown_action");

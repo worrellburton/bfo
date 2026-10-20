@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { logActivity } from "../lib/activity.js";
 import { currentUser, fail, formatPhone, guard, handleError, isAdmin, normalizeEmail, normalizePhone, sb, sendEmail, sendSms, type AppUser } from "../lib/auth.js";
 import { accessFor, grantAccess, revokeAccess } from "../lib/entity-access.js";
 import { readRows } from "../lib/tree.js";
@@ -55,6 +56,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = String(body.userId ?? "");
       if (!/^[0-9a-f-]{36}$/i.test(userId)) return fail(res, 400, "bad_user");
       await revokeAccess(userId, assetId);
+      const gone = (await sb<AppUser[]>(`app_users?id=eq.${userId}&select=name,phone&limit=1`))[0];
+      await logActivity(assetId, { id: me.id, name: me.name || me.email, source: "user" }, [{ kind: "access", summary: `Took away ${gone?.name || "someone"}'s access` }]);
       // A partner with nothing left to see is signed out everywhere.
       const left = await sb<{ asset_id: string }[]>(`entity_access?user_id=eq.${userId}&select=asset_id&limit=1`);
       const users = await sb<AppUser[]>(`app_users?id=eq.${userId}&select=role&limit=1`);
@@ -97,6 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     await grantAccess(user.id, assetId, memberName, me.id);
+    await logActivity(assetId, { id: me.id, name: me.name || me.email, source: "user" }, [{ kind: "access", summary: `Invited ${user.name || name} to BFO` }]);
 
     // Tell them. Staff already have the whole app, so they're only told it's shared.
     const from = me.name?.trim() || "Burton Family Office";
