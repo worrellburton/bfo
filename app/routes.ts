@@ -34,6 +34,7 @@ export default [
     route("notifications", "./routes/notifications.tsx"),
     route("estate-map", "./routes/estate-map.tsx"),
     route("inbox", "./routes/inbox.tsx"),
+    route("paper-mail", "./routes/paper-mail.tsx"),
     route("tools/compliance", "./routes/tools-compliance.tsx"),
     route("*", "./routes/not-found.tsx"),
   ]),

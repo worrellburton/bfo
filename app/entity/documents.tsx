@@ -7,6 +7,7 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { canDraftAgreement } from "../paperwork-generate";
 import { isPartner } from "../auth";
+import { paperAction, PaperMailList, usePaperMail } from "../paper-mail";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
 import {
@@ -63,6 +64,7 @@ export function DocumentsTab() {
     <div onDragOver={swallow} onDrop={swallow} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
         <Filings />
+        <PaperMailSection />
         <Library />
       </div>
       {!isPartner() && (
@@ -283,6 +285,29 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
         <InlineError error={slot.error} />
       </Row>
     </div>
+  );
+}
+
+// ── Paper mail ───────────────────────────────────────────────────────────
+
+/** Paper mail Stable received for this entity: shown once there is some. */
+function PaperMailSection() {
+  const { page } = useEntity();
+  const { mail, setMail } = usePaperMail(page.id ?? undefined);
+  if (!mail?.length) return null;
+  const unread = mail.filter((m) => !m.readAt).length;
+  return (
+    <Section title="Paper mail" count={unread || undefined} alert={unread > 0} info="Mail that arrived for this entity at the Stable address, with its envelope and scan.">
+      <PaperMailList
+        mail={mail.slice(0, 10)}
+        empty=""
+        onOpen={(m) => {
+          if (m.readAt) return;
+          setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)) ?? list);
+          void paperAction({ action: "read", id: m.id }).catch(() => {});
+        }}
+      />
+    </Section>
   );
 }
 
