@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { draftProblems, emptyDraft, officeAddress, parseAddress, sameAddress, type FormationDraft } from "../app/formation";
+import { draftProblems, emptyDraft, emptyOwner, officeAddress, ownerName, parentOwnerId, parseAddress, sameAddress, type FormationDraft } from "../app/formation";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, redactDraft, summarizeFiling } from "../lib/palm-formation";
 
 const { state, sbMock } = vi.hoisted(() => ({ state: { role: "owner" as string | null }, sbMock: vi.fn() }));
@@ -42,6 +42,40 @@ describe("formation draft", () => {
     expect(texts).toContain("The registered agent must be in the state of formation.");
     expect(texts).toContain("The responsible party's SSN is needed for the EIN application.");
     expect(texts).toContain("Choose the entity's principal activity for the EIN.");
+  });
+});
+
+describe("owners", () => {
+  const owners = (): FormationDraft["owners"] => [
+    { ...emptyOwner("entity", "60"), entityId: "louise", entityName: "Ledger Louise, LLC" },
+    { ...emptyOwner("person", "40"), first: "Jane", last: "Doe", address: { street1: "2 Elm St", street2: "", city: "Reno", region: "NV", postal: "89502" } },
+  ];
+
+  it("must name everyone and add up to 100", () => {
+    const d = fullDraft();
+    d.owners = owners();
+    expect(draftProblems(d)).toEqual([]);
+    d.owners[1].percent = "30";
+    expect(draftProblems(d).map((p) => p.text)).toEqual(["Ownership adds up to 90%, not 100%."]);
+    d.owners[1] = { ...emptyOwner("person", ""), first: "Jane" };
+    expect(draftProblems(d).map((p) => p.text)).toEqual(["Owner 2 needs a name.", "Owner 2 needs a percentage."]);
+  });
+
+  it("go to Palm as the LLC's members, entities by name, and the largest one in BFO is the parent", () => {
+    const d = fullDraft();
+    d.owners = owners();
+    d.ein = { first: "Robert", last: "Burton", ssn: "123456789", fiscalYearEndMonth: 12, activity: "finance", activityDetail: "" };
+    const body = buildFormationRequest(d, "a") as any;
+    expect(body.initial_governing_persons).toEqual([
+      { name: { type: "entity", entity_name: "Ledger Louise, LLC" }, address: body.principal_address, role: "member", title: "Member" },
+      { name: { type: "person", first: "Jane", last: "Doe" }, address: { street_line_1: "2 Elm St", city: "Reno", region: "NV", postal_code: "89502", country: "US" }, role: "member", title: "Member" },
+      { name: { type: "person", first: "Robert", last: "Burton" }, role: "manager" },
+    ]);
+    expect(body.ein.llc_member_count).toBe(2);
+    expect(parentOwnerId(d.owners)).toBe("louise");
+    expect(ownerName(d.owners[1])).toBe("Jane Doe");
+    d.entityType = "corporation";
+    expect((buildFormationRequest(d, "a") as any).initial_governing_persons).toHaveLength(1);
   });
 });
 

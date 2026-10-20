@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
+import { ownerName, ownerPercent, parentOwnerId } from "../lib/formation-owners.js";
 import {
   isJurisdiction,
   normalizeEin,
@@ -353,6 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // The business Palm created is this entity's: stamp it so documents, mail and the agent find their way back.
         if (filing.business_id) await palm(`/v1/business/${filing.business_id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } }).catch(() => {});
         const a = draft.principal;
+        const owners = Array.isArray(draft.owners) ? draft.owners : [];
         const record: Record<string, unknown> = {
           name: draft.legalName.trim(),
           type: entityType === "llc" ? "LLC" : "C-Corp",
@@ -361,7 +363,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           createdAt: Date.now(),
           formedVia: "palm",
           address: [[a.street1, a.street2].filter((x) => x?.trim()).join(", "), a.city, `${a.region.toUpperCase()} ${a.postal}`].filter(Boolean).join(", "),
-          ...(draft.ownerId ? { ownerId: draft.ownerId } : {}),
+          ...(parentOwnerId(owners) ? { ownerId: parentOwnerId(owners) } : {}),
+          ...(owners.length ? { members: owners.map((o) => ({ name: ownerName(o), percent: ownerPercent(o) || null, role: "Member" })) } : {}),
           ...(draft.email ? { email: draft.email.trim() } : {}),
           palm: { [mode]: { businessId: filing.business_id ?? null, linkedAt: state.submittedAt, formation: state } },
         };

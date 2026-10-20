@@ -9,11 +9,17 @@ import {
   EIN_ACTIVITIES,
   EMPTY_ADDRESS,
   emptyDraft,
+  emptyOwner,
   officeAddress,
+  ownerName,
+  ownerPercent,
+  ownersTotal,
+  parseAddress,
   sameAddress,
   US_STATES,
   type FormationAddress,
   type FormationDraft,
+  type FormationOwner,
   type FormationState,
 } from "../formation";
 import { palmCall, PalmUnavailable, type PalmMode } from "../palm";
@@ -77,6 +83,8 @@ function Wizard({
     if (office) d.principal = { ...office };
     d.contact = { name: me?.name ?? "", email: me?.email ?? "", phone: me?.phone ?? "" };
     d.email = me?.email ?? "";
+    // Most new entities are owned by one already here: start with that row to fill in.
+    if (entities.length) d.owners = [emptyOwner("entity", "100")];
     return d;
   });
   const [mode, setMode] = useState<PalmMode | null | "off">(null);
@@ -208,7 +216,8 @@ function Wizard({
         `${typeLabel.toUpperCase() === "LLC" ? "LLC" : "Corporation"} in ${stateName}${draft.expeditedTier ? `, ${TIER_LABEL[draft.expeditedTier] ?? draft.expeditedTier} processing` : ""}.`,
         draft.agent.provider === "palm" ? "Palm serves as registered agent." : `${draft.agent.name} serves as registered agent.`,
         draft.ein ? "Palm applies for the EIN once the state has formed it." : "No EIN application.",
-        `${draft.organizers.length} organizer${draft.organizers.length === 1 ? "" : "s"}${draft.governors.length ? `, ${draft.governors.length} ${draft.governors.length === 1 ? "member or manager" : "members and managers"}` : ""}.`,
+        draft.owners.length ? `Owned by ${draft.owners.map((o) => `${ownerName(o)} (${ownerPercent(o)}%)`).join(", ")}.` : "No owners listed.",
+        `${draft.organizers.length} organizer${draft.organizers.length === 1 ? "" : "s"}${draft.governors.length ? `, ${draft.governors.length} ${draft.governors.length === 1 ? (draft.entityType === "llc" ? "manager" : "director or officer") : draft.entityType === "llc" ? "managers" : "directors and officers"}` : ""}.`,
       ],
       tone: live ? "danger" : "default",
       confirmLabel: live ? "Yes, file with the state" : "Submit test filing",
@@ -226,6 +235,13 @@ function Wizard({
       setSubmitting(false);
     }
   }
+
+  const setOwner = (i: number, next: FormationOwner) => set({ owners: draft.owners.map((x, j) => (j === i ? next : x)) });
+  /** A new owner takes whatever share is left. */
+  const addOwner = (kind: FormationOwner["kind"]) => {
+    const left = Math.max(0, Math.round((100 - ownersTotal(draft.owners)) * 100) / 100);
+    set({ owners: [...draft.owners, emptyOwner(kind, left ? String(left) : "")] });
+  };
 
   const field = (label: string, node: ReactNode, hint?: ReactNode, wide = false) => (
     <Field label={label} hint={hint} wide={wide}>
@@ -303,18 +319,6 @@ function Wizard({
                 <NameStatus check={nameCheck} onPick={(n) => set({ legalName: n })} />
               )}
             </div>
-            {field(
-              "Owned by",
-              <Select value={draft.ownerId} onChange={(e) => set({ ownerId: e.target.value })}>
-                <option value="">Nobody here (top of the structure)</option>
-                {entities.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </Select>,
-              "Where it sits on the estate map. Ownership on the state's filing comes from the people on the next steps."
-            )}
           </div>
         );
       case "Addresses":
@@ -368,6 +372,44 @@ function Wizard({
         return (
           <div className="space-y-6">
             <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className={`text-[13px] font-semibold ${t.text}`}>Owners</h3>
+                <div className="flex items-center gap-3">
+                  <TextButton onClick={() => addOwner("entity")}>Add an entity</TextButton>
+                  <TextButton onClick={() => addOwner("person")}>Add a person</TextButton>
+                </div>
+              </div>
+              <p className={`mb-3 text-[12px] ${t.muted}`}>
+                {draft.entityType === "llc"
+                  ? "Who owns it and how much. They go to Palm as the LLC's members, and Palm drafts the operating agreement from this list. The percentages are kept here."
+                  : "Who owns it and how much. Kept here; the shares are issued after the state forms it."}
+              </p>
+              {draft.owners.length === 0 ? (
+                <p className={`text-[12.5px] ${t.faint}`}>No owners listed. It sits at the top of the structure.</p>
+              ) : (
+                <div className="space-y-3">
+                  {draft.owners.map((o, i) => (
+                    <OwnerRow
+                      key={i}
+                      owner={o}
+                      entities={entities}
+                      llc={draft.entityType === "llc"}
+                      principal={draft.principal}
+                      onChange={(next) => setOwner(i, next)}
+                      onRemove={() => set({ owners: draft.owners.filter((_, j) => j !== i) })}
+                      address={
+                        <>
+                          <TextButton onClick={() => setOwner(i, { ...o, address: o.address ? null : { ...EMPTY_ADDRESS } })}>{o.address ? "Use the principal office" : "Different address"}</TextButton>
+                          {o.address && <div className="mt-2">{addressFields(o.address, (address) => setOwner(i, { ...o, address }))}</div>}
+                        </>
+                      }
+                    />
+                  ))}
+                  <OwnersTotal owners={draft.owners} />
+                </div>
+              )}
+            </div>
+            <div>
               <div className="mb-2 flex items-center justify-between">
                 <h3 className={`text-[13px] font-semibold ${t.text}`}>{draft.entityType === "llc" ? "Organizers" : "Incorporators"}</h3>
                 <TextButton onClick={() => set({ organizers: [...draft.organizers, { first: "", last: "", address: null, title: draft.entityType === "llc" ? "Organizer" : "Incorporator" }] })}>Add another</TextButton>
@@ -393,11 +435,13 @@ function Wizard({
             </div>
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className={`text-[13px] font-semibold ${t.text}`}>{draft.entityType === "llc" ? "Members and managers" : "Directors and officers"}</h3>
+                <h3 className={`text-[13px] font-semibold ${t.text}`}>{draft.entityType === "llc" ? "Managers" : "Directors and officers"}</h3>
                 <TextButton onClick={() => set({ governors: [...draft.governors, { first: "", last: "", role: "manager", title: "" }] })}>Add a person</TextButton>
               </div>
               <p className={`mb-3 text-[12px] ${t.muted}`}>
-                Optional. Some states list them on the articles or the initial list. The operating agreement, not the state, sets ownership and is kept here in Documents after formation.
+                {draft.entityType === "llc"
+                  ? "Optional. Only for a manager-managed LLC: the people who run it without owning it. Leave empty and the owners run it."
+                  : "Optional. Some states list them on the articles or the initial list."}
               </p>
               {draft.governors.length === 0 ? (
                 <p className={`text-[12.5px] ${t.faint}`}>No one listed.</p>
@@ -411,10 +455,12 @@ function Wizard({
                       onChange={(first, last) => set({ governors: draft.governors.map((x, j) => (j === i ? { ...x, first, last } : x)) })}
                       onRemove={() => set({ governors: draft.governors.filter((_, j) => j !== i) })}
                       extra={
-                        <Select value={g.role} onChange={(e) => set({ governors: draft.governors.map((x, j) => (j === i ? { ...x, role: e.target.value as "member" | "manager" } : x)) })} className="!w-auto">
-                          <option value="manager">{draft.entityType === "llc" ? "Manager" : "Director"}</option>
-                          <option value="member">{draft.entityType === "llc" ? "Member" : "Officer"}</option>
-                        </Select>
+                        draft.entityType === "llc" ? undefined : (
+                          <Select value={g.role} onChange={(e) => set({ governors: draft.governors.map((x, j) => (j === i ? { ...x, role: e.target.value as "member" | "manager" } : x)) })} className="!w-auto">
+                            <option value="manager">Director</option>
+                            <option value="member">Officer</option>
+                          </Select>
+                        )
                       }
                     />
                   ))}
@@ -541,10 +587,10 @@ function Wizard({
               <Summary label="Entity" value={`${draft.legalName.trim()} · ${draft.entityType === "llc" ? "LLC" : "Corporation"} · ${stateName}`} />
               <Summary label="Office" value={`${draft.principal.street1}${draft.principal.street2 ? `, ${draft.principal.street2}` : ""}, ${draft.principal.city}, ${draft.principal.region} ${draft.principal.postal}`} />
               <Summary label={draft.entityType === "llc" ? "Organizers" : "Incorporators"} value={draft.organizers.map((o) => `${o.first} ${o.last}`.trim()).join(", ")} />
-              {draft.governors.length > 0 && <Summary label="People" value={draft.governors.map((g) => `${g.first} ${g.last} (${g.role})`).join(", ")} />}
+              <Summary label={draft.owners.length === 1 ? "Owner" : "Owners"} value={draft.owners.length ? draft.owners.map((o) => `${ownerName(o)} · ${ownerPercent(o)}%`).join("\n") : "None listed"} />
+              {draft.governors.length > 0 && <Summary label={draft.entityType === "llc" ? "Managers" : "People"} value={draft.governors.map((g) => `${g.first} ${g.last}${draft.entityType === "llc" ? "" : ` (${g.role === "manager" ? "director" : "officer"})`}`).join(", ")} />}
               <Summary label="Registered agent" value={draft.agent.provider === "palm" ? "Palm" : draft.agent.name} />
               <Summary label="EIN" value={draft.ein ? `Palm applies after formation (${draft.ein.first} ${draft.ein.last} as responsible party)` : "Not now"} />
-              {draft.ownerId && <Summary label="Owned by" value={entities.find((e) => e.id === draft.ownerId)?.name ?? "—"} />}
             </dl>
 
             <div>
@@ -758,6 +804,106 @@ function NameStatus({ check, onPick }: { check: NameCheck | null | "checking"; o
         </span>
       )}
     </span>
+  );
+}
+
+function OwnerRow({
+  owner: o,
+  entities,
+  llc,
+  principal,
+  onChange,
+  onRemove,
+  address,
+}: {
+  owner: FormationOwner;
+  entities: { id: string; name: string; address?: string }[];
+  llc: boolean;
+  principal: FormationAddress;
+  onChange: (next: FormationOwner) => void;
+  onRemove: () => void;
+  address: ReactNode;
+}) {
+  const t = useTone();
+  // An entity owner is one already here, or one typed in ("other").
+  const [typed, setTyped] = useState(() => o.kind === "entity" && !o.entityId && !!o.entityName);
+  const pick = (id: string) => {
+    if (id === "__other") {
+      setTyped(true);
+      onChange({ ...o, entityId: "", entityName: "" });
+      return;
+    }
+    setTyped(false);
+    const e = entities.find((x) => x.id === id);
+    // Its address on record when it has its own; otherwise the principal office.
+    const own = parseAddress(e?.address);
+    onChange({ ...o, entityId: id, entityName: e?.name ?? "", address: own && !sameAddress(own, principal) ? own : null });
+  };
+  return (
+    <div className={`rounded-xl border p-3 ${t.line}`}>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Owner is" className="w-[118px] shrink-0">
+          <Select value={o.kind} onChange={(e) => onChange({ ...o, kind: e.target.value as FormationOwner["kind"] })}>
+            <option value="entity">An entity</option>
+            <option value="person">A person</option>
+          </Select>
+        </Field>
+        {o.kind === "entity" ? (
+          <>
+            <Field label="Entity" className="min-w-[180px] flex-1">
+              <Select value={typed ? "__other" : o.entityId} onChange={(e) => pick(e.target.value)}>
+                <option value="">Choose…</option>
+                {entities.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+                <option value="__other">Another company…</option>
+              </Select>
+            </Field>
+            {typed && (
+              <Field label="Legal name" className="min-w-[180px] flex-1">
+                <Input value={o.entityName} onChange={(e) => onChange({ ...o, entityName: e.target.value })} placeholder="Example Holdings, LLC" autoComplete="off" />
+              </Field>
+            )}
+          </>
+        ) : (
+          <>
+            <Field label="First name" className="min-w-[120px] flex-1">
+              <Input value={o.first} onChange={(e) => onChange({ ...o, first: e.target.value })} autoComplete="off" />
+            </Field>
+            <Field label="Last name" className="min-w-[120px] flex-1">
+              <Input value={o.last} onChange={(e) => onChange({ ...o, last: e.target.value })} autoComplete="off" />
+            </Field>
+          </>
+        )}
+        <Field label={llc ? "Ownership" : "Owns"} className="w-[96px] shrink-0">
+          <div className="relative">
+            <Input value={o.percent} onChange={(e) => onChange({ ...o, percent: e.target.value.replace(/[^\d.]/g, "") })} inputMode="decimal" className="pr-6 text-right tabular-nums" aria-label="Percent owned" />
+            <span className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12.5px] ${t.muted}`}>%</span>
+          </div>
+        </Field>
+        <div className="flex h-8 items-center max-sm:h-[44px]">
+          <IconButton icon="x" label="Remove owner" onClick={onRemove} />
+        </div>
+      </div>
+      <div className="mt-2">{address}</div>
+    </div>
+  );
+}
+
+/** The shares added up: fine at 100, flagged otherwise. */
+function OwnersTotal({ owners }: { owners: FormationOwner[] }) {
+  const t = useTone();
+  const total = ownersTotal(owners);
+  const ok = total === 100;
+  return (
+    <div className={`flex items-center justify-end gap-2 px-1 text-[12.5px] tabular-nums ${ok ? t.muted : t.dark ? "text-amber-300" : "text-amber-700"}`}>
+      {ok ? <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2} /> : null}
+      <span>
+        Total {total}%{ok ? "" : `, ${total < 100 ? `${Math.round((100 - total) * 100) / 100}% left to assign` : `${Math.round((total - 100) * 100) / 100}% over`}`}
+      </span>
+    </div>
   );
 }
 

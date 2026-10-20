@@ -1,3 +1,7 @@
+import { ownerPercent, ownersTotal } from "../lib/formation-owners";
+
+export { emptyOwner, ownerName, ownerPercent, ownersTotal, parentOwnerId } from "../lib/formation-owners";
+
 /**
  * Forming a new entity through Palm: what the wizard collects (a Draft), and
  * what the entity's record keeps about the filing (FormationState). Shared
@@ -45,6 +49,20 @@ export type FormationGovernor = FormationPerson & {
   title: string;
 };
 
+/** Someone who owns part of the new entity: an entity (one already in BFO, or another) or a person. */
+export type FormationOwner = {
+  kind: "entity" | "person";
+  /** An entity in BFO; blank for one that isn't, named in entityName. */
+  entityId: string;
+  entityName: string;
+  first: string;
+  last: string;
+  /** Blank: the principal address is used. */
+  address: FormationAddress | null;
+  /** Percent owned, as typed. */
+  percent: string;
+};
+
 export type FormationAgent =
   | { provider: "palm" }
   | { provider: "own"; kind: "person" | "organization"; name: string; address: FormationAddress; email: string; phone: string };
@@ -75,14 +93,15 @@ export type FormationDraft = {
   mailingSame: boolean;
   mailing: FormationAddress;
   organizers: FormationOrganizer[];
+  /** Who owns it, with their shares. For an LLC these are its members on the filing. */
+  owners: FormationOwner[];
+  /** Managers (LLC), or directors and officers (corporation). */
   governors: FormationGovernor[];
   agent: FormationAgent;
   ein: FormationEin | null;
   expeditedTier: string;
   /** Jurisdiction-specific fields, keyed as Palm's requirement schema names them. */
   extra: Record<string, unknown>;
-  /** BFO: which entity owns this one, and its Palm business once formed. */
-  ownerId: string;
   note: string;
 };
 
@@ -106,12 +125,12 @@ export function emptyDraft(): FormationDraft {
     mailingSame: true,
     mailing: { ...EMPTY_ADDRESS },
     organizers: [{ first: "", last: "", address: null, title: "Organizer" }],
+    owners: [],
     governors: [],
     agent: { provider: "palm" },
     ein: null,
     expeditedTier: "",
     extra: {},
-    ownerId: "",
     note: "",
   };
 }
@@ -210,6 +229,14 @@ export function draftProblems(d: FormationDraft): { step: number; text: string }
     if (!o.first.trim() || !o.last.trim()) out.push({ step: 2, text: `Organizer ${i + 1} needs a first and last name.` });
     if (o.address) for (const p of addressProblems(o.address, `Organizer ${i + 1}`)) out.push({ step: 2, text: p });
   });
+  d.owners.forEach((o, i) => {
+    const n = d.owners.length > 1 ? ` ${i + 1}` : "";
+    if (o.kind === "person" ? !o.first.trim() || !o.last.trim() : !o.entityName.trim()) out.push({ step: 2, text: `Owner${n} needs a name.` });
+    const pct = ownerPercent(o);
+    if (!(pct > 0 && pct <= 100)) out.push({ step: 2, text: `Owner${n} needs a percentage.` });
+    if (o.address) for (const p of addressProblems(o.address, `Owner${n}`)) out.push({ step: 2, text: p });
+  });
+  if (d.owners.length && d.owners.every((o) => ownerPercent(o) > 0) && ownersTotal(d.owners) !== 100) out.push({ step: 2, text: `Ownership adds up to ${ownersTotal(d.owners)}%, not 100%.` });
   d.governors.forEach((g, i) => {
     if (!g.first.trim() || !g.last.trim()) out.push({ step: 2, text: `${g.role === "manager" ? "Manager" : "Member"} ${i + 1} needs a first and last name.` });
   });
