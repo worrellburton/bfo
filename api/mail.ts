@@ -35,7 +35,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  * is for owners and admins only. Email-only users may use this endpoint.
  *
  * GET ?view=
- *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
+ *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&to=<one of my addresses>&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
  *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
  *   message&id=<uuid>                → { message }  (marks it read)
  *   count                            → { unread, otherUnread, address|null, aliases, canSeeOther, sync? }  (kicks a sync)
@@ -112,10 +112,27 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       if (before && (!TIMESTAMP_RE.test(before) || Number.isNaN(Date.parse(before)))) return fail(res, 400, "bad_before");
       if (beforeId && (!before || !UUID_RE.test(beforeId))) return fail(res, 400, "bad_before");
       const at = encodeURIComponent(`"${before}"`);
+      // One mailbox: mail that came in to that address of mine, or went out from it.
+      const to = param(req, "to").trim().toLowerCase();
+      let box = "";
+      if (to) {
+        const main = (me.mail_address ?? "").toLowerCase();
+        const mine = main ? [main, ...(await listAliases(me.id)).map((a) => a.toLowerCase())] : [];
+        if (!mine.includes(to)) return fail(res, 400, "bad_mailbox");
+        const v = encodeURIComponent(`"${to}"`);
+        // Mail from before extra addresses existed has no delivered-to: it came to the main one.
+        box =
+          folder === "sent"
+            ? `from_email.eq.${v}`
+            : to === main
+              ? `or(delivered_to.eq.${v},delivered_to.is.null)`
+              : `delivered_to.eq.${v}`;
+      }
       // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
       const conditions = [
         !before ? "" : beforeId ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))` : `occurred_at.lt.${at}`,
         searchCondition(param(req, "q")),
+        box,
       ].filter(Boolean);
       const extra = conditions.length ? `&and=(${conditions.join(",")})` : "";
       // A search looks through everything the caller may see, whatever folder is open.
