@@ -1,5 +1,6 @@
 /** "email" = Email only: signs in to their own inbox and nothing else. */
-export type Role = "owner" | "admin" | "member" | "viewer" | "email";
+/** "partner" = an entity's owner or member, invited to see only the entities they're on. */
+export type Role = "owner" | "admin" | "member" | "viewer" | "email" | "partner";
 export type Status = "incoming" | "approved" | "denied";
 
 export type User = {
@@ -160,9 +161,13 @@ export function isEmailOnly(user: User | null = getUser()): boolean {
   return user?.role === "email";
 }
 
-/** Where a signed-in user lands: the inbox for "Email only", Home for everyone else. */
+export function isPartner(user: User | null = getUser()): boolean {
+  return user?.role === "partner";
+}
+
+/** Where a signed-in user lands: the inbox for "Email only", their entities for a partner, Home for everyone else. */
 export function homePath(user: User | null = getUser()): string {
-  return isEmailOnly(user) ? "/inbox" : "/home";
+  return isEmailOnly(user) ? "/inbox" : isPartner(user) ? "/assets" : "/home";
 }
 
 /**
@@ -171,7 +176,7 @@ export function homePath(user: User | null = getUser()): string {
  */
 export function profileComplete(user: User | null | undefined): boolean {
   if (!user?.name || !user.phone) return false;
-  return isEmailOnly(user) || !!user.email;
+  return isEmailOnly(user) || isPartner(user) || !!user.email;
 }
 
 export function initials(user: User | null = getUser()): string {

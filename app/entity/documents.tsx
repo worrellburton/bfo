@@ -6,6 +6,7 @@
 
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { canDraftAgreement } from "../paperwork-generate";
+import { isPartner } from "../auth";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
 import {
@@ -64,9 +65,11 @@ export function DocumentsTab() {
         <Filings />
         <Library />
       </div>
-      <div className="min-w-0 space-y-4">
-        <DocumentCheck />
-      </div>
+      {!isPartner() && (
+        <div className="min-w-0 space-y-4">
+          <DocumentCheck />
+        </div>
+      )}
     </div>
   );
 }
@@ -139,14 +142,18 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const pick = () => picker.current?.click();
   // Paperwork BFO can write itself, from the record.
   const generate =
-    kind === "w9"
+    isPartner()
+      ? null
+      : kind === "w9"
       ? { label: "Fill in", title: "Fill in the IRS's W-9 from the record", run: page.generateW9 }
       : kind === "operatingAgreement" && canDraftAgreement(asset)
         ? { label: "Draft", title: "Draft the operating agreement from the members, state and tax class on record", run: page.generateOperatingAgreement }
         : null;
 
   const need: { tone: Tone; word: string; hint?: string } =
-    rule?.level === "recommended"
+    isPartner()
+      ? { tone: "muted", word: "Not on file" }
+      : rule?.level === "recommended"
       ? { tone: "muted", word: "Optional" }
       : rule?.level === "expected"
         ? { tone: "warn", word: "Expected", hint: "Not a legal requirement, but banks, lenders and courts expect it" }
@@ -159,7 +166,7 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   };
   // A filled slot takes no drop, but still clears the highlight if it was filed mid-drag.
   const dropHandlers = {
-        ...(file ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
+        ...(file || isPartner() ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
         onDragLeave: (e: DragEvent<HTMLDivElement>) => {
           e.preventDefault();
           e.stopPropagation();
@@ -185,7 +192,7 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
     <span className="flex min-w-0 items-center gap-2">
       <Dot tone="good" />
       <a href={file.url} target="_blank" rel="noopener noreferrer" title={file.fileName} className="min-w-0 truncate hover:underline">
-        {file.fileName}
+        {file.fileName || "On file"}
       </a>
       {file.uploadedAt ? <span className={`shrink-0 text-[12px] tabular-nums ${t.muted}`}>{fmtStamp(file.uploadedAt)}</span> : null}
     </span>
@@ -199,7 +206,14 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
     </span>
   );
 
-  const actions = file ? (
+  // An invited owner looks; only staff change paperwork.
+  const actions = isPartner() ? (
+    file ? (
+      <div className="-my-1 flex shrink-0 items-center">
+        <IconLink href={file.url} icon="external" label="View" ariaLabel={`View ${title}`} />
+      </div>
+    ) : null
+  ) : file ? (
     <div className={`-my-1 flex shrink-0 items-center ${slot.uploading ? "" : REVEAL}`}>
       <IconLink href={file.url} icon="external" label="View" ariaLabel={`View ${title}`} />
       <IconButton icon="refresh" label="Replace" aria-label={`Replace ${title}`} disabled={slot.uploading} onClick={pick} />
@@ -240,7 +254,7 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
             {kind === "w9" ? "BFO can fill in the IRS's form from the record, ready to sign." : "BFO can draft it from the members, shares, state and tax class on record. Have counsel read it before signing."}
           </span>
         )}
-        {!file && <span className={`mt-1 block ${t.muted}`}>Drop a file on this row or upload one. {TYPES_LABEL} · up to 25 MB.</span>}
+        {!file && !isPartner() && <span className={`mt-1 block ${t.muted}`}>Drop a file on this row or upload one. {TYPES_LABEL} · up to 25 MB.</span>}
       </>
     ) : undefined;
 
@@ -321,7 +335,7 @@ function Library() {
         count={docs.length}
         info="Drop files anywhere on this card, or use Upload — multiple allowed. PDF, images, Office docs · up to 25 MB each."
         actions={
-          <>
+          isPartner() ? undefined : <>
             <TextButton onClick={() => page.setShowLinkForm((v) => !v)} aria-expanded={page.showLinkForm} className="mr-2">
               {page.showLinkForm ? "Hide link" : "Add link"}
             </TextButton>
@@ -445,7 +459,7 @@ function DocRow({ doc }: { doc: AssetDoc }) {
           )}
         </p>
       </div>
-      <div className={`flex shrink-0 items-center ${renaming || copied ? "" : REVEAL}`}>
+      {!isPartner() && <div className={`flex shrink-0 items-center ${renaming || copied ? "" : REVEAL}`}>
         <IconButton
           icon="sparkle"
           label={renaming ? "Renaming…" : "Rename"}
@@ -461,7 +475,7 @@ function DocRow({ doc }: { doc: AssetDoc }) {
           onClick={() => void page.handleCopyDocUrl(doc)}
         />
         <IconButton icon="trash" tone="danger" label="Delete" aria-label={`Delete ${doc.name}`} onClick={() => void page.handleDeleteDoc(doc.id)} />
-      </div>
+      </div>}
     </div>
   );
 }

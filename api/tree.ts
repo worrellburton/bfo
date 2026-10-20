@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { canWrite, currentUser, fail, handleError } from "../lib/auth.js";
+import { canWrite, currentUser, fail, handleError, isPartner } from "../lib/auth.js";
+import { accessibleAssetIds } from "../lib/entity-access.js";
 import { importAll, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
 import {
   applyOps,
@@ -16,7 +17,8 @@ import {
 
 /**
  * The shared JSON tree (lib/tree.ts) for signed-in users. Any approved user
- * but "Email only" may read; owners, admins and members may write.
+ * but "Email only" may read; owners, admins and members may write. Partners
+ * (invited owners) read only the entities they've been given, nothing else.
  *
  * GET ?path=assets                 → { value, updated }  a whole collection keyed by id, and each row's updated_at
  * GET ?path=assets/x/documents     → { value }       any node (null when missing)
@@ -42,18 +44,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET" && req.method !== "POST") return fail(res, 405, "method_not_allowed");
   try {
-    const me = await currentUser(req);
+    const me = await currentUser(req, { allowPartner: true });
     if (!me) return fail(res, 401, "unauthorized");
-    return req.method === "GET" ? await read(req, res) : await write(req, res, canWrite(me));
+    const only = isPartner(me) ? new Set(await accessibleAssetIds(me.id)) : null;
+    return req.method === "GET" ? await read(req, res, only) : await write(req, res, canWrite(me));
   } catch (err) {
     return handleError(res, err);
   }
 }
 
-async function read(req: VercelRequest, res: VercelResponse) {
+/** `only`: the entity ids a partner may read (null: everything). */
+async function read(req: VercelRequest, res: VercelResponse, only: Set<string> | null) {
   const path = parsePath(param(req, "path"));
   if (!path || !path.length) return fail(res, 400, "bad_path");
   const collection = path[0] as Collection;
+  if (only) return readOwn(req, res, path, only);
   // Every collection is copied out of Firebase on the first request of any kind, so
   // nothing is left behind in a page nobody has opened yet. Done once, it's a few small reads.
   await importAll();
@@ -76,6 +81,27 @@ async function read(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ value: collectionValue(rows), updated: Object.fromEntries(rows.map((r) => [r.id, r.updated_at])) });
   }
   const row = (await readRows(collection, [path[1]]))[0];
+  return res.status(200).json({ value: row ? valueAt(row.data, path.slice(2)) : null });
+}
+
+/** Staff-only parts of an entity record, never sent to a partner. */
+const STAFF_ONLY = ["notes", "contracts", "verification"];
+const forPartner = <T extends { data: unknown }>(r: T): T =>
+  r.data && typeof r.data === "object" ? { ...r, data: Object.fromEntries(Object.entries(r.data as Record<string, unknown>).filter(([k]) => !STAFF_ONLY.includes(k))) } : r;
+
+/** A partner's read: their entities, and only under assets. */
+async function readOwn(req: VercelRequest, res: VercelResponse, path: string[], only: Set<string>) {
+  if (path[0] !== "assets") return fail(res, 403, "forbidden");
+  if (path.length === 1) {
+    const view = param(req, "view");
+    const wanted = param(req, "ids") ? param(req, "ids").split(",").filter((id) => only.has(id)) : [...only];
+    const rows = (await readRows("assets", wanted.slice(0, 500))).map(forPartner);
+    if (view === "index") return res.status(200).json({ rows: rows.map((r) => ({ id: r.id, updated_at: r.updated_at })) });
+    if (param(req, "ids")) return res.status(200).json({ rows });
+    return res.status(200).json({ value: collectionValue(rows), updated: Object.fromEntries(rows.map((r) => [r.id, r.updated_at])) });
+  }
+  if (!only.has(path[1]) || STAFF_ONLY.includes(path[2])) return fail(res, 403, "forbidden");
+  const row = (await readRows("assets", [path[1]])).map(forPartner)[0];
   return res.status(200).json({ value: row ? valueAt(row.data, path.slice(2)) : null });
 }
 

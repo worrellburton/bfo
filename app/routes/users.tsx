@@ -14,6 +14,7 @@ const ROLE_LABELS: Record<Role, string> = {
   member: "Member",
   viewer: "Viewer",
   email: "Email only",
+  partner: "Entity owner",
 };
 
 type Tab = "all" | "incoming";
@@ -273,7 +274,7 @@ export default function Users() {
               onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
             <select className={`${input} cursor-pointer`} value={draft.role} aria-label="Role"
               onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}>
-              {(["admin", "member", "viewer", "email", ...(canSetOwner ? ["owner"] : [])] as Role[]).map((r) => (
+              {(["admin", "member", "viewer", "email", "partner", ...(canSetOwner ? ["owner"] : [])] as Role[]).map((r) => (
                 <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
             </select>
@@ -452,7 +453,7 @@ export default function Users() {
                           isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
                         }`}
                       >
-                        {(["admin", "member", "viewer", "email", ...(canSetOwner || user.role === "owner" ? ["owner"] : [])] as Role[]).map((r) => (
+                        {(["admin", "member", "viewer", "email", "partner", ...(canSetOwner || user.role === "owner" ? ["owner"] : [])] as Role[]).map((r) => (
                           <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                         ))}
                       </select>

@@ -12,6 +12,7 @@ import {
   isAdmin,
   isAuthenticated,
   isEmailOnly,
+  isPartner,
   logout,
   otherAccounts,
   profileComplete,
@@ -270,10 +271,26 @@ export default function AppLayout() {
   const mail = useMailCount();
   // "Email only" members get a reduced shell: the wordmark, the inbox and the user menu.
   const emailOnly = isEmailOnly(user);
+  // Partners (invited entity owners) see their entities and nothing else.
+  const partner = isPartner(user);
+  const [myEntities, setMyEntities] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!partner) return;
+    let live = true;
+    void (async () => {
+      const { db, ref, get, authReady } = await import("../store");
+      await authReady;
+      const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
+      if (live) setMyEntities(Object.entries(all).map(([id, a]) => ({ id, name: a?.name ?? "Entity" })).sort((a, b) => a.name.localeCompare(b.name)));
+    })().catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [partner]);
 
   useEffect(() => {
     // Refresh the custom entity-initials cache once per session.
-    if (isEmailOnly(getUser())) return;
+    if (isEmailOnly(getUser()) || isPartner(getUser())) return;
     void import("../books-shared").then((m) => m.hydrateEntityTags());
   }, []);
 
@@ -402,7 +419,9 @@ export default function AppLayout() {
   // Its folders carry their own counts; Other only for those who can see it.
   const unread = mail?.unread ?? 0;
   const canSeeOther = mail ? mail.canSeeOther : isAdmin(user);
-  const items: NavItem[] = (emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) =>
+  const entitiesItem = navItems.find((i) => i.to === "/assets")!;
+  const partnerItems: NavItem[] = myEntities.map((e) => ({ to: `/assets/${e.id}`, label: e.name, icon: entitiesItem.icon }));
+  const items: NavItem[] = (partner ? partnerItems : emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) =>
     i.to === "/inbox" && i.children
       ? {
           ...i,
@@ -521,7 +540,7 @@ export default function AppLayout() {
         </div>
 
         {/* Jump to anything — the palette's front door in the rail. */}
-        {!emailOnly && (
+        {!emailOnly && !partner && (
           <div className="px-3 pb-2">
             <button
               type="button"
@@ -653,7 +672,7 @@ export default function AppLayout() {
                 </button>
               )}
 
-              {!emailOnly && (
+              {!emailOnly && !partner && (
                 <>
                   <button onClick={() => go("/notifications")} className={menuItemCls} role="menuitem">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -722,7 +741,7 @@ export default function AppLayout() {
               </span>
             )}
           </NavLink>
-          {!emailOnly && (
+          {!emailOnly && !partner && (
             <button
               type="button"
               onClick={openPalette}
@@ -742,10 +761,16 @@ export default function AppLayout() {
 
       <main id="main" tabIndex={-1} className="sidebar-content outline-none relative z-10 p-4 pt-[calc(4.5rem+env(safe-area-inset-top))] sm:p-6 sm:pt-[calc(5rem+env(safe-area-inset-top))] lg:p-8 lg:ml-[var(--inset)]">
         {/* Email-only members see the inbox and nothing else; redirect before any other page mounts. */}
-        {emailOnly && location.pathname !== "/inbox" ? <Navigate to="/inbox" replace /> : <Outlet />}
+        {emailOnly && location.pathname !== "/inbox" ? (
+          <Navigate to="/inbox" replace />
+        ) : partner && !location.pathname.startsWith("/assets") ? (
+          <Navigate to="/assets" replace />
+        ) : (
+          <Outlet />
+        )}
       </main>
 
-      {!emailOnly && (
+      {!emailOnly && !partner && (
         <>
           <ShellShortcuts pages={pages} openPalette={openPalette} openSheet={openSheet} />
           <CommandPalette
