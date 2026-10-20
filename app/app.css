@@ -1150,3 +1150,109 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
   .word, .reveal-block { opacity: 1; transform: none; filter: none; transition: none; }
   .gold-sheen::after { display: none; }
 }
+
+/* ── Formation wizard (app/entity/form-wizard.tsx) ─────────────────────
+   A deeper panel than the palette, with a faint indigo-to-gold light behind
+   it; the active choices glow; the filing preview reads like paper. */
+
+.wiz.glass-panel {
+  background:
+    radial-gradient(900px 520px at 0% 0%, rgba(129, 140, 248, 0.10), transparent 60%),
+    radial-gradient(700px 480px at 100% 100%, rgba(251, 191, 36, 0.06), transparent 60%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 60%),
+    rgba(10, 10, 14, 0.92);
+}
+html.light .wiz.glass-panel {
+  background:
+    radial-gradient(900px 520px at 0% 0%, rgba(79, 70, 229, 0.07), transparent 60%),
+    radial-gradient(700px 480px at 100% 100%, rgba(217, 119, 6, 0.06), transparent 60%),
+    rgba(255, 255, 255, 0.97);
+}
+.wiz-rail { background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 40%); }
+html.light .wiz-rail { background: linear-gradient(180deg, rgba(15, 23, 42, 0.02), transparent 40%); }
+.wiz-preview-bg { background: rgba(0, 0, 0, 0.18); }
+html.light .wiz-preview-bg { background: rgba(248, 250, 252, 0.8); }
+
+.wiz-step { animation: wiz-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes wiz-in { from { opacity: 0; transform: translateY(10px); } }
+.wiz-reveal { animation: wiz-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.wiz-pulse { animation: wiz-pulse 1.4s ease-in-out infinite; }
+@keyframes wiz-pulse { 50% { opacity: 0.45; } }
+
+.wiz-card { background: rgba(255, 255, 255, 0.018); }
+html.light .wiz-card { background: rgba(255, 255, 255, 0.7); }
+
+.wiz-dot-on {
+  background: linear-gradient(135deg, #818cf8, #6366f1 55%, #a78bfa);
+  box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.16), 0 6px 18px -6px rgba(99, 102, 241, 0.8);
+}
+.wiz-line-done { background: linear-gradient(180deg, rgba(52, 211, 153, 0.5), rgba(129, 140, 248, 0.35)); }
+.wiz-progress {
+  background: linear-gradient(90deg, #818cf8, #a78bfa 50%, #fbbf24);
+  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wiz-choice { cursor: pointer; transition: border-color 160ms, background-color 160ms, box-shadow 200ms, transform 160ms; }
+.wiz-choice:hover { border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.025); }
+html.light .wiz-choice:hover { border-color: rgb(209 213 219); background: rgba(255, 255, 255, 0.9); }
+.wiz-choice:active { transform: scale(0.995); }
+.wiz-choice.is-on {
+  border-color: rgba(129, 140, 248, 0.55);
+  background: linear-gradient(160deg, rgba(129, 140, 248, 0.12), rgba(129, 140, 248, 0.04));
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.25) inset, 0 14px 40px -24px rgba(99, 102, 241, 0.9);
+}
+html.light .wiz-choice.is-on {
+  border-color: rgba(79, 70, 229, 0.45);
+  background: linear-gradient(160deg, rgba(79, 70, 229, 0.07), rgba(255, 255, 255, 0.9));
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.15) inset, 0 14px 40px -26px rgba(79, 70, 229, 0.6);
+}
+.wiz-glyph { color: #a5b4fc; background: rgba(129, 140, 248, 0.1); box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.18) inset; }
+html.light .wiz-glyph { color: #4f46e5; background: rgba(79, 70, 229, 0.07); box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.12) inset; }
+.wiz-choice.is-on .wiz-glyph { color: #fff; background: linear-gradient(135deg, #818cf8, #6366f1); box-shadow: 0 6px 16px -6px rgba(99, 102, 241, 0.9); }
+.wiz-radio.is-on { border-color: transparent; background: linear-gradient(135deg, #818cf8, #6366f1); }
+
+.wiz-chip { transition: background-color 140ms, border-color 140ms, color 140ms; }
+.wiz-chip:hover { border-color: rgba(255, 255, 255, 0.18); }
+html.light .wiz-chip:hover { border-color: rgb(156 163 175); }
+.wiz-chip.is-on { color: #fff; border-color: transparent; background: linear-gradient(135deg, #818cf8, #6366f1); box-shadow: 0 6px 16px -8px rgba(99, 102, 241, 0.9); }
+
+.wiz-switch-on { background: linear-gradient(135deg, #818cf8, #6366f1); }
+
+.wiz-cta {
+  display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 18px;
+  border-radius: 12px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #818cf8, #6366f1 60%, #7c3aed);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 10px 24px -10px rgba(99, 102, 241, 0.9);
+  transition: transform 140ms, box-shadow 200ms, opacity 140ms, filter 140ms;
+}
+.wiz-cta:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 14px 30px -10px rgba(99, 102, 241, 1); }
+.wiz-cta:active:not(:disabled) { transform: translateY(1px); }
+.wiz-cta:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+
+.wiz-paper {
+  border-color: rgba(251, 191, 36, 0.18);
+  background:
+    radial-gradient(400px 200px at 100% 0%, rgba(251, 191, 36, 0.07), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 24px 50px -30px rgba(0, 0, 0, 0.9);
+}
+html.light .wiz-paper {
+  border-color: rgba(217, 119, 6, 0.2);
+  background: radial-gradient(400px 200px at 100% 0%, rgba(251, 191, 36, 0.1), transparent 70%), #fffdf8;
+  box-shadow: 0 24px 50px -32px rgba(120, 53, 15, 0.35);
+}
+.wiz-seal {
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.07), 0 0 0 4px rgba(251, 191, 36, 0.15);
+}
+html.light .wiz-seal { color: #b45309; border-color: rgba(217, 119, 6, 0.4); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wiz-step, .wiz-reveal, .wiz-pulse { animation: none; }
+}
+/* Phones: the wizard is the whole screen, so nothing should show through it. */
+@media (max-width: 639px) {
+  .wiz.glass-panel { background: #0b0b0f; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.light .wiz.glass-panel { background: #fff; }
+}

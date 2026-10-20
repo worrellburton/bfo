@@ -1,14 +1,28 @@
-import type { FormationOwner } from "../app/formation";
+import type { FormationOwner, PersonName } from "../app/formation";
 
 /**
  * The owners of an entity being formed: shared by the wizard (app/formation.ts
  * re-exports these) and the server, which stores them on the new record.
  */
 
-export const emptyOwner = (kind: FormationOwner["kind"], percent = ""): FormationOwner => ({ kind, entityId: "", entityName: "", first: "", last: "", address: null, percent });
+export const emptyOwner = (kind: FormationOwner["kind"], percent = ""): FormationOwner => ({
+  kind,
+  entityId: "",
+  entityName: "",
+  name: { first: "", middle: "", last: "", suffix: "" },
+  percent,
+  title: "Member",
+  address: null,
+  email: "",
+  phone: "",
+  ssn: "",
+});
 
-/** An owner's name as the filing and the record write it. (Picking an entity in BFO fills in its name.) */
-export const ownerName = (o: FormationOwner) => (o.kind === "person" ? `${o.first.trim()} ${o.last.trim()}`.trim() : o.entityName.trim());
+/** "Jane A. Doe Jr." */
+export const personName = (n: PersonName) => [n.first, n.middle, n.last, n.suffix].map((x) => (x ?? "").trim()).filter(Boolean).join(" ");
+
+/** An owner's name as the filing and the record write it. */
+export const ownerName = (o: FormationOwner) => (o.kind === "person" ? personName(o.name) : o.entityName.trim());
 
 /** "60", "60%", "33.33" → the number; anything else → NaN. */
 export const ownerPercent = (o: FormationOwner) => (/^\s*\d+(\.\d+)?\s*%?\s*$/.test(o.percent) ? Number.parseFloat(o.percent) : Number.NaN);

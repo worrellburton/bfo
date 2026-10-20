@@ -1,6 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { draftProblems, emptyDraft, emptyOwner, officeAddress, ownerName, parentOwnerId, parseAddress, sameAddress, type FormationDraft } from "../app/formation";
-import { buildFormationRequest, einPatch, extraFields, formationPatch, redactDraft, summarizeFiling } from "../lib/palm-formation";
+import {
+  activityQuestions,
+  asksMarried,
+  draftProblems,
+  EMPTY_ADDRESS,
+  emptyDraft,
+  emptyEin,
+  emptyOfficer,
+  emptyOfficial,
+  emptyOwner,
+  emptyParty,
+  emptyStockClass,
+  officeAddress,
+  ownerName,
+  parentOwnerId,
+  parseAddress,
+  sameAddress,
+  type FormationDraft,
+  type FormationEin,
+} from "../app/formation";
+import { buildFormationRequest, einPatch, extraFields, formationPatch, principalActivity, redactDraft, stateRules, summarizeFiling } from "../lib/palm-formation";
 
 const { state, sbMock } = vi.hoisted(() => ({ state: { role: "owner" as string | null }, sbMock: vi.fn() }));
 
@@ -19,36 +38,75 @@ function fullDraft(): FormationDraft {
   d.legalName = "Example Holdings, LLC";
   d.email = "ops@example.com";
   d.contact = { name: "Robert Burton", email: "robert@example.com", phone: "" };
-  d.principal = { street1: "1 Main St", street2: "Suite 2", city: "Reno", region: "NV", postal: "89501" };
-  d.organizers = [{ first: "Robert", last: "Burton", address: null, title: "Organizer" }];
-  d.governors = [{ first: "Robert", last: "Burton", role: "manager", title: "" }];
+  d.principal = { street1: "1 Main St", street2: "Suite 2", city: "Reno", region: "NV", postal: "89501", county: "" };
+  d.organizers = [emptyParty("Organizer", { first: "Robert", last: "Burton" })];
   return d;
+}
+
+const person = (first: string, last: string) => ({ first, middle: "", last, suffix: "" });
+
+function fullEin(over: Partial<FormationEin> = {}): FormationEin {
+  return {
+    ...emptyEin(),
+    responsible: { first: "Robert", middle: "", last: "Burton", ssn: "123-45-6789" },
+    activity: { category: "finance", type: "investment_holding" },
+    activityDetail: "Holds family investments",
+    ...over,
+  };
 }
 
 describe("formation draft", () => {
   it("lists what's missing by step", () => {
     const problems = draftProblems(emptyDraft());
-    expect(problems.map((p) => p.step)).toEqual(expect.arrayContaining([0, 1, 2]));
-    expect(problems.some((p) => p.step === 3)).toBe(false);
+    expect(new Set(problems.map((p) => p.step))).toEqual(new Set(["entity", "business", "filers"]));
     expect(draftProblems(fullDraft())).toEqual([]);
   });
 
-  it("asks for the agent and the EIN party when chosen", () => {
+  it("asks for the agent and every EIN answer when chosen", () => {
     const d = fullDraft();
-    d.agent = { provider: "own", kind: "organization", name: "", address: { street1: "", street2: "", city: "", region: "AZ", postal: "" }, email: "", phone: "" };
-    d.ein = { first: "", last: "", ssn: "123-45", fiscalYearEndMonth: 12, activity: "", activityDetail: "" };
+    d.agent = { provider: "own", kind: "organization", name: person("", ""), entityName: "", address: { ...EMPTY_ADDRESS, region: "AZ" }, mailing: null, email: "", phone: "" };
+    d.ein = { ...emptyEin(), responsible: { first: "", middle: "", last: "", ssn: "123-45" }, employees: { agricultural: "0", other: "3" }, activity: { category: "real_estate", type: "rent_lease_owned_property" } };
     const texts = draftProblems(d).map((p) => p.text);
     expect(texts).toContain("Name the registered agent.");
-    expect(texts).toContain("The registered agent must be in the state of formation.");
-    expect(texts).toContain("The responsible party's SSN is needed for the EIN application.");
-    expect(texts).toContain("Choose the entity's principal activity for the EIN.");
+    expect(texts).toContain("The registered office must be in the state of formation.");
+    expect(texts).toContain("The responsible party's SSN or ITIN is needed.");
+    expect(texts).toContain("When will wages first be paid?");
+    expect(texts).toContain("Principal activity: what it rents");
+    expect(texts).toContain("Describe what it sells, makes or does (line 17).");
+  });
+
+  it("asks what the state requires: a county, an organizer's email, its own fields", () => {
+    const d = fullDraft();
+    const rules = { "principal_address.county": { required: true, options: [], description: null }, "organizers.email": { required: true, options: [], description: null } };
+    const texts = draftProblems(d, rules, [{ key: "management_type", label: "Management", required: true }]).map((p) => p.text);
+    expect(texts).toEqual(["Principal office: county (Nevada asks for it)", "The organizer: email (the state asks for it)", "Management is required in Nevada."]);
+  });
+
+  it("asks a two-member LLC in a community-property state whether the members are married", () => {
+    const d = fullDraft();
+    d.owners = [
+      { ...emptyOwner("person", "50"), name: person("Robert", "Burton") },
+      { ...emptyOwner("person", "50"), name: person("Jane", "Burton") },
+    ];
+    d.ein = fullEin();
+    expect(asksMarried(d)).toBe(true);
+    expect(draftProblems(d).map((p) => p.text)).toEqual(["Are the two members married to each other?"]);
+    d.ein.marriedCouple = "yes";
+    expect(draftProblems(d).map((p) => p.text)).toEqual(["Choose how the married couple's LLC is taxed."]);
+    d.ein.llcClassification = "single_member";
+    expect(draftProblems(d)).toEqual([]);
+    const body = buildFormationRequest(d, "a") as any;
+    expect(body.ein).toMatchObject({ llc_member_count: 2, members_are_married_couple: true, llc_classification: "single_member" });
+    d.principal.region = "NY";
+    expect(asksMarried(d)).toBe(false);
+    expect((buildFormationRequest(d, "a") as any).ein.members_are_married_couple).toBeUndefined();
   });
 });
 
 describe("owners", () => {
   const owners = (): FormationDraft["owners"] => [
     { ...emptyOwner("entity", "60"), entityId: "louise", entityName: "Ledger Louise, LLC" },
-    { ...emptyOwner("person", "40"), first: "Jane", last: "Doe", address: { street1: "2 Elm St", street2: "", city: "Reno", region: "NV", postal: "89502" } },
+    { ...emptyOwner("person", "40"), name: person("Jane", "Doe"), email: "jane@example.com", address: { street1: "2 Elm St", street2: "", city: "Reno", region: "NV", postal: "89502", county: "" } },
   ];
 
   it("must name everyone and add up to 100", () => {
@@ -57,25 +115,28 @@ describe("owners", () => {
     expect(draftProblems(d)).toEqual([]);
     d.owners[1].percent = "30";
     expect(draftProblems(d).map((p) => p.text)).toEqual(["Ownership adds up to 90%, not 100%."]);
-    d.owners[1] = { ...emptyOwner("person", ""), first: "Jane" };
+    d.owners[1] = { ...emptyOwner("person", ""), name: person("Jane", "") };
     expect(draftProblems(d).map((p) => p.text)).toEqual(["Owner 2 needs a name.", "Owner 2 needs a percentage."]);
   });
 
-  it("go to Palm as the LLC's members, entities by name, and the largest one in BFO is the parent", () => {
+  it("go to Palm as the LLC's members, managers after them, and the largest one in BFO is the parent", () => {
     const d = fullDraft();
     d.owners = owners();
-    d.ein = { first: "Robert", last: "Burton", ssn: "123456789", fiscalYearEndMonth: 12, activity: "finance", activityDetail: "" };
+    d.managed = "managers";
+    d.managers = [{ ...emptyOfficial("Manager"), name: person("Robert", "Burton") }];
+    d.ein = fullEin();
     const body = buildFormationRequest(d, "a") as any;
     expect(body.initial_governing_persons).toEqual([
       { name: { type: "entity", entity_name: "Ledger Louise, LLC" }, address: body.principal_address, role: "member", title: "Member" },
-      { name: { type: "person", first: "Jane", last: "Doe" }, address: { street_line_1: "2 Elm St", city: "Reno", region: "NV", postal_code: "89502", country: "US" }, role: "member", title: "Member" },
-      { name: { type: "person", first: "Robert", last: "Burton" }, role: "manager" },
+      { name: { type: "person", first: "Jane", last: "Doe" }, address: { street_line_1: "2 Elm St", city: "Reno", region: "NV", postal_code: "89502", country: "US" }, role: "member", title: "Member", email: "jane@example.com" },
+      { name: { type: "person", first: "Robert", last: "Burton" }, role: "manager", title: "Manager", address: body.principal_address },
     ]);
     expect(body.ein.llc_member_count).toBe(2);
     expect(parentOwnerId(d.owners)).toBe("louise");
     expect(ownerName(d.owners[1])).toBe("Jane Doe");
-    d.entityType = "corporation";
-    expect((buildFormationRequest(d, "a") as any).initial_governing_persons).toHaveLength(1);
+    // Member-managed: the managers listed are left out.
+    d.managed = "members";
+    expect((buildFormationRequest(d, "a") as any).initial_governing_persons).toHaveLength(2);
   });
 });
 
@@ -87,27 +148,115 @@ describe("formation request", () => {
     expect(body.principal_address).toEqual({ street_line_1: "1 Main St", street_line_2: "Suite 2", city: "Reno", region: "NV", postal_code: "89501", country: "US" });
     expect(body.mailing_address).toBeUndefined();
     expect(body.organizers[0]).toEqual({ name: { type: "person", first: "Robert", last: "Burton" }, address: body.principal_address, title: "Organizer" });
-    expect(body.initial_governing_persons[0].role).toBe("manager");
+    expect(body.initial_governing_persons).toBeUndefined();
     expect(body.registered_agent).toBeUndefined(); // Palm serves
     expect(body.ein).toBeUndefined();
+    expect(body.phone).toBeUndefined();
     expect(body.metadata).toEqual({ bfo_asset_id: "asset1" });
   });
 
-  it("sends the EIN application with the SSN unformatted and keeps nothing secret in the redacted draft", () => {
+  it("sends a corporation's stock, board and officers, and its EIN with every answer", () => {
     const d = fullDraft();
     d.entityType = "corporation";
-    d.ein = { first: "Robert", last: "Burton", ssn: "123-45-6789", fiscalYearEndMonth: 12, activity: "real_estate", activityDetail: "Holds property" };
+    d.organizers = [{ ...emptyParty("Incorporator"), kind: "entity", entityName: "Ledger Louise, LLC", entityType: "limited_liability_company", email: "ops@example.com" }];
+    d.stock = { total: "1,000,000", hasPar: true, par: "0.0001", consideration: "100", rights: "", multiClass: false, classes: [] };
+    d.directors = [{ ...emptyOfficial("Chair"), name: { first: "Robert", middle: "A", last: "Burton", suffix: "Jr." } }];
+    d.officers = [{ ...emptyOfficer("president"), name: person("Robert", "Burton") }, { ...emptyOfficer("other"), title: "Chief investment officer", name: person("Jane", "Doe") }];
+    d.mailing = { street1: "PO Box 9", street2: "", city: "Reno", region: "NV", postal: "89501", county: "Washoe" };
+    d.ein = fullEin({
+      reason: "other",
+      reasonDetail: "Banking",
+      employees: { agricultural: "0", other: "2" },
+      wageDate: "2027-01-01",
+      activity: { category: "real_estate", type: "use_capital_to_build_property", single_trade: "no", construction_type: "other_structures", construction_type_detail: "Bridges" },
+      hasPreviousEin: true,
+      previousEin: "12-3456789",
+      tradeName: "Example",
+      form944: true,
+      involvesAtf: true,
+      corporationSubtype: "s_corporation",
+      memberCount: "3",
+    });
     d.extra = { shares_authorized: 1000, blank: "", legal_name: "ignored" };
     const body = buildFormationRequest(d, "a") as any;
-    expect(body.incorporators).toHaveLength(1);
+    expect(body.incorporators).toEqual([{ name: { type: "entity", entity_name: "Ledger Louise, LLC" }, address: body.principal_address, title: "Incorporator", email: "ops@example.com", entity_type: "limited_liability_company" }]);
     expect(body.organizers).toBeUndefined();
-    expect(body.ein.responsible_party).toEqual({ first_name: "Robert", last_name: "Burton", ssn: "123456789" });
-    expect(body.ein.llc_member_count).toBeUndefined();
+    expect(body.mailing_address).toEqual({ street_line_1: "PO Box 9", city: "Reno", region: "NV", postal_code: "89501", county: "Washoe", country: "US" });
+    expect(body.stock_structure).toEqual({ total_authorized_shares: 1000000, has_par_value: true, par_value_per_share: 0.0001, total_consideration: 100 });
+    expect(body.initial_directors).toEqual([{ name: { first: "Robert", middle: "A", last: "Burton", suffix: "Jr." }, title: "Chair", address: body.principal_address }]);
+    expect(body.initial_officers.map((o: any) => [o.role, o.title])).toEqual([["president", "President"], ["other", "Chief investment officer"]]);
+    expect(body.initial_governing_persons).toBeUndefined();
+    expect(body.ein).toEqual({
+      responsible_party: { first_name: "Robert", last_name: "Burton", ssn: "123456789" },
+      reason: "other",
+      reason_detail: "Banking",
+      fiscal_year_end_month: 12,
+      expected_employee_count: { agricultural: 0, other: 2 },
+      wage_date: "2027-01-01",
+      principal_activity: { category: "real_estate", type: "use_capital_to_build_property", construction: { single_trade: false, construction_type: "other_structures", construction_type_detail: "Bridges" } },
+      principal_activity_detail: "Holds family investments",
+      has_previous_ein: true,
+      previous_ein: "12-3456789",
+      trade_name: "Example",
+      form_944_election: true,
+      owns_highway_vehicle: false,
+      involves_gambling: false,
+      files_form_720: false,
+      involves_alcohol_tobacco_firearms: true,
+      corporation_subtype: "s_corporation",
+    });
     expect(body.shares_authorized).toBe(1000);
     expect(body.blank).toBeUndefined();
     expect(body.legal_name).toBe("Example Holdings, LLC");
-    expect(redactDraft(d).ein?.ssn).toBe("");
-    expect(d.ein.ssn).toBe("123-45-6789");
+  });
+
+  it("sends several classes of stock with their total", () => {
+    const d = fullDraft();
+    d.entityType = "corporation";
+    d.stock = { ...d.stock, multiClass: true, classes: [{ ...emptyStockClass("Common"), authorized: "9000", issued: "1000", par: "0.001" }, { ...emptyStockClass("Preferred"), authorized: "1000", rights: "Liquidation preference" }] };
+    expect((buildFormationRequest(d, "a") as any).stock_structure).toEqual({
+      total_authorized_shares: 10000,
+      classes: [
+        { class_name: "Common", authorized_shares: 9000, issued_shares: 1000, par_value_per_share: 0.001 },
+        { class_name: "Preferred", authorized_shares: 1000, rights_and_restrictions: "Liquidation preference" },
+      ],
+    });
+  });
+
+  it("asks each activity's own follow-ups, and only those that apply", () => {
+    expect(principalActivity({ category: "construction", single_trade: "yes", trade: "Electrical", construction_type: "new_residential" })).toEqual({ category: "construction", detail: { single_trade: true, trade: "Electrical" } });
+    expect(principalActivity({ category: "health_care", includes_md: "no", non_md_role: "dentist", md_role: "psychiatrist" })).toEqual({ category: "health_care", includes_md: false, non_md_role: "dentist" });
+    expect(principalActivity({ category: "wholesale", owns_goods: "yes", receives_commission: "no", goods: "Soap" })).toEqual({ category: "wholesale", owns_goods: true, receives_commission: false, goods: "Soap" });
+    expect(principalActivity({ category: "warehousing" })).toEqual({ category: "warehousing" });
+    expect(activityQuestions({ category: "transportation", type: "cargo" }).map((q) => q.key)).toEqual(["type", "cargo_mode"]);
+  });
+
+  it("sends your own agent, and never keeps an SSN in the redacted draft", () => {
+    const d = fullDraft();
+    d.agent = { provider: "own", kind: "person", name: person("Ann", "Agent"), entityName: "", address: { street1: "9 Court St", street2: "", city: "Carson City", region: "NV", postal: "89701", county: "" }, mailing: null, email: "ann@example.com", phone: "" };
+    d.owners = [{ ...emptyOwner("person", "100"), name: person("Jane", "Doe"), ssn: "111-22-3333" }];
+    d.ein = fullEin();
+    const body = buildFormationRequest(d, "a") as any;
+    expect(body.registered_agent).toEqual({ type: "person", name: { type: "person", first: "Ann", last: "Agent" }, address: { street_line_1: "9 Court St", city: "Carson City", region: "NV", postal_code: "89701", country: "US" }, email: "ann@example.com" });
+    expect(body.initial_governing_persons[0].ssn).toBe("111-22-3333");
+    const safe = redactDraft(d);
+    expect(JSON.stringify(safe)).not.toMatch(/\d{3}-\d{2}-\d{4}/);
+    expect(d.ein.responsible.ssn).toBe("123-45-6789");
+  });
+
+  it("reads the state's rules for fields Palm already has", () => {
+    const schema = {
+      properties: {
+        principal_address: { $ref: "#/$defs/Address" },
+        organizers: { type: "array", items: { type: "object", required: ["name", "email"], properties: { email: { type: "string" }, title: { type: "string", enum: ["Organizer", "Member"] } } } },
+      },
+      $defs: { Address: { type: "object", required: ["county"], properties: { county: { type: "string" }, city: { type: "string" } } } },
+    };
+    const rules = stateRules(schema);
+    expect(rules["principal_address.county"]).toEqual({ required: true, options: [], description: null });
+    expect(rules["principal_address.city"].required).toBe(false);
+    expect(rules["organizers.email"].required).toBe(true);
+    expect(rules["organizers.title"].options).toEqual(["Organizer", "Member"]);
   });
 
   it("finds the state's extra fields in a requirement schema", () => {
@@ -233,6 +382,11 @@ describe("/api/palm formation actions", () => {
     expect(r.json).toEqual({ ok: false, errors: [{ field: "principal_address.postal_code", message: "Not a Nevada ZIP" }] });
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.getpalm.com/v1/filing/formation/llc/validate");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).legal_name).toBe("Example Holdings, LLC");
+    // Palm's usual answer: 200, with errors and warnings listed.
+    fetchMock.mockResolvedValueOnce(reply(200, { valid: false, errors: [{ source: "rules", code: "X", path: "organizers.0.email", message: "Email required" }], warnings: [{ source: "payload", code: "UNKNOWN_FIELD", path: "website", message: "Not accepted" }] }));
+    expect((await call({ action: "form-validate", draft: fullDraft() })).json).toEqual({ ok: false, errors: [{ field: "organizers.0.email", message: "Email required" }], warnings: [{ field: "website", message: "Not accepted" }] });
+    fetchMock.mockResolvedValueOnce(reply(200, { valid: true, errors: [], warnings: [] }));
+    expect((await call({ action: "form-validate", draft: fullDraft() })).json.ok).toBe(true);
   });
 
   it("only an owner files, in the mode the wizard saw, with an idempotency key, and writes the entity", async () => {
@@ -268,6 +422,7 @@ describe("/api/palm formation actions", () => {
     expect(op.value.palm.test.businessId).toBe("b1");
     expect(op.value.palm.test.formation.filingId).toBe(FID);
     expect(JSON.stringify(op.value)).not.toContain("ssn");
+    expect(op.value.members).toBeUndefined();
   });
 
   it("refuses to file over an existing entity", async () => {
@@ -301,8 +456,9 @@ describe("the family's office address", () => {
       city: "Phoenix",
       region: "AZ",
       postal: "85028",
+      county: "",
     });
-    expect(parseAddress("540 Hudson #6, New York, ny 10014-1234")).toEqual({ street1: "540 Hudson #6", street2: "", city: "New York", region: "NY", postal: "10014-1234" });
+    expect(parseAddress("540 Hudson #6, New York, ny 10014-1234")).toEqual({ street1: "540 Hudson #6", street2: "", city: "New York", region: "NY", postal: "10014-1234", county: "" });
     expect(parseAddress("Somewhere in Phoenix")).toBeNull();
     expect(parseAddress(undefined)).toBeNull();
   });
