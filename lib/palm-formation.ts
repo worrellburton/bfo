@@ -1,4 +1,5 @@
 import type { FilingStatus, FormationAddress, FormationDraft, FormationState } from "../app/formation";
+import { ownerName } from "./formation-owners.js";
 
 /**
  * Forming an entity through Palm, server side: the wizard's draft becomes
@@ -67,10 +68,32 @@ function address(a: FormationAddress): Record<string, string> {
   };
 }
 
-/** Palm's request body for the draft. `assetId` rides along as metadata so webhooks find the entity. */
+/**
+ * Palm's request body for the draft. `assetId` rides along as metadata so
+ * webhooks find the entity. An LLC's owners go to Palm as its members (Palm
+ * has no field for their shares: those live in BFO and the operating
+ * agreement).
+ */
 export function buildFormationRequest(d: FormationDraft, assetId: string): Record<string, unknown> {
   const principal = address(d.principal);
   const people = d.entityType === "llc" ? "organizers" : "incorporators";
+  const members =
+    d.entityType === "llc"
+      ? (d.owners ?? []).map((o) => ({
+          name: o.kind === "person" ? { type: "person", first: clean(o.first), last: clean(o.last) } : { type: "entity", entity_name: ownerName(o) },
+          address: o.address ? address(o.address) : principal,
+          role: "member",
+          title: "Member",
+        }))
+      : [];
+  const governing = [
+    ...members,
+    ...d.governors.map((g) => ({
+      name: { type: "person", first: clean(g.first), last: clean(g.last) },
+      role: g.role,
+      ...(clean(g.title) ? { title: clean(g.title) } : {}),
+    })),
+  ];
   const body: Record<string, unknown> = {
     jurisdiction: d.jurisdiction,
     legal_name: clean(d.legalName),
@@ -87,15 +110,7 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
       address: o.address ? address(o.address) : principal,
       ...(clean(o.title) ? { title: clean(o.title) } : {}),
     })),
-    ...(d.governors.length
-      ? {
-          initial_governing_persons: d.governors.map((g) => ({
-            name: { type: "person", first: clean(g.first), last: clean(g.last) },
-            role: g.role,
-            ...(clean(g.title) ? { title: clean(g.title) } : {}),
-          })),
-        }
-      : {}),
+    ...(governing.length ? { initial_governing_persons: governing } : {}),
     ...(d.agent.provider === "own"
       ? {
           registered_agent: {
@@ -117,7 +132,7 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
             principal_activity: { category: d.ein.activity, ...(clean(d.ein.activityDetail) ? { detail: clean(d.ein.activityDetail) } : {}) },
             principal_activity_detail: clean(d.ein.activityDetail) || clean(d.purpose).slice(0, 200),
             has_previous_ein: false,
-            ...(d.entityType === "llc" ? { llc_member_count: Math.max(1, d.governors.filter((g) => g.role === "member").length || 1) } : {}),
+            ...(d.entityType === "llc" ? { llc_member_count: Math.max(1, members.length + d.governors.filter((g) => g.role === "member").length) } : {}),
           },
         }
       : {}),
