@@ -102,5 +102,8 @@ describe("/api/stable-webhook", () => {
     expect(r.status).toBe(200);
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.usestable.com/v1/mail-items/mi_123456");
     expect(sbCalls.find((c) => c.method === "POST")!.body[0].from_name).toBe("From the API");
+    // A piece Stable doesn't know isn't retried.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"statusCode":404}', { status: 404 })));
+    expect(await call({ token: "secret-token" }, { eventType: "mailItem.created", data: { id: "mi_gone00" } })).toEqual({ status: 200, json: { ok: true, ignored: true } });
   });
 });

@@ -28,6 +28,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true });
   } catch (err) {
     if (err instanceof StableNotConfigured) return res.status(503).json({ error: "not_configured" });
+    // Stable doesn't know the piece (deleted, or not ours): nothing to retry.
+    if (err instanceof Error && /^stable 404\b/.test(err.message)) return res.status(200).json({ ok: true, ignored: true });
     console.error("stable webhook failed", body?.eventType, id, err);
     // 500 so Stable tries again; the hourly sync catches it otherwise.
     return res.status(500).json({ error: "failed" });
