@@ -53,7 +53,7 @@ export type PalmLink = {
   businessId: string;
   palmId?: string | null;
   linkedAt: number;
-  ra?: { status: RaService["status"]; name?: string | null; checkedAt: number };
+  ra?: { status: RaService["status"]; name?: string | null; address?: string | null; checkedAt: number };
   /** Set when BFO formed this entity through Palm (app/formation.ts). */
   formation?: FormationState;
 };
@@ -148,7 +148,7 @@ export function sameAddressText(a?: string | null, b?: string | null): boolean {
   return !!norm(a) && norm(a) === norm(b);
 }
 
-export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; formationDate?: string; address?: string }): Finding[] {
+export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string }): Finding[] {
   const out: Finding[] = [];
   if (rec.status && rec.status !== "active") out.push({ tone: "bad", text: `The state lists it as ${rec.status}, not active.` });
   const s = rec.standing ?? {};
@@ -157,6 +157,8 @@ export function stateFindings(rec: StateRecord, asset: { name?: string; register
   if (s.agent === "not_compliant") out.push({ tone: "bad", text: "The registered agent on file isn't valid." });
   if (rec.agent && asset.registeredAgent && normalizeName(rec.agent) !== normalizeName(asset.registeredAgent)) {
     out.push({ tone: "warn", text: `The state has ${rec.agent} as registered agent; our record says ${asset.registeredAgent}.` });
+  } else if (rec.agentAddress && asset.registeredAgentAddress && !sameAddressText(rec.agentAddress, asset.registeredAgentAddress)) {
+    out.push({ tone: "warn", text: `The state has the agent at ${rec.agentAddress}; our record says ${asset.registeredAgentAddress}.` });
   }
   if (rec.formationDate && asset.formationDate && rec.formationDate.slice(0, 10) !== asset.formationDate) {
     out.push({ tone: "warn", text: `The state's formation date is ${rec.formationDate.slice(0, 10)}; our record says ${asset.formationDate}.` });
@@ -216,7 +218,7 @@ export type StateLookup =
   | { kind: "error"; message: string };
 
 export async function lookupStateRecord(
-  entity: { name: string; state?: string; fileNumber?: string },
+  entity: { name: string; state?: string; fileNumber?: string; registeredAgent?: string; registeredAgentAddress?: string },
   mode: PalmMode,
   choice?: RegistryRecord,
 ): Promise<StateLookup> {
@@ -249,6 +251,11 @@ export async function lookupStateRecord(
   const snapshot = toStateRecord(record, mode);
   const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
   if (mode === "live" && !entity.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
+  // The agent's street address, as the state has it, when ours is blank and it's the same agent.
+  if (mode === "live" && !entity.registeredAgentAddress?.trim() && snapshot.agentAddress && (!entity.registeredAgent || normalizeName(entity.registeredAgent) === normalizeName(snapshot.agent ?? ""))) {
+    patch.registeredAgentAddress = snapshot.agentAddress;
+    if (!entity.registeredAgent && snapshot.agent) patch.registeredAgent = snapshot.agent;
+  }
   return { kind: "record", record: snapshot, patch };
 }
 

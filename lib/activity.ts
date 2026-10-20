@@ -31,7 +31,9 @@ const FIELDS: Record<string, string> = {
   type: "Entity type",
   state: "State",
   ein: "EIN",
-  address: "Address",
+  address: "Principal office",
+  mailingAddress: "Mailing address",
+  registeredAgentAddress: "Registered agent's address",
   formationDate: "Formation date",
   registeredAgent: "Registered agent",
   llcType: "Tax classification",
@@ -121,6 +123,15 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     const show = (v: unknown) => (key === "ownerId" && typeof v === "string" ? (names(v) ?? v) : text(v));
     fields.push({ key, label, from: QUIET.has(key) ? null : show(before[key]), to: QUIET.has(key) ? null : show(after[key]) });
   }
+  // The agent and file number in each state it's registered in as a foreign entity.
+  const foreignOf = (r: Rec): Record<string, Rec> => (r.foreign && typeof r.foreign === "object" ? r.foreign : {});
+  for (const code of new Set([...Object.keys(foreignOf(before)), ...Object.keys(foreignOf(after))])) {
+    const b = foreignOf(before)[code] ?? {};
+    const a = foreignOf(after)[code] ?? {};
+    for (const [k, label] of [["agent", "agent"], ["agentAddress", "agent's address"], ["fileNumber", "file number"]] as const) {
+      if (!same(b[k], a[k])) fields.push({ key: `foreign.${code}.${k}`, label: `${code} ${label}`, from: text(b[k]), to: text(a[k]) });
+    }
+  }
   if (fields.length) out.push({ kind: "edit", summary: editSummary(fields), detail: { fields } });
 
   // Owners
@@ -196,6 +207,13 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   else if (sa && sb0) {
     const moved = (["status", "standing", "address", "agent"] as const).filter((k) => !same(sb0[k], sa[k]) && sa[k]);
     if (moved.length) out.push({ kind: "state", summary: `The state's record changed: ${moved.map((k) => `${k} ${sa[k]}`).join(", ")}` });
+  }
+
+  // Foreign registrations: reading another state's record
+  const fb = (before.foreign ?? {}) as Record<string, Rec>;
+  const fa = (after.foreign ?? {}) as Record<string, Rec>;
+  for (const code of Object.keys(fa)) {
+    if (fa[code]?.record && fa[code].record.checkedAt !== fb[code]?.record?.checkedAt) out.push({ kind: "state", summary: `Read ${code}'s record through Palm` });
   }
 
   // Checks

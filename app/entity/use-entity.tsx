@@ -18,6 +18,7 @@ import {
   palmJurisdiction,
   PalmUnavailable,
   RA_STATUS,
+  sameAddressText,
   sortDocuments,
   stateFindings,
   type PalmDocument,
@@ -81,6 +82,17 @@ import {
  * records, editing and deleting — with no markup. The views render it.
  * (Moved unchanged from the old single-file page.)
  */
+/** Foreign registrations as typed: blank fields dropped, a state with nothing left dropped (null when none). */
+function cleanForeign(f: Asset["foreign"]): Asset["foreign"] | null {
+  const out: NonNullable<Asset["foreign"]> = {};
+  for (const [code, reg] of Object.entries(f ?? {})) {
+    const kept = Object.fromEntries(Object.entries(reg ?? {}).filter(([, v]) => (typeof v === "string" ? v.trim() : v))) as typeof reg;
+    for (const k of ["agent", "agentAddress", "fileNumber"] as const) if (typeof kept[k] === "string") kept[k] = kept[k]!.trim();
+    if (Object.keys(kept).length) out[code] = kept;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 export function useEntityPage() {
   const { id, tab: tabParam } = useParams();
   const navigate = useNavigate();
@@ -348,6 +360,9 @@ export function useEntityPage() {
       ein: pick("ein") || "",
       registeredAgent: pick("registeredAgent") || "",
       address: pick("address") || "",
+      mailingAddress: sameAddressText(pick("mailingAddress"), pick("address")) ? "" : (pick("mailingAddress") || "").trim(),
+      registeredAgentAddress: (pick("registeredAgentAddress") || "").trim(),
+      foreign: cleanForeign(pick("foreign")),
       formationDate: pick("formationDate") || "",
       status: pick("status") || "Active",
       notes: pick("notes") || "",
@@ -858,6 +873,8 @@ export function useEntityPage() {
   const [palmRa, setPalmRa] = useState<RaService | null | undefined>(undefined);
   const [palmDocs, setPalmDocs] = useState<PalmDocument[] | null>(null);
   const [palmBusy, setPalmBusy] = useState<"record" | "move" | "refresh" | null>(null);
+  /** The foreign state whose record is being read. */
+  const [foreignBusy, setForeignBusy] = useState<string | null>(null);
   const [palmError, setPalmError] = useState("");
   const [registryChoices, setRegistryChoices] = useState<RegistryRecord[] | null>(null);
   const palmMode = palmStatus?.mode ?? null;
@@ -988,7 +1005,7 @@ export function useEntityPage() {
       if (!current) return;
       const before = current.palm?.[mode]?.ra?.status ?? null;
       const patch: Record<string, unknown> = {
-        [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, checkedAt: Date.now() },
+        [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, address: formatPalmAddress(service?.address) ?? null, checkedAt: Date.now() },
       };
       if (mode === "live") {
         // Only on the change itself, so a later hand edit isn't overwritten on every visit.
@@ -996,6 +1013,10 @@ export function useEntityPage() {
           patch.registeredAgent = service.name;
           patch.registeredAgentSource = `Palm, active since ${(service.started_at ?? new Date().toISOString()).slice(0, 10)}`;
         }
+        // Palm's street address, once Palm reports it, while Palm is the agent on record.
+        const palmAddress = formatPalmAddress(service?.address);
+        const palmOnRecord = (service?.status === "active" && before !== "active") || /^Palm, active/.test(current.registeredAgentSource ?? "");
+        if (service?.status === "active" && palmAddress && palmOnRecord && !sameAddressText(palmAddress, current.registeredAgentAddress)) patch.registeredAgentAddress = palmAddress;
         if ((service?.status === "terminated" || service?.status === "canceled") && before === "active" && current.registeredAgentSource?.startsWith("Palm")) {
           patch.registeredAgentSource = `Palm stopped serving ${(service.ended_at ?? new Date().toISOString()).slice(0, 10)} — confirm the current agent`;
         }
@@ -1038,6 +1059,42 @@ export function useEntityPage() {
       if (epoch === palmEpoch.current) showPalmError(err);
     } finally {
       if (epoch === palmEpoch.current) setPalmBusy(null);
+    }
+  }
+
+  /**
+   * Read a foreign registration's record (e.g. Arizona's, for a Delaware LLC
+   * run from Phoenix) through Palm, and fill the agent and file number from it
+   * where ours are blank. Returns why it couldn't, or null.
+   */
+  async function checkForeignRecord(code: string): Promise<string | null> {
+    const current = assetRef.current;
+    const mode = palmMode;
+    if (!current) return null;
+    if (!mode) return "Connect Palm to read the state's record.";
+    const f = current.foreign?.[code] ?? {};
+    setForeignBusy(code);
+    try {
+      const found = await lookupStateRecord({ name: current.name, state: code, fileNumber: f.fileNumber, registeredAgent: f.agent, registeredAgentAddress: f.agentAddress }, mode);
+      if (found.kind === "error") return found.message;
+      if (found.kind === "choices") {
+        return found.results.length
+          ? `More than one ${code} registry entry matched. Add the ${code} file number under Edit, then check again.`
+          : `${code} has no registration for “${current.name}” yet. Once it's filed, add the file number under Edit.`;
+      }
+      const rec = found.record;
+      const live = mode === "live";
+      await patchAsset({
+        [`foreign/${code}/record`]: JSON.parse(JSON.stringify(rec)),
+        ...(live && !f.fileNumber && rec.registrationNumber ? { [`foreign/${code}/fileNumber`]: rec.registrationNumber } : {}),
+        ...(live && !f.agent && rec.agent ? { [`foreign/${code}/agent`]: rec.agent } : {}),
+        ...(live && !f.agentAddress && rec.agentAddress && (!f.agent || normalizeName(f.agent) === normalizeName(rec.agent ?? "")) ? { [`foreign/${code}/agentAddress`]: rec.agentAddress } : {}),
+      });
+      return null;
+    } catch (err) {
+      return err instanceof PalmUnavailable ? "Connect Palm to read the state's record." : (err as Error).message;
+    } finally {
+      setForeignBusy(null);
     }
   }
 
@@ -1125,7 +1182,7 @@ export function useEntityPage() {
       const { service } = await palmCall<{ service: RaService }>("ra-change", { mode, businessId: linkedId, assetId: id });
       palmSeq.current++;
       if (epoch === palmEpoch.current) setPalmRa(service);
-      await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, checkedAt: Date.now() } });
+      await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, address: formatPalmAddress(service.address) ?? null, checkedAt: Date.now() } });
     } catch (err) {
       // The request may have gone through before the error: show Palm's actual state, then the error.
       if (linkedId && epoch === palmEpoch.current) await refreshPalm(linkedId, { busy: false, keepError: true });
@@ -2079,6 +2136,8 @@ export function useEntityPage() {
     palmBusinessId,
     refreshPalm,
     checkStateRecord,
+    checkForeignRecord,
+    foreignBusy,
     moveAgentToPalm,
     buildProfile,
     documentsForReading,

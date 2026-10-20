@@ -63,6 +63,10 @@ type Entity = {
 
 type Business = { id: string; palm_id: string | null; display_name: string | null; metadata?: Record<string, string>; vault?: Record<string, unknown> | null };
 
+/** A wizard address as one line: "street, suite, city, ST 12345". */
+const oneLine = (a: { street1: string; street2?: string | null; city: string; region: string; postal: string }) =>
+  [[a.street1, a.street2].filter((x) => x?.trim()).join(", "), a.city, `${a.region.toUpperCase()} ${a.postal}`].filter(Boolean).join(", ");
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
@@ -369,7 +373,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ein: "",
           createdAt: Date.now(),
           formedVia: "palm",
-          address: [[a.street1, a.street2].filter((x) => x?.trim()).join(", "), a.city, `${a.region.toUpperCase()} ${a.postal}`].filter(Boolean).join(", "),
+          address: oneLine(a),
+          ...(draft.mailing ? { mailingAddress: oneLine(draft.mailing) } : {}),
           ...(parentOwnerId(owners) ? { ownerId: parentOwnerId(owners) } : {}),
           ...(owners.length ? { members: owners.map((o) => ({ name: ownerName(o), percent: ownerPercent(o) || null, role: entityType === "llc" ? "Member" : "Shareholder" })) } : {}),
           ...(draft.email ? { email: draft.email.trim() } : {}),

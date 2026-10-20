@@ -13,12 +13,14 @@ import {
   documentRules,
   entityType,
   stateCode,
+  stateName,
   TAX_CLASSES,
   type DocKey,
   type DocRule,
   type EntityType,
   type PaperworkInput,
 } from "./entity-paperwork";
+import { foreignStates } from "./entity-addresses";
 
 export { entityType, TAX_CLASSES };
 export type { EntityType };
@@ -68,6 +70,14 @@ export function entityCompleteness(a: CompletenessInput, today = new Date()): Co
       { key: "formationDate", label: "Formation date", weight: 6, done: !!a.formationDate },
       { key: "address", label: "Principal address", weight: 6, done: !!a.address?.trim() },
       { key: "registeredAgent", label: agentTerm(st), weight: 6, done: !!a.registeredAgent?.trim() },
+      { key: "registeredAgentAddress", label: `${agentTerm(st)}'s address`, weight: 3, done: !!a.registeredAgentAddress?.trim() },
+      // The agent in each state it must register in: it can't register there without one.
+      ...foreignStates(a).map((code) => ({
+        key: `foreign:${code}`,
+        label: `${agentTerm(code)} in ${stateName(code)}`,
+        weight: 3,
+        done: !!a.foreign?.[code]?.agent?.trim() && !!a.foreign?.[code]?.agentAddress?.trim(),
+      })),
       { key: "llcType", label: "Tax classification", weight: 6, done: TAX_CLASSES[type].includes((a.llcType ?? "") as never) },
     ];
   }

@@ -62,12 +62,14 @@ const withOwner = (r: Rec, lookup: (id: string) => Rec | undefined): Rec => {
 export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined): W9Data {
   const notes: string[] = [];
   const a = withOwner(entity, lookup);
-  const addr = parseAddress(entity.address);
+  // Lines 5–6 are where the payer mails the 1099: the mailing address, when there's one.
+  const mailTo = entity.mailingAddress || entity.address;
+  const addr = parseAddress(mailTo);
   const base = {
-    street: addr ? [addr.street1, addr.street2].filter(Boolean).join(", ") : (entity.address ?? "").trim(),
+    street: addr ? [addr.street1, addr.street2].filter(Boolean).join(", ") : (mailTo ?? "").trim(),
     cityStateZip: addr ? `${addr.city}, ${addr.region} ${addr.postal}` : "",
   };
-  if (!addr) notes.push(entity.address ? "The address isn't in a form the W-9 can split; check lines 5 and 6." : "No address on record: fill in lines 5 and 6.");
+  if (!addr) notes.push(mailTo ? "The address isn't in a form the W-9 can split; check lines 5 and 6." : "No address on record: fill in lines 5 and 6.");
 
   if (taxClassOf(a).value !== "Disregarded Entity") {
     const cls = boxFor(a);
