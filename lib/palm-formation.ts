@@ -1,5 +1,21 @@
-import type { FilingStatus, FormationAddress, FormationDraft, FormationState } from "../app/formation";
-import { ownerName } from "./formation-owners.js";
+import {
+  activityQuestions,
+  asksMarried,
+  CONSTRUCTION_QUESTIONS,
+  einMemberCount,
+  filersKey,
+  OFFICER_ROLES,
+  type EinActivity,
+  type FilingStatus,
+  type FormationAddress,
+  type FormationDraft,
+  type FormationEin,
+  type FormationOfficial,
+  type FormationState,
+  type FormationStock,
+  type PersonName,
+  type StateRules,
+} from "../app/formation.js";
 
 /**
  * Forming an entity through Palm, server side: the wizard's draft becomes
@@ -13,7 +29,8 @@ export type { FormationDraft, FormationState };
 /** Fields every formation has; anything else in a state's schema is state-specific. */
 const COMMON_FIELDS = new Set([
   "jurisdiction", "legal_name", "entity_name", "purpose", "phone", "email", "website", "effective_date",
-  "contact", "principal_address", "mailing_address", "organizers", "incorporators", "initial_governing_persons", "directors", "officers",
+  "contact", "principal_address", "mailing_address", "organizers", "incorporators", "initial_governing_persons", "initial_directors", "initial_officers",
+  "stock_structure", "directors", "officers",
   "registered_agent", "ein", "fein", "note", "metadata", "expedited_tier", "idempotency_key",
 ]);
 
@@ -56,88 +73,202 @@ export function extraFields(schema: unknown): ExtraField[] {
 }
 
 const clean = (s: string | undefined | null) => (s ?? "").trim();
+/** The keys that hold something, so blanks never reach Palm. */
+const some = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v !== undefined && v !== null));
+const number = (s: string) => {
+  const n = Number(clean(s).replace(/,/g, ""));
+  return clean(s) && Number.isFinite(n) ? n : undefined;
+};
 
 function address(a: FormationAddress): Record<string, string> {
-  return {
+  return some({
     street_line_1: clean(a.street1),
-    ...(clean(a.street2) ? { street_line_2: clean(a.street2) } : {}),
+    street_line_2: clean(a.street2),
     city: clean(a.city),
     region: clean(a.region).toUpperCase(),
     postal_code: clean(a.postal),
+    county: clean(a.county),
     country: "US",
-  };
+  }) as Record<string, string>;
+}
+
+const personName = (n: PersonName) => some({ first: clean(n.first), middle: clean(n.middle), last: clean(n.last), suffix: clean(n.suffix) });
+const partyName = (kind: "person" | "entity", n: PersonName, entityName: string) =>
+  kind === "person" ? { type: "person", ...personName(n) } : { type: "entity", entity_name: clean(entityName) };
+
+/** A manager / director / officer: name, and whatever else was given. */
+function official(p: FormationOfficial, principal: Record<string, string>, extra: Record<string, unknown> = {}) {
+  return some({
+    name: personName(p.name),
+    ...extra,
+    title: clean(p.title),
+    address: p.address ? address(p.address) : principal,
+    email: clean(p.email),
+    phone: clean(p.phone),
+    ssn: clean(p.ssn),
+  });
+}
+
+/** "yes" / "no" → a boolean; anything else is left out. */
+const yesNo = (v: string | undefined) => (v === "yes" ? true : v === "no" ? false : undefined);
+
+function construction(a: EinActivity) {
+  const single = yesNo(a.single_trade);
+  return some({
+    single_trade: single,
+    trade: single ? clean(a.trade) : "",
+    construction_type: single === false ? a.construction_type : "",
+    construction_type_detail: single === false && a.construction_type === "other_structures" ? clean(a.construction_type_detail) : "",
+  });
+}
+
+/** The principal activity as Palm's discriminated object: the category, and the follow-ups that apply. */
+export function principalActivity(a: EinActivity): Record<string, unknown> {
+  const out: Record<string, unknown> = { category: a.category };
+  if (a.category === "construction") return { ...out, detail: construction(a) };
+  for (const q of activityQuestions(a)) {
+    if (CONSTRUCTION_QUESTIONS.some((c) => c.key === q.key)) continue;
+    const v = q.kind === "yesno" ? yesNo(a[q.key]) : clean(a[q.key]);
+    if (v !== undefined && v !== "") out[q.key] = v;
+  }
+  if (a.category === "real_estate" && a.type === "use_capital_to_build_property") out.construction = construction(a);
+  return out;
+}
+
+function einRequest(d: FormationDraft, e: FormationEin): Record<string, unknown> {
+  const llc = d.entityType === "llc";
+  const employees = { agricultural: Math.max(0, Math.floor(number(e.employees.agricultural) ?? 0)), other: Math.max(0, Math.floor(number(e.employees.other) ?? 0)) };
+  const married = asksMarried(d) ? yesNo(e.marriedCouple) : undefined;
+  return some({
+    responsible_party: some({ first_name: clean(e.responsible.first), middle_name: clean(e.responsible.middle), last_name: clean(e.responsible.last), ssn: clean(e.responsible.ssn).replace(/-/g, "") }),
+    reason: e.reason || "started_new_business",
+    reason_detail: e.reason === "other" ? clean(e.reasonDetail) : "",
+    fiscal_year_end_month: e.fiscalYearEndMonth || 12,
+    expected_employee_count: employees,
+    wage_date: employees.agricultural + employees.other > 0 ? e.wageDate : "",
+    principal_activity: principalActivity(e.activity),
+    principal_activity_detail: clean(e.activityDetail).slice(0, 200) || clean(d.purpose).slice(0, 200),
+    has_previous_ein: e.hasPreviousEin,
+    previous_ein: e.hasPreviousEin ? clean(e.previousEin) : "",
+    trade_name: clean(e.tradeName),
+    form_944_election: e.form944,
+    owns_highway_vehicle: e.ownsHighwayVehicle,
+    involves_gambling: e.involvesGambling,
+    files_form_720: e.filesForm720,
+    involves_alcohol_tobacco_firearms: e.involvesAtf,
+    phone: clean(e.phone),
+    mailing_address: e.mailing ? address(e.mailing) : undefined,
+    llc_member_count: llc ? einMemberCount(d) : undefined,
+    members_are_married_couple: married,
+    llc_classification: married ? e.llcClassification : "",
+    corporation_subtype: llc ? "" : e.corporationSubtype,
+  });
+}
+
+function stockStructure(s: FormationStock): Record<string, unknown> {
+  if (s.multiClass) {
+    const classes = s.classes.map((c) =>
+      some({
+        class_name: clean(c.name),
+        authorized_shares: number(c.authorized),
+        issued_shares: number(c.issued),
+        par_value_per_share: number(c.par),
+        consideration: number(c.consideration),
+        rights_and_restrictions: clean(c.rights),
+      })
+    );
+    return some({
+      total_authorized_shares: s.classes.reduce((n, c) => n + (number(c.authorized) ?? 0), 0),
+      total_consideration: number(s.consideration),
+      classes,
+    });
+  }
+  return some({
+    total_authorized_shares: number(s.total),
+    has_par_value: s.hasPar,
+    par_value_per_share: s.hasPar ? number(s.par) : undefined,
+    total_consideration: number(s.consideration),
+    rights_and_restrictions: clean(s.rights),
+  });
 }
 
 /**
- * Palm's request body for the draft. `assetId` rides along as metadata so
- * webhooks find the entity. An LLC's owners go to Palm as its members (Palm
- * has no field for their shares: those live in BFO and the operating
- * agreement).
+ * Palm's request body for the draft, every field Palm takes. `assetId` rides
+ * along as metadata so webhooks find the entity. An LLC's owners go as its
+ * members (Palm has no field for their shares: those live in BFO and the
+ * operating agreement), its managers after them; a corporation's people go
+ * as its directors and officers.
  */
 export function buildFormationRequest(d: FormationDraft, assetId: string): Record<string, unknown> {
+  const llc = d.entityType === "llc";
   const principal = address(d.principal);
-  const people = d.entityType === "llc" ? "organizers" : "incorporators";
-  const members =
-    d.entityType === "llc"
-      ? (d.owners ?? []).map((o) => ({
-          name: o.kind === "person" ? { type: "person", first: clean(o.first), last: clean(o.last) } : { type: "entity", entity_name: ownerName(o) },
-          address: o.address ? address(o.address) : principal,
-          role: "member",
-          title: "Member",
-        }))
-      : [];
-  const governing = [
-    ...members,
-    ...d.governors.map((g) => ({
-      name: { type: "person", first: clean(g.first), last: clean(g.last) },
-      role: g.role,
-      ...(clean(g.title) ? { title: clean(g.title) } : {}),
-    })),
-  ];
+  const filers = d.organizers.map((o) =>
+    some({
+      name: partyName(o.kind, o.name, o.entityName),
+      address: o.address ? address(o.address) : principal,
+      title: clean(o.title),
+      email: clean(o.email),
+      phone: clean(o.phone),
+      entity_type: o.kind === "entity" ? clean(o.entityType) : "",
+    })
+  );
+  const governing = llc
+    ? [
+        ...d.owners.map((o) =>
+          some({
+            name: partyName(o.kind, o.name, o.entityName),
+            address: o.address ? address(o.address) : principal,
+            role: "member",
+            title: clean(o.title) || "Member",
+            email: clean(o.email),
+            phone: clean(o.phone),
+            ssn: o.kind === "person" ? clean(o.ssn) : "",
+          })
+        ),
+        ...(d.managed === "managers" ? d.managers.map((m) => official(m, principal, { role: "manager" })) : []),
+      ].map((g) => {
+        // Managers are people: Palm's name for them carries a type.
+        const n = g.name as Record<string, unknown>;
+        return n.type ? g : { ...g, name: { type: "person", ...n } };
+      })
+    : [];
+  const a = d.agent;
   const body: Record<string, unknown> = {
     jurisdiction: d.jurisdiction,
     legal_name: clean(d.legalName),
     purpose: clean(d.purpose),
     email: clean(d.email),
-    ...(clean(d.phone) ? { phone: clean(d.phone) } : {}),
-    ...(clean(d.website) ? { website: clean(d.website) } : {}),
+    ...some({ phone: clean(d.phone), website: clean(d.website) }),
     ...(/^\d{4}-\d{2}-\d{2}$/.test(d.effectiveDate) ? { effective_date: d.effectiveDate } : {}),
-    contact: { name: clean(d.contact.name), email: clean(d.contact.email), ...(clean(d.contact.phone) ? { phone: clean(d.contact.phone) } : {}) },
+    contact: some({ name: clean(d.contact.name), email: clean(d.contact.email), phone: clean(d.contact.phone) }),
     principal_address: principal,
-    ...(d.mailingSame ? {} : { mailing_address: address(d.mailing) }),
-    [people]: d.organizers.map((o) => ({
-      name: { type: "person", first: clean(o.first), last: clean(o.last) },
-      address: o.address ? address(o.address) : principal,
-      ...(clean(o.title) ? { title: clean(o.title) } : {}),
-    })),
-    ...(governing.length ? { initial_governing_persons: governing } : {}),
-    ...(d.agent.provider === "own"
+    ...(d.mailing ? { mailing_address: address(d.mailing) } : {}),
+    [filersKey(d.entityType)]: filers,
+    ...(llc
+      ? governing.length
+        ? { initial_governing_persons: governing }
+        : {}
+      : {
+          stock_structure: stockStructure(d.stock),
+          ...(d.directors.length ? { initial_directors: d.directors.map((p) => official(p, principal)) } : {}),
+          ...(d.officers.length
+            ? { initial_officers: d.officers.map((p) => official({ ...p, title: clean(p.title) || (OFFICER_ROLES.find(([r]) => r === p.role)?.[1] ?? "") }, principal, { role: p.role })) }
+            : {}),
+        }),
+    ...(a.provider === "own"
       ? {
-          registered_agent: {
-            type: d.agent.kind,
-            name: clean(d.agent.name),
-            address: address(d.agent.address),
-            ...(clean(d.agent.email) ? { email: clean(d.agent.email) } : {}),
-            ...(clean(d.agent.phone) ? { phone: clean(d.agent.phone) } : {}),
-          },
+          registered_agent: some({
+            type: a.kind,
+            name: a.kind === "person" ? { type: "person", ...personName(a.name) } : { type: "entity", entity_name: clean(a.entityName) },
+            address: address(a.address),
+            mailing_address: a.mailing ? address(a.mailing) : undefined,
+            email: clean(a.email),
+            phone: clean(a.phone),
+          }),
         }
       : {}),
-    ...(d.ein
-      ? {
-          ein: {
-            responsible_party: { first_name: clean(d.ein.first), last_name: clean(d.ein.last), ssn: clean(d.ein.ssn).replace(/-/g, "") },
-            reason: "started_new_business",
-            fiscal_year_end_month: d.ein.fiscalYearEndMonth || 12,
-            expected_employee_count: { agricultural: 0, other: 0 },
-            principal_activity: { category: d.ein.activity, ...(clean(d.ein.activityDetail) ? { detail: clean(d.ein.activityDetail) } : {}) },
-            principal_activity_detail: clean(d.ein.activityDetail) || clean(d.purpose).slice(0, 200),
-            has_previous_ein: false,
-            ...(d.entityType === "llc" ? { llc_member_count: Math.max(1, members.length + d.governors.filter((g) => g.role === "member").length) } : {}),
-          },
-        }
-      : {}),
-    ...(clean(d.expeditedTier) ? { expedited_tier: clean(d.expeditedTier) } : {}),
-    ...(clean(d.note) ? { note: clean(d.note).slice(0, 2000) } : {}),
+    ...(d.ein ? { ein: einRequest(d, d.ein) } : {}),
+    ...some({ expedited_tier: clean(d.expeditedTier), note: clean(d.note).slice(0, 2000) }),
     metadata: { bfo_asset_id: assetId },
   };
   // State-specific answers go on top; blanks are left out.
@@ -148,9 +279,63 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
   return body;
 }
 
+/**
+ * What a state's requirement schema adds to the common fields: which nested
+ * ones it requires (a county, an organizer's email) and the values it allows
+ * (a title from a set list). Paths are dotted, arrays without an index.
+ */
+export function stateRules(schema: unknown): StateRules {
+  const root = (schema ?? {}) as Record<string, unknown>;
+  const defs = { ...((root.$defs as object) ?? {}), ...((root.definitions as object) ?? {}) } as Record<string, Record<string, unknown>>;
+  const out: StateRules = {};
+  const resolve = (node: unknown, depth: number): Record<string, unknown> | null => {
+    if (!node || typeof node !== "object" || depth > 8) return null;
+    let n = node as Record<string, unknown>;
+    if (typeof n.$ref === "string") {
+      const key = n.$ref.replace(/^#\/(\$defs|definitions)\//, "");
+      n = { ...(defs[key] ?? {}), ...n };
+    }
+    // allOf: one object made of its parts.
+    if (Array.isArray(n.allOf)) {
+      const parts = (n.allOf as unknown[]).map((x) => resolve(x, depth + 1) ?? {});
+      n = {
+        ...Object.assign({}, ...parts),
+        ...n,
+        properties: Object.assign({}, ...parts.map((x) => x.properties ?? {}), n.properties ?? {}),
+        required: [...parts.flatMap((x) => (Array.isArray(x.required) ? x.required : [])), ...(Array.isArray(n.required) ? n.required : [])],
+      };
+    }
+    return n;
+  };
+  const walk = (node: unknown, path: string, depth: number) => {
+    const n = resolve(node, depth);
+    if (!n || depth > 6) return;
+    if (n.type === "array" || n.items) return walk(n.items, path, depth + 1);
+    const props = (n.properties ?? {}) as Record<string, unknown>;
+    const required = new Set(Array.isArray(n.required) ? (n.required as string[]) : []);
+    for (const [key, child] of Object.entries(props)) {
+      const p = path ? `${path}.${key}` : key;
+      const c = resolve(child, depth + 1) ?? {};
+      const options = Array.isArray(c.enum) ? (c.enum as unknown[]).filter((v): v is string => typeof v === "string") : [];
+      out[p] = { required: required.has(key), options, description: typeof c.description === "string" ? c.description : null };
+      walk(c, p, depth + 1);
+    }
+  };
+  walk(root, "", 0);
+  return out;
+}
+
 /** The draft with anything secret removed, for logs and the record. */
 export function redactDraft(d: FormationDraft): FormationDraft {
-  return d.ein ? { ...d, ein: { ...d.ein, ssn: "" } } : d;
+  const off = <T extends { ssn: string }>(list: T[]) => list.map((p) => ({ ...p, ssn: "" }));
+  return {
+    ...d,
+    owners: off(d.owners),
+    managers: off(d.managers),
+    directors: off(d.directors),
+    officers: off(d.officers),
+    ein: d.ein ? { ...d.ein, responsible: { ...d.ein.responsible, ssn: "" } } : null,
+  };
 }
 
 // ── A Palm filing → the entity's record ───────────────────────────────

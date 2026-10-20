@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
-import { buildFormationRequest, einPatch, extraFields, formationPatch, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
+import { buildFormationRequest, einPatch, extraFields, formationPatch, stateRules, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
 import { ownerName, ownerPercent, parentOwnerId } from "../lib/formation-owners.js";
 import {
@@ -258,9 +258,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!jurisdiction || !entityType) return res.status(400).json({ error: "missing_params" });
         try {
           const r = await palm<{ expedited_tiers?: string[]; schema?: unknown }>(`/v1/filing/formation/requirement?entity_type=${entityType}&jurisdiction=${jurisdiction}`);
-          return res.status(200).json({ mode, supported: true, expeditedTiers: r.expedited_tiers ?? [], extra: extraFields(r.schema) });
+          return res.status(200).json({ mode, supported: true, expeditedTiers: r.expedited_tiers ?? [], extra: extraFields(r.schema), rules: stateRules(r.schema) });
         } catch (err) {
-          if (err instanceof PalmError && (err.status === 404 || err.status === 501)) return res.status(200).json({ mode, supported: false, expeditedTiers: [], extra: [] });
+          if (err instanceof PalmError && (err.status === 404 || err.status === 501)) return res.status(200).json({ mode, supported: false, expeditedTiers: [], extra: [], rules: {} });
           throw err;
         }
       }
@@ -315,8 +315,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const entityType = formationType(draft?.entityType);
         if (!draft || !entityType || !isJurisdiction(draft.jurisdiction)) return res.status(400).json({ error: "missing_params" });
         try {
-          await palm(`/v1/filing/formation/${entityType}/validate`, { method: "POST", body: buildFormationRequest(draft, "pending") });
-          return res.status(200).json({ ok: true, errors: [] });
+          // Palm answers every problem at once: errors block the filing, warnings (a field the state ignores) don't.
+          type Issue = { path?: string; code?: string; message?: string };
+          const r = await palm<{ valid?: boolean; errors?: Issue[]; warnings?: Issue[] } | null>(`/v1/filing/formation/${entityType}/validate`, { method: "POST", body: buildFormationRequest(draft, "pending") });
+          const list = (xs: Issue[] | undefined) => (xs ?? []).map((e) => ({ field: e.path || null, message: e.message || e.code || "Problem" }));
+          const errors = list(r?.errors);
+          return res.status(200).json({ ok: r?.valid ?? !errors.length, errors, warnings: list(r?.warnings) });
         } catch (err) {
           if (!(err instanceof PalmError)) throw err;
           // Palm answers 400 with every problem at once; anything else means it couldn't check.
@@ -364,7 +368,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           formedVia: "palm",
           address: [[a.street1, a.street2].filter((x) => x?.trim()).join(", "), a.city, `${a.region.toUpperCase()} ${a.postal}`].filter(Boolean).join(", "),
           ...(parentOwnerId(owners) ? { ownerId: parentOwnerId(owners) } : {}),
-          ...(owners.length ? { members: owners.map((o) => ({ name: ownerName(o), percent: ownerPercent(o) || null, role: "Member" })) } : {}),
+          ...(owners.length ? { members: owners.map((o) => ({ name: ownerName(o), percent: ownerPercent(o) || null, role: entityType === "llc" ? "Member" : "Shareholder" })) } : {}),
           ...(draft.email ? { email: draft.email.trim() } : {}),
           palm: { [mode]: { businessId: filing.business_id ?? null, linkedAt: state.submittedAt, formation: state } },
         };
