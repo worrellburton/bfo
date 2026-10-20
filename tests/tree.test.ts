@@ -151,6 +151,33 @@ describe("files still in Firebase", () => {
 
 // ── The endpoint ──────────────────────────────────────────────────────
 
+describe("partners (invited entity owners)", () => {
+  const partner = { id: "p1", name: "Jane", role: "partner", status: "approved" };
+  beforeEach(() => {
+    me = partner;
+    sbRoutes.push([/GET entity_access\?user_id=eq\.p1/, () => [{ asset_id: "mine" }]]);
+    sbRoutes.push([/GET tree_nodes\?collection=eq\.assets&id=in\./, (c) =>
+      [
+        { collection: "assets", id: "mine", data: { name: "TallulahMD LLC", notes: "internal", contracts: { c1: {} }, operatingAgreement: { url: "u" } }, updated_at: "t" },
+        { collection: "assets", id: "theirs", data: { name: "Other, LLC" }, updated_at: "t" },
+      ].filter((r) => c.path.includes(`"${r.id}"`))]);
+  });
+
+  it("read only the entities they were given, without the office's notes and contracts", async () => {
+    expect((await call("GET", { query: { path: "assets" } })).json).toEqual({ value: { mine: { name: "TallulahMD LLC", operatingAgreement: { url: "u" } } }, updated: { mine: "t" } });
+    expect((await call("GET", { query: { path: "assets", view: "index" } })).json).toEqual({ rows: [{ id: "mine", updated_at: "t" }] });
+    expect((await call("GET", { query: { path: "assets", ids: "mine,theirs" } })).json.rows.map((r: any) => r.id)).toEqual(["mine"]);
+    expect((await call("GET", { query: { path: "assets/mine/operatingAgreement/url" } })).json).toEqual({ value: "u" });
+    expect((await call("GET", { query: { path: "assets/theirs" } })).status).toBe(403);
+    expect((await call("GET", { query: { path: "assets/mine/notes" } })).status).toBe(403);
+    expect((await call("GET", { query: { path: "notes" } })).status).toBe(403);
+  });
+
+  it("can't write anything", async () => {
+    expect((await call("POST", { body: { ops: [{ op: "update", path: "assets/mine", value: { name: "x" } }] } })).status).toBe(403);
+  });
+});
+
 describe("/api/tree", () => {
   it("needs a session, and a path in the tree", async () => {
     me = null;

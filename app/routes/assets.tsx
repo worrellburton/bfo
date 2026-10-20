@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router";
+import { getUser, isPartner } from "../auth";
 import { useTheme } from "../theme";
 import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
@@ -898,6 +899,65 @@ function StateMegaMenu({
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function Assets() {
+  // An invited entity owner sees only their own entities, as a simple list.
+  if (isPartner()) return <PartnerEntities />;
+  return <StaffAssets />;
+}
+
+/** A partner's front page: the entities they've been given, each with what's on file. */
+function PartnerEntities() {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  const [list, setList] = useState<{ id: string; name: string; type?: string; state?: string; files: number }[] | null>(null);
+  const me = getUser();
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const { db, ref, get, authReady } = await import("../store");
+      await authReady;
+      const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string; type?: string; state?: string; documents?: Record<string, unknown> }>;
+      if (live)
+        setList(
+          Object.entries(all)
+            .map(([id, a]) => ({ id, name: a?.name ?? "Entity", type: a?.type, state: a?.state, files: Object.keys(a?.documents ?? {}).length }))
+            .sort((a, b) => a.name.localeCompare(b.name))
+        );
+    })().catch(() => live && setList([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const first = me?.name?.trim().split(/\s+/)[0];
+  return (
+    <div className="mx-auto max-w-[880px] pt-4 sm:pt-10">
+      <p className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${dark ? "text-gray-500" : "text-gray-500"}`}>Burton Family Office</p>
+      <h1 className="mt-2 font-brand text-[30px] leading-tight sm:text-[38px]">{first ? `Welcome, ${first}.` : "Welcome."}</h1>
+      <p className={`mt-2 text-[14px] ${dark ? "text-gray-400" : "text-gray-600"}`}>The entities you're part of. Open one to see its documents and who owns it.</p>
+      <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {list === null
+          ? [0, 1].map((i) => <div key={i} className="shimmer h-[104px] rounded-2xl" />)
+          : list.length === 0
+            ? <p className={`text-[13px] ${dark ? "text-gray-500" : "text-gray-500"}`}>Nothing has been shared with you yet.</p>
+            : list.map((e) => (
+                <Link
+                  key={e.id}
+                  to={`/assets/${e.id}`}
+                  className={`group rounded-2xl border p-5 transition-colors ${dark ? "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]" : "border-gray-200 bg-white hover:border-gray-300"}`}
+                >
+                  <span className="block font-brand text-[20px] leading-snug">{e.name}</span>
+                  <span className={`mt-1 block text-[12.5px] ${dark ? "text-gray-500" : "text-gray-500"}`}>
+                    {[e.type, e.state].filter(Boolean).join(" · ")}
+                    {e.files ? ` · ${e.files} document${e.files === 1 ? "" : "s"}` : ""}
+                  </span>
+                  <span className={`mt-4 inline-flex items-center gap-1 text-[12.5px] font-medium ${dark ? "text-[#a5b4fc]" : "text-[#4f46e5]"}`}>Open →</span>
+                </Link>
+              ))}
+      </div>
+    </div>
+  );
+}
+
+function StaffAssets() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const navigate = useNavigate();

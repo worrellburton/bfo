@@ -15,7 +15,7 @@ import {
 } from "../../lib/auth.js";
 import { aliasOwner, ensureMailAddress, parseMailAddress } from "../../lib/mail-address.js";
 
-const ROLES: Role[] = ["owner", "admin", "member", "viewer", "email"];
+const ROLES: Role[] = ["owner", "admin", "member", "viewer", "email", "partner"];
 const STATUSES: Status[] = ["incoming", "approved", "denied"];
 
 /** Build the column patch shared by create and update, validating as it goes. */

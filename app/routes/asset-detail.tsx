@@ -8,6 +8,8 @@ import { GovernanceTab } from "../entity/governance";
 import { CategoryMenu, EntityHeader } from "../entity/header";
 import { ScanToast } from "../entity/overlay";
 import { OverviewTab } from "../entity/overview";
+import { PeopleTab } from "../entity/people";
+import { isPartner } from "../auth";
 import { Icon, useTone } from "../entity/ui";
 import { useEntityPage } from "../entity/use-entity";
 
@@ -57,6 +59,7 @@ export default function AssetDetail() {
     allAssets: page.allAssets,
     kindsFor: page.kindsFor,
     tabParam: page.tabParam,
+    partner: isPartner(),
   });
 
   return (
@@ -67,6 +70,7 @@ export default function AssetDetail() {
         <CategoryMenu />
         {view.tab === "overview" && <OverviewTab />}
         {view.tab === "documents" && <DocumentsTab />}
+        {view.tab === "people" && <PeopleTab />}
         {view.tab === "compliance" && <ComplianceTab />}
         {view.tab === "agreements" && <AgreementsTab />}
         {view.tab === "governance" && <GovernanceTab />}

@@ -6,7 +6,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "PUT"])) return;
 
   try {
-    const me = await currentUser(req);
+    const me = await currentUser(req, { allowPartner: true });
     if (!me) return fail(res, 401, "unauthorized");
 
     if (req.method === "GET") {

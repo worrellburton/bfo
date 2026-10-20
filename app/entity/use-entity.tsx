@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isFormationDone } from "../formation";
 import { canDraftAgreement, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
-import { authFetch } from "../auth";
+import { authFetch, isPartner } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import {
@@ -910,7 +910,8 @@ export function useEntityPage() {
   }
 
   useEffect(() => {
-    void loadPalmStatus();
+    // An invited owner's page has no Palm card.
+    if (!isPartner()) void loadPalmStatus();
   }, []);
 
   // Another entity: start the card clean.
