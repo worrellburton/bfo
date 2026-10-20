@@ -20,6 +20,15 @@ const RESERVED = new Set([
   "team", "webmaster",
 ]);
 
+/**
+ * Of those, the ones nobody gets even as an extra address: the system sender
+ * and the addresses mail servers and DMARC reports use.
+ */
+const SYSTEM = new Set([
+  "abuse", "bounce", "bounces", "dmarc", "hostmaster", "mail", "mailer-daemon", "no-reply", "noreply",
+  "postmaster", "reports", "root", "webmaster",
+]);
+
 const LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
 
 /** The address for a local part on our domain. */
@@ -42,7 +51,7 @@ export function onOurDomain(address: string): boolean {
  * Validate an address an admin typed: a bare local part ("robert") or a full
  * address on our domain. Returns the lowercase address, or an error message.
  */
-export function parseMailAddress(input: unknown): { address: string } | { error: string } {
+export function parseMailAddress(input: unknown, opts: { roleOk?: boolean } = {}): { address: string } | { error: string } {
   if (typeof input !== "string") return { error: "Enter an address." };
   let value = input.trim().toLowerCase();
   if (!value) return { error: "Enter an address." };
@@ -53,8 +62,58 @@ export function parseMailAddress(input: unknown): { address: string } | { error:
   if (!LOCAL_RE.test(value) || /\.\./.test(value)) {
     return { error: "Use letters, numbers, dots, dashes or underscores." };
   }
-  if (RESERVED.has(value)) return { error: `${addressFor(value)} is reserved.` };
+  if (SYSTEM.has(value) || (!opts.roleOk && RESERVED.has(value))) return { error: `${addressFor(value)} is reserved.` };
   return { address: addressFor(value) };
+}
+
+// ── Extra addresses (mail_aliases) ────────────────────────────────────
+//
+// An account can have more addresses than its main one: each delivers to the
+// same inbox and can be sent from. Role addresses (accounting@, info@…) are
+// allowed here, since only an owner or admin adds them; system ones aren't.
+
+/** At most this many extra addresses per account. */
+export const MAX_ALIASES = 10;
+
+/** A user's extra addresses, oldest first. */
+export async function listAliases(userId: string): Promise<string[]> {
+  const rows = await sb<{ address: string }[]>(`mail_aliases?user_id=eq.${userId}&select=address&order=created_at.asc`);
+  return (rows ?? []).map((r) => r.address);
+}
+
+/** Whose extra address this is, if anyone's. */
+export async function aliasOwner(address: string): Promise<string | null> {
+  const rows = await sb<{ user_id: string }[]>(`mail_aliases?address=eq.${encodeURIComponent(address.toLowerCase())}&select=user_id&limit=1`);
+  return rows?.[0]?.user_id ?? null;
+}
+
+export type AliasRefusal = { error: "invalid_mail_address" | "address_taken" | "too_many"; message: string };
+
+/** Give a user one more address. Refuses one that's anyone's main or extra address. */
+export async function addAlias(user: Pick<AppUser, "id" | "mail_address">, input: unknown): Promise<{ address: string } | AliasRefusal> {
+  const parsed = parseMailAddress(input, { roleOk: true });
+  if ("error" in parsed) return { error: "invalid_mail_address", message: parsed.error };
+  const { address } = parsed;
+  if (address === user.mail_address) return { error: "address_taken", message: `${address} is already your address.` };
+  const [owner, mine] = await Promise.all([
+    sb<{ id: string }[]>(`app_users?mail_address=eq.${encodeURIComponent(address)}&select=id&limit=1`),
+    listAliases(user.id),
+  ]);
+  if (owner?.length) return { error: "address_taken", message: `${address} is taken.` };
+  if (mine.includes(address)) return { address };
+  if (mine.length >= MAX_ALIASES) return { error: "too_many", message: `An account can have up to ${MAX_ALIASES} extra addresses.` };
+  try {
+    await sb("mail_aliases", { method: "POST", body: [{ address, user_id: user.id }], prefer: "return=minimal" });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("duplicate key")) return { error: "address_taken", message: `${address} is taken.` };
+    throw err;
+  }
+  return { address };
+}
+
+/** Take an extra address off a user. Mail already received stays where it is. */
+export async function removeAlias(userId: string, address: string): Promise<void> {
+  await sb(`mail_aliases?user_id=eq.${userId}&address=eq.${encodeURIComponent(address.toLowerCase())}`, { method: "DELETE", prefer: "return=minimal" });
 }
 
 /** Candidate local parts for a person, best first: "robert", "robert.burton", "robert.burton2"… */

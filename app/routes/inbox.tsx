@@ -6,6 +6,7 @@ import { confirmDialog } from "../confirm-dialog";
 import { Button, Dot, ErrorLine, Icon, IconButton, TextButton, buttonClass, formatBytes, useTone } from "../entity/ui";
 import { MailFrame, htmlToText } from "../mail-frame";
 import {
+  addAlias,
   attachmentUrl,
   deleteMail,
   getMessage,
@@ -13,6 +14,7 @@ import {
   markRead,
   moveMail,
   notifyMailChanged,
+  removeAlias,
   sendMail,
   starMail,
   useMailCount,
@@ -215,10 +217,164 @@ const EMPTY: Record<MailFolder, string> = {
   other: "Nothing here.",
 };
 
+// ── My addresses ─────────────────────────────────────────────────────────
+
+/**
+ * The header's line of addresses: the main one, then any extras on the same
+ * account (mail to them lands in this inbox, and they can be sent from).
+ * Click one to copy it. Admins add and remove extras here.
+ */
+function MyAddresses({ address, aliases, canAdd }: { address: string; aliases: string[]; canAdd: boolean }) {
+  const t = useTone();
+  const domain = address.slice(address.indexOf("@") + 1);
+  // The server's answer to an add or remove shows at once; the shared count catches up after.
+  const [shown, setShown] = useState<string[] | null>(null);
+  const list = shown ?? aliases;
+  useEffect(() => setShown(null), [aliases]);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function copy(a: string) {
+    try {
+      await navigator.clipboard.writeText(a);
+      setCopied(a);
+      setTimeout(() => setCopied((c) => (c === a ? null : c)), 1500);
+    } catch {
+      // Clipboard refused; the address is on screen.
+    }
+  }
+
+  async function add() {
+    // "accounting" or the whole address; the server checks it's on our domain.
+    const local = value.trim();
+    if (!local || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { aliases: next } = await addAlias(local);
+      setShown(next);
+      setValue("");
+      setAdding(false);
+      notifyMailChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(a: string) {
+    const ok = await confirmDialog({
+      title: `Remove ${a}?`,
+      message: "Mail sent to it will stop arriving here. Mail already received stays.",
+      confirmLabel: "Remove",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      const { aliases: next } = await removeAlias(a);
+      setShown(next);
+      notifyMailChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const chip = `group/copy relative inline-flex max-w-full cursor-pointer items-center gap-1.5 text-[12.5px] transition-colors max-sm:after:absolute max-sm:after:-inset-y-2 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.muted} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-900"}`;
+  const copyMark = (a: string) => (
+    <span aria-live="polite" className={`inline-flex items-center gap-1 ${copied === a ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
+      <Icon name={copied === a ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
+      {copied === a ? "Copied" : ""}
+    </span>
+  );
+
+  return (
+    <div className="mt-1 min-w-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button type="button" onClick={() => void copy(address)} title="Copy address" aria-label={`${address}. Copy`} className={chip}>
+          <span className="truncate">{address}</span>
+          {copyMark(address)}
+        </button>
+        {list.map((a) => (
+          <span key={a} className="inline-flex max-w-full items-center gap-0.5">
+            <span aria-hidden className={`mr-1.5 ${t.faint}`}>·</span>
+            <button type="button" onClick={() => void copy(a)} title="Copy address" aria-label={`${a}. Copy`} className={chip}>
+              <span className="truncate">{a}</span>
+              {copyMark(a)}
+            </button>
+            {canAdd && (
+              <button
+                type="button"
+                onClick={() => void remove(a)}
+                aria-label={`Remove ${a}`}
+                title="Remove address"
+                className={`inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded-md max-sm:h-8 max-sm:w-8 ${t.dark ? "text-gray-600 hover:bg-white/[0.06] hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"}`}
+              >
+                <Icon name="x" className="h-3 w-3" />
+              </button>
+            )}
+          </span>
+        ))}
+        {canAdd && !adding && (
+          <TextButton onClick={() => { setAdding(true); setError(null); }} className="text-[12px]">
+            <Icon name="plus" className="h-3 w-3" strokeWidth={2} />
+            Add address
+          </TextButton>
+        )}
+      </div>
+      {adding && (
+        <form
+          className="mt-2 flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void add();
+          }}
+        >
+          <label className={`flex h-8 min-w-0 items-center rounded-lg border pl-2.5 pr-2 text-[12.5px] max-sm:h-10 ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}>
+            <span className="sr-only">New address</span>
+            <input
+              autoFocus
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setAdding(false);
+                  setValue("");
+                  setError(null);
+                }
+              }}
+              placeholder="accounting"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoComplete="off"
+              style={{ outline: "none" }}
+              className={`w-[120px] min-w-0 bg-transparent text-right placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
+            />
+            <span className={`shrink-0 ${t.muted}`}>@{domain}</span>
+          </label>
+          <Button kind="primary" type="submit" disabled={busy || !value.trim()}>
+            {busy ? "Adding…" : "Add"}
+          </Button>
+          <Button kind="ghost" onClick={() => { setAdding(false); setValue(""); setError(null); }}>
+            Cancel
+          </Button>
+        </form>
+      )}
+      {error && <p className={`mt-1.5 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+    </div>
+  );
+}
+
 // ── Compose drafts ───────────────────────────────────────────────────────
 
 type Draft = {
   title: string;
+  /** Which of my addresses it goes out from; the main one when unset. */
+  from?: string;
   to: string;
   cc: string;
   bcc: string;
@@ -258,13 +414,17 @@ function uniqueEmails(list: MailAddress[], exclude: string[]): string[] {
   return out;
 }
 
-function replyDraft(m: MailMessage, mode: "reply" | "all", me: string): Draft {
+/** `mine`: every address of mine, main first. The reply goes out from the one the message reached me at. */
+function replyDraft(m: MailMessage, mode: "reply" | "all", mine: string[]): Draft {
   // Replying to your own sent mail goes back to the people it went to.
   const targets = m.direction === "out" ? m.to : [m.from];
-  const to = uniqueEmails(targets, m.direction === "out" ? [me] : []);
-  const cc = mode === "all" ? uniqueEmails([...(m.direction === "out" ? [] : m.to), ...m.cc], [me, ...to]) : [];
+  const to = uniqueEmails(targets, m.direction === "out" ? mine : []);
+  const cc = mode === "all" ? uniqueEmails([...(m.direction === "out" ? [] : m.to), ...m.cc], [...mine, ...to]) : [];
+  const via = m.direction === "out" ? m.from.email : m.deliveredTo;
+  const from = mine.find((a) => via && same(a, via));
   return {
     title: mode === "all" ? "Reply all" : "Reply",
+    ...(from ? { from } : {}),
     to: to.join(", "),
     cc: cc.join(", "),
     bcc: "",
@@ -343,6 +503,8 @@ export default function Inbox() {
   // Until the count answers, the session's copy will do. null from the server: no address yet.
   const address = (count ? count.address : me?.mailAddress) || "";
   const noAddress = !!count && !count.address;
+  const aliases = useMemo(() => (address ? (count?.aliases ?? []) : []), [address, count?.aliases]);
+  const mine = useMemo(() => (address ? [address, ...aliases] : []), [address, aliases]);
 
   const [view, setView] = useState<View>("table");
   useEffect(() => setView(savedView()), []);
@@ -364,7 +526,6 @@ export default function Inbox() {
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
   const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, mode: "replace" | "refresh") => {
@@ -600,17 +761,6 @@ export default function Inbox() {
     return () => clearTimeout(id);
   }, [toast]);
 
-  async function copyAddress() {
-    if (!address) return;
-    try {
-      await navigator.clipboard.writeText(address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard refused; the address is on screen.
-    }
-  }
-
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
   const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
   const rows = list && list.folder === folder && list.filter === filter && list.q === q ? list.messages : null;
@@ -632,7 +782,7 @@ export default function Inbox() {
       me={address}
       backAlways={view === "table"}
       onBack={closeMessage}
-      onReply={(m, mode) => setDraft(replyDraft(m, mode, address))}
+      onReply={(m, mode) => setDraft(replyDraft(m, mode, mine))}
       onForward={(m) => setDraft(forwardDraft(m))}
       onMove={move}
       onDelete={remove}
@@ -749,19 +899,7 @@ export default function Inbox() {
           {noAddress ? (
             <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
           ) : address && (
-            <button
-              type="button"
-              onClick={copyAddress}
-              title="Copy address"
-              aria-label={`${address}. Copy`}
-              className={`group/copy relative mt-1 inline-flex max-w-full cursor-pointer items-center gap-1.5 text-[12.5px] transition-colors max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.muted} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-900"}`}
-            >
-              <span className="truncate">{address}</span>
-              <span aria-live="polite" className={`inline-flex items-center gap-1 ${copied ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
-                <Icon name={copied ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
-                {copied ? "Copied" : ""}
-              </span>
-            </button>
+            <MyAddresses address={address} aliases={aliases} canAdd={isAdmin(me)} />
           )}
         </div>
         <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
@@ -848,7 +986,7 @@ export default function Inbox() {
         )}
 
       {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
-      {draft && createPortal(<Compose draft={draft} onClose={() => setDraft(null)} onSent={onSent} />, document.body)}
+      {draft && createPortal(<Compose draft={draft} addresses={mine} onClose={() => setDraft(null)} onSent={onSent} />, document.body)}
 
       {toast &&
         createPortal(
@@ -1597,9 +1735,10 @@ function readBase64(file: File): Promise<string> {
   });
 }
 
-function Compose({ draft, onClose, onSent }: { draft: Draft; onClose: () => void; onSent: (m: MailSummary) => void }) {
+function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresses: string[]; onClose: () => void; onSent: (m: MailSummary) => void }) {
   const t = useTone();
   const [sendId] = useState(() => crypto.randomUUID());
+  const [from, setFrom] = useState(() => addresses.find((a) => draft.from && same(a, draft.from)) ?? addresses[0] ?? "");
   const [to, setTo] = useState(draft.to);
   const [cc, setCc] = useState(draft.cc);
   const [bcc, setBcc] = useState(draft.bcc);
@@ -1723,6 +1862,7 @@ function Compose({ draft, onClose, onSent }: { draft: Draft; onClose: () => void
       );
       const { message } = await sendMail({
         sendId,
+        ...(from && addresses.length > 1 ? { from } : {}),
         to: lists[0].ok,
         ...(lists[1].ok.length ? { cc: lists[1].ok } : {}),
         ...(lists[2].ok.length ? { bcc: lists[2].ok } : {}),
@@ -1784,6 +1924,19 @@ function Compose({ draft, onClose, onSent }: { draft: Draft; onClose: () => void
           <IconButton icon="x" label="Close" onClick={() => void close()} />
         </header>
 
+        {addresses.length > 1 && (
+          <div className={row}>
+            <label htmlFor="compose-from" className={label}>From</label>
+            <select id="compose-from" value={from} onChange={(e) => setFrom(e.target.value)} className={`${field} cursor-pointer appearance-none`} style={noRing}>
+              {addresses.map((a) => (
+                <option key={a} value={a} className={t.dark ? "bg-[#111113]" : undefined}>
+                  {a}
+                </option>
+              ))}
+            </select>
+            <Icon name="chevronDown" className={`h-3.5 w-3.5 pointer-events-none ${t.muted}`} />
+          </div>
+        )}
         <div className={row}>
           <label htmlFor="compose-to" className={label}>To</label>
           <input id="compose-to" ref={toRef} value={to} onChange={(e) => setTo(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
