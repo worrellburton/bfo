@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, useTone } from "../entity/ui";
+import { Button, Icon, useTone } from "../entity/ui";
 import { paperAction, PaperMailList, STABLE_ADDRESS, STABLE_DASHBOARD, usePaperMail, type PaperMail } from "../paper-mail";
 
 export function meta() {
-  return [{ title: "BFO - Paper mail" }];
+  return [{ title: "BFO - Mailbox" }];
 }
+
+const changed = () => window.dispatchEvent(new Event("bfo-paper-mail-changed"));
 
 type Filter = "all" | "unread" | "unassigned";
 
@@ -20,6 +22,17 @@ export default function PaperMailPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  async function copyAddress() {
+    try {
+      await navigator.clipboard.writeText(STABLE_ADDRESS);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // The address is on screen.
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -44,6 +57,7 @@ export default function PaperMailPage() {
     try {
       const r = await paperAction({ action: "sync", days: 30 });
       await reload();
+      changed();
       setNote(r.synced ? `Checked Stable: ${r.synced} piece${r.synced === 1 ? "" : "s"} from the last 30 days.` : "Checked Stable: nothing new.");
     } catch (err) {
       setNote((err as Error).message);
@@ -56,6 +70,7 @@ export default function PaperMailPage() {
     setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, assetId, assigned: "hand" } : x)) ?? list);
     try {
       await paperAction({ action: "assign", id: m.id, assetId });
+      changed();
     } catch (err) {
       setNote((err as Error).message);
       void reload();
@@ -65,25 +80,41 @@ export default function PaperMailPage() {
   function opened(m: PaperMail) {
     if (m.readAt) return;
     setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)) ?? list);
-    void paperAction({ action: "read", id: m.id }).catch(() => {});
+    void paperAction({ action: "read", id: m.id }).then(changed).catch(() => {});
   }
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3 pt-1">
-        <div className="min-w-0">
-          <h1 className={`text-[20px] font-semibold tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Paper mail</h1>
-          <p className={`mt-1 text-[12.5px] ${t.muted}`}>{STABLE_ADDRESS} · through Stable</p>
+      <h1 className={`pt-1 text-[20px] font-semibold tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mailbox</h1>
+
+      {/* The address, as the mail should be addressed. */}
+      <section className={`relative overflow-hidden rounded-2xl border p-5 sm:p-6 ${t.surface}`}>
+        <div className="flex flex-wrap items-center justify-between gap-5">
+          <div className="min-w-0">
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${t.muted}`}>Our mailing address</p>
+            <address className={`mt-2 font-brand text-[22px] not-italic leading-snug sm:text-[26px] ${t.text}`}>
+              5227 N 7th St STE 48575
+              <br />
+              Phoenix, AZ 85014
+            </address>
+            <p className={`mt-2 text-[12.5px] ${t.muted}`}>Received and scanned by Stable. Every piece shows up below, filed under its entity.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button icon={copied ? "check" : "copy"} onClick={() => void copyAddress()}>
+              {copied ? "Copied" : "Copy address"}
+            </Button>
+            <a
+              href={STABLE_DASHBOARD}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold transition-colors ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+            >
+              Stable dashboard
+              <Icon name="external" className="h-3.5 w-3.5" />
+            </a>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <a href={STABLE_DASHBOARD} target="_blank" rel="noopener noreferrer" className={`text-[12.5px] font-medium hover:underline ${t.accent}`}>
-            Open Stable
-          </a>
-          <Button icon="refresh" onClick={() => void sync()} disabled={syncing || !configured}>
-            {syncing ? "Checking…" : "Check now"}
-          </Button>
-        </div>
-      </header>
+      </section>
 
       {!configured && (
         <div className={`rounded-2xl border p-5 text-[13px] leading-relaxed ${t.surface} ${t.soft}`}>
@@ -117,6 +148,10 @@ export default function PaperMailPage() {
           </button>
         ))}
         {note && <span className={`ml-2 text-[12px] ${t.muted}`}>{note}</span>}
+        <span className="flex-1" />
+        <Button icon="refresh" onClick={() => void sync()} disabled={syncing || !configured}>
+          {syncing ? "Checking…" : "Check now"}
+        </Button>
       </div>
 
       <section className={`overflow-hidden rounded-2xl border ${t.surface}`}>

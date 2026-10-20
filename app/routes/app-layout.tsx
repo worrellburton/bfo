@@ -35,17 +35,6 @@ const iconCls = "w-[18px] h-[18px] shrink-0";
 /** Mail's folders all live on /inbox, told apart by ?f= (inbox when absent). */
 const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "inbox") === f;
 
-/** Paper mail through Stable, for staff (not Email only). */
-const paperMailChild: NavChild = {
-  to: "/paper-mail",
-  label: "Paper",
-  icon: (
-    <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-    </svg>
-  ),
-};
-
 /** Shown to admins (and anyone given access): mail to addresses nobody has yet. */
 const otherMailChild: NavChild = {
   to: "/inbox?f=other",
@@ -106,6 +95,15 @@ const navItems: NavItem[] = [
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+      </svg>
+    ),
+  },
+  {
+    to: "/mailbox",
+    label: "Mailbox",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V9a4.5 4.5 0 014.5-4.5h10.5a4.5 4.5 0 014.5 4.5v6.75a1.5 1.5 0 01-1.5 1.5H12M2.25 12.75h7.5v6a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-6zM6.75 4.5a4.5 4.5 0 014.5 4.5v3.75M15 9h3" />
       </svg>
     ),
   },
@@ -282,6 +280,25 @@ export default function AppLayout() {
   const mail = useMailCount();
   // "Email only" members get a reduced shell: the wordmark, the inbox and the user menu.
   const emailOnly = isEmailOnly(user);
+  // Unread paper mail, for the Mailbox badge (staff only).
+  const [paperUnread, setPaperUnread] = useState(0);
+  useEffect(() => {
+    if (isEmailOnly(user) || isPartner(user)) return;
+    const load = () =>
+      authFetch("/api/stable?view=all")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j && setPaperUnread((j.mail ?? []).filter((m: { readAt: string | null }) => !m.readAt).length))
+        .catch(() => {});
+    void load();
+    const id = window.setInterval(load, 5 * 60_000);
+    window.addEventListener("bfo-paper-mail-changed", load);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("bfo-paper-mail-changed", load);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Partners (invited entity owners) see their entities and nothing else.
   const partner = isPartner(user);
   const [myEntities, setMyEntities] = useState<{ id: string; name: string }[]>([]);
@@ -432,6 +449,7 @@ export default function AppLayout() {
   const canSeeOther = mail ? mail.canSeeOther : isAdmin(user);
   const entitiesItem = navItems.find((i) => i.to === "/assets")!;
   const partnerItems: NavItem[] = myEntities.map((e) => ({ to: `/assets/${e.id}`, label: e.name, icon: entitiesItem.icon }));
+  const withMailbox = (i: NavItem): NavItem => (i.to === "/mailbox" ? { ...i, badge: paperUnread } : i);
   const items: NavItem[] = (partner ? partnerItems : emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) =>
     i.to === "/inbox" && i.children
       ? {
@@ -439,11 +457,10 @@ export default function AppLayout() {
           badge: unread,
           children: [
             ...i.children.map((c) => (c.to === "/inbox" ? { ...c, badge: unread } : c)),
-            ...(emailOnly ? [] : [paperMailChild]),
             ...(canSeeOther ? [{ ...otherMailChild, badge: mail?.otherUnread ?? 0 }] : []),
           ],
         }
-      : i
+      : withMailbox(i)
   );
 
   // Accounts: every account signed in on this browser, Gmail-style. Switching

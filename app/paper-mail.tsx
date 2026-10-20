@@ -29,7 +29,7 @@ export type PaperMail = {
 };
 
 export const STABLE_ADDRESS = "5227 N 7th St STE 48575, Phoenix, AZ 85014";
-export const STABLE_DASHBOARD = "https://dashboard.usestable.com";
+export const STABLE_DASHBOARD = "https://dashboard.usestable.com/dashboard";
 
 /** The pieces for one entity, or (no id) all of them. */
 export function usePaperMail(assetId?: string) {
