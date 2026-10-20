@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isFormationDone } from "../formation";
-import { canDraftAgreement, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
+import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
 import { authFetch, isPartner } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
@@ -1465,12 +1465,16 @@ export function useEntityPage() {
 
   // ── Paperwork BFO writes ────────────────────────────────────────────────
 
-  /** Put a generated PDF in Documents and file it in its slot. */
-  async function fileGenerated(kind: FileKind, blob: Blob, name: string) {
+  /** Put a generated PDF in Documents and file it in its slot (`replace`: in place of what's there, which stays in Documents). */
+  async function fileGenerated(kind: FileKind, blob: Blob, name: string, replace = false) {
     setSlot(kind, { error: null, uploading: true, progress: 0 });
     try {
       const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), (pct) => setSlot(kind, { progress: pct }));
-      await fileDocument(kind, doc);
+      if (replace)
+        await patchAsset({
+          [kind]: { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: "application/pdf", uploadedAt: Date.now(), storagePath: "", docId: doc.id } satisfies UploadedFile,
+        });
+      else await fileDocument(kind, doc);
     } catch (err) {
       setSlot(kind, { error: err instanceof Error ? err.message : "Couldn't save it." });
     } finally {
@@ -1481,7 +1485,7 @@ export function useEntityPage() {
   const lookupAsset = (oid: string) => allAssets[oid] as Rec | undefined;
 
   /** Fill in the IRS's W-9 from the record (a disregarded LLC's goes in its owner's name and TIN). */
-  async function generateW9() {
+  async function generateW9(replace = false) {
     const current = assetRef.current;
     if (!current) return;
     const data = w9Data({ ...current, ownerId: current.ownerId } as Rec, lookupAsset);
@@ -1500,7 +1504,7 @@ export function useEntityPage() {
         return r.arrayBuffer();
       });
       const blob = await fillW9(data, form);
-      await fileGenerated("w9", blob, `W-9 - ${current.name}.pdf`);
+      await fileGenerated("w9", blob, `W-9 - ${current.name}.pdf`, replace);
     } catch (err) {
       setSlot("w9", { error: err instanceof Error ? err.message : "Couldn't fill in the W-9." });
     }
@@ -1534,6 +1538,36 @@ export function useEntityPage() {
     } catch (err) {
       setSlot("operatingAgreement", { error: err instanceof Error ? err.message : "Couldn't draft the agreement." });
     }
+  }
+
+  /** Fill in the IRS's Form 8822-B for an address change; it goes into Documents, unsigned. */
+  async function generate8822B() {
+    const current = assetRef.current;
+    if (!current) return;
+    const data = f8822bData(current);
+    if (!data.ein) {
+      await alertDialog("No EIN on record", data.notes[0]);
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Fill in Form 8822-B?",
+      message: `${data.name} (${data.ein}), from ${data.oldAddress || "the old address"} to ${data.newAddress}. Sign it, then mail it to ${data.mailTo}.`,
+      details: data.notes.length ? data.notes : ["Covers its tax returns (line 1). Signature, title and phone are left for you."],
+      confirmLabel: "Fill it in",
+    });
+    if (!ok) return;
+    const form = await fetch("/forms/f8822b.pdf").then((r) => {
+      if (!r.ok) throw new Error("Couldn't load the IRS form.");
+      return r.arrayBuffer();
+    });
+    const blob = await fill8822B(data, form);
+    const doc = await uploadDocFile(new File([blob], `Form 8822-B - ${current.name}.pdf`, { type: "application/pdf" }), () => {});
+    window.open(doc.url, "_blank", "noopener");
+  }
+
+  /** Mark where the address change has been reported (or undo it). */
+  async function markAddressStep(step: "state" | "irs" | "banks", done: boolean) {
+    await patchAsset({ [`addressUpdates/${step}`]: done ? new Date().toISOString().slice(0, 10) : null });
   }
 
   /** Palm's documents that fill an empty slot (the state's certificate, the IRS's EIN letter), saved and filed once. */
@@ -2059,6 +2093,8 @@ export function useEntityPage() {
     handleUploadFile,
     generateW9,
     generateOperatingAgreement,
+    generate8822B,
+    markAddressStep,
     handleDeleteFile,
     deleting,
     setDeleting,

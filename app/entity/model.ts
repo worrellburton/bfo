@@ -37,6 +37,11 @@ export interface Asset {
   /** The state's record as last read through Palm. */
   stateRecord?: StateRecord;
   operatingAgreementDate?: string;
+  /** The address before the last change, and when it changed (YYYY-MM-DD). */
+  previousAddress?: string;
+  addressChangedAt?: string;
+  /** Where the change has been reported, by date (YYYY-MM-DD): the state, the IRS, banks. */
+  addressUpdates?: { state?: string | null; irs?: string | null; banks?: string | null };
   articlesOfOrgDate?: string;
   w9?: UploadedFile;
   articles?: UploadedFile;

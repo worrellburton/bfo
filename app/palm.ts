@@ -66,6 +66,8 @@ export type StateRecord = {
   standing?: RegistryRecord["standing"];
   agent?: string | null;
   agentAddress?: string | null;
+  /** The business's address as the state has it (principal office). */
+  address?: string | null;
   formationDate?: string;
   registrationNumber?: string;
   jurisdiction?: string;
@@ -119,6 +121,7 @@ export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Dat
     standing: r.standing,
     agent: agent?.name ?? null,
     agentAddress: formatAddress(agent?.address),
+    address: formatAddress(r.principal_address),
     formationDate: r.formation_date,
     registrationNumber: r.registration_number,
     jurisdiction: r.registration_jurisdiction ?? r.formation_jurisdiction,
@@ -130,7 +133,22 @@ export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Dat
 export type Finding = { tone: "bad" | "warn" | "info"; text: string };
 
 /** What the state's record says that our record doesn't — the things to act on. */
-export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; formationDate?: string }): Finding[] {
+/** Addresses compared the way people write them: case, punctuation, "Suite"/"Ste"/"#" and ZIP+4 don't matter. */
+export function sameAddressText(a?: string | null, b?: string | null): boolean {
+  const norm = (s?: string | null) =>
+    (s ?? "")
+      .toLowerCase()
+      .replace(/\b(suite|ste|unit|#)\b\.?/g, " ")
+      .replace(/#/g, " ")
+      .replace(/\b(\d{5})-\d{4}\b/g, "$1")
+      .replace(/\bnorth\b/g, "n")
+      .replace(/\bstreet\b/g, "st")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  return !!norm(a) && norm(a) === norm(b);
+}
+
+export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; formationDate?: string; address?: string }): Finding[] {
   const out: Finding[] = [];
   if (rec.status && rec.status !== "active") out.push({ tone: "bad", text: `The state lists it as ${rec.status}, not active.` });
   const s = rec.standing ?? {};
@@ -142,6 +160,9 @@ export function stateFindings(rec: StateRecord, asset: { name?: string; register
   }
   if (rec.formationDate && asset.formationDate && rec.formationDate.slice(0, 10) !== asset.formationDate) {
     out.push({ tone: "warn", text: `The state's formation date is ${rec.formationDate.slice(0, 10)}; our record says ${asset.formationDate}.` });
+  }
+  if (rec.address && asset.address && !sameAddressText(rec.address, asset.address)) {
+    out.push({ tone: "warn", text: `The state has ${rec.address} as its address; our record says ${asset.address}.` });
   }
   if (rec.name && asset.name && normalizeName(rec.name) !== normalizeName(asset.name)) {
     out.push({ tone: "info", text: `The state's legal name is “${rec.name}”.` });

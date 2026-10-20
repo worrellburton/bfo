@@ -6,7 +6,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
-import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, type PalmDocument } from "../palm";
+import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
+import { f8822bData, stateAddressStep } from "../paperwork-generate";
+import { isPartner } from "../auth";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { useEntity } from "./context";
 import { BY_HAND, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
@@ -18,6 +20,7 @@ export function OverviewTab() {
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr]">
       <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+        <AddressChange />
         <Formation />
         {page.editing ? <EditForm /> : <Details />}
       </div>
@@ -29,6 +32,125 @@ export function OverviewTab() {
         <About />
       </div>
     </div>
+  );
+}
+
+// ── Address change ───────────────────────────────────────────────────────
+
+/**
+ * After the address changes in BFO, what's left to tell: the state (checked
+ * against its own record through Palm), the IRS (Form 8822-B, filled in
+ * here), the W-9, and the banks. Each step is marked done with its date;
+ * the card goes once they all are.
+ */
+function AddressChange() {
+  const { page, asset } = useEntity();
+  const t = useTone();
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!asset.previousAddress || isPartner()) return null;
+  const done = asset.addressUpdates ?? {};
+  const step = stateAddressStep(asset.state, asset.type);
+  const rec = asset.stateRecord;
+  // The state's own record says which address it has, once read after the change.
+  const stateMatches = !!rec?.address && sameAddressText(rec.address, asset.address);
+  const stateDone = !step.needed || !!done.state || stateMatches;
+  const irs = f8822bData(asset);
+  const irsNeeded = !!irs.ein;
+  const irsDone = !irsNeeded || !!done.irs;
+  const w9Old = !!asset.w9 && (!asset.addressChangedAt || (asset.w9.uploadedAt ?? 0) < Date.parse(asset.addressChangedAt));
+  const banksDone = !!done.banks;
+  const remaining = [!stateDone, !irsDone, w9Old, !banksDone].filter(Boolean).length;
+  if (!remaining) return null;
+
+  const run = async (key: string, fn: () => Promise<unknown>) => {
+    setBusy(key);
+    try {
+      await fn();
+    } finally {
+      setBusy(null);
+    }
+  };
+  const doneMark = (date: string) => <Dot tone="good">Done {fmtDate(date)}</Dot>;
+  const markBtn = (key: "state" | "irs" | "banks", on: boolean) => (
+    <TextButton onClick={() => void run(key, () => page.markAddressStep(key, !on))} disabled={busy === key}>
+      {on ? "Undo" : "Mark done"}
+    </TextButton>
+  );
+
+  return (
+    <Section
+      title="Address change"
+      count={remaining}
+      alert
+      info={`BFO's record moved from ${asset.previousAddress} to ${asset.address}${asset.addressChangedAt ? ` on ${fmtDate(asset.addressChangedAt)}` : ""}. These still have the old one.`}
+    >
+      <Rows>
+        <Row
+          label={step.agency}
+          info={step.how}
+          actions={
+            step.needed && !stateMatches ? (
+              <div className="flex items-center gap-3">
+                {step.url && <TextLink href={step.url}>{step.linkLabel ?? "Open"}</TextLink>}
+                <TextButton onClick={() => void page.checkStateRecord()} disabled={!!page.palmBusy}>
+                  {page.palmBusy === "record" ? "Checking…" : "Check state record"}
+                </TextButton>
+                {markBtn("state", !!done.state)}
+              </div>
+            ) : undefined
+          }
+        >
+          {!step.needed ? (
+            <Dot tone="good">Nothing to file</Dot>
+          ) : stateMatches ? (
+            <Dot tone="good">The state has the new address</Dot>
+          ) : done.state ? (
+            doneMark(done.state)
+          ) : rec?.address ? (
+            <span>
+              <Dot tone="warn">The state still has the old address</Dot>
+              <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{rec.address}</span>
+            </span>
+          ) : (
+            <Dot tone="warn">To file</Dot>
+          )}
+        </Row>
+        <Row
+          label="IRS · Form 8822-B"
+          info={irsNeeded ? `Sign it, then mail it to ${irs.mailTo}. The IRS takes 4–6 weeks to process it.` : irs.notes[0]}
+          actions={
+            irsNeeded ? (
+              <div className="flex items-center gap-3">
+                {!done.irs && (
+                  <TextButton onClick={() => void run("8822", page.generate8822B)} disabled={busy === "8822"}>
+                    {busy === "8822" ? "Filling in…" : "Fill in 8822-B"}
+                  </TextButton>
+                )}
+                {markBtn("irs", !!done.irs)}
+              </div>
+            ) : undefined
+          }
+        >
+          {!irsNeeded ? <Dot tone="muted">No EIN of its own</Dot> : done.irs ? doneMark(done.irs) : <Dot tone="warn">To mail</Dot>}
+        </Row>
+        {w9Old && (
+          <Row
+            label="W-9"
+            info="The W-9 on file has the old address. A new one goes on file; the old one stays in Documents."
+            actions={
+              <TextButton onClick={() => void run("w9", () => page.generateW9(true))} disabled={busy === "w9"}>
+                {busy === "w9" ? "Filling in…" : "Fill in a new W-9"}
+              </TextButton>
+            }
+          >
+            <Dot tone="warn">Old address</Dot>
+          </Row>
+        )}
+        <Row label="Banks, Palm, insurers" info="Anyone who mails it statements or notices: update the address in each." actions={markBtn("banks", banksDone)}>
+          {banksDone ? doneMark(done.banks!) : <Dot tone="warn">To update</Dot>}
+        </Row>
+      </Rows>
+    </Section>
   );
 }
 

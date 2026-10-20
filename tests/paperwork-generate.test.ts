@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, W9_BOX, type Rec } from "../app/paperwork-generate";
+import { f8822bData, f8822bMailTo, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, stateAddressStep, w9Data, W9_BOX, type Rec } from "../app/paperwork-generate";
+import { sameAddressText, stateFindings } from "../app/palm";
 
 const OFFICE = "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028";
 const assets: Record<string, Rec & { name: string }> = {
@@ -112,5 +113,39 @@ describe("Palm's documents", () => {
     expect(PALM_SLOT.certificate_of_formation).toBe("articles");
     expect(PALM_SLOT.ein_letter).toBe("einLetter");
     expect(PALM_SLOT.service_of_process).toBeUndefined();
+  });
+});
+
+describe("address change", () => {
+  const moved = { name: "Swisshelm Mountain Ventures, LLC", ein: "93-1234567", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014", previousAddress: OFFICE };
+
+  it("fills in the IRS's Form 8822-B", async () => {
+    const data = f8822bData(moved);
+    expect(data).toMatchObject({ ein: "93-1234567", mailTo: "Internal Revenue Service, Ogden, UT 84201-0023", notes: [] });
+    const bytes = readFileSync(new URL("../public/forms/f8822b.pdf", import.meta.url));
+    const blob = await fill8822B(data, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const { PDFDocument } = await import("pdf-lib");
+    const form = (await PDFDocument.load(await blob.arrayBuffer())).getForm();
+    const P = "topmostSubform[0].Page1[0].";
+    expect(form.getCheckBox(P + "c1_2[0]").isChecked()).toBe(true);
+    expect(form.getTextField(P + "Line4aReadOrder[0].f1_1[0]").getText()).toBe("Swisshelm Mountain Ventures, LLC");
+    expect(form.getTextField(P + "Line4bReadOrder[0].f1_2[0]").getText()).toBe("93-1234567");
+    expect(form.getTextField(P + "f1_3[0]").getText()).toBe(OFFICE);
+    expect(form.getTextField(P + "f1_7[0]").getText()).toBe("5227 N 7th St STE 48575, Phoenix, AZ 85014");
+  });
+
+  it("knows who needs one and where it's mailed", () => {
+    expect(f8822bData({ ...moved, ein: "00-0000000" }).ein).toBeNull();
+    expect(f8822bMailTo("540 Hudson #6, New York, NY 10014")).toBe("Internal Revenue Service, Kansas City, MO 64999");
+    expect(stateAddressStep("Arizona", "LLC")).toMatchObject({ needed: true, url: "https://ecorp.azcc.gov/" });
+    expect(stateAddressStep("Nevada", "LLC").needed).toBe(true);
+    expect(stateAddressStep("Delaware", "LLC").needed).toBe(false);
+  });
+
+  it("compares the state's address the way people write it", () => {
+    expect(sameAddressText("5227 North 7th Street Suite 48575, Phoenix, AZ 85014-1234", "5227 N 7th St STE 48575, Phoenix, AZ 85014")).toBe(true);
+    expect(sameAddressText(OFFICE, "5227 N 7th St STE 48575, Phoenix, AZ 85014")).toBe(false);
+    const findings = stateFindings({ mode: "live", address: OFFICE, checkedAt: 0 }, { address: "5227 N 7th St STE 48575, Phoenix, AZ 85014" });
+    expect(findings[0].text).toContain("The state has 11201 N Tatum Blvd");
   });
 });

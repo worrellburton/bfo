@@ -285,7 +285,7 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
   const choices = page.registryChoices ?? [];
   const stale = !!rec && palmIsAgent && !!startedAt && rec.checkedAt < Date.parse(startedAt);
   const standing = rec?.standing ? (["registration", "tax", "agent"] as const).filter((k) => rec.standing?.[k]) : [];
-  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.managers?.length || !!rec.formationDate || findings.length > 0);
+  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.address || !!rec.managers?.length || !!rec.formationDate || findings.length > 0);
 
   return (
     <div className={`border-t ${t.line}`}>
@@ -353,6 +353,7 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
               {rec.agentAddress && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{rec.agentAddress}</span>}
             </Row>
           )}
+          {rec.address && <Row label="Address on file">{rec.address}</Row>}
           {rec.managers && rec.managers.length > 0 && <Row label="People on file">{rec.managers.join(", ")}</Row>}
           {rec.formationDate && (
             <Row label="Formed">
