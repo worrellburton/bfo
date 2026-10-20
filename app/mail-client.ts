@@ -48,6 +48,8 @@ export type MailCount = {
   otherUnread: number;
   /** null until an admin gives the user an address. */
   address: string | null;
+  /** Extra addresses on the same account: mail to them lands here too, and they can be sent from. */
+  aliases?: string[];
   canSeeOther: boolean;
   sync?: { error?: string };
 };
@@ -63,6 +65,8 @@ export type OutgoingAttachment = { filename: string; contentType: string; data: 
 
 export type SendInput = {
   sendId: string;
+  /** One of my addresses; the main one when left out. */
+  from?: string;
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -143,6 +147,15 @@ export function attachmentUrl(id: string, att: string) {
 /** Owner/admin diagnostics: is Bird set up to receive? */
 export function getMailStatus() {
   return call<MailStatus>("/api/mail?view=status");
+}
+
+/** Owner/admin: adds an extra address to my account ("accounting" or the full address). */
+export function addAlias(address: string) {
+  return post<{ aliases: string[] }>({ action: "alias-add", address });
+}
+
+export function removeAlias(address: string) {
+  return post<{ aliases: string[] }>({ action: "alias-remove", address });
 }
 
 export function syncMail() {

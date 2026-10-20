@@ -13,7 +13,7 @@ import {
   type Role,
   type Status,
 } from "../../lib/auth.js";
-import { ensureMailAddress, parseMailAddress } from "../../lib/mail-address.js";
+import { aliasOwner, ensureMailAddress, parseMailAddress } from "../../lib/mail-address.js";
 
 const ROLES: Role[] = ["owner", "admin", "member", "viewer", "email"];
 const STATUSES: Status[] = ["incoming", "approved", "denied"];
@@ -106,6 +106,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const built = fields(req.body ?? {});
       if ("error" in built) return fail(res, 400, built.error, built.message);
       const patch = built.patch;
+      if (typeof patch.mail_address === "string" && (await aliasOwner(patch.mail_address))) {
+        return fail(res, 409, "address_taken", `${patch.mail_address} is taken.`);
+      }
       if (!patch.phone && !patch.email) {
         return fail(res, 400, "missing_identifier", "A phone number or email address is required.");
       }
@@ -158,6 +161,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if ("error" in built) return fail(res, 400, built.error, built.message);
     const patch = built.patch;
     if (Object.keys(patch).length === 0) return fail(res, 400, "nothing_to_update");
+    // An extra address on someone's account can't also be a main address.
+    if (typeof patch.mail_address === "string" && (await aliasOwner(patch.mail_address))) {
+      return fail(res, 409, "address_taken", `${patch.mail_address} is taken.`);
+    }
 
     if (target.id === me.id && patch.role !== undefined && patch.role !== me.role) {
       return fail(res, 400, "cannot_change_own_role", "You can't change your own role.");
