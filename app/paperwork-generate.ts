@@ -460,3 +460,82 @@ export const PALM_SLOT: Record<string, "articles" | "einLetter" | "operatingAgre
 
 /** Which entity type the generator can write an operating agreement for. */
 export const canDraftAgreement = (r: { name?: string; type?: string }) => entityType(r) === "LLC";
+
+// ── Change of address ────────────────────────────────────────────────────
+
+export type AddressChangeStep = {
+  /** Whether the state keeps the address, so something must be filed. */
+  needed: boolean;
+  agency: string;
+  how: string;
+  url?: string;
+  linkLabel?: string;
+};
+
+/** What telling the state takes, by where the entity was formed. */
+export function stateAddressStep(state: string | undefined | null, type: string | undefined | null): AddressChangeStep {
+  const st = stateCode(state);
+  const corp = type === "C-Corp";
+  if (st === "AZ")
+    return {
+      needed: true,
+      agency: "Arizona Corporation Commission",
+      how: `Sign in to eCorp, open the ${corp ? "corporation" : "entity"}, and file the change of its ${corp ? "known place of business" : "principal / known place of business"} address. The new address shows on the public record once the ACC processes it.`,
+      url: "https://ecorp.azcc.gov/",
+      linkLabel: "Open eCorp",
+    };
+  if (st === "NV")
+    return {
+      needed: true,
+      agency: "Nevada Secretary of State",
+      how: `File an amended list of ${corp ? "officers and directors" : "managers or members"} with the new address in SilverFlume, or put it on the next annual list.`,
+      url: "https://www.nvsilverflume.gov/",
+      linkLabel: "Open SilverFlume",
+    };
+  if (st === "DE")
+    return {
+      needed: false,
+      agency: "Delaware Division of Corporations",
+      how: corp
+        ? "Delaware keeps the registered agent, not the business address, until the annual franchise tax report. Use the new address on the next report."
+        : "Delaware keeps only the registered agent on file, not the business address. Nothing to file.",
+      url: "https://corp.delaware.gov/",
+      linkLabel: "Delaware Division of Corporations",
+    };
+  return { needed: true, agency: st ? `${stateName(st)} Secretary of State` : "The state", how: "Update the address on file with the state the entity was formed in, and anywhere it's registered to do business." };
+}
+
+/** Where Form 8822-B is mailed: by the state of the old address (Rev. December 2019). */
+export function f8822bMailTo(oldAddress: string | null | undefined): string {
+  const st = parseAddress(oldAddress)?.region ?? "";
+  const kansasCity = new Set(["CT", "DE", "DC", "GA", "IL", "IN", "KY", "ME", "MD", "MA", "MI", "NH", "NJ", "NY", "NC", "OH", "PA", "RI", "SC", "TN", "VT", "VA", "WV", "WI"]);
+  return kansasCity.has(st) ? "Internal Revenue Service, Kansas City, MO 64999" : "Internal Revenue Service, Ogden, UT 84201-0023";
+}
+
+export type F8822BData = { name: string; ein: string | null; oldAddress: string; newAddress: string; mailTo: string; notes: string[] };
+
+/** What goes on the entity's 8822-B, or why it doesn't need one. */
+export function f8822bData(entity: { name?: string; ein?: string | null; address?: string | null; previousAddress?: string | null }): F8822BData {
+  const d = digits(entity.ein);
+  const notes: string[] = [];
+  const ein = d.length === 9 && !/^0+$/.test(d) ? `${d.slice(0, 2)}-${d.slice(2)}` : null;
+  if (!ein) notes.push("No EIN on record. An entity without its own EIN doesn't file one; its owner does, if the owner's address changed.");
+  if (!entity.previousAddress) notes.push("The old address isn't on record: fill in line 5 by hand.");
+  return { name: (entity.name ?? "").trim(), ein, oldAddress: (entity.previousAddress ?? "").trim(), newAddress: (entity.address ?? "").trim(), mailTo: f8822bMailTo(entity.previousAddress), notes };
+}
+
+/** The IRS's Form 8822-B (Rev. December 2019), filled in: line 1 (its returns), 4a, 4b, 5 and 6. Left unsigned. */
+export async function fill8822B(data: F8822BData, formBytes: ArrayBuffer): Promise<Blob> {
+  const { PDFDocument } = await import("pdf-lib");
+  const pdf = await PDFDocument.load(formBytes);
+  const form = pdf.getForm();
+  const P = "topmostSubform[0].Page1[0].";
+  const text = (name: string, value: string) => value && form.getTextField(P + name).setText(value);
+  form.getCheckBox(P + "c1_2[0]").check();
+  text("Line4aReadOrder[0].f1_1[0]", data.name);
+  text("Line4bReadOrder[0].f1_2[0]", data.ein ?? "");
+  text("f1_3[0]", data.oldAddress);
+  text("f1_7[0]", data.newAddress);
+  const bytes = await pdf.save();
+  return new Blob([bytes as BlobPart], { type: "application/pdf" });
+}
