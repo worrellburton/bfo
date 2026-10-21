@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import Anthropic from "@anthropic-ai/sdk";
 import { currentUser, fail, handleError, isAdmin, sb, type AppUser } from "../lib/auth.js";
 import {
   BirdError,
@@ -27,6 +28,7 @@ import {
   type SummaryRow,
 } from "../lib/mail.js";
 import { addAlias, listAliases, removeAlias } from "../lib/mail-address.js";
+import { cleanCompose, composeText } from "../lib/mail-compose.js";
 import { storageSignedUrl } from "../lib/storage.js";
 
 /**
@@ -44,7 +46,9 @@ import { storageSignedUrl } from "../lib/storage.js";
  *
  * POST { action, … }:
  *   sync                             → { ingested, error? }
- *   send { sendId, from?, to, cc?, bcc?, subject, text, replyToId?, forwardId?, attachments? } → { message }
+ *   send { sendId, from?, to, cc?, bcc?, subject, text, html?, replyToId?, forwardId?, attachments? } → { message }
+ *        html: the editor's formatted body; cleaned to the allowlist (lib/mail-compose.ts), text written from it
+ *   improve { html, subject? } → { html }  the same message laid out better: same words, clearer shape
  *                                    from: one of the caller's addresses (main by default)
  *   alias-add { address }            → { aliases }  (owner/admin: one more address on their own account)
  *   alias-remove { address }         → { aliases }
@@ -208,6 +212,9 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
     case "send":
       return send(res, me, admin, body);
 
+    case "improve":
+      return improve(res, body);
+
     // More addresses on the caller's own account. Owners and admins only, as
     // they're the ones who hand out addresses (role addresses included).
     case "alias-add": {
@@ -265,6 +272,47 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
     default:
       return fail(res, 400, "bad_action");
   }
+}
+
+const IMPROVE_MODEL = "claude-sonnet-5-5";
+
+const IMPROVE_INSTRUCTIONS = `You lay out business emails so they read clearly and look polished and professional. You change the layout, not the message.
+
+Rules:
+- Keep every word's meaning. Keep every name, address, number, date and request exactly. Don't add facts, promises or new requests, and don't drop any.
+- You may: split it into short paragraphs; put an address on its own lines (one line per part); turn a run of requests or steps into a numbered list, and a run of parallel items into a bulleted list; bold the few things a reader must not miss (an account number, an address, a deadline), sparingly; fix spelling, capitalization and punctuation.
+- Keep the greeting and the sign-off, each in its own paragraph, and the sign-off's lines together with line breaks.
+- Leave anything inside <blockquote> (quoted earlier mail) exactly as it is.
+- No headings, no emoji, no colors, no tables.
+
+Answer with the email body only, as an HTML fragment using just these tags: p, br, strong, em, ul, ol, li, blockquote, a. No <html> or <body>, no code fences, no commentary.`;
+
+/** The same message, laid out better (the Improve design button). */
+async function improve(res: VercelResponse, body: Record<string, unknown>) {
+  const html = typeof body.html === "string" ? body.html : "";
+  const clean = cleanCompose(html);
+  if (!composeText(clean).trim()) return fail(res, 400, "empty", "Write the message first.");
+  if (clean.length > 60_000) return fail(res, 413, "too_long", "That message is too long to redesign.");
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return fail(res, 503, "not_configured", "Design help isn't set up (ANTHROPIC_API_KEY).");
+  const subject = typeof body.subject === "string" ? body.subject.slice(0, 300) : "";
+  const client = new Anthropic({ apiKey });
+  const message = await client.messages.create({
+    model: IMPROVE_MODEL,
+    max_tokens: 8000,
+    output_config: { effort: "low" },
+    system: IMPROVE_INSTRUCTIONS,
+    messages: [{ role: "user", content: `${subject ? `Subject: ${subject}\n\n` : ""}${clean}` }],
+  });
+  const out = message.content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+    .replace(/^```(?:html)?\s*|```\s*$/g, "")
+    .trim();
+  const improved = cleanCompose(out);
+  if (!composeText(improved).trim()) return fail(res, 502, "empty_response", "Couldn't redesign it just now. Try again.");
+  return res.status(200).json({ html: improved });
 }
 
 async function send(res: VercelResponse, me: AppUser, admin: boolean, body: Record<string, unknown>) {

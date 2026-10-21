@@ -72,6 +72,8 @@ export type SendInput = {
   bcc?: string[];
   subject: string;
   text: string;
+  /** The formatted body (the editor's HTML); the server cleans it and writes the text part from it. */
+  html?: string;
   replyToId?: string;
   forwardId?: string;
   attachments?: OutgoingAttachment[];
@@ -279,4 +281,9 @@ export function useMailCount(): MailCount | null {
     if (count) void refreshCount();
   }, []);
   return value;
+}
+
+/** The same message, laid out better: same words, clearer shape (Improve design). */
+export function improveMail(html: string, subject: string): Promise<{ html: string }> {
+  return post<{ html: string }>({ action: "improve", html, subject });
 }
