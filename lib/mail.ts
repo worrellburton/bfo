@@ -323,6 +323,28 @@ export function replyHeaders(original: Pick<MailRow, "message_id" | "references_
   return { inReplyTo: messageIdOk(id) ? id : null, references: refs };
 }
 
+/** Every Message-ID a message names: its own, the one it answers, and its References. */
+export function threadIds(row: Pick<MailRow, "message_id" | "in_reply_to" | "references_ids">): string[] {
+  const out: string[] = [];
+  for (const v of [row.message_id, row.in_reply_to, ...(row.references_ids ?? [])]) {
+    const id = typeof v === "string" ? v.trim() : "";
+    if (messageIdOk(id) && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * PostgREST condition for the messages in one conversation: any that is one of
+ * these ids, answers one, or lists one in its References. Null when there are
+ * none to look for. Goes in an and=(…), so it can't clash with a scope's or=(…).
+ */
+export function threadCondition(ids: string[]): string | null {
+  const ok = ids.filter(messageIdOk).slice(0, 60);
+  if (!ok.length) return null;
+  const q = ok.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",");
+  return `and=${encodeURIComponent(`(or(message_id.in.(${q}),in_reply_to.in.(${q}),references_ids.ov.{${q}}))`)}`;
+}
+
 // ── Mapping rows to the API ───────────────────────────────────────────
 
 export function toSummary(row: SummaryRow): MailSummary {
