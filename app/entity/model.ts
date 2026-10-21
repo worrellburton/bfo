@@ -6,6 +6,7 @@
 import { entityType } from "../entity-completeness";
 import { DOC_KEYS, documentRules, type DocKey, type DocRule, type PaperworkInput } from "../entity-paperwork";
 import type { ForeignRegistration } from "../entity-addresses";
+import type { Closing } from "../entity-closing";
 import type { PalmLink, PalmMode, StateRecord } from "../palm";
 
 export interface Asset {
@@ -23,6 +24,8 @@ export interface Asset {
   registeredAgentAddress?: string;
   /** Each state it's registered in as a foreign entity, by two-letter code. */
   foreign?: Record<string, ForeignRegistration>;
+  /** Being closed down (app/entity-closing.ts): when it started, each step's date, when it was marked dissolved. */
+  closing?: Closing | null;
   /** States whose registry had no entry (or several) for it, from the state-record check. */
   registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
   formationDate?: string;

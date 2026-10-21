@@ -221,6 +221,21 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     if (fa[code]?.record && fa[code].record.checkedAt !== fb[code]?.record?.checkedAt) out.push({ kind: "state", summary: `Read ${code}'s record through Palm` });
   }
 
+  // Closing it down
+  const cb0 = before.closing as Rec | null | undefined;
+  const ca0 = after.closing as Rec | null | undefined;
+  if (ca0 && !cb0) out.push({ kind: "closing", summary: "Started closing it down" });
+  else if (!ca0 && cb0) out.push({ kind: "closing", summary: "Stopped closing it down" });
+  else if (ca0 && cb0) {
+    const sb1 = (cb0.steps ?? {}) as Record<string, string | null>;
+    const sa1 = (ca0.steps ?? {}) as Record<string, string | null>;
+    for (const k of new Set([...Object.keys(sb1), ...Object.keys(sa1)])) {
+      if (!sb1[k] && sa1[k]) out.push({ kind: "closing", summary: `Closing: done with ${stepWords(k)}` });
+      else if (sb1[k] && !sa1[k]) out.push({ kind: "closing", summary: `Closing: reopened ${stepWords(k)}` });
+    }
+    if (ca0.closedAt && !cb0.closedAt) out.push({ kind: "closing", summary: "Marked dissolved" });
+  }
+
   // Checks
   if (after.verification?.checkedAt && after.verification.checkedAt !== before.verification?.checkedAt) {
     const issues = Array.isArray(after.verification.issues) ? after.verification.issues.length : 0;
@@ -238,6 +253,15 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   for (const [k, c] of Object.entries(cb)) if (!ca[k]) out.push({ kind: "agreement", summary: `Removed the agreement with ${c.counterparty || "a counterparty"}` });
 
   return out;
+}
+
+/** A closing step's key as words (app/entity-closing.ts). */
+function stepWords(key: string): string {
+  if (key.startsWith("state:")) return `the state filing (${key.slice(6)})`;
+  if (key.startsWith("withdraw:")) return `the withdrawal in ${key.slice(9)}`;
+  return (
+    { consent: "the owners' consent", windup: "winding up", bank: "closing the accounts", tax: "the final tax return", ein: "closing the EIN account", agent: "ending the registered agent", mail: "stopping the mail" } as Record<string, string>
+  )[key] ?? key;
 }
 
 /**

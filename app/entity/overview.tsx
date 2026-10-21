@@ -14,6 +14,7 @@ import { f8822bData, stateAddressStep } from "../paperwork-generate";
 import { isAdmin, isPartner } from "../auth";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
+import { ClosingCard } from "./closing";
 import { useEntity } from "./context";
 import { BY_HAND, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
@@ -24,6 +25,7 @@ export function OverviewTab() {
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr]">
       <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+        <ClosingCard />
         <AddressChange />
         <Formation />
         {page.editing ? <EditForm /> : <><Addresses /><Details /></>}
