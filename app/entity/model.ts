@@ -23,6 +23,8 @@ export interface Asset {
   registeredAgentAddress?: string;
   /** Each state it's registered in as a foreign entity, by two-letter code. */
   foreign?: Record<string, ForeignRegistration>;
+  /** States whose registry had no entry (or several) for it, from the state-record check. */
+  registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
   formationDate?: string;
   status?: string;
   notes?: string;

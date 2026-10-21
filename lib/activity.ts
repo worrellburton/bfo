@@ -205,8 +205,13 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   const sa = after.stateRecord as Rec | undefined;
   if (sa && !sb0) out.push({ kind: "state", summary: "Read the state's record through Palm" });
   else if (sa && sb0) {
-    const moved = (["status", "standing", "address", "agent"] as const).filter((k) => !same(sb0[k], sa[k]) && sa[k]);
-    if (moved.length) out.push({ kind: "state", summary: `The state's record changed: ${moved.map((k) => `${k} ${sa[k]}`).join(", ")}` });
+    // Only a value that was there and is now different: a field read for the first time isn't a change.
+    const moved = (["status", "standing", "address", "agent"] as const).filter((k) => sb0[k] != null && sa[k] != null && !same(sb0[k], sa[k]));
+    const say = (k: string, v: any): string =>
+      k === "standing"
+        ? `standing ${Object.entries((v ?? {}) as Record<string, string>).map(([part, s]) => `${part === "registration" ? "filings" : part} ${s === "compliant" ? "current" : "behind"}`).join(", ")}`
+        : k === "status" ? `status ${v}` : k === "agent" ? `agent ${v}` : `address ${v}`;
+    if (moved.length) out.push({ kind: "state", summary: `The state's record changed: ${moved.map((k) => say(k, sa[k])).join("; ")}` });
   }
 
   // Foreign registrations: reading another state's record

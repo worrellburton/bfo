@@ -46,3 +46,10 @@ describe("an entity's addresses", () => {
     expect(out[0].summary).toBe("Changed the mailing address and AZ agent");
   });
 });
+
+describe("a state with no registration", () => {
+  it("says it isn't registered there yet", () => {
+    const a = entityAddresses({ name: "Ledger Louise, LLC", type: "LLC", state: "Nevada", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014", registeredAgent: "NW", registeredAgentAddress: "732 S 6th St, Las Vegas, NV 89101", registryMiss: { AZ: { outcome: "not_found", at: Date.parse("2026-10-20T21:40:00Z") } } });
+    expect(a.agents[1].checks[0].text).toMatch(/^Not registered in Arizona: its registry had no entry for this name \(checked Oct 20\)/);
+  });
+});

@@ -22,3 +22,13 @@ describe("reading every state record", () => {
     expect(Object.keys(patchFor({ name: "X" }, "AZ", false, rec(), false))).toEqual(["foreign/AZ/record"]);
   });
 });
+
+describe("matching a registry entry", () => {
+  it("finds an entity whose name on record leaves off its ending or carries a note", async () => {
+    const { pickRegistryMatch, searchName } = await import("../lib/registry");
+    const results = [{ name: "BREEZEWOOD, LLC", registration_jurisdiction: "US-AZ" }, { name: "BREEZEWOOD HOLDINGS LLC", registration_jurisdiction: "US-AZ" }];
+    expect(searchName("Breezewood (100%)")).toBe("Breezewood");
+    expect(pickRegistryMatch(results, "Breezewood (100%)", "US-AZ")?.name).toBe("BREEZEWOOD, LLC");
+    expect(pickRegistryMatch([{ name: "BREEZEWOOD LLC", registration_jurisdiction: "US-NV" }], "Breezewood", "US-AZ")).toBeNull();
+  });
+});

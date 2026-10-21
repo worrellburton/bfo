@@ -63,11 +63,32 @@ export function pickRegistryMatch<T extends { name?: string; registration_jurisd
   name: string,
   jurisdiction?: string | null,
 ): T | null {
-  const want = normalizeName(name);
-  const same = results.filter((r) => normalizeName(r.name) === want);
-  const home = jurisdiction ? same.filter((r) => r.registration_jurisdiction === jurisdiction || r.formation_jurisdiction === jurisdiction) : same;
-  const pool = home.length ? home : same;
-  return pool.length === 1 ? pool[0] : null;
+  const pick = (key: (n?: string | null) => string) => {
+    const want = key(name);
+    const same = results.filter((r) => key(r.name) === want);
+    const home = jurisdiction ? same.filter((r) => r.registration_jurisdiction === jurisdiction || r.formation_jurisdiction === jurisdiction) : same;
+    const pool = home.length ? home : same;
+    return pool.length === 1 ? pool[0] : pool.length > 1 ? "many" : null;
+  };
+  // The exact name first; then without the entity ending ("Breezewood" is "BREEZEWOOD LLC"), only in its own state.
+  const exact = pick(normalizeName);
+  if (exact !== null) return exact === "many" ? null : exact;
+  const bare = pick(baseName);
+  if (bare === null || bare === "many") return null;
+  return !jurisdiction || bare.registration_jurisdiction === jurisdiction || bare.formation_jurisdiction === jurisdiction ? bare : null;
+}
+
+/** A name without its entity ending: "Breezewood, L.L.C." → "breezewood". */
+export function baseName(name?: string | null): string {
+  return normalizeName(name)
+    .replace(/\b(llc|inc|incorporated|corp|corporation|co|company|lp|llp|ltd|limited|partnership|pllc|pc)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The name to search a registry with: BFO's notes in parentheses ("(100%)") dropped. */
+export function searchName(name: string): string {
+  return name.replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Date.now()): StateRecord {
