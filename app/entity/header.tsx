@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { formingNow } from "../entity-addresses";
 import { useEntity } from "./context";
-import { fmtDate } from "./model";
+import { WITH_FORMATION } from "./derive";
+import { fmtDate, splitNames } from "./model";
 import { Button, Count, Dot, Icon, IconButton, useTone } from "./ui";
 import { isAdmin, isPartner } from "../auth";
 
@@ -9,10 +11,12 @@ import { isAdmin, isPartner } from "../auth";
 export function EntityHeader() {
   const { page, view, asset, tabPath } = useEntity();
   const t = useTone();
-  const { etype, isTrust, glyph, score, filedCount, scoredKinds } = view;
+  const { etype, isTrust, glyph, score } = view;
+  // What's left, as To do counts it (a formation's own papers aren't left to do while it's under way).
+  const toDo = view.missing.filter((i) => !(formingNow(asset) && WITH_FORMATION.has(i.key))).length;
   const owner = asset.ownerId ? page.assetNames[asset.ownerId] : undefined;
   const formed = fmtDate(asset.formationDate);
-  const trustees = (asset.trustees ?? "").split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  const trustees = splitNames(asset.trustees);
 
   const meta = [etype, asset.state || "No state", asset.llcType].filter(Boolean) as string[];
 
@@ -78,9 +82,9 @@ export function EntityHeader() {
         </div>
       </div>
 
-      <div className={`grid grid-cols-2 border-t sm:grid-cols-4 ${t.line}`}>
+      <div className={`grid grid-cols-2 border-t sm:grid-cols-3 ${t.line}`}>
         {isTrust && !asset.ein ? (
-          <Metric label="Trustees" value={String(trustees.length)} sub={trustees[0] ?? "none recorded"} />
+          <Metric label="Trustees" value={trustees.length ? trustees[0] : "None on record"} sub={trustees.length > 1 ? `+${trustees.length - 1}` : undefined} />
         ) : (
           <CopyMetric id="ein" label="EIN" value={asset.ein} mono />
         )}
@@ -89,12 +93,37 @@ export function EntityHeader() {
           label={isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : etype === "LP" ? "Formed" : "Formation date"}
           value={formed}
         />
-        <Metric label="Completeness" value={`${score}`} sub="/ 100" />
-        <Link to={tabPath("documents")} className={`block transition-colors ${t.hover}`}>
-          <Metric label="Paperwork" value={`${filedCount}/${scoredKinds.length}`} sub={filedCount === scoredKinds.length ? "complete" : "on file"} />
+        {/* One measure of the record: the ring, and how many things are left (the To do card lists them). */}
+        <Link to={tabPath("overview")} className={`col-span-2 block transition-colors sm:col-span-1 ${t.hover}`}>
+          <div className="flex min-w-0 items-center gap-3 px-5 py-3 sm:px-6">
+            <ScoreRing score={score} />
+            <div className="min-w-0">
+              <p className={`text-[11.5px] ${t.muted}`}>Record</p>
+              <p className={`mt-0.5 truncate text-[15px] font-medium ${t.text}`}>
+                {toDo ? `${toDo} to do` : "Complete"}
+              </p>
+            </div>
+          </div>
         </Link>
       </div>
     </section>
+  );
+}
+
+/** The record's completeness as a ring: emerald when complete, indigo most of the way, amber below. */
+function ScoreRing({ score }: { score: number }) {
+  const t = useTone();
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  const color = score >= 90 ? "#34d399" : score >= 60 ? "#818cf8" : "#fbbf24";
+  return (
+    <span className="relative inline-grid h-[38px] w-[38px] shrink-0 place-items-center" aria-label={`${score} of 100`}>
+      <svg viewBox="0 0 38 38" className="absolute inset-0 -rotate-90">
+        <circle cx="19" cy="19" r={r} fill="none" strokeWidth="3" className={t.dark ? "stroke-white/[0.08]" : "stroke-gray-200"} />
+        <circle cx="19" cy="19" r={r} fill="none" strokeWidth="3" strokeLinecap="round" stroke={color} strokeDasharray={`${(c * score) / 100} ${c}`} style={{ transition: "stroke-dasharray 600ms ease" }} />
+      </svg>
+      <span className={`text-[11px] font-semibold tabular-nums ${t.text}`}>{score}</span>
+    </span>
   );
 }
 

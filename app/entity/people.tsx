@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { authFetch, isAdmin, isPartner } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
 import { useEntity } from "./context";
-import type { Member } from "./model";
+import { splitNames, type Member } from "./model";
 import { Button, Empty, Icon, IconButton, Input, Section, Select, TextButton, useTone } from "./ui";
 
 /**
@@ -38,7 +38,7 @@ const initials = (name: string) =>
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 
 export function PeopleTab() {
-  const { page, asset } = useEntity();
+  const { page, asset, view } = useEntity();
   const t = useTone();
   const admin = isAdmin() && !isPartner();
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -97,11 +97,15 @@ export function PeopleTab() {
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
+        {view.isTrust ? (
+          <TrustRoles admin={admin} accessOf={accessOf} onInvite={(name) => setInviting({ memberName: name })} onRevoke={(p) => void revoke(p)} />
+        ) : (
+        <>
         <Section
-          title={asset.type === "C-Corp" ? "Shareholders" : asset.type === "Trust" ? "Beneficial owners" : "Owners"}
+          title={asset.type === "C-Corp" ? "Shareholders" : "Owners"}
           count={owners.length || undefined}
           info={fromOwner ? "From the owner on record. Add the members to record their shares." : "Who owns it, and in what share. From the operating agreement, the formation, or entered here."}
-          actions={admin ? <TextButton onClick={() => setAdding(true)}>+ Add</TextButton> : undefined}
+          actions={admin && owners.length > 0 ? <TextButton onClick={() => setAdding(true)}>+ Add</TextButton> : undefined}
         >
           {owners.length > 0 && (
             <div className="px-5 pb-1 pt-4">
@@ -187,6 +191,8 @@ export function PeopleTab() {
             )}
           </Section>
         )}
+        </>
+        )}
 
         {admin && others.length > 0 && (
           <Section title="Also has access" count={others.length} info="People given this entity in BFO who aren't on its owner list.">
@@ -202,7 +208,7 @@ export function PeopleTab() {
 
       <aside className="min-w-0 space-y-4">
         <div className={`rounded-2xl border p-5 ${t.surface}`}>
-          <p className={`text-[13px] font-semibold ${t.text}`}>{admin ? "Invite owners to BFO" : "Your access"}</p>
+          <p className={`text-[13px] font-semibold ${t.text}`}>{admin ? (view.isTrust ? "Invite people to BFO" : "Invite owners to BFO") : "Your access"}</p>
           <p className={`mt-1.5 text-[12.5px] leading-relaxed ${t.muted}`}>
             {admin
               ? "An invitation gives them their own sign-in. They sign in with their phone number and see only the entities they're on: the documents, the operating agreement and who owns it. Nothing else in BFO."
@@ -230,6 +236,89 @@ export function PeopleTab() {
           document.body
         )}
     </div>
+  );
+}
+
+// ── A trust's people ─────────────────────────────────────────────────────
+
+const TRUST_ROLES = [
+  { key: "trustees", title: "Trustees", one: "Trustee", info: "They hold and manage the trust's property, and sign for it. Banks and title companies ask for them." },
+  { key: "grantors", title: "Grantors", one: "Grantor", info: "Who created the trust and put property into it. While a grantor of a revocable trust is alive, it's taxed to them." },
+  { key: "beneficiaries", title: "Beneficiaries", one: "Beneficiary", info: "Who the trust is for: who receives its income or property." },
+] as const;
+
+
+/** Trustees, grantors and beneficiaries: the record's own lists, edited in place. */
+function TrustRoles({ admin, accessOf, onInvite, onRevoke }: { admin: boolean; accessOf: (name: string) => Person | null; onInvite: (name: string) => void; onRevoke: (p: Person) => void }) {
+  const { page, asset } = useEntity();
+  const t = useTone();
+  const [adding, setAdding] = useState<string | null>(null);
+  const [name, setName] = useState("");
+
+  async function save(key: (typeof TRUST_ROLES)[number]["key"], names: string[]) {
+    await page.patchAsset({ [key]: names.join(", ") });
+  }
+
+  return (
+    <>
+      {TRUST_ROLES.map((role, r) => {
+        const names = splitNames(asset[role.key]);
+        const open = adding === role.key;
+        return (
+          <Section
+            key={role.key}
+            title={role.title}
+            count={names.length || undefined}
+            info={role.info}
+            actions={admin && names.length > 0 && !open ? <TextButton onClick={() => (setAdding(role.key), setName(""))}>+ Add</TextButton> : undefined}
+          >
+            {names.length === 0 && !open ? (
+              <Empty action={admin ? <Button icon="plus" onClick={() => (setAdding(role.key), setName(""))}>Add {role.one.toLowerCase()}</Button> : undefined}>
+                None on record. {role.key === "trustees" ? "The trust agreement names them." : ""}
+              </Empty>
+            ) : (
+              <div className={`divide-y ${t.divide}`}>
+                {names.map((n, i) => (
+                  <PersonRow
+                    key={`${n}-${i}`}
+                    color={COLORS[(i + r * 3) % COLORS.length]}
+                    name={n}
+                    detail={role.one}
+                    share={null}
+                    access={admin ? accessOf(n) : null}
+                    admin={admin}
+                    onInvite={isCompany(n) ? undefined : () => onInvite(n)}
+                    onRevoke={onRevoke}
+                    onRemove={async () => {
+                      if (await confirmDialog({ title: `Remove ${n}?`, message: `From the trust's ${role.title.toLowerCase()}.`, confirmLabel: "Remove", tone: "danger" }))
+                        await save(role.key, names.filter((_, j) => j !== i));
+                    }}
+                  />
+                ))}
+                {open && (
+                  <form
+                    className={`flex items-center gap-2 px-5 py-3 ${t.dark ? "bg-white/[0.015]" : "bg-gray-50/60"}`}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!name.trim()) return;
+                      void save(role.key, [...names, name.trim()]).then(() => setAdding(null));
+                    }}
+                  >
+                    <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${role.one}'s full name`} autoFocus aria-label={`${role.one}'s name`} />
+                    <Button kind="ghost" onClick={() => setAdding(null)}>
+                      Cancel
+                    </Button>
+                    <Button kind="primary" type="submit" disabled={!name.trim()}>
+                      Add
+                    </Button>
+                  </form>
+                )}
+              </div>
+            )}
+          </Section>
+        );
+      })}
+    </>
   );
 }
 

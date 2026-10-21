@@ -125,7 +125,7 @@ export const VERIFY_LABEL: Record<VerifyField, string> = {
   state: "State of formation",
   ein: "EIN",
   formationDate: "Formation date",
-  address: "Principal address",
+  address: "Principal office",
   registeredAgent: "Registered agent",
   llcType: "Tax classification",
   operatingAgreementDate: "Operating agreement date",
@@ -422,3 +422,11 @@ export function tidyEin(raw?: string | null): string {
 }
 
 export const einLooksRight = (s?: string | null) => !s?.trim() || /^\d{2}-\d{7}$/.test(tidyEin(s));
+
+/** "Robert L. Burton, Claire B. Burton and Jane Doe" → each name. */
+export function splitNames(s?: string | null): string[] {
+  return (s ?? "")
+    .split(/\s*(?:,|;|\n|\band\b|&)\s*/i)
+    .map((n) => n.trim())
+    .filter(Boolean);
+}

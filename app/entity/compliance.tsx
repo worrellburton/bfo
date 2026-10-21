@@ -228,7 +228,12 @@ function RegisteredAgent() {
                 {agentShown || <span className={t.faint}>—</span>}
                 {asset.registeredAgentSource && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{asset.registeredAgentSource}</span>}
               </span>
-            ) : undefined}
+            ) : (
+              <span>
+                <span className={toneText("bad", t.dark)}>None on record</span>
+                <span className={`mt-0.5 block text-[12px] ${t.muted}`}>Every entity must keep one in its state. Make Palm the agent, or add yours under Edit.</span>
+              </span>
+            )}
           </Row>
           {(st || (page.palmBusinessId && svc === null)) && (
             <Row label="Status" info={statusInfo}>
