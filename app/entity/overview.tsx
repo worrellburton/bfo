@@ -15,6 +15,7 @@ import { isAdmin, isPartner } from "../auth";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
 import { ClosingCard } from "./closing";
+import { WITH_FORMATION } from "./derive";
 import { useEntity } from "./context";
 import { BY_HAND, einLooksRight, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
@@ -264,14 +265,12 @@ function Details() {
 
         {view.isTrust ? (
           <>
-            <Row label="Trustees">{val(asset.trustees)}</Row>
-            <Row label="Grantors">{val(asset.grantors)}</Row>
-            <Row label="Beneficiaries">{val(asset.beneficiaries)}</Row>
-            <Row label="Trust date">{formed ? <span className="tabular-nums">{formed}</span> : undefined}</Row>
-            <Row label="Governing law">{val(asset.state)}</Row>
-            <Row label="Tax classification">{val(asset.llcType)}</Row>
+            {/* Trustees, grantors and beneficiaries live on the People tab. */}
+            <Row label="Trust date">{formed ? <span className="tabular-nums">{formed}</span> : <AddValue field="formationDate" />}</Row>
+            <Row label="Governing law">{val(asset.state) ?? <AddValue field="state" />}</Row>
+            <Row label="Tax classification">{val(asset.llcType) ?? <AddValue field="llcType" />}</Row>
             <Row label="Trust agreement">{filedFact(asset, "trustAgreement", asset.formationDate)}</Row>
-            <Row label="Mailing address">{val(asset.address)}</Row>
+            <Row label="Mailing address">{val(asset.address) ?? <AddValue field="address" />}</Row>
           </>
         ) : (
           <>
@@ -289,7 +288,9 @@ function Details() {
                     </TextLink>
                   )}
                 </span>
-              ) : undefined}
+              ) : (
+                <AddValue field="fileNumber" />
+              )}
             </Row>
           </>
         )}
@@ -304,11 +305,35 @@ function Details() {
   );
 }
 
-/** A filing's date, and whether the document itself is on file. Nothing when neither is known. */
+/** Open the edit form on one field, focused (an empty value's Add, a To do item). */
+function useEditField() {
+  const { page } = useEntity();
+  return (key: string) => {
+    if (!page.editing) page.startEditing();
+    window.setTimeout(() => {
+      const el = document.getElementById(`edit-${key}`) ?? document.getElementById("entity-edit");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.focus({ preventScroll: true });
+    }, 60);
+  };
+}
+
+/** An empty value, as the one thing to do about it. */
+function AddValue({ field, label = "Add" }: { field: string; label?: string }) {
+  const editField = useEditField();
+  return (
+    <TextButton onClick={() => editField(field)}>
+      <Icon name="plus" className="h-3 w-3" />
+      {label}
+    </TextButton>
+  );
+}
+
+/** A filing's date, and whether the document itself is on file; Upload when it isn't. */
 function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
   const file = asset[kind];
   const when = fmtDate(date);
-  if (!file && !when) return undefined;
+  if (!file && !when) return <UploadSlot kind={kind} />;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       {file ? (
@@ -320,6 +345,16 @@ function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
       )}
       {when ? <span className="tabular-nums">{when}</span> : <span className="text-gray-500">no date</span>}
     </span>
+  );
+}
+
+function UploadSlot({ kind }: { kind: FileKind }) {
+  const { goToTab } = useEntity();
+  return (
+    <TextButton onClick={() => goToTab("documents", `filing-${kind}`, "center")}>
+      <Icon name="upload" className="h-3 w-3" />
+      Upload
+    </TextButton>
   );
 }
 
@@ -379,8 +414,15 @@ function Addresses() {
       }
     >
       <Rows className="[overflow-wrap:anywhere]">
+        {!a.principal.value && !a.mailing.value ? (
+          // No address at all: one line, one thing to do.
+          <Row label="Address" actions={<AddValue field="address" />}>
+            <span className={t.faint}>None on record. The principal office is the address the state lists; mail goes there unless you add a separate mailing address.</span>
+          </Row>
+        ) : (
+          <>
         <Row label="Principal office">
-          {a.principal.value ?? <span className={t.faint}>None on record</span>}
+          {a.principal.value ?? <AddValue field="address" />}
           {checks(a.principal.checks)}
         </Row>
         <Row label="Mailing address">
@@ -398,6 +440,8 @@ function Addresses() {
           )}
           {checks(a.mailing.checks)}
         </Row>
+          </>
+        )}
         {a.agents.map((g) => (
           <Row
             key={g.state}
@@ -569,7 +613,12 @@ function TaxClassRows() {
   const { page, view, asset, tabPath, goToTab } = useEntity();
   const label = view.etype === "C-Corp" ? "Classification" : "Tax classification";
   const c = asset.llcTypeConflict;
-  if (!asset.llcType && !c) return <Row label={label} />;
+  if (!asset.llcType && !c)
+    return (
+      <Row label={label}>
+        <AddValue field="llcType" />
+      </Row>
+    );
 
   const src = asset.llcTypeSource;
   const home = view.homeReturn;
@@ -844,6 +893,8 @@ function About() {
   const { page, asset, goToTab } = useEntity();
   const t = useTone();
   const p = asset.profile;
+  // Nothing on file means nothing to read: To do already asks for the documents.
+  if (!p && !page.docs.length && !page.profiling) return null;
 
   const info = p
     ? `Read ${fmtStamp(p.checkedAt)} from ${p.sources.length ? p.sources.join(", ") : "the documents on file"}.`
@@ -963,33 +1014,27 @@ function List({ items }: { items: string[] }) {
 
 // ── To do (completeness) ─────────────────────────────────────────────────
 
-/** What a formation through Palm brings with it: not a to-do while it's under way. */
-const WITH_FORMATION = new Set(["ein", "formationDate", "registeredAgent", "registeredAgentAddress", "articles", "einLetter"]);
 
 function ToDo() {
   const { page, view, asset, goToTab } = useEntity();
   const t = useTone();
-  const { checklist, score } = view;
+  const { checklist } = view;
   const forming = !!formingNow(asset);
   const coming = forming ? view.missing.filter((i) => WITH_FORMATION.has(i.key)) : [];
   const missing = forming ? view.missing.filter((i) => !WITH_FORMATION.has(i.key)) : view.missing;
+  const editField = useEditField();
   const done = checklist.filter((i) => i.done);
 
   // Each item opens exactly where it's fixed: its filing row, the Addresses card, or its field in the edit form.
   function open(item: (typeof missing)[number]) {
     if (item.filing) return goToTab("documents", `filing-${item.key}`, "center");
+    if (["trustees", "grantors", "beneficiaries"].includes(item.key)) return goToTab("people");
     if (item.key.startsWith("foreign:")) return document.getElementById("addresses")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (!page.editing) page.startEditing();
-    const focus = () => {
-      const el = document.getElementById(`edit-${item.key}`) ?? document.getElementById("entity-edit");
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.focus({ preventScroll: true });
-    };
-    window.setTimeout(focus, 60);
+    editField(item.key);
   }
 
   return (
-    <Section title="To do" count={missing.length} actions={<span className={`text-[12px] tabular-nums ${t.muted}`}>{score}/100</span>}>
+    <Section title="To do" count={missing.length}>
       <Rows>
         {missing.length === 0 ? (
           <div className="px-5 py-3">
@@ -1004,7 +1049,6 @@ function ToDo() {
               className={`group flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left text-[13px] transition-colors max-sm:min-h-[44px] ${t.text} ${t.hover}`}
             >
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              <span className={`shrink-0 text-[11.5px] tabular-nums ${t.muted}`}>+{item.weight}</span>
               <Icon name="chevronRight" className={`h-3 w-3 ${t.faint}`} />
             </button>
           ))

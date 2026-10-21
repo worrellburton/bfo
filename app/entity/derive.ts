@@ -8,7 +8,7 @@ import { formingNow } from "../entity-addresses";
 import { entityCompleteness, entityType } from "../entity-completeness";
 import { documentRules, obligations, paperworkChecks, taxHome, type PaperworkInput } from "../entity-paperwork";
 import { stateFindings } from "../palm";
-import { FILING_KINDS, type Asset, type AssetDoc, type EntityTab, type FileKind, type OperatingContract } from "./model";
+import { FILING_KINDS, splitNames, type Asset, type AssetDoc, type EntityTab, type FileKind, type OperatingContract } from "./model";
 
 export type Tab = { key: EntityTab; label: string; count?: number; alert?: boolean };
 
@@ -52,7 +52,10 @@ export function deriveEntity(input: {
 
   const stateBad = asset.stateRecord ? stateFindings(asset.stateRecord, asset).filter((f) => f.tone === "bad").length : 0;
   const complianceAlerts = issues.filter((i) => i.severity !== "info").length + stateBad;
-  const people = { key: "people" as const, label: isTrust ? "People" : "Owners", count: (asset.members?.length || (asset.ownerId ? 1 : 0)) || undefined };
+  const peopleCount = isTrust
+    ? new Set([asset.trustees, asset.grantors, asset.beneficiaries].flatMap((s) => splitNames(s).map((n) => n.toLowerCase()))).size
+    : asset.members?.length || (asset.ownerId ? 1 : 0);
+  const people = { key: "people" as const, label: isTrust ? "People" : "Owners", count: peopleCount || undefined };
   const tabs: Tab[] = partner
     ? [{ key: "documents", label: "Documents", count: docs.length || undefined }, people]
     : [
@@ -91,3 +94,6 @@ export function deriveEntity(input: {
 }
 
 export type EntityView = ReturnType<typeof deriveEntity>;
+
+/** What a formation through Palm brings with it: not a to-do while it's under way. */
+export const WITH_FORMATION = new Set(["ein", "formationDate", "registeredAgent", "registeredAgentAddress", "articles", "einLetter"]);

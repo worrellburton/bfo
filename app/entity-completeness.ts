@@ -68,7 +68,7 @@ export function entityCompleteness(a: CompletenessInput, today = new Date()): Co
       { key: "ein", label: "EIN", weight: 12, done: !!a.ein?.trim() },
       { key: "state", label: "State of formation", weight: 6, done: !!a.state?.trim() },
       { key: "formationDate", label: "Formation date", weight: 6, done: !!a.formationDate },
-      { key: "address", label: "Principal address", weight: 6, done: !!a.address?.trim() },
+      { key: "address", label: "Principal office", weight: 6, done: !!a.address?.trim() },
       { key: "registeredAgent", label: agentTerm(st), weight: 6, done: !!a.registeredAgent?.trim() },
       { key: "registeredAgentAddress", label: `${agentTerm(st)}'s address`, weight: 3, done: !!a.registeredAgentAddress?.trim() },
       // The agent in each state it must register in: it can't register there without one.

@@ -144,7 +144,7 @@ export function entityAddresses(a: AddressInput): Addresses {
   const trust = entityType(a) === "Trust";
 
   const pChecks: Check[] = [];
-  if (!principal) pChecks.push({ tone: "warn", text: trust ? "Add its address under Edit." : "Add it under Edit: it's the address the state lists for the business." });
+  if (!principal) pChecks.push({ tone: "warn", text: trust ? "Its mailing address." : "The address the state lists for the business." });
   else if (rec?.address) {
     pChecks.push(sameAddressText(rec.address, principal) ? { tone: "good", text: "Matches the state's record" } : { tone: "warn", text: `The state has ${rec.address}.` });
   }
