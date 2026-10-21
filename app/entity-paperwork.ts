@@ -97,6 +97,10 @@ export type PaperworkInput = {
   formationDate?: string;
   address?: string;
   registeredAgent?: string;
+  registeredAgentAddress?: string;
+  mailingAddress?: string;
+  /** States it's registered in as a foreign entity, with the agent there. */
+  foreign?: Record<string, { agent?: string; agentAddress?: string }>;
   /** Federal tax class. */
   llcType?: string;
   trustees?: string;

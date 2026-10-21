@@ -164,12 +164,14 @@ describe("completeness on the rule book", () => {
   it("scores a fully papered Delaware LLC run from Arizona only once it's registered there", () => {
     const base = {
       name: "Ledger Burton, LLC", type: "LLC", state: "Delaware", address: PHX, ein: "93-3749778", formationDate: "2023-08-17",
-      registeredAgent: "Agent", llcType: "Disregarded Entity", articles: {}, einLetter: {}, w9: {}, operatingAgreement: {},
+      registeredAgent: "Agent", registeredAgentAddress: "1 Rodney Sq, Wilmington, DE 19801", llcType: "Disregarded Entity", articles: {}, einLetter: {}, w9: {}, operatingAgreement: {},
     };
     const before = entityCompleteness(base, today);
     expect(before.score).toBeLessThan(100);
-    expect(before.missing.map((m) => m.key)).toContain("foreignRegistration");
-    expect(entityCompleteness({ ...base, foreignRegistration: {} }, today).score).toBe(100);
+    expect(before.missing.map((m) => m.key)).toEqual(expect.arrayContaining(["foreignRegistration", "foreign:AZ"]));
+    // Registered there takes the filing and an Arizona statutory agent.
+    expect(entityCompleteness({ ...base, foreignRegistration: {} }, today).score).toBeLessThan(100);
+    expect(entityCompleteness({ ...base, foreignRegistration: {}, foreign: { AZ: { agent: "Palm", agentAddress: "2 N Central Ave, Phoenix, AZ 85004" } } }, today).score).toBe(100);
   });
 
   it("never scores recommended paperwork", () => {

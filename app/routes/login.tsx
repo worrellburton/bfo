@@ -1,7 +1,9 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, adoptToken, homePath, isAuthenticated, profileComplete, requestCode, verifyCode } from "../auth";
+import { ApiError, addingAccount, adoptToken, cancelAddAccount, displayName, homePath, isAuthenticated, profileComplete, requestCode, verifyCode, type User } from "../auth";
 import { ParticleCanvas } from "../particles";
+import { lockupOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 
 export function meta() {
   return [{ title: "Sign in — BFO" }];
@@ -57,6 +59,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(false);
+  const lockup = lockupOf(useBrandLogo());
   const [success, setSuccess] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const idInput = useRef<HTMLInputElement>(null);
@@ -64,6 +67,9 @@ export default function Login() {
   const submittedCode = useRef("");
 
   const [params] = useSearchParams();
+  // Signing in one more account (from the account menu): say so, and offer the way back.
+  const [returnTo, setReturnTo] = useState<User | null>(null);
+  useEffect(() => setReturnTo(addingAccount()), []);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -163,11 +169,26 @@ export default function Login() {
       <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
 
       <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
-        <h1 className="landing-title landing-title-sm font-bold tracking-tight leading-none select-none">
-          BFO
+        <h1 className="m-0 select-none">
+          <BrandLockup font={lockup.font} finish={lockup.finish} size="compact" />
         </h1>
 
-        <div className="auth-card mt-10 p-6 text-left">
+        {returnTo && (
+          <p className="auth-in mt-8 text-[12.5px] text-white/55">
+            Adding another account.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                if (cancelAddAccount()) window.location.assign(homePath(returnTo));
+              }}
+              className="cursor-pointer text-white/85 underline-offset-4 hover:underline"
+            >
+              Back to {displayName(returnTo)}
+            </button>
+          </p>
+        )}
+
+        <div className={`auth-card ${returnTo ? "mt-4" : "mt-10"} p-6 text-left`}>
           {step === "identifier" && (
             <form
               key="identifier"

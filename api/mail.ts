@@ -26,6 +26,7 @@ import {
   type MailRow,
   type SummaryRow,
 } from "../lib/mail.js";
+import { addAlias, listAliases, removeAlias } from "../lib/mail-address.js";
 import { storageSignedUrl } from "../lib/storage.js";
 
 /**
@@ -34,16 +35,19 @@ import { storageSignedUrl } from "../lib/storage.js";
  * is for owners and admins only. Email-only users may use this endpoint.
  *
  * GET ?view=
- *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
+ *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&to=<one of my addresses>&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
  *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
  *   message&id=<uuid>                → { message }  (marks it read)
- *   count                            → { unread, otherUnread, address|null, canSeeOther, sync? }  (kicks a sync)
+ *   count                            → { unread, otherUnread, address|null, aliases, canSeeOther, sync? }  (kicks a sync)
  *   attachment&id=<uuid>&att=<id>    → { url }  (signed, 5 minutes)
  *   status                           → setup diagnostics (owner/admin)
  *
  * POST { action, … }:
  *   sync                             → { ingested, error? }
- *   send { sendId, to, cc?, bcc?, subject, text, replyToId?, forwardId?, attachments? } → { message }
+ *   send { sendId, from?, to, cc?, bcc?, subject, text, replyToId?, forwardId?, attachments? } → { message }
+ *                                    from: one of the caller's addresses (main by default)
+ *   alias-add { address }            → { aliases }  (owner/admin: one more address on their own account)
+ *   alias-remove { address }         → { aliases }
  *   move { ids, folder }             → { ok }  (inbox|archive; received mail only)
  *   read { ids, read }               → { ok }
  *   star { ids, starred }            → { ok }
@@ -108,10 +112,27 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       if (before && (!TIMESTAMP_RE.test(before) || Number.isNaN(Date.parse(before)))) return fail(res, 400, "bad_before");
       if (beforeId && (!before || !UUID_RE.test(beforeId))) return fail(res, 400, "bad_before");
       const at = encodeURIComponent(`"${before}"`);
+      // One mailbox: mail that came in to that address of mine, or went out from it.
+      const to = param(req, "to").trim().toLowerCase();
+      let box = "";
+      if (to) {
+        const main = (me.mail_address ?? "").toLowerCase();
+        const mine = main ? [main, ...(await listAliases(me.id)).map((a) => a.toLowerCase())] : [];
+        if (!mine.includes(to)) return fail(res, 400, "bad_mailbox");
+        const v = encodeURIComponent(`"${to}"`);
+        // Mail from before extra addresses existed has no delivered-to: it came to the main one.
+        box =
+          folder === "sent"
+            ? `from_email.eq.${v}`
+            : to === main
+              ? `or(delivered_to.eq.${v},delivered_to.is.null)`
+              : `delivered_to.eq.${v}`;
+      }
       // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
       const conditions = [
         !before ? "" : beforeId ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))` : `occurred_at.lt.${at}`,
         searchCondition(param(req, "q")),
+        box,
       ].filter(Boolean);
       const extra = conditions.length ? `&and=(${conditions.join(",")})` : "";
       // A search looks through everything the caller may see, whatever folder is open.
@@ -136,12 +157,13 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
     case "count": {
       // An admin assigns addresses; until then there's none (never one from a name the user typed).
       const address = me.mail_address ?? null;
+      const aliases = address ? await listAliases(me.id) : [];
       const sync = await syncInbound({ budgetMs: COUNT_SYNC_BUDGET_MS }).catch((err) => ({ ingested: 0, error: problemText(err), skipped: false }));
       const [unread, otherUnread] = await Promise.all([
         countRows("mail_messages", `${folderFilter("inbox", me.id, admin)}&read_at=is.null`),
         admin ? countRows("mail_messages", `${folderFilter("other", me.id, admin)}&read_at=is.null`) : 0,
       ]);
-      const counts = { unread, otherUnread, address, canSeeOther: admin };
+      const counts = { unread, otherUnread, address, aliases, canSeeOther: admin };
       if (!admin) return res.status(200).json(counts);
       const error = sync.skipped ? (await lastSync()).error : sync.error;
       return res.status(200).json({ ...counts, sync: error ? { error } : {} });
@@ -185,6 +207,23 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
 
     case "send":
       return send(res, me, admin, body);
+
+    // More addresses on the caller's own account. Owners and admins only, as
+    // they're the ones who hand out addresses (role addresses included).
+    case "alias-add": {
+      if (!admin) return fail(res, 403, "forbidden", "Ask an owner or admin to add an address.");
+      if (!me.mail_address) return fail(res, 400, "no_address", "Your account needs its main address first.");
+      const r = await addAlias(me, body.address);
+      if ("error" in r) return fail(res, r.error === "address_taken" ? 409 : 400, r.error, r.message);
+      return res.status(200).json({ aliases: await listAliases(me.id) });
+    }
+
+    case "alias-remove": {
+      if (!admin) return fail(res, 403, "forbidden");
+      if (typeof body.address !== "string" || !body.address.trim()) return fail(res, 400, "bad_address");
+      await removeAlias(me.id, body.address.trim());
+      return res.status(200).json({ aliases: await listAliases(me.id) });
+    }
 
     case "move": {
       const ids = idList(body.ids);
@@ -237,9 +276,17 @@ async function send(res: VercelResponse, me: AppUser, admin: boolean, body: Reco
   const original = originalId ? await findMessage(me, admin, originalId) : null;
   if (originalId && !original) return fail(res, 400, "not_found", "The original message wasn't found.");
 
+  // Send as the main address or one of the caller's extra ones, never anyone else's.
+  let from = me.mail_address;
+  if (typeof body.from === "string" && body.from.trim() && body.from.trim().toLowerCase() !== from) {
+    const wanted = body.from.trim().toLowerCase();
+    if (!(await listAliases(me.id)).includes(wanted)) return fail(res, 400, "bad_from", "You can only send from your own addresses.");
+    from = wanted;
+  }
+
   // sendMail checks the daily limit (mail_sends) just before calling Bird; going over is a SendRefused.
   try {
-    const row = await sendMail({ id: me.id, name: me.name, address: me.mail_address }, request, original);
+    const row = await sendMail({ id: me.id, name: me.name, address: from }, request, original);
     return res.status(200).json({ message: toSummary(row) });
   } catch (err) {
     if (err instanceof SendRefused) return fail(res, 400, err.code, err.message);

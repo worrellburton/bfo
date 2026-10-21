@@ -5,6 +5,7 @@
 
 import { entityType } from "../entity-completeness";
 import { DOC_KEYS, documentRules, type DocKey, type DocRule, type PaperworkInput } from "../entity-paperwork";
+import type { ForeignRegistration } from "../entity-addresses";
 import type { PalmLink, PalmMode, StateRecord } from "../palm";
 
 export interface Asset {
@@ -14,7 +15,16 @@ export interface Asset {
   ein: string;
   createdAt: number;
   registeredAgent?: string;
+  /** The principal office: where the business is, as the state lists it. */
   address?: string;
+  /** Where its mail goes, when not the principal office. */
+  mailingAddress?: string;
+  /** The home state's registered agent's street address. */
+  registeredAgentAddress?: string;
+  /** Each state it's registered in as a foreign entity, by two-letter code. */
+  foreign?: Record<string, ForeignRegistration>;
+  /** States whose registry had no entry (or several) for it, from the state-record check. */
+  registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
   formationDate?: string;
   status?: string;
   notes?: string;
@@ -37,6 +47,11 @@ export interface Asset {
   /** The state's record as last read through Palm. */
   stateRecord?: StateRecord;
   operatingAgreementDate?: string;
+  /** The address before the last change, and when it changed (YYYY-MM-DD). */
+  previousAddress?: string;
+  addressChangedAt?: string;
+  /** Where the change has been reported, by date (YYYY-MM-DD): the state, the IRS, banks. */
+  addressUpdates?: { state?: string | null; irs?: string | null; banks?: string | null };
   articlesOfOrgDate?: string;
   w9?: UploadedFile;
   articles?: UploadedFile;
@@ -227,7 +242,7 @@ export function fmtDate(value?: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-export type EntityTab = "overview" | "documents" | "compliance" | "agreements" | "governance";
+export type EntityTab = "overview" | "documents" | "people" | "compliance" | "agreements" | "governance" | "activity";
 
 // A moment as a local calendar date ("Oct 7, 2026") — not the UTC day.
 export function fmtStamp(ms?: number): string {

@@ -264,15 +264,3 @@ describe("/api/palm", () => {
     expect(r.json.palmStatus).toBe(401);
   });
 });
-
-describe("case helpers", () => {
-  it("splits a one-line address for prefilling and sends only what's filled", async () => {
-    const { parseUsAddress, addressValue, isAddressField } = await import("../app/palm");
-    expect(parseUsAddress("11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028")).toEqual({ street_line_1: "11201 N Tatum Blvd Ste 300", street_line_2: "PMB 44879", city: "Phoenix", region: "AZ", postal_code: "85028", country: "US" });
-    expect(parseUsAddress("1 Main St, Reno, nv 89501").region).toBe("NV");
-    expect(parseUsAddress("somewhere")).toMatchObject({ street_line_1: "somewhere", city: "" });
-    expect(addressValue({ street_line_1: "1 Main St", street_line_2: " ", city: "Reno", region: "NV", postal_code: "89501", country: "US" })).toEqual({ street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" });
-    expect(isAddressField({ name: "mailing_address", type: "object", description: "" })).toBe(true);
-    expect(isAddressField({ name: "legal_name", type: "string", description: "" })).toBe(false);
-  });
-});

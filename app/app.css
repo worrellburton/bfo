@@ -255,6 +255,57 @@ html.light {
 .sidebar-logo-model { display: block; width: 96px; height: 44px; transition: width 180ms ease, height 180ms ease; }
 .sidebar-logo-model-sm { width: 44px; height: 36px; }
 .mobile-logo { display: block; height: 30px; width: auto; max-width: 110px; object-fit: contain; }
+/* The brand typeface: Playfair Display (the Editorial lockup) unless the
+   logo studio picks another, which overrides this from brand-lockup.tsx. */
+:root { --font-brand: "Playfair Display", Georgia, serif; }
+.font-brand { font-family: var(--font-brand); }
+
+/* The chosen lockup as live type (app/brand-lockup.tsx): name above, BFO below. */
+.brand-lockup { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; }
+.brand-lockup-name {
+  font-size: clamp(0.7rem, 2.6vw, 1.15rem);
+  letter-spacing: 0.42em;
+  margin-right: -0.42em; /* recenter after tracking */
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding-bottom: 0.9em;
+  border-bottom: 1px solid currentColor;
+  margin-bottom: 0.35em;
+  opacity: 0.85;
+}
+.brand-lockup-hero .brand-lockup-mark { font-size: clamp(6rem, 26vw, 13rem); letter-spacing: 0.04em; margin-right: -0.04em; }
+.brand-lockup-compact .brand-lockup-name { font-size: clamp(0.6rem, 2.4vw, 0.75rem); }
+.brand-lockup-compact .brand-lockup-mark { font-size: clamp(3.5rem, 15vw, 5rem); letter-spacing: 0.04em; margin-right: -0.04em; }
+.brand-lockup-hero, .brand-lockup-compact { animation: landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.brand-lockup-mark { white-space: nowrap; }
+/* Finishes: metal as a gradient through the letters, ivory as flat warm white.
+   The name line takes the same colour as solid text so its rule shows. */
+.brand-gold { color: #d8b56a; }
+.brand-gold .brand-lockup-mark {
+  background: linear-gradient(115deg, #a77c32 10%, #f3dc9a 38%, #c9a24f 55%, #fff1c4 68%, #a77c32 90%);
+  background-size: 220% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: landing-shimmer 12s linear infinite;
+}
+.brand-silver { color: #d4d8de; }
+.brand-silver .brand-lockup-mark {
+  background: linear-gradient(115deg, #8c939c 10%, #f4f6f8 38%, #aab1b9 55%, #ffffff 68%, #8c939c 90%);
+  background-size: 220% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: landing-shimmer 12s linear infinite;
+}
+.brand-ivory { color: #f4ede0; }
+/* On the light app shell, the same finishes in darker ink (the landing page is always black). */
+html.light .app-shell-brand .brand-gold { color: #8a6424; }
+html.light .app-shell-brand .brand-gold .brand-lockup-mark { background-image: linear-gradient(115deg, #6f4e17 10%, #b8893a 45%, #7d5a1d 90%); }
+html.light .app-shell-brand .brand-silver { color: #3a3f46; }
+html.light .app-shell-brand .brand-silver .brand-lockup-mark { background-image: linear-gradient(115deg, #2b3036 10%, #6b7380 45%, #2b3036 90%); }
+html.light .app-shell-brand .brand-ivory { color: #1c1915; }
+.sidebar-lockup .brand-lockup-mark { font-size: 26px; letter-spacing: 0.06em; transition: font-size 180ms ease; }
+@media (min-width: 1024px) { .sidebar-lockup-sm .brand-lockup-mark { font-size: 14px; } }
+.mobile-lockup .brand-lockup-mark { font-size: 19px; letter-spacing: 0.12em; }
+@media (prefers-reduced-motion: reduce) {
+  .brand-lockup-hero, .brand-gold .brand-lockup-mark, .brand-silver .brand-lockup-mark { animation: none; }
+  .sidebar-lockup .brand-lockup-mark { transition: none; }
+}
 .landing-title-sm {
   font-size: clamp(3.25rem, 13vw, 4.5rem);
 }
@@ -418,6 +469,62 @@ html.light {
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar-rail, .sidebar-content { transition: none; }
+}
+
+/* The rail's nav tree (app/sidebar-nav.tsx). A group opens by animating its
+   row track from 0fr to 1fr; its pages hang off a thin vertical line that
+   starts under the group's icon, each with a rounded elbow into it. The last page's elbow ends the line. */
+.nav-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease;
+}
+.nav-collapse-open { grid-template-rows: 1fr; opacity: 1; }
+.nav-collapse > .nav-tree { overflow: hidden; min-height: 0; }
+.nav-tree { list-style: none; margin: 0; padding: 2px 0 4px 33px; position: relative; }
+.nav-tree-dark { --nav-line: rgba(255, 255, 255, 0.14); }
+.nav-tree-light { --nav-line: rgba(0, 0, 0, 0.13); }
+.nav-branch { position: relative; padding: 1px 0; }
+/* The elbow: down from the line, round the corner, into the row. */
+.nav-branch::before {
+  content: "";
+  position: absolute;
+  left: -15px;
+  top: 0;
+  height: 50%;
+  width: 12px;
+  border-left: 1.5px solid var(--nav-line);
+  border-bottom: 1.5px solid var(--nav-line);
+  border-bottom-left-radius: 8px;
+}
+/* The line carrying on to the next page. */
+.nav-branch:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  bottom: 0;
+  border-left: 1.5px solid var(--nav-line);
+}
+/* The current page's elbow lights up. */
+.nav-branch:has(> [aria-current="page"])::before { border-color: #818cf8; }
+html.light .nav-branch:has(> [aria-current="page"])::before { border-color: #4f46e5; }
+/* The current top-level row: a soft accent sliver at its left edge. */
+.nav-row-on::before {
+  content: "";
+  position: absolute;
+  left: -9px; /* the nav's 0.75rem padding, at this app's 11.9px rem */
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #a5b4fc, #818cf8);
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.7);
+}
+html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-collapse { transition: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -874,4 +981,278 @@ html.light .glass-panel {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   Tools → Entity compliance (app/routes/tools-compliance.tsx).
+   Each card carries its tier colour in --tier: at risk glows and breathes,
+   the selected card rings in it, the lit ownership chain flows toward the
+   selected entity, and the detail panel slides in from the right.
+   ────────────────────────────────────────────────────────────────────── */
+.cmp-map-bg {
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse at center, #000 40%, transparent 85%);
+}
+html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.07) 1px, transparent 0); }
+.cmp-card { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px -16px rgba(0, 0, 0, 0.6); }
+.cmp-card::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--tier);
+  opacity: 0.85;
+}
+.cmp-card:hover { transform: translateY(-1px); }
+.cmp-card-risk { border-color: color-mix(in srgb, var(--tier) 35%, transparent); animation: cmp-breathe 3.2s ease-in-out infinite; }
+.cmp-card-selected { box-shadow: 0 0 0 2px var(--tier), 0 0 28px -6px var(--tier); }
+@keyframes cmp-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 transparent, 0 8px 24px -16px rgba(0, 0, 0, 0.6); }
+  50% { box-shadow: 0 0 22px -6px color-mix(in srgb, var(--tier) 70%, transparent), 0 8px 24px -16px rgba(0, 0, 0, 0.6); }
+}
+.cmp-card-risk.cmp-card-selected { animation: none; }
+/* The phone outline: owned entities hang off their owner on a line with a rounded elbow, like the nav tree. */
+.cmp-outline { list-style: none; margin: 8px 0 0; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 8px; }
+.cmp-outline > .cmp-branch { position: relative; }
+.cmp-outline > .cmp-branch::before {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: -8px;
+  height: 44px;
+  width: 11px;
+  border-left: 1.5px solid var(--nav-line);
+  border-bottom: 1.5px solid var(--nav-line);
+  border-bottom-left-radius: 9px;
+}
+.cmp-outline > .cmp-branch:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: 36px;
+  bottom: -8px;
+  border-left: 1.5px solid var(--nav-line);
+}
+.cmp-flow { animation: cmp-flow 1.1s linear infinite; }
+@keyframes cmp-flow { to { stroke-dashoffset: -20; } }
+.cmp-gauge-arc { transition: stroke-dasharray 900ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.cmp-drawer { animation: cmp-slide 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes cmp-slide { from { transform: translateX(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .cmp-card-risk, .cmp-flow, .cmp-drawer { animation: none; }
+  .cmp-card:hover { transform: none; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   The public site: / (landing.tsx) and /mission (mission.tsx), under one
+   layout (public-layout.tsx) whose backdrop mounts once.
+
+   Moving between the two is a view transition: the backdrop is its own
+   layer that doesn't animate (the orbs and particles keep going), the BFO
+   mark (.vt-mark) glides between its place on each page, and the rest
+   fades through a soft blur. The landing page skips its entrance on a
+   return visit (.no-intro) so the mark doesn't fade in under the glide.
+
+   On /mission, the words fade up into place (.reveal.is-in .word, each
+   with its own delay --w).
+   ────────────────────────────────────────────────────────────────────── */
+.public-backdrop { view-transition-name: bfo-backdrop; }
+.vt-mark { view-transition-name: bfo-mark; }
+::view-transition-group(bfo-backdrop),
+::view-transition-old(bfo-backdrop),
+::view-transition-new(bfo-backdrop) { animation: none; }
+::view-transition-old(bfo-backdrop) { display: none; }
+::view-transition-old(root) { animation: public-out 420ms cubic-bezier(0.4, 0, 1, 1) both; }
+::view-transition-new(root) { animation: public-in 760ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
+::view-transition-group(bfo-mark) { animation-duration: 820ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+::view-transition-old(bfo-mark),
+::view-transition-new(bfo-mark) { animation-duration: 820ms; height: 100%; object-fit: contain; }
+@keyframes public-out { to { opacity: 0; filter: blur(10px); transform: scale(0.985); } }
+@keyframes public-in { from { opacity: 0; filter: blur(12px); transform: scale(1.015); } }
+.no-intro .brand-lockup-hero,
+.no-intro .landing-sub,
+.no-intro .landing-fade-in { animation: none; }
+
+/* The mission page's header: the small mark (home) and a Home link. */
+.mission-mark .brand-lockup { animation: none; }
+.mission-mark .brand-lockup-name { font-size: 8px; letter-spacing: 0.36em; margin-right: -0.36em; padding-bottom: 6px; }
+.mission-mark .brand-lockup-mark { font-size: 30px; }
+.mission-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(244, 237, 224, 0.55);
+  transition: color 250ms ease;
+}
+.mission-back:hover { color: #f4ede0; }
+
+
+
+/* Words into place: each one rises out of a blur, in turn. */
+.word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.5em);
+  filter: blur(8px);
+  transition: opacity 1.1s cubic-bezier(0.16, 1, 0.3, 1), transform 1.1s cubic-bezier(0.16, 1, 0.3, 1), filter 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--w, 0s);
+}
+.reveal.is-in .word { opacity: 1; transform: none; filter: none; }
+.reveal-block {
+  opacity: 0;
+  transform: translateY(26px);
+  filter: blur(10px);
+  transition: opacity 1.3s cubic-bezier(0.16, 1, 0.3, 1), transform 1.3s cubic-bezier(0.16, 1, 0.3, 1), filter 1.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--d, 0s);
+}
+.reveal-block.is-in { opacity: 1; transform: none; filter: none; }
+
+/* Ivory with a band of gold light passing through: a gold copy of the word
+   (::after, from data-text) seen through a mask whose bright band slides
+   across. Only the letters paint, so nothing shows around them. */
+.gold-sheen { position: relative; display: inline-block; }
+.gold-sheen::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: #e8c779;
+  text-shadow: 0 0 18px rgba(216, 181, 106, 0.35);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(110deg, transparent 0%, transparent 40%, #000 50%, transparent 60%, transparent 100%);
+  mask-image: linear-gradient(110deg, transparent 0%, transparent 40%, #000 50%, transparent 60%, transparent 100%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: gold-sheen 7s linear infinite;
+  animation-delay: var(--s, 0s);
+}
+@keyframes gold-sheen { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: -50% 0; mask-position: -50% 0; } }
+
+/* ── Type ─────────────────────────────────────────────────────────── */
+.site { color: #f4ede0; }
+.mission-hero { text-wrap: balance; }
+.mission-hero { font-size: clamp(42px, 7.4vw, 104px); font-weight: 500; line-height: 1.05; letter-spacing: -0.01em; }
+.mission-italic { font-style: italic; }
+/* The mission: two lines. */
+.narrative-title { font-size: clamp(40px, 6.2vw, 84px); }
+
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .word, .reveal-block { opacity: 1; transform: none; filter: none; transition: none; }
+  .gold-sheen::after { display: none; }
+}
+
+/* ── Formation wizard (app/entity/form-wizard.tsx) ─────────────────────
+   A deeper panel than the palette, with a faint indigo-to-gold light behind
+   it; the active choices glow; the filing preview reads like paper. */
+
+.wiz.glass-panel {
+  background:
+    radial-gradient(900px 520px at 0% 0%, rgba(129, 140, 248, 0.10), transparent 60%),
+    radial-gradient(700px 480px at 100% 100%, rgba(251, 191, 36, 0.06), transparent 60%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 60%),
+    rgba(10, 10, 14, 0.92);
+}
+html.light .wiz.glass-panel {
+  background:
+    radial-gradient(900px 520px at 0% 0%, rgba(79, 70, 229, 0.07), transparent 60%),
+    radial-gradient(700px 480px at 100% 100%, rgba(217, 119, 6, 0.06), transparent 60%),
+    rgba(255, 255, 255, 0.97);
+}
+.wiz-rail { background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 40%); }
+html.light .wiz-rail { background: linear-gradient(180deg, rgba(15, 23, 42, 0.02), transparent 40%); }
+.wiz-preview-bg { background: rgba(0, 0, 0, 0.18); }
+html.light .wiz-preview-bg { background: rgba(248, 250, 252, 0.8); }
+
+.wiz-step { animation: wiz-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes wiz-in { from { opacity: 0; transform: translateY(10px); } }
+.wiz-reveal { animation: wiz-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.wiz-pulse { animation: wiz-pulse 1.4s ease-in-out infinite; }
+@keyframes wiz-pulse { 50% { opacity: 0.45; } }
+
+.wiz-card { background: rgba(255, 255, 255, 0.018); }
+html.light .wiz-card { background: rgba(255, 255, 255, 0.7); }
+
+.wiz-dot-on {
+  background: linear-gradient(135deg, #818cf8, #6366f1 55%, #a78bfa);
+  box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.16), 0 6px 18px -6px rgba(99, 102, 241, 0.8);
+}
+.wiz-line-done { background: linear-gradient(180deg, rgba(52, 211, 153, 0.5), rgba(129, 140, 248, 0.35)); }
+.wiz-progress {
+  background: linear-gradient(90deg, #818cf8, #a78bfa 50%, #fbbf24);
+  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wiz-choice { cursor: pointer; transition: border-color 160ms, background-color 160ms, box-shadow 200ms, transform 160ms; }
+.wiz-choice:hover { border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.025); }
+html.light .wiz-choice:hover { border-color: rgb(209 213 219); background: rgba(255, 255, 255, 0.9); }
+.wiz-choice:active { transform: scale(0.995); }
+.wiz-choice.is-on {
+  border-color: rgba(129, 140, 248, 0.55);
+  background: linear-gradient(160deg, rgba(129, 140, 248, 0.12), rgba(129, 140, 248, 0.04));
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.25) inset, 0 14px 40px -24px rgba(99, 102, 241, 0.9);
+}
+html.light .wiz-choice.is-on {
+  border-color: rgba(79, 70, 229, 0.45);
+  background: linear-gradient(160deg, rgba(79, 70, 229, 0.07), rgba(255, 255, 255, 0.9));
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.15) inset, 0 14px 40px -26px rgba(79, 70, 229, 0.6);
+}
+.wiz-glyph { color: #a5b4fc; background: rgba(129, 140, 248, 0.1); box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.18) inset; }
+html.light .wiz-glyph { color: #4f46e5; background: rgba(79, 70, 229, 0.07); box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.12) inset; }
+.wiz-choice.is-on .wiz-glyph { color: #fff; background: linear-gradient(135deg, #818cf8, #6366f1); box-shadow: 0 6px 16px -6px rgba(99, 102, 241, 0.9); }
+.wiz-radio.is-on { border-color: transparent; background: linear-gradient(135deg, #818cf8, #6366f1); }
+
+.wiz-chip { transition: background-color 140ms, border-color 140ms, color 140ms; }
+.wiz-chip:hover { border-color: rgba(255, 255, 255, 0.18); }
+html.light .wiz-chip:hover { border-color: rgb(156 163 175); }
+.wiz-chip.is-on { color: #fff; border-color: transparent; background: linear-gradient(135deg, #818cf8, #6366f1); box-shadow: 0 6px 16px -8px rgba(99, 102, 241, 0.9); }
+
+.wiz-switch-on { background: linear-gradient(135deg, #818cf8, #6366f1); }
+
+.wiz-cta {
+  display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 18px;
+  border-radius: 12px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #818cf8, #6366f1 60%, #7c3aed);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 10px 24px -10px rgba(99, 102, 241, 0.9);
+  transition: transform 140ms, box-shadow 200ms, opacity 140ms, filter 140ms;
+}
+.wiz-cta:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 14px 30px -10px rgba(99, 102, 241, 1); }
+.wiz-cta:active:not(:disabled) { transform: translateY(1px); }
+.wiz-cta:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+
+.wiz-paper {
+  border-color: rgba(251, 191, 36, 0.18);
+  background:
+    radial-gradient(400px 200px at 100% 0%, rgba(251, 191, 36, 0.07), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 24px 50px -30px rgba(0, 0, 0, 0.9);
+}
+html.light .wiz-paper {
+  border-color: rgba(217, 119, 6, 0.2);
+  background: radial-gradient(400px 200px at 100% 0%, rgba(251, 191, 36, 0.1), transparent 70%), #fffdf8;
+  box-shadow: 0 24px 50px -32px rgba(120, 53, 15, 0.35);
+}
+.wiz-seal {
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.07), 0 0 0 4px rgba(251, 191, 36, 0.15);
+}
+html.light .wiz-seal { color: #b45309; border-color: rgba(217, 119, 6, 0.4); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wiz-step, .wiz-reveal, .wiz-pulse { animation: none; }
+}
+/* Phones: the wizard is the whole screen, so nothing should show through it. */
+@media (max-width: 639px) {
+  .wiz.glass-panel { background: #0b0b0f; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.light .wiz.glass-panel { background: #fff; }
 }

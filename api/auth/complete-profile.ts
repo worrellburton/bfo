@@ -27,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["POST"])) return;
 
   try {
-    const me = await currentUser(req, { allowEmailOnly: true });
+    const me = await currentUser(req, { allowEmailOnly: true, allowPartner: true });
     if (!me) return fail(res, 401, "unauthorized");
 
     if (req.body?.name !== undefined && req.body?.identifier === undefined) {

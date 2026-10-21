@@ -1,24 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { isFormationDone } from "../formation";
+import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
-import { authFetch } from "../auth";
+import { authFetch, isPartner } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import {
   DOC_LABEL,
   docKindOf,
+  fetchPalmDocument,
   formatAddress as formatPalmAddress,
+  lookupStateRecord,
   normalizeName,
   openPalmDocument,
   palmCall,
   PalmCallError,
   palmJurisdiction,
   PalmUnavailable,
-  pickRegistryMatch,
   RA_STATUS,
+  sameAddressText,
   sortDocuments,
   stateFindings,
-  toStateRecord,
   type PalmDocument,
   type PalmLink,
   type PalmMode,
@@ -26,7 +28,6 @@ import {
   type RegistryRecord,
   type StateRecord,
 } from "../palm";
-import type { PalmCase } from "../palm";
 import {
   BOI_NOTE,
   DOC_KEYS,
@@ -34,6 +35,7 @@ import {
   obligations,
   paperworkChecks,
   stateCode,
+  stateName,
   taxHome,
   type DocKey,
   type DocRule,
@@ -80,6 +82,17 @@ import {
  * records, editing and deleting — with no markup. The views render it.
  * (Moved unchanged from the old single-file page.)
  */
+/** Foreign registrations as typed: blank fields dropped, a state with nothing left dropped (null when none). */
+function cleanForeign(f: Asset["foreign"]): Asset["foreign"] | null {
+  const out: NonNullable<Asset["foreign"]> = {};
+  for (const [code, reg] of Object.entries(f ?? {})) {
+    const kept = Object.fromEntries(Object.entries(reg ?? {}).filter(([, v]) => (typeof v === "string" ? v.trim() : v))) as typeof reg;
+    for (const k of ["agent", "agentAddress", "fileNumber"] as const) if (typeof kept[k] === "string") kept[k] = kept[k]!.trim();
+    if (Object.keys(kept).length) out[code] = kept;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 export function useEntityPage() {
   const { id, tab: tabParam } = useParams();
   const navigate = useNavigate();
@@ -347,6 +360,9 @@ export function useEntityPage() {
       ein: pick("ein") || "",
       registeredAgent: pick("registeredAgent") || "",
       address: pick("address") || "",
+      mailingAddress: sameAddressText(pick("mailingAddress"), pick("address")) ? "" : (pick("mailingAddress") || "").trim(),
+      registeredAgentAddress: (pick("registeredAgentAddress") || "").trim(),
+      foreign: cleanForeign(pick("foreign")),
       formationDate: pick("formationDate") || "",
       status: pick("status") || "Active",
       notes: pick("notes") || "",
@@ -857,6 +873,8 @@ export function useEntityPage() {
   const [palmRa, setPalmRa] = useState<RaService | null | undefined>(undefined);
   const [palmDocs, setPalmDocs] = useState<PalmDocument[] | null>(null);
   const [palmBusy, setPalmBusy] = useState<"record" | "move" | "refresh" | null>(null);
+  /** The foreign state whose record is being read. */
+  const [foreignBusy, setForeignBusy] = useState<string | null>(null);
   const [palmError, setPalmError] = useState("");
   const [registryChoices, setRegistryChoices] = useState<RegistryRecord[] | null>(null);
   const palmMode = palmStatus?.mode ?? null;
@@ -877,26 +895,6 @@ export function useEntityPage() {
       live = false;
     };
   }, [palmMode, id, tabParam]);
-  /** Cases Palm opened on this entity (a filing or the business): what it needs before it can go on. */
-  const [palmCases, setPalmCases] = useState<PalmCase[] | null>(null);
-  const [palmCasesError, setPalmCasesError] = useState("");
-  const palmCaseBusinessId = palmMode ? asset?.palm?.[palmMode]?.businessId : undefined;
-  const palmCaseFilingId = palmMode ? asset?.palm?.[palmMode]?.formation?.filingId : undefined;
-  useEffect(() => {
-    if (!palmMode || !id || tabParam !== "compliance" || (!palmCaseBusinessId && !palmCaseFilingId)) return;
-    let live = true;
-    palmCall<{ cases: PalmCase[] }>("cases", { assetId: id, businessId: palmCaseBusinessId ?? undefined })
-      .then((r) => live && (setPalmCases(r.cases), setPalmCasesError("")))
-      .catch((err) => live && setPalmCasesError(err instanceof PalmUnavailable ? "" : (err as Error).message));
-    return () => {
-      live = false;
-    };
-  }, [palmMode, id, tabParam, palmCaseBusinessId, palmCaseFilingId]);
-  async function respondCase(caseId: string, fields: Record<string, unknown>, documents?: string[]): Promise<PalmCase> {
-    const r = await palmCall<{ case: PalmCase }>("case-respond", { caseId, fields, documents, mode: palmMode });
-    setPalmCases((cs) => (cs ?? []).map((c) => (c.id === caseId ? r.case : c)));
-    return r.case;
-  }
   /** Bumped by every read or change of Palm's agent service; an older response is dropped. */
   const palmSeq = useRef(0);
   /** Bumped when the page moves to another entity; work started for the last one stops touching the card. */
@@ -929,7 +927,8 @@ export function useEntityPage() {
   }
 
   useEffect(() => {
-    void loadPalmStatus();
+    // An invited owner's page has no Palm card.
+    if (!isPartner()) void loadPalmStatus();
   }, []);
 
   // Another entity: start the card clean.
@@ -992,7 +991,10 @@ export function useEntityPage() {
         palmCall<{ documents: PalmDocument[] }>("documents", { businessId, mode }),
       ]);
       if (seq !== palmSeq.current) return;
-      if (docsR.status === "fulfilled") setPalmDocs(sortDocuments(docsR.value.documents));
+      if (docsR.status === "fulfilled") {
+        setPalmDocs(sortDocuments(docsR.value.documents));
+        void importPalmPaperwork(docsR.value.documents);
+      }
       if (raR.status === "rejected") {
         if (!opts.keepError) showPalmError(raR.reason);
         return;
@@ -1003,7 +1005,7 @@ export function useEntityPage() {
       if (!current) return;
       const before = current.palm?.[mode]?.ra?.status ?? null;
       const patch: Record<string, unknown> = {
-        [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, checkedAt: Date.now() },
+        [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, address: formatPalmAddress(service?.address) ?? null, checkedAt: Date.now() },
       };
       if (mode === "live") {
         // Only on the change itself, so a later hand edit isn't overwritten on every visit.
@@ -1011,6 +1013,10 @@ export function useEntityPage() {
           patch.registeredAgent = service.name;
           patch.registeredAgentSource = `Palm, active since ${(service.started_at ?? new Date().toISOString()).slice(0, 10)}`;
         }
+        // Palm's street address, once Palm reports it, while Palm is the agent on record.
+        const palmAddress = formatPalmAddress(service?.address);
+        const palmOnRecord = (service?.status === "active" && before !== "active") || /^Palm, active/.test(current.registeredAgentSource ?? "");
+        if (service?.status === "active" && palmAddress && palmOnRecord && !sameAddressText(palmAddress, current.registeredAgentAddress)) patch.registeredAgentAddress = palmAddress;
         if ((service?.status === "terminated" || service?.status === "canceled") && before === "active" && current.registeredAgentSource?.startsWith("Palm")) {
           patch.registeredAgentSource = `Palm stopped serving ${(service.ended_at ?? new Date().toISOString()).slice(0, 10)} — confirm the current agent`;
         }
@@ -1036,44 +1042,59 @@ export function useEntityPage() {
     setPalmBusy("record");
     setPalmError("");
     try {
-      let number = choice ? choice.registration_number : current.fileNumber;
-      let where = choice?.registration_jurisdiction || jurisdiction;
-      if (choice && !number && choice.palm_id) {
-        // A picked entry without its number: look that exact entry up by its Palm ID.
-        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { palmId: choice.palm_id, mode });
-        number = results.find((r) => r.palm_id === choice.palm_id)?.registration_number;
-        where = results[0]?.registration_jurisdiction || where;
-      }
-      if (choice && !number) {
-        if (epoch === palmEpoch.current) setPalmError("That registry entry has no file number. Add it by hand under Edit, then check again.");
+      const found = await lookupStateRecord(current, mode, choice);
+      if (epoch !== palmEpoch.current) return;
+      if (found.kind === "error") {
+        setPalmError(found.message);
         return;
       }
-      if (!number) {
-        const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: current.name, jurisdiction, mode });
-        if (epoch !== palmEpoch.current) return;
-        const match = pickRegistryMatch(results, current.name, jurisdiction);
-        if (!match) {
-          setRegistryChoices(results);
-          if (!results.length) setPalmError(`No ${current.state} registry entry matched “${current.name}”. Add the state file number under Edit and try again.`);
-          return;
-        }
-        number = match.registration_number;
-        where = match.registration_jurisdiction || jurisdiction;
-      }
-      if (!number) {
-        setPalmError("The registry result had no file number. Add it by hand under Edit.");
+      if (found.kind === "choices") {
+        setRegistryChoices(found.results);
+        if (found.message) setPalmError(found.message);
         return;
       }
-      const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number, mode });
-      const snapshot = toStateRecord(record, mode);
-      const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
-      if (mode === "live" && !current.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
-      await patchAsset(patch);
+      await patchAsset(found.patch);
       if (epoch === palmEpoch.current) setRegistryChoices(null);
     } catch (err) {
       if (epoch === palmEpoch.current) showPalmError(err);
     } finally {
       if (epoch === palmEpoch.current) setPalmBusy(null);
+    }
+  }
+
+  /**
+   * Read a foreign registration's record (e.g. Arizona's, for a Delaware LLC
+   * run from Phoenix) through Palm, and fill the agent and file number from it
+   * where ours are blank. Returns why it couldn't, or null.
+   */
+  async function checkForeignRecord(code: string): Promise<string | null> {
+    const current = assetRef.current;
+    const mode = palmMode;
+    if (!current) return null;
+    if (!mode) return "Connect Palm to read the state's record.";
+    const f = current.foreign?.[code] ?? {};
+    setForeignBusy(code);
+    try {
+      const found = await lookupStateRecord({ name: current.name, state: code, fileNumber: f.fileNumber, registeredAgent: f.agent, registeredAgentAddress: f.agentAddress }, mode);
+      if (found.kind === "error") return found.message;
+      if (found.kind === "choices") {
+        return found.results.length
+          ? `More than one ${code} registry entry matched. Add the ${code} file number under Edit, then check again.`
+          : `${code} has no registration for “${current.name}” yet. Once it's filed, add the file number under Edit.`;
+      }
+      const rec = found.record;
+      const live = mode === "live";
+      await patchAsset({
+        [`foreign/${code}/record`]: JSON.parse(JSON.stringify(rec)),
+        ...(live && !f.fileNumber && rec.registrationNumber ? { [`foreign/${code}/fileNumber`]: rec.registrationNumber } : {}),
+        ...(live && !f.agent && rec.agent ? { [`foreign/${code}/agent`]: rec.agent } : {}),
+        ...(live && !f.agentAddress && rec.agentAddress && (!f.agent || normalizeName(f.agent) === normalizeName(rec.agent ?? "")) ? { [`foreign/${code}/agentAddress`]: rec.agentAddress } : {}),
+      });
+      return null;
+    } catch (err) {
+      return err instanceof PalmUnavailable ? "Connect Palm to read the state's record." : (err as Error).message;
+    } finally {
+      setForeignBusy(null);
     }
   }
 
@@ -1161,7 +1182,7 @@ export function useEntityPage() {
       const { service } = await palmCall<{ service: RaService }>("ra-change", { mode, businessId: linkedId, assetId: id });
       palmSeq.current++;
       if (epoch === palmEpoch.current) setPalmRa(service);
-      await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, checkedAt: Date.now() } });
+      await patchAsset({ [`palm/${mode}/ra`]: { status: service.status, name: service.name ?? null, address: formatPalmAddress(service.address) ?? null, checkedAt: Date.now() } });
     } catch (err) {
       // The request may have gone through before the error: show Palm's actual state, then the error.
       if (linkedId && epoch === palmEpoch.current) await refreshPalm(linkedId, { busy: false, keepError: true });
@@ -1497,6 +1518,138 @@ export function useEntityPage() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  // ── Paperwork BFO writes ────────────────────────────────────────────────
+
+  /** Put a generated PDF in Documents and file it in its slot (`replace`: in place of what's there, which stays in Documents). */
+  async function fileGenerated(kind: FileKind, blob: Blob, name: string, replace = false) {
+    setSlot(kind, { error: null, uploading: true, progress: 0 });
+    try {
+      const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), (pct) => setSlot(kind, { progress: pct }));
+      if (replace)
+        await patchAsset({
+          [kind]: { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: "application/pdf", uploadedAt: Date.now(), storagePath: "", docId: doc.id } satisfies UploadedFile,
+        });
+      else await fileDocument(kind, doc);
+    } catch (err) {
+      setSlot(kind, { error: err instanceof Error ? err.message : "Couldn't save it." });
+    } finally {
+      setSlot(kind, { uploading: false, progress: 0 });
+    }
+  }
+
+  const lookupAsset = (oid: string) => allAssets[oid] as Rec | undefined;
+
+  /** Fill in the IRS's W-9 from the record (a disregarded LLC's goes in its owner's name and TIN). */
+  async function generateW9(replace = false) {
+    const current = assetRef.current;
+    if (!current) return;
+    const data = w9Data({ ...current, ownerId: current.ownerId } as Rec, lookupAsset);
+    const ok = await confirmDialog({
+      title: "Fill in the W-9?",
+      message: data.business
+        ? `It's disregarded, so the W-9 is in ${data.name || "its owner"}'s name and TIN, with ${data.business} on line 2. It's left unsigned and editable.`
+        : "BFO fills in the IRS's form from the record. It's left unsigned and editable.",
+      details: data.notes.length ? data.notes : ["Everything it needs is on record."],
+      confirmLabel: "Fill it in",
+    });
+    if (!ok) return;
+    try {
+      const form = await fetch("/forms/fw9.pdf").then((r) => {
+        if (!r.ok) throw new Error("Couldn't load the IRS form.");
+        return r.arrayBuffer();
+      });
+      const blob = await fillW9(data, form);
+      await fileGenerated("w9", blob, `W-9 - ${current.name}.pdf`, replace);
+    } catch (err) {
+      setSlot("w9", { error: err instanceof Error ? err.message : "Couldn't fill in the W-9." });
+    }
+  }
+
+  /** Draft the LLC's operating agreement from its members, state and tax class. */
+  async function generateOperatingAgreement() {
+    const current = assetRef.current;
+    if (!current) return;
+    if (!canDraftAgreement(current)) {
+      await alertDialog("Only for LLCs", "BFO drafts LLC operating agreements. Upload the bylaws or partnership agreement instead.");
+      return;
+    }
+    const input = oaInput({ ...current } as Rec & { name: string }, lookupAsset);
+    const problems = oaProblems(input);
+    if (problems.length) {
+      await alertDialog("Not enough to draft it yet", problems.join(" "));
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Draft the operating agreement?",
+      message: `A ${input.members.length === 1 ? "single-member" : `${input.members.length}-member`}, ${input.managed === "managers" ? "manager" : "member"}-managed agreement under ${stateName(input.state)} law, effective ${fmtDate(input.effective)}. Have counsel read it before it's signed.`,
+      details: input.members.map((m) => `${m.name}: ${m.percent}%`),
+      confirmLabel: "Draft it",
+    });
+    if (!ok) return;
+    try {
+      const blob = await operatingAgreementPdf(operatingAgreement(input), current.name);
+      await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`);
+      if (!current.operatingAgreementDate) await patchAsset({ operatingAgreementDate: input.effective });
+    } catch (err) {
+      setSlot("operatingAgreement", { error: err instanceof Error ? err.message : "Couldn't draft the agreement." });
+    }
+  }
+
+  /** Fill in the IRS's Form 8822-B for an address change; it goes into Documents, unsigned. */
+  async function generate8822B() {
+    const current = assetRef.current;
+    if (!current) return;
+    const data = f8822bData(current);
+    if (!data.ein) {
+      await alertDialog("No EIN on record", data.notes[0]);
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Fill in Form 8822-B?",
+      message: `${data.name} (${data.ein}), from ${data.oldAddress || "the old address"} to ${data.newAddress}. Sign it, then mail it to ${data.mailTo}.`,
+      details: data.notes.length ? data.notes : ["Covers its tax returns (line 1). Signature, title and phone are left for you."],
+      confirmLabel: "Fill it in",
+    });
+    if (!ok) return;
+    const form = await fetch("/forms/f8822b.pdf").then((r) => {
+      if (!r.ok) throw new Error("Couldn't load the IRS form.");
+      return r.arrayBuffer();
+    });
+    const blob = await fill8822B(data, form);
+    const doc = await uploadDocFile(new File([blob], `Form 8822-B - ${current.name}.pdf`, { type: "application/pdf" }), () => {});
+    window.open(doc.url, "_blank", "noopener");
+  }
+
+  /** Mark where the address change has been reported (or undo it). */
+  async function markAddressStep(step: "state" | "irs" | "banks", done: boolean) {
+    await patchAsset({ [`addressUpdates/${step}`]: done ? new Date().toISOString().slice(0, 10) : null });
+  }
+
+  /** Palm's documents that fill an empty slot (the state's certificate, the IRS's EIN letter), saved and filed once. */
+  const importingPalm = useRef(new Set<string>());
+  async function importPalmPaperwork(list: PalmDocument[]) {
+    const current = assetRef.current;
+    if (!current) return;
+    const have = new Set(docs.map((d) => (d as AssetDoc & { palmDocumentId?: string }).palmDocumentId).filter(Boolean));
+    for (const d of list) {
+      const slot = [docKindOf(d), ...(d.types ?? []), d.type ?? ""].map((k) => PALM_SLOT[k]).find(Boolean);
+      if (!slot || current[slot] || have.has(d.id) || importingPalm.current.has(d.id)) continue;
+      importingPalm.current.add(d.id);
+      try {
+        const blob = await fetchPalmDocument(d);
+        const name = d.filename || `${filingTitle(slot, current)}.pdf`;
+        const doc = await uploadDocFile(new File([blob], name, { type: blob.type || "application/pdf" }), () => {});
+        const { db, ref: dbRef, update } = await import("../store");
+        await update(dbRef(db, `assets/${id}/documents/${doc.id}`), { palmDocumentId: d.id });
+        await fileDocument(slot, doc);
+      } catch (err) {
+        console.error("Palm document import failed", d.id, err);
+      } finally {
+        importingPalm.current.delete(d.id);
+      }
+    }
   }
 
   async function handleUploadFile(kind: FileKind, file: File) {
@@ -1961,9 +2114,6 @@ export function useEntityPage() {
     setPalmStatus,
     formation,
     formationError,
-    palmCases,
-    palmCasesError,
-    respondCase,
     palmRa,
     setPalmRa,
     palmDocs,
@@ -1986,6 +2136,8 @@ export function useEntityPage() {
     palmBusinessId,
     refreshPalm,
     checkStateRecord,
+    checkForeignRecord,
+    foreignBusy,
     moveAgentToPalm,
     buildProfile,
     documentsForReading,
@@ -1998,6 +2150,10 @@ export function useEntityPage() {
     handleRenameDoc,
     formatBytes,
     handleUploadFile,
+    generateW9,
+    generateOperatingAgreement,
+    generate8822B,
+    markAddressStep,
     handleDeleteFile,
     deleting,
     setDeleting,

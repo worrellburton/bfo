@@ -18,8 +18,10 @@ export function deriveEntity(input: {
   allAssets: Record<string, PaperworkInput & { ownerId?: string }>;
   kindsFor: (a: Asset | null) => FileKind[];
   tabParam?: string;
+  /** An invited entity owner: a read-only page of documents and people. */
+  partner?: boolean;
 }) {
-  const { asset, docs, contracts, allAssets, kindsFor, tabParam } = input;
+  const { asset, docs, contracts, allAssets, kindsFor, tabParam, partner = false } = input;
   const etype = entityType(asset);
   const isTrust = etype === "Trust";
   const glyph = etype === "C-Corp" ? "INC" : etype === "Trust" ? "TR" : etype === "LP" ? "LP" : "LLC";
@@ -48,14 +50,19 @@ export function deriveEntity(input: {
 
   const stateBad = asset.stateRecord ? stateFindings(asset.stateRecord, asset).filter((f) => f.tone === "bad").length : 0;
   const complianceAlerts = issues.filter((i) => i.severity !== "info").length + stateBad;
-  const tabs: Tab[] = [
-    { key: "overview", label: "Overview" },
-    { key: "documents", label: "Documents", count: docs.length || undefined },
-    { key: "compliance", label: "Compliance", count: complianceAlerts || undefined, alert: complianceAlerts > 0 },
-    ...(etype === "LLC" ? [{ key: "agreements" as const, label: "Agreements", count: contracts.length || undefined }] : []),
-    ...(asset.type === "C-Corp" ? [{ key: "governance" as const, label: "Governance" }] : []),
-  ];
-  const tab: EntityTab = tabs.some((t) => t.key === tabParam) ? (tabParam as EntityTab) : "overview";
+  const people = { key: "people" as const, label: isTrust ? "People" : "Owners", count: (asset.members?.length || (asset.ownerId ? 1 : 0)) || undefined };
+  const tabs: Tab[] = partner
+    ? [{ key: "documents", label: "Documents", count: docs.length || undefined }, people]
+    : [
+        { key: "overview", label: "Overview" },
+        { key: "documents", label: "Documents", count: docs.length || undefined },
+        people,
+        { key: "compliance", label: "Compliance", count: complianceAlerts || undefined, alert: complianceAlerts > 0 },
+        ...(etype === "LLC" ? [{ key: "agreements" as const, label: "Agreements", count: contracts.length || undefined }] : []),
+        ...(asset.type === "C-Corp" ? [{ key: "governance" as const, label: "Governance" }] : []),
+        { key: "activity", label: "Activity" },
+      ];
+  const tab: EntityTab = tabs.some((t) => t.key === tabParam) ? (tabParam as EntityTab) : tabs[0].key;
 
   return {
     etype,

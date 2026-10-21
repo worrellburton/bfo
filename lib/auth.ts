@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 
-export type Role = "owner" | "admin" | "member" | "viewer" | "email";
+/** "partner": an owner or member of an entity, invited to see only the entities they're on (entity_access). */
+export type Role = "owner" | "admin" | "member" | "viewer" | "email" | "partner";
 export type Status = "incoming" | "approved" | "denied";
 
 export type AppUser = {
@@ -39,6 +40,12 @@ function supabaseConfig() {
 }
 
 export class ConfigError extends Error {}
+
+/**
+ * A partner (invited owner) reached an endpoint that isn't theirs. Answered
+ * 403, never 401: a 401 would sign them out of the portal they do have.
+ */
+export class PartnerRefused extends Error {}
 
 /**
  * Low-level Supabase REST call with service-role auth — returns the raw
@@ -484,7 +491,7 @@ export function bearerToken(req: VercelRequest): string | null {
  */
 export async function currentUser(
   req: VercelRequest,
-  opts: { allowEmailOnly?: boolean } = {}
+  opts: { allowEmailOnly?: boolean; allowPartner?: boolean } = {}
 ): Promise<AppUser | null> {
   const token = bearerToken(req);
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return null;
@@ -500,6 +507,8 @@ export async function currentUser(
   const user = users?.[0];
   if (!user || user.status !== "approved") return null;
   if (isEmailOnly(user) && !opts.allowEmailOnly) return null;
+  // Partners only reach the endpoints that let them in, and see only their entities there.
+  if (isPartner(user) && !opts.allowPartner) throw new PartnerRefused("Not available to entity owners.");
 
   // Sessions last 30 days, so last_login_at (written only when a code is
   // entered) goes stale while someone is actively using the app. Touch a
@@ -522,6 +531,10 @@ export function isAdmin(user: AppUser): boolean {
 /** Viewers can look but not change anything; email-only users can't touch shared data. */
 export function canWrite(user: AppUser): boolean {
   return user.role === "owner" || user.role === "admin" || user.role === "member";
+}
+
+export function isPartner(user: Pick<AppUser, "role">): boolean {
+  return user.role === "partner";
 }
 
 /** Signs in to use their own inbox and nothing else. */
@@ -575,6 +588,7 @@ export function guard(
 }
 
 export function handleError(res: VercelResponse, err: unknown) {
+  if (err instanceof PartnerRefused) return fail(res, 403, "forbidden", err.message);
   if (err instanceof ConfigError) {
     return fail(res, 503, "not_configured", err.message);
   }

@@ -2,58 +2,79 @@ import { sb } from "./auth.js";
 import { storageUpload } from "./storage.js";
 
 /**
- * The BFO logo, made in two steps: OpenAI draws six styles of a "BFO" mark as
- * a physical object (the style sheet), then Meshy turns the chosen one into a
- * textured 3D model (GLB) the site shows with <model-viewer>. Everything lands
- * in the public "brand" bucket; the state lives in brand_settings (key → json).
+ * The BFO logo. OpenAI draws six lockups (a reference sheet): "BURTON FAMILY
+ * OFFICE" set small above a large "BFO", each in a different typeface. The one
+ * you pick goes on the site as live type in its paired Google font, so the
+ * logo and the typeface stay one thing. Any lockup can still go to Meshy for a
+ * 3D model. Everything lands in the public "brand" bucket; the state lives in
+ * brand_settings (key → json).
  */
 
 export const BRAND_BUCKET = "brand";
 
-export type LogoStyle = { id: string; name: string; blurb: string; prompt: string };
+/** How the site colours the lockup's letters. */
+export type Finish = "gold" | "ivory" | "silver";
 
-/** What every style shares: one object, centered, lit for a 3D scan. */
+/** The Google font a lockup is drawn in and the site sets it in. */
+export type BrandFont = { family: string; weight: number; css: string };
+
+export type LogoStyle = { id: string; name: string; blurb: string; font: BrandFont; finish: Finish; prompt: string };
+
+/** What every lockup shares: the two lines of type, flat, on a black presentation board. */
 const BASE_PROMPT =
-  "A logo mark for \"BFO\", a private family office. The three capital letters B, F and O, exactly those and nothing else, as one single solid physical object. " +
-  "Centered, three-quarter front view, filling most of the frame, on a plain seamless light-gray studio backdrop with soft even studio lighting and only a faint contact shadow. " +
-  "Photorealistic product render, sharp edges, no extra text, no reflections of surroundings, no people.";
+  "A luxury brand identity logo lockup for Burton Family Office, a private family office. Two lines of type, centered, and nothing else: " +
+  "on top, the words \"BURTON FAMILY OFFICE\" in small, widely letterspaced capitals; below it, much larger, the monogram \"BFO\" (the capital letters B, F and O, exactly those). " +
+  "Spell every word exactly as written. Flat, crisp vector artwork, perfectly centered with generous margins, presented on a plain deep black (#0a0a0a) background like a page of a brand reference sheet. " +
+  "No mockup, no photo, no extra words, no tagline, no watermark.";
 
 export const LOGO_STYLES: LogoStyle[] = [
   {
-    id: "monolith",
-    name: "Monolith",
-    blurb: "One block of polished black stone, letters cut through.",
-    prompt: "Style: a single thick slab of polished black obsidian with the letters BFO carved as one piece, geometric grotesque sans-serif, deep bevelled edges, subtle brushed-steel inlay along the edges, serious and quiet.",
+    id: "didone",
+    name: "Didone",
+    blurb: "High-contrast Bodoni, ivory, a hairline rule between the lines.",
+    font: { family: "Bodoni Moda", weight: 500, css: "Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900" },
+    finish: "ivory",
+    prompt: "Typeface: a high-contrast Didone serif like Bodoni, razor-thin hairlines and heavy stems, in warm ivory white. A single fine hairline rule separates the two lines. Editorial, like a couture fashion house.",
   },
   {
-    id: "chrome",
-    name: "Liquid chrome",
-    blurb: "Rounded mirror-chrome letters, soft and heavy.",
-    prompt: "Style: BFO in heavy rounded sans-serif letters made of liquid mirror chrome, surfaces smooth and bulbous as if poured, cool studio reflections, letters fused together at the joins.",
+    id: "inscription",
+    name: "Inscription",
+    blurb: "Roman capitals in the Trajan tradition, gold foil.",
+    font: { family: "Cinzel", weight: 500, css: "Cinzel:wght@400..900" },
+    finish: "gold",
+    prompt: "Typeface: classical Roman inscriptional capitals in the Trajan tradition, like Cinzel, with sharp flared serifs. Rendered in rich brushed gold foil with a subtle metallic sheen. Timeless and monumental, like letters cut into marble.",
   },
   {
-    id: "glass",
-    name: "Aurora glass",
-    blurb: "Frosted glass lit from inside with indigo and violet.",
-    prompt: "Style: BFO in a modern sans-serif cut from thick frosted glass, translucent, glowing softly from within with indigo (#818cf8) and violet (#c4b5fd) light, light refracting at the edges, clean and luminous.",
+    id: "monogram",
+    name: "Monogram",
+    blurb: "Garamond capitals, B F O interlaced, inside a fine gold ring.",
+    font: { family: "Cormorant Garamond", weight: 500, css: "Cormorant+Garamond:ital,wght@0,300..700;1,300..700" },
+    finish: "gold",
+    prompt: "Typeface: an elegant old-style Garamond, like Cormorant Garamond. The letters B, F and O are interlaced into one refined heraldic monogram set inside a thin gold circle, the O wrapping around the B and F. Champagne gold on black. Heritage, like a private bank's seal.",
   },
   {
-    id: "signet",
-    name: "Signet",
-    blurb: "A brass seal with the BFO monogram embossed.",
-    prompt: "Style: a round brass signet seal, like a coin or wax stamp, with an interlocking BFO monogram embossed in relief at the center and a thin raised ring around the rim, aged warm brass with soft patina.",
+    id: "geometric",
+    name: "Geometric",
+    blurb: "Futura-like geometric sans, wide tracking, silver.",
+    font: { family: "Jost", weight: 400, css: "Jost:ital,wght@0,100..900;1,100..900" },
+    finish: "silver",
+    prompt: "Typeface: a pure geometric sans-serif like Futura (Jost), perfect circle O, light-to-regular weight, very wide letterspacing on BFO as well. Brushed platinum silver. Minimal and modern, like an architecture firm or a Swiss private bank.",
   },
   {
-    id: "cube",
-    name: "Three faces",
-    blurb: "Navy block, one letter inlaid on each visible face.",
-    prompt: "Style: a matte deep-navy cube seen from a corner so three faces show, with B, F and O each inlaid in polished gold on one face, one letter per face, crisp and architectural.",
+    id: "deco",
+    name: "Deco",
+    blurb: "Fine-line Art Deco capitals with stepped gold sunrays.",
+    font: { family: "Italiana", weight: 400, css: "Italiana" },
+    finish: "gold",
+    prompt: "Typeface: slender high-contrast Art Deco capitals like Italiana. A restrained 1920s Art Deco ornament of fine stepped lines and a small sunray fan frames the BFO monogram. Polished gold line art on black. Glamorous, like a grand Manhattan lobby.",
   },
   {
-    id: "serif",
-    name: "Inline serif",
-    blurb: "Extruded slab-serif wordmark, matte black, one indigo line.",
-    prompt: "Style: BFO as a wide extruded slab-serif wordmark in matte charcoal black, deep extrusion so the letters read as solid bars, a single thin indigo inline running along the front faces, understated luxury.",
+    id: "editorial",
+    name: "Editorial",
+    blurb: "Playfair Display, BFO in italic with a swash, ivory.",
+    font: { family: "Playfair Display", weight: 600, css: "Playfair+Display:ital,wght@0,400..900;1,400..900" },
+    finish: "ivory",
+    prompt: "Typeface: a transitional display serif like Playfair Display. \"BURTON FAMILY OFFICE\" in upright small capitals; \"BFO\" large in a graceful italic with a single elegant swash on the F. Warm ivory on black. Literary and confident, like a classic publishing house.",
   },
 ];
 
@@ -79,7 +100,21 @@ export type ModelState = {
   updatedAt: number;
 };
 
-export type Logo = { styleId: string; glbUrl: string; usdzUrl?: string | null; posterUrl: string | null; imageUrl: string; updatedAt: number };
+/**
+ * The logo on the site. "lockup": live type in the style's font and finish.
+ * "3d": the Meshy model (the older shape, saved before lockups, has no kind).
+ */
+export type Logo = {
+  styleId: string;
+  kind?: "lockup" | "3d";
+  font?: BrandFont;
+  finish?: Finish;
+  glbUrl?: string | null;
+  usdzUrl?: string | null;
+  posterUrl?: string | null;
+  imageUrl: string;
+  updatedAt: number;
+};
 
 // ── Settings (brand_settings: key → json) ────────────────────────────────
 

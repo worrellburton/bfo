@@ -5,6 +5,9 @@
  */
 
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
+import { canDraftAgreement } from "../paperwork-generate";
+import { isPartner } from "../auth";
+import { paperAction, PaperMailList, usePaperMail } from "../paper-mail";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
 import {
@@ -61,11 +64,14 @@ export function DocumentsTab() {
     <div onDragOver={swallow} onDrop={swallow} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
         <Filings />
+        <PaperMailSection />
         <Library />
       </div>
-      <div className="min-w-0 space-y-4">
-        <DocumentCheck />
-      </div>
+      {!isPartner() && (
+        <div className="min-w-0 space-y-4">
+          <DocumentCheck />
+        </div>
+      )}
     </div>
   );
 }
@@ -136,9 +142,20 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const slot = page.uploadState[kind];
   const title = filingTitle(kind, asset);
   const pick = () => picker.current?.click();
+  // Paperwork BFO can write itself, from the record.
+  const generate =
+    isPartner()
+      ? null
+      : kind === "w9"
+      ? { label: "Fill in", title: "Fill in the IRS's W-9 from the record", run: page.generateW9 }
+      : kind === "operatingAgreement" && canDraftAgreement(asset)
+        ? { label: "Draft", title: "Draft the operating agreement from the members, state and tax class on record", run: page.generateOperatingAgreement }
+        : null;
 
   const need: { tone: Tone; word: string; hint?: string } =
-    rule?.level === "recommended"
+    isPartner()
+      ? { tone: "muted", word: "Not on file" }
+      : rule?.level === "recommended"
       ? { tone: "muted", word: "Optional" }
       : rule?.level === "expected"
         ? { tone: "warn", word: "Expected", hint: "Not a legal requirement, but banks, lenders and courts expect it" }
@@ -151,7 +168,7 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   };
   // A filled slot takes no drop, but still clears the highlight if it was filed mid-drag.
   const dropHandlers = {
-        ...(file ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
+        ...(file || isPartner() ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
         onDragLeave: (e: DragEvent<HTMLDivElement>) => {
           e.preventDefault();
           e.stopPropagation();
@@ -177,7 +194,7 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
     <span className="flex min-w-0 items-center gap-2">
       <Dot tone="good" />
       <a href={file.url} target="_blank" rel="noopener noreferrer" title={file.fileName} className="min-w-0 truncate hover:underline">
-        {file.fileName}
+        {file.fileName || "On file"}
       </a>
       {file.uploadedAt ? <span className={`shrink-0 text-[12px] tabular-nums ${t.muted}`}>{fmtStamp(file.uploadedAt)}</span> : null}
     </span>
@@ -191,7 +208,14 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
     </span>
   );
 
-  const actions = file ? (
+  // An invited owner looks; only staff change paperwork.
+  const actions = isPartner() ? (
+    file ? (
+      <div className="-my-1 flex shrink-0 items-center">
+        <IconLink href={file.url} icon="external" label="View" ariaLabel={`View ${title}`} />
+      </div>
+    ) : null
+  ) : file ? (
     <div className={`-my-1 flex shrink-0 items-center ${slot.uploading ? "" : REVEAL}`}>
       <IconLink href={file.url} icon="external" label="View" ariaLabel={`View ${title}`} />
       <IconButton icon="refresh" label="Replace" aria-label={`Replace ${title}`} disabled={slot.uploading} onClick={pick} />
@@ -205,8 +229,13 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
       />
     </div>
   ) : (
-    <div className="-my-1 shrink-0">
-      <Button icon="upload" aria-label={`Upload ${title}`} title={`${TYPES_LABEL} · up to 25 MB`} disabled={slot.uploading} onClick={pick}>
+    <div className="-my-1 flex shrink-0 items-center gap-1.5">
+      {generate && (
+        <Button icon="sparkle" aria-label={`${generate.label} ${title}`} title={generate.title} disabled={slot.uploading} onClick={() => void generate.run()}>
+          {generate.label}
+        </Button>
+      )}
+      <Button icon="upload" aria-label={`Upload ${title}`} title={`${TYPES_LABEL} · up to 25 MB`} disabled={slot.uploading} onClick={pick} kind={generate ? "ghost" : undefined}>
         Upload
       </Button>
     </div>
@@ -222,7 +251,12 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
             <Icon name="external" className="h-3 w-3" />
           </a>
         )}
-        {!file && <span className={`mt-1 block ${t.muted}`}>Drop a file on this row or upload one. {TYPES_LABEL} · up to 25 MB.</span>}
+        {!file && generate && (
+          <span className={`mt-1 block ${t.muted}`}>
+            {kind === "w9" ? "BFO can fill in the IRS's form from the record, ready to sign." : "BFO can draft it from the members, shares, state and tax class on record. Have counsel read it before signing."}
+          </span>
+        )}
+        {!file && !isPartner() && <span className={`mt-1 block ${t.muted}`}>Drop a file on this row or upload one. {TYPES_LABEL} · up to 25 MB.</span>}
       </>
     ) : undefined;
 
@@ -251,6 +285,31 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
         <InlineError error={slot.error} />
       </Row>
     </div>
+  );
+}
+
+// ── Paper mail ───────────────────────────────────────────────────────────
+
+/** Paper mail Stable received for this entity: shown once there is some. */
+function PaperMailSection() {
+  const { page } = useEntity();
+  const { mail, setMail } = usePaperMail(page.id ?? undefined);
+  if (!mail?.length) return null;
+  const unread = mail.filter((m) => !m.readAt).length;
+  return (
+    <Section title="Paper mail" count={unread || undefined} alert={unread > 0} info="Mail that arrived for this entity at the Stable address, with its envelope and scan.">
+      <PaperMailList
+        mail={mail.slice(0, 10)}
+        empty=""
+        onOpen={(m) => {
+          if (m.readAt) return;
+          setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)) ?? list);
+          void paperAction({ action: "read", id: m.id })
+            .then(() => window.dispatchEvent(new Event("bfo-paper-mail-changed")))
+            .catch(() => {});
+        }}
+      />
+    </Section>
   );
 }
 
@@ -303,7 +362,7 @@ function Library() {
         count={docs.length}
         info="Drop files anywhere on this card, or use Upload — multiple allowed. PDF, images, Office docs · up to 25 MB each."
         actions={
-          <>
+          isPartner() ? undefined : <>
             <TextButton onClick={() => page.setShowLinkForm((v) => !v)} aria-expanded={page.showLinkForm} className="mr-2">
               {page.showLinkForm ? "Hide link" : "Add link"}
             </TextButton>
@@ -427,7 +486,7 @@ function DocRow({ doc }: { doc: AssetDoc }) {
           )}
         </p>
       </div>
-      <div className={`flex shrink-0 items-center ${renaming || copied ? "" : REVEAL}`}>
+      {!isPartner() && <div className={`flex shrink-0 items-center ${renaming || copied ? "" : REVEAL}`}>
         <IconButton
           icon="sparkle"
           label={renaming ? "Renaming…" : "Rename"}
@@ -443,7 +502,7 @@ function DocRow({ doc }: { doc: AssetDoc }) {
           onClick={() => void page.handleCopyDocUrl(doc)}
         />
         <IconButton icon="trash" tone="danger" label="Delete" aria-label={`Delete ${doc.name}`} onClick={() => void page.handleDeleteDoc(doc.id)} />
-      </div>
+      </div>}
     </div>
   );
 }

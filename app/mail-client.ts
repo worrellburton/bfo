@@ -48,6 +48,8 @@ export type MailCount = {
   otherUnread: number;
   /** null until an admin gives the user an address. */
   address: string | null;
+  /** Extra addresses on the same account: mail to them lands here too, and they can be sent from. */
+  aliases?: string[];
   canSeeOther: boolean;
   sync?: { error?: string };
 };
@@ -63,6 +65,8 @@ export type OutgoingAttachment = { filename: string; contentType: string; data: 
 
 export type SendInput = {
   sendId: string;
+  /** One of my addresses; the main one when left out. */
+  from?: string;
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -110,6 +114,8 @@ export type ListQuery = {
   filter?: MailFilter;
   /** Search text: every folder is searched and `folder` is ignored. */
   q?: string;
+  /** One of my addresses: only that mailbox. */
+  to?: string;
   /** The last row already shown, for the next page. */
   before?: string;
   beforeId?: string;
@@ -117,10 +123,11 @@ export type ListQuery = {
 };
 
 /** One page, newest first. */
-export function listMail({ folder, filter = "all", q = "", before, beforeId, limit = 50 }: ListQuery) {
+export function listMail({ folder, filter = "all", q = "", to, before, beforeId, limit = 50 }: ListQuery) {
   const p = new URLSearchParams({ view: "list", folder, limit: String(limit) });
   if (filter !== "all") p.set("filter", filter);
   if (q.trim()) p.set("q", q.trim());
+  if (to) p.set("to", to);
   if (before) p.set("before", before);
   if (before && beforeId) p.set("beforeId", beforeId);
   return call<{ messages: MailSummary[]; hasMore: boolean }>(`/api/mail?${p}`);
@@ -143,6 +150,15 @@ export function attachmentUrl(id: string, att: string) {
 /** Owner/admin diagnostics: is Bird set up to receive? */
 export function getMailStatus() {
   return call<MailStatus>("/api/mail?view=status");
+}
+
+/** Owner/admin: adds an extra address to my account ("accounting" or the full address). */
+export function addAlias(address: string) {
+  return post<{ aliases: string[] }>({ action: "alias-add", address });
+}
+
+export function removeAlias(address: string) {
+  return post<{ aliases: string[] }>({ action: "alias-remove", address });
 }
 
 export function syncMail() {

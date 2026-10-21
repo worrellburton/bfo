@@ -1,3 +1,4 @@
+import { describeChange, logActivity, type Actor } from "./activity.js";
 import { sb } from "./auth.js";
 
 /**
@@ -149,13 +150,28 @@ export async function readIndex(collection: Collection): Promise<{ id: string; u
   return (await sb<{ id: string; updated_at: string }[]>(`tree_nodes?collection=eq.${enc(collection)}&select=id,updated_at&order=id`)) ?? [];
 }
 
-/** Apply operations in one transaction, then return the rows they touched (null data = gone). */
-export async function applyOps(ops: TreeOp[]): Promise<Array<TreeRow | { collection: Collection; id: string; data: null; updated_at: null }>> {
-  await sb("rpc/tree_apply", { method: "POST", body: { ops } });
+/**
+ * Apply operations in one transaction, then return the rows they touched (null data = gone).
+ * With an actor, each entity it changes gets the change in its activity (lib/activity.ts).
+ */
+export async function applyOps(ops: TreeOp[], actor?: Actor): Promise<Array<TreeRow | { collection: Collection; id: string; data: null; updated_at: null }>> {
   const touched = touchedRows(ops);
+  const assetIds = actor ? touched.filter((t) => t.collection === "assets").map((t) => t.id) : [];
+  const before = assetIds.length ? new Map((await readRows("assets", assetIds)).map((r) => [r.id, r.data])) : null;
+  await sb("rpc/tree_apply", { method: "POST", body: { ops } });
   const byCollection = new Map<Collection, string[]>();
   for (const t of touched) byCollection.set(t.collection, [...(byCollection.get(t.collection) ?? []), t.id]);
   const found = new Map<string, TreeRow>();
   for (const [collection, ids] of byCollection) for (const r of await readRows(collection, ids)) found.set(`${collection}/${r.id}`, r);
+  if (actor && before) await recordActivity(assetIds, before, found, actor);
   return touched.map((t) => found.get(`${t.collection}/${t.id}`) ?? { ...t, data: null, updated_at: null });
+}
+
+async function recordActivity(ids: string[], before: Map<string, Json>, after: Map<string, TreeRow>, actor: Actor): Promise<void> {
+  const asRec = (v: Json | undefined) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : null);
+  const pairs = ids.map((id) => ({ id, b: asRec(before.get(id)), a: asRec(after.get(`assets/${id}`)?.data) }));
+  // An owner shows by name: look up the ones that changed.
+  const ownerIds = [...new Set(pairs.filter((p) => p.b?.ownerId !== p.a?.ownerId).flatMap((p) => [p.b?.ownerId, p.a?.ownerId]))].filter((v): v is string => typeof v === "string" && !!v);
+  const names = new Map((ownerIds.length ? await readRows("assets", ownerIds).catch(() => []) : []).map((r) => [r.id, (r.data as { name?: string } | null)?.name ?? null]));
+  for (const p of pairs) await logActivity(p.id, actor, describeChange(p.b, p.a, (id) => names.get(id) ?? null));
 }

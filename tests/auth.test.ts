@@ -293,3 +293,13 @@ describe("mail addresses and user changes", () => {
     expect(signOuts()).toBe(2);
   });
 });
+
+describe("partners", () => {
+  it("are refused with 403, never the 401 that would sign them out", async () => {
+    const { handleError, PartnerRefused } = await import("../lib/auth");
+    const out: { status?: number; json?: unknown } = {};
+    const res: any = { status: (c: number) => ((out.status = c), res), json: (j: unknown) => ((out.json = j), res) };
+    handleError(res, new PartnerRefused("Not available to entity owners."));
+    expect(out).toEqual({ status: 403, json: { error: "forbidden", message: "Not available to entity owners." } });
+  });
+});

@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { useEntity } from "./context";
 import { fmtDate } from "./model";
 import { Button, Count, Dot, Icon, IconButton, useTone } from "./ui";
+import { isPartner } from "../auth";
 
 /** The entity card: who it is, the facts people copy most, and how complete its record is. */
 export function EntityHeader() {
@@ -62,10 +63,10 @@ export function EntityHeader() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Button icon="edit" onClick={() => (page.editing ? page.setEditing(false) : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
+            {!isPartner() && <Button icon="edit" onClick={() => (page.editing ? page.setEditing(false) : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
               <span className="max-sm:hidden">{page.editing ? "Cancel" : "Edit"}</span>
-            </Button>
-            <MoreMenu />
+            </Button>}
+            {!isPartner() && <MoreMenu />}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ParticleCanvas } from "../particles";
-import { useBrandLogo } from "../brand";
+import { lockupOf, modelOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 
 export function meta() {
@@ -10,34 +10,35 @@ export function meta() {
   ];
 }
 
+/** Whether the landing page has already been seen this visit: coming back from /mission, it doesn't replay its entrance. */
+let shown = false;
+
+/**
+ * The front door. The backdrop is the public layout's (public-layout.tsx).
+ * /mission is unlisted: nothing here links to it, but its link glides back
+ * here without a reload.
+ */
 export default function Landing() {
-  // The orbs and wordmark already stop under reduced motion (app.css); the
-  // particle field is a JS animation loop, so leave it out entirely.
+  const [intro] = useState(() => !shown);
   const [still, setStill] = useState(false);
   const logo = useBrandLogo();
+  const model = modelOf(logo);
+  const lockup = lockupOf(logo);
   useEffect(() => {
+    shown = true;
     setStill(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
   }, []);
   return (
-    <div className="min-h-dvh bg-black relative overflow-hidden flex items-center justify-center">
-      {/* Drifting aurora orbs */}
-      <div aria-hidden className="absolute inset-0">
-        <div className="landing-orb landing-orb-1" />
-        <div className="landing-orb landing-orb-2" />
-        <div className="landing-orb landing-orb-3" />
-      </div>
-
-      {/* Particle field */}
-      {!still && <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />}
-
-      {/* Wordmark */}
-      <div className="relative z-10 text-center select-none px-6">
-        {logo ? (
+    <div className={`flex min-h-dvh items-center justify-center ${intro ? "" : "no-intro"}`}>
+      <div className="text-center select-none px-6">
+        {model ? (
           <h1 className="landing-logo mx-auto" aria-label="BFO">
-            <Logo3D src={logo.glbUrl} poster={logo.posterUrl} className="landing-logo-model" interactive spin={!still} exposure={1.1} />
+            <Logo3D src={model.glbUrl} poster={model.posterUrl} className="landing-logo-model" interactive spin={!still} exposure={1.1} />
           </h1>
         ) : (
-          <h1 className="landing-title font-bold tracking-tight leading-none">BFO</h1>
+          <h1 className="m-0 vt-mark">
+            <BrandLockup font={lockup.font} finish={lockup.finish} size="hero" />
+          </h1>
         )}
         <p className="landing-sub uppercase mt-4 sm:mt-6">Ledger Louise, LLC</p>
       </div>

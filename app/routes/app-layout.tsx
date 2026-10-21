@@ -4,6 +4,7 @@ import { CommandPalette, ShortcutSheet, useGlobalShortcuts, useTrackRecent, type
 import { OfflineBanner, RouteProgress } from "../shell-status";
 import {
   authFetch,
+  beginAddAccount,
   displayName,
   getUser,
   homePath,
@@ -11,20 +12,42 @@ import {
   isAdmin,
   isAuthenticated,
   isEmailOnly,
+  isPartner,
   logout,
+  otherAccounts,
   profileComplete,
   revalidate,
+  switchAccount,
+  type User,
 } from "../auth";
 import { useMailCount } from "../mail-client";
 import { resetStore } from "../store";
 import { useTheme } from "../theme";
 import { ParticleCanvas } from "../particles";
-import { useBrandLogo } from "../brand";
+import { lockupOf, modelOf, useBrandLogo } from "../brand";
+import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
+import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
 
 const iconCls = "w-[18px] h-[18px] shrink-0";
-const navItems = [
+
+/** Mail's folders all live on /inbox, told apart by ?f= (inbox when absent). */
+const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "inbox") === f;
+
+/** Shown to admins (and anyone given access): mail to addresses nobody has yet. */
+const otherMailChild: NavChild = {
+  to: "/inbox?f=other",
+  label: "Other",
+  match: mailFolder("other"),
+  icon: (
+    <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
+    </svg>
+  ),
+};
+
+const navItems: NavItem[] = [
   {
     to: "/home",
     label: "Home",
@@ -37,9 +60,50 @@ const navItems = [
   {
     to: "/inbox",
     label: "Mail",
+    children: [
+      {
+        to: "/inbox",
+        label: "Inbox",
+        match: mailFolder("inbox"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z" />
+          </svg>
+        ),
+      },
+      {
+        to: "/inbox?f=sent",
+        label: "Sent",
+        match: mailFolder("sent"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        ),
+      },
+      {
+        to: "/inbox?f=archive",
+        label: "Archive",
+        match: mailFolder("archive"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+          </svg>
+        ),
+      },
+    ] as NavChild[],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+      </svg>
+    ),
+  },
+  {
+    to: "/mailbox",
+    label: "Mailbox",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V9a4.5 4.5 0 014.5-4.5h10.5a4.5 4.5 0 014.5 4.5v6.75a1.5 1.5 0 01-1.5 1.5H12M2.25 12.75h7.5v6a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-6zM6.75 4.5a4.5 4.5 0 014.5 4.5v3.75M15 9h3" />
       </svg>
     ),
   },
@@ -73,6 +137,7 @@ const navItems = [
   {
     to: "/books/transactions",
     label: "Books",
+    breakBefore: true,
     children: [
       {
         to: "/books/transactions",
@@ -154,13 +219,30 @@ const navItems = [
       </svg>
     ),
   },
-
+  {
+    to: "/tools",
+    label: "Tools",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
+      </svg>
+    ),
+    children: [
+      {
+        to: "/tools/compliance",
+        label: "Entity compliance",
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+          </svg>
+        ),
+      },
+    ],
+  },
 ];
 
-
-// The nav reads as two groups — what the family owns, then the work of
-// running it — separated by a little air rather than headings.
-const SECTION_BREAK = "/books/transactions";
+// The nav reads as two halves (what the family owns, then the work of
+// running it), separated by a little air at Books rather than headings.
 
 const usersIcon = (
   <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -177,6 +259,8 @@ function ShellShortcuts({ pages, openPalette, openSheet }: { pages: PageLink[]; 
 
 export default function AppLayout() {
   const logo = useBrandLogo();
+  const logoModel = modelOf(logo);
+  const lockup = lockupOf(logo);
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggle } = useTheme();
@@ -196,10 +280,45 @@ export default function AppLayout() {
   const mail = useMailCount();
   // "Email only" members get a reduced shell: the wordmark, the inbox and the user menu.
   const emailOnly = isEmailOnly(user);
+  // Unread paper mail, for the Mailbox badge (staff only).
+  const [paperUnread, setPaperUnread] = useState(0);
+  useEffect(() => {
+    if (isEmailOnly(user) || isPartner(user)) return;
+    const load = () =>
+      authFetch("/api/stable?view=all")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j && setPaperUnread((j.mail ?? []).filter((m: { readAt: string | null }) => !m.readAt).length))
+        .catch(() => {});
+    void load();
+    const id = window.setInterval(load, 5 * 60_000);
+    window.addEventListener("bfo-paper-mail-changed", load);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("bfo-paper-mail-changed", load);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Partners (invited entity owners) see their entities and nothing else.
+  const partner = isPartner(user);
+  const [myEntities, setMyEntities] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!partner) return;
+    let live = true;
+    void (async () => {
+      const { db, ref, get, authReady } = await import("../store");
+      await authReady;
+      const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
+      if (live) setMyEntities(Object.entries(all).map(([id, a]) => ({ id, name: a?.name ?? "Entity" })).sort((a, b) => a.name.localeCompare(b.name)));
+    })().catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [partner]);
 
   useEffect(() => {
     // Refresh the custom entity-initials cache once per session.
-    if (isEmailOnly(getUser())) return;
+    if (isEmailOnly(getUser()) || isPartner(getUser())) return;
     void import("../books-shared").then((m) => m.hydrateEntityTags());
   }, []);
 
@@ -260,11 +379,11 @@ export default function AppLayout() {
   // Every destination the palette can jump to, in nav order.
   const pages = useMemo<PageLink[]>(() => {
     const list: PageLink[] = [];
-    for (const item of navItems as any[]) {
+    for (const item of navItems) {
       if (item.children) {
-        for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label });
+        for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label, ...(item.label === "Mail" ? { keywords: "email messages" } : {}) });
       } else {
-        list.push(item.to === "/inbox" ? { to: item.to, label: item.label, keywords: "inbox email messages" } : { to: item.to, label: item.label });
+        list.push({ to: item.to, label: item.label });
       }
     }
     list.push(
@@ -301,18 +420,6 @@ export default function AppLayout() {
     };
   }, [drawerOpen]);
 
-  // Bird-style drill-in nav: a group opens into its own sub-view. `drill`
-  // holds the open group's path; "__root__" forces the top level; null follows
-  // the current route (so landing on a group's page opens that group). These
-  // hooks sit above the signed-out early return so they always run.
-  const activeGroupTo =
-    (navItems as any[]).find((i) => i.children?.some((c: any) => location.pathname.startsWith(c.to)))?.to ?? null;
-  const [drill, setDrill] = useState<string | null>(null);
-  useEffect(() => {
-    setDrill(activeGroupTo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
   // Below lg the rail is an off-canvas drawer; while it's closed its links
   // must not be reachable by Tab.
   const [isDesktop, setIsDesktop] = useState(true);
@@ -334,14 +441,51 @@ export default function AppLayout() {
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
   const contentInset = railWidth;
   const showLabels = expanded;
-  // The mobile drawer always shows labels, so drill-in navigation works there too.
+  // The mobile drawer always shows labels, so groups open there too.
   const labelsVisible = expanded || drawerOpen;
   // Mail carries its unread count; "Email only" members see Mail and nothing else.
+  // Its folders carry their own counts; Other only for those who can see it.
   const unread = mail?.unread ?? 0;
-  const items = (emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) => (i.to === "/inbox" ? { ...i, badge: unread } : i));
+  const canSeeOther = mail ? mail.canSeeOther : isAdmin(user);
+  const entitiesItem = navItems.find((i) => i.to === "/assets")!;
+  const partnerItems: NavItem[] = myEntities.map((e) => ({ to: `/assets/${e.id}`, label: e.name, icon: entitiesItem.icon }));
+  const withMailbox = (i: NavItem): NavItem => (i.to === "/mailbox" ? { ...i, badge: paperUnread } : i);
+  const items: NavItem[] = (partner ? partnerItems : emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) =>
+    i.to === "/inbox" && i.children
+      ? {
+          ...i,
+          badge: unread,
+          children: [
+            ...i.children.map((c) => (c.to === "/inbox" ? { ...c, badge: unread } : c)),
+            ...(canSeeOther ? [{ ...otherMailChild, badge: mail?.otherUnread ?? 0 }] : []),
+          ],
+        }
+      : withMailbox(i)
+  );
 
-  const openGroup =
-    drill && drill !== "__root__" ? ((items as any[]).find((i) => i.to === drill && i.children) ?? null) : null;
+  // Accounts: every account signed in on this browser, Gmail-style. Switching
+  // and signing out reload the app, so nothing one account loaded lingers
+  // for the next.
+  const others = userMenuOpen ? otherAccounts() : [];
+  function switchTo(u: User) {
+    if (switchAccount(u.id)) window.location.assign(homePath(u));
+  }
+  function addAccount() {
+    setUserMenuOpen(false);
+    setDrawerOpen(false);
+    beginAddAccount();
+    resetStore();
+    navigate("/login");
+  }
+  function signOut() {
+    setUserMenuOpen(false);
+    setDrawerOpen(false);
+    setPaletteOpen(false);
+    const next = logout();
+    resetStore();
+    if (next) window.location.assign(homePath(next));
+    else navigate("/login");
+  }
 
   function go(to: string) {
     setUserMenuOpen(false);
@@ -401,12 +545,14 @@ export default function AppLayout() {
       >
         {/* Top: the wordmark */}
         <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
-          {logo ? (
+          {logoModel ? (
             <span className="sidebar-logo" aria-label="BFO">
-              <Logo3D src={logo.glbUrl} poster={logo.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
+              <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
             </span>
           ) : (
-            <span className={`sidebar-brand ${showLabels ? "" : "sidebar-brand-sm"}`}>BFO</span>
+            <span className={`app-shell-brand sidebar-lockup ${showLabels ? "" : "sidebar-lockup-sm"}`}>
+              <BrandLockup font={lockup.font} finish={lockup.finish} size="mark" />
+            </span>
           )}
           <button
             type="button"
@@ -423,7 +569,7 @@ export default function AppLayout() {
         </div>
 
         {/* Jump to anything — the palette's front door in the rail. */}
-        {!emailOnly && (
+        {!emailOnly && !partner && (
           <div className="px-3 pb-2">
             <button
               type="button"
@@ -448,109 +594,7 @@ export default function AppLayout() {
           </div>
         )}
 
-        <nav className="flex flex-col gap-1 flex-1 px-3 overflow-y-auto" aria-label="Main">
-            {labelsVisible && openGroup ? (
-              /* Drilled-in group: a back header, then its pages as a flat list. */
-              <>
-                <button
-                  onClick={() => setDrill("__root__")}
-                  className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
-                    isDark ? "text-gray-300 hover:text-white hover:bg-white/5" : "text-gray-700 hover:text-black hover:bg-black/5"
-                  }`}
-                >
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                  </svg>
-                  <span className="truncate">{openGroup.label}</span>
-                </button>
-                <div className={`h-px mx-2 my-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
-                {openGroup.children.map((c: { to: string; label: string; icon?: React.ReactNode }) => (
-                  <NavLink
-                    key={c.to}
-                    to={c.to}
-                    onClick={() => setDrawerOpen(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                        isActive
-                          ? isDark ? "bg-white/10 text-white font-medium" : "bg-black/5 text-black font-medium"
-                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-                      }`
-                    }
-                  >
-                    {c.icon && <span className="shrink-0 inline-flex">{c.icon}</span>}
-                    <span className="truncate">{c.label}</span>
-                  </NavLink>
-                ))}
-              </>
-            ) : (
-              /* Top level: leaf items link; grouped items drill in with a chevron. */
-              items.map((item) => {
-                const children = ("children" in item ? (item as any).children : null) as
-                  | Array<{ to: string; label: string }>
-                  | null;
-                const groupActive = !!children && children.some((c) => location.pathname.startsWith(c.to));
-
-                if (labelsVisible && children) {
-                  return (
-                    <button
-                      key={item.to}
-                      onClick={() => setDrill(item.to)}
-                      className={`relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 cursor-pointer ${item.to === SECTION_BREAK ? "mt-4" : ""} ${
-                        groupActive
-                          ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-                      }`}
-                    >
-                      <span className="inline-flex shrink-0">{item.icon}</span>
-                      <span className="ml-2 flex-1 truncate text-left">{item.label}</span>
-                      <svg className="w-4 h-4 shrink-0 opacity-50" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                      </svg>
-                    </button>
-                  );
-                }
-
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.to === "/home"}
-                    onClick={() => setDrawerOpen(false)}
-                    title={showLabels ? undefined : item.label}
-                    aria-label={showLabels ? undefined : item.label}
-                    className={({ isActive }) =>
-                      `relative flex items-center rounded-lg text-sm font-medium transition-colors px-3 py-2 ${item.to === SECTION_BREAK ? "mt-4" : ""} ${
-                        showLabels ? "" : "lg:justify-center lg:px-0"
-                      } ${
-                        isActive || groupActive
-                          ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-                          : isDark ? "text-gray-400 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-black hover:bg-black/5"
-                      }`
-                    }
-                  >
-                    <span className="relative inline-flex shrink-0">
-                      {item.icon}
-                      {"badge" in item && (item as any).badge > 0 && !showLabels && (
-                        <span
-                          className={`absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ring-2 ${
-                            isDark ? "bg-[#818cf8] text-black ring-black" : "bg-[#4f46e5] text-white ring-white"
-                          }`}
-                        >
-                          {(item as any).badge > 99 ? "99+" : (item as any).badge}
-                        </span>
-                      )}
-                    </span>
-                    <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
-                    {"badge" in item && (item as any).badge > 0 && showLabels && (
-                      <span className={`ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ${isDark ? "bg-[#818cf8] text-black" : "bg-[#4f46e5] text-white"}`}>
-                        {(item as any).badge > 99 ? "99+" : (item as any).badge}
-                      </span>
-                    )}
-                  </NavLink>
-                );
-              })
-            )}
-        </nav>
+        <SidebarNav items={items} isDark={isDark} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
         <div className="relative mt-auto p-3" ref={userMenuRef}>
@@ -585,10 +629,53 @@ export default function AppLayout() {
           {userMenuOpen && (
             <div
               role="menu"
-              className={`absolute bottom-full left-3 mb-2 w-56 max-w-[calc(100vw-1.5rem)] rounded-xl border shadow-lg overflow-hidden z-50 ${
+              className={`absolute bottom-full left-3 mb-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border shadow-lg overflow-hidden z-50 ${
                 isDark ? "bg-[#1a1a1a] border-white/10" : "bg-white border-gray-200"
               }`}
             >
+              {/* Accounts signed in on this browser: the current one, the others to switch to, and one more. */}
+              <div className="py-1.5">
+                <p className={`px-4 pb-1 pt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] ${isDark ? "text-gray-500" : "text-gray-400"}`}>Accounts</p>
+                {[user, ...others].filter((u): u is User => !!u).map((u, i) => {
+                  const current = i === 0;
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => (current ? setUserMenuOpen(false) : switchTo(u))}
+                      role="menuitemradio"
+                      aria-checked={current}
+                      className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors cursor-pointer ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
+                    >
+                      <span
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-bold shrink-0 ${
+                          current ? (isDark ? "bg-white text-black" : "bg-gray-900 text-white") : isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
+                        }`}
+                      >
+                        {initials(u)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-[13px] ${current ? "font-semibold" : ""} ${isDark ? "text-gray-100" : "text-gray-900"}`}>{displayName(u)}</span>
+                        <span className={`block truncate text-[11.5px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{u.mailAddress || u.email || u.phoneFormatted}</span>
+                      </span>
+                      {current && (
+                        <svg className={`w-4 h-4 shrink-0 ${isDark ? "text-indigo-300" : "text-indigo-600"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+                <button onClick={addAccount} className={menuItemCls} role="menuitem">
+                  <span className={`w-7 h-7 -ml-0.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${isDark ? "border-white/25" : "border-gray-300"}`}>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+                    </svg>
+                  </span>
+                  Add another account
+                </button>
+              </div>
+              <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
+
               <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
                 {isDark ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -614,7 +701,7 @@ export default function AppLayout() {
                 </button>
               )}
 
-              {!emailOnly && (
+              {!emailOnly && !partner && (
                 <>
                   <button onClick={() => go("/notifications")} className={menuItemCls} role="menuitem">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -636,13 +723,7 @@ export default function AppLayout() {
               <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
 
               <button
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  setDrawerOpen(false);
-                  logout();
-                  resetStore();
-                  navigate("/login");
-                }}
+                onClick={signOut}
                 role="menuitem"
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
                   isDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
@@ -681,9 +762,15 @@ export default function AppLayout() {
             </svg>
           </button>
           <NavLink to={homePath(user)} aria-label="BFO home" className="mobile-brand">
-            {logo?.posterUrl ? <img src={logo.posterUrl} alt="BFO" className="mobile-logo" draggable={false} /> : "BFO"}
+            {logoModel?.posterUrl ? (
+              <img src={logoModel.posterUrl} alt="BFO" className="mobile-logo" draggable={false} />
+            ) : (
+              <span className="app-shell-brand mobile-lockup">
+                <BrandLockup font={lockup.font} finish={lockup.finish} size="mark" />
+              </span>
+            )}
           </NavLink>
-          {!emailOnly && (
+          {!emailOnly && !partner && (
             <button
               type="button"
               onClick={openPalette}
@@ -703,10 +790,16 @@ export default function AppLayout() {
 
       <main id="main" tabIndex={-1} className="sidebar-content outline-none relative z-10 p-4 pt-[calc(4.5rem+env(safe-area-inset-top))] sm:p-6 sm:pt-[calc(5rem+env(safe-area-inset-top))] lg:p-8 lg:ml-[var(--inset)]">
         {/* Email-only members see the inbox and nothing else; redirect before any other page mounts. */}
-        {emailOnly && location.pathname !== "/inbox" ? <Navigate to="/inbox" replace /> : <Outlet />}
+        {emailOnly && location.pathname !== "/inbox" ? (
+          <Navigate to="/inbox" replace />
+        ) : partner && !location.pathname.startsWith("/assets") ? (
+          <Navigate to="/assets" replace />
+        ) : (
+          <Outlet />
+        )}
       </main>
 
-      {!emailOnly && (
+      {!emailOnly && !partner && (
         <>
           <ShellShortcuts pages={pages} openPalette={openPalette} openSheet={openSheet} />
           <CommandPalette
@@ -717,7 +810,7 @@ export default function AppLayout() {
             actions={[
               { id: "theme", label: isDark ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
               { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", run: () => { setPaletteOpen(false); setSheetOpen(true); } },
-              { id: "logout", label: "Log out", run: () => { setPaletteOpen(false); logout(); resetStore(); navigate("/login"); } },
+              { id: "logout", label: "Log out", run: signOut },
             ]}
           />
           <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} isDark={isDark} />

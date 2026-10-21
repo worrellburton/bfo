@@ -3,12 +3,22 @@
   "outputDirectory": "build/client",
   "framework": null,
   "functions": {
-    "api/documents/profile.ts": { "memory": 1024, "maxDuration": 300 },
+    "api/documents/profile.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
     "api/documents/verify.ts": {
       "memory": 1024,
       "maxDuration": 300
     },
-    "api/brand.ts": { "memory": 1024, "maxDuration": 300 },
+    "api/brand.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "api/cron/state-records.ts": {
+      "memory": 256,
+      "maxDuration": 300
+    },
     "api/**/*.ts": {
       "memory": 256,
       "maxDuration": 60
@@ -22,13 +32,36 @@
     {
       "path": "/api/cron/books-sync",
       "schedule": "0 12-15 * * *"
+    },
+    {
+      "path": "/api/stable?cron=1",
+      "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/cron/state-records",
+      "schedule": "40 21 * * *"
     }
   ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/LedgerLouisePrivacyPolicy.pdf", "destination": "/policies/LedgerLouisePrivacyPolicy.pdf" },
-    { "source": "/LedgerLouiseDataRetentionAndDisposalPolicy.pdf", "destination": "/policies/LedgerLouiseDataRetentionAndDisposalPolicy.pdf" },
-    { "source": "/LedgerLouiseInformationSecurityPolicy.pdf", "destination": "/policies/LedgerLouiseInformationSecurityPolicy.pdf" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/LedgerLouisePrivacyPolicy.pdf",
+      "destination": "/policies/LedgerLouisePrivacyPolicy.pdf"
+    },
+    {
+      "source": "/LedgerLouiseDataRetentionAndDisposalPolicy.pdf",
+      "destination": "/policies/LedgerLouiseDataRetentionAndDisposalPolicy.pdf"
+    },
+    {
+      "source": "/LedgerLouiseInformationSecurityPolicy.pdf",
+      "destination": "/policies/LedgerLouiseInformationSecurityPolicy.pdf"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }

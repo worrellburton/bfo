@@ -615,11 +615,32 @@ async function inboundAttachment(id: string, attachmentId: string): Promise<Uint
 
 // ── Receiving ─────────────────────────────────────────────────────────
 
-/** Approved users whose address is one of these. */
+/**
+ * Approved users with one of these addresses, main or extra (mail_aliases),
+ * each once, with the address it reached them at (the first of theirs listed).
+ */
 async function usersAt(addresses: string[]): Promise<{ id: string; mail_address: string }[]> {
   if (!addresses.length) return [];
   const list = addresses.map((a) => enc(`"${a}"`)).join(",");
-  return (await sb<{ id: string; mail_address: string }[]>(`app_users?status=eq.approved&mail_address=in.(${list})&select=id,mail_address`)) ?? [];
+  const [main, extra] = await Promise.all([
+    sb<{ id: string; mail_address: string }[]>(`app_users?status=eq.approved&mail_address=in.(${list})&select=id,mail_address`),
+    sb<{ address: string; user_id: string }[]>(`mail_aliases?address=in.(${list})&select=address,user_id`),
+  ]);
+  const extraOwners = [...new Set((extra ?? []).map((r) => r.user_id))];
+  const approved = extraOwners.length
+    ? new Set((await sb<{ id: string }[]>(`app_users?status=eq.approved&id=in.(${extraOwners.join(",")})&select=id`) ?? []).map((u) => u.id))
+    : new Set<string>();
+  const hits = [
+    ...(main ?? []).map((u) => ({ id: u.id, address: u.mail_address })),
+    ...(extra ?? []).filter((r) => approved.has(r.user_id)).map((r) => ({ id: r.user_id, address: r.address })),
+  ];
+  const out: { id: string; mail_address: string }[] = [];
+  for (const addr of addresses) {
+    for (const h of hits) {
+      if (h.address === addr && !out.some((o) => o.id === h.id)) out.push({ id: h.id, mail_address: h.address });
+    }
+  }
+  return out;
 }
 
 /** Copy each attachment into the bucket once, shared by every mailbox copy. A file Bird no longer has is kept as unavailable. */

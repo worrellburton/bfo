@@ -7,24 +7,10 @@
 import { authFetch } from "./auth";
 import { stateCode } from "./entity-paperwork";
 import type { FormationState } from "./formation";
+import { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateRecord } from "../lib/registry";
 
-export type PalmMode = "test" | "live";
-
-export type PalmAddress = { street_line_1?: string; street_line_2?: string; city?: string; region?: string; postal_code?: string; country?: string } | null | undefined;
-
-export type RegistryRecord = {
-  palm_id?: string;
-  name?: string;
-  formation_jurisdiction?: string;
-  registration_jurisdiction?: string;
-  status?: "active" | "inactive" | "dissolved" | "expired" | "merged" | "withdrawn" | "pending" | "canceled";
-  entity_type?: string;
-  formation_date?: string;
-  registration_number?: string;
-  principal_address?: PalmAddress;
-  associates?: { role?: string; name?: string; title?: string; type?: string; address?: PalmAddress }[];
-  standing?: { registration?: "compliant" | "not_compliant"; tax?: "compliant" | "not_compliant"; agent?: "compliant" | "not_compliant" };
-};
+export type { PalmAddress, PalmMode, RegistryRecord, StateRecord } from "../lib/registry";
+export { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord } from "../lib/registry";
 
 export type RaService = {
   provider: "palm" | "external" | null;
@@ -53,24 +39,9 @@ export type PalmLink = {
   businessId: string;
   palmId?: string | null;
   linkedAt: number;
-  ra?: { status: RaService["status"]; name?: string | null; checkedAt: number };
+  ra?: { status: RaService["status"]; name?: string | null; address?: string | null; checkedAt: number };
   /** Set when BFO formed this entity through Palm (app/formation.ts). */
   formation?: FormationState;
-};
-
-/** The state's record as last read through Palm. */
-export type StateRecord = {
-  mode: PalmMode;
-  name?: string;
-  status?: RegistryRecord["status"];
-  standing?: RegistryRecord["standing"];
-  agent?: string | null;
-  agentAddress?: string | null;
-  formationDate?: string;
-  registrationNumber?: string;
-  jurisdiction?: string;
-  managers?: string[];
-  checkedAt: number;
 };
 
 /** "Nevada" → "US-NV". */
@@ -79,58 +50,11 @@ export function palmJurisdiction(state?: string | null): string | null {
   return code ? `US-${code}` : null;
 }
 
-export function formatAddress(a: PalmAddress): string | null {
-  if (!a) return null;
-  const line = [a.street_line_1, a.street_line_2].filter(Boolean).join(", ");
-  const city = [a.city, [a.region, a.postal_code].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-  return [line, city].filter(Boolean).join(", ") || null;
-}
-
-/** Names compared the way a registry writes them: case, punctuation and "L.L.C." vs "LLC" don't matter. */
-export function normalizeName(name?: string | null): string {
-  return (name ?? "")
-    .toLowerCase()
-    .replace(/\(.*?\)/g, " ")
-    .replace(/l\.\s*l\.\s*c\.?/g, "llc")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-/** The one registry result that is this entity, or null when it's ambiguous. */
-export function pickRegistryMatch<T extends { name?: string; registration_jurisdiction?: string; formation_jurisdiction?: string }>(
-  results: T[],
-  name: string,
-  jurisdiction?: string | null,
-): T | null {
-  const want = normalizeName(name);
-  const same = results.filter((r) => normalizeName(r.name) === want);
-  const home = jurisdiction ? same.filter((r) => r.registration_jurisdiction === jurisdiction || r.formation_jurisdiction === jurisdiction) : same;
-  const pool = home.length ? home : same;
-  return pool.length === 1 ? pool[0] : null;
-}
-
-export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Date.now()): StateRecord {
-  const agent = (r.associates ?? []).find((a) => a.role === "agent");
-  const managers = (r.associates ?? []).filter((a) => a.role === "manager" || a.role === "member" || a.role === "officer" || a.role === "director").map((a) => a.name).filter((n): n is string => !!n);
-  return {
-    mode,
-    name: r.name,
-    status: r.status,
-    standing: r.standing,
-    agent: agent?.name ?? null,
-    agentAddress: formatAddress(agent?.address),
-    formationDate: r.formation_date,
-    registrationNumber: r.registration_number,
-    jurisdiction: r.registration_jurisdiction ?? r.formation_jurisdiction,
-    managers,
-    checkedAt,
-  };
-}
-
 export type Finding = { tone: "bad" | "warn" | "info"; text: string };
 
 /** What the state's record says that our record doesn't — the things to act on. */
-export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; formationDate?: string }): Finding[] {
+
+export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string }): Finding[] {
   const out: Finding[] = [];
   if (rec.status && rec.status !== "active") out.push({ tone: "bad", text: `The state lists it as ${rec.status}, not active.` });
   const s = rec.standing ?? {};
@@ -139,9 +63,14 @@ export function stateFindings(rec: StateRecord, asset: { name?: string; register
   if (s.agent === "not_compliant") out.push({ tone: "bad", text: "The registered agent on file isn't valid." });
   if (rec.agent && asset.registeredAgent && normalizeName(rec.agent) !== normalizeName(asset.registeredAgent)) {
     out.push({ tone: "warn", text: `The state has ${rec.agent} as registered agent; our record says ${asset.registeredAgent}.` });
+  } else if (rec.agentAddress && asset.registeredAgentAddress && !sameAddressText(rec.agentAddress, asset.registeredAgentAddress)) {
+    out.push({ tone: "warn", text: `The state has the agent at ${rec.agentAddress}; our record says ${asset.registeredAgentAddress}.` });
   }
   if (rec.formationDate && asset.formationDate && rec.formationDate.slice(0, 10) !== asset.formationDate) {
     out.push({ tone: "warn", text: `The state's formation date is ${rec.formationDate.slice(0, 10)}; our record says ${asset.formationDate}.` });
+  }
+  if (rec.address && asset.address && !sameAddressText(rec.address, asset.address)) {
+    out.push({ tone: "warn", text: `The state has ${rec.address} as its address; our record says ${asset.address}.` });
   }
   if (rec.name && asset.name && normalizeName(rec.name) !== normalizeName(asset.name)) {
     out.push({ tone: "info", text: `The state's legal name is “${rec.name}”.` });
@@ -183,6 +112,59 @@ export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
   return [...docs].sort((a, b) => rank(a) - rank(b) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
 }
 
+/**
+ * What reading the state's record found: the snapshot (with the patch to save
+ * on the entity), a list of registry entries to choose from when the name
+ * matched more than one or none exactly, or why it couldn't be read.
+ * `choice` is the registry entry the user picked from that list.
+ */
+export type StateLookup =
+  | { kind: "record"; record: StateRecord; patch: Record<string, unknown> }
+  | { kind: "choices"; results: RegistryRecord[]; message?: string }
+  | { kind: "error"; message: string };
+
+export async function lookupStateRecord(
+  entity: { name: string; state?: string; fileNumber?: string; registeredAgent?: string; registeredAgentAddress?: string },
+  mode: PalmMode,
+  choice?: RegistryRecord,
+): Promise<StateLookup> {
+  const jurisdiction = palmJurisdiction(entity.state);
+  if (!jurisdiction) return { kind: "error", message: "Set the entity's state first." };
+  let number = choice ? choice.registration_number : entity.fileNumber;
+  let where = choice?.registration_jurisdiction || jurisdiction;
+  if (choice && !number && choice.palm_id) {
+    // A picked entry without its number: look that exact entry up by its Palm ID.
+    const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { palmId: choice.palm_id, mode });
+    number = results.find((r) => r.palm_id === choice.palm_id)?.registration_number;
+    where = results[0]?.registration_jurisdiction || where;
+  }
+  if (choice && !number) return { kind: "error", message: "That registry entry has no file number. Add it by hand under Edit, then check again." };
+  if (!number) {
+    const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: entity.name, jurisdiction, mode });
+    const match = pickRegistryMatch(results, entity.name, jurisdiction);
+    if (!match) {
+      return {
+        kind: "choices",
+        results,
+        message: results.length ? undefined : `No ${entity.state} registry entry matched “${entity.name}”. Add the state file number under Edit and try again.`,
+      };
+    }
+    number = match.registration_number;
+    where = match.registration_jurisdiction || jurisdiction;
+  }
+  if (!number) return { kind: "error", message: "The registry result had no file number. Add it by hand under Edit." };
+  const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number, mode });
+  const snapshot = toStateRecord(record, mode);
+  const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
+  if (mode === "live" && !entity.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
+  // The agent's street address, as the state has it, when ours is blank and it's the same agent.
+  if (mode === "live" && !entity.registeredAgentAddress?.trim() && snapshot.agentAddress && (!entity.registeredAgent || normalizeName(entity.registeredAgent) === normalizeName(snapshot.agent ?? ""))) {
+    patch.registeredAgentAddress = snapshot.agentAddress;
+    if (!entity.registeredAgent && snapshot.agent) patch.registeredAgent = snapshot.agent;
+  }
+  return { kind: "record", record: snapshot, patch };
+}
+
 export class PalmUnavailable extends Error {}
 
 /** A refused Palm action, with the server's error code (e.g. "mode_changed", "business_mismatch"). */
@@ -203,6 +185,17 @@ export async function palmCall<T = Record<string, unknown>>(action: string, body
   if (r.status === 503 && json?.error === "not_connected") throw new PalmUnavailable(json.message);
   if (!r.ok) throw new PalmCallError(json?.message || `Palm request failed (${r.status}).`, json?.error, r.status);
   return json as T;
+}
+
+/** A Palm document's file. */
+export async function fetchPalmDocument(doc: PalmDocument): Promise<Blob> {
+  const r = await authFetch("/api/palm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "document", documentId: doc.id }),
+  });
+  if (!r.ok) throw new Error("Couldn't fetch that document from Palm.");
+  return r.blob();
 }
 
 /** Open a Palm document in a new tab. */
@@ -231,51 +224,4 @@ export async function openPalmDocument(doc: PalmDocument): Promise<void> {
     a.click();
   }
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
-// ── Cases: Palm asking for something before it can go on ───────────────
-
-export type CaseField = { name: string; type: "string" | "number" | "boolean" | "date" | "document" | "object" | "list" | string; description: string; required?: boolean; example?: unknown; document_types?: string[] };
-export type PalmCase = {
-  id: string;
-  kind: "missing_information" | "legal_name_change" | "ra_termination" | string;
-  status: "needs_response" | "under_review" | "resolved" | "superseded";
-  summary: string;
-  details?: string | null;
-  parent_type: string;
-  parent_id: string;
-  request?: { fields?: CaseField[]; documents?: string[] } | null;
-  response?: { fields?: Record<string, unknown>; documents?: string[] } | null;
-  due_at?: string | null;
-  opened_at?: string;
-  resolved_at?: string | null;
-  resolution_reason?: string | null;
-};
-
-export const CASE_STATUS: Record<PalmCase["status"], string> = {
-  needs_response: "Waiting on you",
-  under_review: "Palm is on it",
-  resolved: "Resolved",
-  superseded: "No longer needed",
-};
-
-/** An object field that wants an address: Palm names them "…address…". */
-export const isAddressField = (f: CaseField) => f.type === "object" && /address/i.test(f.name);
-
-export type StructuredAddress = { street_line_1: string; street_line_2: string; city: string; region: string; postal_code: string; country: string };
-export const EMPTY_STRUCTURED: StructuredAddress = { street_line_1: "", street_line_2: "", city: "", region: "", postal_code: "", country: "US" };
-
-/** "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028" → its parts, for prefilling. Anything else: street only. */
-export function parseUsAddress(text?: string | null): StructuredAddress {
-  const raw = (text ?? "").trim();
-  if (!raw) return { ...EMPTY_STRUCTURED };
-  const m = /^(.*?),\s*([^,]+),\s*([A-Za-z]{2})\.?\s+(\d{5}(?:-\d{4})?)\s*$/.exec(raw);
-  if (!m) return { ...EMPTY_STRUCTURED, street_line_1: raw };
-  const street = m[1].split(",").map((s) => s.trim()).filter(Boolean);
-  return { street_line_1: street[0] ?? "", street_line_2: street.slice(1).join(", "), city: m[2].trim(), region: m[3].toUpperCase(), postal_code: m[4], country: "US" };
-}
-
-/** The address as Palm takes it: blanks left out. */
-export function addressValue(a: StructuredAddress): Record<string, string> {
-  return Object.fromEntries(Object.entries(a).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v));
 }

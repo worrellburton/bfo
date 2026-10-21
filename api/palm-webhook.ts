@@ -1,9 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { logActivity } from "../lib/activity.js";
 import { sb, sendEmail } from "../lib/auth.js";
 import { palm, palmMode } from "../lib/palm.js";
 import { toEventRow, verifyPalmSignature, type PalmEvent } from "../lib/palm-webhook.js";
 import { einPatch, formationPatch, summarizeFiling, type FormationState, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
+
+const PALM = { id: null, name: "Palm", source: "palm" } as const;
 
 /**
  * Palm calls this when something happens to a business it serves: mail the
@@ -12,8 +15,12 @@ import { applyOps, readRows } from "../lib/tree.js";
  * public.palm_events, tied to its BFO entity, for the entity page and Home
  * to show. Legal papers served on an entity also email the owners/admins.
  *
+ * A question Palm opens on a filing (case.opened/updated/resolved) updates
+ * the formation's count of open questions, shows in activity, and emails
+ * the owners and admins to answer it on the entity page.
+ *
  * Set up in Palm Console → Webhooks: URL https://<site>/api/palm-webhook,
- * the document.created and registered_agent.* events, and the signing
+ * the document.created, registered_agent.*, filing.* and case.* events, and the signing
  * secret in Vercel as PALM_WEBHOOK_SECRET.
  */
 
@@ -58,19 +65,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     entityName = business?.display_name ?? null;
   }
 
-  // A case opened on a filing: the filing's metadata says whose it is.
-  if (!assetId && event.type.startsWith("case.") && object.parent_type === "filing" && typeof object.parent_id === "string" && row.mode === palmMode()) {
-    const filing = await palm<{ metadata?: Record<string, string>; business_id?: string | null }>(`/v1/filing/${object.parent_id}`).catch(() => null);
-    assetId = filing?.metadata?.bfo_asset_id ?? null;
-    if (!assetId && filing?.business_id) {
-      const business = await palm<{ metadata?: Record<string, string> }>(`/v1/business/${filing.business_id}`).catch(() => null);
-      assetId = business?.metadata?.bfo_asset_id ?? null;
+  // A question from Palm (case.opened / updated / resolved): find the entity by the filing it's on.
+  if (event.type.startsWith("case.")) {
+    const found = await caseEntity(object, row.mode).catch(() => null);
+    if (found) {
+      assetId = assetId ?? found.assetId;
+      entityName = entityName ?? found.name;
     }
   }
 
   // A formation (or its EIN) moving along: the entity's record follows it.
   if (assetId && event.type.startsWith("filing.") && (object.type === "formation" || object.type === "ein")) {
     await trackFiling(assetId, row.mode, object as unknown as PalmFiling).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
+  }
+
+  if (assetId && event.type.startsWith("case.")) {
+    await onCase(event.id, event.type, assetId, entityName, row.mode, object).catch((err) => console.error("palm-webhook: couldn't record the case", err));
   }
 
   try {
@@ -99,26 +109,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ).catch((err) => console.error("palm alert email failed", err));
       }
     }
-
-    // Palm needs something before it can go on: tell the people who can answer, once.
-    if (isNew && row.mode === "live" && event.type === "case.opened") {
-      const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
-      const to = [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
-      const summary = typeof object.summary === "string" ? object.summary : "Palm needs more information.";
-      if (to.length) {
-        const who = entityName || "one of your entities";
-        const link = assetId ? `${SITE}/assets/${assetId}/compliance` : `${SITE}/assets`;
-        await sendEmail(
-          to,
-          `Palm needs something for ${who}`,
-          `${summary}\n\nAnswer it in BFO:\n${link}`,
-          `<p>${summary.replace(/</g, "&lt;")}</p><p><a href="${link}">Answer it in BFO</a></p>`,
-          undefined,
-          undefined,
-          { idempotencyKey: `palm-${row.id}` },
-        ).catch((err) => console.error("palm case email failed", err));
-      }
-    }
   } catch (err) {
     console.error("palm webhook store failed", err);
     return res.status(500).json({ error: "store_failed" }); // Palm retries
@@ -133,10 +123,56 @@ async function trackFiling(assetId: string, mode: "test" | "live", filing: PalmF
   const prev = ((row?.data ?? {}) as { palm?: Record<string, { formation?: FormationState }> }).palm?.[mode]?.formation ?? null;
   if (filing.type === "ein") {
     if (!prev) return;
-    await applyOps([{ op: "update", path: ["assets", assetId], value: einPatch(filing, mode, prev) as never }]);
+    await applyOps([{ op: "update", path: ["assets", assetId], value: einPatch(filing, mode, prev) as never }], PALM);
     return;
   }
   if (prev && prev.filingId !== filing.id) return; // a different filing than the one this record tracks
   const state = summarizeFiling(filing, prev);
-  await applyOps([{ op: "update", path: ["assets", assetId], value: formationPatch(state, mode, filing.business_id ?? undefined) as never }]);
+  await applyOps([{ op: "update", path: ["assets", assetId], value: formationPatch(state, mode, filing.business_id ?? undefined) as never }], PALM);
+}
+
+/** The entity a case belongs to: the one whose formation (or its EIN) is the case's filing. */
+async function caseEntity(c: Record<string, unknown>, mode: "test" | "live"): Promise<{ assetId: string; name: string | null } | null> {
+  const parent = String(c.parent_id ?? "");
+  if (c.parent_type !== "filing" || !/^[0-9a-f-]{36}$/i.test(parent)) return null;
+  for (const path of [`data->palm->${mode}->formation->>filingId`, `data->palm->${mode}->formation->ein->>filingId`]) {
+    const rows = await sb<{ id: string; name: string | null }[]>(`tree_nodes?collection=eq.assets&${path}=eq.${parent}&select=id,name:data->>name&limit=1`);
+    if (rows[0]) return { assetId: rows[0].id, name: rows[0].name };
+  }
+  return null;
+}
+
+/** A case opened or closed: the formation's count of open questions follows, it shows in activity, and an opened one emails the owners. */
+async function onCase(eventId: string, type: string, assetId: string, entityName: string | null, mode: "test" | "live", c: Record<string, unknown>): Promise<void> {
+  const row = (await readRows("assets", [assetId]))[0];
+  const formation = ((row?.data ?? {}) as { palm?: Record<string, { formation?: FormationState }> }).palm?.[mode]?.formation;
+  // Read the formation again so its open-question count is current.
+  if (formation?.filingId && mode === palmMode()) {
+    const filing = await within(5000, palm<PalmFiling>(`/v1/filing/${formation.filingId}`));
+    if (filing) await trackFiling(assetId, mode, filing);
+  }
+  const summary = String(c.summary ?? "Palm needs more information.");
+  const tag = mode === "test" ? " (test)" : "";
+  if (type === "case.opened") {
+    await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm asked: ${summary}${tag}` }]);
+    if (mode === "live") {
+      const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
+      const to = [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
+      const who = entityName || "one of your entities";
+      const link = `${SITE}/assets/${assetId}`;
+      if (to.length) {
+        await sendEmail(
+          to,
+          `Palm has a question about ${who}`,
+          `Palm needs an answer before the state will accept ${who}'s filing: ${summary}\nAnswer it in BFO: ${link}`,
+          `<p>Palm needs an answer before the state will accept <b>${who.replace(/</g, "&lt;")}</b>'s filing:</p><p>${summary.replace(/</g, "&lt;")}</p><p><a href="${link}">Answer it in BFO</a></p>`,
+          undefined,
+          undefined,
+          { idempotencyKey: `palm-${eventId}` },
+        ).catch((err) => console.error("palm case email failed", err));
+      }
+    }
+  } else if (type === "case.resolved") {
+    await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm closed its question: ${summary}${tag}` }]);
+  }
 }

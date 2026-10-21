@@ -8,7 +8,7 @@ import { useState, type ReactNode } from "react";
 import { isAdmin } from "../auth";
 import { BOI_NOTE, type Obligation, type PaperworkIssue } from "../entity-paperwork";
 import { DOC_LABEL, docKindOf, formatAddress, openPalmDocument, RA_STATUS, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
-import { Cases } from "./cases";
+import { PalmQuestions } from "./palm-questions";
 import { useEntity } from "./context";
 import { fmtDate, fmtStamp } from "./model";
 import { Button, buttonClass, Dot, Empty, ErrorLine, Icon, IconButton, InfoText, InfoToggle, Row, Rows, Section, TextButton, toneText, useTone, type Tone } from "./ui";
@@ -37,7 +37,7 @@ export function ComplianceTab() {
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
-        <Cases />
+        <PalmQuestions title="Palm needs" />
         <RegisteredAgent />
         <Mail />
       </div>
@@ -287,7 +287,7 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
   const choices = page.registryChoices ?? [];
   const stale = !!rec && palmIsAgent && !!startedAt && rec.checkedAt < Date.parse(startedAt);
   const standing = rec?.standing ? (["registration", "tax", "agent"] as const).filter((k) => rec.standing?.[k]) : [];
-  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.managers?.length || !!rec.formationDate || findings.length > 0);
+  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.address || !!rec.managers?.length || !!rec.formationDate || findings.length > 0);
 
   return (
     <div className={`border-t ${t.line}`}>
@@ -355,6 +355,7 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
               {rec.agentAddress && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{rec.agentAddress}</span>}
             </Row>
           )}
+          {rec.address && <Row label="Address on file">{rec.address}</Row>}
           {rec.managers && rec.managers.length > 0 && <Row label="People on file">{rec.managers.join(", ")}</Row>}
           {rec.formationDate && (
             <Row label="Formed">

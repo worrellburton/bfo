@@ -355,6 +355,20 @@ describe("ingest", () => {
     expect(birdCalls.some((c) => c.path.endsWith("/raw"))).toBe(false);
   });
 
+  it("delivers mail to an extra address to the account that has it, once per person", async () => {
+    const ACCOUNTS = "accounting@burtonfamilyoffice.com";
+    birdRoutes = [[/\/body$/, () => json({ html: null, text: "Invoice" })]];
+    sbRoutes = [
+      [/GET mail_aliases\?address=in\./, () => [{ address: ACCOUNTS, user_id: U1 }]],
+      [/GET app_users\?status=eq\.approved&id=in\./, () => [{ id: U1 }]],
+      [/GET app_users\?status=eq\.approved&mail_address=in\./, () => [{ id: U1, mail_address: ROBERT }]],
+      [/POST mail_messages/, (c) => c.body.map(() => ({ id: "r" }))],
+    ];
+    // Addressed to both of Robert's addresses: one copy, delivered at the first one named.
+    expect(await ingestInbound(inbound({ id: "rem_a", to: [{ email: ACCOUNTS }, { email: ROBERT }] }))).toBe(1);
+    expect(inserted()!.body).toEqual([expect.objectContaining({ user_id: U1, dedupe_key: `in:rem_a:${U1}`, delivered_to: ACCOUNTS })]);
+  });
+
   it("falls back to the envelope headers when To/Cc name nobody here", async () => {
     birdRoutes = [
       [/\/raw$/, () => new Response("Received: by rx1.us1.inbound.bird.com\r\n for <claire@burtonfamilyoffice.com>; Tue\r\nTo: list@lists.example.com\r\n\r\nbody")],
@@ -688,7 +702,7 @@ describe("/api/mail", () => {
     me = { id: U2, name: "Claire Burton", role: "email", status: "approved", mail_address: CLAIRE };
     unreadTotal = 4;
     const r = await call("GET", { query: { view: "count" } });
-    expect(r).toEqual({ status: 200, json: { unread: 4, otherUnread: 0, address: CLAIRE, canSeeOther: false } });
+    expect(r).toEqual({ status: 200, json: { unread: 4, otherUnread: 0, address: CLAIRE, aliases: [], canSeeOther: false } });
     expect(currentUserMock).toHaveBeenCalledWith(expect.anything(), { allowEmailOnly: true });
     expect(sbCalls.filter((c) => c.method === "COUNT").map((c) => c.path)).toEqual([`mail_messages?user_id=eq.${U2}&folder=eq.inbox&read_at=is.null&select=created_at&limit=1`]);
   });
@@ -697,7 +711,7 @@ describe("/api/mail", () => {
     // A name the user typed (complete-profile) must not claim robert@ or accounting@.
     me = { id: U2, name: "Accounting", role: "email", status: "approved", mail_address: null };
     const r = await call("GET", { query: { view: "count" } });
-    expect(r).toEqual({ status: 200, json: { unread: 0, otherUnread: 0, address: null, canSeeOther: false } });
+    expect(r).toEqual({ status: 200, json: { unread: 0, otherUnread: 0, address: null, aliases: [], canSeeOther: false } });
     const sent = await call("POST", { body: { action: "send", sendId: SEND_ID, to: ["jane@example.com"], subject: "Hi", text: "Hi" } });
     expect(sent).toEqual({ status: 400, json: { error: "no_address", message: "You don't have an address yet. Ask an admin." } });
     expect(sbCalls.some((c) => c.path.startsWith("app_users") || c.path.startsWith("mail_sends"))).toBe(false);
@@ -709,7 +723,7 @@ describe("/api/mail", () => {
     unreadTotal = 2;
     sbRoutes = [[/GET mail_sync/, () => [{ synced_at: "2026-10-14T12:00:00Z", error: "Bird refused (403): the API key can't read received mail" }]]];
     const r = await call("GET", { query: { view: "count" } });
-    expect(r.json).toEqual({ unread: 2, otherUnread: 2, address: ROBERT, canSeeOther: true, sync: { error: "Bird refused (403): the API key can't read received mail" } });
+    expect(r.json).toEqual({ unread: 2, otherUnread: 2, address: ROBERT, aliases: [], canSeeOther: true, sync: { error: "Bird refused (403): the API key can't read received mail" } });
     expect(sbCalls.some((c) => c.method === "COUNT" && c.path.startsWith("mail_messages?user_id=is.null&folder=eq.inbox&read_at=is.null"))).toBe(true);
   });
 
@@ -866,6 +880,61 @@ describe("/api/mail", () => {
     expect(storageCalls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/object/mail/out/m/0-b"]);
   });
 
+  describe("extra addresses", () => {
+    const ACCOUNTS = "accounting@burtonfamilyoffice.com";
+    let aliases: { address: string; user_id: string }[] = [];
+    beforeEach(() => {
+      aliases = [];
+      sbRoutes = [
+        [/GET mail_aliases\?user_id=eq\./, () => aliases.map((a) => ({ address: a.address }))],
+        [/GET app_users\?mail_address=eq\./, (c) => (c.path.includes("claire") ? [{ id: U2 }] : [])],
+        [/POST mail_aliases$/, (c) => {
+          aliases.push(...c.body);
+          return null;
+        }],
+        [/DELETE mail_aliases\?/, (c) => {
+          aliases = aliases.filter((a) => !decodeURIComponent(c.path).includes(a.address));
+          return null;
+        }],
+      ];
+    });
+
+    it("lets an owner or admin add and remove addresses on their own account", async () => {
+      me = owner;
+      expect(await call("POST", { body: { action: "alias-add", address: "accounting" } })).toEqual({ status: 200, json: { aliases: [ACCOUNTS] } });
+      expect(aliases).toEqual([{ address: ACCOUNTS, user_id: U1 }]);
+      expect((await call("GET", { query: { view: "count" } })).json.aliases).toEqual([ACCOUNTS]);
+      expect(await call("POST", { body: { action: "alias-remove", address: ACCOUNTS } })).toEqual({ status: 200, json: { aliases: [] } });
+    });
+
+    it("shows one mailbox at a time: mail to that address, or sent from it", async () => {
+      me = owner;
+      aliases = [{ address: ACCOUNTS, user_id: U1 }];
+      sbRoutes.push([/GET mail_messages\?/, () => []]);
+      expect((await call("GET", { query: { view: "list", to: "Accounting@BurtonFamilyOffice.com" } })).status).toBe(200);
+      const inbox = sbCalls.filter((c) => c.method === "GET" && c.path.startsWith("mail_messages?")).pop()!.path;
+      expect(decodeURIComponent(inbox)).toContain(`delivered_to.eq."${ACCOUNTS}"`);
+      await call("GET", { query: { view: "list", folder: "sent", to: ACCOUNTS } });
+      expect(decodeURIComponent(sbCalls.filter((c) => c.path.startsWith("mail_messages?")).pop()!.path)).toContain(`from_email.eq."${ACCOUNTS}"`);
+      // The main address also takes older mail with no delivered-to.
+      await call("GET", { query: { view: "list", to: ROBERT } });
+      expect(decodeURIComponent(sbCalls.filter((c) => c.path.startsWith("mail_messages?")).pop()!.path)).toContain("delivered_to.is.null");
+      // Someone else's address isn't a mailbox of mine.
+      expect((await call("GET", { query: { view: "list", to: "claire@burtonfamilyoffice.com" } })).json).toEqual({ error: "bad_mailbox" });
+    });
+
+    it("refuses someone else's address, system addresses, other domains, and members", async () => {
+      me = owner;
+      expect(await call("POST", { body: { action: "alias-add", address: "claire" } })).toMatchObject({ status: 409, json: { error: "address_taken" } });
+      expect(await call("POST", { body: { action: "alias-add", address: "postmaster" } })).toMatchObject({ status: 400, json: { error: "invalid_mail_address" } });
+      expect(await call("POST", { body: { action: "alias-add", address: "me@gmail.com" } })).toMatchObject({ status: 400, json: { error: "invalid_mail_address" } });
+      expect(await call("POST", { body: { action: "alias-add", address: ROBERT } })).toMatchObject({ status: 409, json: { error: "address_taken" } });
+      me = robert;
+      expect(await call("POST", { body: { action: "alias-add", address: "accounting" } })).toMatchObject({ status: 403 });
+      expect(aliases).toEqual([]);
+    });
+  });
+
   describe("send", () => {
     const send = (over: Record<string, unknown> = {}) =>
       call("POST", { body: { action: "send", sendId: SEND_ID, to: ["Jane <Jane@Example.com>"], subject: "Re: Hello", text: "Thanks!\n\n> Hi Robert", ...over } });
@@ -880,6 +949,17 @@ describe("/api/mail", () => {
     });
     const storedCopy = () => sbCalls.find((c) => c.method === "POST" && c.path.startsWith("mail_messages"));
     const reservations = () => sbCalls.filter((c) => c.method === "POST" && c.path.startsWith("mail_sends"));
+
+    it("sends from one of the caller's own addresses, and only theirs", async () => {
+      const ACCOUNTS = "accounting@burtonfamilyoffice.com";
+      sbRoutes.unshift([/GET mail_aliases\?user_id=eq\./, () => [{ address: ACCOUNTS }]]);
+      expect(await send({ from: "claire@burtonfamilyoffice.com" })).toMatchObject({ status: 400, json: { error: "bad_from" } });
+      expect(birdCalls).toEqual([]);
+      expect((await send({ from: "Accounting@BurtonFamilyOffice.com" })).status).toBe(200);
+      const sent = birdCalls.find((c) => c.path.endsWith("/v1/email/messages"))!.body;
+      expect((typeof sent === "string" ? JSON.parse(sent) : sent).from).toEqual({ email: ACCOUNTS, name: "Robert Burton" });
+      expect(storedCopy()!.body).toMatchObject({ from_email: ACCOUNTS });
+    });
 
     it("refuses bad recipients and too many, before calling Bird", async () => {
       expect(await send({ to: ["jane@"] })).toMatchObject({ status: 400, json: { error: "bad_address", message: expect.stringContaining("jane@") } });
