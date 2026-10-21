@@ -30,7 +30,7 @@ import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
 import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
 
-const iconCls = "w-[18px] h-[18px] shrink-0";
+const iconCls = "w-4 h-4 shrink-0";
 
 /** Mail's folders all live on /inbox, told apart by ?f= (inbox when absent). */
 const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "inbox") === f;
@@ -538,13 +538,13 @@ export default function AppLayout() {
         onMouseLeave={() => setHovering(false)}
         className={`
           sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r
-          w-[260px] lg:w-[var(--rail)]
+          w-[240px] lg:w-[var(--rail)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
           ${isDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
         `}
       >
         {/* Top: the wordmark */}
-        <div className={`flex items-center gap-2 px-4 h-16 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
+        <div className={`flex items-center gap-2 px-3 h-12 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
           {logoModel ? (
             <span className="sidebar-logo" aria-label="BFO">
               <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
@@ -570,26 +570,26 @@ export default function AppLayout() {
 
         {/* Jump to anything — the palette's front door in the rail. */}
         {!emailOnly && !partner && (
-          <div className="px-3 pb-2">
+          <div className="px-2 pb-1.5">
             <button
               type="button"
               onClick={openPalette}
               title={showLabels ? undefined : "Search (⌘K)"}
               aria-label="Search and jump to"
-              className={`flex w-full items-center rounded-lg border text-sm transition-colors cursor-pointer px-3 py-2 ${
-                labelsVisible ? "" : "lg:justify-center lg:px-0 lg:border-transparent"
+              className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 ${
+                labelsVisible ? "" : "lg:justify-center lg:px-0"
               } ${
                 isDark
-                  ? "border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/5"
-                  : "border-gray-200 bg-white/60 text-gray-500 hover:text-black hover:bg-black/5"
+                  ? "text-gray-400 hover:text-white hover:bg-white/[0.05]"
+                  : "text-gray-500 hover:text-black hover:bg-black/[0.04]"
               }`}
             >
-              <svg className="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
                   <circle cx="11" cy="11" r="7" />
                   <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
                 </svg>
               <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "lg:hidden"}`}>Search</span>
-              <kbd className={`hidden text-[11px] ${labelsVisible ? "lg:inline" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
+              <kbd className={`hidden text-[10.5px] ${labelsVisible ? "lg:inline" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
             </button>
           </div>
         )}
@@ -597,19 +597,19 @@ export default function AppLayout() {
         <SidebarNav items={items} isDark={isDark} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
-        <div className="relative mt-auto p-3" ref={userMenuRef}>
+        <div className="relative mt-auto p-2" ref={userMenuRef}>
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             aria-expanded={userMenuOpen}
             aria-haspopup="menu"
             title={showLabels ? undefined : displayName(user)}
             aria-label={showLabels ? undefined : displayName(user)}
-            className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer ${
               showLabels ? "" : "lg:justify-center lg:px-0"
             } ${isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
           >
             <div
-              className={`relative w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+              className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold shrink-0 ${
                 isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
               }`}
             >
@@ -620,7 +620,7 @@ export default function AppLayout() {
             </div>
             <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "lg:hidden"}`}>
               <span className="block truncate font-medium">{displayName(user)}</span>
-              <span className={`block truncate text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+              <span className={`block truncate text-[11.5px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>
                 {user?.email || user?.phoneFormatted || "Signed in"}
               </span>
             </span>
