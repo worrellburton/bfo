@@ -32,3 +32,10 @@ describe("matching a registry entry", () => {
     expect(pickRegistryMatch([{ name: "BREEZEWOOD LLC", registration_jurisdiction: "US-NV" }], "Breezewood", "US-AZ")).toBeNull();
   });
 });
+
+describe("what the daily check skips", () => {
+  it("skips an entity still being formed, and a state it only gets mail in", () => {
+    expect(statesToRead({ name: "T LLC", type: "LLC", state: "Delaware", palm: { live: { formation: { status: "processing" } } } })).toEqual([]);
+    expect(statesToRead({ name: "T LLC", type: "LLC", state: "Delaware", address: "1 Main St, Phoenix, AZ 85014", foreign: { AZ: { notNeeded: true } } })).toEqual([{ code: "DE", home: true }]);
+  });
+});

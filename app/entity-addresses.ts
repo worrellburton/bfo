@@ -12,7 +12,7 @@
  * state) and against the state's own record when it's been read through Palm.
  */
 
-import { addressState, agentTerm, entityType, stateCode, stateName } from "./entity-paperwork";
+import { addressState, agentTerm, entityType, hostState, stateCode, stateName } from "./entity-paperwork";
 import { sameAddressText, type StateRecord } from "./palm";
 
 /** A state the entity is registered in as a foreign entity, keyed by its two-letter code. */
@@ -22,6 +22,10 @@ export type ForeignRegistration = {
   fileNumber?: string;
   /** The state's record, read through Palm. */
   record?: StateRecord;
+  /** Someone said it doesn't do business here (its address is here, nothing more). */
+  notNeeded?: boolean;
+  /** Someone said it does business here, so it must register. */
+  confirmed?: boolean;
 };
 
 export type AddressInput = {
@@ -35,7 +39,7 @@ export type AddressInput = {
   registeredAgentSource?: string;
   stateRecord?: StateRecord;
   foreign?: Record<string, ForeignRegistration>;
-  palm?: { live?: { ra?: { status?: string | null } } };
+  palm?: Partial<Record<"live" | "test", { ra?: { status?: string | null } | null; formation?: { status?: string; registeredAgent?: { status: string } | null } | null }>>;
   /** A state whose registry had no entry (or several) for it, from the state-record check. */
   registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
 };
@@ -54,13 +58,26 @@ export type AgentLine = {
   palm: boolean;
   fileNumber: string | null;
   record: StateRecord | null;
+  /** Only its address puts it here: ask whether it does business in this state. */
+  ask: boolean;
   checks: Check[];
 };
+
+/** A formation still with the state (through Palm), in either mode. */
+export function formingNow(a: AddressInput): { palmAgent: boolean } | null {
+  for (const m of ["live", "test"] as const) {
+    const f = a.palm?.[m]?.formation;
+    if (f && f.status !== "completed" && f.status !== "canceled") return { palmAgent: !!f.registeredAgent };
+  }
+  return null;
+}
 
 export type Addresses = {
   principal: { value: string | null; checks: Check[] };
   mailing: { value: string | null; same: boolean; checks: Check[] };
   agents: AgentLine[];
+  /** States its address is in that it doesn't do business in, as someone said. */
+  notNeeded: string[];
   /** Everything not "good", worst first: the gaps. */
   gaps: (Check & { where: string })[];
 };
@@ -74,8 +91,8 @@ const norm = (s?: string | null) => (s ?? "").toLowerCase().replace(/[.,]/g, "")
 /** The states that need a foreign registration: where it's run from, plus any already on record. */
 export function foreignStates(a: AddressInput): string[] {
   const home = stateCode(a.state);
-  const out = new Set(Object.keys(a.foreign ?? {}).filter((c) => c !== home));
-  const host = addressState(a.address);
+  const out = new Set(Object.entries(a.foreign ?? {}).filter(([c, f]) => c !== home && !f?.notNeeded).map(([c]) => c));
+  const host = hostState(a);
   if (home && host && host !== home) out.add(host);
   return [...out].sort();
 }
@@ -135,12 +152,20 @@ export function entityAddresses(a: AddressInput): Addresses {
       palm: palmActive,
       fileNumber: null,
       record: rec,
+      ask: false,
     };
-    const homeMiss = !rec ? a.registryMiss?.[home] : undefined;
+    const forming = formingNow(a);
+    if (forming?.palmAgent && !base.name) Object.assign(base, { name: "Palm", palm: true });
+    const homeMiss = !rec && !forming ? a.registryMiss?.[home] : undefined;
     const homeLead: Check[] = homeMiss
       ? [{ tone: "warn", text: `${base.stateLabel}'s registry had ${homeMiss.outcome === "not_found" ? "no entry" : "more than one entry"} for this name (checked ${new Date(homeMiss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}). Add the state file number under Edit, unless it's still being formed.` }]
       : [];
-    agents.push({ ...base, checks: [...homeLead, ...agentChecks(base)] });
+    agents.push({
+      ...base,
+      checks: forming?.palmAgent && base.palm
+        ? [{ tone: "info", text: `Palm becomes the registered agent when ${base.stateLabel} approves the formation; its address shows then.` }]
+        : [...homeLead, ...agentChecks(base)],
+    });
     for (const code of foreignStates(a)) {
       const f = a.foreign?.[code] ?? {};
       const line = {
@@ -153,8 +178,9 @@ export function entityAddresses(a: AddressInput): Addresses {
         palm: /palm/i.test(f.agent ?? ""),
         fileNumber: (f.fileNumber ?? "").trim() || null,
         record: f.record ?? null,
+        ask: !f.confirmed && !f.agent?.trim() && !f.fileNumber?.trim() && !f.record,
       };
-      const miss = !f.record ? a.registryMiss?.[code] : undefined;
+      const miss = !f.record && !forming ? a.registryMiss?.[code] : undefined;
       const when = miss ? new Date(miss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
       const lead: Check[] = miss
         ? [
@@ -163,7 +189,13 @@ export function entityAddresses(a: AddressInput): Addresses {
               : { tone: "warn", text: `${line.stateLabel}'s registry has more than one entry like this name (checked ${when}). Add the file number under Edit.` },
           ]
         : [];
-      agents.push({ ...line, checks: [...lead, ...agentChecks(line)] });
+      const what = entityType(a) === "C-Corp" ? "corporation" : "LLC";
+      agents.push({
+        ...line,
+        checks: line.ask
+          ? [{ tone: "warn", text: `Its address is in ${line.stateLabel}. If it does business there (an office, staff, patients or customers, operating property), it must register there as a foreign ${what}, with a ${line.term.toLowerCase()} in ${line.stateLabel}. If ${line.stateLabel} is only where its mail goes, it doesn't.` }]
+          : [...lead, ...agentChecks(line)],
+      });
     }
   }
 
@@ -180,6 +212,7 @@ export function entityAddresses(a: AddressInput): Addresses {
     principal: { value: principal, checks: pChecks },
     mailing: { value: mailingOwn ?? principal, same: !mailingOwn, checks: mChecks },
     agents,
+    notNeeded: Object.entries(a.foreign ?? {}).filter(([, f]) => f?.notNeeded).map(([c]) => c).sort(),
     gaps,
   };
 }

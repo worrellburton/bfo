@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { agentTerm, stateCode, stateName } from "../entity-paperwork";
-import { entityAddresses, foreignStates, type Check } from "../entity-addresses";
+import { entityAddresses, foreignStates, formingNow, type Check } from "../entity-addresses";
 import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
 import { STABLE_ADDRESS } from "../paper-mail";
 import { f8822bData, stateAddressStep } from "../paperwork-generate";
@@ -336,6 +336,7 @@ function Addresses() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   if (view.isTrust) return null;
   const a = entityAddresses(asset);
+  const forming = formingNow(asset);
   const alerts = a.gaps.filter((g) => g.tone === "bad" || g.tone === "warn").length;
   const source = asset.registeredAgentSource ?? "";
   const palmStopped = source.startsWith("Palm stopped");
@@ -350,8 +351,8 @@ function Addresses() {
     list.length > 0 && (
       <span className="mt-1.5 flex flex-col gap-1">
         {list.map((c) => (
-          <Dot key={c.text} tone={c.tone === "info" ? "muted" : c.tone}>
-            <span className="text-[12px]">{c.text}</span>
+          <Dot key={c.text} tone={c.tone === "info" ? "muted" : c.tone} className="!items-start !whitespace-normal [&>span:first-child]:mt-[6px] [&>span:first-child]:shrink-0">
+            <span className="text-[12px] leading-snug">{c.text}</span>
           </Dot>
         ))}
       </span>
@@ -405,8 +406,8 @@ function Addresses() {
             info={g.home && source ? source : !g.home && g.record ? `${g.stateLabel}'s record read through Palm, ${fmtStamp(g.record.checkedAt)}.` : undefined}
             actions={
               g.home ? (
-                <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
-              ) : page.palmStatus?.configured ? (
+                forming && g.palm ? undefined : <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
+              ) : g.ask ? undefined : page.palmStatus?.configured ? (
                 <TextButton onClick={() => void check(g.state)} disabled={page.foreignBusy === g.state}>
                   {page.foreignBusy === g.state ? "Checking…" : g.record ? `Re-check ${g.state}` : `Check ${g.state} record`}
                 </TextButton>
@@ -425,9 +426,27 @@ function Addresses() {
             {g.address && <span className={`mt-0.5 block text-[12.5px] ${t.soft}`}>{g.address}</span>}
             {g.fileNumber && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>File number <span className="font-mono tabular-nums">{g.fileNumber}</span></span>}
             {checks(g.checks)}
+            {g.ask && (
+              <span className="mt-2 flex flex-wrap gap-2">
+                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/confirmed`]: true, [`foreign/${g.state}/notNeeded`]: null })}>
+                  It does business in {g.stateLabel}
+                </Button>
+                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/notNeeded`]: true, [`foreign/${g.state}/confirmed`]: null })}>
+                  Only its mail goes there
+                </Button>
+              </span>
+            )}
             {errors[g.state] && <span className={`mt-1 block text-[12px] ${toneText("bad", t.dark)}`}>{errors[g.state]}</span>}
           </Row>
         ))}
+        {a.notNeeded.length > 0 && (
+          <Row label="Not registered in">
+            <span className={t.soft}>
+              {a.notNeeded.map((c) => stateName(c)).join(", ")}: its address is there, but it doesn't do business there.
+            </span>{" "}
+            <TextButton onClick={() => void page.patchAsset(Object.fromEntries(a.notNeeded.map((c) => [`foreign/${c}/notNeeded`, null])))}>Undo</TextButton>
+          </Row>
+        )}
       </Rows>
     </Section>
   );

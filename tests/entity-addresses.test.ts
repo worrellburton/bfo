@@ -13,8 +13,9 @@ describe("an entity's addresses", () => {
     expect(a.principal.value).toBe(STABLE);
     expect(a.mailing).toMatchObject({ value: STABLE, same: true });
     expect(a.agents.map((g) => [g.state, g.term, g.home])).toEqual([["DE", "Registered agent", true], ["AZ", "Statutory agent", false]]);
-    // Run from Phoenix: Arizona needs its own statutory agent.
-    expect(a.gaps[0]).toMatchObject({ tone: "bad", where: "Statutory agent · Arizona" });
+    // Its address is in Phoenix: BFO asks whether it does business in Arizona.
+    expect(a.gaps[0]).toMatchObject({ tone: "warn", where: "Statutory agent · Arizona" });
+    expect(a.agents[1].ask).toBe(true);
   });
 
   it("refuses an agent at a mailbox or out of state", () => {
@@ -49,7 +50,31 @@ describe("an entity's addresses", () => {
 
 describe("a state with no registration", () => {
   it("says it isn't registered there yet", () => {
-    const a = entityAddresses({ name: "Ledger Louise, LLC", type: "LLC", state: "Nevada", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014", registeredAgent: "NW", registeredAgentAddress: "732 S 6th St, Las Vegas, NV 89101", registryMiss: { AZ: { outcome: "not_found", at: Date.parse("2026-10-20T21:40:00Z") } } });
+    const a = entityAddresses({ name: "Ledger Louise, LLC", type: "LLC", state: "Nevada", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014", registeredAgent: "NW", registeredAgentAddress: "732 S 6th St, Las Vegas, NV 89101", registryMiss: { AZ: { outcome: "not_found", at: Date.parse("2026-10-20T21:40:00Z") } }, foreign: { AZ: { confirmed: true } } });
     expect(a.agents[1].checks[0].text).toMatch(/^Not registered in Arizona: its registry had no entry for this name \(checked Oct 20\)/);
+  });
+});
+
+describe("an entity formed through BFO, still with the state", () => {
+  const forming = {
+    name: "TallulahMD LLC", type: "LLC", state: "Delaware", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014",
+    palm: { live: { formation: { status: "processing", registeredAgent: { status: "pending" } } } },
+    registryMiss: { DE: { outcome: "not_found" as const, at: 0 }, AZ: { outcome: "not_found" as const, at: 0 } },
+  };
+
+  it("has Palm as its agent to be, and no registry miss", () => {
+    const g = entityAddresses(forming).agents[0];
+    expect(g).toMatchObject({ name: "Palm", palm: true });
+    expect(g.checks).toEqual([{ tone: "info", text: "Palm becomes the registered agent when Delaware approves the formation; its address shows then." }]);
+  });
+
+  it("asks about Arizona instead of assuming, and drops it once told it's only mail", () => {
+    const az = entityAddresses(forming).agents[1];
+    expect(az.ask).toBe(true);
+    expect(az.checks[0].text).toMatch(/^Its address is in Arizona\. If it does business there/);
+    const mailOnly = entityAddresses({ ...forming, foreign: { AZ: { notNeeded: true } } });
+    expect(mailOnly.agents.map((g) => g.state)).toEqual(["DE"]);
+    expect(mailOnly.notNeeded).toEqual(["AZ"]);
+    expect(entityAddresses({ ...forming, foreign: { AZ: { confirmed: true } } }).agents[1].checks[0].tone).toBe("bad");
   });
 });

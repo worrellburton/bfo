@@ -1,4 +1,4 @@
-import { addressState, stateCode } from "../app/entity-paperwork.js";
+import { hostState, stateCode } from "../app/entity-paperwork.js";
 import { palm, palmMode } from "./palm.js";
 import { baseName, normalizeName, pickRegistryMatch, searchName, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
 import { applyOps, readCollection, type TreeOp } from "./tree.js";
@@ -26,7 +26,8 @@ type Rec = {
   stateRecord?: StateRecord;
   /** A state whose registry had no entry (or several) for it, and when that was found. */
   registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
-  foreign?: Record<string, { agent?: string; agentAddress?: string; fileNumber?: string; record?: StateRecord }>;
+  foreign?: Record<string, { agent?: string; agentAddress?: string; fileNumber?: string; record?: StateRecord; notNeeded?: boolean }>;
+  palm?: Record<string, { formation?: { status?: string } | null } | undefined>;
 };
 
 export type CheckResult = { id: string; name: string; state: string; outcome: "read" | "fresh" | "not_found" | "ambiguous" | "error"; detail?: string };
@@ -36,8 +37,10 @@ export function statesToRead(a: Rec): { code: string; home: boolean }[] {
   if (a.type === "Trust" || /\btrust\b/i.test(a.name ?? "")) return [];
   const home = stateCode(a.state);
   if (!home) return [];
-  const foreign = new Set(Object.keys(a.foreign ?? {}).filter((c) => c !== home));
-  const host = addressState(a.address);
+  // Still being formed: the state has nothing to read yet.
+  if (Object.values(a.palm ?? {}).some((p) => p?.formation && p.formation.status !== "completed" && p.formation.status !== "canceled")) return [];
+  const foreign = new Set(Object.entries(a.foreign ?? {}).filter(([c, f]) => c !== home && !f?.notNeeded).map(([c]) => c));
+  const host = hostState(a);
   if (host && host !== home) foreign.add(host);
   return [{ code: home, home: true }, ...[...foreign].sort().map((code) => ({ code, home: false }))];
 }

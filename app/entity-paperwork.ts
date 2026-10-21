@@ -100,7 +100,7 @@ export type PaperworkInput = {
   registeredAgentAddress?: string;
   mailingAddress?: string;
   /** States it's registered in as a foreign entity, with the agent there. */
-  foreign?: Record<string, { agent?: string; agentAddress?: string }>;
+  foreign?: Record<string, { agent?: string; agentAddress?: string; notNeeded?: boolean }>;
   /** Federal tax class. */
   llcType?: string;
   trustees?: string;
@@ -150,6 +150,15 @@ export function addressState(address?: string | null): string | null {
   if (m && CODE_NAMES[m[1].toUpperCase()]) return m[1].toUpperCase();
   const named = Object.keys(STATE_CODES).find((n) => new RegExp(`\\b${n}\\b`, "i").test(a));
   return named ? STATE_CODES[named] : null;
+}
+
+/**
+ * The state it's run from, by its principal office, unless someone has said
+ * it doesn't do business there (a mailbox there, say, and nothing more).
+ */
+export function hostState(a: { address?: string; foreign?: Record<string, { notNeeded?: boolean }> }): string | null {
+  const host = addressState(a.address);
+  return host && a.foreign?.[host]?.notNeeded ? null : host;
 }
 
 /** Arizona counties over 800,000 people, where the ACC publishes notices itself. */
@@ -282,7 +291,7 @@ function monthsSince(iso: string | undefined, today: Date): number | null {
 export function documentRules(a: PaperworkInput, today = new Date()): DocRule[] {
   const type = entityType(a);
   const st = stateCode(a.state);
-  const host = addressState(a.address);
+  const host = hostState(a);
   const tax = taxClassOf(a).value;
   const rules: DocRule[] = [];
 
@@ -599,7 +608,7 @@ export function obligations(a: PaperworkInput, today = new Date(), taxHomeName?:
       urlLabel: "Arizona Business Center",
     });
   }
-  const host = addressState(a.address);
+  const host = hostState(a);
   if (type === "C-Corp" && st && host === "NY" && st !== "NY") {
     out.push({
       key: "ny-biennial",
@@ -653,7 +662,7 @@ export type PaperworkIssue = {
 export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
   const type = entityType(a);
   const st = stateCode(a.state);
-  const host = addressState(a.address);
+  const host = hostState(a);
   const recorded = (a.llcType ?? "").trim();
   const tax = taxClassOf(a);
   const owner = a.owner ?? null;
