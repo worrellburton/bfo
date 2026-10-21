@@ -58,6 +58,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     entityName = business?.display_name ?? null;
   }
 
+  // A case opened on a filing: the filing's metadata says whose it is.
+  if (!assetId && event.type.startsWith("case.") && object.parent_type === "filing" && typeof object.parent_id === "string" && row.mode === palmMode()) {
+    const filing = await palm<{ metadata?: Record<string, string>; business_id?: string | null }>(`/v1/filing/${object.parent_id}`).catch(() => null);
+    assetId = filing?.metadata?.bfo_asset_id ?? null;
+    if (!assetId && filing?.business_id) {
+      const business = await palm<{ metadata?: Record<string, string> }>(`/v1/business/${filing.business_id}`).catch(() => null);
+      assetId = business?.metadata?.bfo_asset_id ?? null;
+    }
+  }
+
   // A formation (or its EIN) moving along: the entity's record follows it.
   if (assetId && event.type.startsWith("filing.") && (object.type === "formation" || object.type === "ein")) {
     await trackFiling(assetId, row.mode, object as unknown as PalmFiling).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
@@ -87,6 +97,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           undefined,
           { idempotencyKey: `palm-${row.id}` },
         ).catch((err) => console.error("palm alert email failed", err));
+      }
+    }
+
+    // Palm needs something before it can go on: tell the people who can answer, once.
+    if (isNew && row.mode === "live" && event.type === "case.opened") {
+      const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
+      const to = [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
+      const summary = typeof object.summary === "string" ? object.summary : "Palm needs more information.";
+      if (to.length) {
+        const who = entityName || "one of your entities";
+        const link = assetId ? `${SITE}/assets/${assetId}/compliance` : `${SITE}/assets`;
+        await sendEmail(
+          to,
+          `Palm needs something for ${who}`,
+          `${summary}\n\nAnswer it in BFO:\n${link}`,
+          `<p>${summary.replace(/</g, "&lt;")}</p><p><a href="${link}">Answer it in BFO</a></p>`,
+          undefined,
+          undefined,
+          { idempotencyKey: `palm-${row.id}` },
+        ).catch((err) => console.error("palm case email failed", err));
       }
     }
   } catch (err) {

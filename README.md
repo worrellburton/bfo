@@ -99,6 +99,17 @@ it turns and can be dragged) and in the app's corner; "Back to the wordmark"
 undoes it. State lives in `brand_settings`; `/api/brand` serves the current
 logo to anyone and the studio to admins.
 
+### Palm cases
+
+When Palm can't finish something (a registered agent change, a formation)
+without information only you have, it opens a *case* listing what it needs and
+sends a `case.opened` webhook; owners and admins get an email. The entity's
+Compliance tab shows the case under "Palm needs" with a form built from Palm's
+own field list. Address fields are prefilled from the entity's principal
+address (the mailing address follows it until unticked). "Send to Palm" posts
+the answer to Palm's case API; the case shows as "Palm is on it" until Palm
+resolves it. Only owners and admins can answer.
+
 ### Forming an entity
 
 "New entity" on `/assets` records an entity that already exists, or hands off to

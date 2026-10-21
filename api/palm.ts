@@ -28,6 +28,10 @@ import {
  *   inbox             { assetId?, unread? }            → mail and agent events Palm has sent (webhook)
  *   inbox-read        { ids } | { assetId }            → mark them read
  *
+ * Cases (Palm asking for something before it can go on):
+ *   cases             { assetId, businessId? }         → open and recent cases on the business and its formation filing
+ *   case-respond      { caseId, fields, documents?, mode } → owner/admin: the answer, keyed as Palm asked
+ *
  * Forming a new entity (lib/palm-formation.ts):
  *   form-requirements { jurisdiction, entityType }     → what the state asks for: extra fields, expedite tiers
  *   form-name         { jurisdiction, entityType, name } → is the name compliant and available
@@ -72,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
-  const mustMatchMode = action === "link" || action === "ra-change" || action === "form-submit" || action === "form-status";
+  const mustMatchMode = action === "link" || action === "ra-change" || action === "form-submit" || action === "form-status" || action === "case-respond";
   if ((body.mode !== undefined || mustMatchMode) && body.mode !== mode) {
     return res.status(409).json({ error: "mode_changed", mode, message: `Palm is now in ${mode} mode. Reload the page and check again before going on.` });
   }
@@ -250,6 +254,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true });
       }
 
+      // ── Cases ───────────────────────────────────────────────────────────
+      case "cases": {
+        const assetId = String(body.assetId ?? "");
+        if (!/^[\w-]{1,128}$/.test(assetId)) return res.status(400).json({ error: "bad_asset_id" });
+        const businessId = UUID.test(String(body.businessId ?? "")) ? String(body.businessId) : null;
+        const row = (await readRows("assets", [assetId]))[0];
+        const link = ((row?.data ?? {}) as { palm?: Record<string, { businessId?: string | null; formation?: { filingId?: string } }> }).palm?.[mode];
+        const parents: { parent_type: string; parent_id: string }[] = [];
+        const bid = businessId ?? link?.businessId ?? null;
+        if (bid && UUID.test(bid)) parents.push({ parent_type: "business", parent_id: bid });
+        if (link?.formation?.filingId && UUID.test(link.formation.filingId)) parents.push({ parent_type: "filing", parent_id: link.formation.filingId });
+        const seen = new Set<string>();
+        const cases: PalmCase[] = [];
+        for (const parent of parents) {
+          const q = new URLSearchParams({ ...parent, limit: "50" });
+          const r = await palm<{ data?: PalmCase[] }>(`/v1/case?${q}`).catch((err) => {
+            if (err instanceof PalmError && err.status === 404) return { data: [] };
+            throw err;
+          });
+          for (const c of r?.data ?? []) if (!seen.has(c.id)) {
+            seen.add(c.id);
+            cases.push(c);
+          }
+        }
+        // Waiting on us first, then newest.
+        const rank = (c: PalmCase) => (c.status === "needs_response" ? 0 : c.status === "under_review" ? 1 : 2);
+        cases.sort((a, b) => rank(a) - rank(b) || String(b.opened_at ?? b.created_at ?? "").localeCompare(String(a.opened_at ?? a.created_at ?? "")));
+        return res.status(200).json({ mode, cases: cases.slice(0, 20) });
+      }
+
+      case "case-respond": {
+        if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin can answer Palm." });
+        const caseId = String(body.caseId ?? "");
+        if (!UUID.test(caseId)) return res.status(400).json({ error: "bad_case_id" });
+        const fields = body.fields && typeof body.fields === "object" && !Array.isArray(body.fields) ? (body.fields as Record<string, unknown>) : {};
+        const documents = Array.isArray(body.documents) ? (body.documents as unknown[]).filter((d): d is string => typeof d === "string" && UUID.test(d)) : [];
+        try {
+          const updated = await palm<PalmCase>(`/v1/case/${caseId}/response`, { method: "POST", body: { response: { fields, ...(documents.length ? { documents } : {}) } } });
+          return res.status(200).json({ mode, case: updated });
+        } catch (err) {
+          if (err instanceof PalmError && err.status === 409) return res.status(409).json({ error: "not_waiting", message: "Palm isn't waiting on an answer for this case any more." });
+          if (err instanceof PalmError && err.status === 400) return res.status(400).json({ error: "invalid", message: err.message, errors: palmErrors(err) });
+          throw err;
+        }
+      }
+
       // ── Forming a new entity ────────────────────────────────────────────
       case "form-requirements": {
         const jurisdiction = isJurisdiction(body.jurisdiction) ? body.jurisdiction : null;
@@ -414,3 +464,23 @@ function palmErrors(err: PalmError): { field: string | null; message: string }[]
   const list = (d.errors ?? []).map((e) => ({ field: e.field ?? e.path ?? e.pointer ?? null, message: e.message ?? e.detail ?? "Problem" }));
   return list.length ? list : [{ field: null, message: err.message }];
 }
+
+/** A Palm case, as its API returns it (early access: the shape may move). */
+type PalmCase = {
+  id: string;
+  mode?: string;
+  kind: string;
+  status: "needs_response" | "under_review" | "resolved" | "superseded";
+  summary: string;
+  details?: string | null;
+  parent_type: string;
+  parent_id: string;
+  request?: { fields?: { name: string; type: string; description: string; required?: boolean; example?: unknown; document_types?: string[] }[]; documents?: string[] } | null;
+  response?: { fields?: Record<string, unknown>; documents?: string[] } | null;
+  due_at?: string | null;
+  opened_at?: string;
+  resolved_at?: string | null;
+  resolution_reason?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};

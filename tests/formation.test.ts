@@ -258,3 +258,58 @@ describe("/api/palm formation actions", () => {
     expect((await call({ action: "form-status", assetId: "-Oabcdefghijklmnopqr", filingId: "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee", mode: "test" })).status).toBe(404);
   });
 });
+
+describe("/api/palm cases", () => {
+  const fetchMock = vi.fn();
+  const reply = (status: number, body: unknown) => ({ ok: status < 400, status, text: async () => JSON.stringify(body) });
+  const BID = "6f1c2c1e-1111-4222-8333-944445555666";
+  const FID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const CID = "2a6f8d31-4e97-4b52-8c1d-9f3a7e5b2c84";
+  function call(body: Record<string, unknown>) {
+    const out: { status: number; json?: any } = { status: 0 };
+    const res: any = { status: (c: number) => ((out.status = c), res), json: (j: unknown) => ((out.json = j), res), setHeader() {}, send: () => res, end: () => res };
+    return Promise.resolve(handler({ method: "POST", body, headers: {} } as any, res)).then(() => out);
+  }
+  beforeEach(() => {
+    state.role = "owner";
+    process.env.PALM_API_KEY = "sk_test_x";
+    fetchMock.mockReset();
+    sbMock.mockReset();
+    sbMock.mockImplementation(async (path: string) => (path.startsWith("tree_nodes?") ? [{ collection: "assets", id: "-Oabcdefghijklmnopqr", data: { palm: { test: { businessId: BID, formation: { filingId: FID } } } } }] : []));
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.PALM_API_KEY;
+  });
+
+  it("lists the cases on the business and its formation filing, waiting-on-us first", async () => {
+    const mk = (id: string, status: string, parent_type: string, opened_at: string) => ({ id, status, parent_type, parent_id: "x", kind: "missing_information", summary: id, opened_at });
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { data: [mk("c-old", "resolved", "business", "2026-01-01T00:00:00Z"), mk("c-open", "needs_response", "business", "2026-02-01T00:00:00Z")] }))
+      .mockResolvedValueOnce(reply(200, { data: [mk("c-open", "needs_response", "business", "2026-02-01T00:00:00Z"), mk("c-review", "under_review", "filing", "2026-03-01T00:00:00Z")] }));
+    const r = await call({ action: "cases", assetId: "-Oabcdefghijklmnopqr" });
+    expect(r.status).toBe(200);
+    expect(r.json.cases.map((c: any) => c.id)).toEqual(["c-open", "c-review", "c-old"]);
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://api.getpalm.com/v1/case?parent_type=business&parent_id=${BID}&limit=50`);
+    expect(fetchMock.mock.calls[1][0]).toBe(`https://api.getpalm.com/v1/case?parent_type=filing&parent_id=${FID}&limit=50`);
+  });
+
+  it("answers a case as Palm asked, owner or admin only, in the mode the page saw", async () => {
+    state.role = "member";
+    expect((await call({ action: "case-respond", caseId: CID, fields: {}, mode: "test" })).status).toBe(403);
+    state.role = "admin";
+    expect((await call({ action: "case-respond", caseId: CID, fields: {}, mode: "live" })).json.error).toBe("mode_changed");
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce(reply(201, { id: CID, status: "under_review" }));
+    const fields = { principal_address: { street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" }, mailing_address: { street_line_1: "PO Box 1", city: "Reno", region: "NV", postal_code: "89501", country: "US" } };
+    const r = await call({ action: "case-respond", caseId: CID, fields, documents: ["not-a-uuid"], mode: "test" });
+    expect(r.json.case.status).toBe("under_review");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`https://api.getpalm.com/v1/case/${CID}/response`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ response: { fields } });
+    fetchMock.mockResolvedValueOnce(reply(409, { title: "Conflict", detail: "Case is not awaiting a response" }));
+    expect((await call({ action: "case-respond", caseId: CID, fields, mode: "test" })).json.error).toBe("not_waiting");
+  });
+});

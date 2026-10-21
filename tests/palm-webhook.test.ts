@@ -90,3 +90,13 @@ describe("/api/palm-webhook", () => {
     expect(emailMock).not.toHaveBeenCalled();
   });
 });
+
+describe("case events", () => {
+  it("keeps the business a case was opened on", () => {
+    const r = toEventRow({ id: "evt_c", type: "case.opened", mode: "live", data: { object: { id: "c1", parent_type: "business", parent_id: "biz9", status: "needs_response", summary: "Need addresses" } } });
+    expect(r.business_id).toBe("biz9");
+    expect(r.status).toBe("needs_response");
+    const f = toEventRow({ id: "evt_d", type: "case.opened", mode: "live", data: { object: { id: "c2", parent_type: "filing", parent_id: "fil1", status: "needs_response" } } });
+    expect(f.business_id).toBeNull();
+  });
+});

@@ -8,6 +8,7 @@ import { useState, type ReactNode } from "react";
 import { isAdmin } from "../auth";
 import { BOI_NOTE, type Obligation, type PaperworkIssue } from "../entity-paperwork";
 import { DOC_LABEL, docKindOf, formatAddress, openPalmDocument, RA_STATUS, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
+import { Cases } from "./cases";
 import { useEntity } from "./context";
 import { fmtDate, fmtStamp } from "./model";
 import { Button, buttonClass, Dot, Empty, ErrorLine, Icon, IconButton, InfoText, InfoToggle, Row, Rows, Section, TextButton, toneText, useTone, type Tone } from "./ui";
@@ -36,6 +37,7 @@ export function ComplianceTab() {
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
+        <Cases />
         <RegisteredAgent />
         <Mail />
       </div>

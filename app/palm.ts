@@ -232,3 +232,50 @@ export async function openPalmDocument(doc: PalmDocument): Promise<void> {
   }
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+// ── Cases: Palm asking for something before it can go on ───────────────
+
+export type CaseField = { name: string; type: "string" | "number" | "boolean" | "date" | "document" | "object" | "list" | string; description: string; required?: boolean; example?: unknown; document_types?: string[] };
+export type PalmCase = {
+  id: string;
+  kind: "missing_information" | "legal_name_change" | "ra_termination" | string;
+  status: "needs_response" | "under_review" | "resolved" | "superseded";
+  summary: string;
+  details?: string | null;
+  parent_type: string;
+  parent_id: string;
+  request?: { fields?: CaseField[]; documents?: string[] } | null;
+  response?: { fields?: Record<string, unknown>; documents?: string[] } | null;
+  due_at?: string | null;
+  opened_at?: string;
+  resolved_at?: string | null;
+  resolution_reason?: string | null;
+};
+
+export const CASE_STATUS: Record<PalmCase["status"], string> = {
+  needs_response: "Waiting on you",
+  under_review: "Palm is on it",
+  resolved: "Resolved",
+  superseded: "No longer needed",
+};
+
+/** An object field that wants an address: Palm names them "…address…". */
+export const isAddressField = (f: CaseField) => f.type === "object" && /address/i.test(f.name);
+
+export type StructuredAddress = { street_line_1: string; street_line_2: string; city: string; region: string; postal_code: string; country: string };
+export const EMPTY_STRUCTURED: StructuredAddress = { street_line_1: "", street_line_2: "", city: "", region: "", postal_code: "", country: "US" };
+
+/** "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028" → its parts, for prefilling. Anything else: street only. */
+export function parseUsAddress(text?: string | null): StructuredAddress {
+  const raw = (text ?? "").trim();
+  if (!raw) return { ...EMPTY_STRUCTURED };
+  const m = /^(.*?),\s*([^,]+),\s*([A-Za-z]{2})\.?\s+(\d{5}(?:-\d{4})?)\s*$/.exec(raw);
+  if (!m) return { ...EMPTY_STRUCTURED, street_line_1: raw };
+  const street = m[1].split(",").map((s) => s.trim()).filter(Boolean);
+  return { street_line_1: street[0] ?? "", street_line_2: street.slice(1).join(", "), city: m[2].trim(), region: m[3].toUpperCase(), postal_code: m[4], country: "US" };
+}
+
+/** The address as Palm takes it: blanks left out. */
+export function addressValue(a: StructuredAddress): Record<string, string> {
+  return Object.fromEntries(Object.entries(a).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v));
+}

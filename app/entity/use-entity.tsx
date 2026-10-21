@@ -26,6 +26,7 @@ import {
   type RegistryRecord,
   type StateRecord,
 } from "../palm";
+import type { PalmCase } from "../palm";
 import {
   BOI_NOTE,
   DOC_KEYS,
@@ -876,6 +877,26 @@ export function useEntityPage() {
       live = false;
     };
   }, [palmMode, id, tabParam]);
+  /** Cases Palm opened on this entity (a filing or the business): what it needs before it can go on. */
+  const [palmCases, setPalmCases] = useState<PalmCase[] | null>(null);
+  const [palmCasesError, setPalmCasesError] = useState("");
+  const palmCaseBusinessId = palmMode ? asset?.palm?.[palmMode]?.businessId : undefined;
+  const palmCaseFilingId = palmMode ? asset?.palm?.[palmMode]?.formation?.filingId : undefined;
+  useEffect(() => {
+    if (!palmMode || !id || tabParam !== "compliance" || (!palmCaseBusinessId && !palmCaseFilingId)) return;
+    let live = true;
+    palmCall<{ cases: PalmCase[] }>("cases", { assetId: id, businessId: palmCaseBusinessId ?? undefined })
+      .then((r) => live && (setPalmCases(r.cases), setPalmCasesError("")))
+      .catch((err) => live && setPalmCasesError(err instanceof PalmUnavailable ? "" : (err as Error).message));
+    return () => {
+      live = false;
+    };
+  }, [palmMode, id, tabParam, palmCaseBusinessId, palmCaseFilingId]);
+  async function respondCase(caseId: string, fields: Record<string, unknown>, documents?: string[]): Promise<PalmCase> {
+    const r = await palmCall<{ case: PalmCase }>("case-respond", { caseId, fields, documents, mode: palmMode });
+    setPalmCases((cs) => (cs ?? []).map((c) => (c.id === caseId ? r.case : c)));
+    return r.case;
+  }
   /** Bumped by every read or change of Palm's agent service; an older response is dropped. */
   const palmSeq = useRef(0);
   /** Bumped when the page moves to another entity; work started for the last one stops touching the card. */
@@ -1940,6 +1961,9 @@ export function useEntityPage() {
     setPalmStatus,
     formation,
     formationError,
+    palmCases,
+    palmCasesError,
+    respondCase,
     palmRa,
     setPalmRa,
     palmDocs,
