@@ -28,6 +28,7 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  *   link              { assetId, entity }              → the entity's Palm business (found or added)
  *   ra                { businessId }                   → Palm's registered agent service for it
  *   ra-change         { businessId, assetId }          → move the registered agent to Palm (files with the state)
+ *   ra-end            { businessId, assetId }          → Palm stops being the agent (the entity is dissolved); owner/admin
  *   documents         { businessId }                   → mail and filings Palm holds for it
  *   document          { documentId }                   → one document's file
  *   inbox             { assetId?, unread? }            → mail and agent events Palm has sent (webhook)
@@ -99,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
-  const mustMatchMode = action === "link" || action === "ra-change" || action === "form-submit" || action === "form-status";
+  const mustMatchMode = action === "link" || action === "ra-change" || action === "ra-end" || action === "form-submit" || action === "form-status";
   if ((body.mode !== undefined || mustMatchMode) && body.mode !== mode) {
     return res.status(409).json({ error: "mode_changed", mode, message: `Palm is now in ${mode} mode. Reload the page and check again before going on.` });
   }
@@ -213,6 +214,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           method: "PATCH",
           body: { status: "change_requested", metadata: { source: "bfo", bfo_asset_id: assetId, requested_by: user.id } },
         });
+        return res.status(200).json({ mode, service: ra });
+      }
+
+      case "ra-end": {
+        // Closing the entity down: Palm stops serving as its agent once the work completes.
+        if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin can end a registered agent." });
+        const id = String(body.businessId || "");
+        const assetId = String(body.assetId || "");
+        if (!UUID.test(id) || !assetId) return res.status(400).json({ error: "missing_params" });
+        const business = await palm<Business>(`/v1/business/${id}`);
+        if (business?.metadata?.bfo_asset_id !== assetId) {
+          return res.status(409).json({ error: "business_mismatch", message: "That Palm business isn't linked to this entity." });
+        }
+        const ra = await palm<RegisteredAgentService>(`/v1/business/${id}/registered-agent`, {
+          method: "PATCH",
+          body: { status: "termination_requested", reason: "business_dissolved", metadata: { source: "bfo", bfo_asset_id: assetId, requested_by: user.id } },
+        });
+        await logActivity(assetId, { id: user.id, name: user.name || user.email, source: "user" }, [{ kind: "palm", summary: "Asked Palm to end its registered agent service (dissolved)" }]);
         return res.status(200).json({ mode, service: ra });
       }
 

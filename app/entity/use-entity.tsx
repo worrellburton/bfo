@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { stepsLeft } from "../entity-closing";
 import { isFormationDone } from "../formation";
 import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
@@ -1597,6 +1598,97 @@ export function useEntityPage() {
     }
   }
 
+  // ── Closing the entity down (app/entity-closing.ts) ──
+
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  async function startClosing() {
+    const current = assetRef.current;
+    if (!current || current.closing) return;
+    const ok = await confirmDialog({
+      title: `Start closing ${current.name}?`,
+      message: "BFO lists every step to close it down: the owners' consent, winding up, the state filing, the final return, the EIN, the agent and the mail. Nothing is filed until you do each step.",
+      details: ["You can stop at any point and the entity stays as it is.", "Palm can't file a dissolution; the state filing is done on the state's site, linked from each step."],
+      confirmLabel: "Start closing",
+    });
+    if (!ok) return;
+    await patchAsset({ closing: { startedAt: today(), steps: {} } });
+  }
+
+  async function cancelClosing() {
+    const current = assetRef.current;
+    if (!current?.closing) return;
+    const ok = await confirmDialog({ title: "Stop closing it?", message: "The steps marked done are cleared. Nothing filed with a state or the IRS is undone.", confirmLabel: "Stop closing", tone: "danger" });
+    if (ok) await patchAsset({ closing: null });
+  }
+
+  async function markClosingStep(key: string, done: boolean) {
+    await patchAsset({ [`closing/steps/${key.replace(/[/.#$[\]]/g, "_")}`]: done ? today() : null });
+  }
+
+  async function finishClosing() {
+    const current = assetRef.current;
+    if (!current?.closing) return;
+    const left = stepsLeft(current);
+    const ok = await confirmDialog({
+      title: `Mark ${current.name} dissolved?`,
+      message: "Its status becomes Dissolved: it drops out of compliance checks and the daily state check, and its record stays here.",
+      details: left.length ? [`Still open: ${left.map((s) => s.title).join("; ")}.`] : ["Every step is done."],
+      confirmLabel: "Mark dissolved",
+      tone: left.length ? "danger" : "default",
+    });
+    if (ok) await patchAsset({ status: "Dissolved", "closing/closedAt": today() });
+  }
+
+  /** Ask Palm to stop serving as registered agent (only once the state has accepted the dissolution). */
+  async function endPalmAgent(): Promise<string | null> {
+    const current = assetRef.current;
+    const businessId = current?.palm?.live?.businessId;
+    if (!current || !businessId) return "This entity isn't linked to Palm.";
+    const ok = await confirmDialog({
+      title: "End Palm's registered agent service?",
+      message: `Palm stops being ${current.name}'s registered agent. Do this only after the state has accepted the dissolution: a live entity without an agent falls out of good standing.`,
+      confirmLabel: "End Palm's service",
+      tone: "danger",
+      requireText: current.name,
+    });
+    if (!ok) return null;
+    try {
+      const { service } = await palmCall<{ service: RaService }>("ra-end", { mode: "live", businessId, assetId: id });
+      await patchAsset({ "palm/live/ra": { status: service.status, name: service.name ?? null, address: formatPalmAddress(service.address) ?? null, checkedAt: Date.now() }, "closing/steps/agent": today() });
+      return null;
+    } catch (err) {
+      return (err as Error).message;
+    }
+  }
+
+  /** Draft a closing paper into Documents: the owners' consent to dissolve, or the letter closing the EIN account. */
+  async function generateClosingDoc(kind: "consent" | "ein-letter"): Promise<string | null> {
+    const current = assetRef.current;
+    if (!current) return null;
+    const { dissolutionConsent, dissolutionConsentPdf, einLetter, einLetterPdf } = await import("../closing-docs");
+    try {
+      let blob: Blob;
+      let name: string;
+      if (kind === "consent") {
+        const doc = dissolutionConsent({ ...current } as Rec & { name: string }, lookupAsset);
+        if (!doc.signers.length) return "Add its owners on the Owners tab first: the consent is signed by each of them.";
+        blob = await dissolutionConsentPdf(doc, current.name);
+        name = `Consent to Dissolve - ${current.name}.pdf`;
+      } else {
+        const letter = einLetter({ ...current } as Rec & { name: string }, current.closing?.steps?.["state:" + (stateCode(current.state) ?? "home")] ?? null);
+        if (!letter.ein) return "No EIN on record.";
+        blob = await einLetterPdf(letter);
+        name = `IRS Letter to Close EIN Account - ${current.name}.pdf`;
+      }
+      const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), () => {});
+      window.open(doc.url, "_blank", "noopener");
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Couldn't draft it.";
+    }
+  }
+
   /** Fill in the IRS's Form 8822-B for an address change; it goes into Documents, unsigned. */
   async function generate8822B() {
     const current = assetRef.current;
@@ -2137,6 +2229,12 @@ export function useEntityPage() {
     refreshPalm,
     checkStateRecord,
     checkForeignRecord,
+    startClosing,
+    cancelClosing,
+    markClosingStep,
+    finishClosing,
+    endPalmAgent,
+    generateClosingDoc,
     foreignBusy,
     moveAgentToPalm,
     buildProfile,

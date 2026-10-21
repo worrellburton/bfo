@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useEntity } from "./context";
 import { fmtDate } from "./model";
 import { Button, Count, Dot, Icon, IconButton, useTone } from "./ui";
-import { isPartner } from "../auth";
+import { isAdmin, isPartner } from "../auth";
 
 /** The entity card: who it is, the facts people copy most, and how complete its record is. */
 export function EntityHeader() {
@@ -132,7 +132,7 @@ function CopyMetric({ id, label, value, mono = false }: { id: string; label: str
 
 /** Rarely-used actions: delete. */
 function MoreMenu() {
-  const { page } = useEntity();
+  const { page, asset, goToTab } = useEntity();
   const t = useTone();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -157,6 +157,19 @@ function MoreMenu() {
             t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"
           }`}
         >
+          {!asset.closing && asset.type !== "Trust" && isAdmin() && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                void page.startClosing().then(() => goToTab("overview"));
+              }}
+              className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12.5px] max-sm:min-h-[44px] ${t.dark ? "text-gray-200 hover:bg-white/[0.05]" : "text-gray-800 hover:bg-gray-50"}`}
+            >
+              <Icon name="x" />
+              Close this entity…
+            </button>
+          )}
           <button
             type="button"
             disabled={page.deleting}

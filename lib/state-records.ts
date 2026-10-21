@@ -17,6 +17,7 @@ const ACTOR = { id: null, name: "BFO", source: "system" } as const;
 
 type Rec = {
   name?: string;
+  status?: string;
   type?: string;
   state?: string;
   address?: string;
@@ -34,7 +35,7 @@ export type CheckResult = { id: string; name: string; state: string; outcome: "r
 
 /** The states to read for one entity: home first, then each foreign one. */
 export function statesToRead(a: Rec): { code: string; home: boolean }[] {
-  if (a.type === "Trust" || /\btrust\b/i.test(a.name ?? "")) return [];
+  if (a.type === "Trust" || /\btrust\b/i.test(a.name ?? "") || a.status === "Dissolved") return [];
   const home = stateCode(a.state);
   if (!home) return [];
   // Still being formed: the state has nothing to read yet.
