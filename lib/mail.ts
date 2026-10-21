@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { birdPlatformFetch, sb, sbFetch } from "./auth.js";
 import { isOurAddress, MAIL_DOMAIN, onOurDomain } from "./mail-address.js";
+import { composeDocument, composeText } from "./mail-compose.js";
 import { storageDownload, storageRemove, storageUpload } from "./storage.js";
 
 /**
@@ -472,7 +473,10 @@ export function parseSend(body: Record<string, unknown>): SendRequest | Refusal 
   const subject = storable(typeof body.subject === "string" ? body.subject : "").replace(/[\r\n]+/g, " ").trim();
   if (subject.length > LIMITS.subject) return { error: "subject_too_long", message: `Keep the subject under ${LIMITS.subject} characters.` };
 
-  const text = storable(typeof body.text === "string" ? body.text : "");
+  // A formatted message (the editor's HTML) is cleaned to the allowlist again here; its text part is written from it.
+  const formatted = typeof body.html === "string" && body.html.trim() ? storable(body.html) : null;
+  if (formatted && Buffer.byteLength(formatted) > LIMITS.textBytes * 2) return { error: "text_too_long", message: "The message is too long." };
+  const text = formatted ? composeText(formatted) : storable(typeof body.text === "string" ? body.text : "");
   if (Buffer.byteLength(text) > LIMITS.textBytes) return { error: "text_too_long", message: "The message is too long." };
 
   const ref = (v: unknown) => (v == null || v === "" ? null : typeof v === "string" && UUID_RE.test(v) ? v : undefined);
@@ -494,7 +498,7 @@ export function parseSend(body: Record<string, unknown>): SendRequest | Refusal 
     return { error: "attachments_too_large", message: "Attachments can be 3 MB in total." };
   }
 
-  return { sendId, to, cc: ccOnly, bcc: bccOnly, subject, text, html: htmlFromText(text), replyToId, forwardId, attachments };
+  return { sendId, to, cc: ccOnly, bcc: bccOnly, subject, text, html: formatted ? composeDocument(formatted) : htmlFromText(text), replyToId, forwardId, attachments };
 }
 
 // ── Bird ──────────────────────────────────────────────────────────────

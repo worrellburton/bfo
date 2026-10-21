@@ -1,3 +1,5 @@
+import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
+import { composeText, htmlFromPlain } from "../../lib/mail-compose";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -15,6 +17,7 @@ import {
   moveMail,
   notifyMailChanged,
   removeAlias,
+  improveMail,
   sendMail,
   starMail,
   useMailCount,
@@ -1785,17 +1788,22 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
   const [bcc, setBcc] = useState(draft.bcc);
   const [showCc, setShowCc] = useState(!!(draft.cc || draft.bcc));
   const [subject, setSubject] = useState(draft.subject);
-  const [text, setText] = useState(draft.text);
+  // The body is formatted: a reply's quote and a forward's header come in as paragraphs and a quote.
+  const [initialHtml] = useState(() => htmlFromPlain(draft.text));
+  const [html, setHtml] = useState(initialHtml);
+  const [improving, setImproving] = useState(false);
+  /** The body before Improve design, so it can be put back. */
+  const [beforeImprove, setBeforeImprove] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toRef = useRef<HTMLInputElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<MailEditorHandle>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const asking = useRef(false);
 
-  const dirty = to !== draft.to || cc !== draft.cc || bcc !== draft.bcc || subject !== draft.subject || text !== draft.text || files.length > 0;
+  const dirty = to !== draft.to || cc !== draft.cc || bcc !== draft.bcc || subject !== draft.subject || html !== initialHtml || files.length > 0;
   const totalBytes = files.reduce((n, f) => n + f.size, 0);
 
   // Leaving the page (Back, a palette jump) asks first; ?m and ?f changes inside the inbox don't.
@@ -1838,9 +1846,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
     // New / Reply / Forward: focus goes back there on close.
     const opener = document.activeElement as HTMLElement | null;
     if (draft.focus === "body" && bodyRef.current) {
-      bodyRef.current.focus();
-      bodyRef.current.setSelectionRange(0, 0);
-      bodyRef.current.scrollTop = 0;
+      bodyRef.current.focus(true);
     } else toRef.current?.focus();
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1886,6 +1892,23 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
     setFiles(next);
   }
 
+  /** Lay the message out better: the same words, clearer shape. Undo puts it back. */
+  async function improveDesign() {
+    if (improving) return;
+    setImproving(true);
+    setError(null);
+    try {
+      const before = html;
+      const { html: better } = await improveMail(html, subject);
+      bodyRef.current?.setHtml(better);
+      setBeforeImprove(before);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setImproving(false);
+    }
+  }
+
   async function send() {
     if (sending) return;
     const lists = [parseRecipients(to), parseRecipients(cc), parseRecipients(bcc)];
@@ -1908,7 +1931,8 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         ...(lists[1].ok.length ? { cc: lists[1].ok } : {}),
         ...(lists[2].ok.length ? { bcc: lists[2].ok } : {}),
         subject: subject.replace(/[\r\n]+/g, " ").trim(),
-        text,
+        text: composeText(html),
+        html,
         ...(draft.replyToId ? { replyToId: draft.replyToId } : {}),
         ...(draft.forwardId ? { forwardId: draft.forwardId } : {}),
         ...(attachments.length ? { attachments } : {}),
@@ -2004,13 +2028,15 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
           <input id="compose-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={300} className={field} style={noRing} />
         </div>
 
-        <textarea
+        <MailEditor
           ref={bodyRef}
-          aria-label="Message"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          style={noRing}
-          className={`min-h-[220px] w-full flex-1 resize-none bg-transparent px-4 py-3 text-[13.5px] leading-relaxed placeholder:text-gray-500 max-sm:text-[16px] sm:h-[340px] sm:min-h-[120px] sm:flex-initial ${t.text}`}
+          initialHtml={initialHtml}
+          onChange={(h) => {
+            setHtml(h);
+            setBeforeImprove(null);
+          }}
+          placeholder="Write your message…"
+          className="min-h-[220px] w-full flex-1 sm:h-[340px] sm:min-h-[120px] sm:flex-initial"
         />
 
         {(draft.carried.length > 0 || files.length > 0) && (
@@ -2050,7 +2076,26 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
           <GlyphButton glyph="clip" label="Attach files" onClick={() => fileRef.current?.click()} />
           {totalBytes > 0 && <span className={`text-[11.5px] tabular-nums ${t.muted}`}>{formatBytes(totalBytes)}</span>}
+          <span className={`mx-1 h-4 w-px max-sm:hidden ${t.dark ? "bg-white/10" : "bg-gray-200"}`} aria-hidden />
+          <span className="max-sm:hidden">
+            <FormatBar disabled={sending || improving} onFormat={() => setHtml(document.activeElement?.innerHTML ?? html)} />
+          </span>
           <span className="flex-1" />
+          {beforeImprove !== null ? (
+            <Button
+              kind="ghost"
+              onClick={() => {
+                bodyRef.current?.setHtml(beforeImprove);
+                setBeforeImprove(null);
+              }}
+            >
+              Undo design
+            </Button>
+          ) : (
+            <Button kind="ghost" icon="sparkle" disabled={sending || improving || !composeText(html).trim()} onClick={() => void improveDesign()}>
+              {improving ? "Improving…" : "Improve design"}
+            </Button>
+          )}
           <span className={`mr-1 text-[11px] max-sm:hidden ${t.faint}`}>⌘↵</span>
           <Button kind="ghost" onClick={() => void close()} disabled={sending}>
             Discard
