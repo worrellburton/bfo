@@ -532,6 +532,10 @@ export default function Inbox() {
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** Messages picked for a bulk action, and the last one clicked (shift-click picks the range from it). */
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const pickAnchor = useRef<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
   const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh") => {
@@ -784,6 +788,79 @@ export default function Inbox() {
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
   const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
   const rows = list && list.folder === folder && list.filter === filter && list.q === q && list.to === box ? list.messages : null;
+
+  // Another folder, filter, search or mailbox starts with nothing picked.
+  useEffect(() => {
+    setPicked(new Set());
+    pickAnchor.current = null;
+  }, [folder, filter, q, box]);
+
+  // Esc lets go of the selection (when no message is open to close first).
+  useEffect(() => {
+    if (!picked.size) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !openIdRef.current && !draft) setPicked(new Set());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked.size, draft]);
+
+  function pick(id: string, shift: boolean) {
+    const ids = (rows ?? []).map((m) => m.id);
+    setPicked((prev) => {
+      const next = new Set(prev);
+      const turnOn = !prev.has(id);
+      const from = shift && pickAnchor.current ? ids.indexOf(pickAnchor.current) : -1;
+      const to = ids.indexOf(id);
+      if (from >= 0 && to >= 0) {
+        // The whole range takes the clicked one's new state.
+        for (const x of ids.slice(Math.min(from, to), Math.max(from, to) + 1)) turnOn ? next.add(x) : next.delete(x);
+      } else if (turnOn) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    pickAnchor.current = id;
+  }
+
+  function pickAll() {
+    const ids = (rows ?? []).map((m) => m.id);
+    setPicked((prev) => (ids.length && ids.every((x) => prev.has(x)) ? new Set() : new Set(ids)));
+    pickAnchor.current = null;
+  }
+
+  /** Read or unread, archive or back to the inbox, or delete: for every picked message at once. */
+  async function bulk(action: "read" | "unread" | "archive" | "inbox" | "delete") {
+    const ids = (rows ?? []).filter((m) => picked.has(m.id)).map((m) => m.id);
+    if (!ids.length || bulkBusy) return;
+    if (action === "delete") {
+      const ok = await confirmDialog({ title: `Delete ${ids.length} message${ids.length === 1 ? "" : "s"}?`, confirmLabel: "Delete", tone: "danger" });
+      if (!ok) return;
+    }
+    setBulkBusy(true);
+    try {
+      if (action === "read" || action === "unread") {
+        const read = action === "read";
+        await markRead(ids, read);
+        setList((prev) => prev && { ...prev, messages: prev.messages.map((m) => (picked.has(m.id) ? { ...m, read } : m)) });
+        for (const id of ids) cache.current.delete(id);
+        setToast(read ? `Marked ${ids.length} as read` : `Marked ${ids.length} as unread`);
+      } else {
+        if (action === "delete") await deleteMail(ids);
+        else await moveMail(ids, action);
+        const gone = new Set(ids);
+        setList((prev) => prev && { ...prev, messages: prev.messages.filter((m) => !gone.has(m.id)) });
+        for (const id of ids) cache.current.delete(id);
+        if (openIdRef.current && gone.has(openIdRef.current)) closeMessage();
+        setPicked(new Set());
+        setToast(action === "delete" ? `Deleted ${ids.length}` : action === "archive" ? `Archived ${ids.length}` : `Moved ${ids.length} to the inbox`);
+      }
+      notifyMailChanged();
+    } catch (e) {
+      setListError((e as Error).message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
   const sent = folder === "sent";
   // In the table, the open message takes the whole card; in columns, it sits beside the list.
   const tableReading = view === "table" && !!openId;
@@ -811,6 +888,53 @@ export default function Inbox() {
     />
   );
 
+  const pickedRows = (rows ?? []).filter((m) => picked.has(m.id));
+  const bulkBar = pickedRows.length > 0 && rows && (
+    <div
+      role="toolbar"
+      aria-label="Selected messages"
+      className={`pick-bar-in sticky top-0 z-[2] flex flex-wrap items-center gap-1 border-b px-3 py-1.5 backdrop-blur-xl ${t.line} ${t.dark ? "bg-[#14152a]/95" : "bg-indigo-50/95"}`}
+    >
+      <SelectBox
+        on={pickedRows.length === rows.length}
+        mixed={pickedRows.length < rows.length}
+        onToggle={() => pickAll()}
+        label={pickedRows.length === rows.length ? "Unselect all" : "Select all"}
+      />
+      <span className={`mr-2 text-[12.5px] font-medium tabular-nums ${t.text}`}>{pickedRows.length} selected</span>
+      {pickedRows.length < rows.length && (
+        <button type="button" onClick={() => pickAll()} className={`mr-1 cursor-pointer text-[12px] hover:underline ${t.accent}`}>
+          Select all {rows.length}
+        </button>
+      )}
+      <span className="flex-1" />
+      {pickedRows.some((m) => !m.read) && (
+        <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("read")}>
+          Mark read
+        </Button>
+      )}
+      {pickedRows.some((m) => m.read) && (
+        <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("unread")}>
+          Mark unread
+        </Button>
+      )}
+      {folder === "inbox" && (
+        <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("archive")}>
+          Archive
+        </Button>
+      )}
+      {folder === "archive" && (
+        <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("inbox")}>
+          Move to inbox
+        </Button>
+      )}
+      <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("delete")}>
+        Delete
+      </Button>
+      <IconButton icon="x" label="Clear selection (Esc)" onClick={() => setPicked(new Set())} />
+    </div>
+  );
+
   const listBody = !rows ? (
     listError ? <ErrorLine>{listError}</ErrorLine> : <ListSkeleton table={view === "table"} />
   ) : rows.length === 0 ? (
@@ -822,11 +946,11 @@ export default function Inbox() {
     <>
       {view === "table" ? (
         <>
-          <MailTable rows={rows} sent={sent} me={address} onOpen={select} onStar={star} className="max-md:hidden" />
+          <MailTable rows={rows} sent={sent} me={address} onOpen={select} onStar={star} picked={picked} onPick={pick} onPickAll={pickAll} className="max-md:hidden" />
           <ul className="md:hidden">
             {rows.map((m) => (
               <li key={m.id}>
-                <ListRow m={m} sent={sent} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} />
+                <ListRow m={m} sent={sent} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
               </li>
             ))}
           </ul>
@@ -835,7 +959,7 @@ export default function Inbox() {
         <ul className={`divide-y ${t.divide}`}>
           {rows.map((m) => (
             <li key={m.id}>
-              <ListRow m={m} sent={sent} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} />
+              <ListRow m={m} sent={sent} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
             </li>
           ))}
         </ul>
@@ -982,7 +1106,10 @@ export default function Inbox() {
           ) : (
             <>
               {toolbar}
-              <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">{listBody}</div>
+              <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+                {bulkBar}
+                {listBody}
+              </div>
             </>
           )}
         </section>
@@ -994,7 +1121,10 @@ export default function Inbox() {
             className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
-            <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">{listBody}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+                {bulkBar}
+                {listBody}
+              </div>
           </section>
 
           {/* The reader */}
@@ -1177,6 +1307,52 @@ function Star({ on, className = "h-3.5 w-3.5", strokeWidth = 1.6 }: { on: boolea
 }
 
 /** Star toggle for a row: quiet until hovered, unless it's on. Stops the click reaching the row. */
+/**
+ * Picking a message: a round box that pops as it fills and draws its check
+ * (a dash when only some are picked). Shift-click picks the range from the
+ * last one picked.
+ */
+function SelectBox({ on, mixed = false, onToggle, label, className = "" }: { on: boolean; mixed?: boolean; onToggle: (shift: boolean) => void; label: string; className?: string }) {
+  const t = useTone();
+  const filled = on || mixed;
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={mixed ? "mixed" : on}
+      aria-label={label}
+      title={label}
+      // Shift-click shouldn't select the text between.
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(e.shiftKey);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className={`group/pick inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:h-[40px] max-md:w-[40px] ${className}`}
+    >
+      <span
+        key={filled ? "on" : "off"}
+        className={`relative grid h-[17px] w-[17px] place-items-center rounded-full border-[1.5px] transition-[background-color,border-color,box-shadow] duration-200 ${filled ? "pick-pop" : ""} ${
+          filled
+            ? "border-[#818cf8] bg-[#6366f1] shadow-[0_0_0_3px_rgba(129,140,248,0.18)]"
+            : t.dark
+              ? "border-white/25 group-hover/pick:border-white/60"
+              : "border-gray-300 group-hover/pick:border-gray-500"
+        }`}
+      >
+        <svg viewBox="0 0 12 12" className="h-[9px] w-[9px]" fill="none" stroke="white" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          {mixed ? (
+            <path d="M3 6h6" />
+          ) : (
+            <path d="M2.5 6.3l2.3 2.3 4.7-5" style={{ strokeDasharray: 12, strokeDashoffset: on ? 0 : 12, transition: "stroke-dashoffset 220ms ease 60ms" }} />
+          )}
+        </svg>
+      </span>
+    </button>
+  );
+}
+
 function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { on: boolean; onToggle: (next: boolean) => void; className?: string; alwaysOnPhones?: boolean }) {
   const t = useTone();
   return (
@@ -1257,6 +1433,9 @@ function MailTable({
   me,
   onOpen,
   onStar,
+  picked,
+  onPick,
+  onPickAll,
   className = "",
 }: {
   rows: MailSummary[];
@@ -1264,24 +1443,30 @@ function MailTable({
   me: string;
   onOpen: (id: string) => void;
   onStar: (m: MailSummary, on: boolean) => void;
+  picked: Set<string>;
+  onPick: (id: string, shift: boolean) => void;
+  onPickAll: () => void;
   className?: string;
 }) {
+  const all = rows.length > 0 && rows.every((m) => picked.has(m.id));
+  const some = !all && rows.some((m) => picked.has(m.id));
   const t = useTone();
   const th = `px-2 pb-2 pt-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.08em] ${t.faint}`;
   return (
     <table className={`w-full table-fixed border-collapse text-[12.5px] ${className}`}>
       <colgroup>
-        <col className="w-[44px]" />
+        <col className="w-[76px]" />
         <col className="w-[22%] lg:w-[200px] xl:w-[220px]" />
         <col className="w-[30%]" />
         <col />
         <col className="w-[32px]" />
         <col className="w-[84px]" />
       </colgroup>
-      <thead className={`sticky top-0 z-[1] ${t.dark ? "bg-[#0b0b0f]/95" : "bg-white/95"} backdrop-blur-xl`}>
+      {/* While anything is picked, the action bar above takes the header's place. */}
+      <thead className={`sticky top-0 z-[1] ${picked.size ? "hidden" : ""} ${t.dark ? "bg-[#0b0b0f]/95" : "bg-white/95"} backdrop-blur-xl`}>
         <tr className={`border-b ${t.line}`}>
-          <th scope="col" className={th}>
-            <span className="sr-only">Starred</span>
+          <th scope="col" className={`${th} py-1 pl-[14px]`}>
+            <SelectBox on={all} mixed={some} onToggle={onPickAll} label={all ? "Unselect all" : "Select all"} />
           </th>
           <th scope="col" className={th}>
             {sent ? "To" : "From"}
@@ -1304,8 +1489,10 @@ function MailTable({
         {rows.map((m) => {
           const unread = !m.read;
           const who = whoOf(m, sent, me);
+          const on = picked.has(m.id);
           return (
             <tr
+              aria-selected={on}
               key={m.id}
               tabIndex={0}
               onClick={() => onOpen(m.id)}
@@ -1315,12 +1502,15 @@ function MailTable({
                   onOpen(m.id);
                 }
               }}
-              className={`group cursor-pointer transition-colors ${t.hover} focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
+              className={`group cursor-pointer transition-colors duration-150 ${
+                on ? (t.dark ? "bg-[#6366f1]/[0.13] hover:bg-[#6366f1]/[0.17]" : "bg-indigo-50 hover:bg-indigo-100/70") : t.hover
+              } focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
             >
               <td className="py-1.5 pl-2 pr-0 align-middle">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-0.5">
                   <UnreadDot on={unread} />
-                  <StarButton on={m.starred} onToggle={(on) => onStar(m, on)} />
+                  <SelectBox on={on} onToggle={(shift) => onPick(m.id, shift)} label={on ? "Unselect" : "Select"} />
+                  <StarButton on={m.starred} onToggle={(next) => onStar(m, next)} />
                 </div>
               </td>
               <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`} title={sent ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
@@ -1349,7 +1539,28 @@ function MailTable({
   );
 }
 
-function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; sent: boolean; me: string; selected: boolean; onOpen: () => void; onStar: (on: boolean) => void }) {
+function ListRow({
+  m,
+  sent,
+  me,
+  selected,
+  onOpen,
+  onStar,
+  picked = false,
+  picking = false,
+  onPick,
+}: {
+  m: MailSummary;
+  sent: boolean;
+  me: string;
+  selected: boolean;
+  onOpen: () => void;
+  onStar: (on: boolean) => void;
+  /** Picked for a bulk action; `picking`: some message is, so every row shows its box. */
+  picked?: boolean;
+  picking?: boolean;
+  onPick?: (shift: boolean) => void;
+}) {
   const t = useTone();
   const unread = !m.read;
   const who = sent ? `To ${whoOf(m, true, me)}` : whoOf(m, false, me);
@@ -1366,12 +1577,21 @@ function ListRow({ m, sent, me, selected, onOpen, onStar }: { m: MailSummary; se
         }
       }}
       aria-current={selected ? "true" : undefined}
+      aria-selected={onPick ? picked : undefined}
       className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3 max-md:rounded-2xl max-md:px-3 max-md:py-3 ${
-        selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
+        picked ? (t.dark ? "bg-[#6366f1]/[0.13]" : "bg-indigo-50") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
       } ${t.dark ? "active:bg-white/[0.05]" : "active:bg-gray-100"}`}
     >
       <span className="relative mt-0.5 shrink-0">
-        <Avatar a={face} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
+        {/* The avatar turns into its select box on hover, and stays one while anything is picked. */}
+        <span className={`block transition-opacity duration-150 ${onPick && (picked || picking) ? "opacity-0" : onPick ? "md:group-hover:opacity-0" : ""}`}>
+          <Avatar a={face} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
+        </span>
+        {onPick && (
+          <span className={`absolute inset-0 grid place-items-center transition-opacity duration-150 ${picked || picking ? "opacity-100" : "opacity-0 md:group-hover:opacity-100 max-md:opacity-0"}`}>
+            <SelectBox on={picked} onToggle={onPick} label={picked ? "Unselect" : "Select"} className="!h-10 !w-10" />
+          </span>
+        )}
         {unread && (
           <span aria-hidden="true" className={`absolute -left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
         )}
