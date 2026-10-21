@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { logActivity } from "../lib/activity.js";
 import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, stateRules, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
@@ -39,6 +40,8 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  *   form-validate     { draft }                        → Palm's full list of problems, filing nothing
  *   form-submit       { draft, assetId, stateName, mode, idempotencyKey } → files with the state; owner/admin only
  *   form-status       { assetId, filingId, mode }      → the filing now, written to the entity's record
+ *   cases             { assetId }                      → Palm's questions on its filings, open ones first
+ *   case-respond      { assetId, caseId, fields, documents? } → answer one; owner/admin only
  *
  * Reads need a signed-in user; adding a business needs write access; moving
  * the agent — a state filing billed to the Palm account — needs an owner or admin.
@@ -47,6 +50,22 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  * ra-change must. If the key has since switched between test and live, the
  * call is refused (409 mode_changed) rather than acting in the other mode.
  */
+
+/** A question Palm has on a filing or business (GET /v1/case). */
+type PalmCase = {
+  id: string;
+  kind: string;
+  status: "needs_response" | "under_review" | "resolved" | "superseded";
+  summary: string;
+  details?: string | null;
+  request?: { fields: { name: string; type: string; description: string; required?: boolean; example?: unknown; document_types?: string[] }[]; documents?: string[] } | null;
+  response?: unknown;
+  due_at?: string | null;
+  opened_at: string;
+  resolved_at?: string | null;
+  parent_type: string;
+  parent_id: string;
+};
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DOC_ID = /^[\w-]{1,128}$/;
@@ -403,6 +422,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }], PALM);
         return res.status(200).json({ mode, formation: (patch[`palm/${mode}/formation`] as unknown) ?? state, patch });
+      }
+
+      case "cases": {
+        const assetId = String(body.assetId ?? "");
+        if (!/^[\w-]{8,64}$/.test(assetId)) return res.status(400).json({ error: "bad_params" });
+        const row = (await readRows("assets", [assetId]))[0];
+        const link = ((row?.data ?? {}) as { palm?: Record<string, { businessId?: string | null; formation?: { filingId?: string; ein?: { filingId?: string } | null } }> }).palm?.[mode];
+        // The formation, its EIN, and the business itself can each have questions.
+        const parents: [string, string][] = [];
+        if (link?.formation?.filingId) parents.push(["filing", link.formation.filingId]);
+        if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
+        if (link?.businessId) parents.push(["business", link.businessId]);
+        const lists = await Promise.all(
+          parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch(() => null))
+        );
+        const seen = new Set<string>();
+        const cases = lists
+          .flatMap((l) => (Array.isArray(l) ? l : l?.data ?? []))
+          .filter((c) => c?.id && !seen.has(c.id) && seen.add(c.id))
+          .sort((a, b) => Number(b.status === "needs_response") - Number(a.status === "needs_response") || String(b.opened_at).localeCompare(String(a.opened_at)));
+        return res.status(200).json({ mode, cases });
+      }
+
+      case "case-respond": {
+        if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "An owner or admin answers Palm." });
+        const assetId = String(body.assetId ?? "");
+        const caseId = String(body.caseId ?? "");
+        const fields = body.fields;
+        const documents = Array.isArray(body.documents) ? body.documents.map(String) : [];
+        if (!/^[\w-]{8,64}$/.test(assetId) || !UUID.test(caseId) || !fields || typeof fields !== "object" || Array.isArray(fields) || !documents.every((d) => UUID.test(d))) {
+          return res.status(400).json({ error: "bad_params" });
+        }
+        if (JSON.stringify(fields).length > 20_000) return res.status(413).json({ error: "too_large" });
+        const answered = await palm<PalmCase>(`/v1/case/${caseId}/response`, { method: "POST", body: { response: { fields, ...(documents.length ? { documents } : {}) } } });
+        await logActivity(assetId, { id: user.id, name: user.name || user.email, source: "user" }, [
+          { kind: "palm", summary: `Answered Palm's question: ${answered?.summary ?? "more information"}`, detail: { fields: Object.keys(fields as object) } },
+        ]);
+        return res.status(200).json({ mode, case: answered });
       }
 
       default:
