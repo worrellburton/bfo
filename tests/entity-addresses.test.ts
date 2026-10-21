@@ -78,3 +78,14 @@ describe("an entity formed through BFO, still with the state", () => {
     expect(entityAddresses({ ...forming, foreign: { AZ: { confirmed: true } } }).agents[1].checks[0].tone).toBe("bad");
   });
 });
+
+describe("is Palm the agent", () => {
+  it("believes Palm unless the record and the state both name someone else", async () => {
+    const { palmServes } = await import("../app/entity-addresses");
+    const active = { palm: { live: { ra: { status: "active" } } } };
+    expect(palmServes(active)).toBe(true);
+    expect(palmServes({ ...active, registeredAgent: "Palm Registered Agents LLC" })).toBe(true);
+    expect(palmServes({ ...active, registeredAgent: "Northwest Registered Agent LLC", stateRecord: { mode: "live", agent: "Northwest Registered Agent LLC", checkedAt: 0 } })).toBe(false);
+    expect(palmServes({ registeredAgentSource: "Palm stopped serving 2026-01-01 — confirm the current agent" })).toBe(false);
+  });
+});

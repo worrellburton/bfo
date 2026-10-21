@@ -39,7 +39,7 @@ export type AddressInput = {
   registeredAgentSource?: string;
   stateRecord?: StateRecord;
   foreign?: Record<string, ForeignRegistration>;
-  palm?: Partial<Record<"live" | "test", { ra?: { status?: string | null } | null; formation?: { status?: string; registeredAgent?: { status: string } | null } | null }>>;
+  palm?: Partial<Record<"live" | "test", { ra?: { status?: string | null; address?: string | null } | null; formation?: { status?: string; registeredAgent?: { status: string } | null } | null }>>;
   /** A state whose registry had no entry (or several) for it, from the state-record check. */
   registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
 };
@@ -62,6 +62,19 @@ export type AgentLine = {
   ask: boolean;
   checks: Check[];
 };
+
+/**
+ * Whether Palm is the registered agent, one answer for every card: Palm's own
+ * word (its service active) unless the record and the state both name
+ * someone else, which means Palm's answer is stale.
+ */
+export function palmServes(a: Pick<AddressInput, "palm" | "registeredAgent" | "registeredAgentSource" | "stateRecord">): boolean {
+  if (/^Palm stopped/.test(a.registeredAgentSource ?? "")) return false;
+  const active = a.palm?.live?.ra?.status === "active" || /^Palm, active/.test(a.registeredAgentSource ?? "");
+  if (!active) return false;
+  const named = [a.registeredAgent, a.stateRecord?.agent].filter((n): n is string => !!n?.trim());
+  return !named.length || named.some((n) => /palm/i.test(n)) || /^Palm, active/.test(a.registeredAgentSource ?? "");
+}
 
 /** A formation still with the state (through Palm), in either mode. */
 export function formingNow(a: AddressInput): { palmAgent: boolean } | null {
@@ -131,7 +144,7 @@ export function entityAddresses(a: AddressInput): Addresses {
   const trust = entityType(a) === "Trust";
 
   const pChecks: Check[] = [];
-  if (!principal) pChecks.push({ tone: "warn", text: trust ? "No address on record." : "No principal office on record." });
+  if (!principal) pChecks.push({ tone: "warn", text: trust ? "Add its address under Edit." : "Add it under Edit: it's the address the state lists for the business." });
   else if (rec?.address) {
     pChecks.push(sameAddressText(rec.address, principal) ? { tone: "good", text: "Matches the state's record" } : { tone: "warn", text: `The state has ${rec.address}.` });
   }
@@ -141,14 +154,19 @@ export function entityAddresses(a: AddressInput): Addresses {
 
   const agents: AgentLine[] = [];
   if (!trust && home) {
-    const palmActive = a.palm?.live?.ra?.status === "active" || /^Palm, active/.test(a.registeredAgentSource ?? "");
+    const palmActive = palmServes(a);
     const base = {
       state: home,
       stateLabel: stateName(home),
       term: agentTerm(home),
       home: true,
       name: (a.registeredAgent ?? "").trim() || null,
-      address: (a.registeredAgentAddress ?? "").trim() || null,
+      // Ours, else what Palm or the state reported for the same agent.
+      address:
+        (a.registeredAgentAddress ?? "").trim() ||
+        (palmActive ? a.palm?.live?.ra?.address?.trim() : null) ||
+        (rec?.agentAddress && (!a.registeredAgent?.trim() || norm(rec.agent) === norm(a.registeredAgent) || (palmActive && /palm/i.test(rec.agent ?? ""))) ? rec.agentAddress : null) ||
+        null,
       palm: palmActive,
       fileNumber: null,
       record: rec,

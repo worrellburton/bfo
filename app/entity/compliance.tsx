@@ -6,7 +6,8 @@
 
 import { useState, type ReactNode } from "react";
 import { isAdmin } from "../auth";
-import { BOI_NOTE, type Obligation, type PaperworkIssue } from "../entity-paperwork";
+import { formingNow } from "../entity-addresses";
+import { BOI_NOTE, stateCode, stateName, type Obligation, type PaperworkIssue } from "../entity-paperwork";
 import { DOC_LABEL, docKindOf, formatAddress, openPalmDocument, RA_STATUS, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
 import { PalmQuestions } from "./palm-questions";
 import { useEntity } from "./context";
@@ -123,6 +124,8 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 
 // ── Registered agent (Palm) ──────────────────────────────────────────────
 
+const stateNameOf = (s?: string) => stateName(stateCode(s)) || "The state";
+
 function RegisteredAgent() {
   const { page, asset } = useEntity();
   const t = useTone();
@@ -136,7 +139,9 @@ function RegisteredAgent() {
   const raStatus = known ? svc?.status ?? null : cached?.status ?? null;
   const palmIsAgent = raStatus === "active";
   const inFlight = raStatus === "pending" || raStatus === "termination_requested";
-  const canMove = known && isAdmin() && !palmIsAgent && !inFlight;
+  // Formed through Palm with its agent service: Palm is appointed with the formation itself.
+  const forming = formingNow(asset);
+  const canMove = known && isAdmin() && !palmIsAgent && !inFlight && !forming;
   const st = raStatus ? RA_STATUS[raStatus] : null;
   const agentShown = palmIsAgent ? svc?.name ?? cached?.name ?? asset.registeredAgent : asset.registeredAgent;
   const agentAddress = palmIsAgent ? formatAddress(svc?.address) : null;
@@ -185,6 +190,17 @@ function RegisteredAgent() {
       </Empty>
     );
   else if (!status.configured) body = <NotConnected />;
+  else if (forming)
+    body = (
+      <Rows>
+        <Row label="Agent">
+          {forming.palmAgent ? "Palm" : asset.registeredAgent || <span className={t.faint}>The agent named in the formation</span>}
+          <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
+            Appointed with the formation. {stateNameOf(asset.state)} has no record of the entity until it approves the formation; the state record is read after that.
+          </span>
+        </Row>
+      </Rows>
+    );
   else {
     const reason = svc?.status === "failed" ? svc.rejection_reason ?? page.palmInbox.find((e) => e.rejection_reason)?.rejection_reason : null;
     const statusInfo =

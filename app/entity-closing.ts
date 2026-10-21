@@ -10,6 +10,7 @@
  * does end its own registered agent service, which is the last step.
  */
 
+import { palmServes } from "./entity-addresses";
 import { entityType, stateCode, stateName, taxClassOf } from "./entity-paperwork";
 
 export type Closing = {
@@ -149,7 +150,7 @@ export function closingSteps(a: Input): ClosingStep[] {
     });
   }
 
-  const palmAgent = a.palm?.live?.ra?.status === "active" || /^Palm, active/.test(a.registeredAgentSource ?? "");
+  const palmAgent = palmServes(a as never);
   steps.push({
     key: "agent",
     title: palmAgent ? "End Palm's registered agent service" : `Tell ${a.registeredAgent?.trim() || "the registered agent"} to stop service`,

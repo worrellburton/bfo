@@ -100,7 +100,9 @@ export type PaperworkInput = {
   registeredAgentAddress?: string;
   mailingAddress?: string;
   /** States it's registered in as a foreign entity, with the agent there. */
-  foreign?: Record<string, { agent?: string; agentAddress?: string; notNeeded?: boolean }>;
+  foreign?: Record<string, { agent?: string; agentAddress?: string; notNeeded?: boolean; confirmed?: boolean }>;
+  /** Still being formed (through Palm): the state's papers, agent and EIN are on their way. */
+  forming?: boolean;
   /** Federal tax class. */
   llcType?: string;
   trustees?: string;
@@ -712,12 +714,13 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
     }
   }
 
-  if (st && host && st !== host) {
+  // Once answered (it does business there, or only gets mail there) the filing list carries it.
+  if (st && host && st !== host && !a.foreign?.[host]?.confirmed) {
     out.push({
       key: "foreign",
       severity: "medium",
-      title: `Formed in ${stateName(st)}, run from ${stateName(host)}`,
-      detail: `If it does business in ${stateName(host)} beyond simply owning property, it must register there as a foreign ${type === "C-Corp" ? "corporation" : "entity"} (${foreignTitle(type, host)}).`,
+      title: `Does it do business in ${stateName(host)}?`,
+      detail: `Its address is in ${stateName(host)}. If it does business there beyond simply owning property, it must register there as a foreign ${type === "C-Corp" ? "corporation" : "entity"} (${foreignTitle(type, host)}). Answer on the Overview's Addresses card.`,
     });
   }
 
@@ -748,7 +751,7 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
     if (!a.trustees?.trim()) {
       out.push({ key: "trustees", severity: "medium", title: "No trustees on record", detail: "The trustees act for the trust — banks and title companies ask for them. They're named in the trust agreement and the certification of trust." });
     }
-  } else if (!a.registeredAgent?.trim()) {
+  } else if (!a.registeredAgent?.trim() && !a.forming) {
     out.push({
       key: "agent",
       severity: "medium",
@@ -757,7 +760,7 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
     });
   }
 
-  if (!a.formationDate && type !== "Trust") {
+  if (!a.formationDate && type !== "Trust" && !a.forming) {
     out.push({ key: "formation-date", severity: "low", title: "Formation date missing", detail: "Annual-report deadlines are set from it. It's the filing date on the formation document." });
   }
 

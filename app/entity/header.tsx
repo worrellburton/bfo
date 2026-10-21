@@ -55,11 +55,18 @@ export function EntityHeader() {
                   </Link>
                 </span>
               )}{" "}
-              {asset.status && (
-                <Dot tone={asset.status === "Active" ? "good" : "warn"} className="ml-1 align-middle">
-                  {asset.status}
-                </Dot>
-              )}
+              {(() => {
+                // One status: dissolved, being closed, or what the record says (Forming, Active…).
+                const closing = asset.closing && !asset.closing.closedAt;
+                const label = asset.status === "Dissolved" ? "Dissolved" : closing ? "Closing" : asset.status;
+                if (!label) return null;
+                const tone = label === "Active" ? "good" : label === "Dissolved" ? "muted" : label === "Closing" ? "bad" : "warn";
+                return (
+                  <Dot tone={tone} className="ml-1 align-middle">
+                    {label}
+                  </Dot>
+                );
+              })()}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
