@@ -456,7 +456,7 @@ html.light .app-shell-brand .brand-ivory { color: #1c1915; }
 /* ──────────────────────────────────────────────────────────────────────
    Collapsible sidebar.
 
-   Two widths drive everything — 260px open, 76px rail — via --sidebar-w
+   Two widths drive everything — 240px open, 60px rail — via --sidebar-w
    (saved mode, set before first paint by the boot script in root.tsx) and
    the layout's --rail/--inset pair. Mode changes reflow content; the
    auto-collapse hover overlays it.
@@ -482,15 +482,17 @@ html.light .app-shell-brand .brand-ivory { color: #1c1915; }
 }
 .nav-collapse-open { grid-template-rows: 1fr; opacity: 1; }
 .nav-collapse > .nav-tree { overflow: hidden; min-height: 0; }
-.nav-tree { list-style: none; margin: 0; padding: 2px 0 4px 33px; position: relative; }
+.nav-tree { list-style: none; margin: 0; padding: 0 0 0 26px; position: relative; transition: padding 220ms ease; }
+/* Breathing room only while open, so a closed group adds no gap. */
+.nav-collapse-open > .nav-tree { padding-top: 1px; padding-bottom: 3px; }
 .nav-tree-dark { --nav-line: rgba(255, 255, 255, 0.14); }
 .nav-tree-light { --nav-line: rgba(0, 0, 0, 0.13); }
-.nav-branch { position: relative; padding: 1px 0; }
+.nav-branch { position: relative; padding: 0.5px 0; }
 /* The elbow: down from the line, round the corner, into the row. */
 .nav-branch::before {
   content: "";
   position: absolute;
-  left: -15px;
+  left: -12px;
   top: 0;
   height: 50%;
   width: 12px;
@@ -502,7 +504,7 @@ html.light .app-shell-brand .brand-ivory { color: #1c1915; }
 .nav-branch:not(:last-child)::after {
   content: "";
   position: absolute;
-  left: -15px;
+  left: -12px;
   top: 50%;
   bottom: 0;
   border-left: 1.5px solid var(--nav-line);
@@ -512,6 +514,7 @@ html.light .app-shell-brand .brand-ivory { color: #1c1915; }
 html.light .nav-branch:has(> [aria-current="page"])::before { border-color: #4f46e5; }
 /* The current top-level row: a soft accent sliver at its left edge. */
 .nav-row-on::before {
+  display: none;
   content: "";
   position: absolute;
   left: -9px; /* the nav's 0.75rem padding, at this app's 11.9px rem */

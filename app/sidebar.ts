@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 
 /**
- * The sidebar is an auto-collapsing rail: 76px of icons at rest, expanding to
- * 260px as an overlay while a fine pointer hovers it. One pair of numbers
+ * The sidebar is an auto-collapsing rail: 60px of icons at rest, expanding to
+ * 240px as an overlay while a fine pointer hovers it. One pair of numbers
  * drives the rail, the content inset and the flyout, so the edges never drift.
  */
-export const SIDEBAR_OPEN_W = 260;
-export const SIDEBAR_RAIL_W = 76;
+export const SIDEBAR_OPEN_W = 240;
+export const SIDEBAR_RAIL_W = 60;
 
 /**
  * Runs in <head> before first paint so the rail renders at its resting width
