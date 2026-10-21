@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
 import { entityCompleteness, type CompletenessInput } from "../entity-completeness";
@@ -17,6 +16,10 @@ type Entity = {
   x: number;
   y: number;
   color?: string;
+  /** Owners outside the family's entities (a person, an outside company), with their share. */
+  partners?: { name: string; percent: number | null }[];
+  /** This entity's own share in its parent's hands, when it isn't 100%. */
+  share?: number | null;
 };
 
 
@@ -92,34 +95,42 @@ function ComplianceRing({ c, size, isDark }: { c: Compliance | null; size: numbe
   );
 }
 
-export const INITIAL_ENTITIES: Entity[] = [
-  // Root
-  { id: "bfrt", name: "Burton Family Revocable Trust", parentId: null, x: 600, y: 40, color: "#6366f1" },
-  // Level 1
-  { id: "ll", name: "Ledger Louise, LLC", parentId: "bfrt", x: 600, y: 160 },
-  // Level 2 - Main holding companies
-  { id: "smv", name: "Swisshelm Mountain Ventures, LLC", parentId: "ll", x: 150, y: 300 },
-  { id: "si", name: "Sundown Investments, LLC", parentId: "ll", x: 450, y: 300 },
-  { id: "lb", name: "Ledger Burton, LLC", parentId: "ll", x: 750, y: 300 },
-  { id: "wb", name: "Worrell Burton, LLC", parentId: "ll", x: 1050, y: 300 },
-  // SMV children
-  { id: "acr", name: "Arizona Center for Recovery - A New Direction, LLC", parentId: "smv", x: 80, y: 440 },
-  { id: "pl", name: "Persons Lodge LLC (100%)", parentId: "smv", x: 80, y: 520 },
-  { id: "bw", name: "Breezewood (100%)", parentId: "smv", x: 80, y: 600 },
-  // SI children
-  { id: "fdj", name: "FDJ Hesperia, LLC (100%)", parentId: "si", x: 400, y: 440 },
-  { id: "cfs", name: "FDJ CFS, LLC (100%)", parentId: "si", x: 400, y: 520 },
-  { id: "prb", name: "Palomino Ranch on the Bend, LLC (100%)", parentId: "si", x: 400, y: 600 },
-  // LB children
-  { id: "vq", name: "VQ National", parentId: "lb", x: 720, y: 440 },
-  // WB children
-  { id: "cd", name: "Catalog Digital, Inc", parentId: "wb", x: 1020, y: 440 },
-  { id: "ah", name: "Atlas Hydration, Inc", parentId: "wb", x: 1020, y: 520 },
-  // Unconnected
-  { id: "qla", name: "Quail Lakes Apartments, LLC", parentId: null, x: 550, y: 720, color: "#f59e0b" },
-  { id: "hsl", name: "HSL TP Hotel, LLC", parentId: null, x: 780, y: 720, color: "#ef4444" },
-  { id: "hslp", name: "HSL Placita West Ltd Partnership", parentId: null, x: 1010, y: 720, color: "#8b5cf6" },
-];
+/** What the map reads from an entity's record. */
+type MapAsset = CompletenessInput & { name?: string; ownerId?: string; status?: string; members?: { name: string; percent: number | null; role: string | null }[] };
+
+const norm = (s: string) => s.trim().toLowerCase();
+
+/**
+ * The map's nodes, from the entities' own records: each under the entity
+ * that owns it (ownerId), ordered among its siblings as the old hand-drawn
+ * map had them. Owners on its member list that aren't one of the entities
+ * (a person, an outside company) show on its card as partners. Dissolved
+ * entities are left off.
+ */
+export function mapEntities(assets: Record<string, MapAsset>, order: Record<string, number> = {}): Entity[] {
+  const live = Object.entries(assets).filter(([, a]) => a && typeof a.name === "string" && a.name.trim() && a.status !== "Dissolved");
+  const ids = new Set(live.map(([id]) => id));
+  const names = new Set(live.map(([, a]) => norm(a.name!)));
+  return live
+    .map(([id, a]) => {
+      const owner = a.ownerId && ids.has(a.ownerId) && a.ownerId !== id ? a.ownerId : null;
+      const ownerName = owner ? norm(assets[owner].name!) : "";
+      const members = (a.members ?? []).filter((m) => m?.name && !/manager|director|officer/i.test(m.role ?? "") || (m?.name && m.percent != null));
+      const partners = members.filter((m) => !names.has(norm(m.name)) && norm(m.name) !== ownerName).map((m) => ({ name: m.name, percent: m.percent ?? null }));
+      const mine = members.find((m) => norm(m.name) === ownerName);
+      return {
+        id,
+        name: a.name!.trim(),
+        parentId: owner,
+        x: order[norm(a.name!)] ?? 100_000,
+        y: 0,
+        ...(partners.length ? { partners } : {}),
+        ...(mine && mine.percent != null && mine.percent < 100 ? { share: mine.percent } : {}),
+      };
+    })
+    .sort((x, y) => x.x - y.x || x.name.localeCompare(y.name));
+}
+
 
 // ── Geometry (scene px — the whole scene is scaled to fit the canvas) ─────
 const CARD_W = 264; // room for the name and the compliance ring
@@ -442,8 +453,11 @@ export default function EstateMapRoute() {
 export function EstateMapView({
   embedded = false,
   highlight = null,
+  onAddEntity,
 }: {
   embedded?: boolean;
+  /** "+ Entity": open the new-entity form (the Entities page passes its own). */
+  onAddEntity?: () => void;
   /** Lowercased entity names to light (the Entities page's state filter); the rest dim. */
   highlight?: Set<string> | null;
 } = {}) {
@@ -452,13 +466,12 @@ export function EstateMapView({
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const [entities, setEntities] = useState<Entity[]>(INITIAL_ENTITIES);
-  const loaded = useRef(false);
-  const skipNextSave = useRef(false);
-
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [assetByName, setAssetByName] = useState<Record<string, AssetRec>>({});
+  const [assets, setAssets] = useState<Record<string, MapAsset> | null>(null);
+  /** Sibling order as it was hand-arranged on the old map (by name); new entities go last. */
+  const [order, setOrder] = useState<Record<string, number>>({});
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -470,86 +483,48 @@ export function EstateMapView({
   const [smooth, setSmooth] = useState(false);
   const autoFit = useRef(true);
 
-  // Subscribe to the shared estate map
+  // The map is the entities themselves: each entity sits under the one that
+  // owns it (its "Owned by"), so a new entity, or a new owner, shows here at once.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     async function setup() {
       const { db, authReady } = await import("../store");
       await authReady;
-      const { ref, onValue, get, set } = await import("../store");
-
-      // Seed initial entities if nothing exists yet
-      try {
-        const snap = await get(ref(db, "estate-map/entities"));
-        if (!snap.exists()) {
-          await set(ref(db, "estate-map/entities"), INITIAL_ENTITIES);
-        }
-      } catch (err) {
-        console.error("Estate map seed error:", err);
-      }
-
-      unsubscribe = onValue(ref(db, "estate-map/entities"), (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          // The tree may hold an array or an object — normalize to array
-          const arr: Entity[] = Array.isArray(data)
-            ? data.filter(Boolean)
-            : Object.values(data);
-          skipNextSave.current = true;
-          setEntities(arr);
-        }
-        loaded.current = true;
-      });
-    }
-    setup().catch((err) => console.error("Estate map load error:", err));
-    return () => unsubscribe?.();
-  }, []);
-
-  // Debounced save — skip when echoing a remote update
-  useEffect(() => {
-    if (!loaded.current) return;
-    if (skipNextSave.current) {
-      skipNextSave.current = false;
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const { db } = await import("../store");
-        const { ref, set } = await import("../store");
-        await set(ref(db, "estate-map/entities"), entities);
-      } catch (err) {
-        console.error("Estate map save error:", err);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [entities]);
-
-
-  // Subscribe to the assets tree and build a name -> record lookup (the id
-  // opens the entity page; the record scores the paperwork). Read-only: the
-  // map no longer creates entity records from its built-in list.
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    async function setup() {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue } = await import("../store");
-
+      const { ref, onValue, get } = await import("../store");
+      // The old hand-drawn map, for the left-to-right order people arranged.
+      get(ref(db, "estate-map/entities"))
+        .then((snap) => {
+          const raw = snap.val();
+          const nodes: Entity[] = raw ? (Array.isArray(raw) ? raw : Object.values(raw)).filter(Boolean) : [];
+          setOrder(Object.fromEntries(nodes.map((n) => [n.name.trim().toLowerCase(), n.x ?? 0])));
+        })
+        .catch(() => {});
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
-        const data = snapshot.val();
+        const data = (snapshot.val() ?? {}) as Record<string, MapAsset>;
         const map: Record<string, AssetRec> = {};
-        if (data) {
-          for (const [id, value] of Object.entries(data)) {
-            const name = (value as any)?.name;
-            if (typeof name === "string" && name) map[name.toLowerCase()] = { id, data: value as CompletenessInput };
-          }
+        for (const [id, value] of Object.entries(data)) {
+          const name = value?.name;
+          if (typeof name === "string" && name) map[name.toLowerCase()] = { id, data: value as CompletenessInput };
         }
         setAssetByName(map);
+        setAssets(data);
       });
     }
     setup().catch((err) => console.error("Estate map load error:", err));
     return () => unsubscribe?.();
   }, []);
+
+  const entities = useMemo(() => (assets ? mapEntities(assets, order) : []), [assets, order]);
+
+  /** Write one entity's record (re-parenting, renaming). */
+  async function writeAsset(id: string, patch: Record<string, unknown>) {
+    try {
+      const { db, ref, update } = await import("../store");
+      await update(ref(db, `assets/${id}`), patch);
+    } catch (err) {
+      console.error("Estate map save error:", err);
+    }
+  }
 
   // Narrow canvases (phones) get the vertical outline instead of the org chart.
   const compact = size.w > 0 && size.w < 640;
@@ -780,16 +755,13 @@ export function EstateMapView({
     if (assetId) navigate(`/assets/${assetId}`);
   }
 
+  // Dragging onto another entity makes it the owner, on the entity's own record.
   function handleReparent(id: string, parentId: string) {
-    setEntities((prev) => {
-      // Join the new parent's children at the end of the row.
-      const lastX = Math.max(0, ...prev.filter((e) => e.parentId === parentId).map((e) => e.x ?? 0));
-      return prev.map((e) => (e.id === id ? { ...e, parentId, x: lastX + 1 } : e));
-    });
+    void writeAsset(id, { ownerId: parentId });
   }
 
   function handleUnlink(id: string) {
-    setEntities((prev) => prev.map((e) => (e.id === id ? { ...e, parentId: null } : e)));
+    void writeAsset(id, { ownerId: "" });
     setSelectedEdge(null);
   }
 
@@ -802,38 +774,15 @@ export function EstateMapView({
   }
 
   function handleEditSubmit() {
-    if (editingId && editName.trim()) {
-      setEntities((prev) =>
-        prev.map((e) => (e.id === editingId ? { ...e, name: editName.trim() } : e))
-      );
+    if (editingId && editName.trim() && editName.trim() !== entityById.get(editingId)?.name) {
+      void writeAsset(editingId, { name: editName.trim() });
     }
     setEditingId(null);
   }
 
   function handleAddEntity() {
-    const id = `entity-${Date.now()}`;
-    setEntities((prev) => [...prev, { id, name: "New Entity", parentId: null, x: 0, y: 0 }]);
-    setEditingId(id);
-    setEditName("New Entity");
-  }
-
-  async function handleDeleteEntity(id: string) {
-    const ent = entityById.get(id);
-    if (!ent) return;
-    const kids = layout.childrenOf.get(id)?.length ?? 0;
-    const note = kids ? ` Its ${kids} ${kids === 1 ? "subsidiary" : "subsidiaries"} will move to Unlinked.` : "";
-    if (!(await confirmDialog({ title: `Remove ${ent.name} from the estate map?`, message: `The entity's own record is kept.${note}`, tone: "danger", confirmLabel: "Remove" }))) return;
-    setEntities((prev) =>
-      prev.filter((e) => e.id !== id).map((e) => (e.parentId === id ? { ...e, parentId: null } : e))
-    );
-    setHoveredId(null);
-  }
-
-  async function handleReset() {
-    if (await confirmDialog({ title: "Reset the estate map?", message: "This replaces the current links and names with the default structure, for everyone.", tone: "danger", confirmLabel: "Reset map" })) {
-      setEntities(INITIAL_ENTITIES);
-      refit();
-    }
+    if (onAddEntity) onAddEntity();
+    else navigate("/assets?new=1");
   }
 
   // Keyboard: F fits, +/- zoom, Delete unlinks the selected connector, Esc clears.
@@ -899,7 +848,17 @@ export function EstateMapView({
   function metaFor(box: Box, info: ReturnType<typeof describe>): string {
     if (box.kind === "orphan") return `${info.label} · Unlinked`;
     if (box.kind === "root") return `${info.label} · ${box.desc} ${box.desc === 1 ? "entity" : "entities"}`;
+    const ent = entityById.get(box.id);
+    if (ent?.partners?.length) {
+      const p = ent.partners[0];
+      const more = ent.partners.length > 1 ? ` +${ent.partners.length - 1}` : "";
+      // "Sameh Elguizaoui" → "Sameh E." so it fits the card; a company keeps its name.
+      const words = p.name.trim().split(/\s+/);
+      const short = words.length > 1 && !/\b(llc|inc|corp|trust|lp|ltd|company)\b/i.test(p.name) ? `${words[0]} ${words[words.length - 1][0]}.` : p.name;
+      return `${info.label} · Partner ${short}${p.percent != null ? ` (${p.percent}%)` : ""}${more}`;
+    }
     if (box.kids) return `${info.label} · ${box.kids} ${box.kids === 1 ? "subsidiary" : "subsidiaries"}`;
+    if (ent?.share != null) return `${info.label} · ${ent.share}% owned`;
     return info.pct ? `${info.label} · ${info.pct} owned` : info.label;
   }
 
@@ -1232,17 +1191,6 @@ export function EstateMapView({
                       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-1 1a4 4 0 105.656 5.656M10.172 13.828a4 4 0 005.656 0l1-1a4 4 0 00-5.656-5.656M4 4l16 16" /></svg>
                     </button>
                   )}
-                  {box.kind !== "root" && (
-                    <button
-                      className={`h-7 min-w-7 ${coarse} px-1.5 inline-flex items-center justify-center rounded-md transition-colors cursor-pointer ${
-                        isDark ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-500 hover:text-red-600 hover:bg-red-50"
-                      }`}
-                      onClick={() => handleDeleteEntity(box.id)}
-                      title="Remove from map"
-                    >
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12M9 7V5h6v2m-7 0l1 12h6l1-12" /></svg>
-                    </button>
-                  )}
                 </div>
                 </div>
               )}
@@ -1333,14 +1281,6 @@ export function EstateMapView({
           >
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V5a1 1 0 011-1h4M15 4h4a1 1 0 011 1v4M20 15v4a1 1 0 01-1 1h-4M9 20H5a1 1 0 01-1-1v-4" /></svg>
             <span className="hidden sm:inline">Fit</span>
-          </button>
-          <button
-            onClick={handleReset}
-            title="Reset to the default structure"
-            aria-label="Reset to the default structure"
-            className={`grid h-7 w-7 ${coarse} place-items-center rounded-lg border backdrop-blur-md transition-colors cursor-pointer ${hudBtn}`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M5.5 15a7 7 0 0011.9 2.5M18.5 9A7 7 0 006.6 6.5" /></svg>
           </button>
         </div>
 

@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { getUser, isPartner } from "../auth";
 import { useTheme } from "../theme";
 import { EstateMapView } from "./estate-map";
@@ -967,6 +967,15 @@ function StaffAssets() {
   const [toast, setToast] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  // "+ Entity" on the standalone Estate Map lands here with ?new=1.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (params.get("new") !== "1") return;
+    setShowForm(true);
+    const next = new URLSearchParams(params);
+    next.delete("new");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
   const [scan, setScan] = useState<ScanProgress | null>(null);
 
   /** Read every entity's documents and operating agreement, entity by entity. */
@@ -2154,7 +2163,7 @@ function StaffAssets() {
 
       {view === "map" && (
         <div className="mt-5">
-          <EstateMapView embedded highlight={mapHighlight} />
+          <EstateMapView embedded highlight={mapHighlight} onAddEntity={() => setShowForm(true)} />
         </div>
       )}
 
