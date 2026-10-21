@@ -12,6 +12,7 @@ import {
   attachmentUrl,
   deleteMail,
   getMessage,
+  getThread,
   listMail,
   markRead,
   moveMail,
@@ -632,6 +633,21 @@ export default function Inbox() {
     };
   }, [openId]);
 
+  /** The open message's conversation (newest first), and the one just sent into it, which animates in. */
+  const [thread, setThread] = useState<{ id: string; messages: MailMessage[] } | null>(null);
+  const [freshId, setFreshId] = useState<string | null>(null);
+  useEffect(() => {
+    setFreshId(null);
+    if (!openId) return setThread(null);
+    let alive = true;
+    getThread(openId)
+      .then(({ messages }) => alive && setThread({ id: openId, messages }))
+      .catch(() => alive && setThread(null));
+    return () => {
+      alive = false;
+    };
+  }, [openId]);
+
   /** The page's own query string: folder and filter, plus the open message. */
   function query(extra: Record<string, string> = {}): Record<string, string> {
     const next: Record<string, string> = {};
@@ -772,9 +788,19 @@ export default function Inbox() {
     }
   }
 
-  function onSent(sent: MailSummary) {
+  function onSent(sent: MailSummary, about?: string) {
     setDraft(null);
     setToast("Sent");
+    // A reply or forward on the conversation that's open: the sent message joins it at the top.
+    const conv = thread;
+    if (about && conv && (conv.id === about || conv.messages.some((m) => m.id === about))) {
+      getMessage(sent.id)
+        .then(({ message }) => {
+          setThread((cur) => (cur && cur.id === conv.id ? { ...cur, messages: [message, ...cur.messages.filter((m) => m.id !== message.id)] } : cur));
+          setFreshId(message.id);
+        })
+        .catch(() => {});
+    }
     if (folder === "sent" && filter === "all" && !q) setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
     notifyMailChanged();
   }
@@ -885,6 +911,8 @@ export default function Inbox() {
       onDelete={remove}
       onStar={(m, on) => star(m, on)}
       onUnread={markUnread}
+      thread={thread && thread.id === open?.id ? thread.messages : []}
+      freshId={freshId}
     />
   );
 
@@ -1160,7 +1188,7 @@ export default function Inbox() {
         )}
 
       {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
-      {draft && createPortal(<Compose draft={draft} addresses={mine} onClose={() => setDraft(null)} onSent={onSent} />, document.body)}
+      {draft && createPortal(<Compose draft={draft} addresses={mine} onClose={() => setDraft(null)} onSent={(m) => onSent(m, draft.replyToId ?? draft.forwardId)} />, document.body)}
 
       {toast &&
         createPortal(
@@ -1634,7 +1662,13 @@ function Reader({
   onDelete,
   onStar,
   onUnread,
+  thread,
+  freshId,
 }: {
+  /** The whole conversation, newest first (the open message included). */
+  thread: MailMessage[];
+  /** A message just sent into it: it slides in at the top. */
+  freshId: string | null;
   message: MailMessage | null;
   error: string | null;
   me: string;
@@ -1653,6 +1687,9 @@ function Reader({
   const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : senderLabel(a))).join(", ");
   const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
   const canReplyAll = !!m && m.to.length + m.cc.length > 1;
+  const others = m ? thread.filter((x) => x.id !== m.id) : [];
+  const newer = m ? others.filter((x) => x.occurredAt > m.occurredAt) : [];
+  const older = m ? others.filter((x) => x.occurredAt <= m.occurredAt) : [];
 
   const starButton = (m: MailMessage, className = "") => (
     <button
@@ -1720,6 +1757,16 @@ function Reader({
             {starButton(m, "md:hidden -mr-2 -mt-1.5")}
           </div>
 
+          {/* Newer in the conversation (newest on top): the latest reads first, a reply just sent slides in. */}
+          {newer.length > 0 && (
+            <div className="mt-4 space-y-2.5">
+              {newer.map((x, i) => (
+                <ThreadCard key={x.id} m={x} me={me} open={i === 0 || x.id === freshId} fresh={x.id === freshId} />
+              ))}
+              <p className={`pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>The message you opened</p>
+            </div>
+          )}
+
           <div className="mt-4 flex items-start gap-3 max-md:mt-6">
             <Avatar a={m.from} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
             <div className="min-w-0 flex-1">
@@ -1781,6 +1828,53 @@ function Reader({
               ))}
             </div>
           )}
+
+          {older.length > 0 && (
+            <div className="mt-7 space-y-2">
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>Earlier in this conversation · {older.length}</p>
+              {older.map((x) => (
+                <ThreadCard key={x.id} m={x} me={me} open={false} fresh={false} />
+              ))}
+            </div>
+          )}
+
+          {/* Desktop: Reply, Reply all and Forward as big targets under the message, held in view at the bottom while reading a long one. */}
+          <div className={`sticky bottom-0 z-[1] -mx-1 mt-6 hidden px-1 pb-4 pt-6 md:block ${t.dark ? "bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/95 to-transparent" : "bg-gradient-to-t from-white via-white/95 to-transparent"}`}>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => onReply(m, "reply")}
+                className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full px-6 text-[14px] font-semibold shadow-sm transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
+                  t.dark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
+                }`}
+              >
+                <Glyph name="reply" className="h-[18px] w-[18px]" />
+                Reply
+              </button>
+              {canReplyAll && (
+                <button
+                  type="button"
+                  onClick={() => onReply(m, "all")}
+                  className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
+                    t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
+                  }`}
+                >
+                  <Glyph name="replyAll" className="h-[18px] w-[18px]" />
+                  Reply all
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onForward(m)}
+                className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
+                  t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                <Glyph name="forward" className="h-[18px] w-[18px]" />
+                Forward
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1828,6 +1922,45 @@ function Reader({
           document.body
         )}
     </article>
+  );
+}
+
+/** One message in the conversation: who and when, opening to its body. */
+function ThreadCard({ m, me, open: startOpen, fresh }: { m: MailMessage; me: string; open: boolean; fresh: boolean }) {
+  const t = useTone();
+  const [open, setOpen] = useState(startOpen);
+  useEffect(() => {
+    if (startOpen) setOpen(true);
+  }, [startOpen]);
+  const mine = same(m.from.email, me) || m.direction === "out";
+  return (
+    <section className={`overflow-hidden rounded-xl border ${t.line} ${t.dark ? "bg-white/[0.025]" : "bg-gray-50/70"} ${fresh ? "thread-fresh" : ""}`}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={`flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left ${t.hover}`}>
+        <Avatar a={m.from} size="h-7 w-7 text-[10.5px]" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline gap-2">
+            <span className={`truncate text-[13px] font-semibold ${t.text}`}>{mine ? "You" : senderLabel(m.from)}</span>
+            {fresh && <span className={`shrink-0 text-[11px] font-medium ${t.accent}`}>Just sent</span>}
+          </span>
+          {!open && <span className={`block truncate text-[12px] ${t.muted}`}>{m.snippet || (m.text ?? "").slice(0, 140)}</span>}
+        </span>
+        <time dateTime={m.occurredAt} className={`shrink-0 text-[11.5px] tabular-nums ${t.muted}`}>
+          {listDate(m.occurredAt)}
+        </time>
+      </button>
+      {open && (
+        <div className="px-3.5 pb-3.5">
+          {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
+          {m.attachments.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {m.attachments.map((a) => (
+                <AttachmentChip key={a.id} messageId={m.id} a={a} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

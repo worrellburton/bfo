@@ -40,3 +40,15 @@ describe("sending formatted mail", () => {
     expect(r.html).not.toContain("script");
   });
 });
+
+describe("a conversation", () => {
+  it("names every message it's linked by, and asks for any message linked to them", async () => {
+    const { threadCondition, threadIds } = await import("../lib/mail");
+    const ids = threadIds({ message_id: "<b@x>", in_reply_to: "<a@x>", references_ids: ["<a@x>", "bad id"] });
+    expect(ids).toEqual(["<b@x>", "<a@x>"]);
+    expect(decodeURIComponent(threadCondition(ids)!)).toBe(
+      'and=(or(message_id.in.("<b@x>","<a@x>"),in_reply_to.in.("<b@x>","<a@x>"),references_ids.ov.{"<b@x>","<a@x>"}))'
+    );
+    expect(threadCondition([])).toBeNull();
+  });
+});

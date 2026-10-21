@@ -19,6 +19,8 @@ import {
   SendRefused,
   SUMMARY_COLUMNS,
   syncInbound,
+  threadCondition,
+  threadIds,
   toMessage,
   toSummary,
   UUID_RE,
@@ -156,6 +158,26 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         await sb(`mail_messages?id=eq.${row.id}`, { method: "PATCH", body: { read_at: row.read_at } });
       }
       return res.status(200).json({ message: toMessage(row) });
+    }
+
+    case "thread": {
+      // The conversation the message is in, newest first: linked by Message-ID, In-Reply-To and References.
+      const row = await findMessage(me, admin, param(req, "id"));
+      if (!row) return fail(res, 404, "not_found");
+      const scope = scopeFilter(me.id, admin);
+      const found = new Map<string, MailRow>([[row.id, row]]);
+      let ids = threadIds(row);
+      for (let round = 0; round < 2 && ids.length; round++) {
+        const cond = threadCondition(ids);
+        if (!cond) break;
+        const rows = await sb<MailRow[]>(`mail_messages?${scope}&${cond}&select=*&order=occurred_at.desc&limit=40`);
+        for (const r of rows ?? []) if (canSee(r, me.id, admin)) found.set(r.id, r);
+        const next = [...new Set([...found.values()].flatMap(threadIds))];
+        if (next.length === ids.length) break;
+        ids = next;
+      }
+      const messages = [...found.values()].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))).slice(0, 40).map(toMessage);
+      return res.status(200).json({ messages });
     }
 
     case "count": {

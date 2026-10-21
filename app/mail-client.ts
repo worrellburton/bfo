@@ -140,6 +140,11 @@ export function getMessage(id: string) {
   return call<{ message: MailMessage }>(`/api/mail?view=message&id=${encodeURIComponent(id)}`);
 }
 
+/** The conversation a message is in, newest first (itself included). */
+export function getThread(id: string) {
+  return call<{ messages: MailMessage[] }>(`/api/mail?view=thread&id=${encodeURIComponent(id)}`);
+}
+
 export function getMailCount() {
   return call<MailCount>("/api/mail?view=count");
 }
