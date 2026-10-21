@@ -22,7 +22,7 @@ describe("closing an entity", () => {
   });
 
   it("ends Palm's service from here only when Palm is the agent", () => {
-    expect(closingSteps({ ...louise, palm: { live: { ra: { status: "active" } } } }).find((s) => s.key === "agent")).toMatchObject({ palmEnd: true, title: "End Palm's registered agent service" });
+    expect(closingSteps({ ...louise, registeredAgent: "Palm Registered Agents LLC", palm: { live: { ra: { status: "active" } } } }).find((s) => s.key === "agent")).toMatchObject({ palmEnd: true, title: "End Palm's registered agent service" });
     expect(closingSteps(louise).find((s) => s.key === "agent")?.title).toBe("Tell Northwest Registered Agent LLC to stop service");
   });
 

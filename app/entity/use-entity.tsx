@@ -75,7 +75,7 @@ import {
   type EntityTab,
   type FileKind,
   type Classified,
-} from "./model";
+ tidyEin } from "./model";
 
 /**
  * Everything the entity page knows and does — the record and its documents,
@@ -358,7 +358,7 @@ export function useEntityPage() {
       name: String(pick("name") ?? "").trim(),
       type: form.type,
       state: pick("state") || "",
-      ein: pick("ein") || "",
+      ein: tidyEin(pick("ein")),
       registeredAgent: pick("registeredAgent") || "",
       address: pick("address") || "",
       mailingAddress: sameAddressText(pick("mailingAddress"), pick("address")) ? "" : (pick("mailingAddress") || "").trim(),
@@ -1542,6 +1542,13 @@ export function useEntityPage() {
 
   const lookupAsset = (oid: string) => allAssets[oid] as Rec | undefined;
 
+  /** One of the family's entities, by name: its mailing (else principal) address, for an owner that's a company here. */
+  const assetAddressByName = (name: string): string | null => {
+    const want = name.trim().toLowerCase();
+    const hit = Object.values(allAssets).find((a) => (a.name ?? "").trim().toLowerCase() === want);
+    return hit ? (hit.mailingAddress || hit.address || null) : null;
+  };
+
   /** Fill in the IRS's W-9 from the record (a disregarded LLC's goes in its owner's name and TIN). */
   async function generateW9(replace = false) {
     const current = assetRef.current;
@@ -2229,6 +2236,7 @@ export function useEntityPage() {
     refreshPalm,
     checkStateRecord,
     checkForeignRecord,
+    assetAddressByName,
     startClosing,
     cancelClosing,
     markClosingStep,

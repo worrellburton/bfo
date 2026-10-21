@@ -81,7 +81,8 @@ export interface Asset {
   verification?: Verification;
 }
 
-export type Member = { name: string; percent: number | null; role: string | null };
+/** An owner or manager. `address` is theirs (Exhibit A of the operating agreement lists it). */
+export type Member = { name: string; percent: number | null; role: string | null; address?: string | null };
 
 export type EntityProfile = {
   whatItIs: string;
@@ -412,3 +413,12 @@ export function fromDatabase(raw: Asset): Asset {
   }
   return a;
 }
+
+/** An EIN as typed, tidied: nine digits become NN-NNNNNNN; anything else is left for the form to flag. */
+export function tidyEin(raw?: string | null): string {
+  const s = (raw ?? "").trim();
+  const digits = s.replace(/\D/g, "");
+  return digits.length === 9 && /^[\d\s-]+$/.test(s) ? `${digits.slice(0, 2)}-${digits.slice(2)}` : s;
+}
+
+export const einLooksRight = (s?: string | null) => !s?.trim() || /^\d{2}-\d{7}$/.test(tidyEin(s));

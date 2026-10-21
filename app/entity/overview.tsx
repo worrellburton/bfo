@@ -16,7 +16,7 @@ import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
 import { ClosingCard } from "./closing";
 import { useEntity } from "./context";
-import { BY_HAND, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
+import { BY_HAND, einLooksRight, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
 
 export function OverviewTab() {
@@ -195,6 +195,19 @@ function Formation() {
   const canceled = f.status === "canceled";
   const steps = FILING_STATUSES.map((s) => ({ key: s, label: FILING_LABEL[s], reached: !canceled && FILING_STATUSES.indexOf(s) <= FILING_STATUSES.indexOf(f.status as (typeof FILING_STATUSES)[number]) }));
   const stateName = US_STATES.find(([abbr]) => `US-${abbr}` === f.jurisdiction)?.[1] ?? f.jurisdiction;
+  // Once formed, the filing's story is one line; Palm's questions (on the EIN, say) still show.
+  if (done)
+    return (
+      <Section title="Formation" actions={<Dot tone="good">Formed</Dot>}>
+        <Rows>
+          <Row label="Formed">
+            {f.formationDate ? fmtDate(f.formationDate) : "Yes"} with {stateName} through Palm
+            {f.registrationNumber && <span className={t.muted}> · file number {f.registrationNumber}</span>}
+          </Row>
+        </Rows>
+        <PalmQuestions openCases={f.openCases} />
+      </Section>
+    );
   return (
     <Section
       title="Formation"
@@ -248,19 +261,6 @@ function Details() {
     <Section title="Details">
       {/* Free text (addresses, notes with links, file names) wraps instead of running off the card. */}
       <Rows className="[overflow-wrap:anywhere]">
-        <Row label="EIN">
-          {asset.ein ? (
-            <span className="inline-flex items-center gap-1">
-              <span className="font-mono tabular-nums tracking-[0.02em]">{asset.ein}</span>
-              <IconButton
-                icon={page.copiedEin ? "check" : "copy"}
-                label={page.copiedEin ? "Copied" : "Copy EIN"}
-                onClick={page.handleCopyEin}
-                className="-my-1.5 max-sm:-my-3"
-              />
-            </span>
-          ) : undefined}
-        </Row>
 
         {view.isTrust ? (
           <>
@@ -275,7 +275,6 @@ function Details() {
           </>
         ) : (
           <>
-            <Row label="Formation date">{formed ? <span className="tabular-nums">{formed}</span> : undefined}</Row>
             <TaxClassRows />
             <Row label={corp ? "Bylaws" : "Operating agreement"}>{filedFact(asset, "operatingAgreement", asset.operatingAgreementDate)}</Row>
             <Row label={corp ? "Certificate" : "Articles of org"}>{filedFact(asset, "articles", asset.articlesOfOrgDate)}</Row>
@@ -312,7 +311,6 @@ function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
   if (!file && !when) return undefined;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-      {when ? <span className="tabular-nums">{when}</span> : <span className="text-gray-500">Date not on record</span>}
       {file ? (
         <a href={file.url} target="_blank" rel="noopener noreferrer" className={`${linkClass} font-normal`}>
           <Dot tone="good">On file</Dot>
@@ -320,6 +318,7 @@ function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
       ) : (
         <Dot tone="warn">No document</Dot>
       )}
+      {when ? <span className="tabular-nums">{when}</span> : <span className="text-gray-500">no date</span>}
     </span>
   );
 }
@@ -362,6 +361,7 @@ function Addresses() {
 
   return (
     <Section
+      id="addresses"
       title="Addresses"
       count={alerts || undefined}
       alert={alerts > 0}
@@ -380,7 +380,7 @@ function Addresses() {
     >
       <Rows className="[overflow-wrap:anywhere]">
         <Row label="Principal office">
-          {a.principal.value ?? undefined}
+          {a.principal.value ?? <span className={t.faint}>None on record</span>}
           {checks(a.principal.checks)}
         </Row>
         <Row label="Mailing address">
@@ -393,7 +393,9 @@ function Addresses() {
                 </span>
               )}
             </>
-          ) : undefined}
+          ) : (
+            <span className={t.faint}>None on record: mail goes to the principal office once there is one.</span>
+          )}
           {checks(a.mailing.checks)}
         </Row>
         {a.agents.map((g) => (
@@ -576,7 +578,11 @@ function TaxClassRows() {
   let hint: string | null = null;
   let action: ReactNode = null;
   if (!c) {
-    if (src && src !== BY_HAND) {
+    if (formingNow(asset) && (!src || src === BY_HAND)) {
+      // Being formed: the IRS's EIN letter, which Palm brings, is what confirms it.
+      status = <Dot tone="muted">Set at formation</Dot>;
+      hint = "The EIN letter confirms it once Palm has it.";
+    } else if (src && src !== BY_HAND) {
       status = <Dot tone="good">From document</Dot>;
       hint = src;
     } else if (src === BY_HAND) {
@@ -652,10 +658,12 @@ function EditForm() {
     page.setForm((f) => ({ ...f, [k]: v }));
   };
   const text = (k: "name" | "state" | "ein" | "registeredAgent" | "registeredAgentAddress" | "address" | "mailingAddress" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink") => ({
+    id: `edit-${k}`,
     value: form[k] || "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
   });
   const date = (k: "formationDate" | "operatingAgreementDate" | "articlesOfOrgDate") => ({
+    id: `edit-${k}`,
     type: "date",
     value: form[k] || "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
@@ -714,8 +722,8 @@ function EditForm() {
         <Field label={trust ? "Governing law (state)" : "State of formation"}>
           <Input {...text("state")} />
         </Field>
-        <Field label="EIN">
-          <Input {...text("ein")} className="font-mono tabular-nums" />
+        <Field label="EIN" hint={einLooksRight(form.ein) ? undefined : <span className={toneText("warn", t.dark)}>An EIN is nine digits, like 93-1234567.</span>}>
+          <Input {...text("ein")} className="font-mono tabular-nums" placeholder="93-1234567" />
         </Field>
         <Field label={trust ? "Mailing address" : "Principal office"} hint={trust ? undefined : "Where the business is: the address the state lists."}>
           <Input {...text("address")} />
@@ -772,7 +780,7 @@ function EditForm() {
           <Input {...date("formationDate")} />
         </Field>
         <Field label="Entity classification">
-          <Select value={form.llcType || ""} onChange={(e) => set("llcType", e.target.value)}>
+          <Select id="edit-llcType" value={form.llcType || ""} onChange={(e) => set("llcType", e.target.value)}>
             <option value="">Select…</option>
             {classes.map((c) => (
               <option key={c} value={c}>
@@ -846,10 +854,13 @@ function About() {
       title="About"
       info={info}
       actions={
-        <TextButton onClick={() => void page.buildProfile()} disabled={page.profiling}>
-          <Icon name="sparkle" className="h-3 w-3" />
-          {page.profiling ? "Reading…" : p ? "Re-read" : "Read documents"}
-        </TextButton>
+        // One way forward: with nothing on file there is nothing to read, so the body offers adding documents instead.
+        p || page.docs.length ? (
+          <TextButton onClick={() => void page.buildProfile()} disabled={page.profiling}>
+            <Icon name="sparkle" className="h-3 w-3" />
+            {page.profiling ? "Reading…" : p ? "Re-read" : "Read documents"}
+          </TextButton>
+        ) : undefined
       }
     >
       {p ? (
@@ -922,6 +933,8 @@ function About() {
         <ErrorLine>{page.profileError}</ErrorLine>
       ) : page.aiDown ? (
         <Empty>Document reading is paused.</Empty>
+      ) : page.docs.length ? (
+        <Empty>Not read yet: Read documents fills this in from what's on file.</Empty>
       ) : (
         <Empty
           action={
@@ -930,7 +943,7 @@ function About() {
             </Button>
           }
         >
-          Nothing read yet.
+          No documents yet. Add the operating agreement and BFO reads what the entity is from it.
         </Empty>
       )}
     </Section>
@@ -950,16 +963,29 @@ function List({ items }: { items: string[] }) {
 
 // ── To do (completeness) ─────────────────────────────────────────────────
 
+/** What a formation through Palm brings with it: not a to-do while it's under way. */
+const WITH_FORMATION = new Set(["ein", "formationDate", "registeredAgent", "registeredAgentAddress", "articles", "einLetter"]);
+
 function ToDo() {
-  const { page, view, goToTab } = useEntity();
+  const { page, view, asset, goToTab } = useEntity();
   const t = useTone();
-  const { missing, checklist, score } = view;
+  const { checklist, score } = view;
+  const forming = !!formingNow(asset);
+  const coming = forming ? view.missing.filter((i) => WITH_FORMATION.has(i.key)) : [];
+  const missing = forming ? view.missing.filter((i) => !WITH_FORMATION.has(i.key)) : view.missing;
   const done = checklist.filter((i) => i.done);
 
+  // Each item opens exactly where it's fixed: its filing row, the Addresses card, or its field in the edit form.
   function open(item: (typeof missing)[number]) {
-    if (item.filing) goToTab("documents", `filing-${item.key}`, "center");
-    else if (!page.editing) page.startEditing();
-    else document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (item.filing) return goToTab("documents", `filing-${item.key}`, "center");
+    if (item.key.startsWith("foreign:")) return document.getElementById("addresses")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!page.editing) page.startEditing();
+    const focus = () => {
+      const el = document.getElementById(`edit-${item.key}`) ?? document.getElementById("entity-edit");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.focus({ preventScroll: true });
+    };
+    window.setTimeout(focus, 60);
   }
 
   return (
@@ -982,6 +1008,18 @@ function ToDo() {
               <Icon name="chevronRight" className={`h-3 w-3 ${t.faint}`} />
             </button>
           ))
+        )}
+        {coming.length > 0 && (
+          <Disclosure label="Comes with the formation" count={coming.length}>
+            <ul className="pb-2">
+              {coming.map((item) => (
+                <li key={item.key} className={`flex items-center gap-2.5 px-5 py-1.5 text-[12.5px] ${t.muted}`}>
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#818cf8]" aria-hidden />
+                  <span className="min-w-0 truncate">{item.label}</span>
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
         )}
         {done.length > 0 && (
           <Disclosure label="Done" count={done.length}>

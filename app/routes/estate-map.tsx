@@ -20,6 +20,8 @@ type Entity = {
   partners?: { name: string; percent: number | null }[];
   /** This entity's own share in its parent's hands, when it isn't 100%. */
   share?: number | null;
+  /** A person (or outside company) who owns part of its parent: shown with People on. */
+  person?: { percent: number | null };
 };
 
 
@@ -107,7 +109,7 @@ const norm = (s: string) => s.trim().toLowerCase();
  * (a person, an outside company) show on its card as partners. Dissolved
  * entities are left off.
  */
-export function mapEntities(assets: Record<string, MapAsset>, order: Record<string, number> = {}): Entity[] {
+export function mapEntities(assets: Record<string, MapAsset>, order: Record<string, number> = {}, opts: { people?: boolean } = {}): Entity[] {
   const live = Object.entries(assets).filter(([, a]) => a && typeof a.name === "string" && a.name.trim() && a.status !== "Dissolved");
   const ids = new Set(live.map(([id]) => id));
   const names = new Set(live.map(([, a]) => norm(a.name!)));
@@ -128,8 +130,16 @@ export function mapEntities(assets: Record<string, MapAsset>, order: Record<stri
         ...(mine && mine.percent != null && mine.percent < 100 ? { share: mine.percent } : {}),
       };
     })
-    .sort((x, y) => x.x - y.x || x.name.localeCompare(y.name));
+    .sort((x, y) => x.x - y.x || x.name.localeCompare(y.name))
+    .flatMap((e) =>
+      // With People on, each partner is its own card under the entity they co-own.
+      opts.people && e.partners?.length
+        ? [e, ...e.partners.map((p, i) => ({ id: `person:${e.id}:${i}`, name: p.name, parentId: e.id, x: i, y: 0, person: { percent: p.percent } }))]
+        : [e]
+    );
 }
+
+export const isPerson = (id: string) => id.startsWith("person:");
 
 
 // ── Geometry (scene px — the whole scene is scaled to fit the canvas) ─────
@@ -439,6 +449,20 @@ function describe(name: string) {
   return { display: display || name, label, abbr, pct };
 }
 
+/** A person's card: their initials, "Person" (or "Owner" for an outside company). */
+function personInfo(name: string): ReturnType<typeof describe> {
+  const company = /\b(llc|inc|corp|trust|lp|ltd|company|partners)\b/i.test(name);
+  const abbr = company
+    ? "CO"
+    : name
+        .split(/\s+/)
+        .filter((w) => /^[A-Za-z]/.test(w))
+        .slice(0, 2)
+        .map((w) => w[0]!.toUpperCase())
+        .join("");
+  return { display: name, label: company ? "Owner" : "Person", abbr: abbr || "?", pct: null };
+}
+
 type DragState = { id: string; x: number; y: number; target: string | null };
 
 /**
@@ -514,7 +538,24 @@ export function EstateMapView({
     return () => unsubscribe?.();
   }, []);
 
-  const entities = useMemo(() => (assets ? mapEntities(assets, order) : []), [assets, order]);
+  const [people, setPeople] = useState(() => {
+    try {
+      return localStorage.getItem("bfo-map-people") === "1";
+    } catch {
+      return false;
+    }
+  });
+  function togglePeople() {
+    setPeople((on) => {
+      try {
+        localStorage.setItem("bfo-map-people", on ? "0" : "1");
+      } catch {
+        // The map still works; it just won't remember.
+      }
+      return !on;
+    });
+  }
+  const entities = useMemo(() => (assets ? mapEntities(assets, order, { people }) : []), [assets, order, people]);
 
   /** Write one entity's record (re-parenting, renaming). */
   async function writeAsset(id: string, patch: Record<string, unknown>) {
@@ -681,7 +722,7 @@ export function EstateMapView({
 
   // ── Drag an entity onto another to re-parent it ────────────────────────
   function handleCardPointerDown(e: React.PointerEvent, id: string) {
-    if (e.button !== 0 || editingId === id) return;
+    if (e.button !== 0 || editingId === id || isPerson(id)) return;
     if ((e.target as HTMLElement).closest("[data-hud]")) return;
     e.stopPropagation();
     setSelectedEdge(null);
@@ -694,7 +735,7 @@ export function EstateMapView({
     function hitTest(p: { x: number; y: number }): string | null {
       const L = layoutRef.current;
       for (const b of L.boxes) {
-        if (blocked.has(b.id)) continue;
+        if (blocked.has(b.id) || isPerson(b.id)) continue;
         if (p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6) {
           return b.id === currentParent ? null : b.id;
         }
@@ -825,7 +866,7 @@ export function EstateMapView({
   }, [hoveredId, drag, layout]);
 
   const stats = useMemo(() => {
-    return { entities: entities.length, branches: layout.branches, levels: layout.levels, unlinked: layout.tray?.count ?? 0 };
+    return { entities: entities.filter((e) => !e.person).length, branches: layout.branches, levels: layout.levels, unlinked: layout.tray?.count ?? 0 };
   }, [entities, layout]);
 
   // ── Skins ───────────────────────────────────────────────────────────────
@@ -846,8 +887,18 @@ export function EstateMapView({
   }`;
 
   function metaFor(box: Box, info: ReturnType<typeof describe>): string {
+    const who = entityById.get(box.id);
+    if (who?.person) {
+      const parent = who.parentId ? entityById.get(who.parentId) : null;
+      return `${info.label} · ${who.person.percent != null ? `${who.person.percent}% of ` : "owner of "}${parent ? describe(parent.name).display : "it"}`;
+    }
     if (box.kind === "orphan") return `${info.label} · Unlinked`;
-    if (box.kind === "root") return `${info.label} · ${box.desc} ${box.desc === 1 ? "entity" : "entities"}`;
+    if (box.kind === "root") {
+      // Entities under it; people shown alongside don't count.
+      const count = (id: string): number => (layout.childrenOf.get(id) ?? []).reduce((n, c) => n + (isPerson(c) ? 0 : 1 + count(c)), 0);
+      const n = count(box.id);
+      return `${info.label} · ${n} ${n === 1 ? "entity" : "entities"}`;
+    }
     const ent = entityById.get(box.id);
     if (ent?.partners?.length) {
       const p = ent.partners[0];
@@ -857,7 +908,8 @@ export function EstateMapView({
       const short = words.length > 1 && !/\b(llc|inc|corp|trust|lp|ltd|company)\b/i.test(p.name) ? `${words[0]} ${words[words.length - 1][0]}.` : p.name;
       return `${info.label} · Partner ${short}${p.percent != null ? ` (${p.percent}%)` : ""}${more}`;
     }
-    if (box.kids) return `${info.label} · ${box.kids} ${box.kids === 1 ? "subsidiary" : "subsidiaries"}`;
+    const subs = (layout.childrenOf.get(box.id) ?? []).filter((c) => !isPerson(c)).length;
+    if (subs) return `${info.label} · ${subs} ${subs === 1 ? "subsidiary" : "subsidiaries"}`;
     if (ent?.share != null) return `${info.label} · ${ent.share}% owned`;
     return info.pct ? `${info.label} · ${info.pct} owned` : info.label;
   }
@@ -865,8 +917,8 @@ export function EstateMapView({
   function renderCardBody(box: Box, opts: { ghost?: boolean } = {}) {
     const ent = entityById.get(box.id);
     if (!ent) return null;
-    const info = describe(ent.name);
-    const c = toneColor(box.tone, isDark);
+    const info = ent.person ? personInfo(ent.name) : describe(ent.name);
+    const c = ent.person ? (isDark ? "#e2e8f0" : "#475569") : toneColor(box.tone, isDark);
     const leaf = box.kind === "leaf";
     const root = box.kind === "root";
     const orphan = box.kind === "orphan";
@@ -912,7 +964,7 @@ export function EstateMapView({
           />
         )}
         <span
-          className="relative grid shrink-0 place-items-center rounded-lg font-mono font-semibold tracking-tight"
+          className={`relative grid shrink-0 place-items-center font-mono font-semibold tracking-tight ${ent.person ? "rounded-full" : "rounded-lg"}`}
           style={{
             width: glyph,
             height: glyph,
@@ -953,7 +1005,7 @@ export function EstateMapView({
             {metaFor(box, info)}
           </div>
         </div>
-        <ComplianceRing c={complianceFor(box.id)} size={ringSize} isDark={isDark} />
+        {!ent.person && <ComplianceRing c={complianceFor(box.id)} size={ringSize} isDark={isDark} />}
       </div>
     );
   }
@@ -1137,13 +1189,13 @@ export function EstateMapView({
               onPointerLeave={(e) => e.pointerType !== "touch" && setHoveredId((h) => (h === box.id ? null : h))}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                startRename(box.id);
+                if (!isPerson(box.id)) startRename(box.id);
               }}
             >
               {renderCardBody(box)}
 
               {/* Hover actions */}
-              {hoverBox?.id === box.id && (
+              {hoverBox?.id === box.id && !isPerson(box.id) && (
                 // The wrapper's bottom padding bridges the gap to the card, so
                 // moving the pointer up onto the toolbar keeps it open.
                 <div
@@ -1248,6 +1300,17 @@ export function EstateMapView({
 
         {/* HUD: controls */}
         <div data-hud className="absolute right-3 top-3 flex items-center gap-1.5">
+          <button
+            onClick={togglePeople}
+            aria-pressed={people}
+            title={people ? "Hide the people who co-own entities" : "Show the people who co-own entities"}
+            className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${
+              people ? (isDark ? "border-white/25 bg-white/[0.12] text-white" : "border-gray-900 bg-gray-900 text-white") : hudBtn
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            <span className="hidden sm:inline">People</span>
+          </button>
           <button
             onClick={handleAddEntity}
             aria-label="Add entity"

@@ -4,6 +4,7 @@
  * and the category menu. Pure — no React.
  */
 
+import { formingNow } from "../entity-addresses";
 import { entityCompleteness, entityType } from "../entity-completeness";
 import { documentRules, obligations, paperworkChecks, taxHome, type PaperworkInput } from "../entity-paperwork";
 import { stateFindings } from "../palm";
@@ -35,6 +36,7 @@ export function deriveEntity(input: {
     ...asset,
     owner: ownerRec ? { name: ownerRec.name, type: ownerRec.type, llcType: ownerRec.llcType } : null,
     ownerCount: docOwners.length || undefined,
+    forming: !!formingNow(asset as never),
   };
   const rules = documentRules(paper);
   const scoredKinds = rules.filter((r) => r.level !== "recommended").map((r) => r.key);
@@ -58,7 +60,7 @@ export function deriveEntity(input: {
         { key: "documents", label: "Documents", count: docs.length || undefined },
         people,
         { key: "compliance", label: "Compliance", count: complianceAlerts || undefined, alert: complianceAlerts > 0 },
-        ...(etype === "LLC" ? [{ key: "agreements" as const, label: "Agreements", count: contracts.length || undefined }] : []),
+        ...(etype === "LLC" ? [{ key: "agreements" as const, label: "Contracts", count: contracts.length || undefined }] : []),
         ...(asset.type === "C-Corp" ? [{ key: "governance" as const, label: "Governance" }] : []),
         { key: "activity", label: "Activity" },
       ];

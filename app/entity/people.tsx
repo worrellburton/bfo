@@ -137,9 +137,10 @@ export function PeopleTab() {
                     name={m.name}
                     detail={m.role && !/^member$/i.test(m.role) ? m.role : asset.type === "C-Corp" ? "Shareholder" : "Member"}
                     share={m.percent}
+                    address={m.address ?? page.assetAddressByName?.(m.name) ?? null}
                     access={admin ? accessOf(m.name) : null}
                     admin={admin}
-                    onInvite={() => setInviting({ memberName: m.name })}
+                    onInvite={isCompany(m.name) ? undefined : () => setInviting({ memberName: m.name })}
                     onRevoke={(p) => void revoke(p)}
                     onEdit={() => setEditing(i)}
                     onRemove={async () => {
@@ -237,6 +238,7 @@ function PersonRow({
   name,
   detail,
   share,
+  address,
   access,
   admin,
   onInvite,
@@ -248,6 +250,8 @@ function PersonRow({
   name: string;
   detail: string;
   share: number | null;
+  /** Undefined: not asked (managers); null: missing. */
+  address?: string | null;
   access: Person | null;
   admin: boolean;
   onInvite?: () => void;
@@ -271,6 +275,12 @@ function PersonRow({
         <p className={`truncate text-[13.5px] font-medium ${t.text}`}>{name}</p>
         <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] ${t.muted}`}>
           <span>{detail}</span>
+          {address !== undefined &&
+            (address ? (
+              <span className="truncate">· {address}</span>
+            ) : (
+              <span className={t.dark ? "text-amber-300" : "text-amber-700"}>· No address: the operating agreement lists it</span>
+            ))}
           {access && (
             <span className={`inline-flex items-center gap-1 ${signedIn ? (t.dark ? "text-emerald-300" : "text-emerald-700") : t.dark ? "text-amber-300" : "text-amber-700"}`}>
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -306,6 +316,7 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
   const [name, setName] = useState(initial.name);
   const [percent, setPercent] = useState(initial.percent == null ? "" : String(initial.percent));
   const [role, setRole] = useState(initial.role ?? "Member");
+  const [address, setAddress] = useState(initial.address ?? "");
   const [busy, setBusy] = useState(false);
   const manager = /manager|director|officer/i.test(role);
   async function submit(e: FormEvent) {
@@ -313,7 +324,7 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
     if (!name.trim()) return;
     setBusy(true);
     const pct = Number.parseFloat(percent);
-    await onSave({ name: name.trim(), percent: Number.isFinite(pct) ? pct : manager ? null : 0, role });
+    await onSave({ name: name.trim(), percent: Number.isFinite(pct) ? pct : manager ? null : 0, role, ...(address.trim() ? { address: address.trim() } : {}) });
     setBusy(false);
   }
   return (
@@ -337,6 +348,12 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
           <span className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] ${t.muted}`}>%</span>
         </div>
       </label>
+      {!manager && (
+        <label className="col-span-2 block sm:col-span-3">
+          <span className={`mb-1 block text-[11.5px] ${t.muted}`}>Address</span>
+          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, city, state ZIP" />
+        </label>
+      )}
       <div className="col-span-2 flex items-center justify-end gap-1.5 sm:col-span-1">
         <Button kind="ghost" onClick={onCancel}>
           Cancel

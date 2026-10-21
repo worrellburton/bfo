@@ -310,13 +310,13 @@ export function oaInput(entity: Rec & { name: string }, lookup: (id: string) => 
   const owner = entity.ownerId ? lookup(entity.ownerId) : undefined;
   const listed = (entity.members ?? []).filter((m) => !/manager/i.test(m.role ?? "") || m.percent != null);
   const members: OAMember[] = listed.length
-    ? listed.map((m) => ({ name: m.name, percent: m.percent ?? (listed.length === 1 ? 100 : 0), address: "" }))
+    ? listed.map((m) => ({ name: m.name, percent: m.percent ?? (listed.length === 1 ? 100 : 0), address: (m as { address?: string | null }).address?.trim() || "" }))
     : owner?.name
       ? [{ name: owner.name, percent: 100, address: "" }]
       : [];
   // An owner that's an entity here gives its own address.
   for (const m of members) {
-    if (owner?.name === m.name && owner.address) m.address = owner.address;
+    if (!m.address && owner?.name === m.name && owner.address) m.address = owner.mailingAddress || owner.address;
   }
   const managers = (entity.members ?? []).filter((m) => /manager/i.test(m.role ?? "") && m.percent == null).map((m) => m.name);
   const profileManagers = entity.profile?.managers ?? [];
