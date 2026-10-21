@@ -1,6 +1,6 @@
 import { addressState, stateCode } from "../app/entity-paperwork.js";
 import { palm, palmMode } from "./palm.js";
-import { normalizeName, pickRegistryMatch, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
+import { baseName, normalizeName, pickRegistryMatch, searchName, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
 import { applyOps, readCollection, type TreeOp } from "./tree.js";
 
 /**
@@ -24,6 +24,8 @@ type Rec = {
   registeredAgent?: string;
   registeredAgentAddress?: string;
   stateRecord?: StateRecord;
+  /** A state whose registry had no entry (or several) for it, and when that was found. */
+  registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
   foreign?: Record<string, { agent?: string; agentAddress?: string; fileNumber?: string; record?: StateRecord }>;
 };
 
@@ -46,10 +48,10 @@ async function read(name: string, code: string, fileNumber: string | undefined, 
   let number = fileNumber?.trim();
   let where = jurisdiction;
   if (!number) {
-    const r = await palm<{ data: RegistryRecord[] }>("/v1/business/registry/search", { method: "POST", body: { name, registration_jurisdiction: jurisdiction } });
+    const r = await palm<{ data: RegistryRecord[] }>("/v1/business/registry/search", { method: "POST", body: { name: searchName(name), registration_jurisdiction: jurisdiction } });
     const results = r?.data ?? [];
     const match = pickRegistryMatch(results, name, jurisdiction);
-    if (!match) return results.some((x) => normalizeName(x.name) === normalizeName(name)) ? "ambiguous" : "not_found";
+    if (!match) return results.some((x) => baseName(x.name) === baseName(name)) ? "ambiguous" : "not_found";
     number = match.registration_number;
     where = match.registration_jurisdiction || jurisdiction;
     if (!number) return "not_found";
@@ -95,17 +97,20 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
     for (const { code, home } of statesToRead(a)) {
       const prior = home ? a.stateRecord : a.foreign?.[code]?.record;
       const base = { id: row.id, name: a.name, state: code };
-      if (!opts.force && prior && prior.mode === mode && now - prior.checkedAt < FRESH_MS) {
+      const miss = a.registryMiss?.[code];
+      if (!opts.force && ((prior && prior.mode === mode && now - prior.checkedAt < FRESH_MS) || (!prior && miss && now - miss.at < FRESH_MS))) {
         out.push({ ...base, outcome: "fresh" });
         continue;
       }
       try {
         const got = await read(a.name, code, home ? a.fileNumber : a.foreign?.[code]?.fileNumber, mode);
         if (typeof got === "string") {
+          await applyOps([{ op: "update", path: ["assets", row.id], value: { [`registryMiss/${code}`]: { outcome: got, at: now } } }]);
           out.push({ ...base, outcome: got });
           continue;
         }
-        const ops: TreeOp[] = [{ op: "update", path: ["assets", row.id], value: patchFor(a, code, home, got, mode === "live") as never }];
+        const patch = { ...patchFor(a, code, home, got, mode === "live"), ...(miss ? { [`registryMiss/${code}`]: null } : {}) };
+        const ops: TreeOp[] = [{ op: "update", path: ["assets", row.id], value: patch as never }];
         await applyOps(ops, ACTOR);
         out.push({ ...base, outcome: "read", detail: [got.status, got.agent].filter(Boolean).join(" · ") });
       } catch (err) {

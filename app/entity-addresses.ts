@@ -36,6 +36,8 @@ export type AddressInput = {
   stateRecord?: StateRecord;
   foreign?: Record<string, ForeignRegistration>;
   palm?: { live?: { ra?: { status?: string | null } } };
+  /** A state whose registry had no entry (or several) for it, from the state-record check. */
+  registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
 };
 
 export type Check = { tone: "good" | "warn" | "bad" | "info"; text: string };
@@ -134,7 +136,11 @@ export function entityAddresses(a: AddressInput): Addresses {
       fileNumber: null,
       record: rec,
     };
-    agents.push({ ...base, checks: agentChecks(base) });
+    const homeMiss = !rec ? a.registryMiss?.[home] : undefined;
+    const homeLead: Check[] = homeMiss
+      ? [{ tone: "warn", text: `${base.stateLabel}'s registry had ${homeMiss.outcome === "not_found" ? "no entry" : "more than one entry"} for this name (checked ${new Date(homeMiss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}). Add the state file number under Edit, unless it's still being formed.` }]
+      : [];
+    agents.push({ ...base, checks: [...homeLead, ...agentChecks(base)] });
     for (const code of foreignStates(a)) {
       const f = a.foreign?.[code] ?? {};
       const line = {
@@ -148,7 +154,16 @@ export function entityAddresses(a: AddressInput): Addresses {
         fileNumber: (f.fileNumber ?? "").trim() || null,
         record: f.record ?? null,
       };
-      agents.push({ ...line, checks: agentChecks(line) });
+      const miss = !f.record ? a.registryMiss?.[code] : undefined;
+      const when = miss ? new Date(miss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+      const lead: Check[] = miss
+        ? [
+            miss.outcome === "not_found"
+              ? { tone: "bad", text: `Not registered in ${line.stateLabel}: its registry had no entry for this name (checked ${when}). File the foreign registration, or add the file number under Edit if it is registered.` }
+              : { tone: "warn", text: `${line.stateLabel}'s registry has more than one entry like this name (checked ${when}). Add the file number under Edit.` },
+          ]
+        : [];
+      agents.push({ ...line, checks: [...lead, ...agentChecks(line)] });
     }
   }
 
