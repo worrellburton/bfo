@@ -1018,8 +1018,9 @@ export function EstateMapView({
 
   return (
     <div>
+      {/* Edges are drawn owner → owned; the flow runs the other way, up from each entity to its owner. */}
       <style>{`
-        @keyframes estate-flow { to { stroke-dashoffset: -32; } }
+        @keyframes estate-flow { to { stroke-dashoffset: 32; } }
         .estate-flow { animation: estate-flow 1.8s linear infinite; }
         @keyframes estate-live { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
         .estate-live { animation: estate-live 2.4s ease-in-out infinite; }
