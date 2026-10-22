@@ -1783,7 +1783,7 @@ export function useEntityPage() {
   }
 
   /** Draft the LLC's operating agreement from its members, state and tax class. */
-  async function generateOperatingAgreement() {
+  async function generateOperatingAgreement(replace = false) {
     const current = assetRef.current;
     if (!current) return;
     if (!canDraftAgreement(current)) {
@@ -1797,7 +1797,7 @@ export function useEntityPage() {
       return;
     }
     const ok = await confirmDialog({
-      title: "Draft the operating agreement?",
+      title: replace ? "Draft the operating agreement again?" : "Draft the operating agreement?",
       message: `A ${input.members.length === 1 ? "single-member" : `${input.members.length}-member`}, ${input.managed === "managers" ? "manager" : "member"}-managed agreement under ${stateName(input.state)} law, effective ${fmtDate(input.effective)}. Have counsel read it before it's signed.`,
       details: input.members.map((m) => `${m.name}: ${m.percent}%`),
       confirmLabel: "Draft it",
@@ -1805,7 +1805,7 @@ export function useEntityPage() {
     if (!ok) return;
     try {
       const blob = await operatingAgreementPdf(operatingAgreement(input), current.name);
-      await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`);
+      await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`, replace);
       if (!current.operatingAgreementDate) await patchAsset({ operatingAgreementDate: input.effective });
     } catch (err) {
       setSlot("operatingAgreement", { error: err instanceof Error ? err.message : "Couldn't draft the agreement." });

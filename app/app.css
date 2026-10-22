@@ -249,6 +249,13 @@ html.light {
   animation: landing-shimmer 9s linear infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 /* Sign-in uses the same wordmark, sized to leave room for the form. */
+/* The document reader coming and going. */
+@keyframes doc-viewer-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes doc-viewer-out { from { opacity: 1; } to { opacity: 0; } }
+.doc-viewer-in { animation: doc-viewer-in 160ms ease-out; }
+.doc-viewer-out { animation: doc-viewer-out 140ms ease-in forwards; }
+@media (prefers-reduced-motion: reduce) { .doc-viewer-in, .doc-viewer-out { animation: none; } }
+
 /* The 3D logo in place of the wordmark. */
 .landing-logo { width: min(82vw, 720px); height: min(58vw, 440px); }
 .landing-logo-model { display: block; width: 100%; height: 100%; }

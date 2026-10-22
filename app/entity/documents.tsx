@@ -219,6 +219,9 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   ) : file ? (
     <div className={`-my-1 flex shrink-0 items-center ${slot.uploading ? "" : REVEAL}`}>
       <IconLink file={file} icon="external" label="View" ariaLabel={`View ${title}`} />
+      {generate && (
+        <IconButton icon="sparkle" label={`${generate.label} again`} aria-label={`${generate.label} ${title} again`} title={`${generate.title} (the file on record stays in Documents)`} disabled={slot.uploading} onClick={() => void generate.run(true)} />
+      )}
       <IconButton icon="refresh" label="Replace" aria-label={`Replace ${title}`} disabled={slot.uploading} onClick={pick} />
       <IconButton
         icon="trash"

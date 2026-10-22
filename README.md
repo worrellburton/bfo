@@ -99,6 +99,17 @@ it turns and can be dragged) and in the app's corner; "Back to the wordmark"
 undoes it. State lives in `brand_settings`; `/api/brand` serves the current
 logo to anyone and the studio to admins.
 
+### Reading documents
+
+A stored PDF or picture opens in BFO's own reader (a full-screen page with
+Back, Download and New tab) rather than in the browser's viewer at a storage
+URL: pages are drawn with pdf.js, continuous and fitted to the width, with the
+page count as you scroll. A modifier or middle click still opens the signed
+link in a new tab, as do file types the reader doesn't show. Paperwork BFO
+drafted itself (the operating agreement, the W-9) can be drafted again from
+the filled slot, so a draft made before a layout change can be refreshed; the
+earlier file stays in Documents.
+
 ### Palm cases
 
 When Palm can't finish something (a registered agent change, a formation)

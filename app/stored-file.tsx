@@ -11,6 +11,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import { SIGNED_URL_TTL_S, storagePathOf, type StoredFileRef } from "../lib/document-path";
 import { authFetch } from "./auth";
 import { alertDialog } from "./confirm-dialog";
+import { viewerKind } from "./doc-viewer";
 
 export type { StoredFileRef };
 export { storagePathOf };
@@ -70,11 +71,31 @@ export function prefetchStoredFile(file: StoredFileRef): void {
   if (storagePathOf(file) && !cachedFileUrl(file)) void storedFileUrl(file).catch(() => {});
 }
 
+/** The name and type on a stored file, whichever shape it has (a slot's upload or a Documents entry). */
+function describe(file: StoredFileRef): { name: string | null; contentType: string | null } {
+  const f = file as { fileName?: string; name?: string; contentType?: string };
+  return { name: f.fileName || f.name || null, contentType: f.contentType || null };
+}
+
+/** True when the reader can show it: one of our stored PDFs or pictures. */
+export function opensInReader(file: StoredFileRef): boolean {
+  if (!storagePathOf(file)) return false;
+  const { name, contentType } = describe(file);
+  return viewerKind(name, contentType) !== "other";
+}
+
 /**
- * Open a stored file in a new tab. The tab is opened before the signed link
- * is fetched, so this stays inside the click and isn't popup-blocked.
+ * Open a stored file: a PDF or picture of ours in the app's reader; anything
+ * else in a new tab, opened before the signed link is fetched so this stays
+ * inside the click and isn't popup-blocked.
  */
-export async function openStoredFile(file: StoredFileRef): Promise<void> {
+export async function openStoredFile(file: StoredFileRef, opts: { newTab?: boolean; subtitle?: string | null } = {}): Promise<void> {
+  if (!opts.newTab && opensInReader(file)) {
+    const { name, contentType } = describe(file);
+    const { openDocumentViewer } = await import("./doc-viewer");
+    await openDocumentViewer(file, { name, contentType, subtitle: opts.subtitle });
+    return;
+  }
   const ready = cachedFileUrl(file);
   if (ready) {
     window.open(ready, "_blank", "noopener,noreferrer");
@@ -148,6 +169,8 @@ export function StoredFileLink({
   };
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (!ours) return;
+    // A modifier or middle click keeps the browser's own "new tab" with the signed link.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
     e.preventDefault();
     void openStoredFile(file);
   };
