@@ -124,7 +124,7 @@ export type StateLookup =
   | { kind: "error"; message: string };
 
 export async function lookupStateRecord(
-  entity: { name: string; state?: string; fileNumber?: string; registeredAgent?: string; registeredAgentAddress?: string },
+  entity: { name: string; state?: string; fileNumber?: string; registeredAgent?: string; registeredAgentAddress?: string; assetId?: string },
   mode: PalmMode,
   choice?: RegistryRecord,
 ): Promise<StateLookup> {
@@ -134,13 +134,13 @@ export async function lookupStateRecord(
   let where = choice?.registration_jurisdiction || jurisdiction;
   if (choice && !number && choice.palm_id) {
     // A picked entry without its number: look that exact entry up by its Palm ID.
-    const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { palmId: choice.palm_id, mode });
+    const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { palmId: choice.palm_id, mode, assetId: entity.assetId });
     number = results.find((r) => r.palm_id === choice.palm_id)?.registration_number;
     where = results[0]?.registration_jurisdiction || where;
   }
   if (choice && !number) return { kind: "error", message: "That registry entry has no file number. Add it by hand under Edit, then check again." };
   if (!number) {
-    const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: entity.name, jurisdiction, mode });
+    const { results } = await palmCall<{ results: RegistryRecord[] }>("registry-search", { name: entity.name, jurisdiction, mode, assetId: entity.assetId });
     const match = pickRegistryMatch(results, entity.name, jurisdiction);
     if (!match) {
       return {
@@ -153,7 +153,7 @@ export async function lookupStateRecord(
     where = match.registration_jurisdiction || jurisdiction;
   }
   if (!number) return { kind: "error", message: "The registry result had no file number. Add it by hand under Edit." };
-  const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number, mode });
+  const { record } = await palmCall<{ record: RegistryRecord }>("registry-detail", { jurisdiction: where, number, mode, assetId: entity.assetId });
   const snapshot = toStateRecord(record, mode);
   const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
   if (mode === "live" && !entity.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;

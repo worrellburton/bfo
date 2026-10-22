@@ -14,7 +14,9 @@ import {
   type PillarStatus,
   type Tier,
 } from "../compliance-map";
+import { dollars, PALM_PRICES, priceSuffix, STATE_RECORD_CENTS, stateRecordCents } from "../../lib/palm-pricing";
 import { lookupStateRecord, palmCall, PalmUnavailable, type PalmMode } from "../palm";
+import { PalmCostCard, PriceTag } from "../palm-usage";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -170,6 +172,8 @@ export default function EntityCompliance() {
   const [checking, setChecking] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Record<string, { tone: "ok" | "warn" | "bad"; text: string }>>({});
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  /** Bumped after a check, so the Palm costs card re-reads the bill. */
+  const [costKey, setCostKey] = useState(0);
   const user = getUser();
   const canEdit = !!user && user.role !== "viewer" && user.role !== "email";
 
@@ -190,6 +194,7 @@ export default function EntityCompliance() {
 
   const list = useMemo(() => (assets ? assessAll(assets, palm.mode) : []), [assets, palm.mode]);
   const sum = useMemo(() => summarize(list), [list]);
+  const assetNames = useMemo(() => Object.fromEntries(Object.entries(assets ?? {}).map(([id, a]) => [id, a.name ?? ""])), [assets]);
   const byId = useMemo(() => new Map(list.map((a) => [a.id, a])), [list]);
 
   const matches = useCallback(
@@ -218,7 +223,7 @@ export default function EntityCompliance() {
     if (!a || !mode) return "bad";
     setChecking((s) => new Set(s).add(id));
     try {
-      const found = await lookupStateRecord({ name: a.name ?? "", state: a.state, fileNumber: a.fileNumber }, mode);
+      const found = await lookupStateRecord({ name: a.name ?? "", state: a.state, fileNumber: a.fileNumber, assetId: id }, mode);
       if (found.kind === "record") {
         const { db, ref, update } = await import("../store");
         await update(ref(db, `assets/${id}`), found.patch);
@@ -242,6 +247,7 @@ export default function EntityCompliance() {
         n.delete(id);
         return n;
       });
+      setCostKey((k) => k + 1);
     }
   }
 
@@ -254,9 +260,12 @@ export default function EntityCompliance() {
       details: [
         "Each is read in its home state and in every state it's registered in as a foreign entity.",
         "Where the name matches more than one registry entry, it's left for you to pick on the entity's Compliance tab.",
+        palm.mode === "live"
+          ? `Palm bills ${dollars(STATE_RECORD_CENTS)} a state (a ${dollars(PALM_PRICES.search.cents)} search and a ${dollars(PALM_PRICES.detail.cents)} detail; just the detail where the file number is on record), so about ${dollars(ids.length * STATE_RECORD_CENTS)} here, more for entities registered in other states too.`
+          : "In test mode these calls are free.",
         ...(palm.mode === "test" ? ["Palm is in test mode, so the records come from its sandbox."] : []),
       ],
-      confirmLabel: "Check them",
+      confirmLabel: `Check them · about ${dollars(ids.length * STATE_RECORD_CENTS)}`,
     });
     if (!ok) return;
     // One run on the server (api/cron/state-records.ts): the home state and each foreign state.
@@ -282,6 +291,7 @@ export default function EntityCompliance() {
       setNotes((n) => ({ ...n, ...Object.fromEntries(ids.map((id) => [id, { tone: "bad" as const, text: (err as Error).message }])) }));
     } finally {
       setBulk(null);
+      setCostKey((k) => k + 1);
     }
   }
 
@@ -325,12 +335,15 @@ export default function EntityCompliance() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                   </svg>
                   Check {staleOrUnread} with the state
+                  {palm.mode === "live" && <PriceTag cents={staleOrUnread * STATE_RECORD_CENTS} isDark={!isDark} what="reading these records (about)" className="ml-0.5" />}
                 </>
               )}
             </button>
           )}
         </div>
       </header>
+
+      {canEdit && <PalmCostCard isDark={isDark} names={assetNames} refreshKey={costKey} />}
 
       {!assets ? (
         <div className={`mt-6 h-[300px] animate-pulse ${card}`} />
@@ -462,6 +475,7 @@ export default function EntityCompliance() {
           checking={checking.has(sel.id)}
           note={notes[sel.id]}
           onCheck={() => void checkOne(sel.id)}
+          price={priceSuffix(palm.mode, stateRecordCents(!!assets?.[sel.id]?.fileNumber))}
           owner={sel.ownerId ? byId.get(sel.ownerId) ?? null : null}
           owned={list.filter((x) => x.ownerId === sel.id)}
           onSelect={setSelected}
@@ -903,6 +917,7 @@ function Detail({
   checking,
   note,
   onCheck,
+  price = "",
   owner,
   owned,
   onSelect,
@@ -914,6 +929,8 @@ function Detail({
   checking: boolean;
   note?: { tone: "ok" | "warn" | "bad"; text: string };
   onCheck: () => void;
+  /** " · $2.04" when the check is billed. */
+  price?: string;
   owner: Assessment | null;
   owned: Assessment[];
   onSelect: (id: string) => void;
@@ -938,7 +955,7 @@ function Detail({
       return (
         <button type="button" onClick={onCheck} disabled={checking} className={cls}>
           {checking && <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />}
-          {checking ? "Reading the state's record…" : f.cta}
+          {checking ? "Reading the state's record…" : `${f.cta}${price}`}
         </button>
       );
     }

@@ -1043,7 +1043,7 @@ export function useEntityPage() {
     setPalmBusy("record");
     setPalmError("");
     try {
-      const found = await lookupStateRecord(current, mode, choice);
+      const found = await lookupStateRecord({ ...current, assetId: id }, mode, choice);
       if (epoch !== palmEpoch.current) return;
       if (found.kind === "error") {
         setPalmError(found.message);
@@ -1076,7 +1076,7 @@ export function useEntityPage() {
     const f = current.foreign?.[code] ?? {};
     setForeignBusy(code);
     try {
-      const found = await lookupStateRecord({ name: current.name, state: code, fileNumber: f.fileNumber, registeredAgent: f.agent, registeredAgentAddress: f.agentAddress }, mode);
+      const found = await lookupStateRecord({ name: current.name, state: code, fileNumber: f.fileNumber, registeredAgent: f.agent, registeredAgentAddress: f.agentAddress, assetId: id }, mode);
       if (found.kind === "error") return found.message;
       if (found.kind === "choices") {
         return found.results.length

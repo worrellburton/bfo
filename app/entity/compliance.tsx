@@ -5,6 +5,7 @@
  */
 
 import { useState, type ReactNode } from "react";
+import { priceSuffix, stateRecordCents } from "../../lib/palm-pricing";
 import { isAdmin } from "../auth";
 import { formingNow } from "../entity-addresses";
 import { BOI_NOTE, stateCode, stateName, type Obligation, type PaperworkIssue } from "../entity-paperwork";
@@ -324,7 +325,7 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
         }
         actions={
           <TextButton onClick={() => void page.checkStateRecord()} disabled={!!page.palmBusy}>
-            {page.palmBusy === "record" ? "Checking…" : rec ? "Re-check state record" : "Check state record"}
+            {page.palmBusy === "record" ? "Checking…" : `${rec ? "Re-check state record" : "Check state record"}${priceSuffix(page.palmMode, stateRecordCents(!!asset.fileNumber))}`}
           </TextButton>
         }
       >

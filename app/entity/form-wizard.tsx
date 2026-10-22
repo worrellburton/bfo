@@ -50,6 +50,7 @@ import {
   type StateRules,
   type StepKey,
 } from "../formation";
+import { dollars, PALM_PRICES } from "../../lib/palm-pricing";
 import { palmCall, PalmUnavailable, type PalmMode } from "../palm";
 import { pushId } from "../store";
 import { Button, Icon, IconButton, Input, Select, Textarea, useTone } from "./ui";
@@ -135,6 +136,7 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
   const [mode, setMode] = useState<PalmMode | null | "off">(null);
   const [requirements, setRequirements] = useState<Requirements | null>(null);
   const [nameCheck, setNameCheck] = useState<NameCheck | null | "checking">(null);
+  const nameChecks = useRef(new Map<string, NameCheck>());
   const [fee, setFee] = useState<Fee | null>(null);
   const [validation, setValidation] = useState<Validation | null | "checking">(null);
   const [submitting, setSubmitting] = useState(false);
@@ -208,13 +210,23 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
       setNameCheck(null);
       return;
     }
+    // Palm bills each check: a name already checked isn't asked again.
+    const key = `${draft.jurisdiction}|${draft.entityType}|${name.toLowerCase()}`;
+    const known = nameChecks.current.get(key);
+    if (known) {
+      setNameCheck(known);
+      return;
+    }
     let live = true;
     setNameCheck("checking");
     const timer = window.setTimeout(() => {
       palmCall<NameCheck>("form-name", { jurisdiction: draft.jurisdiction, entityType: draft.entityType, name })
-        .then((r) => live && setNameCheck(r))
+        .then((r) => {
+          nameChecks.current.set(key, r);
+          if (live) setNameCheck(r);
+        })
         .catch(() => live && setNameCheck(null));
-    }, 600);
+    }, 900);
     return () => {
       live = false;
       window.clearTimeout(timer);
@@ -318,7 +330,7 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
     }
   }
 
-  const ctx: Ctx = { draft, set, llc, region, state, rules, entities, office, me: me ? { name: me.name ?? "", email: me.email ?? "", phone: me.phone ?? "" } : null };
+  const ctx: Ctx = { draft, set, llc, region, state, rules, entities, office, me: me ? { name: me.name ?? "", email: me.email ?? "", phone: me.phone ?? "" } : null, mode };
 
   const body = (() => {
     switch (here.key) {
@@ -502,6 +514,8 @@ type Ctx = {
   entities: Entities;
   office: FormationAddress | null;
   me: { name: string; email: string; phone: string } | null;
+  /** Palm's mode: a live name check is billed. */
+  mode: PalmMode | null | "off";
 };
 
 const agentName = (d: FormationDraft) => (d.agent.provider === "palm" ? "Palm" : d.agent.kind === "person" ? personName(d.agent.name) : d.agent.entityName.trim());
@@ -581,7 +595,7 @@ function EntityStep({ ctx, requirements, nameCheck, fee, onType }: { ctx: Ctx; r
           aria-label="Legal name"
         />
         <div className="mt-2 text-[12px]">
-          <NameStatus check={nameCheck} onPick={(n) => set({ legalName: n })} hasState={!!state} />
+          <NameStatus check={nameCheck} onPick={(n) => set({ legalName: n })} hasState={!!state} price={ctx.mode === "live" ? dollars(PALM_PRICES.name_eligibility.cents) : null} />
         </div>
       </Card>
 
@@ -2028,9 +2042,10 @@ function ModeBadge({ mode }: { mode: PalmMode | null | "off" }) {
   return <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${cls}`}>{label}</span>;
 }
 
-function NameStatus({ check, onPick, hasState }: { check: NameCheck | null | "checking"; onPick: (name: string) => void; hasState: boolean }) {
+function NameStatus({ check, onPick, hasState, price }: { check: NameCheck | null | "checking"; onPick: (name: string) => void; hasState: boolean; price: string | null }) {
   const t = useTone();
-  if (check === null) return <span className={t.faint}>{hasState ? "Checked with the state as you type." : "Choose a state and the name is checked with it as you type."}</span>;
+  const cost = price ? ` Palm bills ${price} a check.` : "";
+  if (check === null) return <span className={t.faint}>{hasState ? `Checked with the state when you stop typing.${cost}` : "Choose a state and the name is checked with it as you type."}</span>;
   if (check === "checking") return <span className={`wiz-pulse ${t.muted}`}>Checking with the state…</span>;
   const blocking = check.violations.filter((v) => v.severity === "error");
   const notes = check.violations.filter((v) => v.severity !== "error");

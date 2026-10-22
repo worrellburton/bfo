@@ -18,13 +18,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cronSecret = process.env.CRON_SECRET;
     const fromCron =
       req.method === "GET" && (cronSecret ? secretMatches(req.headers.authorization, `Bearer ${cronSecret}`) : !!req.headers["x-vercel-cron-schedule"]);
-    let opts: { ids?: string[]; force?: boolean } = {};
+    let opts: { ids?: string[]; force?: boolean; by?: { id: string; name: string | null } } = {};
     if (!fromCron) {
       const user = await currentUser(req);
       if (!user) return res.status(401).json({ error: "unauthorized" });
       if (!isAdmin(user)) return res.status(403).json({ error: "forbidden" });
       const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { ids?: unknown; force?: unknown };
-      opts = { ids: Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : undefined, force: body.force === true };
+      opts = { ids: Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : undefined, force: body.force === true, by: { id: user.id, name: user.name } };
     }
     const results = await checkStateRecords(opts);
     const counts = results.reduce<Record<string, number>>((n, r) => ((n[r.outcome] = (n[r.outcome] ?? 0) + 1), n), {});

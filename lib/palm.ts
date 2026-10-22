@@ -7,6 +7,9 @@
  * Live keys file with the state and are billed to the Palm account.
  */
 
+import { sb } from "./auth.js";
+import { PALM_PRICES, palmProduct } from "./palm-pricing.js";
+
 const BASE = "https://api.getpalm.com";
 const TIMEOUT_MS = 20_000;
 
@@ -25,12 +28,23 @@ export class PalmError extends Error {
   }
 }
 
-/** One Palm API call. Throws PalmError with Palm's own explanation on failure. */
-export async function palm<T = unknown>(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
+/** Who or what a billed call was for, kept with it in palm_usage. */
+export type PalmUsage = { actorId?: string | null; actorName?: string | null; assetId?: string | null; reason?: string };
+
+/**
+ * One Palm API call. Throws PalmError with Palm's own explanation on failure.
+ * A call Palm bills for (lib/palm-pricing.ts) is logged in palm_usage.
+ */
+export async function palm<T = unknown>(
+  path: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string>; usage?: PalmUsage } = {}
+): Promise<T> {
   const key = process.env.PALM_API_KEY;
-  if (!palmMode(key)) throw new PalmError(503, "Palm isn't connected. Add PALM_API_KEY (sk_test_… or sk_live_…) in Vercel.");
+  const mode = palmMode(key);
+  if (!mode) throw new PalmError(503, "Palm isn't connected. Add PALM_API_KEY (sk_test_… or sk_live_…) in Vercel.");
+  const method = init.method ?? "GET";
   const r = await fetch(`${BASE}${path}`, {
-    method: init.method ?? "GET",
+    method,
     headers: {
       Authorization: `Bearer ${key}`,
       Accept: "application/json",
@@ -41,6 +55,8 @@ export async function palm<T = unknown>(path: string, init: { method?: string; b
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const text = await r.text();
+  const product = palmProduct(method, path);
+  if (product && r.ok) await logUsage(mode, product, method, path, r.status, init.usage);
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;
@@ -49,6 +65,28 @@ export async function palm<T = unknown>(path: string, init: { method?: string; b
   }
   if (!r.ok) throw new PalmError(r.status, problemMessage(r.status, json), json);
   return json as T;
+}
+
+/** A billed call, written down; a call that can't be logged still goes through. */
+async function logUsage(mode: PalmMode, product: string, method: string, path: string, status: number, usage: PalmUsage | undefined) {
+  const price = PALM_PRICES[product as keyof typeof PALM_PRICES];
+  await sb("palm_usage", {
+    method: "POST",
+    body: {
+      mode,
+      product,
+      // The sandbox isn't billed.
+      cents: mode === "live" ? price.cents : 0,
+      method,
+      path: path.slice(0, 300),
+      status,
+      actor_id: usage?.actorId ?? null,
+      actor_name: usage?.actorName?.slice(0, 120) ?? null,
+      asset_id: usage?.assetId ?? null,
+      reason: usage?.reason?.slice(0, 120) ?? null,
+    },
+    prefer: "return=minimal",
+  }).catch((err) => console.error("palm: couldn't log a billed call", err));
 }
 
 /** Palm's RFC 7807 problem → one readable sentence. */
