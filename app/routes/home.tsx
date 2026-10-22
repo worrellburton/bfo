@@ -1242,7 +1242,7 @@ export default function Home() {
         <div className={`flex flex-col gap-3 border-b px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between ${hairline}`}>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <p className={kicker}>Holding structure</p>
-            {!assetsLoading && (
+            {!assetsLoading && !assetsError && (
               <span className={`text-[11px] tabular-nums ${textMuted}`}>
                 {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp{trustCount ? ` · ${trustCount} trust${trustCount === 1 ? "" : "s"}` : ""} · {stateCount} state{stateCount === 1 ? "" : "s"}
               </span>

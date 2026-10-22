@@ -738,7 +738,10 @@ function EditForm() {
   // noValidate: the browser's URL check would block Enter where Save never was.
   function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
     if (e.key === "Escape" && !e.defaultPrevented) {
+      // Stop here: the "Discard changes?" dialog opens within this keypress
+      // and would otherwise hear the same Esc as its own Cancel.
       e.preventDefault();
+      e.stopPropagation();
       void page.cancelEditing();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.target instanceof HTMLTextAreaElement) {
       e.preventDefault();
