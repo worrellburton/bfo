@@ -12,6 +12,7 @@ import {
   deleteMessages,
   filterClause,
   folderFilter,
+  pgQuote,
   lastSync,
   mailStatus,
   parseSend,
@@ -47,6 +48,8 @@ import { storageSignedUrl } from "../lib/storage.js";
  *     folder=active                  inbox and sent together: each conversation's newest message, latest activity
  *                                    first; pages with before=<threadAt>&beforeKey=<threadKey> of the last row
  *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
+ *     with filter=all and no search, starred mail is pinned: the first page carries it as `pinned` (Active: each
+ *     conversation with a starred message, under its newest), and `messages` never repeats it
  *   message&id=<uuid>                → { message }  (marks it read)
  *   count                            → { unread, otherUnread, address|null, aliases, canSeeOther, sync? }  (kicks a sync)
  *   attachment&id=<uuid>&att=<id>    → { url }  (signed, 5 minutes)
@@ -65,7 +68,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  *   photo-remove                     → { faces }  back to initials
  *   move { ids, folder }             → { ok }  (inbox|archive; received mail only)
  *   read { ids, read }               → { ok }
- *   star { ids, starred }            → { ok }
+ *   star { ids, starred, conversation? } → { ok }  (conversation: unstarring clears every message in their conversations)
  *   delete { ids }                   → { ok }  (for good)
  *
  * "Not yours" is 403/404, never 401 — the browser signs out on 401.
@@ -148,8 +151,21 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
               ? `or(and(direction.eq.out,from_email.eq.${v}),and(direction.eq.in,${received}))`
               : received;
       }
+      // A search looks through everything the caller may see, whatever folder is open.
+      const where = searchCondition(param(req, "q")) ? scopeFilter(me.id, admin) : folderFilter(folder, me.id, admin);
+      // Starred mail sits at the top, whatever its date: carried on the first page as `pinned`, and kept out of
+      // the dated list on every page so paging stays on time alone. Not in a search or a narrowed list.
+      const pins = filter === "all" && !searchCondition(param(req, "q"));
+      const inBox = box ? `&and=(${box})` : "";
+      // Active pins each conversation with a starred message in it.
+      const starredKeys =
+        pins && active
+          ? [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=thread_key&limit=100`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))]
+          : [];
+      const keyList = starredKeys.map(pgQuote).join(",");
       // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
       const conditions = [
+        keyList ? `or(thread_key.is.null,thread_key.not.in.(${keyList}))` : "",
         !before
           ? ""
           : active
@@ -159,22 +175,34 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         box,
       ].filter(Boolean);
       const extra = conditions.length ? `&and=(${conditions.join(",")})` : "";
-      // A search looks through everything the caller may see, whatever folder is open.
-      const where = searchCondition(param(req, "q")) ? scopeFilter(me.id, admin) : folderFilter(folder, me.id, admin);
       if (active) {
+        let pinned: SummaryRow[] = [];
+        if (!before && starredKeys.length) {
+          const rows = await sb<SummaryRow[]>(`mail_messages?${where}&thread_key=in.(${keyList})${inBox}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=400`);
+          pinned = conversationHeads(rows ?? [], 100, Infinity).heads;
+        }
         // A conversation's messages come together, newest first; read enough to fill a page of them.
         const fetched = Math.min(limit * 4, 400);
         const rows = await sb<SummaryRow[]>(
           `mail_messages?${where}${filterClause(filter)}${extra}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=${fetched}`
         );
         const { heads, more } = conversationHeads(rows ?? [], limit, fetched);
-        return res.status(200).json({ messages: heads.map(toSummary), hasMore: more });
+        // A pinned conversation shows starred, whichever of its messages carries the star.
+        return res.status(200).json({ messages: heads.map(toSummary), hasMore: more, ...(pins ? { pinned: pinned.map((r) => ({ ...toSummary(r), starred: true })) } : {}) });
       }
+      const pinned =
+        pins && !before
+          ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=100`)) ?? [])
+          : [];
       const rows = await sb<SummaryRow[]>(
-        `mail_messages?${where}${filterClause(filter)}${extra}` +
+        `mail_messages?${where}${filterClause(filter)}${pins ? "&starred_at=is.null" : ""}${extra}` +
           `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`
       );
-      return res.status(200).json({ messages: (rows ?? []).slice(0, limit).map(toSummary), hasMore: (rows ?? []).length > limit });
+      return res.status(200).json({
+        messages: (rows ?? []).slice(0, limit).map(toSummary),
+        hasMore: (rows ?? []).length > limit,
+        ...(pins ? { pinned: pinned.map(toSummary) } : {}),
+      });
     }
 
     case "message": {
@@ -322,6 +350,13 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
         method: "PATCH",
         body: { starred_at: body.starred ? new Date().toISOString() : null },
       });
+      // Active shows a conversation starred when any message in it is: unstarring it there clears them all.
+      if (!body.starred && body.conversation === true) {
+        const keys = [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?id=in.(${ids.join(",")})&${scope}&select=thread_key`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))];
+        if (keys.length) {
+          await sb(`mail_messages?thread_key=in.(${keys.map(pgQuote).join(",")})&starred_at=not.is.null&${scope}`, { method: "PATCH", body: { starred_at: null } });
+        }
+      }
       return res.status(200).json({ ok: true });
     }
 

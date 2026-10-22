@@ -139,7 +139,8 @@ export function listMail({ folder, filter = "all", q = "", to, before, beforeId,
   if (before) p.set("before", before);
   if (before && beforeId) p.set("beforeId", beforeId);
   if (before && beforeKey) p.set("beforeKey", beforeKey);
-  return call<{ messages: MailSummary[]; hasMore: boolean }>(`/api/mail?${p}`);
+  // `pinned`: starred mail for the top of the first page (filter "all", no search).
+  return call<{ messages: MailSummary[]; hasMore: boolean; pinned?: MailSummary[] }>(`/api/mail?${p}`);
 }
 
 /** Opens a message; the server marks it read. */
@@ -207,8 +208,9 @@ export function markRead(ids: string[], read: boolean) {
   return post<{ ok: true }>({ action: "read", ids, read });
 }
 
-export function starMail(ids: string[], starred: boolean) {
-  return post<{ ok: true }>({ action: "star", ids, starred });
+/** `conversation`: unstarring clears every starred message in their conversations (Active shows them as one). */
+export function starMail(ids: string[], starred: boolean, opts: { conversation?: boolean } = {}) {
+  return post<{ ok: true }>({ action: "star", ids, starred, ...(opts.conversation ? { conversation: true } : {}) });
 }
 
 export function deleteMail(ids: string[]) {

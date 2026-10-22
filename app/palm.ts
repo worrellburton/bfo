@@ -11,6 +11,8 @@ import type { RaSnapshot } from "../lib/palm-agent";
 import { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateRecord } from "../lib/registry";
 
 export type { PalmAddress, PalmMode, RegistryRecord, StateRecord } from "../lib/registry";
+export { DOC_LABEL, docKindOf } from "../lib/palm-docs";
+import { docKindOf } from "../lib/palm-docs";
 export { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord } from "../lib/registry";
 
 export type RaService = {
@@ -91,25 +93,7 @@ export const RA_STATUS: Record<NonNullable<RaService["status"]>, { label: string
   canceled: { label: "Canceled", tone: "muted" },
 };
 
-/** Forwarded mail and agent paperwork, most urgent first. */
-export const DOC_LABEL: Record<string, string> = {
-  service_of_process: "Legal papers served",
-  notice: "Notice from the state",
-  mail: "Mail",
-  ra_change_confirmation: "Agent change confirmed",
-  ra_resignation: "Agent resignation",
-  receipt: "Receipt",
-  filing_confirmation: "Filing confirmation",
-  certificate_of_formation: "Certificate of formation",
-  articles_of_incorporation: "Articles",
-  ein_letter: "EIN letter",
-  welcome_letter: "Welcome letter",
-};
 
-/** A document's kind: `types` is current, `type` is Palm's deprecated single value. */
-export function docKindOf(d: PalmDocument): string {
-  return d.types?.find((t) => t === "service_of_process") ?? d.types?.[0] ?? d.type ?? "";
-}
 
 export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
   const rank = (d: PalmDocument) => (docKindOf(d) === "service_of_process" ? 0 : docKindOf(d) === "notice" ? 1 : 2);

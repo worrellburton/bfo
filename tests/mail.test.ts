@@ -735,7 +735,8 @@ describe("/api/mail", () => {
     expect(r.json.messages.map((m: any) => m.id)).toEqual([MSG, "m2"]);
     const q = sbCalls[0].path;
     // The time goes through exactly as given (microseconds kept), not re-parsed into milliseconds.
-    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
+    // Starred mail is pinned above the list, so the dated list leaves it out.
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&starred_at=is\\.null&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
     expect(q).toContain("order=occurred_at.desc,id.desc&limit=3");
     expect(q).not.toContain("html_body");
     for (const bad of <Record<string, string>[]>[{ before: "yesterday" }, { before: '2026-10-15T00:00:00Z",id.gt.(' }, { beforeId: MSG }, { before: "2026-10-15T00:00:00Z", beforeId: "x" }]) {
@@ -782,6 +783,40 @@ describe("/api/mail", () => {
     expect((await call("POST", { body: { action: "star", ids: [MSG], starred: "yes" } })).status).toBe(400);
   });
 
+  it("pins starred mail above the rest, on the first page only", async () => {
+    sbRoutes = [
+      [/GET mail_messages\?.*starred_at=not\.is\.null/, () => [row({ id: "s1", starred_at: "2026-10-01T00:00:00Z" })]],
+      [/GET mail_messages\?/, () => [row()]],
+    ];
+    const r = await call("GET", { query: { view: "list", folder: "inbox" } });
+    expect(r.json.pinned.map((m: any) => m.id)).toEqual(["s1"]);
+    expect(r.json.messages.map((m: any) => m.id)).toEqual([MSG]);
+    expect(sbCalls[1].path).toContain("&starred_at=is.null");
+    // A narrowed list or a search pins nothing.
+    sbCalls.length = 0;
+    const unread = await call("GET", { query: { view: "list", filter: "unread" } });
+    expect(unread.json).not.toHaveProperty("pinned");
+    expect(sbCalls).toHaveLength(1);
+  });
+
+  it("pins each Active conversation with a starred message, and keeps it out of the rest", async () => {
+    sbRoutes = [
+      [/GET mail_messages\?.*select=thread_key&/, () => [{ thread_key: "<a,b@x>" }]],
+      [/GET mail_messages\?.*thread_key=in\./, () => [row({ id: "head", thread_key: "<a,b@x>", thread_at: "2026-10-20T00:00:00Z" }), row({ id: "older", thread_key: "<a,b@x>" })]],
+      [/GET mail_messages\?/, () => [row({ id: "other", thread_key: "<c@x>", thread_at: "2026-10-19T00:00:00Z" })]],
+    ];
+    const r = await call("GET", { query: { view: "list", folder: "active" } });
+    expect(r.json.pinned).toEqual([expect.objectContaining({ id: "head", starred: true })]);
+    expect(r.json.messages.map((m: any) => m.id)).toEqual(["other"]);
+    expect(sbCalls.at(-1)!.path).toContain('and=(or(thread_key.is.null,thread_key.not.in.("<a,b@x>")))');
+  });
+
+  it("unstars a whole conversation from Active", async () => {
+    sbRoutes = [[/GET mail_messages\?id=in/, () => [{ thread_key: "<a@x>" }]]];
+    await call("POST", { body: { action: "star", ids: [MSG], starred: false, conversation: true } });
+    expect(sbCalls.at(-1)).toMatchObject({ method: "PATCH", path: `mail_messages?thread_key=in.("<a@x>")&starred_at=not.is.null&user_id=eq.${U1}`, body: { starred_at: null } });
+  });
+
   it("pages on (time, id), so mail sharing a timestamp isn't skipped", async () => {
     const at = "2026-10-14T12:00:00+00:00";
     const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -817,7 +852,7 @@ describe("/api/mail", () => {
     await call("GET", { query: { view: "list", folder: "archive", before: at, beforeId: id(3) } });
     const q = sbCalls[0].path;
     expect(q.match(/[?&]or=/g)).toHaveLength(1);
-    expect(q).toContain(`or=(user_id.eq.${U1},user_id.is.null)&folder=eq.archive&and=(or(occurred_at.lt."${at}",and(occurred_at.eq."${at}",id.lt.${id(3)})))&`);
+    expect(q).toContain(`or=(user_id.eq.${U1},user_id.is.null)&folder=eq.archive&starred_at=is.null&and=(or(occurred_at.lt."${at}",and(occurred_at.eq."${at}",id.lt.${id(3)})))&`);
   });
 
   it("keeps the catch-all folder to owners and admins", async () => {

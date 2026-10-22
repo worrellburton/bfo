@@ -582,16 +582,8 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
   return pdf.output("blob");
 }
 
-/** Palm's document types → the paperwork slot each one fills. */
-export const PALM_SLOT: Record<string, "articles" | "einLetter" | "operatingAgreement" | "goodStanding" | "foreignRegistration"> = {
-  certificate_of_formation: "articles",
-  articles_of_incorporation: "articles",
-  ein_letter: "einLetter",
-  ein_letter_alternate: "einLetter",
-  operating_agreement: "operatingAgreement",
-  certificate_of_good_standing: "goodStanding",
-  certificate_of_authority: "foreignRegistration",
-};
+/** Palm's document types → the paperwork slot each one fills (lib/palm-docs.ts, shared with the server). */
+export { PALM_SLOT } from "../lib/palm-docs";
 
 /** Which entity type the generator can write an operating agreement for. */
 export const canDraftAgreement = (r: { name?: string; type?: string }) => entityType(r) === "LLC";

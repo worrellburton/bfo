@@ -10,7 +10,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { getUser, isPartner } from "../auth";
+import { authFetch, getUser, isAdmin, isPartner } from "../auth";
+import { palmCall, type PalmMode } from "../palm";
+import { dollars } from "../../lib/palm-pricing";
+import { stateReadCost, type StateReadable } from "../../lib/state-reads";
 import { useTheme } from "../theme";
 import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
@@ -74,7 +77,15 @@ interface Asset {
   w9?: unknown;
   articles?: unknown;
   operatingAgreement?: unknown;
+  // Read for "Sync everything with Palm": which states' records it reads, and what that costs.
+  status?: string;
+  fileNumber?: string;
+  foreign?: StateReadable["foreign"];
+  palm?: StateReadable["palm"];
 }
+
+/** What the server's sync found for one entity (lib/palm-sync.ts). */
+type PalmSyncResult = { id: string; name: string; lines: { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string }[] };
 
 type SortKey = "name" | "type" | "llcType" | "state" | "ein" | "owner" | "filings" | "score";
 type SortDir = "asc" | "desc";
@@ -978,6 +989,58 @@ function StaffAssets() {
   }, [params, setParams]);
   const [scan, setScan] = useState<ScanProgress | null>(null);
 
+  // ── Sync everything with Palm, for every entity ──────────────────────────
+  // One run on the server (api/palm-sync.ts): each entity's state records (the
+  // billed part, priced here first), then its agent, Palm's copy and its mail.
+  const [palmMode, setPalmMode] = useState<PalmMode | null>(null);
+  useEffect(() => {
+    if (!isAdmin()) return;
+    let alive = true;
+    palmCall<{ mode: PalmMode | null }>("status")
+      .then((r) => alive && setPalmMode(r.mode))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const palmPlan = useMemo(() => {
+    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode) }));
+    return { cents: per.reduce((n, x) => n + x.cost.cents, 0), states: per.reduce((n, x) => n + x.cost.states.length, 0), entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length };
+  }, [assets, palmMode]);
+  const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode } | null>(null);
+
+  async function syncAllWithPalm() {
+    if (!palmMode || palmSync?.running) return;
+    const live = palmMode === "live";
+    const ok = await confirmDialog({
+      title: `Sync ${palmPlan.entities} ${palmPlan.entities === 1 ? "entity" : "entities"} with Palm?`,
+      message: live ? (
+        <>
+          Reading {palmPlan.states} state {palmPlan.states === 1 ? "record" : "records"} is billed by Palm: about <b>{dollars(palmPlan.cents)}</b>. Everything else is free.
+        </>
+      ) : (
+        "Palm is in test mode: nothing is billed, and the records come from its sandbox."
+      ),
+      details: [
+        "Each entity's state record is read in its home state and every state it's registered in as a foreign entity ($1.29 with a file number on record, $2.04 without).",
+        "For entities Palm holds: their agent, Palm's copy of the business, their mail (saved to Documents) and Palm's open questions.",
+        "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
+        "It can take a few minutes.",
+      ],
+      confirmLabel: live && palmPlan.cents ? `Sync all · ${dollars(palmPlan.cents)}` : "Sync all",
+    });
+    if (!ok) return;
+    setPalmSync({ running: true, results: [] });
+    try {
+      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Couldn't sync with Palm.");
+      setPalmSync({ running: false, results: j.entities ?? [], mode: j.mode });
+    } catch (err) {
+      setPalmSync({ running: false, results: [], error: (err as Error).message });
+    }
+  }
+
   /** Read every entity's documents and operating agreement, entity by entity. */
   async function scanAll() {
     const ok = await confirmDialog({
@@ -1741,6 +1804,21 @@ function StaffAssets() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+        {isAdmin() && palmMode && (
+          <button
+            type="button"
+            onClick={() => void syncAllWithPalm()}
+            disabled={!!palmSync?.running}
+            title="Every entity's state records, and for the ones Palm holds, their agent, Palm's copy and their mail"
+            className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
+              isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Icon d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" strokeWidth={1.8} className={`w-3.5 h-3.5 ${palmSync?.running ? "animate-spin" : ""}`} />
+            <span className="max-sm:hidden">{palmSync?.running ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
+            <span className={t2}>{palmMode === "test" ? "free in test mode" : palmPlan.cents ? `est. ${dollars(palmPlan.cents)}` : "free"}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void scanAll()}
@@ -1762,6 +1840,52 @@ function StaffAssets() {
         </button>
         </div>
       </div>
+
+      {palmSync && !palmSync.running &&
+        createPortal(
+          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmSync(null)}>
+            <div
+              role="dialog"
+              aria-label="Synced with Palm"
+              onClick={(e) => e.stopPropagation()}
+              className={`flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"}`}
+            >
+              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                <p className="text-sm font-semibold">
+                  {palmSync.error ? "Couldn't sync with Palm" : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
+                </p>
+                <button type="button" onClick={() => setPalmSync(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
+                  Close
+                </button>
+              </div>
+              <div className="overflow-y-auto px-5 py-3">
+                {palmSync.error && <p className="text-sm text-red-500">{palmSync.error}</p>}
+                {palmSync.results.map((e) => (
+                  <div key={e.id} className={`border-b py-3 last:border-0 ${isDark ? "border-white/[0.06]" : "border-gray-100"}`}>
+                    <Link to={`/assets/${e.id}`} className="text-sm font-medium hover:underline">
+                      {e.name}
+                    </Link>
+                    <ul className="mt-1.5 space-y-1">
+                      {e.lines.map((l, i) => (
+                        <li key={i} className="flex items-start gap-2 text-[12.5px] leading-snug">
+                          <span
+                            aria-hidden="true"
+                            className={`mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full ${l.tone === "good" ? "bg-emerald-400" : l.tone === "warn" ? "bg-amber-400" : l.tone === "bad" ? "bg-red-400" : isDark ? "bg-gray-600" : "bg-gray-300"}`}
+                          />
+                          <span className="min-w-0">
+                            <span className="font-medium">{l.label}</span>
+                            <span className={l.tone === "bad" ? "text-red-500" : t2}> · {l.text}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {scan &&
         createPortal(

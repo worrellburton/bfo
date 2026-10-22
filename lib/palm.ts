@@ -93,6 +93,26 @@ export async function palmFile(path: string): Promise<{ bytes: Buffer; contentTy
   };
 }
 
+/** A document Palm holds for a business (GET /v1/business/{id}/document). */
+export type PalmDocumentRow = { id: string; type?: string; types?: string[]; filename?: string; content_type?: string; file_size?: number; created_at?: string; upload_date?: string };
+
+/**
+ * Every document Palm holds for a business, following every page so nothing
+ * (legal papers above all) is cut off; the bound only stops a runaway cursor.
+ */
+export async function listPalmDocuments(businessId: string): Promise<{ documents: PalmDocumentRow[]; truncated: boolean }> {
+  const documents: PalmDocumentRow[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 100; page++) {
+    const q: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+    const r: { data?: PalmDocumentRow[]; has_more?: boolean; next_cursor?: string | null } = await palm(`/v1/business/${businessId}/document?limit=100${q}`);
+    documents.push(...(r?.data ?? []));
+    if (!r?.has_more || !r.next_cursor || r.next_cursor === cursor) return { documents, truncated: false };
+    cursor = r.next_cursor;
+  }
+  return { documents, truncated: true };
+}
+
 /** A billed call, written down; a call that can't be logged still goes through. */
 async function logUsage(mode: PalmMode, product: string, method: string, path: string, status: number, usage: PalmUsage | undefined) {
   const price = PALM_PRICES[product as keyof typeof PALM_PRICES];

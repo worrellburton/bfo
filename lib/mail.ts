@@ -416,7 +416,7 @@ export function folderFilter(folder: MailFolder, userId: string, admin: boolean)
 }
 
 /** A value quoted for a PostgREST condition, so commas, parentheses and dots in it are literal. */
-function pgQuote(v: string): string {
+export function pgQuote(v: string): string {
   return encodeURIComponent(`"${v.replace(/[\\"]/g, (c) => `\\${c}`)}"`);
 }
 
