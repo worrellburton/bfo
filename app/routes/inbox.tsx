@@ -53,6 +53,8 @@ const GLYPHS = {
   star: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z",
   rows: "M3.75 5.25h16.5M3.75 9.75h16.5M3.75 14.25h16.5M3.75 18.75h16.5",
   columns: "M9 4.5v15m6-15v15M3 6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 17.25V6.75z",
+  chats:
+    "M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155",
   unread: "M21.75 9v.906a2.25 2.25 0 01-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 001.183 1.981l6.478 3.488m8.839 2.51l-4.66-2.51m0 0l-1.023-.55a2.25 2.25 0 00-2.134 0l-1.022.55m0 0l-4.661 2.51m16.5 1.615a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V8.844a2.25 2.25 0 011.183-1.981l7.5-4.039a2.25 2.25 0 012.134 0l7.5 4.039a2.25 2.25 0 011.183 1.98V19.5z",
 } as const;
 
@@ -620,7 +622,14 @@ const blankDraft = (): Draft => ({ title: "New message", to: "", cc: "", bcc: ""
 
 // ── Page ─────────────────────────────────────────────────────────────────
 
-type ListState = { folder: MailFolder; filter: MailFilter; q: string; to: string; messages: MailSummary[]; hasMore: boolean };
+/** `pinned`: starred mail, shown above the rest whatever its date; `messages`: the rest, newest first, paged. */
+type ListState = { folder: MailFolder; filter: MailFilter; q: string; to: string; pinned: MailSummary[]; messages: MailSummary[]; hasMore: boolean };
+
+/** Every row a list shows: starred first, then the rest. */
+const listRows = (l: ListState | null): MailSummary[] => (l ? [...l.pinned, ...l.messages] : []);
+
+/** The same change to the starred rows and the rest. */
+const eachRow = (l: ListState, fn: (rows: MailSummary[]) => MailSummary[]): ListState => ({ ...l, pinned: fn(l.pinned), messages: fn(l.messages) });
 
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
 type View = "table" | "columns";
@@ -716,15 +725,15 @@ export default function Inbox() {
       if (req !== listReq.current) return;
       setListError(null);
       setList((prev) => {
-        const fresh = { folder: which, filter: narrow, q: term, to, ...head };
+        const fresh = { folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] };
         if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
-        const ids = new Set(head.messages.map((m) => m.id));
+        const ids = new Set([...head.messages, ...fresh.pinned].map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
         // Keep what sorts after the head's last row, in the server's order. Active has a row per
         // conversation: one that moved up is in the head now, under its newest message.
         const last = head.messages[head.messages.length - 1];
-        const threads = new Set(head.messages.map((m) => m.threadKey).filter(Boolean));
+        const threads = new Set([...head.messages, ...fresh.pinned].map((m) => m.threadKey).filter(Boolean));
         const older = prev.messages.filter((m) =>
           which === "active" && !term
             ? !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)) && threadSortsAfter(m, last)
@@ -764,8 +773,8 @@ export default function Inbox() {
       const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, to: cur.to || undefined, ...after });
       setList((prev) => {
         if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q || prev.to !== cur.to) return prev;
-        const ids = new Set(prev.messages.map((m) => m.id));
-        const threads = new Set(prev.folder === "active" && !prev.q ? prev.messages.map((m) => m.threadKey).filter(Boolean) : []);
+        const ids = new Set(listRows(prev).map((m) => m.id));
+        const threads = new Set(prev.folder === "active" && !prev.q ? listRows(prev).map((m) => m.threadKey).filter(Boolean) : []);
         const added = next.messages.filter((m) => !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)));
         return { ...prev, messages: [...prev.messages, ...added], hasMore: next.hasMore };
       });
@@ -788,7 +797,7 @@ export default function Inbox() {
 
   /** Change one row in the list (if it's there). */
   const patchRow = (id: string, patch: Partial<MailSummary>) =>
-    setList((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
+    setList((prev) => prev && eachRow(prev, (rows) => rows.map((m) => (m.id === id ? { ...m, ...patch } : m))));
 
   // ── The open message ──────────────────────────────────────────────────
 
@@ -801,7 +810,7 @@ export default function Inbox() {
       return;
     }
     const hit = cache.current.get(openId) ?? null;
-    const row = listRef.current?.messages.find((m) => m.id === openId);
+    const row = listRows(listRef.current).find((m) => m.id === openId);
     setOpen({ id: openId, message: hit, error: null });
     // A cached copy will do, unless the list says it's unread again (fetching marks it read).
     if (hit && (!row || row.read)) return;
@@ -915,7 +924,7 @@ export default function Inbox() {
   }
 
   function dropFromList(id: string) {
-    setList((prev) => prev && { ...prev, messages: prev.messages.filter((m) => m.id !== id) });
+    setList((prev) => prev && eachRow(prev, (rows) => rows.filter((m) => m.id !== id)));
     // Close it only if it's still the one open (and the page is still here).
     if (mountedRef.current && openIdRef.current === id) closeMessage();
   }
@@ -957,7 +966,11 @@ export default function Inbox() {
     if (hit) cache.current.set(m.id, { ...hit, starred });
     setOpen((o) => (o && o.id === m.id && o.message ? { ...o, message: { ...o.message, starred } } : o));
     try {
-      await starMail([m.id], starred);
+      // In Active a conversation is starred when any message in it is: unstarring it there clears them all.
+      const cur = listRef.current;
+      await starMail([m.id], starred, { conversation: cur?.folder === "active" && !cur.q });
+      // Starred mail sits at the top: read the list again so it moves there (or back to its date).
+      if (cur && cur.filter === "all" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "refresh");
     } catch (e) {
       patchRow(m.id, { starred: !starred });
       if (hit) cache.current.set(m.id, { ...hit, starred: !starred });
@@ -1006,7 +1019,7 @@ export default function Inbox() {
 
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
   const folders = FOLDERS.filter((x) => x.key !== "other" || canSeeOther);
-  const rows = list && list.folder === folder && list.filter === filter && list.q === q && list.to === box ? list.messages : null;
+  const rows = list && list.folder === folder && list.filter === filter && list.q === q && list.to === box ? listRows(list) : null;
 
   // Another folder, filter, search or mailbox starts with nothing picked.
   useEffect(() => {
@@ -1060,14 +1073,14 @@ export default function Inbox() {
       if (action === "read" || action === "unread") {
         const read = action === "read";
         await markRead(ids, read);
-        setList((prev) => prev && { ...prev, messages: prev.messages.map((m) => (picked.has(m.id) ? { ...m, read } : m)) });
+        setList((prev) => prev && eachRow(prev, (rows) => rows.map((m) => (picked.has(m.id) ? { ...m, read } : m))));
         for (const id of ids) cache.current.delete(id);
         setToast(read ? `Marked ${ids.length} as read` : `Marked ${ids.length} as unread`);
       } else {
         if (action === "delete") await deleteMail(ids);
         else await moveMail(ids, action);
         const gone = new Set(ids);
-        setList((prev) => prev && { ...prev, messages: prev.messages.filter((m) => !gone.has(m.id)) });
+        setList((prev) => prev && eachRow(prev, (rows) => rows.filter((m) => !gone.has(m.id))));
         for (const id of ids) cache.current.delete(id);
         if (openIdRef.current && gone.has(openIdRef.current)) closeMessage();
         setPicked(new Set());
@@ -1215,23 +1228,37 @@ export default function Inbox() {
         {folders.map((x) => {
           const on = x.key === folder;
           const n = x.key === "inbox" || x.key === "active" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
+          // Active isn't a folder like the rest (it's In and Out together, as conversations): its own colour and mark, and a rule after it.
+          const live = x.key === "active";
+          const tone = live
+            ? on
+              ? t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe] ring-1 ring-inset ring-[#818cf8]/50" : "bg-indigo-600 text-white"
+              : t.dark ? "text-[#a5b4fc] ring-1 ring-inset ring-[#818cf8]/25 hover:bg-[#6366f1]/10 hover:text-[#c7d2fe]" : "text-indigo-600 ring-1 ring-inset ring-indigo-200 hover:bg-indigo-50"
+            : on
+              ? t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white"
+              : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900";
+          const badge = live
+            ? on
+              ? t.dark ? "bg-[#818cf8]/30 text-white" : "bg-white/20 text-white"
+              : t.dark ? "bg-[#6366f1]/20 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"
+            : on
+              ? "bg-white/15 text-white"
+              : t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600";
           return (
-            <button
-              key={x.key}
-              type="button"
-              aria-current={on ? "page" : undefined}
-              onClick={() => chooseFolder(x.key)}
-              className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-md:h-[38px] max-md:rounded-[10px] max-md:px-3.5 max-md:text-[13.5px] ${
-                on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              {x.label}
-              {!!n && (
-                <span className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${on ? "bg-white/15 text-white" : t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600"}`}>
-                  {n}
-                </span>
-              )}
-            </button>
+            <Fragment key={x.key}>
+              <button
+                type="button"
+                aria-current={on ? "page" : undefined}
+                onClick={() => chooseFolder(x.key)}
+                title={live ? "In and Out together, a row per conversation, latest activity first" : undefined}
+                className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-md:h-[38px] max-md:rounded-[10px] max-md:px-3.5 max-md:text-[13.5px] ${live ? "font-semibold" : ""} ${tone}`}
+              >
+                {live && <Glyph name="chats" className="h-3.5 w-3.5" />}
+                {x.label}
+                {!!n && <span className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${badge}`}>{n}</span>}
+              </button>
+              {live && <span aria-hidden="true" className={`mx-1.5 my-1 w-px shrink-0 self-stretch ${t.dark ? "bg-white/10" : "bg-gray-200"}`} />}
+            </Fragment>
           );
         })}
       </nav>
@@ -1972,6 +1999,8 @@ function Reader({
             </div>
           )}
 
+          {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date. */}
+          <div className="group/main">
           <div className="mt-4 flex items-start gap-3 max-md:mt-6">
             <Avatar a={m.from} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
             <div className="min-w-0 flex-1">
@@ -1981,6 +2010,11 @@ function Reader({
                   <span className="md:hidden">{listDate(m.occurredAt)}</span>
                   <span className="max-md:hidden">{fullDate(m.occurredAt)}</span>
                 </time>
+                <span className="-my-1 hidden shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover/main:opacity-100 focus-within:opacity-100 md:flex">
+                  <GlyphButton glyph="reply" label="Reply" onClick={() => onReply(m, "reply")} />
+                  {canReplyAll && <GlyphButton glyph="replyAll" label="Reply all" onClick={() => onReply(m, "all")} />}
+                  <GlyphButton glyph="forward" label="Forward" onClick={() => onForward(m)} />
+                </span>
               </div>
               {/* "To me ▾" opens every address. */}
               <button
@@ -2034,17 +2068,8 @@ function Reader({
             </div>
           )}
 
-          {older.length > 0 && (
-            <div className="mt-7 space-y-2">
-              <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>Earlier in this conversation · {older.length}</p>
-              {older.map((x) => (
-                <ThreadCard key={x.id} m={x} me={me} open={false} fresh={false} />
-              ))}
-            </div>
-          )}
-
-          {/* Desktop: Reply, Reply all and Forward as big targets under the message, held in view at the bottom while reading a long one. */}
-          <div className={`sticky bottom-0 z-[1] -mx-1 mt-6 hidden px-1 pb-4 pt-6 md:block ${t.dark ? "bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/95 to-transparent" : "bg-gradient-to-t from-white via-white/95 to-transparent"}`}>
+          {/* Desktop: Reply, Reply all and Forward as big targets right under the message they answer, before anything earlier. */}
+          <div className="mt-6 hidden md:block">
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
@@ -2080,6 +2105,17 @@ function Reader({
               </button>
             </div>
           </div>
+          </div>
+
+          {older.length > 0 && (
+            <div className="mt-7 space-y-2">
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>Earlier in this conversation · {older.length}</p>
+              {older.map((x) => (
+                <ThreadCard key={x.id} m={x} me={me} open={false} fresh={false} />
+              ))}
+            </div>
+          )}
+
         </div>
       )}
 

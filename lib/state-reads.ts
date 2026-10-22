@@ -15,7 +15,7 @@ export type StateReadable = {
   address?: string;
   fileNumber?: string;
   foreign?: Record<string, { fileNumber?: string; notNeeded?: boolean }>;
-  palm?: Record<string, { formation?: { status?: string } | null } | undefined>;
+  palm?: Record<string, { businessId?: string | null; formation?: { status?: string } | null } | undefined>;
 };
 
 /** The states to read for one entity: home first, then each foreign one. */

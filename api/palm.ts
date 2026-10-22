@@ -10,6 +10,7 @@ import {
   normalizeEin,
   normalizeLegalName,
   businessDifferences,
+  listPalmDocuments,
   palm,
   PalmError,
   palmFile,
@@ -277,21 +278,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "documents": {
         const id = String(body.businessId || "");
         if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
-        // Follow every page so nothing — legal papers above all — is cut off; the bound only stops a runaway cursor.
-        const documents: unknown[] = [];
-        let cursor: string | null = null;
-        let truncated = false;
-        for (let page = 0; ; page++) {
-          if (page === 100) {
-            truncated = true;
-            break;
-          }
-          const q: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
-          const r: { data?: unknown[]; has_more?: boolean; next_cursor?: string | null } = await palm(`/v1/business/${id}/document?limit=100${q}`);
-          documents.push(...(r?.data ?? []));
-          if (!r?.has_more || !r.next_cursor || r.next_cursor === cursor) break;
-          cursor = r.next_cursor;
-        }
+        const { documents, truncated } = await listPalmDocuments(id);
         return res.status(200).json({ mode, documents, ...(truncated ? { truncated } : {}) });
       }
 
