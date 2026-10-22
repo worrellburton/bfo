@@ -549,6 +549,45 @@ export function secretMatches(presented: unknown, secret: string | undefined): b
   return !!secret && typeof presented === "string" && safeEqual(presented, secret);
 }
 
+// ── Cron ──────────────────────────────────────────────────────────────
+
+export type CronAuth = "ok" | "unauthorized" | "unconfigured";
+
+/**
+ * Whether a request is the Vercel cron. Vercel sends Authorization: Bearer
+ * $CRON_SECRET on every scheduled fire once that env var exists, and that is
+ * the only proof accepted. The x-vercel-cron-schedule header is not: outside
+ * traffic can send it too. With no secret configured nothing passes, so a
+ * missing env var shuts the cron rather than opening it.
+ */
+export function cronAuth(req: VercelRequest): CronAuth {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return "unconfigured";
+  return secretMatches(req.headers.authorization, `Bearer ${secret}`) ? "ok" : "unauthorized";
+}
+
+/**
+ * Answer a refused cron call: 503 when the secret isn't set (so the fix is
+ * obvious in the logs), 401 otherwise. Logs booleans only, never the secret.
+ */
+export function refuseCron(req: VercelRequest, res: VercelResponse, name: string, outcome: Exclude<CronAuth, "ok">) {
+  console.error(`${name} cron rejected`, {
+    reason: outcome,
+    auth_header: !!req.headers.authorization,
+    schedule_header: !!req.headers["x-vercel-cron-schedule"],
+    ua: req.headers["user-agent"] ?? null,
+  });
+  if (outcome === "unconfigured") {
+    return fail(
+      res,
+      503,
+      "cron_secret_missing",
+      "CRON_SECRET is not set, so scheduled runs are refused. Set it in Vercel (Production) and redeploy."
+    );
+  }
+  return fail(res, 401, "unauthorized");
+}
+
 // ── HTTP plumbing ─────────────────────────────────────────────────────
 
 export function publicUser(user: AppUser) {

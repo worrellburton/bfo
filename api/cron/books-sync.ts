@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, currentUser, sbFetch as db, secretMatches } from "../../lib/auth.js";
+import { canWrite, cronAuth, currentUser, refuseCron, sbFetch as db } from "../../lib/auth.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
+import { fetchAll } from "../../lib/db-pages.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 
@@ -13,19 +14,21 @@ import { sunriseUtcDate } from "../../lib/sunrise.js";
  * entities), which default to "transfer" and can be reclassified as a
  * distribution or a loan.
  *
- * GET  → the Vercel cron (Bearer CRON_SECRET when set)
- * POST → manual "Sync now" from the app (any signed-in user)
+ * GET  → the Vercel cron (Bearer CRON_SECRET, required)
+ * POST → manual "Sync now" from the app (anyone who can write)
  */
 
 const HISTORY_MONTHS = 24;
 
 type UserRule = { match: string; book_category: string | null; vendor_name: string | null; type_override: string | null };
 
-/** Rules the user taught (category popup, vendor rename) — beat the built-ins. */
+/**
+ * Rules the user taught (category popup, vendor rename) — beat the built-ins.
+ * A failed read throws: syncing without them would overwrite every renamed
+ * vendor and taught category with the built-in guess.
+ */
 async function loadUserRules(): Promise<UserRule[]> {
-  const r = await db("book_rules?select=match,book_category,vendor_name,type_override");
-  if (!r.ok) return [];
-  return ((await r.json()) as UserRule[]).map((rule) => ({
+  return (await fetchAll<UserRule>("book_rules?select=match,book_category,vendor_name,type_override")).map((rule) => ({
     match: rule.match.toLowerCase(),
     book_category: rule.book_category ?? null,
     vendor_name: rule.vendor_name ?? null,
@@ -109,19 +112,18 @@ async function upsertChunked(rows: Array<Record<string, unknown>>) {
  * same magnitude, opposite direction, within a few days, different entities.
  */
 async function markIntercompany(sinceDate: string): Promise<number> {
-  const r = await db(
-    `book_transactions?txn_type=eq.transfer&date=gte.${sinceDate}` +
-      `&select=transaction_id,account_id,date,amount,entity_id,intercompany&order=date.asc&limit=10000`
-  );
-  if (!r.ok) return 0;
-  const transfers = (await r.json()) as Array<{
+  // A first sync pairs two years of transfers: more than one 1,000-row page.
+  const transfers = await fetchAll<{
     transaction_id: string;
     account_id: string;
     date: string;
     amount: number;
     entity_id: string | null;
     intercompany: boolean;
-  }>;
+  }>(
+    `book_transactions?txn_type=eq.transfer&date=gte.${sinceDate}` +
+      `&select=transaction_id,account_id,date,amount,entity_id,intercompany&order=date.asc,transaction_id.asc`
+  );
 
   // Bucket by |amount| in cents, then greedily pair an out-leg with an in-leg
   // from a different account within 3 days.
@@ -179,34 +181,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  // Cron proves itself with Authorization: Bearer $CRON_SECRET, which Vercel
-  // injects on every scheduled fire once that env var exists. Until it is
-  // configured, fall back to the x-vercel-cron-schedule header Vercel stamps
-  // on scheduled fires — verified NOT to be stripped from outside traffic, so
-  // it is a stopgap, not a credential: the moment CRON_SECRET is set, the
-  // Bearer match becomes mandatory and the header alone no longer passes.
-  // (An earlier version keyed off an "x-vercel-cron" header Vercel never
-  // sends, which silently 401'd every scheduled fire.) A person proves
-  // themselves with a session.
-  const cronSecret = process.env.CRON_SECRET;
-  const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
-  const fromCron =
-    req.method === "GET" &&
-    (cronSecret ? secretMatches(req.headers.authorization, `Bearer ${cronSecret}`) : !!cronScheduleHeader);
-  if (!fromCron) {
+  // GET is the cron and only the cron: it must present Bearer $CRON_SECRET
+  // (lib/auth.ts cronAuth). A person syncs with POST and a session.
+  const fromCron = req.method === "GET";
+  if (fromCron) {
+    const cron = cronAuth(req);
+    if (cron !== "ok") return refuseCron(req, res, "books-sync", cron);
+  } else {
     const user = await currentUser(req);
-    if (!user) {
-      // Booleans only — never the secret — so a rejected fire explains itself
-      // in the runtime logs instead of being a bare 401.
-      console.error("books-sync rejected", {
-        method: req.method,
-        schedule_header: !!cronScheduleHeader,
-        auth_header: !!req.headers.authorization,
-        secret_configured: !!cronSecret,
-        ua: req.headers["user-agent"] ?? null,
-      });
-      return res.status(401).json({ error: "unauthorized" });
-    }
+    if (!user) return res.status(401).json({ error: "unauthorized" });
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
   }
 
@@ -299,15 +282,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Rows a person has hand-edited (the audit log knows which): the bank
     // refresh keeps their vendor/account/type intact and only updates the
-    // mechanical columns.
-    const editedRes = await db("book_txn_log?select=transaction_id");
+    // mechanical columns. Every page of the log is read (it outgrew PostgREST's
+    // 1,000-row cap), and a failed read aborts the sync: an empty set here
+    // would treat every edit as never made and overwrite it.
     const editedIds = new Set<string>(
-      editedRes.ok ? ((await editedRes.json()) as any[]).map((r) => r.transaction_id) : []
+      (
+        await fetchAll<{ transaction_id: string }>(
+          "book_txn_log?select=transaction_id&order=changed_at.asc,transaction_id.asc,field.asc"
+        )
+      ).map((r) => r.transaction_id)
     );
 
-    const prefsRes = await db("plaid_account_prefs?select=*");
+    // Likewise the account mappings: without them every upserted row would be
+    // stamped with no entity.
     const prefs = new Map<string, any>(
-      prefsRes.ok ? ((await prefsRes.json()) as any[]).map((p) => [p.account_id, p]) : []
+      (await fetchAll<any>("plaid_account_prefs?select=*")).map((p) => [p.account_id, p])
     );
 
     const cutoff = new Date();
@@ -403,7 +392,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .filter(Boolean)
               .map((id) => `"${id}"`)
               .join(",");
-            await db(`book_transactions?transaction_id=in.(${ids})`, { method: "DELETE" }).catch(() => {});
+            // fetch resolves on HTTP errors, so check ok: a failed delete must
+            // throw before the cursor below moves past these removals for good.
+            const del = await db(`book_transactions?transaction_id=in.(${ids})`, { method: "DELETE" });
+            if (!del.ok) throw new Error(`delete of removed transactions failed: ${(await del.text()).slice(0, 300)}`);
             removed += data.removed.length;
           }
 

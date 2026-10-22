@@ -10,7 +10,8 @@ import {
   type PlannedInflow,
 } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser, formatPhone, sb, secretMatches, sendEmail, type AppUser } from "../../lib/auth.js";
+import { cronAuth, currentUser, formatPhone, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { fetchAll } from "../../lib/db-pages.js";
 
 /**
  * The Treasury report email. GET = the daily Vercel cron (sends to whoever's
@@ -245,9 +246,10 @@ async function loadAnticipatedInflows(now: Date): Promise<Anticipated | null> {
     const hidden = new Set((prefs ?? []).filter((p) => p.hidden).map((p) => p.account_id));
     const entityOf = new Map((prefs ?? []).map((p) => [p.account_id, p.entity_name ?? null]));
     const [rows, adjustments] = await Promise.all([
-      sb<Array<InflowRow & { account_id: string }>>(
+      // 18 months of inflows can run past PostgREST's 1,000-row page, so page it.
+      fetchAll<InflowRow & { account_id: string }>(
         `book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id` +
-          `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc&limit=5000`
+          `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc,transaction_id.asc`
       ),
       sb<InflowAdjustment[]>("books_expected_inflows?select=*&active=eq.true&order=created_at.asc").catch(() => [] as InflowAdjustment[]),
     ]);
@@ -1140,34 +1142,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Scheduled cron path. With CRON_SECRET configured Vercel injects
-  // Authorization: Bearer $CRON_SECRET on every scheduled fire and that match
-  // is mandatory. Without it, fall back to the x-vercel-cron-schedule header
-  // Vercel stamps on scheduled fires — verified NOT to be stripped from outside
-  // traffic, so it's a stopgap only (and the secret guard below stops this
-  // handler cold anyway). An earlier version keyed off an "x-vercel-cron"
-  // header Vercel never sends, which silently 401'd every scheduled fire.
-  const cronScheduleHeader = req.headers["x-vercel-cron-schedule"];
-  const authorized = secret ? secretMatches(req.headers.authorization, `Bearer ${secret}`) : !!cronScheduleHeader;
-  if (!authorized) {
-    // Booleans only — never the secret — so a rejected fire explains itself.
-    console.error("treasury-report rejected", {
-      schedule_header: !!cronScheduleHeader,
-      auth_header: !!req.headers.authorization,
-      secret_configured: !!secret,
-      ua: req.headers["user-agent"] ?? null,
-    });
-    return res.status(401).json({ error: "unauthorized" });
-  }
-
-  // The balance pull below authenticates to /api/plaid/data with
-  // x-internal-cron: CRON_SECRET. Without the secret that call can only fail,
-  // and the failure path emails every subscriber a "balances unavailable"
-  // notice — so stop here, loudly, rather than spam the family each Monday.
-  if (!secret) {
-    console.error("treasury-report: CRON_SECRET is not configured; cannot fetch balances. Set it in Vercel → Project → Settings → Environment Variables (Production) and redeploy.");
-    return res.status(500).json({ error: "cron_secret_missing" });
-  }
+  // Scheduled cron path: Bearer $CRON_SECRET is mandatory (lib/auth.ts
+  // cronAuth). With the secret unset this refuses with a 503 — the balance
+  // pull below authenticates to /api/plaid/data with it too, and without it
+  // every subscriber would be emailed a "balances unavailable" notice.
+  const cron = cronAuth(req);
+  if (cron !== "ok") return refuseCron(req, res, "treasury-report", cron);
 
   try {
     // "Email only" members can't see Treasury, so they never get the report.

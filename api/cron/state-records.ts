@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, handleError, isAdmin, secretMatches } from "../../lib/auth.js";
+import { cronAuth, currentUser, handleError, isAdmin, refuseCron } from "../../lib/auth.js";
 import { checkStateRecords } from "../../lib/state-records.js";
 
 /**
@@ -7,7 +7,7 @@ import { checkStateRecords } from "../../lib/state-records.js";
  * each home state and each state it's registered in as a foreign entity.
  * Records read in the last week are skipped.
  *
- * GET  → the Vercel cron (Bearer CRON_SECRET when set, like books-sync)
+ * GET  → the Vercel cron (Bearer CRON_SECRET, required)
  * POST { ids?, force? } → "Check all" from the app (owner or admin)
  */
 
@@ -15,11 +15,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   try {
-    const cronSecret = process.env.CRON_SECRET;
-    const fromCron =
-      req.method === "GET" && (cronSecret ? secretMatches(req.headers.authorization, `Bearer ${cronSecret}`) : !!req.headers["x-vercel-cron-schedule"]);
+    // GET is the cron only, and must present Bearer $CRON_SECRET.
+    const fromCron = req.method === "GET";
     let opts: { ids?: string[]; force?: boolean; by?: { id: string; name: string | null } } = {};
-    if (!fromCron) {
+    if (fromCron) {
+      const cron = cronAuth(req);
+      if (cron !== "ok") return refuseCron(req, res, "state-records", cron);
+    } else {
       const user = await currentUser(req);
       if (!user) return res.status(401).json({ error: "unauthorized" });
       if (!isAdmin(user)) return res.status(403).json({ error: "forbidden" });
