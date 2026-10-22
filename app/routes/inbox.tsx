@@ -67,7 +67,7 @@ function Glyph({ name, className = "h-3.5 w-3.5" }: { name: keyof typeof GLYPHS;
 }
 
 /** IconButton with one of this page's glyphs. */
-function GlyphButton({ glyph, label, tone = "ghost", ...rest }: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger" } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function GlyphButton({ glyph, label, tone = "ghost", className = "", ...rest }: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger" } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { dark } = useTone();
   const t =
     tone === "danger"
@@ -78,8 +78,9 @@ function GlyphButton({ glyph, label, tone = "ghost", ...rest }: { glyph: keyof t
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40 max-sm:h-[40px] max-sm:w-[40px] ${t}`}
       {...rest}
+      // Added to the button's own classes, never in place of them (a caller's size only adds a phone size).
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40 max-sm:h-[40px] max-sm:w-[40px] ${t} ${className}`}
     >
       <Glyph name={glyph} />
     </button>
@@ -141,8 +142,10 @@ const FacesContext = createContext<MailFaces>({});
  * (fetched by domain; falls back to initials if there is none); else initials
  * in a colour that is always the same for that person.
  */
-function Avatar({ a, size = "h-10 w-10 text-[13px]" }: { a: MailAddress; size?: string }) {
-  const photo = useContext(FacesContext)[a.email.toLowerCase()];
+function Avatar({ a, size = "h-10 w-10 text-[13px]", trusted = true }: { a: MailAddress; size?: string; trusted?: boolean }) {
+  // A From that SPF/DKIM don't vouch for could be forged: never dress it in a colleague's photo.
+  const faces = useContext(FacesContext);
+  const photo = trusted ? faces[a.email.toLowerCase()] : undefined;
   const [broken, setBroken] = useState<string | null>(null);
   if (photo && broken !== photo) {
     return (
@@ -696,7 +699,9 @@ export default function Inbox() {
   listRef.current = list;
 
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  /** A short note after an action; with `undo`, a button (and "z") puts it back. */
+  const [toast, setToastState] = useState<{ text: string; undo?: () => void } | null>(null);
+  const setToast = (text: string | null, undo?: () => void) => setToastState(text ? { text, undo } : null);
   /** Everyone's chosen pictures, by address; asked for once per visit. */
   const [faces, setFaces] = useState<MailFaces>({});
   useEffect(() => {
@@ -714,7 +719,9 @@ export default function Inbox() {
   const [bulkBusy, setBulkBusy] = useState(false);
 
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
-  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh") => {
+  // "reset" re-reads the first page without blanking the list first, and drops older pages: after an action
+  // that can move rows anywhere (a star, an archive in Active), merging would keep stale rows or lose moved ones.
+  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh" | "reset") => {
     const req = ++listReq.current;
     if (mode === "replace") {
       setList(null);
@@ -726,7 +733,7 @@ export default function Inbox() {
       setListError(null);
       setList((prev) => {
         const fresh = { folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] };
-        if (mode === "replace" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
+        if (mode === "replace" || mode === "reset" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
         const ids = new Set([...head.messages, ...fresh.pinned].map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
@@ -792,7 +799,7 @@ export default function Inbox() {
    */
   function refreshActive() {
     const cur = listRef.current;
-    if (cur?.folder === "active" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "refresh");
+    if (cur?.folder === "active" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "reset");
   }
 
   /** Change one row in the list (if it's there). */
@@ -815,7 +822,9 @@ export default function Inbox() {
     // A cached copy will do, unless the list says it's unread again (fetching marks it read).
     if (hit && (!row || row.read)) return;
     let alive = true;
-    getMessage(openId)
+    // From Active, the row stood for the whole conversation: opening it reads all of it.
+    const cur = listRef.current;
+    getMessage(openId, { conversation: cur?.folder === "active" && !cur.q })
       .then(({ message }) => {
         if (!alive) return;
         cache.current.set(openId, message);
@@ -924,21 +933,37 @@ export default function Inbox() {
   }
 
   function dropFromList(id: string) {
+    // The one after it (or before, at the end), to open in its place, as Gmail does after an archive.
+    const all = listRows(listRef.current);
+    const at = all.findIndex((m) => m.id === id);
+    const next = at >= 0 ? (all[at + 1] ?? all[at - 1]) : undefined;
     setList((prev) => prev && eachRow(prev, (rows) => rows.filter((m) => m.id !== id)));
-    // Close it only if it's still the one open (and the page is still here).
-    if (mountedRef.current && openIdRef.current === id) closeMessage();
+    // Only if it's still the one open (and the page is still here).
+    if (!mountedRef.current || openIdRef.current !== id) return;
+    if (next) setParams(queryRef.current({ m: next.id }), { replace: true, state: navStateRef.current });
+    else closeMessage();
+  }
+
+  /** Read the list again from its first page, as it shows now (after an undo, say). */
+  function resetList() {
+    const cur = listRef.current;
+    if (cur) void loadList(cur.folder, cur.filter, cur.q, cur.to, "reset");
   }
 
   const failOn = (id: string, e: unknown) => setOpen((o) => (o && o.id === id ? { ...o, error: (e as Error).message } : o));
 
   async function move(m: MailMessage, to: "inbox" | "archive") {
     try {
-      await moveMail([m.id], to);
+      // From Active, Archive takes the whole conversation out (sent copies stay in Out).
+      const cur = listRef.current;
+      const whole = cur?.folder === "active" && !cur.q;
+      await moveMail([m.id], to, { conversation: to === "archive" && whole });
       cache.current.set(m.id, { ...m, folder: to });
       dropFromList(m.id);
       refreshActive();
       notifyMailChanged();
-      setToast(to === "archive" ? "Archived" : "Moved to inbox");
+      const back = to === "archive" ? "inbox" : "archive";
+      setToast(to === "archive" ? "Archived" : "Moved to inbox", () => undoWith(() => moveMail([m.id], back, { conversation: whole })));
     } catch (e) {
       failOn(m.id, e);
     }
@@ -960,21 +985,38 @@ export default function Inbox() {
   }
 
   /** Star or unstar, shown at once and undone if the server says no. */
-  async function star(m: MailSummary, starred: boolean) {
+  async function star(m: MailSummary, starred: boolean, fromList = true) {
     patchRow(m.id, { starred });
     const hit = cache.current.get(m.id);
     if (hit) cache.current.set(m.id, { ...hit, starred });
     setOpen((o) => (o && o.id === m.id && o.message ? { ...o, message: { ...o.message, starred } } : o));
     try {
-      // In Active a conversation is starred when any message in it is: unstarring it there clears them all.
+      // In Active a row is starred when any message in its conversation is: unstarring the row clears them all.
+      // (Unstarring one message in the reader touches only that message.)
+      const before = listRef.current;
+      await starMail([m.id], starred, { conversation: fromList && before?.folder === "active" && !before.q });
+      // Starred mail sits at the top: read the list again so it moves there (or back to its date) — the list
+      // showing now, which may not be the one the click was in.
       const cur = listRef.current;
-      await starMail([m.id], starred, { conversation: cur?.folder === "active" && !cur.q });
-      // Starred mail sits at the top: read the list again so it moves there (or back to its date).
-      if (cur && cur.filter === "all" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "refresh");
+      if (cur && cur.filter === "all" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "reset");
     } catch (e) {
       patchRow(m.id, { starred: !starred });
       if (hit) cache.current.set(m.id, { ...hit, starred: !starred });
       setOpen((o) => (o && o.id === m.id && o.message ? { ...o, message: { ...o.message, starred: !starred }, error: (e as Error).message } : o));
+    }
+  }
+
+  /** Undo the last action: run its reverse, then read the list again. */
+  async function undoWith(reverse: () => Promise<unknown>) {
+    setToastState(null);
+    try {
+      await reverse();
+      cache.current.clear();
+      resetList();
+      notifyMailChanged();
+      setToast("Undone");
+    } catch (e) {
+      setListError((e as Error).message);
     }
   }
 
@@ -986,7 +1028,7 @@ export default function Inbox() {
       cache.current.delete(m.id);
       notifyMailChanged();
       if (mountedRef.current && openIdRef.current === m.id) closeMessage();
-      setToast("Marked as unread");
+      setToast("Marked as unread", () => undoWith(() => markRead([m.id], true)));
     } catch (e) {
       failOn(m.id, e);
     }
@@ -1011,9 +1053,91 @@ export default function Inbox() {
     notifyMailChanged();
   }
 
+  // ── Keys (Gmail's, listed on "?"): j/k next/previous, o open, e archive, # delete, r/a/f reply/all/forward,
+  // s star, x select, U unread, c new, u back to the list, z undo. Never while typing or over a dialog.
+  // Bound fresh each render, so every key acts on the list and message showing now.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (draft || document.querySelector('[aria-modal="true"]')) return;
+      const all = listRows(listRef.current);
+      const openRow = open?.message ?? null;
+      const focusedId = (document.activeElement as HTMLElement | null)?.closest?.("[data-mail-row]")?.getAttribute("data-mail-row") ?? null;
+      const focused = focusedId ? all.find((m) => m.id === focusedId) ?? null : null;
+      const act = (fn: () => void) => {
+        e.preventDefault();
+        fn();
+      };
+      switch (e.key) {
+        case "j":
+        case "k": {
+          const step = e.key === "j" ? 1 : -1;
+          if (openId) {
+            const next = all[all.findIndex((m) => m.id === openId) + step];
+            if (next) act(() => select(next.id));
+            return;
+          }
+          // In the list: move focus row by row (the visible list: table on desktop, rows on phones).
+          const rowsShown = [...document.querySelectorAll<HTMLElement>("[data-mail-row]")].filter((r) => r.offsetParent !== null);
+          const at = rowsShown.findIndex((r) => r.getAttribute("data-mail-row") === focusedId);
+          const target = rowsShown[at < 0 ? 0 : Math.min(rowsShown.length - 1, Math.max(0, at + step))];
+          if (target) act(() => {
+            target.focus();
+            target.scrollIntoView({ block: "nearest" });
+          });
+          return;
+        }
+        case "o":
+          if (focused && !openId) act(() => select(focused.id));
+          return;
+        case "u":
+          if (openId) act(() => closeMessage());
+          return;
+        case "e":
+          if (openRow && (openRow.direction === "in" || folder === "active") && openRow.folder !== "archive") act(() => void move(openRow, "archive"));
+          else if (!openId && picked.size) act(() => void bulk("archive"));
+          else if (!openId && focused && folder !== "archive") act(() => void bulk("archive", [focused.id]));
+          return;
+        case "#":
+          if (openRow) act(() => void remove(openRow));
+          else if (picked.size) act(() => void bulk("delete"));
+          else if (focused) act(() => void bulk("delete", [focused.id]));
+          return;
+        case "r":
+        case "a":
+        case "f":
+          if (!openRow || noAddress) return;
+          act(() => setDraft(e.key === "f" ? forwardDraft(openRow) : replyDraft(openRow, e.key === "a" ? "all" : "reply", mine)));
+          return;
+        case "s":
+          if (openRow) act(() => void star(openRow, !openRow.starred, false));
+          else if (focused) act(() => void star(focused, !focused.starred));
+          return;
+        case "x":
+          if (focused) act(() => pick(focused.id, false));
+          return;
+        case "U":
+          if (openRow && openRow.direction === "in") act(() => void markUnread(openRow));
+          else if (!openId && picked.size) act(() => void bulk("unread"));
+          return;
+        case "c":
+          if (!noAddress) act(() => setDraft(blankDraft()));
+          return;
+        case "z":
+          if (toast?.undo) act(() => toast.undo?.());
+          return;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), 2200);
+    // Long enough to reach Undo when there is one.
+    const id = setTimeout(() => setToastState(null), toast.undo ? 6000 : 2200);
     return () => clearTimeout(id);
   }, [toast]);
 
@@ -1061,11 +1185,18 @@ export default function Inbox() {
   }
 
   /** Read or unread, archive or back to the inbox, or delete: for every picked message at once. */
-  async function bulk(action: "read" | "unread" | "archive" | "inbox" | "delete") {
-    const ids = (rows ?? []).filter((m) => picked.has(m.id)).map((m) => m.id);
+  async function bulk(action: "read" | "unread" | "archive" | "inbox" | "delete", only?: string[]) {
+    // The picked rows, or (from a key) just the one in focus.
+    const ids = only ?? (rows ?? []).filter((m) => picked.has(m.id)).map((m) => m.id);
     if (!ids.length || bulkBusy) return;
+    // In Active each row is a conversation: Archive and Delete take all of it.
+    const whole = folder === "active" && !q;
     if (action === "delete") {
-      const ok = await confirmDialog({ title: `Delete ${ids.length} message${ids.length === 1 ? "" : "s"}?`, confirmLabel: "Delete", tone: "danger" });
+      const ok = await confirmDialog(
+        whole
+          ? { title: `Delete ${ids.length} conversation${ids.length === 1 ? "" : "s"}?`, message: "Every message in them, received and sent, is deleted for good.", confirmLabel: "Delete", tone: "danger" }
+          : { title: `Delete ${ids.length} message${ids.length === 1 ? "" : "s"}?`, confirmLabel: "Delete", tone: "danger" }
+      );
       if (!ok) return;
     }
     setBulkBusy(true);
@@ -1075,17 +1206,21 @@ export default function Inbox() {
         await markRead(ids, read);
         setList((prev) => prev && eachRow(prev, (rows) => rows.map((m) => (picked.has(m.id) ? { ...m, read } : m))));
         for (const id of ids) cache.current.delete(id);
-        setToast(read ? `Marked ${ids.length} as read` : `Marked ${ids.length} as unread`);
+        setToast(read ? `Marked ${ids.length} as read` : `Marked ${ids.length} as unread`, () => undoWith(() => markRead(ids, !read)));
       } else {
-        if (action === "delete") await deleteMail(ids);
-        else await moveMail(ids, action);
+        if (action === "delete") await deleteMail(ids, { conversation: whole });
+        else await moveMail(ids, action, { conversation: whole && action === "archive" });
         const gone = new Set(ids);
         setList((prev) => prev && eachRow(prev, (rows) => rows.filter((m) => !gone.has(m.id))));
         for (const id of ids) cache.current.delete(id);
         if (openIdRef.current && gone.has(openIdRef.current)) closeMessage();
         setPicked(new Set());
         refreshActive();
-        setToast(action === "delete" ? `Deleted ${ids.length}` : action === "archive" ? `Archived ${ids.length}` : `Moved ${ids.length} to the inbox`);
+        if (action === "delete") setToast(`Deleted ${ids.length}`);
+        else {
+          const back = action === "archive" ? "inbox" : "archive";
+          setToast(action === "archive" ? `Archived ${ids.length}` : `Moved ${ids.length} to the inbox`, () => undoWith(() => moveMail(ids, back, { conversation: whole })));
+        }
       }
       notifyMailChanged();
     } catch (e) {
@@ -1118,9 +1253,10 @@ export default function Inbox() {
       onForward={(m) => setDraft(forwardDraft(m))}
       onMove={move}
       onDelete={remove}
-      onStar={(m, on) => star(m, on)}
+      onStar={(m, on) => star(m, on, false)}
       onUnread={markUnread}
       thread={thread && thread.id === open?.id ? thread.messages : []}
+      wholeConversation={folder === "active" && !q}
       freshId={freshId}
     />
   );
@@ -1155,7 +1291,7 @@ export default function Inbox() {
           Mark unread
         </Button>
       )}
-      {(folder === "inbox" || folder === "active") && pickedRows.some((m) => m.direction === "in") && (
+      {(folder === "active" || (folder === "inbox" && pickedRows.some((m) => m.direction === "in"))) && (
         <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("archive")}>
           Archive
         </Button>
@@ -1250,7 +1386,7 @@ export default function Inbox() {
                 type="button"
                 aria-current={on ? "page" : undefined}
                 onClick={() => chooseFolder(x.key)}
-                title={live ? "In and Out together, a row per conversation, latest activity first" : undefined}
+                title={live ? "In (inbox) and Out (sent) together, a row per conversation, latest activity first" : undefined}
                 className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-md:h-[38px] max-md:rounded-[10px] max-md:px-3.5 max-md:text-[13.5px] ${live ? "font-semibold" : ""} ${tone}`}
               >
                 {live && <Glyph name="chats" className="h-3.5 w-3.5" />}
@@ -1345,7 +1481,6 @@ export default function Inbox() {
         </div>
       )}
       {!openId && <SearchField value={q} onSearch={search} className="md:hidden" />}
-      {mobileFilter}
 
       {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
 
@@ -1361,6 +1496,8 @@ export default function Inbox() {
           ) : (
             <>
               {toolbar}
+              {/* Phones: the filter under the folders it narrows, not above them. */}
+              {mobileFilter && <div className="pb-2 md:hidden">{mobileFilter}</div>}
               <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {bulkBar}
                 {listBody}
@@ -1376,6 +1513,7 @@ export default function Inbox() {
             className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
+            {mobileFilter && <div className="pb-2 md:hidden">{mobileFilter}</div>}
             <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {bulkBar}
                 {listBody}
@@ -1403,7 +1541,7 @@ export default function Inbox() {
             type="button"
             aria-label="New message"
             onClick={() => setDraft(blankDraft())}
-            className={`fab-in fixed right-4 z-40 flex h-14 cursor-pointer items-center gap-2.5 rounded-2xl pl-5 pr-6 text-[15px] font-semibold shadow-lg transition-transform active:scale-95 sm:hidden ${
+            className={`fab-in fixed right-4 z-40 flex h-[56px] cursor-pointer items-center gap-2.5 rounded-2xl pl-5 pr-6 text-[15px] font-semibold shadow-lg transition-transform active:scale-95 sm:hidden ${
               t.dark ? "bg-white text-gray-950 shadow-black/40" : "bg-gray-900 text-white shadow-gray-900/30"
             }`}
             style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
@@ -1420,7 +1558,19 @@ export default function Inbox() {
       {toast &&
         createPortal(
           <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
-            <span className={`toast-in rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>{toast}</span>
+            <span className={`toast-in pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
+              {toast.text}
+              {toast.undo && (
+                <button
+                  type="button"
+                  onClick={() => toast.undo?.()}
+                  title="Undo (z)"
+                  className={`-my-1 cursor-pointer rounded-full px-2 py-1 font-semibold underline-offset-2 hover:underline ${t.dark ? "text-indigo-600" : "text-indigo-300"}`}
+                >
+                  Undo
+                </button>
+              )}
+            </span>
           </div>,
           document.body
         )}
@@ -1522,6 +1672,7 @@ function SearchField({ value, onSearch, className = "" }: { value: string; onSea
         spellCheck={false}
         aria-label="Search mail"
         placeholder="Search mail"
+        data-page-search
         value={term}
         onChange={(e) => change(e.target.value)}
         onKeyDown={(e) => {
@@ -1754,6 +1905,7 @@ function MailTable({
             <tr
               aria-selected={on}
               key={m.id}
+              data-mail-row={m.id}
               tabIndex={0}
               onClick={() => onOpen(m.id)}
               onKeyDown={(e) => {
@@ -1828,6 +1980,7 @@ function ListRow({
   return (
     <div
       role="button"
+      data-mail-row={m.id}
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
@@ -1840,12 +1993,12 @@ function ListRow({
       aria-selected={onPick ? picked : undefined}
       className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3 max-md:rounded-2xl max-md:px-3 max-md:py-3 ${
         picked ? (t.dark ? "bg-[#6366f1]/[0.13]" : "bg-indigo-50") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
-      } ${t.dark ? "active:bg-white/[0.05]" : "active:bg-gray-100"}`}
+      } ${t.dark ? "active:bg-white/[0.05] focus-visible:bg-white/[0.05]" : "active:bg-gray-100 focus-visible:bg-gray-50"} focus-visible:outline-none`}
     >
       <span className="relative mt-0.5 shrink-0">
         {/* The avatar turns into its select box on hover, and stays one while anything is picked. */}
         <span className={`block transition-opacity duration-150 ${onPick && (picked || picking) ? "opacity-0" : onPick ? "md:group-hover:opacity-0" : ""}`}>
-          <Avatar a={face} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
+          <Avatar a={face} trusted={sent || !m.unverified} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
         </span>
         {onPick && (
           <span className={`absolute inset-0 grid place-items-center transition-opacity duration-150 ${picked || picking ? "opacity-100" : "opacity-0 md:group-hover:opacity-100 max-md:opacity-0"}`}>
@@ -1896,11 +2049,14 @@ function Reader({
   onUnread,
   thread,
   freshId,
+  wholeConversation = false,
 }: {
   /** The whole conversation, newest first (the open message included). */
   thread: MailMessage[];
   /** A message just sent into it: it slides in at the top. */
   freshId: string | null;
+  /** Opened from Active: Archive takes the whole conversation, whoever wrote this message. */
+  wholeConversation?: boolean;
   message: MailMessage | null;
   error: string | null;
   me: string;
@@ -1964,7 +2120,7 @@ function Reader({
             <span className="flex-1" />
             {starButton(m, "max-md:hidden")}
             {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} className="max-md:h-[44px] max-md:w-[44px]" />}
-            {m.direction === "in" &&
+            {(m.direction === "in" || (wholeConversation && m.folder !== "archive")) &&
               (m.folder === "archive" ? (
                 <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} className="max-md:h-[44px] max-md:w-[44px]" />
               ) : (
@@ -2002,7 +2158,7 @@ function Reader({
           {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date. */}
           <div className="group/main">
           <div className="mt-4 flex items-start gap-3 max-md:mt-6">
-            <Avatar a={m.from} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
+            <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className={`min-w-0 truncate text-[13px] font-semibold max-md:text-[15px] ${t.text}`}>{senderLabel(m.from)}</span>
@@ -2177,7 +2333,7 @@ function ThreadCard({ m, me, open: startOpen, fresh }: { m: MailMessage; me: str
   return (
     <section className={`overflow-hidden rounded-xl border ${t.line} ${t.dark ? "bg-white/[0.025]" : "bg-gray-50/70"} ${fresh ? "thread-fresh" : ""}`}>
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={`flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left ${t.hover}`}>
-        <Avatar a={m.from} size="h-7 w-7 text-[10.5px]" />
+        <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-7 w-7 text-[10.5px]" />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
             <span className={`truncate text-[13px] font-semibold ${t.text}`}>{mine ? "You" : senderLabel(m.from)}</span>

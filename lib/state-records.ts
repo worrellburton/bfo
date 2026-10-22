@@ -30,12 +30,13 @@ type Rec = {
   ownerId?: string | null;
   stateRecord?: StateRecord;
   /** A state whose registry had no entry (or several) for it, and when that was found. */
-  registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
+  registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number; mode?: "test" | "live" }>;
   foreign?: Record<string, { agent?: string; agentAddress?: string; fileNumber?: string; record?: StateRecord; notNeeded?: boolean }>;
   palm?: Record<string, { formation?: { status?: string } | null } | undefined>;
 };
 
-export type CheckResult = { id: string; name: string; state: string; outcome: "read" | "fresh" | "not_found" | "ambiguous" | "error"; detail?: string };
+/** "later": not read because the run's time was up (the next run reads it). */
+export type CheckResult = { id: string; name: string; state: string; outcome: "read" | "fresh" | "not_found" | "ambiguous" | "error" | "later"; detail?: string };
 
 /** One state's record for one entity, or why not. */
 async function read(name: string, code: string, fileNumber: string | undefined, mode: "test" | "live", usage: PalmUsage): Promise<StateRecord | "not_found" | "ambiguous"> {
@@ -81,7 +82,12 @@ export function patchFor(a: Rec, code: string, home: boolean, rec: StateRecord, 
 }
 
 /** Read every entity's state records that aren't fresh (or all of `ids`, fresh or not). */
-export async function checkStateRecords(opts: { ids?: string[]; force?: boolean; now?: number; by?: { id: string; name: string | null } } = {}): Promise<CheckResult[]> {
+/**
+ * `freshMs`: how recent a record must be to be kept rather than read again (a week by default; `force` reads
+ * everything). `deadline`: a time (ms) after which no more reads start, so a run inside a time-limited
+ * function ends cleanly; what's left reports "later".
+ */
+export async function checkStateRecords(opts: { ids?: string[]; force?: boolean; freshMs?: number; deadline?: number; now?: number; by?: { id: string; name: string | null } } = {}): Promise<CheckResult[]> {
   const mode = palmMode();
   if (!mode) throw new Error("Palm isn't connected.");
   const now = opts.now ?? Date.now();
@@ -95,9 +101,16 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
     for (const { code, home } of statesToRead(a)) {
       const prior = home ? a.stateRecord : a.foreign?.[code]?.record;
       const base = { id: row.id, name: a.name, state: code };
+      // A miss found in the other mode (a sandbox search, say) says nothing about this one.
       const miss = a.registryMiss?.[code];
-      if (!opts.force && ((prior && prior.mode === mode && now - prior.checkedAt < FRESH_MS) || (!prior && miss && now - miss.at < FRESH_MS))) {
+      const missHere = miss && (miss.mode ?? mode) === mode ? miss : undefined;
+      const fresh = opts.freshMs ?? FRESH_MS;
+      if (!opts.force && ((prior && prior.mode === mode && now - prior.checkedAt < fresh) || (!prior && missHere && now - missHere.at < fresh))) {
         out.push({ ...base, outcome: "fresh" });
+        continue;
+      }
+      if (opts.deadline && Date.now() > opts.deadline) {
+        out.push({ ...base, outcome: "later" });
         continue;
       }
       try {
@@ -106,7 +119,7 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
           : { actorName: "Daily check", assetId: row.id, reason: `State record (${code})` };
         const got = await read(a.name, code, home ? a.fileNumber : a.foreign?.[code]?.fileNumber, mode, usage);
         if (typeof got === "string") {
-          await applyOps([{ op: "update", path: ["assets", row.id], value: { [`registryMiss/${code}`]: { outcome: got, at: now } } }]);
+          await applyOps([{ op: "update", path: ["assets", row.id], value: { [`registryMiss/${code}`]: { outcome: got, at: now, mode } } }]);
           out.push({ ...base, outcome: got });
           continue;
         }

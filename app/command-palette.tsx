@@ -23,7 +23,8 @@ export type PageLink = { to: string; label: string; section?: string; keywords?:
 export const GO_SHORTCUTS: Array<{ key: string; to: string; label: string }> = [
   { key: "h", to: "/home", label: "Home" },
   { key: "e", to: "/assets", label: "Entities" },
-  { key: "m", to: "/estate-map", label: "Estate map" },
+  { key: "m", to: "/inbox", label: "Mail" },
+  { key: "o", to: "/estate-map", label: "Estate map (ownership)" },
   { key: "t", to: "/treasury", label: "Treasury" },
   { key: "i", to: "/investments", label: "Investments" },
   { key: "b", to: "/books/transactions", label: "Books · Transactions" },
@@ -298,10 +299,28 @@ export function ShortcutSheet({ open, onClose, isDark }: { open: boolean; onClos
   }`;
   const rows: Array<[string[], string]> = [
     [["⌘", "K"], "Jump to anything"],
-    [["/"], "Jump to anything"],
+    [["/"], "Search this page (or jump to anything)"],
     ...GO_SHORTCUTS.map((s) => [["g", s.key], s.label] as [string[], string]),
     [["?"], "This sheet"],
   ];
+  // Mail's own keys (app/routes/inbox.tsx), shown while it's open.
+  const mail: Array<[string[], string]> = [
+    [["j"], "Next message"],
+    [["k"], "Previous message"],
+    [["o"], "Open"],
+    [["e"], "Archive"],
+    [["#"], "Delete"],
+    [["r"], "Reply"],
+    [["a"], "Reply all"],
+    [["f"], "Forward"],
+    [["s"], "Star"],
+    [["x"], "Select"],
+    [["⇧", "U"], "Mark unread"],
+    [["c"], "New message"],
+    [["u"], "Back to the list"],
+    [["z"], "Undo"],
+  ];
+  const inMail = typeof window !== "undefined" && window.location.pathname === "/inbox";
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center px-4" role="presentation">
       <div className="palette-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
@@ -310,7 +329,7 @@ export function ShortcutSheet({ open, onClose, isDark }: { open: boolean; onClos
         aria-modal="true"
         data-shell-dialog
         aria-label="Keyboard shortcuts"
-        className={`palette-panel relative w-full max-w-[400px] rounded-2xl border p-5 shadow-2xl ${
+        className={`palette-panel relative max-h-[90vh] w-full overflow-y-auto rounded-2xl border p-5 shadow-2xl ${inMail ? "max-w-[520px]" : "max-w-[400px]"} ${
           isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"
         }`}
       >
@@ -322,6 +341,25 @@ export function ShortcutSheet({ open, onClose, isDark }: { open: boolean; onClos
             </svg>
           </button>
         </div>
+        {/* In Mail its keys come first, in two columns; everywhere else, the app's. */}
+        {inMail && (
+          <>
+            <p className={`mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] ${isDark ? "text-gray-500" : "text-gray-400"}`}>In Mail</p>
+            <ul className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              {mail.map(([keys, label], i) => (
+                <li key={i} className="flex items-center justify-between gap-3">
+                  <span className={isDark ? "text-gray-300" : "text-gray-600"}>{label}</span>
+                  <span className="flex gap-1">
+                    {keys.map((k, j) => (
+                      <kbd key={j} className={kbd}>{k}</kbd>
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className={`mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] ${isDark ? "text-gray-500" : "text-gray-400"}`}>Everywhere</p>
+          </>
+        )}
         <ul className="space-y-2 text-sm">
           {rows.map(([keys, label], i) => (
             <li key={i} className="flex items-center justify-between gap-4">
@@ -359,7 +397,10 @@ export function useGlobalShortcuts(opts: { openPalette: () => void; openSheet: (
       if (document.querySelector('[aria-modal="true"]')) return;
       if (e.key === "/") {
         e.preventDefault();
-        openPalette();
+        // A page with its own search (Mail, Entities) marks its box: "/" goes there, as it does in Gmail.
+        const own = [...document.querySelectorAll<HTMLInputElement>("input[data-page-search]")].find((el) => el.offsetParent !== null);
+        if (own) own.focus();
+        else openPalette();
       } else if (e.key === "?") {
         e.preventDefault();
         openSheet();

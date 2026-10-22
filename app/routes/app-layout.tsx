@@ -568,7 +568,7 @@ export default function AppLayout() {
             type="button"
             onClick={() => setDrawerOpen(false)}
             aria-label="Close menu"
-            className={`ml-auto flex h-10 w-10 items-center justify-center rounded-full lg:hidden ${
+            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full lg:hidden ${
               isDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
@@ -763,7 +763,7 @@ export default function AppLayout() {
             onClick={() => setDrawerOpen(true)}
             aria-label="Open menu"
             aria-expanded={drawerOpen}
-            className={`absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full transition-colors ${
+            className={`absolute left-2 top-1/2 flex h-[44px] w-[44px] -translate-y-1/2 items-center justify-center rounded-full transition-colors ${
               isDark ? "text-gray-200 hover:bg-white/10" : "text-gray-700 hover:bg-gray-100"
             }`}
           >
@@ -785,7 +785,7 @@ export default function AppLayout() {
               type="button"
               onClick={openPalette}
               aria-label="Search and jump to"
-              className={`absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full transition-colors ${
+              className={`absolute right-2 top-1/2 flex h-[44px] w-[44px] -translate-y-1/2 items-center justify-center rounded-full transition-colors ${
                 isDark ? "text-gray-200 hover:bg-white/10" : "text-gray-700 hover:bg-gray-100"
               }`}
             >

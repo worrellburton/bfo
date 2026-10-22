@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { birdPlatformFetch, sb, sbFetch } from "./auth.js";
+import { birdPlatformFetch, sb } from "./auth.js";
+import { countRows } from "./db-pages.js";
 import { isOurAddress, MAIL_DOMAIN, onOurDomain } from "./mail-address.js";
 import { composeDocument, composeText } from "./mail-compose.js";
 import { storageDownload, storageRemove, storageUpload } from "./storage.js";
@@ -43,6 +44,8 @@ export type MailSummary = {
   /** The conversation it's in, and when that conversation last had a message (Active pages on these). */
   threadKey?: string;
   threadAt?: string;
+  /** Received mail neither SPF nor DKIM vouches for: its From could be forged. */
+  unverified?: boolean;
 };
 /** Narrows a folder's list: everything, only unread, or only starred. */
 export type MailFilter = "all" | "unread" | "starred";
@@ -96,13 +99,13 @@ export type MailRow = {
 
 /** Columns a list needs — no bodies. */
 export const SUMMARY_COLUMNS =
-  "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,starred_at,attachments,status,thread_key,thread_at";
+  "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,starred_at,attachments,status,thread_key,thread_at,spf_pass,dkim_pass";
 
 export type SummaryRow = Pick<
   MailRow,
   | "id" | "user_id" | "folder" | "direction" | "from_email" | "from_name" | "to_addrs" | "cc_addrs"
   | "subject" | "snippet" | "occurred_at" | "created_at" | "read_at" | "starred_at" | "attachments" | "status"
-  | "thread_key" | "thread_at"
+  | "thread_key" | "thread_at" | "spf_pass" | "dkim_pass"
 >;
 
 export const BUCKET = "mail";
@@ -372,7 +375,13 @@ export function toSummary(row: SummaryRow): MailSummary {
     status: row.status ?? null,
     other: row.user_id === null,
     ...(row.thread_key ? { threadKey: row.thread_key, threadAt: row.thread_at ?? row.occurred_at ?? row.created_at } : {}),
+    ...(unverified(row) ? { unverified: true } : {}),
   };
+}
+
+/** Received mail that neither SPF nor DKIM vouches for: the From could be anyone's. Our own sent copies need neither. */
+function unverified(row: Pick<MailRow, "direction"> & Partial<Pick<MailRow, "spf_pass" | "dkim_pass">>): boolean {
+  return row.direction === "in" && row.spf_pass !== true && row.dkim_pass !== true;
 }
 
 export function toMessage(row: MailRow): MailMessage {
@@ -391,7 +400,7 @@ export function toMessage(row: MailRow): MailMessage {
     deliveredTo: row.delivered_to ?? null,
     messageId: row.message_id ?? null,
     // Our own sent copies carry no SPF/DKIM result, and need none.
-    unverifiedSender: row.direction === "in" && row.spf_pass !== true && row.dkim_pass !== true,
+    unverifiedSender: unverified(row),
   };
 }
 
@@ -409,7 +418,8 @@ export function canSee(row: Pick<MailRow, "user_id">, userId: string, admin: boo
 
 /** PostgREST filter for one folder of a user's mail. Archive also holds archived catch-all mail for admins. */
 export function folderFilter(folder: MailFolder, userId: string, admin: boolean): string {
-  if (folder === "active") return `user_id=eq.${userId}&folder=in.(inbox,sent)`;
+  // Active leaves out conversations archived from it (mail_messages.active_hidden).
+  if (folder === "active") return `user_id=eq.${userId}&folder=in.(inbox,sent)&active_hidden=is.false`;
   if (folder === "other") return "user_id=is.null&folder=eq.inbox";
   if (folder === "archive") return `${scopeFilter(userId, admin)}&folder=eq.archive`;
   return `user_id=eq.${userId}&folder=eq.${folder}`;
@@ -472,13 +482,8 @@ export function searchCondition(q: string): string {
   return `or(subject.ilike.${quoted},from_email.ilike.${quoted},from_name.ilike.${quoted},snippet.ilike.${quoted},text_body.ilike.${quoted})`;
 }
 
-/** Rows matching a PostgREST filter, counted without reading them. */
-export async function countRows(table: string, filter: string): Promise<number> {
-  const res = await sbFetch(`${table}?${filter}&select=created_at&limit=1`, { headers: { Prefer: "count=exact" } });
-  if (!res.ok) throw new Error(`supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const total = Number((res.headers.get("content-range") ?? "").split("/")[1]);
-  return Number.isFinite(total) ? total : 0;
-}
+// countRows now lives with the other paging helpers; re-exported for the mail endpoints.
+export { countRows };
 
 // ── Sending: checking a request ───────────────────────────────────────
 

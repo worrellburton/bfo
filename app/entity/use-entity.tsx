@@ -3,6 +3,7 @@ import { stepsLeft } from "../entity-closing";
 import { isFormationDone } from "../formation";
 import { raPatch } from "../../lib/palm-agent";
 import { peoplePatch } from "../../lib/registry";
+import { palmDocKey } from "../../lib/palm-docs";
 import { dollars, STATE_RECORD_CENTS } from "../../lib/palm-pricing";
 import { stateReadCost } from "../../lib/state-reads";
 import { formingNow } from "../entity-addresses";
@@ -11,6 +12,7 @@ import { useNavigate, useParams } from "react-router";
 import { authFetch, getUser, isPartner } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { copyStoredFileLink, openStoredFile } from "../stored-file";
 import {
   DOC_LABEL,
   docKindOf,
@@ -115,8 +117,18 @@ export function useEntityPage() {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [docs, setDocs] = useState<AssetDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  // The entity's first load failed: the page offers Try again instead of spinning forever.
+  const [loadError, setLoadError] = useState(false);
+  const [loadTry, setLoadTry] = useState(0);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Asset>>({});
+  // When the edit form last saved, for a brief "Saved" by the Edit button.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!savedAt) return;
+    const t = setTimeout(() => setSavedAt(null), 3000);
+    return () => clearTimeout(t);
+  }, [savedAt]);
 
   // Sub-pages: the entity card stays on top; a category menu switches what's below.
   // After switching, scroll to the part that was asked for once it has rendered.
@@ -267,13 +279,18 @@ export function useEntityPage() {
       await authReady;
       const { ref, onValue } = await import("../store");
 
-      unsub1 = onValue(ref(db, `assets/${id}`), (snapshot) => {
-        const data = snapshot.val();
-        // The edit form is seeded when editing starts (startEditing), so a
-        // background write (auto-filing, enrichment) never wipes what's typed.
-        if (data) setAsset(fromDatabase(data as Asset));
-        setLoading(false);
-      });
+      unsub1 = onValue(
+        ref(db, `assets/${id}`),
+        (snapshot) => {
+          const data = snapshot.val();
+          // The edit form is seeded when editing starts (startEditing), so a
+          // background write (auto-filing, enrichment) never wipes what's typed.
+          if (data) setAsset(fromDatabase(data as Asset));
+          setLoading(false);
+          setLoadError(false);
+        },
+        () => setLoadError(true)
+      );
 
       unsub2 = onValue(ref(db, `assets/${id}/documents`), (snapshot) => {
         const data = snapshot.val();
@@ -326,14 +343,18 @@ export function useEntityPage() {
       });
     }
 
-    setup();
+    setup().catch(() => setLoadError(true));
     return () => {
       unsub1?.();
       unsub2?.();
       unsub5?.();
       unsub6?.();
     };
-  }, [id]);
+  }, [id, loadTry]);
+  function retryLoad() {
+    setLoadError(false);
+    setLoadTry((n) => n + 1);
+  }
 
   // What the form started from — so Save only overrides fields the user
   // changed, and keeps anything filled in the background meanwhile.
@@ -344,6 +365,7 @@ export function useEntityPage() {
     const seed = { ...asset, type: entityType(asset) };
     editBaseRef.current = seed;
     setForm(seed);
+    setSavedAt(null);
     setEditing(true);
     if ((tabParam ?? "overview") === "overview") setTimeout(() => document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     else goToTab("overview", "entity-edit");
@@ -391,6 +413,21 @@ export function useEntityPage() {
       operatingAgreementDate: pick("operatingAgreementDate") || "",
       articlesOfOrgDate: pick("articlesOfOrgDate") || "",
     });
+    setEditing(false);
+    setSavedAt(Date.now());
+  }
+
+  /** Has the edit form moved from what it started with? */
+  function formDirty() {
+    const base = editBaseRef.current as Record<string, unknown>;
+    const f = form as Record<string, unknown>;
+    const same = (a: unknown, b: unknown) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
+    return Object.keys({ ...base, ...f }).some((k) => !same(f[k], base[k]));
+  }
+
+  /** Leave the edit form; asks first when that would throw away typing. */
+  async function cancelEditing() {
+    if (formDirty() && !(await confirmDialog({ title: "Discard changes?", confirmLabel: "Discard", tone: "danger" }))) return;
     setEditing(false);
   }
 
@@ -950,9 +987,13 @@ export function useEntityPage() {
   // Another entity: start the card clean.
   useEffect(() => {
     setEditing(false);
+    setSavedAt(null);
     setForm({});
     palmEpoch.current++;
     palmSeq.current++;
+    // A sync for the last entity stops at its next step (it checks the epoch); its results aren't this one's.
+    setPalmSync(null);
+    syncingRef.current = false;
     setPalmRa(undefined);
     setPalmDocs(null);
     setRegistryChoices(null);
@@ -1001,7 +1042,7 @@ export function useEntityPage() {
   async function refreshPalm(
     businessId: string,
     opts: { busy?: boolean; keepError?: boolean; waitForImport?: boolean } = {},
-  ): Promise<{ service?: RaService | null; documents?: number; saved?: number; truncated?: boolean; error?: string } | null> {
+  ): Promise<{ service?: RaService | null; documents?: number; saved?: number; failed?: number; truncated?: boolean; error?: string } | null> {
     const mode = palmMode;
     if (!mode) return null;
     const seq = ++palmSeq.current;
@@ -1014,13 +1055,13 @@ export function useEntityPage() {
         palmCall<{ documents: PalmDocument[]; truncated?: boolean }>("documents", { businessId, mode }),
       ]);
       if (seq !== palmSeq.current) return null;
-      const found: { service?: RaService | null; documents?: number; saved?: number; truncated?: boolean; error?: string } = {};
+      const found: { service?: RaService | null; documents?: number; saved?: number; failed?: number; truncated?: boolean; error?: string } = {};
       if (docsR.status === "fulfilled") {
         setPalmDocs(sortDocuments(docsR.value.documents));
         found.documents = docsR.value.documents.length;
         found.truncated = !!docsR.value.truncated;
         const saving = importPalmDocuments(docsR.value.documents, mode);
-        if (opts.waitForImport) found.saved = await saving;
+        if (opts.waitForImport) Object.assign(found, await saving);
       } else found.error = (docsR.reason as Error)?.message;
       if (raR.status === "rejected") {
         if (!opts.keepError) showPalmError(raR.reason);
@@ -1089,9 +1130,12 @@ export function useEntityPage() {
     if (!current) return null;
     if (!mode) return "Connect Palm to read the state's record.";
     const f = current.foreign?.[code] ?? {};
+    const epoch = palmEpoch.current;
     setForeignBusy(code);
     try {
       const found = await lookupStateRecord({ name: current.name, state: code, fileNumber: f.fileNumber, registeredAgent: f.agent, registeredAgentAddress: f.agentAddress, assetId: id }, mode);
+      // Another entity opened meanwhile: this record isn't for the one on screen now.
+      if (epoch !== palmEpoch.current) return "The page moved on.";
       if (found.kind === "error") return found.message;
       if (found.kind === "choices") {
         return found.results.length
@@ -1137,6 +1181,9 @@ export function useEntityPage() {
     const current = assetRef.current;
     const mode = palmMode;
     if (!current || !mode || syncingRef.current) return;
+    // Every step checks this: once another entity is open, the rest would read and write the wrong one.
+    const epoch = palmEpoch.current;
+    const moved = () => epoch !== palmEpoch.current;
     const plan = palmSyncPlan();
     const businessId = current.palm?.[mode]?.businessId;
     if (plan.cents > 0) {
@@ -1154,15 +1201,20 @@ export function useEntityPage() {
         ],
         confirmLabel: `Sync · ${dollars(plan.cents)}`,
       });
-      if (!ok) return;
+      if (!ok || moved()) return;
     }
     syncingRef.current = true;
     const lines: PalmSyncLine[] = [];
+    const MOVED = new Error("moved");
     const say = (line: PalmSyncLine) => {
+      if (moved()) throw MOVED;
       lines.push(line);
       setPalmSync({ running: true, step: line.label, lines: [...lines], cents: plan.cents, mode });
     };
-    const step = (label: string) => setPalmSync({ running: true, step: label, lines: [...lines], cents: plan.cents, mode });
+    const step = (label: string) => {
+      if (moved()) throw MOVED;
+      setPalmSync({ running: true, step: label, lines: [...lines], cents: plan.cents, mode });
+    };
     try {
       // 1. The state's records: the home state's (fills the file number Palm needs), then each foreign one.
       for (const st of plan.states) {
@@ -1201,15 +1253,25 @@ export function useEntityPage() {
 
         step("Agent and mail");
         const found = await refreshPalm(businessId, { busy: false, keepError: true, waitForImport: true });
-        const st = found?.service?.status ? RA_STATUS[found.service.status] : null;
+        if (!found) {
+          // Another read of Palm started meanwhile (the Refresh button, say): its answer is the one on the page.
+          say({ label: "Agent and mail", tone: "muted", text: "Read again just now by the page; see Compliance." });
+        } else {
+        const st = found.service?.status ? RA_STATUS[found.service.status] : null;
         say({ label: "Registered agent", tone: found?.error && !found.service ? "bad" : st?.tone === "good" ? "good" : st ? "warn" : "muted", text: found?.error && found.service === undefined ? found.error : st ? st.label : "Palm isn't its agent." });
         if (found?.documents !== undefined) {
           const saved = found.saved ?? 0;
+          const failed = found.failed ?? 0;
           say({
             label: "Mail",
-            tone: "good",
-            text: !found.documents ? "No documents at Palm." : `${found.documents} document${found.documents === 1 ? "" : "s"} at Palm${mode === "live" ? (saved ? `; ${saved} newly saved to Documents` : "; all already in Documents") : " (test mode: not saved to Documents)"}${found.truncated ? ". More than 10,000: the oldest weren't read." : "."}`,
+            tone: failed ? "warn" : "good",
+            text: !found.documents
+              ? "No documents at Palm."
+              : `${found.documents} document${found.documents === 1 ? "" : "s"} at Palm${
+                  mode !== "live" ? " (test mode: not saved to Documents)" : failed ? `; ${saved} newly saved, ${failed} couldn't be saved (sync again)` : saved ? `; ${saved} newly saved to Documents` : "; all already in Documents"
+                }${found.truncated ? ". More than 10,000: the oldest weren't read." : "."}`,
           });
+        }
         }
       } else {
         say({ label: "Agent and mail", tone: "muted", text: "Not in Palm yet. Its agent and mail are read once Palm is the agent (Compliance → Make Palm the agent)." });
@@ -1237,10 +1299,16 @@ export function useEntityPage() {
           say({ label: "Palm's questions", tone: "bad", text: (err as Error).message });
         }
       }
+      if (moved()) throw MOVED;
       await patchAsset({ [`palm/${mode}/syncedAt`]: Date.now() });
+    } catch (err) {
+      if (err !== MOVED) throw err;
     } finally {
-      syncingRef.current = false;
-      setPalmSync({ running: false, step: "", lines: [...lines], cents: plan.cents, mode, at: Date.now() });
+      // Left for another entity: its page has its own state now (reset when it opened).
+      if (!moved()) {
+        syncingRef.current = false;
+        setPalmSync({ running: false, step: "", lines: [...lines], cents: plan.cents, mode, at: Date.now() });
+      }
     }
   }
 
@@ -1604,22 +1672,16 @@ export function useEntityPage() {
     }
   }
 
+  /** Copy a link to the document that expires (a signed link), never the permanent storage URL. */
   async function handleCopyDocUrl(doc: AssetDoc) {
     try {
-      await navigator.clipboard.writeText(doc.url);
-      setCopiedDocId(doc.id);
-      setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
-    } catch {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = doc.url;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      setCopiedDocId(doc.id);
-      setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
+      await copyStoredFileLink(doc);
+    } catch (err) {
+      await alertDialog("Couldn't copy a link", err instanceof Error ? err.message : undefined);
+      return;
     }
+    setCopiedDocId(doc.id);
+    setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
   }
 
   async function handleRenameDoc(doc: AssetDoc) {
@@ -1834,7 +1896,7 @@ export function useEntityPage() {
         name = `IRS Letter to Close EIN Account - ${current.name}.pdf`;
       }
       const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), () => {});
-      window.open(doc.url, "_blank", "noopener");
+      await openStoredFile(doc);
       return null;
     } catch (err) {
       return err instanceof Error ? err.message : "Couldn't draft it.";
@@ -1863,7 +1925,7 @@ export function useEntityPage() {
     });
     const blob = await fill8822B(data, form);
     const doc = await uploadDocFile(new File([blob], `Form 8822-B - ${current.name}.pdf`, { type: "application/pdf" }), () => {});
-    window.open(doc.url, "_blank", "noopener");
+    await openStoredFile(doc);
   }
 
   /** Mark where the address change has been reported (or undo it). */
@@ -1878,36 +1940,59 @@ export function useEntityPage() {
    * kept as they are. Live mode only (sandbox files aren't the entity's), and
    * only for someone who can change the record. Returns how many were saved.
    */
-  const importingPalm = useRef(new Set<string>());
-  async function importPalmDocuments(list: PalmDocument[], mode: PalmMode): Promise<number> {
+  async function importPalmDocuments(list: PalmDocument[], mode: PalmMode): Promise<{ saved: number; failed: number }> {
+    // One import at a time in this tab: a second (the page's refresh and a sync, say) waits, then finds them saved.
+    const run = importQueue.current.then(() => importPalmDocumentsNow(list, mode));
+    importQueue.current = run.catch(() => undefined);
+    return run;
+  }
+  const importQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  async function importPalmDocumentsNow(list: PalmDocument[], mode: PalmMode): Promise<{ saved: number; failed: number }> {
     const current = assetRef.current;
-    if (!current || mode !== "live" || !id || !canChangeRecord()) return 0;
+    if (!current || mode !== "live" || !id || !canChangeRecord()) return { saved: 0, failed: 0 };
+    const epoch = palmEpoch.current;
     // What Documents holds now, read fresh: the list on screen may not have loaded yet.
-    const { db, ref: dbRef, get, update } = await import("../store");
+    const { db, ref: dbRef, get, set } = await import("../store");
     const stored = ((await get(dbRef(db, `assets/${id}/documents`))).val() ?? {}) as Record<string, { palmDocumentId?: string }>;
     const have = new Set(Object.values(stored).map((d) => d?.palmDocumentId).filter(Boolean));
     let saved = 0;
+    let failed = 0;
     // Oldest first, so Documents reads in the order Palm received them.
     for (const d of [...list].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))) {
-      if (have.has(d.id) || importingPalm.current.has(d.id)) continue;
+      if (epoch !== palmEpoch.current) break; // another entity opened: stop here, its page imports its own
+      if (have.has(d.id)) continue;
       const kind = docKindOf(d);
       const slot = [kind, ...(d.types ?? []), d.type ?? ""].map((k) => PALM_SLOT[k]).find(Boolean);
-      importingPalm.current.add(d.id);
+      // Keyed by Palm's id (as the server's sync keys it), so two imports of one document land on one entry.
+      const key = palmDocKey(d.id);
       try {
+        if ((await get(dbRef(db, `assets/${id}/documents/${key}`))).exists()) continue;
         const blob = await fetchPalmDocument(d);
         const when = (d.created_at ?? d.upload_date ?? "").slice(0, 10);
         const name = d.filename || (slot ? `${filingTitle(slot, current)}.pdf` : `${DOC_LABEL[kind] ?? "Palm document"}${when ? ` ${when}` : ""}.pdf`);
-        const doc = await uploadDocFile(new File([blob], name, { type: blob.type || "application/pdf" }), () => {});
-        await update(dbRef(db, `assets/${id}/documents/${doc.id}`), { palmDocumentId: d.id, ...(kind ? { palmType: kind } : {}) });
-        if (slot && !assetRef.current?.[slot]) await fileDocument(slot, doc);
+        const file = new File([blob], name, { type: blob.type || "application/pdf" });
+        const stored = await uploadToStorage(file, () => {}, () => {});
+        const record = {
+          name: name.replace(/\.[^.]+$/, ""),
+          url: stored.url,
+          storagePath: stored.path,
+          storageProvider: "supabase" as const,
+          size: file.size,
+          contentType: file.type,
+          createdAt: Date.now(),
+          palmDocumentId: d.id,
+          ...(kind ? { palmType: kind } : {}),
+        };
+        await set(dbRef(db, `assets/${id}/documents/${key}`), record);
+        if (slot && !assetRef.current?.[slot]) await fileDocument(slot, { id: key, ...record } as AssetDoc);
         saved++;
       } catch (err) {
         console.error("Palm document import failed", d.id, err);
-      } finally {
-        importingPalm.current.delete(d.id);
+        failed++;
       }
     }
-    return saved;
+    return { saved, failed };
   }
 
   async function handleUploadFile(kind: FileKind, file: File) {
@@ -2264,8 +2349,12 @@ export function useEntityPage() {
     setDocs,
     loading,
     setLoading,
+    loadError,
+    retryLoad,
     editing,
     setEditing,
+    cancelEditing,
+    savedAt,
     form,
     setForm,
     pendingScroll,

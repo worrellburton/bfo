@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
-import { canWrite, currentUser, fail, guard, handleError, isPartner, sb, secretMatches } from "../lib/auth.js";
+import { canWrite, cronAuth, currentUser, fail, guard, handleError, isPartner, refuseCron, sb } from "../lib/auth.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
 import { StableNotConfigured, syncStable, type MailRow } from "../lib/stable.js";
 import { storageSignedUrl } from "../lib/storage.js";
@@ -49,11 +49,10 @@ async function present(r: MailRow) {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "POST"])) return;
   try {
-    // The hourly catch-up, for anything a webhook missed.
-    const cron = process.env.CRON_SECRET;
+    // The hourly catch-up, for anything a webhook missed. Bearer CRON_SECRET only.
     if (req.method === "GET" && req.query.cron === "1") {
-      const ok = cron ? secretMatches(req.headers.authorization, `Bearer ${cron}`) : !!req.headers["x-vercel-cron-schedule"];
-      if (!ok) return fail(res, 401, "unauthorized");
+      const cron = cronAuth(req);
+      if (cron !== "ok") return refuseCron(req, res, "stable", cron);
       if (!process.env.STABLE_API_KEY) return res.status(200).json({ synced: 0, configured: false });
       return res.status(200).json({ synced: await syncStable(7) });
     }

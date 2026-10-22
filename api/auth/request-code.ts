@@ -7,11 +7,23 @@ import {
   handleError,
   normalizeIdentifier,
   sb,
+  signInAllowed,
   verifyStart,
   type AppUser,
 } from "../../lib/auth.js";
+import { countRows } from "../../lib/db-pages.js";
 
 const MAX_CODES_PER_HOUR = 5;
+
+/** Codes sent to everyone together per hour (SIGNIN_HOURLY_CAP), default 60. */
+function hourlyCap(): number {
+  const n = Number(process.env.SIGNIN_HOURLY_CAP);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+}
+
+function hourAgo(): string {
+  return new Date(Date.now() - 60 * 60 * 1000).toISOString();
+}
 
 function mask(kind: "phone" | "email", value: string): string {
   if (kind === "phone") return `••• ••• ${value.slice(-4)}`;
@@ -32,6 +44,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Sign-in is by phone only; an email stays on the profile as contact info.
     if (identifier.kind !== "phone") {
       return fail(res, 400, "phone_only", "Sign in with your phone number.");
+    }
+    // Both checks below run before the account lookup and answer the same for
+    // every number, so they say nothing about who has an account.
+    if (!signInAllowed(identifier.value)) {
+      return fail(res, 400, "unsupported_country", "Sign-in codes can't be sent to numbers in that country.");
+    }
+    // A global ceiling on codes sent, so cycling through fresh numbers (each
+    // within its own per-number limit) can't run up the SMS bill.
+    const sentLastHour = await countRows("login_codes", `created_at=gte.${encodeURIComponent(hourAgo())}`);
+    if (sentLastHour >= hourlyCap()) {
+      console.error(`request-code: global cap reached (${sentLastHour} codes in the last hour)`);
+      res.setHeader("Retry-After", "600");
+      return fail(res, 429, "busy", "Sign-in is busy right now. Try again in a few minutes.");
     }
 
     const column = identifier.kind === "phone" ? "phone" : "email";
@@ -58,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Throttle: one code per identifier every CODE_RESEND_MS, and a cap per hour.
     const recent = await sb<Array<{ created_at: string }>>(
       `login_codes?identifier=eq.${encodeURIComponent(identifier.value)}` +
-        `&created_at=gte.${new Date(Date.now() - 60 * 60 * 1000).toISOString()}` +
+        `&created_at=gte.${hourAgo()}` +
         `&select=created_at&order=created_at.desc`
     );
     const newest = recent?.[0] ? new Date(recent[0].created_at).getTime() : 0;

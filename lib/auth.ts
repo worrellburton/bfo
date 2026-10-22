@@ -100,6 +100,28 @@ export function normalizePhone(raw: string): string | null {
   return /^\+[1-9]\d{7,14}$/.test(e164) ? e164 : null;
 }
 
+/**
+ * Whether a normalized (E.164) number may be sent a sign-in code. Every code
+ * is a paid text, and the family is in the US, so numbers outside the
+ * allowed country codes are refused before anything is sent: international
+ * SMS pumping is the cheap way to run up the bill. `allowList` is
+ * SIGNIN_COUNTRY_CODES, a comma list like "+1,+44"; unset means "+1", and
+ * "*" allows any country. Country codes are prefix-free, so a prefix match
+ * is exact.
+ */
+export function signInAllowed(phone: string, allowList: string | undefined = process.env.SIGNIN_COUNTRY_CODES): boolean {
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) return false;
+  const codes = (allowList?.trim() ? allowList : "+1")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (codes.includes("*")) return true;
+  return codes.some((c) => {
+    const digits = c.replace(/^\+/, "");
+    return /^[1-9]\d{0,3}$/.test(digits) && phone.startsWith(`+${digits}`);
+  });
+}
+
 export function formatPhone(e164: string | null): string {
   if (!e164) return "";
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
@@ -549,6 +571,45 @@ export function secretMatches(presented: unknown, secret: string | undefined): b
   return !!secret && typeof presented === "string" && safeEqual(presented, secret);
 }
 
+// ── Cron ──────────────────────────────────────────────────────────────
+
+export type CronAuth = "ok" | "unauthorized" | "unconfigured";
+
+/**
+ * Whether a request is the Vercel cron. Vercel sends Authorization: Bearer
+ * $CRON_SECRET on every scheduled fire once that env var exists, and that is
+ * the only proof accepted. The x-vercel-cron-schedule header is not: outside
+ * traffic can send it too. With no secret configured nothing passes, so a
+ * missing env var shuts the cron rather than opening it.
+ */
+export function cronAuth(req: VercelRequest): CronAuth {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return "unconfigured";
+  return secretMatches(req.headers.authorization, `Bearer ${secret}`) ? "ok" : "unauthorized";
+}
+
+/**
+ * Answer a refused cron call: 503 when the secret isn't set (so the fix is
+ * obvious in the logs), 401 otherwise. Logs booleans only, never the secret.
+ */
+export function refuseCron(req: VercelRequest, res: VercelResponse, name: string, outcome: Exclude<CronAuth, "ok">) {
+  console.error(`${name} cron rejected`, {
+    reason: outcome,
+    auth_header: !!req.headers.authorization,
+    schedule_header: !!req.headers["x-vercel-cron-schedule"],
+    ua: req.headers["user-agent"] ?? null,
+  });
+  if (outcome === "unconfigured") {
+    return fail(
+      res,
+      503,
+      "cron_secret_missing",
+      "CRON_SECRET is not set, so scheduled runs are refused. Set it in Vercel (Production) and redeploy."
+    );
+  }
+  return fail(res, 401, "unauthorized");
+}
+
 // ── HTTP plumbing ─────────────────────────────────────────────────────
 
 export function publicUser(user: AppUser) {
@@ -594,6 +655,8 @@ export function handleError(res: VercelResponse, err: unknown) {
   if (err instanceof ConfigError) {
     return fail(res, 503, "not_configured", err.message);
   }
+  // The detail (often raw Supabase or provider text: table names, columns,
+  // constraint names) stays in the server log; the client gets a plain line.
   console.error(err);
-  return fail(res, 500, "server_error", err instanceof Error ? err.message : String(err));
+  return fail(res, 500, "server_error", "Something went wrong. Try again.");
 }

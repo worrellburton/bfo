@@ -14,6 +14,9 @@ import { authFetch, getUser, isAdmin, isPartner } from "../auth";
 import { palmCall, type PalmMode } from "../palm";
 import { dollars } from "../../lib/palm-pricing";
 import { stateReadCost, type StateReadable } from "../../lib/state-reads";
+
+/** Kept in step with lib/palm-sync.ts SYNC_FRESH_MS (that module is server-only). */
+const SYNC_FRESH_MS = 24 * 60 * 60 * 1000;
 import { useTheme } from "../theme";
 import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
@@ -82,6 +85,7 @@ interface Asset {
   fileNumber?: string;
   foreign?: StateReadable["foreign"];
   palm?: StateReadable["palm"];
+  stateRecord?: StateReadable["stateRecord"];
 }
 
 /** What the server's sync found for one entity (lib/palm-sync.ts). */
@@ -109,9 +113,10 @@ function canonState(raw: string | undefined): string {
 }
 
 /**
- * List ⇄ cards ⇄ map. Every screen defaults to the map; an explicit choice
- * is remembered per browser and wins over the default (the same contract as
- * the Books ledger).
+ * List ⇄ cards ⇄ map. Phones default to the list (the map is hard to use at
+ * that width), larger screens to the map; an explicit choice is remembered
+ * per browser and wins over the default (the same contract as the Books
+ * ledger).
  */
 const VIEW_KEY = "bfo-entities-view";
 function readStoredView(): EntView | null {
@@ -1004,7 +1009,8 @@ function StaffAssets() {
     };
   }, []);
   const palmPlan = useMemo(() => {
-    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode) }));
+    // Records read in the last day are kept by the server's sync, so they cost nothing here.
+    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode, { freshMs: SYNC_FRESH_MS }) }));
     return { cents: per.reduce((n, x) => n + x.cost.cents, 0), states: per.reduce((n, x) => n + x.cost.states.length, 0), entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length };
   }, [assets, palmMode]);
   const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode } | null>(null);
@@ -1022,7 +1028,7 @@ function StaffAssets() {
         "Palm is in test mode: nothing is billed, and the records come from its sandbox."
       ),
       details: [
-        "Each entity's state record is read in its home state and every state it's registered in as a foreign entity ($1.29 with a file number on record, $2.04 without).",
+        "Each entity's state record is read in its home state and every state it's registered in as a foreign entity ($1.29 with a file number on record, $2.04 without). Records read in the last day are kept, not read again.",
         "For entities Palm holds: their agent, Palm's copy of the business, their mail (saved to Documents) and Palm's open questions.",
         "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
         "It can take a few minutes.",
@@ -1073,7 +1079,8 @@ function StaffAssets() {
   const [menuRow, setMenuRow] = useState<string | null>(null);
 
   const [choice, setChoice] = useState<EntView | null>(readStoredView);
-  const view: EntView = choice ?? "map";
+  const [narrow] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches);
+  const view: EntView = choice ?? (narrow ? "list" : "map");
   const pickView = (v: EntView) => {
     setChoice(v);
     try {
@@ -1248,6 +1255,9 @@ function StaffAssets() {
     const st = (a.state || "").trim();
     if (!inStates(a)) return false;
     if (attention && scoreOf(a).score >= 100) return false;
+    return matchesNeedle(a, st);
+  };
+  function matchesNeedle(a: Asset, st = (a.state || "").trim()) {
     if (!needle) return true;
     return (
       a.name.toLowerCase().includes(needle) ||
@@ -1256,7 +1266,7 @@ function StaffAssets() {
       (digits.length >= 2 && (a.ein || "").replace(/\D/g, "").includes(digits)) ||
       tagOf(a).toLowerCase() === needle
     );
-  };
+  }
   const matched = assets.filter(matches);
   const matchedIds = new Set(matched.map((a) => a.id));
   function clearFilters() {
@@ -1589,8 +1599,10 @@ function StaffAssets() {
   const searchBox = () => (
     <div className="relative order-1 flex-1 min-w-0 lg:min-w-[10rem] lg:max-w-[20rem] xl:flex-none xl:w-72">
       <Icon d={PATHS.search} className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${t3}`} strokeWidth={2} />
+      {/* data-page-search: "/" focuses it (the app's global shortcuts). */}
       <input
         type="search"
+        data-page-search
         value={q}
         onChange={(e) => setQ(e.target.value)}
         aria-label="Search entities by name, EIN or state"
@@ -1625,11 +1637,11 @@ function StaffAssets() {
   const stateMenu = () => (
     <StateMegaMenu isDark={isDark} value={stateF} onChange={setStateF} counts={stateCounts} noState={statelessCount} />
   );
-  // On the map the state filter lights the matching entities (by name).
+  // On the map the state filter and the search light the matching entities (by name).
   const mapHighlight = useMemo(
-    () => (stateF.length ? new Set(assets.filter(inStates).map((a) => a.name.toLowerCase())) : null),
+    () => (stateF.length || needle ? new Set(assets.filter((a) => inStates(a) && matchesNeedle(a)).map((a) => a.name.toLowerCase())) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [assets, stateF]
+    [assets, stateF, needle]
   );
   const attentionToggle = () => (
     <button
@@ -1981,11 +1993,12 @@ function StaffAssets() {
           {view === "map" ? (
             <div className="flex items-center gap-2">
               <div className="shrink-0">{stateMenu()}</div>
-              <p className={`flex-1 min-w-0 truncate text-sm ${t2} hidden sm:block sm:ml-1`}>
-                {stateF.length ? "Entities in the chosen states are lit" : "Ownership map"}
+              {searchBox()}
+              <p className={`order-1 flex-1 min-w-0 truncate text-sm ${t2} hidden lg:block lg:ml-1`}>
+                {needle ? `${mapHighlight?.size ?? 0} matching ${mapHighlight?.size === 1 ? "entity is" : "entities are"} lit` : stateF.length ? "Entities in the chosen states are lit" : "Ownership map"}
                 <span className="hidden lg:inline"> — drag to pan, scroll to zoom</span>
               </p>
-              <div className="shrink-0 ml-auto">{viewToggle()}</div>
+              <div className="order-1 shrink-0 ml-auto">{viewToggle()}</div>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">

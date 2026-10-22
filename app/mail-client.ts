@@ -34,6 +34,8 @@ export type MailSummary = {
   /** The conversation it's in, and when that conversation last had a message (Active pages on these). */
   threadKey?: string;
   threadAt?: string;
+  /** Received mail neither SPF nor DKIM vouches for: its From could be forged (no colleague's photo on it). */
+  unverified?: boolean;
 };
 
 export type MailMessage = MailSummary & {
@@ -143,9 +145,9 @@ export function listMail({ folder, filter = "all", q = "", to, before, beforeId,
   return call<{ messages: MailSummary[]; hasMore: boolean; pinned?: MailSummary[] }>(`/api/mail?${p}`);
 }
 
-/** Opens a message; the server marks it read. */
-export function getMessage(id: string) {
-  return call<{ message: MailMessage }>(`/api/mail?view=message&id=${encodeURIComponent(id)}`);
+/** Opens a message; the server marks it read (with `conversation`, its whole conversation: opened from Active). */
+export function getMessage(id: string, opts: { conversation?: boolean } = {}) {
+  return call<{ message: MailMessage }>(`/api/mail?view=message&id=${encodeURIComponent(id)}${opts.conversation ? "&conversation=1" : ""}`);
 }
 
 /** The conversation a message is in, newest first (itself included). */
@@ -200,8 +202,9 @@ export function sendMail(input: SendInput) {
   return post<{ message: MailSummary }>({ action: "send", ...input });
 }
 
-export function moveMail(ids: string[], folder: "inbox" | "archive") {
-  return post<{ ok: true }>({ action: "move", ids, folder });
+/** `conversation`: archive the whole conversation out of Active (a row there stands for all of it). */
+export function moveMail(ids: string[], folder: "inbox" | "archive", opts: { conversation?: boolean } = {}) {
+  return post<{ ok: true }>({ action: "move", ids, folder, ...(opts.conversation ? { conversation: true } : {}) });
 }
 
 export function markRead(ids: string[], read: boolean) {
@@ -213,8 +216,9 @@ export function starMail(ids: string[], starred: boolean, opts: { conversation?:
   return post<{ ok: true }>({ action: "star", ids, starred, ...(opts.conversation ? { conversation: true } : {}) });
 }
 
-export function deleteMail(ids: string[]) {
-  return post<{ ok: true }>({ action: "delete", ids });
+/** `conversation`: every message in their conversations, sent and received. */
+export function deleteMail(ids: string[], opts: { conversation?: boolean } = {}) {
+  return post<{ ok: true }>({ action: "delete", ids, ...(opts.conversation ? { conversation: true } : {}) });
 }
 
 // ── Change signal ────────────────────────────────────────────────────────

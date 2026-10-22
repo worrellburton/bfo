@@ -50,7 +50,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
  *     with filter=all and no search, starred mail is pinned: the first page carries it as `pinned` (Active: each
  *     conversation with a starred message, under its newest), and `messages` never repeats it
- *   message&id=<uuid>                → { message }  (marks it read)
+ *   message&id=<uuid>[&conversation=1] → { message }  (marks it read; with conversation=1, its whole conversation)
  *   count                            → { unread, otherUnread, address|null, aliases, canSeeOther, sync? }  (kicks a sync)
  *   attachment&id=<uuid>&att=<id>    → { url }  (signed, 5 minutes)
  *   faces                            → { faces: { address: url } }  each user's chosen picture, by every address they have
@@ -66,10 +66,11 @@ import { storageSignedUrl } from "../lib/storage.js";
  *   alias-remove { address }         → { aliases }
  *   photo-set { data }               → { faces }  the caller's picture for their mail (a small JPEG/PNG/WebP, base64)
  *   photo-remove                     → { faces }  back to initials
- *   move { ids, folder }             → { ok }  (inbox|archive; received mail only)
+ *   move { ids, folder, conversation? } → { ok }  (inbox|archive; received mail only. conversation: the whole
+ *                                    conversation, out of Active or (undo) back; any move to the inbox brings it back)
  *   read { ids, read }               → { ok }
  *   star { ids, starred, conversation? } → { ok }  (conversation: unstarring clears every message in their conversations)
- *   delete { ids }                   → { ok }  (for good)
+ *   delete { ids, conversation? }    → { ok }  (for good; conversation: every message in their conversations)
  *
  * "Not yours" is 403/404, never 401 — the browser signs out on 401.
  */
@@ -92,6 +93,14 @@ function idList(v: unknown): string[] | null {
   if (!Array.isArray(v) || !v.length || v.length > 200) return null;
   return v.every((x) => typeof x === "string" && UUID_RE.test(x)) ? [...new Set(v as string[])] : null;
 }
+
+/** The conversations these messages are in (thread_key), within the caller's scope. */
+async function threadKeysOf(ids: string[], scope: string): Promise<string[]> {
+  const rows = await sb<{ thread_key: string | null }[]>(`mail_messages?id=in.(${ids.join(",")})&${scope}&select=thread_key`);
+  return [...new Set((rows ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))];
+}
+
+const keysIn = (keys: string[]) => `thread_key=in.(${keys.map(pgQuote).join(",")})`;
 
 /** One of the caller's messages (or a catch-all one, for an admin), or null. */
 async function findMessage(me: AppUser, admin: boolean, id: string): Promise<MailRow | null> {
@@ -158,14 +167,20 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       const pins = filter === "all" && !searchCondition(param(req, "q"));
       const inBox = box ? `&and=(${box})` : "";
       // Active pins each conversation with a starred message in it.
+      // At most 30 conversations (Active) or 100 messages are pinned; any more stay in the dated list, by date.
       const starredKeys =
         pins && active
-          ? [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=thread_key&limit=100`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))]
+          ? [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=thread_key&order=starred_at.desc&limit=200`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))].slice(0, 30)
           : [];
       const keyList = starredKeys.map(pgQuote).join(",");
+      const pinnedRows =
+        pins && !active
+          ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${before ? "id" : SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=100`)) ?? [])
+          : [];
       // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
       const conditions = [
         keyList ? `or(thread_key.is.null,thread_key.not.in.(${keyList}))` : "",
+        pinnedRows.length ? `id.not.in.(${pinnedRows.map((r) => r.id).join(",")})` : "",
         !before
           ? ""
           : active
@@ -187,15 +202,18 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
           `mail_messages?${where}${filterClause(filter)}${extra}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=${fetched}`
         );
         const { heads, more } = conversationHeads(rows ?? [], limit, fetched);
+        // A conversation shows unread while any message in it is, not just its newest.
+        const keys = [...heads, ...pinned].map((r) => r.thread_key).filter((k): k is string => !!k);
+        const unread = new Set(
+          keys.length ? ((await sb<{ thread_key: string }[]>(`mail_messages?${where}&read_at=is.null&direction=eq.in&${keysIn(keys)}&select=thread_key`)) ?? []).map((r) => r.thread_key) : []
+        );
+        const head = (r: SummaryRow) => ({ ...toSummary(r), ...(r.thread_key && unread.has(r.thread_key) ? { read: false } : {}) });
         // A pinned conversation shows starred, whichever of its messages carries the star.
-        return res.status(200).json({ messages: heads.map(toSummary), hasMore: more, ...(pins ? { pinned: pinned.map((r) => ({ ...toSummary(r), starred: true })) } : {}) });
+        return res.status(200).json({ messages: heads.map(head), hasMore: more, ...(pins ? { pinned: pinned.map((r) => ({ ...head(r), starred: true })) } : {}) });
       }
-      const pinned =
-        pins && !before
-          ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=100`)) ?? [])
-          : [];
+      const pinned = before ? [] : pinnedRows;
       const rows = await sb<SummaryRow[]>(
-        `mail_messages?${where}${filterClause(filter)}${pins ? "&starred_at=is.null" : ""}${extra}` +
+        `mail_messages?${where}${filterClause(filter)}${extra}` +
           `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`
       );
       return res.status(200).json({
@@ -211,6 +229,10 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       if (!row.read_at) {
         row.read_at = new Date().toISOString();
         await sb(`mail_messages?id=eq.${row.id}`, { method: "PATCH", body: { read_at: row.read_at } });
+      }
+      // Opened from Active, the row stood for the whole conversation: it's all read now.
+      if (param(req, "conversation") === "1" && row.thread_key) {
+        await sb(`mail_messages?${keysIn([row.thread_key])}&read_at=is.null&${scopeFilter(me.id, admin)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
       }
       return res.status(200).json({ message: toMessage(row) });
     }
@@ -327,7 +349,21 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       const ids = idList(body.ids);
       if (!ids) return fail(res, 400, "bad_ids");
       if (body.folder !== "inbox" && body.folder !== "archive") return fail(res, 400, "bad_folder");
+      const keys = await threadKeysOf(ids, scope);
+      if (body.folder === "archive" && body.conversation === true && keys.length) {
+        // Archived from Active: the conversation's received mail moves, and the whole of it (sent copies
+        // too, which stay in Out) leaves Active until a new message arrives in it or it moves back.
+        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.inbox&${scope}`, { method: "PATCH", body: { folder: "archive" } });
+        await sb(`mail_messages?${keysIn(keys)}&${scope}`, { method: "PATCH", body: { active_hidden: true } });
+        return res.status(200).json({ ok: true });
+      }
       await sb(`mail_messages?id=in.(${ids.join(",")})&direction=eq.in&${scope}`, { method: "PATCH", body: { folder: body.folder } });
+      // The whole conversation back (undoing an archive from Active): all of its archived received mail.
+      if (body.folder === "inbox" && body.conversation === true && keys.length) {
+        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.archive&${scope}`, { method: "PATCH", body: { folder: "inbox" } });
+      }
+      // Back to the inbox: the conversation is in Active again.
+      if (body.folder === "inbox" && keys.length) await sb(`mail_messages?${keysIn(keys)}&active_hidden=is.true&${scope}`, { method: "PATCH", body: { active_hidden: false } });
       return res.status(200).json({ ok: true });
     }
 
@@ -363,7 +399,14 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
     case "delete": {
       const ids = idList(body.ids);
       if (!ids) return fail(res, 400, "bad_ids");
-      await deleteMessages(ids, scope);
+      // From Active, a row is a conversation: every message in it goes.
+      let all = ids;
+      if (body.conversation === true) {
+        const keys = await threadKeysOf(ids, scope);
+        const rows = keys.length ? await sb<{ id: string }[]>(`mail_messages?${keysIn(keys)}&${scope}&select=id`) : [];
+        all = [...new Set([...ids, ...(rows ?? []).map((r) => r.id)])];
+      }
+      await deleteMessages(all, scope);
       return res.status(200).json({ ok: true });
     }
 

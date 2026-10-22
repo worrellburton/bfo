@@ -92,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // The agent service moving along: the entity's agent follows.
-  if (assetId && event.type.startsWith("registered_agent.")) {
+  if (assetId && event.type.startsWith("registered_agent.") && !(await alreadyStored(row.id))) {
     await trackAgent(assetId, row.mode, object as RaServiceLike, Date.parse(row.occurred_at) || Date.now()).catch((err) => console.error("palm-webhook: couldn't record the agent", err));
   }
 
@@ -153,15 +153,23 @@ async function trackAgent(assetId: string, mode: "test" | "live", service: RaSer
   if (!/^[\w-]{8,64}$/.test(assetId) || !service?.status) return;
   const row = (await readRows("assets", [assetId]))[0];
   if (!row) return;
-  const data = (row.data ?? {}) as Parameters<typeof raPatch>[0] & { palm?: Record<string, { ra?: { status?: string | null; checkedAt?: number } | null } | undefined> };
+  const data = (row.data ?? {}) as Parameters<typeof raPatch>[0] & { palm?: Record<string, { ra?: { status?: string | null; eventAt?: number } | null } | undefined> };
   const prior = data.palm?.[mode]?.ra;
-  // An event older than what the page last read (a retry, or out of order) changes nothing.
-  if (prior?.checkedAt && prior.checkedAt > at) return;
-  await applyOps([{ op: "update", path: ["assets", assetId], value: raPatch(data, service, mode, at) as never }], PALM);
+  // An event older than the last one applied (Palm's times compared with Palm's, not a browser's clock) changes nothing.
+  if (prior?.eventAt && prior.eventAt > at) return;
+  const patch = raPatch(data, service, mode, at);
+  patch[`palm/${mode}/ra`] = { ...(patch[`palm/${mode}/ra`] as object), eventAt: at };
+  await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }], PALM);
   if (prior?.status === service.status) return; // Palm resending, or nothing new to say
   const label = { pending: "is filing the agent change", active: "is now the registered agent", termination_requested: "is resigning as agent", terminated: "stopped serving as agent", failed: "couldn't make the agent change", canceled: "canceled the agent change" }[service.status];
   const why = service.status === "failed" && service.rejection_reason ? `: ${service.rejection_reason}` : "";
   await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm ${label}${why}${mode === "test" ? " (test)" : ""}` }]);
+}
+
+/** True when this event was handled before (Palm redelivers): it changes nothing a second time. */
+async function alreadyStored(eventId: string): Promise<boolean> {
+  const rows = await sb<{ id: string }[]>(`palm_events?id=eq.${encodeURIComponent(eventId)}&select=id&limit=1`).catch(() => []);
+  return !!rows?.length;
 }
 
 /** The entity linked to a Palm business, by the business id kept on it (palm/<mode>/businessId). */

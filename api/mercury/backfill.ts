@@ -71,7 +71,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `book_transactions?account_id=eq.${encodeURIComponent(pref.account_id)}` +
           `&select=date&order=date.asc&limit=1`
       );
-      const earliest = earliestRes.ok ? ((await earliestRes.json()) as any[])[0]?.date ?? null : null;
+      // A failed read must stop the run: read as "no Plaid rows", it would
+      // insert all 24 months on top of what Plaid already has.
+      if (!earliestRes.ok) {
+        throw new Error(`couldn't read existing rows for ${pref.account_id}: ${(await earliestRes.text()).slice(0, 200)}`);
+      }
+      const earliest = ((await earliestRes.json()) as any[])[0]?.date ?? null;
 
       const txns = await mercuryTransactions(acct.id, sinceDay);
       const rows = txns

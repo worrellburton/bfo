@@ -1,4 +1,5 @@
 import { sb } from "./auth.js";
+import { fetchAll } from "./db-pages.js";
 
 /**
  * The loan ledger, shared by the Books Loans page and the Treasury report.
@@ -43,13 +44,14 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
     Array<{ id: string; name: string; starting_balance: number; show_on_report: boolean; archived_at: string | null }>
   >("book_loans?archived_at=is.null&select=id,name,starting_balance,show_on_report,archived_at&order=created_at.asc");
 
-  const txns = await sb<LoanTxn[]>(
+  // Every page: a balance summed from the first 1,000 rows is silently wrong.
+  const txns = await fetchAll<LoanTxn>(
     "book_transactions?select=*&pending=eq.false" +
       // Loans are identified by an explicit loan_id or the intercompany loan
       // class. (The old "Name (loan)" category convention was retired when the
       // chart of accounts went numeric — those rows now carry a loan_id.)
       "&or=(loan_id.not.is.null,intercompany_class.eq.loan)" +
-      "&order=date.desc&limit=2000"
+      "&order=date.desc,transaction_id.asc"
   );
 
   // Entities resolve live from the mappings, not from the stamp written at

@@ -728,15 +728,19 @@ describe("/api/mail", () => {
   });
 
   it("lists only the caller's mail, newest first, with paging", async () => {
-    sbRoutes = [[/GET mail_messages\?/, () => [row(), row({ id: "m2" }), row({ id: "m3" })]]];
+    sbRoutes = [
+      [/GET mail_messages\?.*starred_at=not\.is\.null/, () => []],
+      [/GET mail_messages\?/, () => [row(), row({ id: "m2" }), row({ id: "m3" })]],
+    ];
     const r = await call("GET", { query: { view: "list", folder: "inbox", limit: "2", before: "2026-10-15T00:00:00.123456+00:00" } });
     expect(r.status).toBe(200);
     expect(r.json.hasMore).toBe(true);
     expect(r.json.messages.map((m: any) => m.id)).toEqual([MSG, "m2"]);
-    const q = sbCalls[0].path;
+    // The pinned (starred) ids are asked for first, so the dated list can leave them out; none here.
+    expect(sbCalls[0].path).toContain("starred_at=not.is.null");
     // The time goes through exactly as given (microseconds kept), not re-parsed into milliseconds.
-    // Starred mail is pinned above the list, so the dated list leaves it out.
-    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&starred_at=is\\.null&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
+    const q = sbCalls[1].path;
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
     expect(q).toContain("order=occurred_at.desc,id.desc&limit=3");
     expect(q).not.toContain("html_body");
     for (const bad of <Record<string, string>[]>[{ before: "yesterday" }, { before: '2026-10-15T00:00:00Z",id.gt.(' }, { beforeId: MSG }, { before: "2026-10-15T00:00:00Z", beforeId: "x" }]) {
@@ -791,7 +795,8 @@ describe("/api/mail", () => {
     const r = await call("GET", { query: { view: "list", folder: "inbox" } });
     expect(r.json.pinned.map((m: any) => m.id)).toEqual(["s1"]);
     expect(r.json.messages.map((m: any) => m.id)).toEqual([MSG]);
-    expect(sbCalls[1].path).toContain("&starred_at=is.null");
+    // The dated list leaves out exactly the pinned ones (so a 101st starred message still shows, by date).
+    expect(sbCalls[1].path).toContain("and=(id.not.in.(s1))");
     // A narrowed list or a search pins nothing.
     sbCalls.length = 0;
     const unread = await call("GET", { query: { view: "list", filter: "unread" } });
@@ -808,7 +813,34 @@ describe("/api/mail", () => {
     const r = await call("GET", { query: { view: "list", folder: "active" } });
     expect(r.json.pinned).toEqual([expect.objectContaining({ id: "head", starred: true })]);
     expect(r.json.messages.map((m: any) => m.id)).toEqual(["other"]);
-    expect(sbCalls.at(-1)!.path).toContain('and=(or(thread_key.is.null,thread_key.not.in.("<a,b@x>")))');
+    expect(sbCalls.some((c) => c.path.includes('and=(or(thread_key.is.null,thread_key.not.in.("<a,b@x>")))'))).toBe(true);
+    // Archived conversations stay out of Active.
+    expect(sbCalls.every((c) => c.path.includes("active_hidden=is.false"))).toBe(true);
+  });
+
+  it("shows an Active conversation unread while any message in it is", async () => {
+    sbRoutes = [
+      [/GET mail_messages\?.*select=thread_key&/, () => []],
+      [/GET mail_messages\?.*read_at=is\.null/, () => [{ thread_key: "<c@x>" }]],
+      [/GET mail_messages\?/, () => [row({ id: "newest", thread_key: "<c@x>", read_at: "2026-10-20T00:00:00Z" }), row({ id: "solo", thread_key: "<d@x>", read_at: "2026-10-20T00:00:00Z" })]],
+    ];
+    const r = await call("GET", { query: { view: "list", folder: "active" } });
+    expect(r.json.messages.map((m: any) => [m.id, m.read])).toEqual([["newest", false], ["solo", true]]);
+  });
+
+  it("archives whole conversations from Active, and brings them back", async () => {
+    sbRoutes = [
+      [/GET mail_messages\?id=in\..*select=thread_key/, () => [{ thread_key: "<a@x>" }]],
+      [/GET mail_messages\?thread_key=in\..*select=id/, () => [{ id: MSG }, { id: "22222222-2222-4222-8222-222222222222" }]],
+    ];
+    await call("POST", { body: { action: "move", ids: [MSG], folder: "archive", conversation: true } });
+    const patches = sbCalls.filter((c) => c.method === "PATCH");
+    expect(patches[0]).toMatchObject({ path: `mail_messages?thread_key=in.("<a@x>")&direction=eq.in&folder=eq.inbox&user_id=eq.${U1}`, body: { folder: "archive" } });
+    expect(patches[1]).toMatchObject({ path: `mail_messages?thread_key=in.("<a@x>")&user_id=eq.${U1}`, body: { active_hidden: true } });
+    // Back to the inbox: in Active again.
+    sbCalls.length = 0;
+    await call("POST", { body: { action: "move", ids: [MSG], folder: "inbox" } });
+    expect(sbCalls.filter((c) => c.method === "PATCH").at(-1)).toMatchObject({ body: { active_hidden: false } });
   });
 
   it("unstars a whole conversation from Active", async () => {
@@ -823,6 +855,7 @@ describe("/api/mail", () => {
     // A burst received in the same second, between an older and a newer message.
     const db = [row({ id: id(9), occurred_at: "2026-10-14T12:00:01+00:00" }), ...[1, 2, 3, 4, 5].map((n) => row({ id: id(n), occurred_at: at })), row({ id: id(7), occurred_at: "2026-10-14T11:59:59+00:00" })];
     sbRoutes = [
+      [/GET mail_messages\?.*starred_at=not\.is\.null/, () => []],
       [
         /GET mail_messages\?/,
         (c) => {
@@ -850,9 +883,9 @@ describe("/api/mail", () => {
     me = owner;
     sbCalls.length = 0;
     await call("GET", { query: { view: "list", folder: "archive", before: at, beforeId: id(3) } });
-    const q = sbCalls[0].path;
+    const q = sbCalls[1].path;
     expect(q.match(/[?&]or=/g)).toHaveLength(1);
-    expect(q).toContain(`or=(user_id.eq.${U1},user_id.is.null)&folder=eq.archive&starred_at=is.null&and=(or(occurred_at.lt."${at}",and(occurred_at.eq."${at}",id.lt.${id(3)})))&`);
+    expect(q).toContain(`or=(user_id.eq.${U1},user_id.is.null)&folder=eq.archive&and=(or(occurred_at.lt."${at}",and(occurred_at.eq."${at}",id.lt.${id(3)})))&`);
   });
 
   it("keeps the catch-all folder to owners and admins", async () => {
@@ -888,7 +921,7 @@ describe("/api/mail", () => {
   it("moves only received mail, within the caller's scope", async () => {
     const r = await call("POST", { body: { action: "move", ids: [MSG], folder: "archive" } });
     expect(r).toEqual({ status: 200, json: { ok: true } });
-    expect(sbCalls[0]).toMatchObject({ method: "PATCH", path: `mail_messages?id=in.(${MSG})&direction=eq.in&user_id=eq.${U1}`, body: { folder: "archive" } });
+    expect(sbCalls.find((c) => c.method === "PATCH")).toMatchObject({ method: "PATCH", path: `mail_messages?id=in.(${MSG})&direction=eq.in&user_id=eq.${U1}`, body: { folder: "archive" } });
     expect((await call("POST", { body: { action: "move", ids: [MSG], folder: "sent" } })).status).toBe(400);
     expect((await call("POST", { body: { action: "read", ids: ["x"], read: true } })).status).toBe(400);
   });
