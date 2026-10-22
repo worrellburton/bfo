@@ -50,7 +50,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: "signed_url_failed" });
     }
 
-    // Public URL the client can share once the upload finishes.
+    // The record keeps this URL only for the shape older records have; it is
+    // never opened as-is. `path` is what counts: every read goes through
+    // /api/documents/url (a short-lived signed link) or a service-key
+    // download, so this URL stops working, harmlessly, once the bucket is private.
     const {
       data: { publicUrl },
     } = supabase.storage.from(BUCKET).getPublicUrl(path);

@@ -1,9 +1,14 @@
 /**
- * Fetches a stored document on the server so Claude can read it. The URL
- * comes from the browser, so it is only followed when it points at our own
- * storage (the Supabase project) — never an arbitrary host, an internal
- * address, or a redirect — and the read is capped in both size and time.
+ * Reads a stored entity document on the server so Claude can read it. The
+ * reference comes from the browser (a stored public URL, a signed URL, or a
+ * bare path), so it is never fetched as given: only a path inside the
+ * "documents" bucket under assets/ is accepted, a full URL must be on our own
+ * Supabase host, and the object is downloaded by path with the service key —
+ * which keeps working once the bucket is private. Capped in size and time.
  */
+
+import { DOCUMENTS_BUCKET, documentStoragePath } from "./document-path.js";
+import { storageRead } from "./storage.js";
 
 const TIMEOUT_MS = 20_000;
 
@@ -30,37 +35,22 @@ export function isStorageUrl(raw: string, hosts: string[] = allowedHosts()): boo
 
 export type FetchedDocument = { buf: Buffer; contentType: string };
 
+/** The bucket path a browser-supplied document reference names, or null when it isn't one of ours. */
+export function documentPathFor(raw: unknown, hosts: string[] = allowedHosts()): string | null {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !isStorageUrl(s, hosts)) return null;
+  return documentStoragePath(s);
+}
+
 /**
- * The document's bytes and content type, or null when the URL isn't ours,
- * the fetch fails, or the file is larger than `maxBytes`.
+ * The document's bytes and content type, or null when the reference isn't
+ * one of our documents, the read fails, or the file is larger than `maxBytes`.
  */
 export async function fetchDocument(raw: string, maxBytes: number): Promise<FetchedDocument | null> {
-  if (!isStorageUrl(raw)) return null;
-  try {
-    const res = await fetch(raw, { redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok || !res.body) return null;
-    const declared = Number(res.headers.get("content-length") || "0");
-    if (declared > maxBytes) {
-      await res.body.cancel();
-      return null;
-    }
-    // Stream so an undeclared or lying length can't run past the cap.
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-    const contentType = (res.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
-    return { buf: Buffer.concat(chunks), contentType };
-  } catch {
-    return null;
-  }
+  const path = documentPathFor(raw);
+  if (!path) return null;
+  const file = await storageRead(path, DOCUMENTS_BUCKET, { maxBytes, timeoutMs: TIMEOUT_MS });
+  if (!file) return null;
+  return { buf: Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength), contentType: file.contentType };
 }

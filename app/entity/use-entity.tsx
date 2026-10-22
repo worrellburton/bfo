@@ -11,6 +11,7 @@ import { useNavigate, useParams } from "react-router";
 import { authFetch, getUser, isPartner } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { copyStoredFileLink, openStoredFile } from "../stored-file";
 import {
   DOC_LABEL,
   docKindOf,
@@ -1604,22 +1605,16 @@ export function useEntityPage() {
     }
   }
 
+  /** Copy a link to the document that expires (a signed link), never the permanent storage URL. */
   async function handleCopyDocUrl(doc: AssetDoc) {
     try {
-      await navigator.clipboard.writeText(doc.url);
-      setCopiedDocId(doc.id);
-      setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
-    } catch {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = doc.url;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      setCopiedDocId(doc.id);
-      setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
+      await copyStoredFileLink(doc);
+    } catch (err) {
+      await alertDialog("Couldn't copy a link", err instanceof Error ? err.message : undefined);
+      return;
     }
+    setCopiedDocId(doc.id);
+    setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
   }
 
   async function handleRenameDoc(doc: AssetDoc) {
@@ -1834,7 +1829,7 @@ export function useEntityPage() {
         name = `IRS Letter to Close EIN Account - ${current.name}.pdf`;
       }
       const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), () => {});
-      window.open(doc.url, "_blank", "noopener");
+      await openStoredFile(doc);
       return null;
     } catch (err) {
       return err instanceof Error ? err.message : "Couldn't draft it.";
@@ -1863,7 +1858,7 @@ export function useEntityPage() {
     });
     const blob = await fill8822B(data, form);
     const doc = await uploadDocFile(new File([blob], `Form 8822-B - ${current.name}.pdf`, { type: "application/pdf" }), () => {});
-    window.open(doc.url, "_blank", "noopener");
+    await openStoredFile(doc);
   }
 
   /** Mark where the address change has been reported (or undo it). */

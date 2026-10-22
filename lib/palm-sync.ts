@@ -51,6 +51,7 @@ async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, act
   const contentType = file.contentType || "application/pdf";
   const path = `assets/${safeSegment(assetId)}/${Date.now()}-${safeSegment(name)}`;
   await storageUpload(path, new Uint8Array(file.bytes), contentType, "documents");
+  // The legacy URL shape is kept on the record; reads go by `storagePath` through signed links.
   const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/storage/v1/object/public/documents/${path}`;
   const key = docKey();
   const now = Date.now();
