@@ -100,6 +100,28 @@ export function normalizePhone(raw: string): string | null {
   return /^\+[1-9]\d{7,14}$/.test(e164) ? e164 : null;
 }
 
+/**
+ * Whether a normalized (E.164) number may be sent a sign-in code. Every code
+ * is a paid text, and the family is in the US, so numbers outside the
+ * allowed country codes are refused before anything is sent: international
+ * SMS pumping is the cheap way to run up the bill. `allowList` is
+ * SIGNIN_COUNTRY_CODES, a comma list like "+1,+44"; unset means "+1", and
+ * "*" allows any country. Country codes are prefix-free, so a prefix match
+ * is exact.
+ */
+export function signInAllowed(phone: string, allowList: string | undefined = process.env.SIGNIN_COUNTRY_CODES): boolean {
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) return false;
+  const codes = (allowList?.trim() ? allowList : "+1")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (codes.includes("*")) return true;
+  return codes.some((c) => {
+    const digits = c.replace(/^\+/, "");
+    return /^[1-9]\d{0,3}$/.test(digits) && phone.startsWith(`+${digits}`);
+  });
+}
+
 export function formatPhone(e164: string | null): string {
   if (!e164) return "";
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
