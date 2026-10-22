@@ -10,7 +10,7 @@ import { dollars } from "../../lib/palm-pricing";
 
 /** The entity card: who it is, the facts people copy most, and how complete its record is. */
 export function EntityHeader() {
-  const { page, view, asset, tabPath } = useEntity();
+  const { page, view, asset, tabPath, goToTab } = useEntity();
   const t = useTone();
   const { etype, isTrust, glyph, score } = view;
   // What's left, as To do counts it (a formation's own papers aren't left to do while it's under way).
@@ -78,7 +78,14 @@ export function EntityHeader() {
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {canSyncPalm && <PalmSyncButton />}
-            {!isPartner() && <Button icon="edit" onClick={() => (page.editing ? page.setEditing(false) : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
+            {/* A quiet confirmation once the edit form saves; it clears itself after a few seconds. */}
+            {page.savedAt && !page.editing && (
+              <span role="status" className={`mr-1 inline-flex items-center gap-1 text-[12px] font-medium ${toneText("good", t.dark)}`}>
+                <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2} />
+                Saved
+              </span>
+            )}
+            {!isPartner() && <Button icon="edit" onClick={() => (page.editing ? void page.cancelEditing() : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
               <span className="max-sm:hidden">{page.editing ? "Cancel" : "Edit"}</span>
             </Button>}
             {!isPartner() && <MoreMenu />}
@@ -99,8 +106,16 @@ export function EntityHeader() {
           label={isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : etype === "LP" ? "Formed" : "Formation date"}
           value={formed}
         />
-        {/* One measure of the record: the ring, and how many things are left (the To do card lists them). */}
-        <Link to={tabPath("overview")} className={`col-span-2 block transition-colors sm:col-span-1 ${t.hover}`}>
+        {/* One measure of the record: the ring, and how many things are left (the To do card lists them, so this goes there). */}
+        <Link
+          to={tabPath("overview")}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            e.preventDefault();
+            goToTab("overview", "todo");
+          }}
+          className={`col-span-2 block transition-colors sm:col-span-1 ${t.hover}`}
+        >
           <div className="flex min-w-0 items-center gap-3 px-5 py-3 sm:px-6">
             <ScoreRing score={score} />
             <div className="min-w-0">
@@ -294,6 +309,7 @@ export function CategoryMenu() {
   const { view, tabPath, page } = useEntity();
   const t = useTone();
   const active = useRef<HTMLAnchorElement | null>(null);
+  const strip = useRef<HTMLDivElement | null>(null);
   // On a phone the menu scrolls sideways: keep the current category in view, moving only the menu.
   useEffect(() => {
     const el = active.current;
@@ -302,30 +318,52 @@ export function CategoryMenu() {
     const left = el.offsetLeft - box.offsetLeft;
     if (left < box.scrollLeft || left + el.offsetWidth > box.scrollLeft + box.clientWidth) box.scrollTo({ left: Math.max(0, left - 8) });
   }, [view.tab, page.loading]);
+  // Fade the right edge while more categories sit off-screen, so they're findable.
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const box = strip.current;
+    if (!box) return;
+    const check = () => setMore(box.scrollLeft + box.clientWidth < box.scrollWidth - 1);
+    check();
+    box.addEventListener("scroll", check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(box);
+    return () => {
+      box.removeEventListener("scroll", check);
+      ro.disconnect();
+    };
+  }, [view.tabs.length]);
   return (
     <nav aria-label="Entity sections" className="sticky top-[calc(3.5rem+env(safe-area-inset-top)+8px)] z-20 lg:top-3">
       <div
-        className={`flex gap-1 rounded-xl border p-1 [overflow-x:auto] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+        className={`rounded-xl border p-1 ${
           t.dark ? "border-white/[0.07] bg-[#0b0b0f]/95 backdrop-blur-xl" : "border-gray-200 bg-white/95 backdrop-blur-xl"
         }`}
       >
-        {view.tabs.map((tab) => {
-          const on = tab.key === view.tab;
-          return (
-            <Link
-              key={tab.key}
-              to={tabPath(tab.key)}
-              ref={on ? active : undefined}
-              aria-current={on ? "page" : undefined}
-              className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-2.5 ${
-                on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              {tab.label}
-              <Count n={tab.count} alert={tab.alert} />
-            </Link>
-          );
-        })}
+        <div
+          ref={strip}
+          className={`flex gap-1 [overflow-x:auto] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+            more ? "[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]" : ""
+          }`}
+        >
+          {view.tabs.map((tab) => {
+            const on = tab.key === view.tab;
+            return (
+              <Link
+                key={tab.key}
+                to={tabPath(tab.key)}
+                ref={on ? active : undefined}
+                aria-current={on ? "page" : undefined}
+                className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-2.5 ${
+                  on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                {tab.label}
+                <Count n={tab.count} alert={tab.alert} />
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );

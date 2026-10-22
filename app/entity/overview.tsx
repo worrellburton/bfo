@@ -721,6 +721,7 @@ function EditForm() {
   });
 
   async function save() {
+    if (!named) return;
     setSaving(true);
     setError("");
     try {
@@ -733,158 +734,179 @@ function EditForm() {
     }
   }
 
+  // A <form>, so Enter in a one-line field saves. ⌘/Ctrl+Enter saves from Notes; Esc cancels.
+  // noValidate: the browser's URL check would block Enter where Save never was.
+  function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key === "Escape" && !e.defaultPrevented) {
+      e.preventDefault();
+      void page.cancelEditing();
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.target instanceof HTMLTextAreaElement) {
+      e.preventDefault();
+      void save();
+    }
+  }
+
   return (
     <Section id="entity-edit" title="Edit details" className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20">
-      <div className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 md:grid-cols-2">
-        <Field label="Entity name" wide>
-          <Input {...text("name")} />
-        </Field>
-
-        {/* Not a <label>: a label would pass clicks on its text to the first type button. */}
-        <div role="group" aria-label="Entity type">
-          <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Entity type</span>
-          <div className={`grid grid-cols-4 gap-1 rounded-lg border p-1 ${t.dark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-gray-50"}`}>
-            {ENTITY_TYPES.map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => set("type", type)}
-                aria-pressed={form.type === type}
-                className={`h-[22px] cursor-pointer rounded-md text-[12px] font-medium transition-colors max-sm:h-[40px] ${
-                  form.type === type
-                    ? t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"
-                    : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Field label="Status">
-          <Select value={form.status || "Active"} onChange={(e) => set("status", e.target.value)}>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-            <option value="Dissolved">Dissolved</option>
-            <option value="Pending">Pending</option>
-          </Select>
-        </Field>
-        <Field label={trust ? "Governing law (state)" : "State of formation"}>
-          <Input {...text("state")} />
-        </Field>
-        <Field label="EIN" hint={einLooksRight(form.ein) ? undefined : <span className={toneText("warn", t.dark)}>An EIN is nine digits, like 93-1234567.</span>}>
-          <Input {...text("ein")} className="font-mono tabular-nums" placeholder="93-1234567" />
-        </Field>
-        <Field label={trust ? "Mailing address" : "Principal office"} hint={trust ? undefined : "Where the business is: the address the state lists."}>
-          <Input {...text("address")} />
-        </Field>
-        {!trust && (
-          <Field label="Mailing address" hint="Leave blank when mail goes to the principal office.">
-            <Input {...text("mailingAddress")} placeholder={form.address || "Same as the principal office"} />
+      <form
+        noValidate
+        onKeyDown={onKeyDown}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <div className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 md:grid-cols-2">
+          <Field label="Entity name" wide>
+            <Input {...text("name")} />
           </Field>
-        )}
-        {!trust && (
-          <>
-            <Field label={`${agentTerm(stateCode(form.state))}${form.state ? ` (${form.state})` : ""}`}>
-              <Input {...text("registeredAgent")} />
-            </Field>
-            <Field label="Agent's street address" hint={`In ${form.state || "the state of formation"}; not a PO box or mailbox.`}>
-              <Input {...text("registeredAgentAddress")} />
-            </Field>
-            {foreignStates(form).map((code) => {
-              const f = form.foreign?.[code] ?? {};
-              const setF = (k: "agent" | "agentAddress" | "fileNumber", v: string) => set("foreign", { ...(form.foreign ?? {}), [code]: { ...f, [k]: v } });
-              return (
-                <div key={code} className={`grid grid-cols-1 gap-x-4 gap-y-4 rounded-xl border p-4 md:col-span-2 md:grid-cols-2 ${t.line}`}>
-                  <p className={`text-[12px] font-medium md:col-span-2 ${t.soft}`}>
-                    {stateName(code)}: registered as a foreign {trust ? "entity" : ft === "C-Corp" ? "corporation" : "LLC"}
-                  </p>
-                  <Field label={agentTerm(code)}>
-                    <Input value={f.agent ?? ""} onChange={(e) => setF("agent", e.target.value)} />
-                  </Field>
-                  <Field label="Agent's street address" hint={`In ${stateName(code)}; not a PO box or mailbox.`}>
-                    <Input value={f.agentAddress ?? ""} onChange={(e) => setF("agentAddress", e.target.value)} />
-                  </Field>
-                  <Field label={`${stateName(code)} file number`}>
-                    <Input value={f.fileNumber ?? ""} onChange={(e) => setF("fileNumber", e.target.value)} className="font-mono" />
-                  </Field>
-                </div>
-              );
-            })}
-            <Field label="Registered in another state too?" hint="Doing business elsewhere (an office, staff, operating property) means registering there, with an agent there.">
-              <Select
-                value=""
-                onChange={(e) => e.target.value && set("foreign", { ...(form.foreign ?? {}), [e.target.value]: {} })}
-              >
-                <option value="">Add a state…</option>
-                {US_STATES.filter(([code]) => code !== stateCode(form.state) && !foreignStates(form).includes(code)).map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </>
-        )}
-        <Field label={trust ? "Trust date" : "Formation date"}>
-          <Input {...date("formationDate")} />
-        </Field>
-        <Field label="Entity classification">
-          <Select id="edit-llcType" value={form.llcType || ""} onChange={(e) => set("llcType", e.target.value)}>
-            <option value="">Select…</option>
-            {classes.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            {form.llcType && !classes.includes(form.llcType) && <option value={form.llcType}>{form.llcType}</option>}
-          </Select>
-        </Field>
 
-        {trust ? (
-          <>
-            <Field label="Trustees">
-              <Input {...text("trustees")} placeholder="e.g. Robert Burton, Claire Burton" />
-            </Field>
-            <Field label="Grantors">
-              <Input {...text("grantors")} />
-            </Field>
-            <Field label="Beneficiaries" wide>
-              <Input {...text("beneficiaries")} />
-            </Field>
-          </>
-        ) : (
-          <>
-            <Field label="State file number">
-              <Input {...text("fileNumber")} className="font-mono" />
-            </Field>
-            <Field label="State filing link">
-              <Input {...text("stateLink")} type="url" />
-            </Field>
-            <Field label="Operating agreement">
-              <Input {...date("operatingAgreementDate")} />
-            </Field>
-            <Field label="Articles of organization">
-              <Input {...date("articlesOfOrgDate")} />
-            </Field>
-          </>
-        )}
+          {/* Not a <label>: a label would pass clicks on its text to the first type button. */}
+          <div role="group" aria-label="Entity type">
+            <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Entity type</span>
+            <div className={`grid grid-cols-4 gap-1 rounded-lg border p-1 ${t.dark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-gray-50"}`}>
+              {ENTITY_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => set("type", type)}
+                  aria-pressed={form.type === type}
+                  className={`h-[22px] cursor-pointer rounded-md text-[12px] font-medium transition-colors max-sm:h-[40px] ${
+                    form.type === type
+                      ? t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"
+                      : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        <Field label="Notes" wide>
-          <Textarea value={form.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={3} className="resize-none" />
-        </Field>
-      </div>
-      <ErrorLine>{error}</ErrorLine>
-      <div className={`flex items-center justify-end gap-2 border-t px-5 py-3 ${t.line}`}>
-        <Button kind="ghost" onClick={() => page.setEditing(false)}>
-          Cancel
-        </Button>
-        {/* Not disabled while saving: offline, the write only settles once the connection is back, and Save stays clickable as before. */}
-        <Button kind="primary" icon="check" onClick={() => void save()} disabled={!named} title={named ? undefined : "The entity needs a name"}>
-          {saving ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
+          <Field label="Status">
+            <Select value={form.status || "Active"} onChange={(e) => set("status", e.target.value)}>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+              <option value="Dissolved">Dissolved</option>
+              <option value="Pending">Pending</option>
+            </Select>
+          </Field>
+          <Field label={trust ? "Governing law (state)" : "State of formation"}>
+            <Input {...text("state")} />
+          </Field>
+          <Field label="EIN" hint={einLooksRight(form.ein) ? undefined : <span className={toneText("warn", t.dark)}>An EIN is nine digits, like 93-1234567.</span>}>
+            <Input {...text("ein")} className="font-mono tabular-nums" placeholder="93-1234567" />
+          </Field>
+          <Field label={trust ? "Mailing address" : "Principal office"} hint={trust ? undefined : "Where the business is: the address the state lists."}>
+            <Input {...text("address")} />
+          </Field>
+          {!trust && (
+            <Field label="Mailing address" hint="Leave blank when mail goes to the principal office.">
+              <Input {...text("mailingAddress")} placeholder={form.address || "Same as the principal office"} />
+            </Field>
+          )}
+          {!trust && (
+            <>
+              <Field label={`${agentTerm(stateCode(form.state))}${form.state ? ` (${form.state})` : ""}`}>
+                <Input {...text("registeredAgent")} />
+              </Field>
+              <Field label="Agent's street address" hint={`In ${form.state || "the state of formation"}; not a PO box or mailbox.`}>
+                <Input {...text("registeredAgentAddress")} />
+              </Field>
+              {foreignStates(form).map((code) => {
+                const f = form.foreign?.[code] ?? {};
+                const setF = (k: "agent" | "agentAddress" | "fileNumber", v: string) => set("foreign", { ...(form.foreign ?? {}), [code]: { ...f, [k]: v } });
+                return (
+                  <div key={code} className={`grid grid-cols-1 gap-x-4 gap-y-4 rounded-xl border p-4 md:col-span-2 md:grid-cols-2 ${t.line}`}>
+                    <p className={`text-[12px] font-medium md:col-span-2 ${t.soft}`}>
+                      {stateName(code)}: registered as a foreign {trust ? "entity" : ft === "C-Corp" ? "corporation" : "LLC"}
+                    </p>
+                    <Field label={agentTerm(code)}>
+                      <Input value={f.agent ?? ""} onChange={(e) => setF("agent", e.target.value)} />
+                    </Field>
+                    <Field label="Agent's street address" hint={`In ${stateName(code)}; not a PO box or mailbox.`}>
+                      <Input value={f.agentAddress ?? ""} onChange={(e) => setF("agentAddress", e.target.value)} />
+                    </Field>
+                    <Field label={`${stateName(code)} file number`}>
+                      <Input value={f.fileNumber ?? ""} onChange={(e) => setF("fileNumber", e.target.value)} className="font-mono" />
+                    </Field>
+                  </div>
+                );
+              })}
+              <Field label="Registered in another state too?" hint="Doing business elsewhere (an office, staff, operating property) means registering there, with an agent there.">
+                <Select
+                  value=""
+                  onChange={(e) => e.target.value && set("foreign", { ...(form.foreign ?? {}), [e.target.value]: {} })}
+                >
+                  <option value="">Add a state…</option>
+                  {US_STATES.filter(([code]) => code !== stateCode(form.state) && !foreignStates(form).includes(code)).map(([code, name]) => (
+                    <option key={code} value={code}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          )}
+          <Field label={trust ? "Trust date" : "Formation date"}>
+            <Input {...date("formationDate")} />
+          </Field>
+          <Field label="Entity classification">
+            <Select id="edit-llcType" value={form.llcType || ""} onChange={(e) => set("llcType", e.target.value)}>
+              <option value="">Select…</option>
+              {classes.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              {form.llcType && !classes.includes(form.llcType) && <option value={form.llcType}>{form.llcType}</option>}
+            </Select>
+          </Field>
+
+          {trust ? (
+            <>
+              <Field label="Trustees">
+                <Input {...text("trustees")} placeholder="e.g. Robert Burton, Claire Burton" />
+              </Field>
+              <Field label="Grantors">
+                <Input {...text("grantors")} />
+              </Field>
+              <Field label="Beneficiaries" wide>
+                <Input {...text("beneficiaries")} />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="State file number">
+                <Input {...text("fileNumber")} className="font-mono" />
+              </Field>
+              <Field label="State filing link">
+                <Input {...text("stateLink")} type="url" />
+              </Field>
+              <Field label="Operating agreement">
+                <Input {...date("operatingAgreementDate")} />
+              </Field>
+              <Field label="Articles of organization">
+                <Input {...date("articlesOfOrgDate")} />
+              </Field>
+            </>
+          )}
+
+          <Field label="Notes" wide>
+            <Textarea value={form.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={3} className="resize-none" />
+          </Field>
+        </div>
+        <ErrorLine>{error}</ErrorLine>
+        <div className={`flex items-center justify-end gap-2 border-t px-5 py-3 ${t.line}`}>
+          <Button kind="ghost" onClick={() => void page.cancelEditing()}>
+            Cancel
+          </Button>
+          {/* Not disabled while saving: offline, the write only settles once the connection is back, and Save stays clickable as before. */}
+          <Button kind="primary" icon="check" type="submit" disabled={!named} title={named ? undefined : "The entity needs a name"}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </form>
     </Section>
   );
 }
@@ -1036,7 +1058,7 @@ function ToDo() {
   }
 
   return (
-    <Section title="To do" count={missing.length}>
+    <Section id="todo" title="To do" count={missing.length} className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20">
       <Rows>
         {missing.length === 0 ? (
           <div className="px-5 py-3">
