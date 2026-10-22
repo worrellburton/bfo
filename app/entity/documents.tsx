@@ -7,6 +7,7 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { canDraftAgreement } from "../paperwork-generate";
 import { isPartner } from "../auth";
+import { SIGNED_LINK_MINUTES, StoredFileLink, storagePathOf, type StoredFileRef } from "../stored-file";
 import { paperAction, PaperMailList, usePaperMail } from "../paper-mail";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
@@ -193,9 +194,9 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const value = file ? (
     <span className="flex min-w-0 items-center gap-2">
       <Dot tone="good" />
-      <a href={file.url} target="_blank" rel="noopener noreferrer" title={file.fileName} className="min-w-0 truncate hover:underline">
+      <StoredFileLink file={file} title={file.fileName} className="min-w-0 truncate hover:underline">
         {file.fileName || "On file"}
-      </a>
+      </StoredFileLink>
       {file.uploadedAt ? <span className={`shrink-0 text-[12px] tabular-nums ${t.muted}`}>{fmtStamp(file.uploadedAt)}</span> : null}
     </span>
   ) : slot.uploading ? (
@@ -212,12 +213,12 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const actions = isPartner() ? (
     file ? (
       <div className="-my-1 flex shrink-0 items-center">
-        <IconLink href={file.url} icon="external" label="View" ariaLabel={`View ${title}`} />
+        <IconLink file={file} icon="external" label="View" ariaLabel={`View ${title}`} />
       </div>
     ) : null
   ) : file ? (
     <div className={`-my-1 flex shrink-0 items-center ${slot.uploading ? "" : REVEAL}`}>
-      <IconLink href={file.url} icon="external" label="View" ariaLabel={`View ${title}`} />
+      <IconLink file={file} icon="external" label="View" ariaLabel={`View ${title}`} />
       <IconButton icon="refresh" label="Replace" aria-label={`Replace ${title}`} disabled={slot.uploading} onClick={pick} />
       <IconButton
         icon="trash"
@@ -473,9 +474,9 @@ function DocRow({ doc }: { doc: AssetDoc }) {
     <div className="group flex items-center gap-3 px-5 py-3">
       <Icon name={doc.storagePath ? "doc" : "link"} className={`h-4 w-4 ${t.faint}`} />
       <div className="min-w-0 flex-1">
-        <a href={doc.url} target="_blank" rel="noopener noreferrer" title={doc.name} className={`block truncate text-[13px] font-medium hover:underline ${t.text}`}>
+        <StoredFileLink file={doc} title={doc.name} className={`block truncate text-[13px] font-medium hover:underline ${t.text}`}>
           {doc.name}
-        </a>
+        </StoredFileLink>
         <p className={`mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[12px] tabular-nums ${t.muted}`}>
           <span>{meta}</span>
           {filedAs && (
@@ -497,7 +498,8 @@ function DocRow({ doc }: { doc: AssetDoc }) {
         />
         <IconButton
           icon={copied ? "check" : "copy"}
-          label={copied ? "Copied" : "Copy URL"}
+          label={copied ? "Copied" : storagePathOf(doc) ? `Copy ${SIGNED_LINK_MINUTES}-minute link` : "Copy URL"}
+          title={storagePathOf(doc) ? `Copies a private link to this file that stops working after ${SIGNED_LINK_MINUTES} minutes` : "Copies the link"}
           className={copied ? (t.dark ? "text-emerald-400!" : "text-emerald-700!") : ""}
           onClick={() => void page.handleCopyDocUrl(doc)}
         />
@@ -754,20 +756,19 @@ function Line({ tone, detail, children }: { tone: Tone; detail?: ReactNode; chil
 }
 
 /** IconButton's look, as a link that opens in a new tab. */
-function IconLink({ href, icon, label, ariaLabel }: { href: string; icon: IconName; label: string; ariaLabel?: string }) {
+/** An icon that opens a stored file (through a signed link for our own documents). */
+function IconLink({ file, icon, label, ariaLabel }: { file: StoredFileRef; icon: IconName; label: string; ariaLabel?: string }) {
   const { dark } = useTone();
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={ariaLabel ?? label}
+    <StoredFileLink
+      file={file}
+      ariaLabel={ariaLabel ?? label}
       title={label}
       className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors max-sm:h-[40px] max-sm:w-[40px] ${
         dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"
       }`}
     >
       <Icon name={icon} className="h-3.5 w-3.5" />
-    </a>
+    </StoredFileLink>
   );
 }

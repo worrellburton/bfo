@@ -13,6 +13,7 @@ import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, sameAddressText, type
 import { STABLE_ADDRESS } from "../paper-mail";
 import { f8822bData, stateAddressStep } from "../paperwork-generate";
 import { isAdmin, isPartner } from "../auth";
+import { StoredFileLink } from "../stored-file";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
 import { ClosingCard } from "./closing";
@@ -338,9 +339,9 @@ function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       {file ? (
-        <a href={file.url} target="_blank" rel="noopener noreferrer" className={`${linkClass} font-normal`}>
+        <StoredFileLink file={file} className={`${linkClass} font-normal`}>
           <Dot tone="good">On file</Dot>
-        </a>
+        </StoredFileLink>
       ) : (
         <Dot tone="warn">No document</Dot>
       )}

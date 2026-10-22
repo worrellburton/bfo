@@ -210,6 +210,7 @@ async function moveFile(assetId: string, file: FileRef): Promise<{ storagePath: 
   const base = safeSegment(file.name.replace(/\.[^.]+$/, ""));
   const storagePath = `assets/${safeSegment(assetId)}/${Date.now()}-${base}${ext && !base.endsWith(`.${ext}`) ? `.${ext}` : ""}`;
   await storageUpload(storagePath, bytes, contentType, DOCUMENTS_BUCKET);
+  // The legacy URL shape is kept on the record; reads go by `storagePath` through signed links.
   const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/storage/v1/object/public/${DOCUMENTS_BUCKET}/${storagePath}`;
   return { storagePath, url };
 }
