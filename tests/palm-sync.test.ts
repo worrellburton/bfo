@@ -98,6 +98,14 @@ describe("what a sync costs", () => {
     expect(stateReadCost(entity, "live")).toEqual({ states: [{ code: "NV", home: true, cents: 129 }, { code: "AZ", home: false, cents: 204 }], cents: 333 });
   });
 
+  it("leaves out records read in the last day when asked (Sync all keeps them)", () => {
+    const now = Date.parse("2026-10-22T12:00:00Z");
+    const read = { ...entity, stateRecord: { mode: "live", checkedAt: now - 60 * 60 * 1000 }, foreign: { AZ: { record: { mode: "test", checkedAt: now } } } };
+    // Nevada was read an hour ago (kept); Arizona's only record is sandbox data (read again).
+    expect(stateReadCost(read, "live", { freshMs: 24 * 60 * 60 * 1000, now })).toEqual({ states: [{ code: "AZ", home: false, cents: 204 }], cents: 204 });
+    expect(stateReadCost(read, "live").cents).toBe(333);
+  });
+
   it("is free in test mode, and for a trust", () => {
     expect(stateReadCost(entity, "test").cents).toBe(0);
     expect(stateReadCost({ ...entity, type: "Trust" }, "live")).toEqual({ states: [], cents: 0 });

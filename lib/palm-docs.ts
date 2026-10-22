@@ -42,3 +42,11 @@ export function palmDocName(d: { filename?: string; type?: string; types?: strin
   const when = (d.created_at ?? d.upload_date ?? "").slice(0, 10);
   return `${DOC_LABEL[kind] ?? "Palm document"}${when ? ` ${when}` : ""}.pdf`;
 }
+
+/**
+ * Where a Palm document is saved in the entity's Documents: keyed by Palm's id,
+ * so the page and the server (and two tabs) saving it at once write one entry.
+ */
+export function palmDocKey(palmId: string): string {
+  return `palm_${palmId.replace(/[^\w-]/g, "_")}`;
+}

@@ -14,6 +14,9 @@ import { authFetch, getUser, isAdmin, isPartner } from "../auth";
 import { palmCall, type PalmMode } from "../palm";
 import { dollars } from "../../lib/palm-pricing";
 import { stateReadCost, type StateReadable } from "../../lib/state-reads";
+
+/** Kept in step with lib/palm-sync.ts SYNC_FRESH_MS (that module is server-only). */
+const SYNC_FRESH_MS = 24 * 60 * 60 * 1000;
 import { useTheme } from "../theme";
 import { EstateMapView } from "./estate-map";
 import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
@@ -82,6 +85,7 @@ interface Asset {
   fileNumber?: string;
   foreign?: StateReadable["foreign"];
   palm?: StateReadable["palm"];
+  stateRecord?: StateReadable["stateRecord"];
 }
 
 /** What the server's sync found for one entity (lib/palm-sync.ts). */
@@ -1004,7 +1008,8 @@ function StaffAssets() {
     };
   }, []);
   const palmPlan = useMemo(() => {
-    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode) }));
+    // Records read in the last day are kept by the server's sync, so they cost nothing here.
+    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode, { freshMs: SYNC_FRESH_MS }) }));
     return { cents: per.reduce((n, x) => n + x.cost.cents, 0), states: per.reduce((n, x) => n + x.cost.states.length, 0), entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length };
   }, [assets, palmMode]);
   const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode } | null>(null);
@@ -1022,7 +1027,7 @@ function StaffAssets() {
         "Palm is in test mode: nothing is billed, and the records come from its sandbox."
       ),
       details: [
-        "Each entity's state record is read in its home state and every state it's registered in as a foreign entity ($1.29 with a file number on record, $2.04 without).",
+        "Each entity's state record is read in its home state and every state it's registered in as a foreign entity ($1.29 with a file number on record, $2.04 without). Records read in the last day are kept, not read again.",
         "For entities Palm holds: their agent, Palm's copy of the business, their mail (saved to Documents) and Palm's open questions.",
         "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
         "It can take a few minutes.",

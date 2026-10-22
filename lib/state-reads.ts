@@ -14,7 +14,8 @@ export type StateReadable = {
   state?: string;
   address?: string;
   fileNumber?: string;
-  foreign?: Record<string, { fileNumber?: string; notNeeded?: boolean }>;
+  foreign?: Record<string, { fileNumber?: string; notNeeded?: boolean; record?: { mode: string; checkedAt: number } }>;
+  stateRecord?: { mode: string; checkedAt: number };
   palm?: Record<string, { businessId?: string | null; formation?: { status?: string } | null } | undefined>;
 };
 
@@ -37,8 +38,19 @@ export function statesToRead(a: StateReadable): { code: string; home: boolean }[
  * when its file number is on file, a name search first when it isn't. The
  * sandbox (test mode) isn't billed.
  */
-export function stateReadCost(a: StateReadable, mode: "test" | "live" | null): { states: { code: string; home: boolean; cents: number }[]; cents: number } {
-  const states = statesToRead(a).map(({ code, home }) => {
+export function stateReadCost(
+  a: StateReadable,
+  mode: "test" | "live" | null,
+  opts: { freshMs?: number; now?: number } = {},
+): { states: { code: string; home: boolean; cents: number }[]; cents: number } {
+  const now = opts.now ?? Date.now();
+  // With `freshMs`, a record read that recently in this mode is kept, not read (or billed) again.
+  const kept = (code: string, home: boolean) => {
+    if (!opts.freshMs || !mode) return false;
+    const rec = home ? a.stateRecord : a.foreign?.[code]?.record;
+    return !!rec && rec.mode === mode && now - rec.checkedAt < opts.freshMs;
+  };
+  const states = statesToRead(a).filter(({ code, home }) => !kept(code, home)).map(({ code, home }) => {
     const hasNumber = !!(home ? a.fileNumber : a.foreign?.[code]?.fileNumber)?.trim();
     return { code, home, cents: mode === "live" ? stateRecordCents(hasNumber) : 0 };
   });

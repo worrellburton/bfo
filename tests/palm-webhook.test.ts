@@ -123,8 +123,8 @@ describe("agent events", () => {
 
   it("finds the entity by its linked business and puts Palm on the record", async () => {
     treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC", palm: { live: { businessId: BIZ, ra: { status: "pending", checkedAt: now - 60_000 } } } } });
-    // The entity linked to the business, then the event row.
-    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }]).mockResolvedValueOnce([{ id: "x" }]);
+    // The entity linked to the business, "not handled before", then the event row.
+    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(agentEvent("active", now));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(sbMock.mock.calls[0][0]).toContain(`data->palm->live->>businessId=eq.${BIZ}`);
@@ -134,9 +134,19 @@ describe("agent events", () => {
   });
 
   it("ignores an event older than what was last read", async () => {
-    treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "active", checkedAt: now } } } } });
-    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([{ id: "x" }]);
+    // Ordered by Palm's own event times: the last one applied was newer.
+    treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "active", checkedAt: now, eventAt: now } } } } });
+    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(agentEvent("pending", now - 3_600_000));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(activityMock).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for an event it has already handled", async () => {
+    treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "pending" } } } } });
+    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([{ id: "seen" }]).mockResolvedValueOnce([]);
+    const body = JSON.stringify(agentEvent("active", now));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(applyMock).not.toHaveBeenCalled();
     expect(activityMock).not.toHaveBeenCalled();

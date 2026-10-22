@@ -128,6 +128,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     switch (action) {
       case "registry-search": {
+        // Billed by Palm on a live key: only people who can change the record may run it.
+        if (!canWrite(user)) return res.status(403).json({ error: "forbidden", message: "Only people who can edit entities can read state records." });
         const name = String(body.name || "").trim();
         const palmId = String(body.palmId || "").trim();
         if (!name && !palmId) return res.status(400).json({ error: "missing_name" });
@@ -142,6 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case "registry-detail": {
+        if (!canWrite(user)) return res.status(403).json({ error: "forbidden", message: "Only people who can edit entities can read state records." });
         const number = String(body.number || "").trim();
         if (!isJurisdiction(body.jurisdiction) || !number || number.length > 64) return res.status(400).json({ error: "missing_params" });
         const r = await palm(`/v1/business/registry/${body.jurisdiction}/${encodeURIComponent(number)}`, { usage: usage("State record") });

@@ -26,6 +26,38 @@ function sniff(b: Uint8Array): PhotoKind | null {
   return null;
 }
 
+/** The largest side a picture may have; the browser sends 256. */
+export const PHOTO_MAX_SIDE = 1024;
+
+/** Width and height read from the image's header (PNG IHDR, JPEG SOF, WebP VP8/VP8L/VP8X), or null. */
+export function dimensions(b: Uint8Array, type: string): { width: number; height: number } | null {
+  const u16be = (i: number) => (b[i] << 8) | b[i + 1];
+  const u16le = (i: number) => b[i] | (b[i + 1] << 8);
+  const u24le = (i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2] << 16);
+  const u32be = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+  if (type === "image/png") return b.length >= 24 ? { width: u32be(16), height: u32be(20) } : null;
+  if (type === "image/jpeg") {
+    // Walk the segments to the first start-of-frame marker.
+    for (let i = 2; i + 9 < b.length; ) {
+      if (b[i] !== 0xff) return null;
+      const marker = b[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { height: u16be(i + 5), width: u16be(i + 7) };
+      i += 2 + u16be(i + 2);
+    }
+    return null;
+  }
+  if (type === "image/webp" && b.length >= 30) {
+    const chunk = String.fromCharCode(b[12], b[13], b[14], b[15]);
+    if (chunk === "VP8 ") return { width: u16le(26) & 0x3fff, height: u16le(28) & 0x3fff };
+    if (chunk === "VP8L") {
+      const bits = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+    }
+    if (chunk === "VP8X") return { width: u24le(24) + 1, height: u24le(27) + 1 };
+  }
+  return null;
+}
+
 /** A picture from the browser (a data: URL or bare base64), checked to be a small image. */
 export function parsePhoto(data: unknown): ({ bytes: Uint8Array } & PhotoKind) | { error: string; message: string } {
   if (typeof data !== "string" || !data) return { error: "bad_photo", message: "Choose a picture." };
@@ -36,6 +68,9 @@ export function parsePhoto(data: unknown): ({ bytes: Uint8Array } & PhotoKind) |
   if (bytes.length > PHOTO_MAX_BYTES) return { error: "photo_too_large", message: "That picture is too large." };
   const kind = sniff(bytes);
   if (!kind) return { error: "bad_photo", message: "Use a JPEG, PNG or WebP picture." };
+  // A small file can still claim a huge canvas, and every inbox here would decode it.
+  const size = dimensions(bytes, kind.contentType);
+  if (!size || size.width > PHOTO_MAX_SIDE || size.height > PHOTO_MAX_SIDE) return { error: "bad_photo", message: `Use a picture no larger than ${PHOTO_MAX_SIDE} × ${PHOTO_MAX_SIDE}.` };
   return { bytes, ...kind };
 }
 

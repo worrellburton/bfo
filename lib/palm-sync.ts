@@ -1,11 +1,10 @@
-import { randomBytes } from "node:crypto";
 import type { Actor } from "./activity.js";
 import { raPatch, type RaServiceLike } from "./palm-agent.js";
-import { docKindOf, palmDocName, PALM_SLOT } from "./palm-docs.js";
+import { docKindOf, palmDocKey, palmDocName, PALM_SLOT } from "./palm-docs.js";
 import { businessDifferences, listPalmDocuments, palm, PalmError, palmFile, palmMode, type PalmDocumentRow } from "./palm.js";
 import { checkStateRecords, type CheckResult } from "./state-records.js";
 import { storageUpload } from "./storage.js";
-import { applyOps, readCollection, type Json } from "./tree.js";
+import { applyOps, readCollection, readRows, type Json } from "./tree.js";
 
 /**
  * "Sync everything with Palm" for every entity at once (the Entities page):
@@ -28,24 +27,20 @@ type Data = {
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STATE_LINE: Record<CheckResult["outcome"], SyncLine["tone"]> = { read: "good", fresh: "good", not_found: "warn", ambiguous: "warn", error: "bad" };
+const STATE_LINE: Record<CheckResult["outcome"], SyncLine["tone"]> = { read: "good", fresh: "good", not_found: "warn", ambiguous: "warn", error: "bad", later: "warn" };
 
-/** A key like the app's push ids: time first, so Documents keeps arrival order. */
-const PUSH_CHARS = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
-export function docKey(now = Date.now()): string {
-  let t = now;
-  let stamp = "";
-  for (let i = 0; i < 8; i++) {
-    stamp = PUSH_CHARS[t % 64] + stamp;
-    t = Math.floor(t / 64);
-  }
-  return stamp + [...randomBytes(12)].map((b) => PUSH_CHARS[b % 64]).join("");
-}
+/** A state record read more recently than this is kept by "Sync all", not read (and billed) again. */
+export const SYNC_FRESH_MS = 24 * 60 * 60 * 1000;
 
 const safeSegment = (s: string) => s.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
 
 /** One Palm document saved to the entity's Documents (and its empty slot), as the page saves one. */
-async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, actor: Actor): Promise<void> {
+async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, actor: Actor): Promise<boolean> {
+  // Keyed by Palm's id (as the page keys it), and looked for again just before saving: the page, a tab or
+  // another sync may have saved it since this run read the entity.
+  const key = palmDocKey(d.id);
+  const now0 = ((await readRows("assets", [assetId]))[0]?.data ?? {}) as Data;
+  if (now0.documents?.[key] || Object.values(now0.documents ?? {}).some((x) => x?.palmDocumentId === d.id)) return false;
   const file = await palmFile(`/v1/document/${d.id}/content`);
   const name = palmDocName(d);
   const contentType = file.contentType || "application/pdf";
@@ -53,7 +48,6 @@ async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, act
   await storageUpload(path, new Uint8Array(file.bytes), contentType, "documents");
   // The legacy URL shape is kept on the record; reads go by `storagePath` through signed links.
   const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/storage/v1/object/public/documents/${path}`;
-  const key = docKey();
   const now = Date.now();
   const kind = docKindOf(d);
   const patch: Record<string, unknown> = {
@@ -75,6 +69,7 @@ async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, act
     data[slot] = true; // two of the same kind fill the slot once
   }
   await applyOps([{ op: "update", path: ["assets", assetId], value: patch as Json }], actor);
+  return true;
 }
 
 export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; name: string | null }; budgetMs?: number; now?: () => number }): Promise<{ mode: "test" | "live"; entities: EntitySync[] }> {
@@ -88,14 +83,17 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
   const lineFor = (id: string, name: string) => out.get(id) ?? out.set(id, { id, name, lines: [] }).get(id)!;
 
   // 1. Every state record, home and foreign, read now (the billed part).
-  const states = await checkStateRecords({ ids: opts.ids, force: true, by: opts.by });
+  // Records read in the last day are kept (a second click doesn't bill again), and reading stops in time
+  // for the rest of the run; whatever's left is read next time.
+  const states = await checkStateRecords({ ids: opts.ids, freshMs: SYNC_FRESH_MS, deadline: started + budget * 0.6, by: opts.by });
   for (const r of states) {
     const text =
       r.outcome === "read" ? `Read${r.detail ? ` · ${r.detail}` : ""}`
       : r.outcome === "not_found" ? "No registry entry matched the name. Add its file number under Edit."
       : r.outcome === "ambiguous" ? "More than one registry entry matched. Pick the right one on its Compliance tab."
       : r.outcome === "error" ? r.detail ?? "Couldn't reach Palm."
-      : "Read recently.";
+      : r.outcome === "later" ? "Not read this time (out of time); sync again to read it."
+      : "Read in the last day; kept.";
     lineFor(r.id, r.name).lines.push({ label: `${r.state} record`, tone: STATE_LINE[r.outcome], text });
   }
 
@@ -159,8 +157,7 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
             continue;
           }
           try {
-            await saveDocument(row.id, data, d, actor);
-            saved++;
+            if (await saveDocument(row.id, data, d, actor)) saved++;
           } catch (err) {
             console.error("palm-sync: couldn't save a document", row.id, d.id, err);
             left++;

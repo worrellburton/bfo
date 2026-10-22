@@ -11,6 +11,7 @@ vi.mock("../lib/state-records.js", () => ({
 }));
 vi.mock("../lib/tree.js", () => ({
   readCollection: vi.fn(async () => rows),
+  readRows: vi.fn(async (_c: string, ids: string[]) => rows.filter((r) => ids.includes(r.id))),
   applyOps: vi.fn(async (ops: { path: string[]; value: Record<string, unknown> }[]) => {
     applied.push(...ops);
     return [];
@@ -40,7 +41,8 @@ vi.mock("../lib/palm.js", async (orig) => {
   };
 });
 
-import { docKey, syncAllWithPalm } from "../lib/palm-sync";
+import { palmDocKey } from "../lib/palm-docs";
+import { syncAllWithPalm } from "../lib/palm-sync";
 
 describe("syncing every entity with Palm", () => {
   beforeEach(() => {
@@ -96,8 +98,8 @@ describe("syncing every entity with Palm", () => {
     expect(r.entities.find((e) => e.id === "a1")!.lines.at(-1)).toEqual({ label: "Agent and mail", tone: "warn", text: "Out of time on this run; sync again to finish." });
   });
 
-  it("keys documents by time, like the app's push ids", () => {
-    expect(docKey(1_000)).toHaveLength(20);
-    expect(docKey(1_000) < docKey(2_000_000)).toBe(true);
+  it("keys a Palm document by its Palm id, so two saves of it land on one entry", () => {
+    expect(palmDocKey("doc_8f2a-11")).toBe("palm_doc_8f2a-11");
+    expect(palmDocKey("a.b/c")).toBe("palm_a_b_c");
   });
 });

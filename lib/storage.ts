@@ -26,6 +26,8 @@ export async function storageUpload(path: string, bytes: Uint8Array, contentType
       "x-upsert": "true",
     },
     body: bytes as any,
+    // A stalled upload must not hold a time-limited function (the Palm sync saves many in one run).
+    signal: AbortSignal.timeout(60_000),
   });
   if (!r.ok) throw new Error(`storage upload failed: ${r.status} ${(await r.text()).slice(0, 200)}`);
   return path;
