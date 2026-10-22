@@ -99,6 +99,15 @@ it turns and can be dragged) and in the app's corner; "Back to the wordmark"
 undoes it. State lives in `brand_settings`; `/api/brand` serves the current
 logo to anyone and the studio to admins.
 
+### The operating agreement's execution page
+
+The drafted agreement ends with a signature page built for signing: one
+full-width block per signer with their capacity and share, a clear space above
+each line for a pen or an e-signature stamp, and the lines a signer expects. A
+company member signs "By:" an authorized signature with printed name, title and
+date; a person signs with signature and date, their name already printed.
+Blocks that don't fit flow to another signature page. Exhibit A follows.
+
 ### Reading documents
 
 A stored PDF or picture opens in BFO's own reader (a full-screen page with

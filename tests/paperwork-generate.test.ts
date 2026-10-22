@@ -149,3 +149,24 @@ describe("address change", () => {
     expect(findings[0].text).toContain("The state has 11201 N Tatum Blvd");
   });
 });
+
+describe("operating agreement wording and execution page", () => {
+  it("sets a typed purpose into a sentence and leaves a full one alone", async () => {
+    const { purposeSentence } = await import("../app/paperwork-generate");
+    expect(purposeSentence("any lawful business")).toBe("The purpose of the Company is to engage in any lawful business, and in any other lawful act or activity for which a limited liability company may be formed under the Act.");
+    expect(purposeSentence("to operate a medical practice.")).toMatch(/^The purpose of the Company is to engage in a medical practice, and/);
+    expect(purposeSentence("The Company's purpose is to hold real estate.")).toBe("The Company's purpose is to hold real estate.");
+    expect(purposeSentence("")).toMatch(/^The purpose of the Company is to engage in any lawful act/);
+  });
+
+  it("names each signer's share on the signature page", async () => {
+    const { operatingAgreement } = await import("../app/paperwork-generate");
+    const doc = operatingAgreement({
+      name: "X LLC", state: "DE", effective: "2026-01-01", address: "", registeredAgent: "", purpose: "", managed: "members", managers: [], taxClass: "Partnership",
+      members: [{ name: "A LLC", percent: 60, address: "" }, { name: "Bea Person", percent: 40, address: "" }],
+    });
+    expect(doc.signers).toEqual([{ name: "A LLC", capacity: "Member", share: "60%" }, { name: "Bea Person", capacity: "Member", share: "40%" }]);
+    const single = operatingAgreement({ name: "Y LLC", state: "DE", effective: "2026-01-01", address: "", registeredAgent: "", purpose: "", managed: "members", managers: [], taxClass: "Disregarded Entity", members: [{ name: "Solo", percent: 100, address: "" }] });
+    expect(single.signers[0]).toEqual({ name: "Solo", capacity: "Sole Member", share: undefined });
+  });
+});

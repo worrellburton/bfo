@@ -174,7 +174,7 @@ export type OADoc = {
   preamble: string;
   sections: { heading: string; paragraphs: string[] }[];
   exhibit: { heading: string; rows: [string, string, string][] };
-  signers: { name: string; capacity: string }[];
+  signers: { name: string; capacity: string; share?: string }[];
 };
 
 const longDate = (iso: string) => {
@@ -182,6 +182,15 @@ const longDate = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 };
 const pct = (n: number) => `${Math.round(n * 100) / 100}%`;
+
+/** The purpose as a sentence: a typed phrase ("any lawful business") is set into one; a full sentence stays. */
+export function purposeSentence(raw: string): string {
+  const p = raw.trim().replace(/\s+/g, " ");
+  if (!p) return "The purpose of the Company is to engage in any lawful act or activity for which a limited liability company may be formed under the Act.";
+  if (/^(the )?(purpose|company|business)\b/i.test(p) && /[.!?]$/.test(p)) return p;
+  const body = p.replace(/^(to )?(engage in |conduct |carry on |operate )?/i, "").replace(/[.]+$/, "");
+  return `The purpose of the Company is to engage in ${body}, and in any other lawful act or activity for which a limited liability company may be formed under the Act.`;
+}
 
 /** What's missing before an operating agreement can be drafted. */
 export function oaProblems(i: OAInput): string[] {
@@ -228,7 +237,7 @@ export function operatingAgreement(i: OAInput): OADoc {
     s("Name", `The name of the Company is ${i.name}. The Company may conduct business under that name or any other name ${managers ? "the Managers determine" : single ? "the Member determines" : "the Members determine"}, after any filing the law requires.`),
     s(
       "Purpose and Powers",
-      `${i.purpose.trim() || "The purpose of the Company is to engage in any lawful act or activity for which a limited liability company may be formed under the Act."} The Company has every power the Act grants that is necessary or convenient to that purpose.`
+      `${purposeSentence(i.purpose)} The Company has every power the Act grants that is necessary or convenient to that purpose.`
     ),
     s(
       "Offices and Registered Agent",
@@ -299,7 +308,7 @@ export function operatingAgreement(i: OAInput): OADoc {
       rows: i.members.map((m) => [m.name, m.address || "—", pct(m.percent)]),
     },
     signers: [
-      ...i.members.map((m) => ({ name: m.name, capacity: single ? "Sole Member" : "Member" })),
+      ...i.members.map((m) => ({ name: m.name, capacity: single ? "Sole Member" : "Member", share: single ? undefined : pct(m.percent) })),
       ...(managers ? i.managers.filter((n) => !i.members.some((m) => m.name === n)).map((n) => ({ name: n, capacity: "Manager" })) : []),
     ],
   };
@@ -434,9 +443,10 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
     y += 8;
   });
 
-  // ── Signatures: their own page, a block per signer ──
+  // ── Execution page: one full-width block per signer, room to sign ──
   newPage(false);
   const sigPage = pdf.getNumberOfPages();
+  const sigPages = new Set<number>([sigPage]);
   caps("Signature Page", W / 2, y + 4, 9, MUTED, "center");
   y += 30;
   font("bold", 17, NAVY);
@@ -445,63 +455,64 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
   font("italic", 11.5, INK);
   pdf.text(d.subtitle.replace(/^of /, ""), W / 2, y, { align: "center" });
   y += 34;
-  para(`IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this Agreement as of the date first written above. This Agreement may be signed in counterparts and by electronic signature.`, { align: "justify", gap: 26 });
+  para(
+    `IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this ${d.title} as of the date first written above. This Agreement may be signed in counterparts and by electronic signature, each of which is an original and all of which together are one instrument.`,
+    { align: "justify", gap: 22 }
+  );
 
   const isEntity = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|trust|lp|l\.p\.|ltd\.?|company|partners(hip)?)\b/i.test(name);
-  const gutter = 24;
-  const colW = d.signers.length === 1 ? width * 0.62 : (width - gutter) / 2;
-  const blockH = (name: string) => (isEntity(name) ? 196 : 150);
-  /** A line to write on, with its caption under it. */
-  const field = (x: number, yy: number, w: number, caption: string, prefix?: string) => {
-    let lx = x;
-    if (prefix) {
-      font("normal", 10.5);
-      pdf.text(prefix, x, yy - 3);
-      lx = x + pdf.getTextWidth(prefix) + 6;
+  /** A line to write on, with its caption under it; `given` prints a known value on the line. */
+  const field = (x: number, yy: number, w: number, caption: string, given?: string) => {
+    if (given) {
+      font("normal", 11, INK);
+      pdf.text(given, x + 2, yy - 5);
     }
-    stroke([60, 60, 60], 0.6);
-    pdf.line(lx, yy, x + w, yy);
-    caps(caption, lx, yy + 11, 6.8, MUTED, "left", "normal");
+    stroke([50, 50, 50], 0.75);
+    pdf.line(x, yy, x + w, yy);
+    caps(caption, x, yy + 11, 7, MUTED, "left", "normal");
   };
-  const block = (sg: { name: string; capacity: string }, x: number, top: number) => {
+  const SIGN_ROOM = 54; // the space above a signature line: enough for a pen or an e-signature stamp
+  const blockH = (name: string) => 40 + SIGN_ROOM + (isEntity(name) ? 46 + 46 : 46) + 10;
+  const block = (sg: { name: string; capacity: string; share?: string }, top: number) => {
+    const x = M + 18;
+    const inner = width - 18;
     const h = blockH(sg.name);
-    const pad = 16;
-    const inner = colW - pad * 2;
-    stroke(RULE, 0.6);
-    pdf.roundedRect(x, top, colW, h, 3, 3);
+    // A navy mark down the left, like the section rule, so each signer is its own unit.
     pdf.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
-    pdf.rect(x, top, 3, h, "F");
-    let yy = top + pad + 8;
-    caps(sg.capacity, x + pad, yy, 7.5, MUTED);
-    yy += 17;
-    font("bold", 12.5, INK);
-    const nameLines: string[] = pdf.splitTextToSize(sg.name, inner);
-    pdf.text(nameLines[0], x + pad, yy);
-    yy += 44;
+    pdf.rect(M, top, 2.5, h - 10, "F");
+    let yy = top + 12;
+    caps(`${sg.capacity}${sg.share ? `  ·  ${sg.share}` : ""}`, x, yy, 7.5, MUTED);
+    yy += 18;
+    font("bold", 13.5, INK);
+    pdf.text(String(pdf.splitTextToSize(sg.name, inner)[0]), x, yy);
+    yy += 10 + SIGN_ROOM;
+    const third = (inner - 32) / 3;
     if (isEntity(sg.name)) {
-      field(x + pad, yy, inner, "Authorized signature", "By:");
-      yy += 40;
-      const half = (inner - 14) / 2;
-      field(x + pad, yy, half, "Printed name");
-      field(x + pad + half + 14, yy, half, "Title");
-      yy += 40;
-      field(x + pad, yy, half, "Date");
+      // A company signs through someone: By, then who they are.
+      font("normal", 11, INK);
+      pdf.text("By:", x, yy - 5);
+      field(x + 26, yy, inner * 0.62 - 26, "Authorized signature");
+      field(x + inner * 0.62 + 16, yy, inner - inner * 0.62 - 16, "Date");
+      yy += 46;
+      field(x, yy, third * 2 + 16, "Printed name");
+      field(x + third * 2 + 32, yy, third, "Title");
     } else {
-      field(x + pad, yy, inner, "Signature");
-      yy += 40;
-      field(x + pad, yy, (inner - 14) / 2, "Date");
+      field(x, yy, inner * 0.62, "Signature");
+      field(x + inner * 0.62 + 16, yy, inner - inner * 0.62 - 16, "Date");
+      yy += 46;
+      field(x, yy, third * 2 + 16, "Printed name", sg.name);
     }
+    return h;
   };
-  for (let k = 0; k < d.signers.length; k += 2) {
-    const pair = d.signers.slice(k, k + 2);
-    const h = Math.max(...pair.map((sg) => blockH(sg.name)));
+  for (const sg of d.signers) {
+    const h = blockH(sg.name);
     if (y + h > BOTTOM) {
       newPage(false);
+      sigPages.add(pdf.getNumberOfPages());
+      y = TOP + 10;
     }
-    const left = d.signers.length === 1 ? M : M;
-    block(pair[0], left, y);
-    if (pair[1]) block(pair[1], M + colW + gutter, y);
-    y += h + 20;
+    block(sg, y);
+    y += h + 14;
   }
 
   // ── Exhibit A ──
@@ -561,10 +572,10 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
     stroke(RULE, 0.4);
     pdf.line(M, H - 54, W - M, H - 54);
     font("normal", 8.5, MUTED);
-    pdf.text(p === sigPage ? "Signature page" : p === exhibitPage ? "Exhibit A" : `${d.title} of ${entityName}`, M, H - 40);
+    pdf.text(sigPages.has(p) ? `Signature page · ${d.title} of ${entityName}` : p === exhibitPage ? `Exhibit A · ${d.title} of ${entityName}` : `${d.title} of ${entityName}`, M, H - 40);
     pdf.text(`Page ${p} of ${pages}`, W - M, H - 40, { align: "right" });
     // Each member initials each page of the body.
-    if (initials && bodyPages.has(p) && p !== sigPage && p !== exhibitPage) {
+    if (initials && bodyPages.has(p) && !sigPages.has(p) && p !== exhibitPage) {
       font("normal", 8.5, MUTED);
       const marks = d.signers.filter((sg) => sg.capacity !== "Manager").length;
       const boxW = 34;
