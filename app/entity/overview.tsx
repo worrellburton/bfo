@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState, type ReactNode } from "react";
+import { priceSuffix, stateRecordCents } from "../../lib/palm-pricing";
 import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { agentTerm, stateCode, stateName } from "../entity-paperwork";
@@ -100,7 +101,7 @@ function AddressChange() {
               <div className="flex items-center gap-3">
                 {step.url && <TextLink href={step.url}>{step.linkLabel ?? "Open"}</TextLink>}
                 <TextButton onClick={() => void page.checkStateRecord()} disabled={!!page.palmBusy}>
-                  {page.palmBusy === "record" ? "Checking…" : "Check state record"}
+                  {page.palmBusy === "record" ? "Checking…" : `Check state record${priceSuffix(page.palmMode, stateRecordCents(!!asset.fileNumber))}`}
                 </TextButton>
                 {markBtn("state", !!done.state)}
               </div>
@@ -457,7 +458,7 @@ function Addresses() {
                 forming && g.palm ? undefined : <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
               ) : g.ask ? undefined : page.palmStatus?.configured ? (
                 <TextButton onClick={() => void check(g.state)} disabled={page.foreignBusy === g.state}>
-                  {page.foreignBusy === g.state ? "Checking…" : g.record ? `Re-check ${g.state}` : `Check ${g.state} record`}
+                  {page.foreignBusy === g.state ? "Checking…" : `${g.record ? `Re-check ${g.state}` : `Check ${g.state} record`}${priceSuffix(page.palmMode, stateRecordCents(!!g.fileNumber))}`}
                 </TextButton>
               ) : undefined
             }

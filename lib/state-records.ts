@@ -1,5 +1,5 @@
 import { hostState, stateCode } from "../app/entity-paperwork.js";
-import { palm, palmMode } from "./palm.js";
+import { palm, palmMode, type PalmUsage } from "./palm.js";
 import { baseName, normalizeName, pickRegistryMatch, searchName, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
 import { applyOps, readCollection, type TreeOp } from "./tree.js";
 
@@ -47,12 +47,12 @@ export function statesToRead(a: Rec): { code: string; home: boolean }[] {
 }
 
 /** One state's record for one entity, or why not. */
-async function read(name: string, code: string, fileNumber: string | undefined, mode: "test" | "live"): Promise<StateRecord | "not_found" | "ambiguous"> {
+async function read(name: string, code: string, fileNumber: string | undefined, mode: "test" | "live", usage: PalmUsage): Promise<StateRecord | "not_found" | "ambiguous"> {
   const jurisdiction = `US-${code}`;
   let number = fileNumber?.trim();
   let where = jurisdiction;
   if (!number) {
-    const r = await palm<{ data: RegistryRecord[] }>("/v1/business/registry/search", { method: "POST", body: { name: searchName(name), registration_jurisdiction: jurisdiction } });
+    const r = await palm<{ data: RegistryRecord[] }>("/v1/business/registry/search", { method: "POST", body: { name: searchName(name), registration_jurisdiction: jurisdiction }, usage });
     const results = r?.data ?? [];
     const match = pickRegistryMatch(results, name, jurisdiction);
     if (!match) return results.some((x) => baseName(x.name) === baseName(name)) ? "ambiguous" : "not_found";
@@ -60,7 +60,7 @@ async function read(name: string, code: string, fileNumber: string | undefined, 
     where = match.registration_jurisdiction || jurisdiction;
     if (!number) return "not_found";
   }
-  const record = await palm<RegistryRecord>(`/v1/business/registry/${where}/${encodeURIComponent(number)}`);
+  const record = await palm<RegistryRecord>(`/v1/business/registry/${where}/${encodeURIComponent(number)}`, { usage });
   return toStateRecord(record, mode);
 }
 
@@ -89,7 +89,7 @@ export function patchFor(a: Rec, code: string, home: boolean, rec: StateRecord, 
 }
 
 /** Read every entity's state records that aren't fresh (or all of `ids`, fresh or not). */
-export async function checkStateRecords(opts: { ids?: string[]; force?: boolean; now?: number } = {}): Promise<CheckResult[]> {
+export async function checkStateRecords(opts: { ids?: string[]; force?: boolean; now?: number; by?: { id: string; name: string | null } } = {}): Promise<CheckResult[]> {
   const mode = palmMode();
   if (!mode) throw new Error("Palm isn't connected.");
   const now = opts.now ?? Date.now();
@@ -107,7 +107,10 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
         continue;
       }
       try {
-        const got = await read(a.name, code, home ? a.fileNumber : a.foreign?.[code]?.fileNumber, mode);
+        const usage: PalmUsage = opts.by
+          ? { actorId: opts.by.id, actorName: opts.by.name, assetId: row.id, reason: `State record (${code}), check all` }
+          : { actorName: "Daily check", assetId: row.id, reason: `State record (${code})` };
+        const got = await read(a.name, code, home ? a.fileNumber : a.foreign?.[code]?.fileNumber, mode, usage);
         if (typeof got === "string") {
           await applyOps([{ op: "update", path: ["assets", row.id], value: { [`registryMiss/${code}`]: { outcome: got, at: now } } }]);
           out.push({ ...base, outcome: got });

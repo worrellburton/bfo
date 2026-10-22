@@ -3,6 +3,7 @@ import { logActivity } from "../lib/activity.js";
 import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, stateRules, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
+import { PALM_PRICES, type PalmProduct } from "../lib/palm-pricing.js";
 import { ownerName, ownerPercent, parentOwnerId } from "../lib/formation-owners.js";
 import {
   isJurisdiction,
@@ -13,6 +14,7 @@ import {
   palmEntityType,
   palmMode,
   vaultAddress,
+  type PalmUsage,
   type RegisteredAgentService,
 } from "../lib/palm.js";
 
@@ -23,6 +25,7 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  * Palm, for one entity at a time. POST { action, … }:
  *
  *   status            → { configured, mode }
+ *   usage             → what Palm has billed: this month and last, by product, the latest calls
  *   registry-search   { name | palmId, jurisdiction? } → matches on the state registries
  *   registry-detail   { jurisdiction, number }         → the state's record: status, standing, agent, people
  *   link              { assetId, entity }              → the entity's Palm business (found or added)
@@ -99,11 +102,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const mode = palmMode();
 
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
+  if (action === "usage") {
+    if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
+    return res.status(200).json({ mode, ...(await usageReport()) });
+  }
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
   const mustMatchMode = action === "link" || action === "ra-change" || action === "ra-end" || action === "form-submit" || action === "form-status";
   if ((body.mode !== undefined || mustMatchMode) && body.mode !== mode) {
     return res.status(409).json({ error: "mode_changed", mode, message: `Palm is now in ${mode} mode. Reload the page and check again before going on.` });
   }
+
+  // Kept with each billed call (palm_usage): who asked, for which entity, why.
+  const usage = (reason: string): PalmUsage => ({
+    actorId: user.id,
+    actorName: user.name ?? null,
+    assetId: typeof body.assetId === "string" && /^[\w-]{1,80}$/.test(body.assetId) ? body.assetId : null,
+    reason,
+  });
 
   try {
     switch (action) {
@@ -116,6 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const r = await palm<{ data: unknown[] }>("/v1/business/registry/search", {
           method: "POST",
           body: palmId ? { palm_id: palmId } : { name, ...(jurisdiction ? { registration_jurisdiction: jurisdiction } : {}) },
+          usage: usage("State record"),
         });
         return res.status(200).json({ mode, results: (r?.data ?? []).slice(0, 10) });
       }
@@ -123,7 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "registry-detail": {
         const number = String(body.number || "").trim();
         if (!isJurisdiction(body.jurisdiction) || !number || number.length > 64) return res.status(400).json({ error: "missing_params" });
-        const r = await palm(`/v1/business/registry/${body.jurisdiction}/${encodeURIComponent(number)}`);
+        const r = await palm(`/v1/business/registry/${body.jurisdiction}/${encodeURIComponent(number)}`, { usage: usage("State record") });
         return res.status(200).json({ mode, record: r, checkedAt: Date.now() });
       }
 
@@ -317,7 +333,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!jurisdiction || !entityType || name.length < 2) return res.status(400).json({ error: "missing_params" });
         const q = new URLSearchParams({ name, entity_type: entityType, suggest: "true" });
         const r = await palm<{ eligible: boolean; compliant: boolean; available: boolean; violations?: { severity: string; message: string; fix?: { message?: string } }[]; alternatives?: string[] }>(
-          `/v1/business/registry/${jurisdiction}/name-eligibility?${q}`
+          `/v1/business/registry/${jurisdiction}/name-eligibility?${q}`,
+          { usage: usage("Name check for a new entity") }
         );
         return res.status(200).json({
           eligible: !!r.eligible,
@@ -504,4 +521,35 @@ function palmErrors(err: PalmError): { field: string | null; message: string }[]
   const d = (err.detail ?? {}) as { errors?: { field?: string; path?: string; pointer?: string; message?: string; detail?: string }[]; detail?: string };
   const list = (d.errors ?? []).map((e) => ({ field: e.field ?? e.path ?? e.pointer ?? null, message: e.message ?? e.detail ?? "Problem" }));
   return list.length ? list : [{ field: null, message: err.message }];
+}
+
+type UsageRow = { at: string; mode: "test" | "live"; product: PalmProduct; cents: number; actor_name: string | null; asset_id: string | null; reason: string | null };
+
+/** Billed Palm calls: this month's and last month's totals, this month by product, and the latest 30. */
+async function usageReport() {
+  const now = new Date();
+  const thisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString();
+  const rows =
+    (await sb<UsageRow[]>(`palm_usage?at=gte.${encodeURIComponent(lastMonth)}&select=at,mode,product,cents,actor_name,asset_id,reason&order=at.desc&limit=10000`)) ?? [];
+  const month = { cents: 0, calls: 0, testCalls: 0, byProduct: {} as Partial<Record<PalmProduct, { calls: number; cents: number }>> };
+  let lastCents = 0;
+  for (const r of rows) {
+    if (r.at < thisMonth) {
+      lastCents += r.cents;
+      continue;
+    }
+    if (r.mode === "test") month.testCalls++;
+    else month.calls++;
+    month.cents += r.cents;
+    const p = (month.byProduct[r.product] ??= { calls: 0, cents: 0 });
+    p.calls++;
+    p.cents += r.cents;
+  }
+  return {
+    prices: PALM_PRICES,
+    month,
+    lastMonth: { cents: lastCents },
+    recent: rows.slice(0, 30).map((r) => ({ at: r.at, mode: r.mode, product: r.product, cents: r.cents, by: r.actor_name, assetId: r.asset_id, reason: r.reason })),
+  };
 }
