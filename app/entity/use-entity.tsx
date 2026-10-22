@@ -117,8 +117,18 @@ export function useEntityPage() {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [docs, setDocs] = useState<AssetDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  // The entity's first load failed: the page offers Try again instead of spinning forever.
+  const [loadError, setLoadError] = useState(false);
+  const [loadTry, setLoadTry] = useState(0);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Asset>>({});
+  // When the edit form last saved, for a brief "Saved" by the Edit button.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!savedAt) return;
+    const t = setTimeout(() => setSavedAt(null), 3000);
+    return () => clearTimeout(t);
+  }, [savedAt]);
 
   // Sub-pages: the entity card stays on top; a category menu switches what's below.
   // After switching, scroll to the part that was asked for once it has rendered.
@@ -269,13 +279,18 @@ export function useEntityPage() {
       await authReady;
       const { ref, onValue } = await import("../store");
 
-      unsub1 = onValue(ref(db, `assets/${id}`), (snapshot) => {
-        const data = snapshot.val();
-        // The edit form is seeded when editing starts (startEditing), so a
-        // background write (auto-filing, enrichment) never wipes what's typed.
-        if (data) setAsset(fromDatabase(data as Asset));
-        setLoading(false);
-      });
+      unsub1 = onValue(
+        ref(db, `assets/${id}`),
+        (snapshot) => {
+          const data = snapshot.val();
+          // The edit form is seeded when editing starts (startEditing), so a
+          // background write (auto-filing, enrichment) never wipes what's typed.
+          if (data) setAsset(fromDatabase(data as Asset));
+          setLoading(false);
+          setLoadError(false);
+        },
+        () => setLoadError(true)
+      );
 
       unsub2 = onValue(ref(db, `assets/${id}/documents`), (snapshot) => {
         const data = snapshot.val();
@@ -328,14 +343,18 @@ export function useEntityPage() {
       });
     }
 
-    setup();
+    setup().catch(() => setLoadError(true));
     return () => {
       unsub1?.();
       unsub2?.();
       unsub5?.();
       unsub6?.();
     };
-  }, [id]);
+  }, [id, loadTry]);
+  function retryLoad() {
+    setLoadError(false);
+    setLoadTry((n) => n + 1);
+  }
 
   // What the form started from — so Save only overrides fields the user
   // changed, and keeps anything filled in the background meanwhile.
@@ -346,6 +365,7 @@ export function useEntityPage() {
     const seed = { ...asset, type: entityType(asset) };
     editBaseRef.current = seed;
     setForm(seed);
+    setSavedAt(null);
     setEditing(true);
     if ((tabParam ?? "overview") === "overview") setTimeout(() => document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     else goToTab("overview", "entity-edit");
@@ -393,6 +413,21 @@ export function useEntityPage() {
       operatingAgreementDate: pick("operatingAgreementDate") || "",
       articlesOfOrgDate: pick("articlesOfOrgDate") || "",
     });
+    setEditing(false);
+    setSavedAt(Date.now());
+  }
+
+  /** Has the edit form moved from what it started with? */
+  function formDirty() {
+    const base = editBaseRef.current as Record<string, unknown>;
+    const f = form as Record<string, unknown>;
+    const same = (a: unknown, b: unknown) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
+    return Object.keys({ ...base, ...f }).some((k) => !same(f[k], base[k]));
+  }
+
+  /** Leave the edit form; asks first when that would throw away typing. */
+  async function cancelEditing() {
+    if (formDirty() && !(await confirmDialog({ title: "Discard changes?", confirmLabel: "Discard", tone: "danger" }))) return;
     setEditing(false);
   }
 
@@ -952,6 +987,7 @@ export function useEntityPage() {
   // Another entity: start the card clean.
   useEffect(() => {
     setEditing(false);
+    setSavedAt(null);
     setForm({});
     palmEpoch.current++;
     palmSeq.current++;
@@ -2313,8 +2349,12 @@ export function useEntityPage() {
     setDocs,
     loading,
     setLoading,
+    loadError,
+    retryLoad,
     editing,
     setEditing,
+    cancelEditing,
+    savedAt,
     form,
     setForm,
     pendingScroll,
