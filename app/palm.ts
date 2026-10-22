@@ -7,6 +7,7 @@
 import { authFetch } from "./auth";
 import { stateCode } from "./entity-paperwork";
 import type { FormationState } from "./formation";
+import type { RaSnapshot } from "../lib/palm-agent";
 import { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateRecord } from "../lib/registry";
 
 export type { PalmAddress, PalmMode, RegistryRecord, StateRecord } from "../lib/registry";
@@ -39,7 +40,10 @@ export type PalmLink = {
   businessId: string;
   palmId?: string | null;
   linkedAt: number;
-  ra?: { status: RaService["status"]; name?: string | null; address?: string | null; checkedAt: number };
+  /** The agent service as last read (lib/palm-agent.ts); provider, dates and refusal reason since the sync was added. */
+  ra?: { status: RaService["status"]; name?: string | null; address?: string | null; checkedAt: number } & Partial<Omit<RaSnapshot, "status" | "name" | "address" | "checkedAt">>;
+  /** When "Sync everything with Palm" last ran. */
+  syncedAt?: number;
   /** Set when BFO formed this entity through Palm (app/formation.ts). */
   formation?: FormationState;
 };

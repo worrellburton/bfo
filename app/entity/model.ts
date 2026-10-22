@@ -405,7 +405,7 @@ export function fromDatabase(raw: Asset): Asset {
       checkedAt: p.checkedAt ?? 0,
     };
   }
-  if (a.stateRecord) a.stateRecord = { ...a.stateRecord, managers: list(a.stateRecord.managers) };
+  if (a.stateRecord) a.stateRecord = { ...a.stateRecord, managers: list(a.stateRecord.managers), people: list(a.stateRecord.people) };
   if (a.members) a.members = list(a.members);
   if (a.verification) {
     const v = a.verification;

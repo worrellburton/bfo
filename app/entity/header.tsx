@@ -3,9 +3,10 @@ import { Link } from "react-router";
 import { formingNow } from "../entity-addresses";
 import { useEntity } from "./context";
 import { WITH_FORMATION } from "./derive";
-import { fmtDate, splitNames } from "./model";
-import { Button, Count, Dot, Icon, IconButton, useTone } from "./ui";
-import { isAdmin, isPartner } from "../auth";
+import { fmtDate, fmtStamp, splitNames } from "./model";
+import { Button, Count, Dot, Icon, IconButton, toneText, useTone } from "./ui";
+import { getUser, isAdmin, isPartner } from "../auth";
+import { dollars } from "../../lib/palm-pricing";
 
 /** The entity card: who it is, the facts people copy most, and how complete its record is. */
 export function EntityHeader() {
@@ -19,6 +20,8 @@ export function EntityHeader() {
   const trustees = splitNames(asset.trustees);
 
   const meta = [etype, asset.state || "No state", asset.llcType].filter(Boolean) as string[];
+  // Palm connected, an entity it serves (not a trust), and someone who can change the record.
+  const canSyncPalm = !!page.palmMode && !isTrust && ["owner", "admin", "member"].includes(getUser()?.role ?? "");
 
   return (
     <section className={`overflow-hidden rounded-2xl border ${t.surface}`}>
@@ -74,6 +77,7 @@ export function EntityHeader() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {canSyncPalm && <PalmSyncButton />}
             {!isPartner() && <Button icon="edit" onClick={() => (page.editing ? page.setEditing(false) : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
               <span className="max-sm:hidden">{page.editing ? "Cancel" : "Edit"}</span>
             </Button>}
@@ -81,6 +85,8 @@ export function EntityHeader() {
           </div>
         </div>
       </div>
+
+      {canSyncPalm && page.palmSync && <PalmSyncResults />}
 
       <div className={`grid grid-cols-2 border-t sm:grid-cols-3 ${t.line}`}>
         {isTrust && !asset.ein ? (
@@ -107,6 +113,65 @@ export function EntityHeader() {
         </Link>
       </div>
     </section>
+  );
+}
+
+/**
+ * "Sync everything with Palm", with what it should cost: the state records
+ * Palm bills for (live key), free in test mode. Asks before spending.
+ */
+function PalmSyncButton() {
+  const { page, asset } = useEntity();
+  const t = useTone();
+  const running = !!page.palmSync?.running;
+  const { cents } = page.palmSyncPlan();
+  const mode = page.palmMode;
+  const last = mode ? asset.palm?.[mode]?.syncedAt : undefined;
+  const cost = mode === "test" ? "free in test mode" : cents ? `est. ${dollars(cents)}` : "free";
+  return (
+    <Button
+      icon="refresh"
+      onClick={() => void page.syncWithPalm()}
+      disabled={running || !!page.palmBusy}
+      aria-label={`Sync everything with Palm, ${cost}`}
+      title={last ? `Last synced ${fmtStamp(last)}` : "Read everything Palm and the state have on this entity"}
+      className={running ? "[&>svg]:animate-spin" : ""}
+    >
+      <span className="max-sm:hidden">{running ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
+      <span className={`tabular-nums ${t.muted}`}>{cost}</span>
+    </Button>
+  );
+}
+
+/** What the sync found, a line per step; it fills in as the sync runs. */
+function PalmSyncResults() {
+  const { page } = useEntity();
+  const t = useTone();
+  const sync = page.palmSync!;
+  return (
+    <div className={`border-t px-5 py-3 sm:px-6 ${t.line}`} aria-live="polite">
+      <div className="flex items-center justify-between gap-3">
+        <p className={`text-[12px] font-medium ${t.soft}`}>
+          {sync.running ? `Syncing with Palm · ${sync.step}…` : `Synced with Palm${sync.mode === "test" ? " (test mode)" : ""}`}
+          {!sync.running && sync.cents > 0 && <span className={`font-normal ${t.muted}`}> · state records about {dollars(sync.cents)}</span>}
+        </p>
+        {!sync.running && <IconButton icon="x" label="Close" onClick={() => page.setPalmSync(null)} />}
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {sync.lines.map((l, i) => (
+          <li key={i} className={`flex items-start gap-2 text-[12.5px] leading-snug ${t.text}`}>
+            <span
+              aria-hidden="true"
+              className={`mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full ${l.tone === "good" ? "bg-emerald-400" : l.tone === "warn" ? "bg-amber-400" : l.tone === "bad" ? "bg-red-400" : t.dark ? "bg-gray-600" : "bg-gray-300"}`}
+            />
+            <span className="min-w-0">
+              <span className="font-medium">{l.label}</span>
+              <span className={l.tone === "bad" ? toneText("bad", t.dark) : t.muted}> · {l.text}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

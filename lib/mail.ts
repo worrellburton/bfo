@@ -22,7 +22,8 @@ import { storageDownload, storageRemove, storageUpload } from "./storage.js";
 
 export type MailAddress = { email: string; name?: string | null };
 export type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
-export type MailFolder = "inbox" | "sent" | "archive" | "other";
+/** "active": inbox and sent together, one row per conversation, latest activity first. */
+export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other";
 export type MailSummary = {
   id: string;
   folder: "inbox" | "sent" | "archive";
@@ -39,6 +40,9 @@ export type MailSummary = {
   status: string | null;
   /** A catch-all copy (mail for an address nobody has). */
   other: boolean;
+  /** The conversation it's in, and when that conversation last had a message (Active pages on these). */
+  threadKey?: string;
+  threadAt?: string;
 };
 /** Narrows a folder's list: everything, only unread, or only starred. */
 export type MailFilter = "all" | "unread" | "starred";
@@ -85,16 +89,20 @@ export type MailRow = {
   starred_at: string | null;
   occurred_at: string | null;
   created_at: string;
+  /** The conversation (migration 20261023_mail_threads), and the time of its latest message. */
+  thread_key?: string | null;
+  thread_at?: string | null;
 };
 
 /** Columns a list needs — no bodies. */
 export const SUMMARY_COLUMNS =
-  "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,starred_at,attachments,status";
+  "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,starred_at,attachments,status,thread_key,thread_at";
 
 export type SummaryRow = Pick<
   MailRow,
   | "id" | "user_id" | "folder" | "direction" | "from_email" | "from_name" | "to_addrs" | "cc_addrs"
   | "subject" | "snippet" | "occurred_at" | "created_at" | "read_at" | "starred_at" | "attachments" | "status"
+  | "thread_key" | "thread_at"
 >;
 
 export const BUCKET = "mail";
@@ -363,6 +371,7 @@ export function toSummary(row: SummaryRow): MailSummary {
     attachmentCount: row.attachments?.length ?? 0,
     status: row.status ?? null,
     other: row.user_id === null,
+    ...(row.thread_key ? { threadKey: row.thread_key, threadAt: row.thread_at ?? row.occurred_at ?? row.created_at } : {}),
   };
 }
 
@@ -400,9 +409,45 @@ export function canSee(row: Pick<MailRow, "user_id">, userId: string, admin: boo
 
 /** PostgREST filter for one folder of a user's mail. Archive also holds archived catch-all mail for admins. */
 export function folderFilter(folder: MailFolder, userId: string, admin: boolean): string {
+  if (folder === "active") return `user_id=eq.${userId}&folder=in.(inbox,sent)`;
   if (folder === "other") return "user_id=is.null&folder=eq.inbox";
   if (folder === "archive") return `${scopeFilter(userId, admin)}&folder=eq.archive`;
   return `user_id=eq.${userId}&folder=eq.${folder}`;
+}
+
+/** A value quoted for a PostgREST condition, so commas, parentheses and dots in it are literal. */
+function pgQuote(v: string): string {
+  return encodeURIComponent(`"${v.replace(/[\\"]/g, (c) => `\\${c}`)}"`);
+}
+
+/**
+ * Active's paging, for use inside and=(…): the conversations after the last
+ * one shown, in the list's (thread_at desc, thread_key asc) order.
+ */
+export function activeAfter(threadAt: string, threadKey: string): string {
+  const at = pgQuote(threadAt);
+  return `or(thread_at.lt.${at},and(thread_at.eq.${at},thread_key.gt.${pgQuote(threadKey)}))`;
+}
+
+/** The order Active reads rows in: each conversation together, its newest message first. */
+export const ACTIVE_ORDER = "thread_at.desc,thread_key.asc,occurred_at.desc,id.desc";
+
+/**
+ * Rows in ACTIVE_ORDER → the newest message of each conversation, at most
+ * `limit` of them; `more` when there may be further conversations.
+ */
+export function conversationHeads<T extends { id: string; thread_key?: string | null }>(rows: T[], limit: number, fetched: number): { heads: T[]; more: boolean } {
+  const heads: T[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const key = r.thread_key || `id:${r.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (heads.length === limit) return { heads, more: true };
+    heads.push(r);
+  }
+  // A full read may have stopped partway: there could be more after it.
+  return { heads, more: rows.length >= fetched };
 }
 
 /** PostgREST clause narrowing a folder to unread or starred mail; "" for everything. */

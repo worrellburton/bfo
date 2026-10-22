@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { stepsLeft } from "../entity-closing";
 import { isFormationDone } from "../formation";
+import { raPatch } from "../../lib/palm-agent";
+import { peoplePatch } from "../../lib/registry";
+import { dollars, STATE_RECORD_CENTS } from "../../lib/palm-pricing";
+import { stateReadCost } from "../../lib/state-reads";
+import { formingNow } from "../entity-addresses";
 import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
-import { authFetch, isPartner } from "../auth";
+import { authFetch, getUser, isPartner } from "../auth";
 import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import {
@@ -84,6 +89,16 @@ import {
  * (Moved unchanged from the old single-file page.)
  */
 /** Foreign registrations as typed: blank fields dropped, a state with nothing left dropped (null when none). */
+export type PalmSyncLine = { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string };
+/** A sync with Palm under way (`step` is what it's reading) or just finished (`at`). */
+export type PalmSyncState = { running: boolean; step: string; lines: PalmSyncLine[]; cents: number; mode: PalmMode; at?: number };
+
+/** A People list filled from the state's record (lib/registry.ts peoplePatch): documents, with shares, replace it. */
+const fromStateRecord = (source?: string | null) => /^State record\b/.test(source ?? "");
+
+/** Owners, admins and members change the record; viewers and partners only read it. */
+const canChangeRecord = () => ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+
 function cleanForeign(f: Asset["foreign"]): Asset["foreign"] | null {
   const out: NonNullable<Asset["foreign"]> = {};
   for (const [code, reg] of Object.entries(f ?? {})) {
@@ -622,7 +637,7 @@ export function useEntityPage() {
     }
     const owners = (facts.members ?? []).filter((m) => m?.name?.trim());
     const ownerKinds = new Set(["operatingAgreement", "ownershipLedger", "articles", "annualReport"]);
-    if (owners.length && ownerKinds.has(CLASSIFIER_KIND[facts.kind] ?? "") && (!current.members?.length || current.membersSource === doc.name)) {
+    if (owners.length && ownerKinds.has(CLASSIFIER_KIND[facts.kind] ?? "") && (!current.members?.length || current.membersSource === doc.name || fromStateRecord(current.membersSource))) {
       patch.members = owners.map((m) => ({ name: m.name.trim(), percent: typeof m.percent === "number" ? m.percent : null, role: m.role ?? null }));
       patch.membersSource = doc.name;
       added.push(`${owners.length} owner${owners.length === 1 ? "" : "s"} / managers`);
@@ -978,10 +993,17 @@ export function useEntityPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [palmBusinessId, palmMode]);
 
-  /** Palm's agent service and mail for this entity; the record follows when the agent actually changes. */
-  async function refreshPalm(businessId: string, opts: { busy?: boolean; keepError?: boolean } = {}) {
+  /**
+   * Palm's agent service and mail for this entity; the record follows when the
+   * agent actually changes. Says what it found (the sync reports it); with
+   * `waitForImport`, only once the documents are saved.
+   */
+  async function refreshPalm(
+    businessId: string,
+    opts: { busy?: boolean; keepError?: boolean; waitForImport?: boolean } = {},
+  ): Promise<{ service?: RaService | null; documents?: number; saved?: number; truncated?: boolean; error?: string } | null> {
     const mode = palmMode;
-    if (!mode) return;
+    if (!mode) return null;
     const seq = ++palmSeq.current;
     const busy = opts.busy ?? true;
     if (busy) setPalmBusy("refresh");
@@ -989,75 +1011,68 @@ export function useEntityPage() {
     try {
       const [raR, docsR] = await Promise.allSettled([
         palmCall<{ service: RaService | null }>("ra", { businessId, mode }),
-        palmCall<{ documents: PalmDocument[] }>("documents", { businessId, mode }),
+        palmCall<{ documents: PalmDocument[]; truncated?: boolean }>("documents", { businessId, mode }),
       ]);
-      if (seq !== palmSeq.current) return;
+      if (seq !== palmSeq.current) return null;
+      const found: { service?: RaService | null; documents?: number; saved?: number; truncated?: boolean; error?: string } = {};
       if (docsR.status === "fulfilled") {
         setPalmDocs(sortDocuments(docsR.value.documents));
-        void importPalmPaperwork(docsR.value.documents);
-      }
+        found.documents = docsR.value.documents.length;
+        found.truncated = !!docsR.value.truncated;
+        const saving = importPalmDocuments(docsR.value.documents, mode);
+        if (opts.waitForImport) found.saved = await saving;
+      } else found.error = (docsR.reason as Error)?.message;
       if (raR.status === "rejected") {
         if (!opts.keepError) showPalmError(raR.reason);
-        return;
+        return { ...found, error: (raR.reason as Error)?.message };
       }
       const service = raR.value.service;
+      found.service = service;
       setPalmRa(service);
       const current = assetRef.current;
-      if (!current) return;
-      const before = current.palm?.[mode]?.ra?.status ?? null;
-      const patch: Record<string, unknown> = {
-        [`palm/${mode}/ra`]: { status: service?.status ?? null, name: service?.name ?? null, address: formatPalmAddress(service?.address) ?? null, checkedAt: Date.now() },
-      };
-      if (mode === "live") {
-        // Only on the change itself, so a later hand edit isn't overwritten on every visit.
-        if (service?.status === "active" && before !== "active" && service.name) {
-          patch.registeredAgent = service.name;
-          patch.registeredAgentSource = `Palm, active since ${(service.started_at ?? new Date().toISOString()).slice(0, 10)}`;
-        }
-        // Palm's street address, once Palm reports it, while Palm is the agent on record.
-        const palmAddress = formatPalmAddress(service?.address);
-        const palmOnRecord = (service?.status === "active" && before !== "active") || /^Palm, active/.test(current.registeredAgentSource ?? "");
-        if (service?.status === "active" && palmAddress && palmOnRecord && !sameAddressText(palmAddress, current.registeredAgentAddress)) patch.registeredAgentAddress = palmAddress;
-        if ((service?.status === "terminated" || service?.status === "canceled") && before === "active" && current.registeredAgentSource?.startsWith("Palm")) {
-          patch.registeredAgentSource = `Palm stopped serving ${(service.ended_at ?? new Date().toISOString()).slice(0, 10)} — confirm the current agent`;
-        }
-      }
-      await patchAsset(patch);
+      if (!current) return found;
+      // The whole service (provider, dates, why a change was refused), and the agent on record when it changes.
+      await patchAsset(raPatch(current, service, mode));
       if (docsR.status === "rejected" && !opts.keepError) showPalmError(docsR.reason);
+      return found;
     } finally {
       if (busy) setPalmBusy(null);
     }
   }
 
-  /** Read the state's record: by file number when we have it, otherwise find the entity by name. */
-  async function checkStateRecord(choice?: RegistryRecord) {
+  /** Read the state's record: by file number when we have it, otherwise find the entity by name. Returns why it couldn't, or null. */
+  async function checkStateRecord(choice?: RegistryRecord): Promise<string | null> {
     const current = assetRef.current;
     const mode = palmMode;
-    if (!current || !mode) return;
+    if (!current || !mode) return "Palm isn't connected.";
     const jurisdiction = palmJurisdiction(current.state);
     if (!jurisdiction) {
       setPalmError("Set the entity's state first.");
-      return;
+      return "Set the entity's state first.";
     }
     const epoch = palmEpoch.current;
     setPalmBusy("record");
     setPalmError("");
     try {
       const found = await lookupStateRecord({ ...current, assetId: id }, mode, choice);
-      if (epoch !== palmEpoch.current) return;
+      if (epoch !== palmEpoch.current) return "The page moved on.";
       if (found.kind === "error") {
         setPalmError(found.message);
-        return;
+        return found.message;
       }
       if (found.kind === "choices") {
         setRegistryChoices(found.results);
         if (found.message) setPalmError(found.message);
-        return;
+        return found.message ?? "More than one registry entry matched. Pick the right one under Compliance → State record.";
       }
-      await patchAsset(found.patch);
+      // The state's people fill an empty People list (live only; documents later replace it).
+      const live = assetRef.current ?? current;
+      await patchAsset({ ...found.patch, ...peoplePatch(live, live.ownerId ? assetNames[live.ownerId] : null, found.record, mode === "live") });
       if (epoch === palmEpoch.current) setRegistryChoices(null);
+      return null;
     } catch (err) {
       if (epoch === palmEpoch.current) showPalmError(err);
+      return err instanceof PalmUnavailable ? "Palm isn't connected." : (err as Error).message;
     } finally {
       if (epoch === palmEpoch.current) setPalmBusy(null);
     }
@@ -1096,6 +1111,136 @@ export function useEntityPage() {
       return err instanceof PalmUnavailable ? "Connect Palm to read the state's record." : (err as Error).message;
     } finally {
       setForeignBusy(null);
+    }
+  }
+
+  // ── Sync everything with Palm ─────────────────────────────────────────
+  //
+  // One click reads everything Palm knows about the entity, in the order each
+  // step needs: the state's records first (the paid part, priced up front),
+  // then Palm's own copy of the business, its agent and mail, the formation
+  // under way, and Palm's open questions. It reads and fills blanks; it never
+  // files anything, adds the entity to Palm, or changes its agent.
+
+  /** Bumped so the open-questions card asks Palm again. */
+  const [palmCasesTick, setPalmCasesTick] = useState(0);
+  const [palmSync, setPalmSync] = useState<PalmSyncState | null>(null);
+  const syncingRef = useRef(false);
+
+  /** What a sync reads and what it costs now (live: billed; test: free). */
+  function palmSyncPlan() {
+    const current = assetRef.current;
+    return current ? stateReadCost(current, palmMode) : { states: [], cents: 0 };
+  }
+
+  async function syncWithPalm() {
+    const current = assetRef.current;
+    const mode = palmMode;
+    if (!current || !mode || syncingRef.current) return;
+    const plan = palmSyncPlan();
+    const businessId = current.palm?.[mode]?.businessId;
+    if (plan.cents > 0) {
+      const ok = await confirmDialog({
+        title: `Sync ${current.name} with Palm?`,
+        message: (
+          <>
+            Reading the state's records is billed by Palm: about <b>{dollars(plan.cents)}</b>. Everything else is free.
+          </>
+        ),
+        details: [
+          ...plan.states.map((st) => `${stateName(st.code) || st.code}${st.home ? "" : " (foreign)"} state record: ${dollars(st.cents)}${st.cents < STATE_RECORD_CENTS ? " (file number on record)" : " (name search, then the record)"}`),
+          businessId ? "Palm's copy of the business, its agent, and its mail (saved to Documents): free" : "Its agent and mail: read once Palm is its agent",
+          "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
+        ],
+        confirmLabel: `Sync · ${dollars(plan.cents)}`,
+      });
+      if (!ok) return;
+    }
+    syncingRef.current = true;
+    const lines: PalmSyncLine[] = [];
+    const say = (line: PalmSyncLine) => {
+      lines.push(line);
+      setPalmSync({ running: true, step: line.label, lines: [...lines], cents: plan.cents, mode });
+    };
+    const step = (label: string) => setPalmSync({ running: true, step: label, lines: [...lines], cents: plan.cents, mode });
+    try {
+      // 1. The state's records: the home state's (fills the file number Palm needs), then each foreign one.
+      for (const st of plan.states) {
+        const label = `${stateName(st.code) || st.code}${st.home ? "" : " (foreign)"} record`;
+        step(label);
+        const why = st.home ? await checkStateRecord() : await checkForeignRecord(st.code);
+        const rec = st.home ? assetRef.current?.stateRecord : assetRef.current?.foreign?.[st.code]?.record;
+        if (why) say({ label, tone: "warn", text: why });
+        else {
+          const findings = st.home && rec ? stateFindings(rec, assetRef.current ?? current).filter((f) => f.tone !== "info") : [];
+          say({ label, tone: findings.length ? "warn" : "good", text: [rec?.status ? `Read · ${rec.status}` : "Read", ...findings.map((f) => f.text)].join(" ") });
+        }
+      }
+      if (!plan.states.length) say({ label: "State records", tone: "muted", text: formingNow(current) ? "Read once the state approves the formation." : "Nothing to read: no state on record, or it's a trust or dissolved." });
+
+      // 2. Palm's copy of the business, its agent and its mail.
+      if (businessId) {
+        step("Palm's copy");
+        try {
+          const latest = assetRef.current ?? current;
+          const r = await palmCall<{ renamed: boolean; differences: { field: string; palm: string; ours: string }[] }>("business", {
+            mode,
+            businessId,
+            assetId: id,
+            entity: { name: latest.name, ein: latest.ein, fileNumber: latest.fileNumber, formationDate: latest.formationDate, address: latest.address },
+          });
+          const diff = r.differences.map((d) => `${d.field}: Palm has ${d.palm}, ours is ${d.ours}.`);
+          say({
+            label: "Palm's copy",
+            tone: diff.length ? "warn" : "good",
+            text: diff.length ? `${diff.join(" ")} Palm's API can't change these; correct them in Palm Console.` : r.renamed ? "Name updated to match." : "Matches our record.",
+          });
+        } catch (err) {
+          say({ label: "Palm's copy", tone: "bad", text: (err as Error).message });
+        }
+
+        step("Agent and mail");
+        const found = await refreshPalm(businessId, { busy: false, keepError: true, waitForImport: true });
+        const st = found?.service?.status ? RA_STATUS[found.service.status] : null;
+        say({ label: "Registered agent", tone: found?.error && !found.service ? "bad" : st?.tone === "good" ? "good" : st ? "warn" : "muted", text: found?.error && found.service === undefined ? found.error : st ? st.label : "Palm isn't its agent." });
+        if (found?.documents !== undefined) {
+          const saved = found.saved ?? 0;
+          say({
+            label: "Mail",
+            tone: "good",
+            text: !found.documents ? "No documents at Palm." : `${found.documents} document${found.documents === 1 ? "" : "s"} at Palm${mode === "live" ? (saved ? `; ${saved} newly saved to Documents` : "; all already in Documents") : " (test mode: not saved to Documents)"}${found.truncated ? ". More than 10,000: the oldest weren't read." : "."}`,
+          });
+        }
+      } else {
+        say({ label: "Agent and mail", tone: "muted", text: "Not in Palm yet. Its agent and mail are read once Palm is the agent (Compliance → Make Palm the agent)." });
+      }
+
+      // 3. A formation under way, and Palm's open questions.
+      if (formationId) {
+        step("Formation");
+        try {
+          await palmCall("form-status", { assetId: id, filingId: formationId, mode });
+          const f = assetRef.current?.palm?.[mode]?.formation;
+          say({ label: "Formation", tone: "good", text: f?.status ? `Filing: ${f.status.replace(/_/g, " ")}` : "Up to date." });
+        } catch (err) {
+          say({ label: "Formation", tone: "bad", text: (err as Error).message });
+        }
+      }
+      if (businessId || formationId) {
+        step("Palm's questions");
+        try {
+          const { cases } = await palmCall<{ cases: { status: string }[] }>("cases", { assetId: id, mode });
+          const waiting = cases.filter((c) => c.status === "needs_response").length;
+          say({ label: "Palm's questions", tone: waiting ? "warn" : "good", text: waiting ? `${waiting} waiting on an answer (Compliance).` : "None open." });
+          setPalmCasesTick((n) => n + 1);
+        } catch (err) {
+          say({ label: "Palm's questions", tone: "bad", text: (err as Error).message });
+        }
+      }
+      await patchAsset({ [`palm/${mode}/syncedAt`]: Date.now() });
+    } finally {
+      syncingRef.current = false;
+      setPalmSync({ running: false, step: "", lines: [...lines], cents: plan.cents, mode, at: Date.now() });
     }
   }
 
@@ -1250,7 +1395,7 @@ export function useEntityPage() {
       // The owners the governing documents list feed the paperwork checks,
       // unless a more specific document already supplied them.
       const owners = profile.members.filter((m) => m.name?.trim());
-      if (owners.length && (!current.members?.length || current.membersSource === "governing documents")) {
+      if (owners.length && (!current.members?.length || current.membersSource === "governing documents" || fromStateRecord(current.membersSource))) {
         patch.members = owners.map((m) => ({ name: m.name, percent: m.percent ?? null, role: "member" }));
         patch.membersSource = "governing documents";
       }
@@ -1726,29 +1871,43 @@ export function useEntityPage() {
     await patchAsset({ [`addressUpdates/${step}`]: done ? new Date().toISOString().slice(0, 10) : null });
   }
 
-  /** Palm's documents that fill an empty slot (the state's certificate, the IRS's EIN letter), saved and filed once. */
+  /**
+   * Every document Palm holds for the entity, saved to Documents once: the
+   * state's certificate, the IRS's EIN letter and the like also fill their
+   * empty slot; notices, legal papers, receipts and agent confirmations are
+   * kept as they are. Live mode only (sandbox files aren't the entity's), and
+   * only for someone who can change the record. Returns how many were saved.
+   */
   const importingPalm = useRef(new Set<string>());
-  async function importPalmPaperwork(list: PalmDocument[]) {
+  async function importPalmDocuments(list: PalmDocument[], mode: PalmMode): Promise<number> {
     const current = assetRef.current;
-    if (!current) return;
-    const have = new Set(docs.map((d) => (d as AssetDoc & { palmDocumentId?: string }).palmDocumentId).filter(Boolean));
-    for (const d of list) {
-      const slot = [docKindOf(d), ...(d.types ?? []), d.type ?? ""].map((k) => PALM_SLOT[k]).find(Boolean);
-      if (!slot || current[slot] || have.has(d.id) || importingPalm.current.has(d.id)) continue;
+    if (!current || mode !== "live" || !id || !canChangeRecord()) return 0;
+    // What Documents holds now, read fresh: the list on screen may not have loaded yet.
+    const { db, ref: dbRef, get, update } = await import("../store");
+    const stored = ((await get(dbRef(db, `assets/${id}/documents`))).val() ?? {}) as Record<string, { palmDocumentId?: string }>;
+    const have = new Set(Object.values(stored).map((d) => d?.palmDocumentId).filter(Boolean));
+    let saved = 0;
+    // Oldest first, so Documents reads in the order Palm received them.
+    for (const d of [...list].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))) {
+      if (have.has(d.id) || importingPalm.current.has(d.id)) continue;
+      const kind = docKindOf(d);
+      const slot = [kind, ...(d.types ?? []), d.type ?? ""].map((k) => PALM_SLOT[k]).find(Boolean);
       importingPalm.current.add(d.id);
       try {
         const blob = await fetchPalmDocument(d);
-        const name = d.filename || `${filingTitle(slot, current)}.pdf`;
+        const when = (d.created_at ?? d.upload_date ?? "").slice(0, 10);
+        const name = d.filename || (slot ? `${filingTitle(slot, current)}.pdf` : `${DOC_LABEL[kind] ?? "Palm document"}${when ? ` ${when}` : ""}.pdf`);
         const doc = await uploadDocFile(new File([blob], name, { type: blob.type || "application/pdf" }), () => {});
-        const { db, ref: dbRef, update } = await import("../store");
-        await update(dbRef(db, `assets/${id}/documents/${doc.id}`), { palmDocumentId: d.id });
-        await fileDocument(slot, doc);
+        await update(dbRef(db, `assets/${id}/documents/${doc.id}`), { palmDocumentId: d.id, ...(kind ? { palmType: kind } : {}) });
+        if (slot && !assetRef.current?.[slot]) await fileDocument(slot, doc);
+        saved++;
       } catch (err) {
         console.error("Palm document import failed", d.id, err);
       } finally {
         importingPalm.current.delete(d.id);
       }
     }
+    return saved;
   }
 
   async function handleUploadFile(kind: FileKind, file: File) {
@@ -2236,6 +2395,11 @@ export function useEntityPage() {
     refreshPalm,
     checkStateRecord,
     checkForeignRecord,
+    palmSync,
+    setPalmSync,
+    palmSyncPlan,
+    syncWithPalm,
+    palmCasesTick,
     assetAddressByName,
     startClosing,
     cancelClosing,

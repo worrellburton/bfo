@@ -1,6 +1,6 @@
 import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
 import { composeText, htmlFromPlain } from "../../lib/mail-compose";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
@@ -11,6 +11,7 @@ import {
   addAlias,
   attachmentUrl,
   deleteMail,
+  getFaces,
   getMessage,
   getThread,
   listMail,
@@ -18,12 +19,15 @@ import {
   moveMail,
   notifyMailChanged,
   removeAlias,
+  removeMailPhoto,
   improveMail,
   sendMail,
+  setMailPhoto,
   starMail,
   useMailCount,
   type MailAddress,
   type MailAttachment,
+  type MailFaces,
   type MailFilter,
   type MailFolder,
   type MailMessage,
@@ -126,12 +130,29 @@ function brandDomain(a: MailAddress): string | null {
 /** Logos that loaded, and domains that have none — so a list doesn't flicker as it re-renders. */
 const logoState = new Map<string, "ok" | "none">();
 
+/** The pictures people here chose for their mail, by address (lowercase). */
+const FacesContext = createContext<MailFaces>({});
+
 /**
- * Who the message is from, at a glance: a company's logo when the sender is
- * a company (fetched by domain; falls back to initials if there is none),
- * else initials in a colour that is always the same for that person.
+ * Who the message is from, at a glance: the picture they chose, when they're
+ * one of us and picked one; a company's logo when the sender is a company
+ * (fetched by domain; falls back to initials if there is none); else initials
+ * in a colour that is always the same for that person.
  */
 function Avatar({ a, size = "h-10 w-10 text-[13px]" }: { a: MailAddress; size?: string }) {
+  const photo = useContext(FacesContext)[a.email.toLowerCase()];
+  const [broken, setBroken] = useState<string | null>(null);
+  if (photo && broken !== photo) {
+    return (
+      <span aria-hidden="true" className={`relative inline-flex shrink-0 overflow-hidden rounded-full ${size}`}>
+        <img src={photo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" onError={() => setBroken(photo)} />
+      </span>
+    );
+  }
+  return <InitialsAvatar a={a} size={size} />;
+}
+
+function InitialsAvatar({ a, size }: { a: MailAddress; size: string }) {
   const { dark } = useTone();
   const domain = brandDomain(a);
   const [logo, setLogo] = useState<"ok" | "none" | "loading">(() => (domain ? (logoState.get(domain) ?? "loading") : "none"));
@@ -208,13 +229,15 @@ function fullDate(iso: string): string {
 }
 
 const FOLDERS: { key: MailFolder; label: string }[] = [
-  { key: "inbox", label: "Inbox" },
-  { key: "sent", label: "Sent" },
+  { key: "active", label: "Active" },
+  { key: "inbox", label: "In" },
+  { key: "sent", label: "Out" },
   { key: "archive", label: "Archive" },
   { key: "other", label: "Other" },
 ];
 
 const EMPTY: Record<MailFolder, string> = {
+  active: "No conversations yet.",
   inbox: "No mail yet.",
   sent: "Nothing sent yet.",
   archive: "Nothing archived.",
@@ -373,6 +396,137 @@ function MyAddresses({ address, aliases, canAdd }: { address: string; aliases: s
   );
 }
 
+// ── My picture ───────────────────────────────────────────────────────────
+
+/** The side of the square picture we keep: sharp at every size the inbox shows. */
+const PHOTO_PX = 256;
+
+/**
+ * A picture file as a small square JPEG (a data: URL): cropped from the middle,
+ * or a little above it on a portrait, where a face usually is.
+ */
+async function squarePhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("That picture couldn't be read. Try a JPEG or PNG."));
+      i.src = url;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) throw new Error("That picture couldn't be read. Try a JPEG or PNG.");
+    const side = Math.min(w, h);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = PHOTO_PX;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser can't prepare pictures.");
+    ctx.imageSmoothingQuality = "high";
+    // A transparent PNG goes on white, not black.
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, PHOTO_PX, PHOTO_PX);
+    ctx.drawImage(img, (w - side) / 2, h > w ? (h - side) * 0.25 : (h - side) / 2, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
+    return canvas.toDataURL("image/jpeg", 0.88);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * My face beside the title: the picture shown with my mail in everyone's
+ * inbox here. Click it to choose one, or to go back to initials.
+ */
+function MyPhoto({ address, name, onFaces }: { address: string; name: string | null; onFaces: (faces: MailFaces) => void }) {
+  const t = useTone();
+  const has = !!useContext(FacesContext)[address.toLowerCase()];
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  async function save(work: () => Promise<{ faces: MailFaces }>) {
+    setBusy(true);
+    setError(null);
+    try {
+      onFaces((await work()).faces);
+      setOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const item = `flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12.5px] disabled:cursor-default disabled:opacity-50 max-sm:min-h-[44px] ${t.dark ? "text-gray-200 hover:bg-white/[0.05]" : "text-gray-800 hover:bg-gray-50"}`;
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="Your picture for mail"
+        title="Your picture for mail"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((o) => !o);
+          setError(null);
+        }}
+        className={`group/photo relative block cursor-pointer rounded-full transition-shadow focus-visible:outline-none ${t.dark ? "focus-visible:ring-2 focus-visible:ring-white/40" : "focus-visible:ring-2 focus-visible:ring-gray-400"}`}
+      >
+        <Avatar a={{ email: address, name }} size="h-11 w-11 text-[14px]" />
+        <span
+          aria-hidden="true"
+          className={`absolute inset-0 grid place-items-center rounded-full bg-black/45 text-white transition-opacity ${busy ? "opacity-100" : "opacity-0 group-hover/photo:opacity-100"}`}
+        >
+          {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Icon name="upload" className="h-4 w-4" strokeWidth={2} />}
+        </span>
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void save(async () => setMailPhoto(await squarePhoto(f)));
+        }}
+      />
+      {open && (
+        <div
+          className={`absolute left-0 top-full z-30 mt-2 w-[240px] overflow-hidden rounded-xl border py-1 shadow-lg ${t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"}`}
+        >
+          <p className={`px-3 pb-1.5 pt-2 text-[11.5px] leading-[1.45] ${t.muted}`}>Shown beside your mail in everyone's inbox here.</p>
+          <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className={item}>
+            <Icon name="upload" />
+            {busy ? "Saving…" : has ? "Choose a new picture" : "Choose a picture"}
+          </button>
+          {has && (
+            <button type="button" disabled={busy} onClick={() => void save(removeMailPhoto)} className={item}>
+              <Icon name="trash" />
+              Use my initials
+            </button>
+          )}
+          {error && <p className={`px-3 pb-2 pt-1 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Compose drafts ───────────────────────────────────────────────────────
 
 type Draft = {
@@ -498,7 +652,8 @@ export default function Inbox() {
 
   const canSeeOther = count ? count.canSeeOther : isAdmin(me);
   const f = params.get("f");
-  const folder: MailFolder = f === "sent" || f === "archive" || (f === "other" && canSeeOther) ? f : "inbox";
+  // Active (in and out together, by conversation) unless the URL picks another.
+  const folder: MailFolder = f === "inbox" || f === "sent" || f === "archive" || (f === "other" && canSeeOther) ? f : "active";
   const v = params.get("v");
   const filter: MailFilter = v === "unread" || v === "starred" ? v : "all";
   /** Search text from the URL; while set, every folder is searched. */
@@ -533,6 +688,17 @@ export default function Inbox() {
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** Everyone's chosen pictures, by address; asked for once per visit. */
+  const [faces, setFaces] = useState<MailFaces>({});
+  useEffect(() => {
+    let alive = true;
+    getFaces()
+      .then((r) => alive && setFaces(r.faces))
+      .catch(() => {}); // Initials and logos will do.
+    return () => {
+      alive = false;
+    };
+  }, []);
   /** Messages picked for a bulk action, and the last one clicked (shift-click picks the range from it). */
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const pickAnchor = useRef<string | null>(null);
@@ -555,9 +721,15 @@ export default function Inbox() {
         const ids = new Set(head.messages.map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
-        // Keep what sorts after the head's last row, in the server's (time, id) order.
+        // Keep what sorts after the head's last row, in the server's order. Active has a row per
+        // conversation: one that moved up is in the head now, under its newest message.
         const last = head.messages[head.messages.length - 1];
-        const older = prev.messages.filter((m) => !ids.has(m.id) && sortsAfter(m, last));
+        const threads = new Set(head.messages.map((m) => m.threadKey).filter(Boolean));
+        const older = prev.messages.filter((m) =>
+          which === "active" && !term
+            ? !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)) && threadSortsAfter(m, last)
+            : !ids.has(m.id) && sortsAfter(m, last)
+        );
         return { ...fresh, messages: [...head.messages, ...older], hasMore: older.length ? prev.hasMore : head.hasMore };
       });
     } catch (e) {
@@ -584,17 +756,34 @@ export default function Inbox() {
     setLoadingMore(true);
     try {
       const last = cur.messages[cur.messages.length - 1];
-      const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, to: cur.to || undefined, before: last.occurredAt, beforeId: last.id });
+      // Active pages by conversation; everything else by message.
+      const after =
+        cur.folder === "active" && !cur.q && last.threadAt && last.threadKey
+          ? { before: last.threadAt, beforeKey: last.threadKey }
+          : { before: last.occurredAt, beforeId: last.id };
+      const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, to: cur.to || undefined, ...after });
       setList((prev) => {
         if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q || prev.to !== cur.to) return prev;
         const ids = new Set(prev.messages.map((m) => m.id));
-        return { ...prev, messages: [...prev.messages, ...next.messages.filter((m) => !ids.has(m.id))], hasMore: next.hasMore };
+        const threads = new Set(prev.folder === "active" && !prev.q ? prev.messages.map((m) => m.threadKey).filter(Boolean) : []);
+        const added = next.messages.filter((m) => !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)));
+        return { ...prev, messages: [...prev.messages, ...added], hasMore: next.hasMore };
       });
     } catch (e) {
       setListError((e as Error).message);
     } finally {
       setLoadingMore(false);
     }
+  }
+
+  /**
+   * Active shows each conversation under its newest message, so a reply, move or
+   * delete can change a row or its place: read the list again. Reads the list
+   * that's showing now, not the one when the action started.
+   */
+  function refreshActive() {
+    const cur = listRef.current;
+    if (cur?.folder === "active" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "refresh");
   }
 
   /** Change one row in the list (if it's there). */
@@ -651,7 +840,7 @@ export default function Inbox() {
   /** The page's own query string: folder and filter, plus the open message. */
   function query(extra: Record<string, string> = {}): Record<string, string> {
     const next: Record<string, string> = {};
-    if (folder !== "inbox") next.f = folder;
+    if (folder !== "active") next.f = folder;
     if (filter !== "all") next.v = filter;
     if (q) next.q = q;
     return { ...next, ...extra };
@@ -686,7 +875,7 @@ export default function Inbox() {
   function chooseFolder(next: MailFolder) {
     if (next === folder && !openId && !q) return;
     const p: Record<string, string> = {};
-    if (next !== "inbox") p.f = next;
+    if (next !== "active") p.f = next;
     if (filter !== "all") p.v = filter;
     if (box) p.a = box;
     setParams(p);
@@ -695,7 +884,7 @@ export default function Inbox() {
   function chooseFilter(next: MailFilter) {
     if (next === filter && !openId) return;
     const p: Record<string, string> = {};
-    if (folder !== "inbox") p.f = folder;
+    if (folder !== "active") p.f = folder;
     if (next !== "all") p.v = next;
     if (q) p.q = q;
     if (box) p.a = box;
@@ -707,7 +896,7 @@ export default function Inbox() {
     const clean = term.trim();
     if (clean === q) return;
     const p: Record<string, string> = {};
-    if (folder !== "inbox") p.f = folder;
+    if (folder !== "active") p.f = folder;
     if (filter !== "all") p.v = filter;
     if (clean) p.q = clean;
     if (box) p.a = box;
@@ -718,7 +907,7 @@ export default function Inbox() {
   function chooseBox(next: string) {
     if (next === box) return;
     const p: Record<string, string> = {};
-    if (folder !== "inbox") p.f = folder;
+    if (folder !== "active") p.f = folder;
     if (filter !== "all") p.v = filter;
     if (q) p.q = q;
     if (next) p.a = next;
@@ -738,6 +927,7 @@ export default function Inbox() {
       await moveMail([m.id], to);
       cache.current.set(m.id, { ...m, folder: to });
       dropFromList(m.id);
+      refreshActive();
       notifyMailChanged();
       setToast(to === "archive" ? "Archived" : "Moved to inbox");
     } catch (e) {
@@ -752,6 +942,7 @@ export default function Inbox() {
       await deleteMail([m.id]);
       cache.current.delete(m.id);
       dropFromList(m.id);
+      refreshActive();
       notifyMailChanged();
       setToast("Deleted");
     } catch (e) {
@@ -802,6 +993,8 @@ export default function Inbox() {
         .catch(() => {});
     }
     if (folder === "sent" && filter === "all" && !q) setList((prev) => prev && { ...prev, messages: [sent, ...prev.messages.filter((m) => m.id !== sent.id)] });
+    // In Active, the conversation just replied to moves to the top.
+    refreshActive();
     notifyMailChanged();
   }
 
@@ -878,6 +1071,7 @@ export default function Inbox() {
         for (const id of ids) cache.current.delete(id);
         if (openIdRef.current && gone.has(openIdRef.current)) closeMessage();
         setPicked(new Set());
+        refreshActive();
         setToast(action === "delete" ? `Deleted ${ids.length}` : action === "archive" ? `Archived ${ids.length}` : `Moved ${ids.length} to the inbox`);
       }
       notifyMailChanged();
@@ -888,12 +1082,14 @@ export default function Inbox() {
     }
   }
   const sent = folder === "sent";
+  /** Active mixes both ways: each row says whether it came in or went out. */
+  const mixed = folder === "active" && !q;
   // In the table, the open message takes the whole card; in columns, it sits beside the list.
   const tableReading = view === "table" && !!openId;
 
   const emptyText = () => {
     if (q) return `Nothing matches “${q}”.`;
-    if (folder === "inbox" && noAddress) return "No address yet. Ask an admin.";
+    if ((folder === "inbox" || folder === "active") && noAddress) return "No address yet. Ask an admin.";
     return NOTHING[filter] || EMPTY[folder];
   };
 
@@ -946,7 +1142,7 @@ export default function Inbox() {
           Mark unread
         </Button>
       )}
-      {folder === "inbox" && (
+      {(folder === "inbox" || folder === "active") && pickedRows.some((m) => m.direction === "in") && (
         <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("archive")}>
           Archive
         </Button>
@@ -968,17 +1164,17 @@ export default function Inbox() {
   ) : rows.length === 0 ? (
     <div className={`px-5 py-12 text-center text-[12.5px] ${t.muted}`}>
       <p>{emptyText()}</p>
-      {folder === "inbox" && filter === "all" && !q && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
+      {(folder === "inbox" || folder === "active") && filter === "all" && !q && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
     </div>
   ) : (
     <>
       {view === "table" ? (
         <>
-          <MailTable rows={rows} sent={sent} me={address} onOpen={select} onStar={star} picked={picked} onPick={pick} onPickAll={pickAll} className="max-md:hidden" />
+          <MailTable rows={rows} sent={sent} mixed={mixed} me={address} onOpen={select} onStar={star} picked={picked} onPick={pick} onPickAll={pickAll} className="max-md:hidden" />
           <ul className="md:hidden">
             {rows.map((m) => (
               <li key={m.id}>
-                <ListRow m={m} sent={sent} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
+                <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
               </li>
             ))}
           </ul>
@@ -987,7 +1183,7 @@ export default function Inbox() {
         <ul className={`divide-y ${t.divide}`}>
           {rows.map((m) => (
             <li key={m.id}>
-              <ListRow m={m} sent={sent} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
+              <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
             </li>
           ))}
         </ul>
@@ -1018,7 +1214,7 @@ export default function Inbox() {
       <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:gap-1">
         {folders.map((x) => {
           const on = x.key === folder;
-          const n = x.key === "inbox" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
+          const n = x.key === "inbox" || x.key === "active" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
           return (
             <button
               key={x.key}
@@ -1063,16 +1259,20 @@ export default function Inbox() {
   );
 
   return (
+    <FacesContext.Provider value={faces}>
     <div className="mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
       {/* Phones give an open message the whole screen; the reader's Back returns here. */}
       <header className={`flex items-start justify-between gap-3 pt-1 ${openId ? "max-lg:hidden" : ""}`}>
-        <div className="min-w-0">
-          <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
-          {noAddress ? (
-            <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
-          ) : address && (
-            <MyAddresses address={address} aliases={aliases} canAdd={isAdmin(me)} />
-          )}
+        <div className="flex min-w-0 items-center gap-3">
+          {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
+          <div className="min-w-0">
+            <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
+            {noAddress ? (
+              <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
+            ) : address && (
+              <MyAddresses address={address} aliases={aliases} canAdd={isAdmin(me)} />
+            )}
+          </div>
         </div>
         <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
         <div className="flex shrink-0 items-center gap-2">
@@ -1198,6 +1398,7 @@ export default function Inbox() {
           document.body
         )}
     </div>
+    </FacesContext.Provider>
   );
 }
 
@@ -1458,6 +1659,7 @@ function UnreadDot({ on }: { on: boolean }) {
 function MailTable({
   rows,
   sent,
+  mixed = false,
   me,
   onOpen,
   onStar,
@@ -1468,6 +1670,8 @@ function MailTable({
 }: {
   rows: MailSummary[];
   sent: boolean;
+  /** Active: in and out together, so each row says which. */
+  mixed?: boolean;
   me: string;
   onOpen: (id: string) => void;
   onStar: (m: MailSummary, on: boolean) => void;
@@ -1497,7 +1701,7 @@ function MailTable({
             <SelectBox on={all} mixed={some} onToggle={onPickAll} label={all ? "Unselect all" : "Select all"} />
           </th>
           <th scope="col" className={th}>
-            {sent ? "To" : "From"}
+            {mixed ? "From / To" : sent ? "To" : "From"}
           </th>
           <th scope="col" className={th}>
             Subject
@@ -1516,7 +1720,8 @@ function MailTable({
       <tbody className={`divide-y ${t.divide}`}>
         {rows.map((m) => {
           const unread = !m.read;
-          const who = whoOf(m, sent, me);
+          const out = sent || (mixed && m.direction === "out");
+          const who = mixed && out ? `To ${whoOf(m, true, me)}` : whoOf(m, out, me);
           const on = picked.has(m.id);
           return (
             <tr
@@ -1541,7 +1746,7 @@ function MailTable({
                   <StarButton on={m.starred} onToggle={(next) => onStar(m, next)} />
                 </div>
               </td>
-              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`} title={sent ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
+              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`} title={out ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
                 {who}
               </td>
               <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</td>
@@ -2086,6 +2291,14 @@ const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
 
 /** "a@x.com, Name <b@y.com>; c@z.com" → addresses, plus anything that isn't one. */
 /** True when `m` comes after `last` in the list's newest-first (time, id) order. */
+/** Active's order: latest activity first, then the conversation's key (as the server sorts). */
+function threadSortsAfter(m: MailSummary, last: MailSummary): boolean {
+  if (!m.threadAt || !last.threadAt) return sortsAfter(m, last);
+  const a = Date.parse(m.threadAt), b = Date.parse(last.threadAt);
+  if (a !== b) return a < b;
+  return (m.threadKey ?? "") > (last.threadKey ?? "");
+}
+
 function sortsAfter(m: MailSummary, last: MailSummary): boolean {
   const a = Date.parse(m.occurredAt), b = Date.parse(last.occurredAt);
   if (a !== b) return a < b;

@@ -1,7 +1,9 @@
-import { hostState, stateCode } from "../app/entity-paperwork.js";
 import { palm, palmMode, type PalmUsage } from "./palm.js";
-import { baseName, normalizeName, pickRegistryMatch, searchName, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
+import { baseName, normalizeName, peoplePatch, pickRegistryMatch, searchName, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
 import { applyOps, readCollection, type TreeOp } from "./tree.js";
+import { statesToRead } from "./state-reads.js";
+
+export { statesToRead } from "./state-reads.js";
 
 /**
  * Every entity's record as its states have it, read through Palm: the home
@@ -24,6 +26,8 @@ type Rec = {
   fileNumber?: string;
   registeredAgent?: string;
   registeredAgentAddress?: string;
+  members?: unknown[] | Record<string, unknown> | null;
+  ownerId?: string | null;
   stateRecord?: StateRecord;
   /** A state whose registry had no entry (or several) for it, and when that was found. */
   registryMiss?: Record<string, { outcome: "not_found" | "ambiguous"; at: number }>;
@@ -32,19 +36,6 @@ type Rec = {
 };
 
 export type CheckResult = { id: string; name: string; state: string; outcome: "read" | "fresh" | "not_found" | "ambiguous" | "error"; detail?: string };
-
-/** The states to read for one entity: home first, then each foreign one. */
-export function statesToRead(a: Rec): { code: string; home: boolean }[] {
-  if (a.type === "Trust" || /\btrust\b/i.test(a.name ?? "") || a.status === "Dissolved") return [];
-  const home = stateCode(a.state);
-  if (!home) return [];
-  // Still being formed: the state has nothing to read yet.
-  if (Object.values(a.palm ?? {}).some((p) => p?.formation && p.formation.status !== "completed" && p.formation.status !== "canceled")) return [];
-  const foreign = new Set(Object.entries(a.foreign ?? {}).filter(([c, f]) => c !== home && !f?.notNeeded).map(([c]) => c));
-  const host = hostState(a);
-  if (host && host !== home) foreign.add(host);
-  return [{ code: home, home: true }, ...[...foreign].sort().map((code) => ({ code, home: false }))];
-}
 
 /** One state's record for one entity, or why not. */
 async function read(name: string, code: string, fileNumber: string | undefined, mode: "test" | "live", usage: PalmUsage): Promise<StateRecord | "not_found" | "ambiguous"> {
@@ -64,12 +55,13 @@ async function read(name: string, code: string, fileNumber: string | undefined, 
   return toStateRecord(record, mode);
 }
 
-/** What to write once a state's record is in: the record, and our blanks filled. */
-export function patchFor(a: Rec, code: string, home: boolean, rec: StateRecord, live: boolean): Record<string, unknown> {
+/** What to write once a state's record is in: the record, and our blanks filled (People too, from the home state). */
+export function patchFor(a: Rec, code: string, home: boolean, rec: StateRecord, live: boolean, ownerName?: string | null): Record<string, unknown> {
   const snap = JSON.parse(JSON.stringify(rec));
   if (home) {
     const p: Record<string, unknown> = { stateRecord: snap };
     if (!live) return p;
+    Object.assign(p, peoplePatch(a, ownerName, rec, live));
     if (!a.fileNumber && rec.registrationNumber) p.fileNumber = rec.registrationNumber;
     const sameAgent = !a.registeredAgent || normalizeName(a.registeredAgent) === normalizeName(rec.agent ?? "");
     // "Secretary of State" as agent means there isn't one: never copy it in.
@@ -93,7 +85,9 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
   const mode = palmMode();
   if (!mode) throw new Error("Palm isn't connected.");
   const now = opts.now ?? Date.now();
-  const rows = (await readCollection("assets")).filter((r) => !opts.ids || opts.ids.includes(r.id));
+  const all = await readCollection("assets");
+  const names = new Map(all.map((r) => [r.id, ((r.data ?? {}) as Rec).name ?? null]));
+  const rows = all.filter((r) => !opts.ids || opts.ids.includes(r.id));
   const out: CheckResult[] = [];
   for (const row of rows) {
     const a = (row.data ?? {}) as Rec;
@@ -116,7 +110,7 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
           out.push({ ...base, outcome: got });
           continue;
         }
-        const patch = { ...patchFor(a, code, home, got, mode === "live"), ...(miss ? { [`registryMiss/${code}`]: null } : {}) };
+        const patch = { ...patchFor(a, code, home, got, mode === "live", a.ownerId ? names.get(a.ownerId) : null), ...(miss ? { [`registryMiss/${code}`]: null } : {}) };
         const ops: TreeOp[] = [{ op: "update", path: ["assets", row.id], value: patch as never }];
         await applyOps(ops, ACTOR);
         out.push({ ...base, outcome: "read", detail: [got.status, got.agent].filter(Boolean).join(" · ") });

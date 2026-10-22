@@ -46,6 +46,11 @@ vi.mock("../lib/palm.js", () => ({
   palmMode: () => "live",
   palm: vi.fn(async () => ({ display_name: "Ledger Louise, LLC", metadata: { bfo_asset_id: "a1" } })),
 }));
+const treeRows: { id: string; data: Record<string, unknown> }[] = [];
+const applyMock = vi.fn(async () => {});
+const activityMock = vi.fn(async () => {});
+vi.mock("../lib/tree.js", () => ({ readRows: vi.fn(async () => treeRows), applyOps: (...a: unknown[]) => (applyMock as (...x: unknown[]) => Promise<void>)(...a) }));
+vi.mock("../lib/activity.js", () => ({ logActivity: (...a: unknown[]) => (activityMock as (...x: unknown[]) => Promise<void>)(...a) }));
 import handler from "../api/palm-webhook";
 
 function call(body: string, signature?: string) {
@@ -98,5 +103,42 @@ describe("case events", () => {
     expect(r.status).toBe("needs_response");
     const f = toEventRow({ id: "evt_d", type: "case.opened", mode: "live", data: { object: { id: "c2", parent_type: "filing", parent_id: "fil1", status: "needs_response" } } });
     expect(f.business_id).toBeNull();
+  });
+});
+
+describe("agent events", () => {
+  const BIZ = "0b8d6a3e-1111-4222-8333-944455556666";
+  const agentEvent = (status: string, created: number) => ({
+    id: `evt_ra_${status}_${created}`, object: "event", type: "registered_agent.updated", mode: "live", created_at: new Date(created).toISOString(),
+    data: { object: { business_id: BIZ, provider: "palm", status, started_at: "2026-10-01T00:00:00Z", name: "Palm RA", address: { street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" } } },
+  });
+  beforeEach(() => {
+    process.env.PALM_WEBHOOK_SECRET = SECRET;
+    sbMock.mockReset();
+    applyMock.mockClear();
+    activityMock.mockClear();
+    treeRows.length = 0;
+    vi.useFakeTimers({ now, toFake: ["Date"] });
+  });
+
+  it("finds the entity by its linked business and puts Palm on the record", async () => {
+    treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC", palm: { live: { businessId: BIZ, ra: { status: "pending", checkedAt: now - 60_000 } } } } });
+    // The entity linked to the business, then the event row.
+    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }]).mockResolvedValueOnce([{ id: "x" }]);
+    const body = JSON.stringify(agentEvent("active", now));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(sbMock.mock.calls[0][0]).toContain(`data->palm->live->>businessId=eq.${BIZ}`);
+    const [ops] = applyMock.mock.calls[0] as unknown as [{ value: Record<string, unknown> }[]];
+    expect(ops[0].value).toMatchObject({ registeredAgent: "Palm RA", registeredAgentSource: "Palm, active since 2026-10-01", "palm/live/ra": { status: "active", provider: "palm" } });
+    expect(activityMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an event older than what was last read", async () => {
+    treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "active", checkedAt: now } } } } });
+    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([{ id: "x" }]);
+    const body = JSON.stringify(agentEvent("pending", now - 3_600_000));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(activityMock).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@
 
 import { sb } from "./auth.js";
 import { PALM_PRICES, palmProduct } from "./palm-pricing.js";
+import { sameAddressText } from "./registry.js";
 
 const BASE = "https://api.getpalm.com";
 const TIMEOUT_MS = 20_000;
@@ -65,6 +66,31 @@ export async function palm<T = unknown>(
   }
   if (!r.ok) throw new PalmError(r.status, problemMessage(r.status, json), json);
   return json as T;
+}
+
+/**
+ * A file from Palm (a document's content): the same key, mode check and
+ * timeout as every other call, and PalmError with Palm's explanation on failure.
+ */
+export async function palmFile(path: string): Promise<{ bytes: Buffer; contentType: string; disposition: string | null }> {
+  const key = process.env.PALM_API_KEY;
+  if (!palmMode(key)) throw new PalmError(503, "Palm isn't connected. Add PALM_API_KEY (sk_test_… or sk_live_…) in Vercel.");
+  const r = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30_000) });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      /* not JSON */
+    }
+    throw new PalmError(r.status, problemMessage(r.status, json), json);
+  }
+  return {
+    bytes: Buffer.from(await r.arrayBuffer()),
+    contentType: (r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase(),
+    disposition: r.headers.get("content-disposition"),
+  };
 }
 
 /** A billed call, written down; a call that can't be logged still goes through. */
@@ -157,3 +183,22 @@ export type RegisteredAgentService = {
   name?: string | null;
   address?: { street_line_1?: string; street_line_2?: string; city?: string; region?: string; postal_code?: string; country: string } | null;
 };
+
+/**
+ * Where Palm's copy of the business (its vault, as cached on the business)
+ * disagrees with our record. Only fields Palm shows and we have are compared.
+ */
+export function businessDifferences(vault: Record<string, unknown>, e: { name?: string; ein?: string; fileNumber?: string; formationDate?: string; address?: string }): { field: string; palm: string; ours: string }[] {
+  const v = (k: string) => (typeof vault[k] === "string" ? (vault[k] as string).trim() : "");
+  const out: { field: string; palm: string; ours: string }[] = [];
+  const add = (field: string, palmValue: string, ours: string | undefined, same: (a: string, b: string) => boolean) => {
+    if (palmValue && ours?.trim() && !same(palmValue, ours.trim())) out.push({ field, palm: palmValue, ours: ours.trim() });
+  };
+  add("Legal name", v("business.legal_name"), e.name, (a, b) => normalizeLegalName(a) === normalizeLegalName(b));
+  add("EIN", v("business.ein"), e.ein, (a, b) => normalizeEin(a) === normalizeEin(b));
+  add("File number", v("business.registration_number"), e.fileNumber, (a, b) => a.replace(/\W/g, "").toLowerCase() === b.replace(/\W/g, "").toLowerCase());
+  add("Formation date", v("business.formation_date").slice(0, 10), e.formationDate, (a, b) => a === b.slice(0, 10));
+  const palmAddress = [v("business.address_line_1"), v("business.address_line_2"), v("business.city"), [v("business.region"), v("business.postal_code")].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  add("Address", palmAddress, e.address, sameAddressText);
+  return out;
+}

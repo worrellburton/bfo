@@ -2,9 +2,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
 import { currentUser, fail, handleError, isAdmin, sb, type AppUser } from "../lib/auth.js";
 import {
+  ACTIVE_ORDER,
+  activeAfter,
   BirdError,
   BUCKET,
   canSee,
+  conversationHeads,
   countRows,
   deleteMessages,
   filterClause,
@@ -30,6 +33,7 @@ import {
   type SummaryRow,
 } from "../lib/mail.js";
 import { addAlias, listAliases, removeAlias } from "../lib/mail-address.js";
+import { mailFaces, removeMailPhoto, setMailPhoto } from "../lib/mail-photo.js";
 import { cleanCompose, composeText } from "../lib/mail-compose.js";
 import { storageSignedUrl } from "../lib/storage.js";
 
@@ -40,10 +44,13 @@ import { storageSignedUrl } from "../lib/storage.js";
  *
  * GET ?view=
  *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&to=<one of my addresses>&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
+ *     folder=active                  inbox and sent together: each conversation's newest message, latest activity
+ *                                    first; pages with before=<threadAt>&beforeKey=<threadKey> of the last row
  *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
  *   message&id=<uuid>                → { message }  (marks it read)
  *   count                            → { unread, otherUnread, address|null, aliases, canSeeOther, sync? }  (kicks a sync)
  *   attachment&id=<uuid>&att=<id>    → { url }  (signed, 5 minutes)
+ *   faces                            → { faces: { address: url } }  each user's chosen picture, by every address they have
  *   status                           → setup diagnostics (owner/admin)
  *
  * POST { action, … }:
@@ -54,6 +61,8 @@ import { storageSignedUrl } from "../lib/storage.js";
  *                                    from: one of the caller's addresses (main by default)
  *   alias-add { address }            → { aliases }  (owner/admin: one more address on their own account)
  *   alias-remove { address }         → { aliases }
+ *   photo-set { data }               → { faces }  the caller's picture for their mail (a small JPEG/PNG/WebP, base64)
+ *   photo-remove                     → { faces }  back to initials
  *   move { ids, folder }             → { ok }  (inbox|archive; received mail only)
  *   read { ids, read }               → { ok }
  *   star { ids, starred }            → { ok }
@@ -64,7 +73,7 @@ import { storageSignedUrl } from "../lib/storage.js";
 
 export const config = { api: { bodyParser: { sizeLimit: "5mb" } } };
 
-const FOLDERS: MailFolder[] = ["inbox", "sent", "archive", "other"];
+const FOLDERS: MailFolder[] = ["active", "inbox", "sent", "archive", "other"];
 const FILTERS: MailFilter[] = ["all", "unread", "starred"];
 /** A timestamp as the API hands it out (occurredAt), kept exact for paging. */
 const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}(:?\d{2})?)$/;
@@ -115,8 +124,12 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       // Page on (occurred_at, id) after the last row shown, so rows sharing its time aren't skipped.
       const before = param(req, "before");
       const beforeId = param(req, "beforeId");
+      const beforeKey = param(req, "beforeKey");
       if (before && (!TIMESTAMP_RE.test(before) || Number.isNaN(Date.parse(before)))) return fail(res, 400, "bad_before");
       if (beforeId && (!before || !UUID_RE.test(beforeId))) return fail(res, 400, "bad_before");
+      if (beforeKey && (!before || beforeKey.length > 1000)) return fail(res, 400, "bad_before");
+      // Active lists conversations, not messages (a search still lists messages).
+      const active = folder === "active" && !searchCondition(param(req, "q"));
       const at = encodeURIComponent(`"${before}"`);
       // One mailbox: mail that came in to that address of mine, or went out from it.
       const to = param(req, "to").trim().toLowerCase();
@@ -127,22 +140,36 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         if (!mine.includes(to)) return fail(res, 400, "bad_mailbox");
         const v = encodeURIComponent(`"${to}"`);
         // Mail from before extra addresses existed has no delivered-to: it came to the main one.
+        const received = to === main ? `or(delivered_to.eq.${v},delivered_to.is.null)` : `delivered_to.eq.${v}`;
         box =
           folder === "sent"
             ? `from_email.eq.${v}`
-            : to === main
-              ? `or(delivered_to.eq.${v},delivered_to.is.null)`
-              : `delivered_to.eq.${v}`;
+            : folder === "active"
+              ? `or(and(direction.eq.out,from_email.eq.${v}),and(direction.eq.in,${received}))`
+              : received;
       }
       // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
       const conditions = [
-        !before ? "" : beforeId ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))` : `occurred_at.lt.${at}`,
+        !before
+          ? ""
+          : active
+            ? beforeKey ? activeAfter(before, beforeKey) : `thread_at.lt.${at}`
+            : beforeId ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))` : `occurred_at.lt.${at}`,
         searchCondition(param(req, "q")),
         box,
       ].filter(Boolean);
       const extra = conditions.length ? `&and=(${conditions.join(",")})` : "";
       // A search looks through everything the caller may see, whatever folder is open.
       const where = searchCondition(param(req, "q")) ? scopeFilter(me.id, admin) : folderFilter(folder, me.id, admin);
+      if (active) {
+        // A conversation's messages come together, newest first; read enough to fill a page of them.
+        const fetched = Math.min(limit * 4, 400);
+        const rows = await sb<SummaryRow[]>(
+          `mail_messages?${where}${filterClause(filter)}${extra}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=${fetched}`
+        );
+        const { heads, more } = conversationHeads(rows ?? [], limit, fetched);
+        return res.status(200).json({ messages: heads.map(toSummary), hasMore: more });
+      }
       const rows = await sb<SummaryRow[]>(
         `mail_messages?${where}${filterClause(filter)}${extra}` +
           `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`
@@ -204,6 +231,9 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       return res.status(200).json({ url });
     }
 
+    case "faces":
+      return res.status(200).json({ faces: await mailFaces() });
+
     case "status": {
       if (!admin) return fail(res, 403, "forbidden");
       return res.status(200).json(await mailStatus());
@@ -253,6 +283,17 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       await removeAlias(me.id, body.address.trim());
       return res.status(200).json({ aliases: await listAliases(me.id) });
     }
+
+    // The caller's own picture, and only theirs.
+    case "photo-set": {
+      const r = await setMailPhoto(me, body.data);
+      if ("error" in r) return fail(res, r.error === "photo_too_large" ? 413 : 400, r.error, r.message);
+      return res.status(200).json({ faces: await mailFaces() });
+    }
+
+    case "photo-remove":
+      await removeMailPhoto(me);
+      return res.status(200).json({ faces: await mailFaces() });
 
     case "move": {
       const ids = idList(body.ids);

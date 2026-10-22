@@ -49,7 +49,8 @@ export function PalmQuestions({ openCases = 0, title }: { openCases?: number; ti
     return () => {
       alive = false;
     };
-  }, [mode, page.id, openCases]);
+    // A sync with Palm bumps the tick, so this asks again.
+  }, [mode, page.id, openCases, page.palmCasesTick]);
 
   const open = (cases ?? []).filter((c) => c.status === "needs_response" || c.status === "under_review");
   if (!open.length && !error) return null;
