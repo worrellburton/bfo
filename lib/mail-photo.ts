@@ -74,8 +74,22 @@ export function parsePhoto(data: unknown): ({ bytes: Uint8Array } & PhotoKind) |
   return { bytes, ...kind };
 }
 
+/**
+ * The last answer, reused for a while: every inbox load asks, and signing each photo's link is a request of
+ * its own. The links last 12 hours, so a 10-minute-old list is still good; a photo change clears it.
+ */
+const FACES_REUSE_MS = 10 * 60 * 1000;
+let facesCache: { at: number; faces: Record<string, string> } | null = null;
+
 /** Every address with a picture, lowercase → a signed link to it. */
-export async function mailFaces(): Promise<Record<string, string>> {
+export async function mailFaces(now = Date.now()): Promise<Record<string, string>> {
+  if (facesCache && now - facesCache.at < FACES_REUSE_MS) return facesCache.faces;
+  const faces = await readFaces();
+  facesCache = { at: now, faces };
+  return faces;
+}
+
+async function readFaces(): Promise<Record<string, string>> {
   const users = await sb<{ id: string; mail_address: string; mail_photo: string }[]>(
     "app_users?status=eq.approved&mail_address=not.is.null&mail_photo=not.is.null&select=id,mail_address,mail_photo"
   );
@@ -103,6 +117,7 @@ export async function setMailPhoto(me: AppUser, data: unknown): Promise<{ ok: tr
   const path = `faces/${me.id}/${randomUUID()}.${photo.ext}`;
   await storageUpload(path, photo.bytes, photo.contentType, BUCKET);
   await sb(`app_users?id=eq.${me.id}`, { method: "PATCH", body: { mail_photo: path } });
+  facesCache = null;
   if (me.mail_photo && me.mail_photo !== path) await storageRemove(me.mail_photo, BUCKET);
   return { ok: true };
 }
@@ -110,5 +125,6 @@ export async function setMailPhoto(me: AppUser, data: unknown): Promise<{ ok: tr
 /** Back to initials. */
 export async function removeMailPhoto(me: AppUser): Promise<void> {
   await sb(`app_users?id=eq.${me.id}`, { method: "PATCH", body: { mail_photo: null } });
+  facesCache = null;
   if (me.mail_photo) await storageRemove(me.mail_photo, BUCKET);
 }
