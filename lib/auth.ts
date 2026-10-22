@@ -633,6 +633,8 @@ export function handleError(res: VercelResponse, err: unknown) {
   if (err instanceof ConfigError) {
     return fail(res, 503, "not_configured", err.message);
   }
+  // The detail (often raw Supabase or provider text: table names, columns,
+  // constraint names) stays in the server log; the client gets a plain line.
   console.error(err);
-  return fail(res, 500, "server_error", err instanceof Error ? err.message : String(err));
+  return fail(res, 500, "server_error", "Something went wrong. Try again.");
 }
