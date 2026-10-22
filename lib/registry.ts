@@ -36,9 +36,23 @@ export type StateRecord = {
   formationDate?: string;
   registrationNumber?: string;
   jurisdiction?: string;
+  /** Where it was formed, when that's not where this record is ("US-DE" for a Delaware LLC registered in Arizona). */
+  formationJurisdiction?: string;
+  /** The state's word for what it is ("Domestic LLC", "Foreign Corporation"). */
+  entityType?: string;
+  /** Palm's id for the registry entry, to look the same one up again. */
+  palmId?: string;
+  /** Names only, kept for records read before `people`. */
   managers?: string[];
+  /** Everyone the state lists other than the agent: their role, title and address. */
+  people?: StatePerson[];
   checkedAt: number;
 };
+
+export type StatePerson = { role: string; name: string; title?: string | null; address?: string | null };
+
+/** The roles that run or own an entity (an agent, an organizer or an incorporator doesn't). */
+const PEOPLE_ROLES = new Set(["manager", "member", "officer", "director"]);
 
 export function formatAddress(a: PalmAddress): string | null {
   if (!a) return null;
@@ -93,7 +107,11 @@ export function searchName(name: string): string {
 
 export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Date.now()): StateRecord {
   const agent = (r.associates ?? []).find((a) => a.role === "agent");
-  const managers = (r.associates ?? []).filter((a) => a.role === "manager" || a.role === "member" || a.role === "officer" || a.role === "director").map((a) => a.name).filter((n): n is string => !!n);
+  const people: StatePerson[] = (r.associates ?? [])
+    .filter((a) => !!a.name && a.role !== "agent")
+    .map((a) => ({ role: a.role || "other", name: a.name as string, title: a.title || null, address: formatAddress(a.address) }));
+  const managers = people.filter((p) => PEOPLE_ROLES.has(p.role)).map((p) => p.name);
+  const where = r.registration_jurisdiction ?? r.formation_jurisdiction;
   return {
     mode,
     name: r.name,
@@ -104,10 +122,52 @@ export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Dat
     address: formatAddress(r.principal_address),
     formationDate: r.formation_date,
     registrationNumber: r.registration_number,
-    jurisdiction: r.registration_jurisdiction ?? r.formation_jurisdiction,
+    jurisdiction: where,
+    ...(r.formation_jurisdiction && r.formation_jurisdiction !== where ? { formationJurisdiction: r.formation_jurisdiction } : {}),
+    ...(r.entity_type ? { entityType: r.entity_type } : {}),
+    ...(r.palm_id ? { palmId: r.palm_id } : {}),
     managers,
+    people,
     checkedAt,
   };
+}
+
+/**
+ * The entity's People list from the state's record, when it has none and the
+ * key is live: {} otherwise. An entity owned by another one keeps that owner
+ * at 100% (what People showed before), unless the state already names it.
+ */
+export function peoplePatch(
+  a: { members?: unknown[] | Record<string, unknown> | null; ownerId?: string | null },
+  ownerName: string | null | undefined,
+  rec: StateRecord,
+  live: boolean,
+): Record<string, unknown> {
+  const has = Array.isArray(a.members) ? a.members.length > 0 : !!a.members && Object.keys(a.members).length > 0;
+  if (!live || has) return {};
+  const people = membersFromState(rec);
+  if (!people.length) return {};
+  const owner = a.ownerId && ownerName && !people.some((p) => normalizeName(p.name) === normalizeName(ownerName)) ? [{ name: ownerName, percent: 100, role: "Member", address: null }] : [];
+  const where = (rec.jurisdiction ?? "").replace(/^US-/, "");
+  return { members: [...owner, ...people], membersSource: `State record${where ? ` (${where})` : ""}, ${new Date(rec.checkedAt).toISOString().slice(0, 10)}` };
+}
+
+/**
+ * The state's people as the entity's People list, for when it has none yet
+ * (never over one from documents or typed in): managers, members, officers
+ * and directors, with their title and address. No ownership shares: a
+ * registry doesn't record them.
+ */
+export function membersFromState(rec: Pick<StateRecord, "people">): { name: string; percent: null; role: string; address: string | null }[] {
+  const role = (p: StatePerson) => (p.title?.trim() ? p.title.trim() : p.role.charAt(0).toUpperCase() + p.role.slice(1));
+  const seen = new Set<string>();
+  return (rec.people ?? [])
+    .filter((p) => PEOPLE_ROLES.has(p.role))
+    .filter((p) => {
+      const k = normalizeName(p.name);
+      return !!k && !seen.has(k) && !!seen.add(k);
+    })
+    .map((p) => ({ name: p.name, percent: null, role: role(p), address: p.address ?? null }));
 }
 
 /** Addresses compared the way people write them: case, punctuation, "Suite"/"Ste"/"#" and ZIP+4 don't matter. */

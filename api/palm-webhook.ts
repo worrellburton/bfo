@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
 import { sb, sendEmail } from "../lib/auth.js";
 import { palm, palmMode } from "../lib/palm.js";
+import { raPatch, type RaServiceLike } from "../lib/palm-agent.js";
 import { toEventRow, verifyPalmSignature, type PalmEvent } from "../lib/palm-webhook.js";
 import { einPatch, formationPatch, summarizeFiling, type FormationState, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
@@ -15,9 +16,13 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  * public.palm_events, tied to its BFO entity, for the entity page and Home
  * to show. Legal papers served on an entity also email the owners/admins.
  *
- * A question Palm opens on a filing (case.opened/updated/resolved) updates
- * the formation's count of open questions, shows in activity, and emails
- * the owners and admins to answer it on the entity page.
+ * A question Palm opens on a filing or on the business (case.opened/updated/
+ * resolved) updates the formation's count of open questions, shows in
+ * activity, and emails the owners and admins to answer it on the entity page.
+ *
+ * The agent service changing (registered_agent.*) is written onto the entity
+ * the same way the page does when it reads the service (lib/palm-agent.ts),
+ * so the record follows even when nobody has the page open.
  *
  * Set up in Palm Console → Webhooks: URL https://<site>/api/palm-webhook,
  * the document.created, registered_agent.*, filing.* and case.* events, and the signing
@@ -56,9 +61,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const row = toEventRow(event);
   const object = (event.data?.object ?? {}) as Record<string, unknown>;
 
-  // Which BFO entity: the id stamped on the filing, else on the Palm business (only readable with a key in the same mode).
+  // Which BFO entity: the id stamped on the filing, else the entity linked to the business, else the id on the Palm business.
   let assetId: string | null = (object.metadata as Record<string, string> | undefined)?.bfo_asset_id ?? null;
   let entityName: string | null = null;
+  if (!assetId && row.business_id) {
+    const linked = await businessEntity(row.business_id, row.mode).catch(() => null);
+    if (linked) {
+      assetId = linked.assetId;
+      entityName = linked.name;
+    }
+  }
   if (!assetId && row.business_id && row.mode === palmMode()) {
     const business = await within(4000, palm<{ display_name?: string | null; metadata?: Record<string, string> }>(`/v1/business/${row.business_id}`));
     assetId = business?.metadata?.bfo_asset_id ?? null;
@@ -77,6 +89,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // A formation (or its EIN) moving along: the entity's record follows it.
   if (assetId && event.type.startsWith("filing.") && (object.type === "formation" || object.type === "ein")) {
     await trackFiling(assetId, row.mode, object as unknown as PalmFiling).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
+  }
+
+  // The agent service moving along: the entity's agent follows.
+  if (assetId && event.type.startsWith("registered_agent.")) {
+    await trackAgent(assetId, row.mode, object as RaServiceLike, Date.parse(row.occurred_at) || Date.now()).catch((err) => console.error("palm-webhook: couldn't record the agent", err));
   }
 
   if (assetId && event.type.startsWith("case.")) {
@@ -131,6 +148,29 @@ async function trackFiling(assetId: string, mode: "test" | "live", filing: PalmF
   await applyOps([{ op: "update", path: ["assets", assetId], value: formationPatch(state, mode, filing.business_id ?? undefined) as never }], PALM);
 }
 
+/** The agent service as Palm reports it now, onto the entity (lib/palm-agent.ts). */
+async function trackAgent(assetId: string, mode: "test" | "live", service: RaServiceLike, at: number): Promise<void> {
+  if (!/^[\w-]{8,64}$/.test(assetId) || !service?.status) return;
+  const row = (await readRows("assets", [assetId]))[0];
+  if (!row) return;
+  const data = (row.data ?? {}) as Parameters<typeof raPatch>[0] & { palm?: Record<string, { ra?: { status?: string | null; checkedAt?: number } | null } | undefined> };
+  const prior = data.palm?.[mode]?.ra;
+  // An event older than what the page last read (a retry, or out of order) changes nothing.
+  if (prior?.checkedAt && prior.checkedAt > at) return;
+  await applyOps([{ op: "update", path: ["assets", assetId], value: raPatch(data, service, mode, at) as never }], PALM);
+  if (prior?.status === service.status) return; // Palm resending, or nothing new to say
+  const label = { pending: "is filing the agent change", active: "is now the registered agent", termination_requested: "is resigning as agent", terminated: "stopped serving as agent", failed: "couldn't make the agent change", canceled: "canceled the agent change" }[service.status];
+  const why = service.status === "failed" && service.rejection_reason ? `: ${service.rejection_reason}` : "";
+  await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm ${label}${why}${mode === "test" ? " (test)" : ""}` }]);
+}
+
+/** The entity linked to a Palm business, by the business id kept on it (palm/<mode>/businessId). */
+async function businessEntity(businessId: string, mode: "test" | "live"): Promise<{ assetId: string; name: string | null } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(businessId)) return null;
+  const rows = await sb<{ id: string; name: string | null }[]>(`tree_nodes?collection=eq.assets&data->palm->${mode}->>businessId=eq.${businessId}&select=id,name:data->>name&limit=1`);
+  return rows[0] ? { assetId: rows[0].id, name: rows[0].name } : null;
+}
+
 /** The entity a case belongs to: the one whose formation (or its EIN) is the case's filing. */
 async function caseEntity(c: Record<string, unknown>, mode: "test" | "live"): Promise<{ assetId: string; name: string | null } | null> {
   const parent = String(c.parent_id ?? "");
@@ -153,6 +193,7 @@ async function onCase(eventId: string, type: string, assetId: string, entityName
   }
   const summary = String(c.summary ?? "Palm needs more information.");
   const tag = mode === "test" ? " (test)" : "";
+  const onFiling = c.parent_type === "filing";
   if (type === "case.opened") {
     await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm asked: ${summary}${tag}` }]);
     if (mode === "live") {
@@ -164,8 +205,8 @@ async function onCase(eventId: string, type: string, assetId: string, entityName
         await sendEmail(
           to,
           `Palm has a question about ${who}`,
-          `Palm needs an answer before the state will accept ${who}'s filing: ${summary}\nAnswer it in BFO: ${link}`,
-          `<p>Palm needs an answer before the state will accept <b>${who.replace(/</g, "&lt;")}</b>'s filing:</p><p>${summary.replace(/</g, "&lt;")}</p><p><a href="${link}">Answer it in BFO</a></p>`,
+          `Palm needs an answer about ${who}${onFiling ? "'s filing" : ""}: ${summary}\nAnswer it in BFO: ${link}`,
+          `<p>Palm needs an answer about <b>${who.replace(/</g, "&lt;")}</b>${onFiling ? "'s filing" : ""}:</p><p>${summary.replace(/</g, "&lt;")}</p><p><a href="${link}">Answer it in BFO</a></p>`,
           undefined,
           undefined,
           { idempotencyKey: `palm-${eventId}` },

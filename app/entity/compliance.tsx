@@ -203,7 +203,9 @@ function RegisteredAgent() {
       </Rows>
     );
   else {
-    const reason = svc?.status === "failed" ? svc.rejection_reason ?? page.palmInbox.find((e) => e.rejection_reason)?.rejection_reason : null;
+    // Until Palm answers, the service as last saved (provider, dates, why a change was refused).
+    const reason = raStatus === "failed" ? (known ? svc?.rejection_reason : cached?.rejectionReason) ?? page.palmInbox.find((e) => e.rejection_reason)?.rejection_reason : null;
+    const startedAt = known ? svc?.started_at ?? null : cached?.startedAt ?? null;
     const statusInfo =
       svc?.status === "pending"
         ? "Palm is filing the change with the state. It can take a few business days; this updates when the state accepts it."
@@ -242,9 +244,9 @@ function RegisteredAgent() {
                 <span className="inline-flex flex-col gap-1">
                   <Dot tone={RA_TONE[st.tone]}>
                     {st.label}
-                    {svc?.status === "active" && svc.started_at ? ` · since ${fmtDate(svc.started_at.slice(0, 10))}` : ""}
+                    {raStatus === "active" && startedAt ? ` · since ${fmtDate(startedAt.slice(0, 10))}` : ""}
                   </Dot>
-                  {svc?.status === "failed" && (
+                  {raStatus === "failed" && (
                     <span className={`text-[12px] leading-snug ${toneText("bad", t.dark)}`}>
                       {reason ? `The state didn't accept it: ${reason}.` : "Palm couldn't complete the change."}
                     </span>
@@ -309,7 +311,9 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
   const choices = page.registryChoices ?? [];
   const stale = !!rec && palmIsAgent && !!startedAt && rec.checkedAt < Date.parse(startedAt);
   const standing = rec?.standing ? (["registration", "tax", "agent"] as const).filter((k) => rec.standing?.[k]) : [];
-  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.address || !!rec.managers?.length || !!rec.formationDate || findings.length > 0);
+  // Everyone the state lists (records read before titles and addresses were kept have names only).
+  const people = rec?.people?.length ? rec.people : (rec?.managers ?? []).map((name) => ({ role: "", name, title: null, address: null }));
+  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.address || people.length > 0 || !!rec.formationDate || !!rec.entityType || findings.length > 0);
 
   return (
     <div className={`border-t ${t.line}`}>
@@ -378,10 +382,29 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
             </Row>
           )}
           {rec.address && <Row label="Address on file">{rec.address}</Row>}
-          {rec.managers && rec.managers.length > 0 && <Row label="People on file">{rec.managers.join(", ")}</Row>}
-          {rec.formationDate && (
+          {people.length > 0 && (
+            <Row label="People on file">
+              <span className="flex flex-col gap-1">
+                {people.map((p, i) => {
+                  const what = p.title || (p.role ? p.role.charAt(0).toUpperCase() + p.role.slice(1) : "");
+                  return (
+                    <span key={i}>
+                      {p.name}
+                      {what && <span className={t.muted}> · {what}</span>}
+                      {p.address && <span className={`block text-[12px] ${t.muted}`}>{p.address}</span>}
+                    </span>
+                  );
+                })}
+              </span>
+            </Row>
+          )}
+          {rec.entityType && <Row label="Type on file">{rec.entityType}</Row>}
+          {(rec.formationDate || rec.formationJurisdiction) && (
             <Row label="Formed">
-              <span className="tabular-nums">{fmtDate(rec.formationDate.slice(0, 10))}</span>
+              <span className="tabular-nums">
+                {rec.formationDate ? fmtDate(rec.formationDate.slice(0, 10)) : ""}
+                {rec.formationJurisdiction ? `${rec.formationDate ? " · " : ""}in ${stateName(rec.formationJurisdiction.replace(/^US-/, "")) || rec.formationJurisdiction}` : ""}
+              </span>
             </Row>
           )}
           {findings.map((f, i) => {

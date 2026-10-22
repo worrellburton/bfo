@@ -9,8 +9,10 @@ import {
   isJurisdiction,
   normalizeEin,
   normalizeLegalName,
+  businessDifferences,
   palm,
   PalmError,
+  palmFile,
   palmEntityType,
   palmMode,
   vaultAddress,
@@ -29,10 +31,12 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  *   registry-search   { name | palmId, jurisdiction? } → matches on the state registries
  *   registry-detail   { jurisdiction, number }         → the state's record: status, standing, agent, people
  *   link              { assetId, entity }              → the entity's Palm business (found or added)
+ *   business          { businessId, assetId, entity }  → Palm's copy of the business against ours: its name kept in step
+ *                                                        (the one thing Palm lets us change), the rest as differences
  *   ra                { businessId }                   → Palm's registered agent service for it
  *   ra-change         { businessId, assetId }          → move the registered agent to Palm (files with the state)
  *   ra-end            { businessId, assetId }          → Palm stops being the agent (the entity is dissolved); owner/admin
- *   documents         { businessId }                   → mail and filings Palm holds for it
+ *   documents         { businessId }                   → mail and filings Palm holds for it (every page; truncated past 10,000)
  *   document          { documentId }                   → one document's file
  *   inbox             { assetId?, unread? }            → mail and agent events Palm has sent (webhook)
  *   inbox-read        { ids } | { assetId }            → mark them read
@@ -202,6 +206,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ mode, businessId: created.id, palmId: created.palm_id, created: true });
       }
 
+      case "business": {
+        const id = String(body.businessId || "");
+        const assetId = String(body.assetId || "");
+        if (!UUID.test(id) || !assetId) return res.status(400).json({ error: "missing_params" });
+        const business = await palm<Business>(`/v1/business/${id}`);
+        if (business?.metadata?.bfo_asset_id !== assetId) {
+          return res.status(409).json({ error: "business_mismatch", message: "That Palm business isn't linked to this entity." });
+        }
+        const e = (body.entity || {}) as Entity;
+        // Palm's API changes only a business's display name and metadata after it's added; the vault (EIN,
+        // address, file number) is set when it's added and corrected in Palm Console.
+        let renamed = false;
+        if (canWrite(user) && e.name?.trim() && business.display_name !== e.name.trim()) {
+          await palm(`/v1/business/${id}`, { method: "PATCH", body: { display_name: e.name.trim() } });
+          renamed = true;
+        }
+        return res.status(200).json({ mode, renamed, palmId: business.palm_id, differences: businessDifferences(business.vault ?? {}, e) });
+      }
+
       case "ra": {
         const id = String(body.businessId || "");
         if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
@@ -254,34 +277,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "documents": {
         const id = String(body.businessId || "");
         if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
-        // Follow the pages so nothing — legal papers above all — is cut off.
+        // Follow every page so nothing — legal papers above all — is cut off; the bound only stops a runaway cursor.
         const documents: unknown[] = [];
         let cursor: string | null = null;
-        for (let page = 0; page < 10; page++) {
+        let truncated = false;
+        for (let page = 0; ; page++) {
+          if (page === 100) {
+            truncated = true;
+            break;
+          }
           const q: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
           const r: { data?: unknown[]; has_more?: boolean; next_cursor?: string | null } = await palm(`/v1/business/${id}/document?limit=100${q}`);
           documents.push(...(r?.data ?? []));
-          if (!r?.has_more || !r.next_cursor) break;
+          if (!r?.has_more || !r.next_cursor || r.next_cursor === cursor) break;
           cursor = r.next_cursor;
         }
-        return res.status(200).json({ mode, documents });
+        return res.status(200).json({ mode, documents, ...(truncated ? { truncated } : {}) });
       }
 
       case "document": {
         const id = String(body.documentId || "");
         if (!DOC_ID.test(id)) return res.status(400).json({ error: "bad_document_id" });
-        const r = await fetch(`https://api.getpalm.com/v1/document/${id}/content`, {
-          headers: { Authorization: `Bearer ${process.env.PALM_API_KEY}` },
-          signal: AbortSignal.timeout(30_000),
-        });
-        if (!r.ok) return res.status(r.status === 404 ? 404 : 502).json({ error: "document_unavailable" });
-        const buf = Buffer.from(await r.arrayBuffer());
+        let file: Awaited<ReturnType<typeof palmFile>>;
+        try {
+          file = await palmFile(`/v1/document/${id}/content`);
+        } catch (err) {
+          if (err instanceof PalmError) return res.status(err.status === 404 ? 404 : 502).json({ error: "document_unavailable", message: err.message });
+          throw err;
+        }
+        const buf = file.bytes;
         // Only PDFs and images are shown inline; anything else is a download, never a page on our origin.
-        const ct = (r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+        const ct = file.contentType;
         const safe = ct === "application/pdf" || /^image\/(png|jpeg|gif|webp)$/.test(ct);
         res.setHeader("Content-Type", safe ? ct : "application/octet-stream");
         res.setHeader("X-Content-Type-Options", "nosniff");
-        const cd = r.headers.get("content-disposition");
+        const cd = file.disposition;
         if (cd && !/[\r\n]/.test(cd)) res.setHeader("Content-Disposition", safe ? cd : cd.replace(/^\s*inline/i, "attachment"));
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).send(buf);
