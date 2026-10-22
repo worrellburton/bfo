@@ -22,6 +22,7 @@ function categoryPatch(category: string): Record<string, unknown> {
 import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 import { anticipateInflows, type InflowRow, type PlannedInflow } from "../../lib/books-inflows.js";
+import { fetchAll } from "../../lib/db-pages.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -43,36 +44,6 @@ import { anticipateInflows, type InflowRow, type PlannedInflow } from "../../lib
  * 'intercompany' rows are eliminated when both legs' entities are selected.
  */
 
-/** Page through PostgREST's 1000-row window until the query is exhausted. */
-async function fetchAll<T>(pathWithFilters: string): Promise<T[]> {
-  // The first page carries the exact row count, so the remaining pages can
-  // fetch concurrently instead of one round trip per 1,000 rows.
-  const first = await db(pathWithFilters, { headers: { Range: "0-999", Prefer: "count=exact" } });
-  if (!first.ok) throw new Error(`DB error: ${(await first.text()).slice(0, 300)}`);
-  const out: T[] = (await first.json()) as T[];
-  const total = Number(first.headers.get("content-range")?.split("/")[1]);
-  if (Number.isFinite(total) && total > out.length) {
-    const pages: Array<Promise<Response>> = [];
-    for (let from = 1000; from < total; from += 1000) {
-      pages.push(db(pathWithFilters, { headers: { Range: `${from}-${from + 999}` } }));
-    }
-    for (const r of await Promise.all(pages)) {
-      if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
-      out.push(...((await r.json()) as T[]));
-    }
-    return out;
-  }
-  // No usable count header — fall back to sequential paging.
-  for (let from = out.length; out.length % 1000 === 0 && out.length > 0; from += 1000) {
-    const r = await db(pathWithFilters, { headers: { Range: `${from}-${from + 999}` } });
-    if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
-    const rows = (await r.json()) as T[];
-    out.push(...rows);
-    if (rows.length < 1000) break;
-  }
-  return out;
-}
-
 function prettyCategory(primary: string | null): string {
   if (!primary) return "Uncategorized";
   const s = primary.replace(/_/g, " ").toLowerCase();
@@ -81,7 +52,10 @@ function prettyCategory(primary: string | null): string {
 
 /**
  * Record field-level changes to the immutable audit log — one row per field
- * that actually changed. Best-effort: a logging failure never blocks the edit.
+ * that actually changed. The log is also how the nightly bank sync knows a
+ * row was hand-edited (and keeps its vendor/account/type), so a lost write
+ * here lets the next sync quietly undo the edit. Returns false when the write
+ * failed even after one retry, so the caller can tell the person.
  */
 async function logChanges(
   transaction_ids: string[],
@@ -89,30 +63,53 @@ async function logChanges(
   patch: Record<string, unknown>,
   source: string,
   actor: string | null
-): Promise<void> {
-  try {
-    const rows: any[] = [];
-    for (const id of transaction_ids) {
-      for (const [field, next] of Object.entries(patch)) {
-        const prev = before ? before[field] : undefined;
-        // For batch edits we don't hold each row's old value — log new only.
-        if (before && String(prev ?? "") === String(next ?? "")) continue;
-        rows.push({
-          transaction_id: id,
-          field,
-          old_value: prev === undefined ? null : prev === null ? null : String(prev),
-          new_value: next === null ? null : String(next),
-          source,
-          actor,
-        });
-      }
+): Promise<boolean> {
+  const rows: any[] = [];
+  for (const id of transaction_ids) {
+    for (const [field, next] of Object.entries(patch)) {
+      const prev = before ? before[field] : undefined;
+      // For batch edits we don't hold each row's old value — log new only.
+      if (before && String(prev ?? "") === String(next ?? "")) continue;
+      rows.push({
+        transaction_id: id,
+        field,
+        old_value: prev === undefined ? null : prev === null ? null : String(prev),
+        new_value: next === null ? null : String(next),
+        source,
+        actor,
+      });
     }
-    if (!rows.length) return;
-    await db("book_txn_log", { method: "POST", body: JSON.stringify(rows) });
-  } catch {
-    /* audit logging is best-effort */
   }
+  if (!rows.length) return true;
+  let detail = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await db("book_txn_log", { method: "POST", body: JSON.stringify(rows) });
+      if (r.ok) return true;
+      detail = `${r.status}: ${(await r.text()).slice(0, 300)}`;
+    } catch (err) {
+      detail = err instanceof Error ? err.message : String(err);
+    }
+  }
+  console.error(
+    `BOOKS AUDIT LOG WRITE FAILED: ${transaction_ids.length} edited row(s) are not protected from the next bank sync`,
+    { source, transaction_ids: transaction_ids.slice(0, 20), detail }
+  );
+  return false;
 }
+
+/** Whether a transaction has any audit history, i.e. the sync treats it as hand-edited. */
+async function hasHistory(transaction_id: string): Promise<boolean> {
+  const r = await db(`book_txn_log?transaction_id=eq.${encodeURIComponent(transaction_id)}&select=transaction_id&limit=1`);
+  if (!r.ok) throw new Error(`DB error: ${(await r.text()).slice(0, 300)}`);
+  return ((await r.json()) as unknown[]).length > 0;
+}
+
+/** The answer when an edit saved but its audit row didn't. */
+const HISTORY_FAILED = {
+  error: "history_failed",
+  message: "Saved, but the change history couldn't record it, so the next bank sync could undo it. Try again in a moment.",
+};
 
 type BookTxn = {
   transaction_id: string;
@@ -443,7 +440,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // automatic side-effect of an account move, not an edit — logging it
       // would assert a "loan changed" event that never happened.
       const { loan_id: _dropped, ...logPatch } = patch;
-      await logChanges(ids, null, logPatch, "batch", user.id);
+      if (!(await logChanges(ids, null, logPatch, "batch", user.id))) {
+        return res.status(500).json({ ...HISTORY_FAILED, updated });
+      }
       return res.json({ updated });
     }
 
@@ -525,7 +524,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const rows = (await r.json()) as BookTxn[];
       if (!rows.length) return res.status(404).json({ error: "not_found" });
-      await logChanges([transaction_id], before, patch, "edit", user.id);
+      // Re-saving the same values logs nothing, unless the row has no history
+      // at all, which is what retrying after a failed log write looks like.
+      // Log it then, so the retry really does protect the edit from the sync.
+      const unchanged =
+        !!before && Object.entries(patch).every(([f, v]) => String(before[f] ?? "") === String(v ?? ""));
+      const logBefore = unchanged && !(await hasHistory(transaction_id)) ? null : before;
+      if (!(await logChanges([transaction_id], logBefore, patch, "edit", user.id))) {
+        return res.status(500).json({ ...HISTORY_FAILED, transaction: rows[0] });
+      }
       return res.json({ transaction: rows[0] });
     }
 

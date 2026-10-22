@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash } from "node:crypto";
 import { canWrite, currentUser, sbFetch as db } from "../../lib/auth.js";
+import { planCsvImport } from "../../lib/books-csv.js";
 import { classify } from "../../lib/books-rules.js";
+import { fetchAll } from "../../lib/db-pages.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 
 /**
@@ -10,8 +12,9 @@ import { betterVendor } from "../../lib/vendor-parse.js";
  *
  * The client parses the CSV and posts clean rows; this endpoint stamps ids
  * ("csv_<sha1>") deterministically so re-importing the same file is a no-op,
- * and skips any row that already exists for the account on the same date with
- * the same amount (i.e. rows Plaid already covers) so nothing double-counts.
+ * and skips as many rows as already exist for the account on the same date
+ * with the same amount (i.e. rows Plaid already covers) so nothing
+ * double-counts and genuine same-day repeats survive (lib/books-csv.ts).
  *
  * Sign convention in: bank exports sign deposits positive, withdrawals
  * negative. Books (Plaid convention) signs outflows positive — flipped here.
@@ -48,21 +51,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
     const pref = prefRes.ok ? ((await prefRes.json()) as any[])[0] ?? null : null;
 
-    // Existing (date, amount-in-cents) pairs for this account across the CSV's
-    // date range — anything already present (from Plaid or a prior import) is
-    // skipped rather than doubled.
+    // Existing rows for this account across the CSV's date range — anything
+    // already present (from Plaid or a prior import) is skipped rather than
+    // doubled. Every page is read, and a failed read stops the import: an
+    // empty list here would import the whole file on top of what's there.
     const dates = clean.map((r) => r.date).sort();
-    const existingRes = await db(
+    const existing = await fetchAll<{ date: string; amount: number | string }>(
       `book_transactions?account_id=eq.${encodeURIComponent(accountId)}` +
         `&date=gte.${dates[0]}&date=lte.${dates[dates.length - 1]}` +
-        `&select=date,amount&limit=20000`
-    );
-    const existing = new Set(
-      existingRes.ok
-        ? ((await existingRes.json()) as any[]).map(
-            (t) => `${t.date}|${Math.round(Number(t.amount) * 100)}`
-          )
-        : []
+        `&select=date,amount&order=transaction_id.asc`
     );
 
     // Same rule set the nightly sync applies, so imported rows pick up the
@@ -86,50 +83,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     const now = new Date().toISOString();
-    let skipped = 0;
-    const rows = clean.flatMap((r) => {
-      // CSV: deposits positive → Books: outflows positive.
-      const amount = -r.amount;
-      const key = `${r.date}|${Math.round(amount * 100)}`;
-      if (existing.has(key)) {
-        skipped += 1;
-        return [];
-      }
+    // CSV: deposits positive → Books: outflows positive.
+    const plan = planCsvImport(
+      clean.map((r) => ({ ...r, amount: -r.amount })),
+      existing
+    );
+    const skipped = plan.skipped;
+    const rows = plan.rows.map((r) => {
+      const amount = r.amount;
+      // A twin's position joins the id (the first keeps the original form,
+      // so ids from earlier imports still match).
+      const twin = r.occurrence ? `|${r.occurrence}` : "";
       const id = createHash("sha1")
-        .update(`${accountId}|${r.date}|${amount.toFixed(2)}|${r.description}`)
+        .update(`${accountId}|${r.date}|${amount.toFixed(2)}|${r.description}${twin}`)
         .digest("hex");
       const taught = ruleFor(r.description);
       const rule = classify(r.description, null, null, taught.category ?? null);
-      return [
-        {
+      return {
           transaction_id: `csv_${id}`,
-          account_id: accountId,
-          item_id: "csv_import",
-          date: r.date,
-          name: r.description || null,
-          // A vendor-rename rule names the payee; otherwise the descriptor
-          // parser derives one, same as the nightly sync.
-          merchant_name: taught.vendor ?? betterVendor(r.description, null),
-          amount,
-          pending: false,
-          currency: "USD",
-          plaid_category: null,
-          plaid_category_detailed: null,
-          payment_channel: "csv",
-          txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? "normal") as
-            | "normal"
-            | "transfer",
-          intercompany: rule.type === "intercompany",
-          book_category: rule.category,
-          // Uniform across every row (null when no rule) so the bulk upsert
-          // keeps one column set; mirrors the sync's type override.
-          type_override: taught.type,
-          entity_id: pref?.entity_id ?? null,
-          entity_name: pref?.entity_name ?? null,
-          hidden: pref?.hidden ?? false,
-          updated_at: now,
-        },
-      ];
+        account_id: accountId,
+        item_id: "csv_import",
+        date: r.date,
+        name: r.description || null,
+        // A vendor-rename rule names the payee; otherwise the descriptor
+        // parser derives one, same as the nightly sync.
+        merchant_name: taught.vendor ?? betterVendor(r.description, null),
+        amount,
+        pending: false,
+        currency: "USD",
+        plaid_category: null,
+        plaid_category_detailed: null,
+        payment_channel: "csv",
+        txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? "normal") as
+          | "normal"
+          | "transfer",
+        intercompany: rule.type === "intercompany",
+        book_category: rule.category,
+        // Uniform across every row (null when no rule) so the bulk upsert
+        // keeps one column set; mirrors the sync's type override.
+        type_override: taught.type,
+        entity_id: pref?.entity_id ?? null,
+        entity_name: pref?.entity_name ?? null,
+        hidden: pref?.hidden ?? false,
+        updated_at: now,
+      };
     });
 
     for (let i = 0; i < rows.length; i += 500) {

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { birdPlatformFetch, sb, sbFetch } from "./auth.js";
+import { birdPlatformFetch, sb } from "./auth.js";
+import { countRows } from "./db-pages.js";
 import { isOurAddress, MAIL_DOMAIN, onOurDomain } from "./mail-address.js";
 import { composeDocument, composeText } from "./mail-compose.js";
 import { storageDownload, storageRemove, storageUpload } from "./storage.js";
@@ -472,13 +473,8 @@ export function searchCondition(q: string): string {
   return `or(subject.ilike.${quoted},from_email.ilike.${quoted},from_name.ilike.${quoted},snippet.ilike.${quoted},text_body.ilike.${quoted})`;
 }
 
-/** Rows matching a PostgREST filter, counted without reading them. */
-export async function countRows(table: string, filter: string): Promise<number> {
-  const res = await sbFetch(`${table}?${filter}&select=created_at&limit=1`, { headers: { Prefer: "count=exact" } });
-  if (!res.ok) throw new Error(`supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const total = Number((res.headers.get("content-range") ?? "").split("/")[1]);
-  return Number.isFinite(total) ? total : 0;
-}
+// countRows now lives with the other paging helpers; re-exported for the mail endpoints.
+export { countRows };
 
 // ── Sending: checking a request ───────────────────────────────────────
 
