@@ -4,6 +4,7 @@ import { authFetch, getUser } from "../auth";
 import { entityCompleteness, entityType } from "../entity-completeness";
 import { obligations } from "../entity-paperwork";
 import { DOC_LABEL, palmCall } from "../palm";
+import { TextButton } from "../entity/ui";
 import { HomeBackground } from "../home-background";
 import { useTheme } from "../theme";
 
@@ -599,6 +600,9 @@ export default function Home() {
   const [user] = useState(() => (typeof window === "undefined" ? null : getUser()));
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
+  // A failed load must not read as "no entities" / "all clear".
+  const [assetsError, setAssetsError] = useState(false);
+  const [assetsTry, setAssetsTry] = useState(0);
   const [home, setHome] = useState<HomeData | null>(null);
   const [homeLoading, setHomeLoading] = useState(true);
   const [range, setRange] = useState<RangeKey>("90");
@@ -626,18 +630,29 @@ export default function Home() {
                 : []
             );
             setAssetsLoading(false);
+            setAssetsError(false);
           },
-          () => setAssetsLoading(false)
+          () => {
+            setAssetsLoading(false);
+            setAssetsError(true);
+          }
         );
       } catch {
+        if (cancelled) return;
         setAssetsLoading(false);
+        setAssetsError(true);
       }
     })();
     return () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, []);
+  }, [assetsTry]);
+  const retryAssets = () => {
+    setAssetsError(false);
+    setAssetsLoading(true);
+    setAssetsTry((n) => n + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -882,6 +897,13 @@ export default function Home() {
   } as const;
   const enter = "home-in";
   const guide = isDark ? "border-white/[0.12]" : "border-gray-300/80";
+  const warnText = isDark ? "text-amber-300" : "text-amber-700";
+  const assetsFailed = (
+    <>
+      <span className={warnText}>Couldn't load your entities.</span>
+      <TextButton onClick={retryAssets}>Retry</TextButton>
+    </>
+  );
 
   // ── Header copy ────────────────────────────────────────────────────────
   const now = new Date();
@@ -920,6 +942,11 @@ export default function Home() {
               <>
                 <span className={`h-1.5 w-1.5 rounded-full ${isDark ? "bg-white/30" : "bg-gray-300"}`} />
                 Checking on everything…
+              </>
+            ) : assetsError ? (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                {assetsFailed}
               </>
             ) : attention.length ? (
               <>
@@ -1100,6 +1127,8 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          ) : attention.length === 0 && assetsError ? (
+            <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-10 text-center text-[12.5px]">{assetsFailed}</p>
           ) : attention.length === 0 ? (
             <div className={`flex flex-col items-center justify-center gap-2 px-5 py-10 text-center ${late.home || late.assets ? "home-late" : ""}`}>
               <span className={`flex h-10 w-10 items-center justify-center rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}>
@@ -1213,7 +1242,7 @@ export default function Home() {
         <div className={`flex flex-col gap-3 border-b px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between ${hairline}`}>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <p className={kicker}>Holding structure</p>
-            {!assetsLoading && (
+            {!assetsLoading && !assetsError && (
               <span className={`text-[11px] tabular-nums ${textMuted}`}>
                 {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp{trustCount ? ` · ${trustCount} trust${trustCount === 1 ? "" : "s"}` : ""} · {stateCount} state{stateCount === 1 ? "" : "s"}
               </span>
@@ -1247,6 +1276,8 @@ export default function Home() {
                 <Bone key={i} className="h-[112px]" />
               ))}
             </div>
+          ) : assetsError ? (
+            <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 py-6 text-center text-[12px]">{assetsFailed}</p>
           ) : scored.length === 0 ? (
             <p className={`px-2 py-6 text-center text-[12px] ${textMuted}`}>
               No entities yet.{" "}

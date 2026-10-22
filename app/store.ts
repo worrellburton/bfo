@@ -250,7 +250,13 @@ async function poll() {
   polling = true;
   try {
     for (const [collection, s] of stores) {
-      if (!s.loaded || !s.listeners.size) continue;
+      if (!s.listeners.size) continue;
+      // A first load that failed would otherwise leave its page stuck; try it
+      // again so the page recovers on its own (listeners hear the success).
+      if (!s.loaded) {
+        await load(collection).catch(() => {});
+        continue;
+      }
       const { rows: index } = await call<{ rows: { id: string; updated_at: string }[] }>(q([collection], "&view=index"));
       const seen = new Set<string>();
       const changed: string[] = [];

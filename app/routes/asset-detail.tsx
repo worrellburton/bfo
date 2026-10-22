@@ -11,7 +11,7 @@ import { ScanToast } from "../entity/overlay";
 import { OverviewTab } from "../entity/overview";
 import { PeopleTab } from "../entity/people";
 import { isPartner } from "../auth";
-import { Icon, useTone } from "../entity/ui";
+import { Icon, TextButton, toneText, useTone } from "../entity/ui";
 import { useEntityPage } from "../entity/use-entity";
 
 export function meta() {
@@ -26,6 +26,19 @@ export function meta() {
 export default function AssetDetail() {
   const page = useEntityPage();
   const t = useTone();
+
+  // A failed load says so (the store also retries it on its next poll).
+  if (page.loadError && !page.asset) {
+    return (
+      <div className="mx-auto max-w-[1400px]">
+        <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl border px-5 py-5 text-[12.5px] ${t.surface}`}>
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+          <span className={toneText("warn", t.dark)}>Couldn't load this entity.</span>
+          <TextButton onClick={page.retryLoad}>Try again</TextButton>
+        </div>
+      </div>
+    );
+  }
 
   if (page.loading) {
     return (
