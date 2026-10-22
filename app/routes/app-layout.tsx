@@ -32,8 +32,8 @@ import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
 
 const iconCls = "w-4 h-4 shrink-0";
 
-/** Mail's folders all live on /inbox, told apart by ?f= (inbox when absent). */
-const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "inbox") === f;
+/** Mail's folders all live on /inbox, told apart by ?f= (Active when absent). */
+const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "active") === f;
 
 /** Shown to admins (and anyone given access): mail to addresses nobody has yet. */
 const otherMailChild: NavChild = {
@@ -63,7 +63,17 @@ const navItems: NavItem[] = [
     children: [
       {
         to: "/inbox",
-        label: "Inbox",
+        label: "Active",
+        match: mailFolder("active"),
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+          </svg>
+        ),
+      },
+      {
+        to: "/inbox?f=inbox",
+        label: "In",
         match: mailFolder("inbox"),
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -73,7 +83,7 @@ const navItems: NavItem[] = [
       },
       {
         to: "/inbox?f=sent",
-        label: "Sent",
+        label: "Out",
         match: mailFolder("sent"),
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -456,7 +466,7 @@ export default function AppLayout() {
           ...i,
           badge: unread,
           children: [
-            ...i.children.map((c) => (c.to === "/inbox" ? { ...c, badge: unread } : c)),
+            ...i.children.map((c) => (c.to === "/inbox" || c.to === "/inbox?f=inbox" ? { ...c, badge: unread } : c)),
             ...(canSeeOther ? [{ ...otherMailChild, badge: mail?.otherUnread ?? 0 }] : []),
           ],
         }

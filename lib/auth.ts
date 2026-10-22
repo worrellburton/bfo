@@ -19,6 +19,8 @@ export type AppUser = {
   last_seen_at: string | null;
   /** Their address on the family domain (lowercase), once assigned. */
   mail_address: string | null;
+  /** The picture beside their mail (a path in the mail bucket), if they chose one. */
+  mail_photo?: string | null;
 };
 
 /** Don't rewrite the last-seen stamp more than once per this window. */

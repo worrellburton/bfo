@@ -10,7 +10,8 @@ import { authFetch, getToken } from "./auth";
 
 export type MailAddress = { email: string; name?: string | null };
 export type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
-export type MailFolder = "inbox" | "sent" | "archive" | "other";
+/** "active": inbox and sent together, one row per conversation, latest activity first. */
+export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other";
 /** Narrows a folder's list: everything, only unread, or only starred. */
 export type MailFilter = "all" | "unread" | "starred";
 
@@ -30,6 +31,9 @@ export type MailSummary = {
   status: string | null;
   /** A catch-all copy (mail to an address nobody owns). */
   other: boolean;
+  /** The conversation it's in, and when that conversation last had a message (Active pages on these). */
+  threadKey?: string;
+  threadAt?: string;
 };
 
 export type MailMessage = MailSummary & {
@@ -121,17 +125,20 @@ export type ListQuery = {
   /** The last row already shown, for the next page. */
   before?: string;
   beforeId?: string;
+  /** Active: the last conversation shown (with before = its threadAt). */
+  beforeKey?: string;
   limit?: number;
 };
 
 /** One page, newest first. */
-export function listMail({ folder, filter = "all", q = "", to, before, beforeId, limit = 50 }: ListQuery) {
+export function listMail({ folder, filter = "all", q = "", to, before, beforeId, beforeKey, limit = 50 }: ListQuery) {
   const p = new URLSearchParams({ view: "list", folder, limit: String(limit) });
   if (filter !== "all") p.set("filter", filter);
   if (q.trim()) p.set("q", q.trim());
   if (to) p.set("to", to);
   if (before) p.set("before", before);
   if (before && beforeId) p.set("beforeId", beforeId);
+  if (before && beforeKey) p.set("beforeKey", beforeKey);
   return call<{ messages: MailSummary[]; hasMore: boolean }>(`/api/mail?${p}`);
 }
 
@@ -166,6 +173,22 @@ export function addAlias(address: string) {
 
 export function removeAlias(address: string) {
   return post<{ aliases: string[] }>({ action: "alias-remove", address });
+}
+
+/** Address (lowercase) → a link to the picture its owner chose for their mail. */
+export type MailFaces = Record<string, string>;
+
+export function getFaces() {
+  return call<{ faces: MailFaces }>("/api/mail?view=faces");
+}
+
+/** My picture for my mail: a small square image as a data: URL. */
+export function setMailPhoto(data: string) {
+  return post<{ faces: MailFaces }>({ action: "photo-set", data });
+}
+
+export function removeMailPhoto() {
+  return post<{ faces: MailFaces }>({ action: "photo-remove" });
 }
 
 export function syncMail() {
