@@ -66,8 +66,8 @@ import { storageSignedUrl } from "../lib/storage.js";
  *   alias-remove { address }         → { aliases }
  *   photo-set { data }               → { faces }  the caller's picture for their mail (a small JPEG/PNG/WebP, base64)
  *   photo-remove                     → { faces }  back to initials
- *   move { ids, folder, conversation? } → { ok }  (inbox|archive; received mail only. conversation: archive the
- *                                    whole conversation out of Active; moving to the inbox brings it back)
+ *   move { ids, folder, conversation? } → { ok }  (inbox|archive; received mail only. conversation: the whole
+ *                                    conversation, out of Active or (undo) back; any move to the inbox brings it back)
  *   read { ids, read }               → { ok }
  *   star { ids, starred, conversation? } → { ok }  (conversation: unstarring clears every message in their conversations)
  *   delete { ids, conversation? }    → { ok }  (for good; conversation: every message in their conversations)
@@ -358,6 +358,10 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
         return res.status(200).json({ ok: true });
       }
       await sb(`mail_messages?id=in.(${ids.join(",")})&direction=eq.in&${scope}`, { method: "PATCH", body: { folder: body.folder } });
+      // The whole conversation back (undoing an archive from Active): all of its archived received mail.
+      if (body.folder === "inbox" && body.conversation === true && keys.length) {
+        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.archive&${scope}`, { method: "PATCH", body: { folder: "inbox" } });
+      }
       // Back to the inbox: the conversation is in Active again.
       if (body.folder === "inbox" && keys.length) await sb(`mail_messages?${keysIn(keys)}&active_hidden=is.true&${scope}`, { method: "PATCH", body: { active_hidden: false } });
       return res.status(200).json({ ok: true });

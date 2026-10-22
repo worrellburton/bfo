@@ -107,8 +107,9 @@ export function SidebarNav({
       return n;
     });
 
-  // Compact rows: 30px, 13px type, 16px icons, a soft fill for the current page.
-  const rowBase = "nav-row group/row relative flex items-center rounded-lg text-[13px] transition-colors duration-150 h-[30px] px-2";
+  // Compact rows: 30px, 13px type, 16px icons, a soft fill for the current page. In the phone drawer, thumb-sized
+  // (44px): sizes are px because the root font is 11.9px, so rem classes come out at 74% (app/app.css).
+  const rowBase = "nav-row group/row relative flex items-center rounded-lg text-[13px] transition-colors duration-150 h-[30px] px-2 max-lg:h-[44px] max-lg:text-[15px]";
   const idle = isDark ? "text-gray-300/90 hover:text-white hover:bg-white/[0.05]" : "text-gray-600 hover:text-black hover:bg-black/[0.04]";
   const lit = isDark ? "bg-white/[0.08] text-white" : "bg-black/[0.06] text-black";
   const on = `nav-row-on ${lit}`;
@@ -125,14 +126,14 @@ export function SidebarNav({
         const iconWithDot = (
           <span className="relative inline-flex shrink-0">
             {item.icon}
+            {/* On the collapsed rail, a dot (a number would cover the icon); the count is in the label and tooltip. */}
             {total > 0 && !showLabels && (
               <span
-                className={`absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold tabular-nums flex items-center justify-center ring-2 ${
-                  labelsVisible ? "hidden" : ""
-                } ${isDark ? "bg-[#818cf8] text-black ring-black" : "bg-[#4f46e5] text-white ring-white"}`}
-              >
-                {total > 99 ? "99+" : total}
-              </span>
+                aria-hidden="true"
+                className={`absolute -top-[2px] -right-[3px] h-[7px] w-[7px] rounded-full ring-2 ${labelsVisible ? "hidden" : ""} ${
+                  isDark ? "bg-[#818cf8] ring-black" : "bg-[#4f46e5] ring-white"
+                }`}
+              />
             )}
           </span>
         );
@@ -144,8 +145,8 @@ export function SidebarNav({
               <Link
                 to={kids ? kids[0].to : item.to}
                 onClick={onNavigate}
-                title={showLabels ? undefined : item.label}
-                aria-label={showLabels ? undefined : item.label}
+                title={showLabels ? undefined : `${item.label}${total ? ` · ${total} new` : ""}`}
+                aria-label={showLabels ? undefined : `${item.label}${total ? `, ${total} new` : ""}`}
                 aria-current={active ? "page" : undefined}
                 className={`${rowBase} ${collapsed} ${active ? on : idle}`}
               >
@@ -192,7 +193,7 @@ export function SidebarNav({
                         to={c.to}
                         onClick={onNavigate}
                         aria-current={here ? "page" : undefined}
-                        className={`flex items-center gap-2 rounded-lg h-7 px-2 text-[12.5px] transition-colors duration-150 ${
+                        className={`flex items-center gap-2 rounded-lg h-7 px-2 text-[12.5px] transition-colors duration-150 max-lg:h-[40px] max-lg:text-[14px] ${
                           here
                             ? isDark
                               ? "bg-white/[0.08] text-white font-medium"
