@@ -1097,8 +1097,9 @@ export default function Inbox() {
           return;
         case "e":
           if (openRow && (openRow.direction === "in" || folder === "active") && openRow.folder !== "archive") act(() => void move(openRow, "archive"));
-          else if (!openId && picked.size) act(() => void bulk("archive"));
-          else if (!openId && focused && folder !== "archive") act(() => void bulk("archive", [focused.id]));
+          // Only where the bulk bar offers Archive: Active, and received mail in In.
+          else if (!openId && picked.size && (folder === "active" || (folder === "inbox" && pickedRows.some((m) => m.direction === "in")))) act(() => void bulk("archive"));
+          else if (!openId && !picked.size && focused && (folder === "active" || (folder === "inbox" && focused.direction === "in"))) act(() => void bulk("archive", [focused.id]));
           return;
         case "#":
           if (openRow) act(() => void remove(openRow));
@@ -2109,10 +2110,12 @@ function Reader({
               <Glyph name="reply" />
               Reply
             </Button>
-            <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all" className="max-md:hidden">
-              <Glyph name="replyAll" />
-              Reply all
-            </Button>
+            {canReplyAll && (
+              <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all" className="max-md:hidden">
+                <Glyph name="replyAll" />
+                Reply all
+              </Button>
+            )}
             <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward" className="max-md:hidden">
               <Glyph name="forward" />
               Forward
@@ -2547,7 +2550,8 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
   const [showCc, setShowCc] = useState(!!(draft.cc || draft.bcc));
   const [subject, setSubject] = useState(draft.subject);
   // The body is formatted: a reply's quote and a forward's header come in as paragraphs and a quote.
-  const [initialHtml] = useState(() => htmlFromPlain(draft.text));
+  // A reply or forward starts with blank lines above the quote: keep one, empty, for the caret to type in.
+  const [initialHtml] = useState(() => (/^[ \t]*\n/.test(draft.text) ? "<p><br></p>" : "") + htmlFromPlain(draft.text));
   const [html, setHtml] = useState(initialHtml);
   const [improving, setImproving] = useState(false);
   /** The body before Improve design, so it can be put back. */

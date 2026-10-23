@@ -1854,6 +1854,7 @@ function StaffAssets() {
             onClick={() => void syncAllWithPalm()}
             disabled={!!palmSync?.running}
             title="Every entity's state records, and for the ones Palm holds, their agent, Palm's copy and their mail"
+            aria-label={`Sync everything with Palm, ${palmMode === "test" ? "free in test mode" : palmPlan.cents ? `estimated ${dollars(palmPlan.cents)}` : "free"}`}
             className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
               isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
             }`}
@@ -1967,10 +1968,11 @@ function StaffAssets() {
 
       {palmSync && !palmSync.running &&
         createPortal(
-          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmSync(null)}>
+          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmSync(null)} onKeyDown={(e) => e.key === "Escape" && setPalmSync(null)}>
             <div
               role="dialog"
-              aria-label="Synced with Palm"
+              aria-modal="true"
+              aria-label={palmSync.title ?? "Synced with Palm"}
               onClick={(e) => e.stopPropagation()}
               className={`flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"}`}
             >
@@ -1980,7 +1982,7 @@ function StaffAssets() {
                     ? `${palmSync.title}${palmSync.error ? ": didn't finish" : ` · ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"}`}${palmSync.mode === "test" ? " (test mode)" : ""}`
                     : palmSync.error ? "Couldn't sync with Palm" : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
                 </p>
-                <button type="button" onClick={() => setPalmSync(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
+                <button type="button" autoFocus onClick={() => setPalmSync(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
                   Close
                 </button>
               </div>
