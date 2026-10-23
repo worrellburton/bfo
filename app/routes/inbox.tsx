@@ -698,7 +698,8 @@ function forwardDraft(m: MailMessage): Draft {
   };
 }
 
-const blankDraft = (): Draft => ({ title: "New message", to: "", cc: "", bcc: "", subject: "", text: "", carried: [], focus: "to" });
+/** A new message. `from`: the mailbox being looked at, so it goes out from there; unset (All mailboxes), Compose asks. */
+const blankDraft = (from?: string): Draft => ({ title: "New message", ...(from ? { from } : {}), to: "", cc: "", bcc: "", subject: "", text: "", carried: [], focus: "to" });
 
 // ── Page ─────────────────────────────────────────────────────────────────
 
@@ -1201,7 +1202,7 @@ export default function Inbox() {
           else if (!openId && picked.size) act(() => void bulk("unread"));
           return;
         case "c":
-          if (!noAddress) act(() => setDraft(blankDraft()));
+          if (!noAddress) act(() => setDraft(blankDraft(box || undefined)));
           return;
         case "z":
           if (toast?.undo) act(() => toast.undo?.());
@@ -1528,7 +1529,7 @@ export default function Inbox() {
               { key: "columns", label: "Columns", icon: <Glyph name="columns" className="h-3.5 w-3.5" /> },
             ]}
           />
-          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft())} className="max-sm:hidden">
+          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft(box || undefined))} className="max-sm:hidden">
             New
           </Button>
         </div>
@@ -1594,7 +1595,7 @@ export default function Inbox() {
           <button
             type="button"
             aria-label="New message"
-            onClick={() => setDraft(blankDraft())}
+            onClick={() => setDraft(blankDraft(box || undefined))}
             className={`fab-in fixed right-4 z-40 flex h-[56px] cursor-pointer items-center gap-2.5 rounded-2xl pl-5 pr-6 text-[15px] font-semibold shadow-lg transition-transform active:scale-95 sm:hidden ${
               t.dark ? "bg-white text-gray-950 shadow-black/40" : "bg-gray-900 text-white shadow-gray-900/30"
             }`}
@@ -2596,7 +2597,9 @@ function readBase64(file: File): Promise<string> {
 function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresses: string[]; onClose: () => void; onSent: (m: MailSummary) => void }) {
   const t = useTone();
   const [sendId] = useState(() => crypto.randomUUID());
-  const [from, setFrom] = useState(() => addresses.find((a) => draft.from && same(a, draft.from)) ?? addresses[0] ?? "");
+  // Several addresses and none named by the draft (composed from "All mailboxes"): ask which, before anything else.
+  const [from, setFrom] = useState(() => addresses.find((a) => draft.from && same(a, draft.from)) ?? (addresses.length > 1 ? "" : addresses[0] ?? ""));
+  const needsFrom = addresses.length > 1 && !from;
   const [to, setTo] = useState(draft.to);
   const [cc, setCc] = useState(draft.cc);
   const [bcc, setBcc] = useState(draft.bcc);
@@ -2726,6 +2729,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
 
   async function send() {
     if (sending) return;
+    if (needsFrom) return setError("Choose which mailbox it goes out from.");
     const lists = [parseRecipients(to), parseRecipients(cc), parseRecipients(bcc)];
     const bad = lists.flatMap((l) => l.bad);
     const total = lists.reduce((n, l) => n + l.ok.length, 0);
@@ -2803,6 +2807,42 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
           </h2>
           <IconButton icon="x" label="Close" onClick={() => void close()} />
         </header>
+
+        {needsFrom && (
+          <div className={`absolute inset-x-0 bottom-0 top-12 z-10 flex flex-col max-sm:top-14 ${t.dark ? "bg-[#111113]" : "bg-white"}`} style={{ top: "calc(env(safe-area-inset-top) + 3rem)" }}>
+            <div className="px-5 pb-3 pt-6 sm:px-6">
+              <p className={`text-[15px] font-semibold ${t.text}`}>Send from which mailbox?</p>
+              <p className={`mt-1 text-[12.5px] ${t.muted}`}>You're looking at all your mail, so pick the address this goes out from. It can be changed in the From line after.</p>
+            </div>
+            <ul role="listbox" aria-label="Send from" className="px-3 sm:px-4">
+              {addresses.map((a, i) => (
+                <li key={a}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    autoFocus={i === 0}
+                    onClick={() => {
+                      setFrom(a);
+                      setError(null);
+                      setTimeout(() => toRef.current?.focus(), 0);
+                    }}
+                    className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors max-sm:min-h-[52px] ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+                  >
+                    <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
+                      <Icon name="mail" className={`h-4 w-4 ${t.muted}`} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate text-[14px] font-medium ${t.text}`}>{a.slice(0, a.indexOf("@"))}</span>
+                      <span className={`block truncate text-[12px] ${t.muted}`}>{a}</span>
+                    </span>
+                    <Icon name="chevronRight" className={`h-4 w-4 shrink-0 ${t.faint}`} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {addresses.length > 1 && (
           <div className={row}>
