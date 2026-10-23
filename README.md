@@ -172,7 +172,10 @@ Every user has an address on the family domain (assigned from their first name;
 admins can change it on `/users`) and a Mail page at `/inbox`. Bird receives the
 mail and BFO keeps each mailbox's copy in Supabase (`mail_messages`, attachments
 in the private `mail` bucket; `read_at` and `starred_at` mark unread and starred).
-Mail to an address nobody has lands in "Other", which owners and admins see.
+Under the page title, one control says whose mail is shown: "All mailboxes"
+or one address; its menu lists every address on the account with a copy on
+each, and admins add and remove extras there. Mail to an address nobody has
+lands in "Other", which owners and admins see.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open
 message.

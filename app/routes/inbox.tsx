@@ -252,22 +252,70 @@ const EMPTY: Record<MailFolder, string> = {
 // ── My addresses ─────────────────────────────────────────────────────────
 
 /**
- * The header's line of addresses: the main one, then any extras on the same
- * account (mail to them lands in this inbox, and they can be sent from).
- * Click one to copy it. Admins add and remove extras here.
+ * The header's one control for whose mail is shown: "All mailboxes", or one
+ * address. Its menu lists every address on the account (mail to each lands
+ * here, and each can be sent from), with a copy on each; admins add and
+ * remove extras from the same menu. With one address, the button is that
+ * address and the menu holds copy and add.
  */
-function MyAddresses({ address, aliases, canAdd }: { address: string; aliases: string[]; canAdd: boolean }) {
+function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean }) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
   // The server's answer to an add or remove shows at once; the shared count catches up after.
   const [shown, setShown] = useState<string[] | null>(null);
   const list = shown ?? aliases;
   useEffect(() => setShown(null), [aliases]);
+  const mine = [address, ...list];
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  /** The menu sits under the button but inside the screen (a phone's header is narrow and the button sits well in from the left). */
+  const [place, setPlace] = useState<{ top: number; left: number; width: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const r = wrap.current?.getBoundingClientRect();
+      if (!r) return;
+      const vw = window.innerWidth;
+      const width = Math.min(360, vw - 32);
+      setPlace({ top: r.bottom + 6, left: Math.max(16, Math.min(r.left, vw - 16 - width)), width });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
+
+  // Outside click or Esc closes the menu.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const n = e.target as Node;
+      if (wrap.current && !wrap.current.contains(n) && !menuRef.current?.contains(n)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setAdding(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   async function copy(a: string) {
     try {
@@ -299,6 +347,7 @@ function MyAddresses({ address, aliases, canAdd }: { address: string; aliases: s
   }
 
   async function remove(a: string) {
+    setOpen(false);
     const ok = await confirmDialog({
       title: `Remove ${a}?`,
       message: "Mail sent to it will stop arriving here. Mail already received stays.",
@@ -309,94 +358,122 @@ function MyAddresses({ address, aliases, canAdd }: { address: string; aliases: s
     try {
       const { aliases: next } = await removeAlias(a);
       setShown(next);
+      if (box === a.toLowerCase()) onChoose("");
       notifyMailChanged();
     } catch (e) {
       setError((e as Error).message);
+      setOpen(true);
     }
   }
 
-  const chip = `group/copy relative inline-flex max-w-full cursor-pointer items-center gap-1.5 text-[12.5px] transition-colors max-sm:after:absolute max-sm:after:-inset-y-2 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.muted} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-900"}`;
-  const copyMark = (a: string) => (
-    <span aria-live="polite" className={`inline-flex items-center gap-1 ${copied === a ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
-      <Icon name={copied === a ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
-      {copied === a ? "Copied" : ""}
-    </span>
+  const current = mine.find((m) => m.toLowerCase() === box) ?? null;
+  const label = mine.length === 1 ? address : current ?? "All mailboxes";
+  const row = `flex w-full cursor-pointer items-center gap-2.5 px-3 text-left text-[13px] transition-colors max-sm:min-h-[44px] sm:h-9 ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`;
+  const copyBtn = (a: string) => (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        void copy(a);
+      }}
+      aria-label={`Copy ${a}`}
+      title="Copy address"
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-9 max-sm:w-9 ${copied === a ? (t.dark ? "text-emerald-400" : "text-emerald-600") : t.dark ? "text-gray-500 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}
+    >
+      <Icon name={copied === a ? "check" : "copy"} className="h-3.5 w-3.5" strokeWidth={2} />
+    </button>
   );
 
   return (
-    <div className="mt-1 min-w-0">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button type="button" onClick={() => void copy(address)} title="Copy address" aria-label={`${address}. Copy`} className={chip}>
-          <span className="truncate">{address}</span>
-          {copyMark(address)}
-        </button>
-        {list.map((a) => (
-          <span key={a} className="inline-flex max-w-full items-center gap-0.5">
-            <span aria-hidden className={`mr-1.5 ${t.faint}`}>·</span>
-            <button type="button" onClick={() => void copy(a)} title="Copy address" aria-label={`${a}. Copy`} className={chip}>
-              <span className="truncate">{a}</span>
-              {copyMark(a)}
+    <div ref={wrap} className="relative mt-1 min-w-0">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={`group/pick inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg py-0.5 pr-1 text-[13px] transition-colors max-sm:min-h-[36px] ${t.muted} ${t.dark ? "hover:text-gray-100" : "hover:text-gray-900"}`}
+      >
+        {mine.length > 1 && <Icon name="mail" className="h-3.5 w-3.5 shrink-0" />}
+        <span className="truncate">{label}</span>
+        {mine.length > 1 && !current && <span className={`shrink-0 text-[12px] ${t.faint}`}>· {mine.length}</span>}
+        <Icon name="chevronDown" className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.faint}`} />
+      </button>
+
+      {open && place && createPortal(
+        <div ref={menuRef} role="menu" aria-label="Mailbox" style={{ position: "fixed", top: place.top, left: place.left, width: place.width }} className={`z-[65] overflow-hidden rounded-xl border py-1 shadow-xl ${t.dark ? "border-white/10 bg-[#101016]" : "border-gray-200 bg-white"}`}>
+          {mine.length > 1 && (
+            <button type="button" role="menuitemradio" aria-checked={!current} onClick={() => { onChoose(""); setOpen(false); }} className={`${row} ${!current ? t.text : t.soft}`}>
+              <span className={`inline-flex h-4 w-4 items-center justify-center ${!current ? "" : "opacity-0"}`}>
+                <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.25} />
+              </span>
+              <span className="min-w-0 flex-1 truncate font-medium">All mailboxes</span>
             </button>
-            {canAdd && (
-              <button
-                type="button"
-                onClick={() => void remove(a)}
-                aria-label={`Remove ${a}`}
-                title="Remove address"
-                className={`inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded-md max-sm:h-8 max-sm:w-8 ${t.dark ? "text-gray-600 hover:bg-white/[0.06] hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900"}`}
-              >
-                <Icon name="x" className="h-3 w-3" />
-              </button>
-            )}
-          </span>
-        ))}
-        {canAdd && !adding && (
-          <TextButton onClick={() => { setAdding(true); setError(null); }} className="text-[12px]">
-            <Icon name="plus" className="h-3 w-3" strokeWidth={2} />
-            Add address
-          </TextButton>
-        )}
-      </div>
-      {adding && (
-        <form
-          className="mt-2 flex flex-wrap items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void add();
-          }}
-        >
-          <label className={`flex h-8 min-w-0 items-center rounded-lg border pl-2.5 pr-2 text-[12.5px] max-sm:h-10 ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}>
-            <span className="sr-only">New address</span>
-            <input
-              autoFocus
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setAdding(false);
-                  setValue("");
-                  setError(null);
-                }
-              }}
-              placeholder="accounting"
-              spellCheck={false}
-              autoCapitalize="none"
-              autoComplete="off"
-              style={{ outline: "none" }}
-              className={`w-[120px] min-w-0 bg-transparent text-right placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
-            />
-            <span className={`shrink-0 ${t.muted}`}>@{domain}</span>
-          </label>
-          <Button kind="primary" type="submit" disabled={busy || !value.trim()}>
-            {busy ? "Adding…" : "Add"}
-          </Button>
-          <Button kind="ghost" onClick={() => { setAdding(false); setValue(""); setError(null); }}>
-            Cancel
-          </Button>
-        </form>
+          )}
+          {mine.map((m) => {
+            const on = mine.length > 1 ? current?.toLowerCase() === m.toLowerCase() : false;
+            const extra = m !== address;
+            return (
+              <div key={m} className={`${row} ${on ? t.text : t.soft}`} role="none">
+                {mine.length > 1 ? (
+                  <button type="button" role="menuitemradio" aria-checked={on} onClick={() => { onChoose(m.toLowerCase()); setOpen(false); }} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-left">
+                    <span className={`inline-flex h-4 w-4 items-center justify-center ${on ? "" : "opacity-0"}`}>
+                      <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.25} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{m}</span>
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate">{m}</span>
+                )}
+                {copyBtn(m)}
+                {extra && canAdd && (
+                  <button type="button" onClick={() => void remove(m)} aria-label={`Remove ${m}`} title="Remove address" className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-9 max-sm:w-9 ${t.dark ? "text-gray-600 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}>
+                    <Icon name="x" className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {canAdd && (
+            <div className={`mt-1 border-t px-3 pb-2 pt-2 ${t.line}`}>
+              {!adding ? (
+                <TextButton onClick={() => { setAdding(true); setError(null); }} className="text-[12.5px]">
+                  <Icon name="plus" className="h-3 w-3" strokeWidth={2} />
+                  Add address
+                </TextButton>
+              ) : (
+                <form
+                  className="flex flex-wrap items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void add();
+                  }}
+                >
+                  <label className={`flex h-8 min-w-0 flex-1 items-center rounded-lg border pl-2.5 pr-2 text-[12.5px] max-sm:h-10 ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}>
+                    <span className="sr-only">New address</span>
+                    <input
+                      autoFocus
+                      value={value}
+                      onChange={(e) => setValue(e.target.value)}
+                      placeholder="accounting"
+                      spellCheck={false}
+                      autoCapitalize="none"
+                      autoComplete="off"
+                      style={{ outline: "none" }}
+                      className={`w-full min-w-0 bg-transparent text-right placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
+                    />
+                    <span className={`shrink-0 ${t.muted}`}>@{domain}</span>
+                  </label>
+                  <Button kind="primary" type="submit" disabled={busy || !value.trim()}>
+                    {busy ? "Adding…" : "Add"}
+                  </Button>
+                </form>
+              )}
+              {error && <p className={`mt-1.5 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+            </div>
+          )}
+        </div>,
+        document.body
       )}
-      {error && <p className={`mt-1.5 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
     </div>
   );
 }
@@ -1434,7 +1511,7 @@ export default function Inbox() {
             {noAddress ? (
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
             ) : address && (
-              <MyAddresses address={address} aliases={aliases} canAdd={isAdmin(me)} />
+              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} />
             )}
           </div>
         </div>
@@ -1457,30 +1534,6 @@ export default function Inbox() {
         </div>
       </header>
 
-      {/* With more than one address: which mailbox to show. */}
-      {mine.length > 1 && (
-        <div role="tablist" aria-label="Mailbox" className={`-mt-1 flex flex-wrap items-center gap-1.5 ${openId ? "max-lg:hidden" : ""}`}>
-          {["", ...mine].map((m) => {
-            const on = (m.toLowerCase() || "") === box;
-            return (
-              <button
-                key={m || "all"}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                onClick={() => chooseBox(m.toLowerCase())}
-                className={`inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors ${
-                  on ? (t.dark ? "border-white/20 bg-white/[0.09] text-white" : "border-gray-900 bg-gray-900 text-white") : `${t.dark ? "border-white/[0.08] text-gray-400 hover:text-gray-100" : "border-gray-200 text-gray-600 hover:text-gray-900"}`
-                }`}
-              >
-                <Icon name="mail" className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{m ? m.slice(0, m.indexOf("@")) : "All mailboxes"}</span>
-                {m && <span className={`max-sm:hidden ${on ? "opacity-60" : t.faint}`}>@{m.slice(m.indexOf("@") + 1)}</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
       {!openId && <SearchField value={q} onSearch={search} className="md:hidden" />}
 
       {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
