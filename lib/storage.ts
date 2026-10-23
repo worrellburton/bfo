@@ -35,24 +35,23 @@ export async function storageUpload(path: string, bytes: Uint8Array, contentType
 
 /**
  * A time-limited signed download URL for a stored object (default 1 hour).
- * With `download`, the browser saves it under that filename.
+ * With `download`, the browser saves it under that filename. Null when the
+ * object isn't there; any other failure (Storage down, misconfigured) throws,
+ * so it isn't mistaken for a missing file.
  */
 export async function storageSignedUrl(path: string, expiresIn = 3600, bucket = BUCKET, download?: string): Promise<string | null> {
-  try {
-    const { url, key } = cfg();
-    const r = await fetch(`${url}/storage/v1/object/sign/${bucket}/${encodeURI(path)}`, {
-      method: "POST",
-      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ expiresIn }),
-    });
-    if (!r.ok) return null;
-    const data = (await r.json()) as { signedURL?: string };
-    if (!data.signedURL) return null;
-    const signed = `${url}/storage/v1${data.signedURL}`;
-    return download ? `${signed}${signed.includes("?") ? "&" : "?"}download=${encodeURIComponent(download)}` : signed;
-  } catch {
-    return null;
-  }
+  const { url, key } = cfg();
+  const r = await fetch(`${url}/storage/v1/object/sign/${bucket}/${encodeURI(path)}`, {
+    method: "POST",
+    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn }),
+  });
+  if (r.status === 404 || r.status === 400) return null; // Storage answers a missing object with either
+  if (!r.ok) throw new Error(`storage sign failed: ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const data = (await r.json()) as { signedURL?: string };
+  if (!data.signedURL) throw new Error("storage sign failed: no signedURL in the answer");
+  const signed = `${url}/storage/v1${data.signedURL}`;
+  return download ? `${signed}${signed.includes("?") ? "&" : "?"}download=${encodeURIComponent(download)}` : signed;
 }
 
 /** The bytes of a stored object, or null when it isn't there. */

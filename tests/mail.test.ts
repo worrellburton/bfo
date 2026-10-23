@@ -849,6 +849,41 @@ describe("/api/mail", () => {
     expect(sbCalls.at(-1)).toMatchObject({ method: "PATCH", path: `mail_messages?thread_key=in.("<a@x>")&starred_at=not.is.null&user_id=eq.${U1}`, body: { starred_at: null } });
   });
 
+  it("keeps an admin's whole-conversation actions off the catch-all copy", async () => {
+    me = owner;
+    sbRoutes = [
+      [/GET mail_messages\?id=in\..*select=thread_key/, () => [{ thread_key: "<a@x>" }]],
+      [/GET mail_messages\?id=eq\./, () => [row({ thread_key: "<a@x>", read_at: "2026-10-14T13:00:00Z" })]],
+      [/GET mail_messages\?thread_key=in\..*select=id/, () => [{ id: MSG }]],
+    ];
+    await call("POST", { body: { action: "move", ids: [MSG], folder: "archive", conversation: true } });
+    await call("POST", { body: { action: "move", ids: [MSG], folder: "inbox", conversation: true } });
+    await call("POST", { body: { action: "star", ids: [MSG], starred: false, conversation: true } });
+    await call("POST", { body: { action: "delete", ids: [MSG], conversation: true } });
+    await call("GET", { query: { view: "message", id: MSG, conversation: "1" } });
+    const wide = sbCalls.filter((c) => c.path.includes("thread_key=in.") || /select=thread_key$/.test(c.path));
+    expect(wide.length).toBeGreaterThanOrEqual(8);
+    for (const c of wide) {
+      expect(c.path).toContain(`user_id=eq.${U1}`);
+      expect(c.path).not.toContain("user_id.is.null");
+    }
+  });
+
+  it("keeps out of Active's dated list only the starred conversations it pins", async () => {
+    sbRoutes = [
+      [/GET mail_messages\?.*select=thread_key&/, () => [{ thread_key: "<a@x>" }, { thread_key: "<b@x>" }]],
+      // The bounded read came back full of <a@x>: <b@x> isn't in it, so it stays in the dated list.
+      [/GET mail_messages\?.*thread_key=in\./, () => [row({ id: "head", thread_key: "<a@x>" })]],
+      [/GET mail_messages\?/, () => [row({ id: "b-head", thread_key: "<b@x>" })]],
+    ];
+    for (const query of <Record<string, string>[]>[{}, { before: "2026-10-21T09:00:00Z", beforeKey: "<z@x>" }]) {
+      sbCalls.length = 0;
+      const r = await call("GET", { query: { view: "list", folder: "active", ...query } });
+      expect(r.json.messages.map((m: any) => m.id)).toEqual(["b-head"]);
+      expect(sbCalls.some((c) => c.path.includes('or(thread_key.is.null,thread_key.not.in.("<a@x>"))'))).toBe(true);
+    }
+  });
+
   it("pages on (time, id), so mail sharing a timestamp isn't skipped", async () => {
     const at = "2026-10-14T12:00:00+00:00";
     const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;

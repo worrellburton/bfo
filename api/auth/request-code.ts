@@ -35,6 +35,8 @@ function mask(kind: "phone" | "email", value: string): string {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["POST"])) return;
 
+  let held: { id: string; created_at: string } | undefined;
+  let sent = false;
   try {
     const raw = (req.body?.identifier ?? req.body?.phone ?? req.body?.email ?? "") as string;
     const identifier = normalizeIdentifier(raw);
@@ -50,10 +52,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!signInAllowed(identifier.value)) {
       return fail(res, 400, "unsupported_country", "Sign-in codes can't be sent to numbers in that country.");
     }
+    // The code's row goes in before anything is counted or sent, held back
+    // (consumed, so verify-code passes over it) until the code is out. Each
+    // limit counts the rows written before it, so a burst of parallel
+    // requests can't all pass a count taken before any of them was written.
+    // A request that sends nothing takes its row out again (finally, below).
+    held = (
+      await sb<Array<{ id: string; created_at: string }>>("login_codes?select=id,created_at", {
+        method: "POST",
+        prefer: "return=representation",
+        body: [{ identifier: identifier.value, code_hash: "pending", consumed: true, expires_at: new Date().toISOString() }],
+      })
+    )?.[0];
+    if (!held) throw new Error("request-code: the code's row wasn't written");
+    const upTo = encodeURIComponent(held.created_at);
+
     // A global ceiling on codes sent, so cycling through fresh numbers (each
-    // within its own per-number limit) can't run up the SMS bill.
-    const sentLastHour = await countRows("login_codes", `created_at=gte.${encodeURIComponent(hourAgo())}`);
-    if (sentLastHour >= hourlyCap()) {
+    // within its own per-number limit) can't run up the SMS bill. This
+    // request's row counts too. countRows throws when it can't count, so an
+    // unknown count never lets a code through.
+    const sentLastHour = await countRows("login_codes", `created_at=gte.${encodeURIComponent(hourAgo())}&created_at=lte.${upTo}`);
+    if (sentLastHour > hourlyCap()) {
       console.error(`request-code: global cap reached (${sentLastHour} codes in the last hour)`);
       res.setHeader("Retry-After", "600");
       return fail(res, 429, "busy", "Sign-in is busy right now. Try again in a few minutes.");
@@ -80,10 +99,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user = created?.[0];
     }
 
-    // Throttle: one code per identifier every CODE_RESEND_MS, and a cap per hour.
+    // Throttle: one code per identifier every CODE_RESEND_MS, and a cap per
+    // hour — counting the codes requested before this one.
     const recent = await sb<Array<{ created_at: string }>>(
       `login_codes?identifier=eq.${encodeURIComponent(identifier.value)}` +
-        `&created_at=gte.${hourAgo()}` +
+        `&created_at=gte.${hourAgo()}&created_at=lt.${upTo}` +
         `&select=created_at&order=created_at.desc`
     );
     const newest = recent?.[0] ? new Date(recent[0].created_at).getTime() : 0;
@@ -99,15 +119,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Bird Verify generates, delivers and checks the code; we keep only its
     // verification id, namespaced so verify-code knows which path to take.
     const verificationId = await verifyStart(identifier);
-    await sb("login_codes", {
-      method: "POST",
-      body: [
-        {
-          identifier: identifier.value,
-          code_hash: `bird:${verificationId}`,
-          expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
-        },
-      ],
+    sent = true;
+    await sb(`login_codes?id=eq.${held.id}`, {
+      method: "PATCH",
+      body: {
+        code_hash: `bird:${verificationId}`,
+        consumed: false,
+        expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
+      },
     });
 
     return res.status(200).json({
@@ -119,5 +138,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    if (held && !sent) {
+      await sb(`login_codes?id=eq.${held.id}`, { method: "DELETE" }).catch((err) => console.error("request-code: couldn't release a held code row", err));
+    }
   }
 }

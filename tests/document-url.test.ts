@@ -20,6 +20,7 @@ vi.mock("../lib/tree.js", () => ({ readRows: async (_: string, ids: string[]) =>
 vi.mock("../lib/storage.js", () => ({
   storageSignedUrl: async (path: string, ttl: number, bucket: string, download?: string) => {
     signed.push({ path, ttl, bucket, download });
+    if (path.endsWith("down.pdf")) throw new Error("storage sign failed: 503 upstream");
     return path.endsWith("gone.pdf") ? null : `https://sb.test/storage/v1/object/sign/${bucket}/${path}?token=t`;
   },
 }));
@@ -119,5 +120,10 @@ describe("GET /api/documents/url", () => {
 
   it("answers 404 when the file is gone", async () => {
     expect((await call({ path: "assets/e1/gone.pdf" })).status).toBe(404);
+  });
+
+  it("answers 500, not 404, when Storage itself fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await call({ path: "assets/e1/down.pdf" })).toMatchObject({ status: 500, json: { error: "server_error" } });
   });
 });

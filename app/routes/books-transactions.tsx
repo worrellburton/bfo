@@ -483,7 +483,7 @@ export default function BooksTransactions() {
     try {
       const res = await authFetch("/api/cron/books-sync", { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Sync failed.");
+      if (!res.ok) throw new Error(data?.message || "Sync failed.");
       setLastSynced(new Date().toISOString());
       await load();
     } catch (err) {

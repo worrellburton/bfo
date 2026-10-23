@@ -56,10 +56,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // doubled. Every page is read, and a failed read stops the import: an
     // empty list here would import the whole file on top of what's there.
     const dates = clean.map((r) => r.date).sort();
-    const existing = await fetchAll<{ date: string; amount: number | string }>(
+    const existing = await fetchAll<{ date: string; amount: number | string; name: string | null }>(
       `book_transactions?account_id=eq.${encodeURIComponent(accountId)}` +
         `&date=gte.${dates[0]}&date=lte.${dates[dates.length - 1]}` +
-        `&select=date,amount&order=transaction_id.asc`
+        `&select=date,amount,name&order=transaction_id.asc`
     );
 
     // Same rule set the nightly sync applies, so imported rows pick up the
@@ -140,7 +140,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ imported: rows.length, skipped_existing: skipped });
   } catch (err: any) {
+    // The detail (raw database text) stays in the log.
     console.error("csv import error:", err.message);
-    return res.status(500).json({ error: "import_failed", message: err.message?.slice(0, 300) });
+    return res.status(500).json({ error: "import_failed", message: "The import didn't finish. Try again." });
   }
 }

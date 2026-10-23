@@ -67,6 +67,13 @@ describe("countRows", () => {
     expect(await countRows("login_codes", "created_at=gte.x", db)).toBe(42);
   });
 
+  it("throws when there's no total, rather than counting nothing", async () => {
+    const db: DbFetch = async () => new Response("[]", { headers: { "content-range": "0-0/*" } });
+    await expect(countRows("login_codes", "created_at=gte.x", db)).rejects.toThrow(/no row count/);
+    const bare: DbFetch = async () => new Response("[]");
+    await expect(countRows("login_codes", "created_at=gte.x", bare)).rejects.toThrow(/no row count/);
+  });
+
   it("throws on a failed count", async () => {
     const db: DbFetch = async () => new Response("nope", { status: 500 });
     await expect(countRows("login_codes", "created_at=gte.x", db)).rejects.toThrow(/supabase 500/);

@@ -49,6 +49,16 @@ describe("planCsvImport", () => {
     expect(plan.rows.map((r) => r.amount)).toEqual([-25]);
   });
 
+  it("lets a stored row absorb the CSV row with its own description first", () => {
+    const stored = [{ date: "2026-01-02", amount: 25, name: "Parking  Garage" }];
+    const plan = planCsvImport([row("2026-01-02", 25, "TOLL"), row("2026-01-02", 25, "PARKING GARAGE")], stored);
+    expect(plan.skipped).toBe(1);
+    expect(plan.rows.map((r) => r.description)).toEqual(["TOLL"]);
+    // With no description to go on (a Plaid row named otherwise), any same-day amount still matches, in file order.
+    const plaid = planCsvImport([row("2026-01-02", 25, "TOLL"), row("2026-01-02", 25, "PARKING")], [{ date: "2026-01-02", amount: 25, name: "E-ZPass" }]);
+    expect(plaid.rows.map((r) => r.description)).toEqual(["PARKING"]);
+  });
+
   it("is a no-op when the whole file is already there", () => {
     const file = [row("2026-01-02", 25), row("2026-01-02", 25), row("2026-01-05", 9.99)];
     const stored = file.map((r) => ({ date: r.date, amount: r.amount }));

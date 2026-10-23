@@ -180,7 +180,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ backfilled: totalInserted, accounts: summary });
   } catch (err: any) {
+    // The detail (raw Mercury or database text) stays in the log.
     console.error("mercury backfill error:", err.message);
-    return res.status(500).json({ error: "backfill_failed", message: err.message?.slice(0, 300) });
+    return res.status(500).json({ error: "backfill_failed", message: "The Mercury backfill didn't finish. Try again." });
   }
 }

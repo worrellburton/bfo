@@ -21,10 +21,9 @@ const PIECE = /^[\w-]{6,64}$/;
 
 /** A row as the page shows it, with short-lived links to the copies. */
 async function present(r: MailRow) {
-  const [envelope, scan] = await Promise.all([
-    r.envelope_path ? storageSignedUrl(r.envelope_path, 3600, "mail") : null,
-    r.scan_path ? storageSignedUrl(r.scan_path, 3600, "mail") : null,
-  ]);
+  // A link that can't be signed just isn't shown; the list still loads.
+  const link = (path: string) => storageSignedUrl(path, 3600, "mail").catch((err) => (console.error("stable: couldn't sign a link", err), null));
+  const [envelope, scan] = await Promise.all([r.envelope_path ? link(r.envelope_path) : null, r.scan_path ? link(r.scan_path) : null]);
   return {
     id: r.id,
     assetId: r.asset_id,
