@@ -1606,9 +1606,7 @@ export default function Inbox() {
             type="button"
             aria-label="New message"
             onClick={() => setDraft(blankDraft(box || undefined))}
-            className={`fab-in fixed right-4 z-40 flex h-[56px] cursor-pointer items-center gap-2.5 rounded-2xl pl-5 pr-6 text-[15px] font-semibold shadow-lg transition-transform active:scale-95 sm:hidden ${
-              t.dark ? "bg-white text-gray-950 shadow-black/40" : "bg-gray-900 text-white shadow-gray-900/30"
-            }`}
+            className="fab-in fab-glass fixed left-1/2 z-40 flex h-[54px] -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full pl-6 pr-7 text-[15px] font-semibold transition-transform active:scale-95 sm:hidden"
             style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
           >
             <Icon name="edit" className="h-5 w-5" strokeWidth={1.9} />
