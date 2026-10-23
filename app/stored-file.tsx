@@ -7,7 +7,7 @@
  * moved out of Firebase open as they are.
  */
 
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type SyntheticEvent } from "react";
 import { SIGNED_URL_TTL_S, storagePathOf, type StoredFileRef } from "../lib/document-path";
 import { authFetch } from "./auth";
 import { alertDialog } from "./confirm-dialog";
@@ -30,6 +30,12 @@ export function cachedFileUrl(file: StoredFileRef | null | undefined): string | 
   if (!path) return file?.url || null;
   const hit = cache.get(path);
   return hit && hit.until > Date.now() ? hit.url : null;
+}
+
+/** When the cached signed link for this file stops being reused (0 when there's none). */
+function cachedUntil(file: StoredFileRef): number {
+  const path = storagePathOf(file);
+  return (path && cache.get(path)?.until) || 0;
 }
 
 /**
@@ -144,9 +150,11 @@ export async function copyStoredFileLink(file: StoredFileRef): Promise<void> {
 
 /**
  * A link to a stored file: an ordinary anchor for an external link; for one
- * of our documents, a click fetches a signed link and opens it. The signed
- * link is fetched on hover/focus too, so middle-click and "copy link address"
- * get a working (expiring) URL rather than the old public one.
+ * of our documents, a click opens it in the reader (openStoredFile) and a
+ * modifier or middle click in a new tab. The signed link is fetched on hover/focus/press too, and only then
+ * becomes the href, so "open in new tab" and "copy link address" get a working
+ * (expiring) URL; until then there's no href (never "#"), and once the link
+ * lapses it's taken out again.
  */
 export function StoredFileLink({
   file,
@@ -163,19 +171,51 @@ export function StoredFileLink({
 }) {
   const [, setTick] = useState(0);
   const ours = !!storagePathOf(file);
-  const href = ours ? (cachedFileUrl(file) ?? "#") : file.url || undefined;
+  const ready = ours ? cachedFileUrl(file) : null;
+  const href = ours ? (ready ?? undefined) : file.url || undefined;
+  // Re-render as the signed link lapses, so an expired one never sits in href.
+  useEffect(() => {
+    if (!ready) return;
+    const t = setTimeout(() => setTick((n) => n + 1), Math.max(cachedUntil(file) - Date.now(), 0) + 50);
+    return () => clearTimeout(t);
+  }, [ready, file]);
   const warm = () => {
     if (ours && !cachedFileUrl(file)) void storedFileUrl(file).then(() => setTick((n) => n + 1), () => {});
   };
-  const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
-    if (!ours) return;
-    // A modifier or middle click keeps the browser's own "new tab" with the signed link.
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+  // A plain click opens the reader; a modifier or middle click opens a tab, natively once the signed link is
+  // the href, else through openStoredFile.
+  const open = (e: SyntheticEvent, newTab = false) => {
+    if (newTab && href) return;
     e.preventDefault();
-    void openStoredFile(file);
+    void openStoredFile(file, newTab ? { newTab: true } : {});
   };
+  if (!ours) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" title={title} aria-label={ariaLabel} className={className}>
+        {children}
+      </a>
+    );
+  }
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" title={title} aria-label={ariaLabel} className={className} onMouseEnter={warm} onFocus={warm} onClick={onClick}>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      // With no href yet the anchor still has to act as a link: focusable, and Enter opens it.
+      role="link"
+      tabIndex={0}
+      style={href ? undefined : { cursor: "pointer" }}
+      title={title}
+      aria-label={ariaLabel}
+      className={className}
+      onMouseEnter={warm}
+      onFocus={warm}
+      onPointerDown={warm}
+      onContextMenu={warm}
+      onClick={(e: MouseEvent<HTMLAnchorElement>) => open(e, e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1)}
+      onAuxClick={(e: MouseEvent<HTMLAnchorElement>) => e.button === 1 && open(e, true)}
+      onKeyDown={(e: KeyboardEvent<HTMLAnchorElement>) => !href && e.key === "Enter" && open(e)}
+    >
       {children}
     </a>
   );

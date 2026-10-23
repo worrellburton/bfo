@@ -74,6 +74,7 @@ export default function AssetDetail() {
     kindsFor: page.kindsFor,
     tabParam: page.tabParam,
     partner: isPartner(),
+    palmMode: page.palmMode,
   });
 
   return (

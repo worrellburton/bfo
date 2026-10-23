@@ -571,7 +571,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const rows = await fetchAll<BookTxn>(
             "book_transactions?select=date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id" +
               `&pending=eq.false&date=gt.${priorFrom}` +
-              scopeFilter(prefs, null)
+              scopeFilter(prefs, null) +
+              "&order=transaction_id.asc"
           );
           const win = () => ({ in: 0, out: 0, net: 0 });
           const current = win();
@@ -620,7 +621,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const [rows, adjustments] = await Promise.all([
             fetchAll<InflowRow & { account_id: string }>(
               "book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id" +
-                `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc`
+                `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc,transaction_id.asc`
             ),
             fetchAll<{ kind: string; name: string; amount: number | string | null; cadence: string | null; expected_day: number | null; entity_name: string | null; note: string | null }>(
               "books_expected_inflows?select=kind,name,amount,cadence,expected_day,entity_name,note&active=eq.true&order=created_at.asc"
@@ -674,7 +675,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // How many transactions each rule currently touches, for context.
       const counts = new Map<string, number>();
       const txns = await fetchAll<{ merchant_name: string | null; name: string | null }>(
-        "book_transactions?select=merchant_name,name"
+        "book_transactions?select=merchant_name,name&order=transaction_id.asc"
       );
       for (const r of rules) {
         const needle = String(r.match).toLowerCase();
@@ -721,7 +722,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const receipts = await Promise.all(
         rawReceipts.map(async (r) => ({
           ...r,
-          url: r.path ? await storageSignedUrl(r.path) : r.url,
+          url: r.path ? await storageSignedUrl(r.path).catch((err) => (console.error("books: couldn't sign a receipt link", err), null)) : r.url,
         }))
       );
       return res.json({ log, receipts });
@@ -736,7 +737,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         db("book_transactions?select=transaction_id&limit=1", { headers: { Prefer: "count=exact" } }),
         db("book_transactions?select=updated_at&order=updated_at.desc&limit=1"),
         fetchAll<{ merchant_name: string | null; name: string | null; book_category: string | null }>(
-          "book_transactions?select=merchant_name,name,book_category"
+          "book_transactions?select=merchant_name,name,book_category&order=transaction_id.asc"
         ),
         fetchAll<{ id: string; name: string }>("book_loans?archived_at=is.null&select=id,name&order=name.asc"),
       ]);
@@ -829,7 +830,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let summary: { count: number; expenses: number; income: number; first: string | null; last: string | null } | null = null;
       if (offset === 0) {
         const all = await fetchAll<{ date: string; amount: number | string }>(
-          `book_transactions?select=date,amount${filter}&order=date.asc`
+          `book_transactions?select=date,amount${filter}&order=date.asc,transaction_id.asc`
         );
         let expenses = 0;
         let income = 0;
@@ -862,7 +863,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `book_transactions?select=*&pending=eq.false` +
             `&date=gte.${year}-01-01&date=lte.${year}-12-31` +
             scopeFilter(prefs, selection) +
-            "&order=date.asc"
+            "&order=date.asc,transaction_id.asc"
         ),
         prefs
       );
@@ -1020,7 +1021,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rows = withLiveEntity(
         await fetchAll<BookTxn>(
           `book_transactions?select=*&pending=eq.false&date=gte.${year}-01-01&date=lte.${year}-12-31` +
-            scopeFilter(prefs, selection)
+            scopeFilter(prefs, selection) +
+            "&order=transaction_id.asc"
         ),
         prefs
       );
@@ -1074,7 +1076,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rows = withLiveEntity(
         await fetchAll<BookTxn>(
           `book_transactions?select=*&pending=eq.false&date=gte.${year}-01-01&date=lte.${year}-12-31` +
-            scopeFilter(prefs, null)
+            scopeFilter(prefs, null) +
+            "&order=transaction_id.asc"
         ),
         prefs
       );
@@ -1103,7 +1106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "review") {
       const prefs = await getPrefs();
       const rows = withLiveEntity(
-        await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}`),
+        await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=transaction_id.asc`),
         prefs
       );
       const slim = (t: BookTxn) => ({
@@ -1166,7 +1169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const prefs = await getPrefs();
       const rows = withLiveEntity(
         await fetchAll<BookTxn>(
-          `book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=date.asc`
+          `book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=date.asc,transaction_id.asc`
         ),
         prefs
       );
@@ -1233,7 +1236,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (report === "reconciliation") {
       const prefs = await getPrefs();
       const rows = await fetchAll<{ account_id: string; amount: number }>(
-        `book_transactions?select=account_id,amount&pending=eq.false`
+        `book_transactions?select=account_id,amount&pending=eq.false&order=transaction_id.asc`
       );
       const ledger = new Map<string, number>();
       for (const t of rows) ledger.set(t.account_id, (ledger.get(t.account_id) ?? 0) - t.amount); // inflow +
@@ -1379,7 +1382,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await fetchAll<BookTxn>(
           `book_transactions?select=*&pending=eq.false` +
             `&date=gte.${year}-01-01&date=lte.${year}-12-31` +
-            scopeFilter(prefs, selection)
+            scopeFilter(prefs, selection) +
+            "&order=transaction_id.asc"
         ),
         prefs
       );

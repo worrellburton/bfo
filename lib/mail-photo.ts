@@ -100,7 +100,8 @@ async function readFaces(): Promise<Record<string, string>> {
   const faces: Record<string, string> = {};
   await Promise.all(
     users.map(async (u) => {
-      const url = await storageSignedUrl(u.mail_photo, FACE_LINK_SECONDS, BUCKET);
+      // A picture that can't be signed falls back to initials.
+      const url = await storageSignedUrl(u.mail_photo, FACE_LINK_SECONDS, BUCKET).catch((err) => (console.error("mail-photo: couldn't sign a link", err), null));
       if (!url) return;
       faces[u.mail_address.toLowerCase()] = url;
       for (const a of aliases ?? []) if (a.user_id === u.id) faces[a.address.toLowerCase()] = url;

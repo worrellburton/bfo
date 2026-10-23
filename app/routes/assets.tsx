@@ -1013,7 +1013,39 @@ function StaffAssets() {
     const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode, { freshMs: SYNC_FRESH_MS }) }));
     return { cents: per.reduce((n, x) => n + x.cost.cents, 0), states: per.reduce((n, x) => n + x.cost.states.length, 0), entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length };
   }, [assets, palmMode]);
-  const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode } | null>(null);
+  const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode; title?: string } | null>(null);
+
+  // ── Palm Monitor and the IRS EIN check, for every entity ─────────────────
+  // What each would do and cost comes from the server (which registrations are
+  // already watched, which EINs already checked out), shown before anything runs.
+  type PalmChecksPlan = { mode: PalmMode; monitor: { count: number; cents: number; on: number; unidentified: number }; ein: { count: number; cents: number; settled: number } };
+  const [palmChecks, setPalmChecks] = useState<{ plan?: PalmChecksPlan; error?: string } | null>(null);
+  async function openPalmChecks() {
+    setPalmChecks({});
+    try {
+      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({ action: "plan" }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Couldn't reach Palm.");
+      setPalmChecks({ plan: j });
+    } catch (err) {
+      setPalmChecks({ error: (err as Error).message });
+    }
+  }
+  async function runPalmCheck(action: "monitor-all" | "ein-all") {
+    const plan = palmChecks?.plan;
+    if (!plan || palmSync?.running) return;
+    setPalmChecks(null);
+    const title = action === "monitor-all" ? "Palm Monitor" : "EINs checked with the IRS";
+    setPalmSync({ running: true, results: [], title });
+    try {
+      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({ action, mode: plan.mode }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Palm didn't finish.");
+      setPalmSync({ running: false, results: j.entities ?? [], mode: j.mode, title });
+    } catch (err) {
+      setPalmSync({ running: false, results: [], error: (err as Error).message, title });
+    }
+  }
 
   async function syncAllWithPalm() {
     if (!palmMode || palmSync?.running) return;
@@ -1822,13 +1854,29 @@ function StaffAssets() {
             onClick={() => void syncAllWithPalm()}
             disabled={!!palmSync?.running}
             title="Every entity's state records, and for the ones Palm holds, their agent, Palm's copy and their mail"
+            aria-label={`Sync everything with Palm, ${palmMode === "test" ? "free in test mode" : palmPlan.cents ? `estimated ${dollars(palmPlan.cents)}` : "free"}`}
             className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
               isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
             }`}
           >
-            <Icon d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" strokeWidth={1.8} className={`w-3.5 h-3.5 ${palmSync?.running ? "animate-spin" : ""}`} />
-            <span className="max-sm:hidden">{palmSync?.running ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
+            <Icon d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" strokeWidth={1.8} className={`w-3.5 h-3.5 ${palmSync?.running && !palmSync.title ? "animate-spin" : ""}`} />
+            <span className="max-sm:hidden">{palmSync?.running && !palmSync.title ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
             <span className={t2}>{palmMode === "test" ? "free in test mode" : palmPlan.cents ? `est. ${dollars(palmPlan.cents)}` : "free"}</span>
+          </button>
+        )}
+        {isAdmin() && palmMode && (
+          <button
+            type="button"
+            onClick={() => void openPalmChecks()}
+            disabled={!!palmSync?.running}
+            title="Palm Monitor on every registration, and every EIN checked with the IRS"
+            aria-label="Monitor and verify with Palm"
+            className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
+              isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Icon d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z" strokeWidth={1.8} className="w-3.5 h-3.5" />
+            <span className="max-sm:hidden">{palmSync?.running && palmSync.title ? "Working with Palm…" : "Monitor & verify"}</span>
           </button>
         )}
         <button
@@ -1853,20 +1901,88 @@ function StaffAssets() {
         </div>
       </div>
 
-      {palmSync && !palmSync.running &&
+      {palmChecks &&
         createPortal(
-          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmSync(null)}>
+          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmChecks(null)} onKeyDown={(e) => e.key === "Escape" && setPalmChecks(null)}>
             <div
               role="dialog"
-              aria-label="Synced with Palm"
+              aria-modal="true"
+              aria-label="Monitor and verify with Palm"
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full max-w-[520px] overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"}`}
+            >
+              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                <p className="text-sm font-semibold">Monitor &amp; verify with Palm{palmChecks.plan?.mode === "test" ? " (test mode)" : ""}</p>
+                <button type="button" autoFocus onClick={() => setPalmChecks(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
+                  Close
+                </button>
+              </div>
+              <div className="px-5 py-2">
+                {palmChecks.error ? (
+                  <p className="py-3 text-sm text-red-500">{palmChecks.error}</p>
+                ) : !palmChecks.plan ? (
+                  <p className={`py-3 text-sm ${t2}`}>Working out what's left to do…</p>
+                ) : (
+                  (() => {
+                    const p = palmChecks.plan;
+                    const live = p.mode === "live";
+                    const rows = [
+                      {
+                        key: "monitor-all" as const,
+                        title: "Watch every registration",
+                        text: `Palm tells you when a state's record changes and when a filing comes due or goes overdue. ${p.monitor.count ? `${p.monitor.count} not watched yet` : p.monitor.unidentified ? "None ready to watch" : "Every registration is watched"}${p.monitor.on ? ` · ${p.monitor.on} already on` : ""}${p.monitor.unidentified ? ` · ${p.monitor.unidentified} need a file number first (sync with Palm to read it)` : ""}.${live ? " $1.99 a month each while on; turn any off on its Compliance tab." : ""}`,
+                        count: p.monitor.count,
+                        label: `Watch ${p.monitor.count}${live && p.monitor.cents ? ` · ${dollars(p.monitor.cents)}/mo` : ""}`,
+                      },
+                      {
+                        key: "ein-all" as const,
+                        title: "Check every EIN with the IRS",
+                        text: `Each EIN asked against its legal name. ${p.ein.count ? `${p.ein.count} to check` : "Nothing to check"}${p.ein.settled ? ` · ${p.ein.settled} already confirmed, not checked again` : ""}.${live ? " 99¢ each, once." : ""}`,
+                        count: p.ein.count,
+                        label: `Check ${p.ein.count}${live && p.ein.cents ? ` · ${dollars(p.ein.cents)}` : ""}`,
+                      },
+                    ];
+                    return rows.map((row) => (
+                      <div key={row.key} className={`flex flex-col gap-2 border-b py-3.5 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${isDark ? "border-white/[0.06]" : "border-gray-100"}`}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{row.title}</p>
+                          <p className={`mt-0.5 text-[12.5px] leading-snug ${t2}`}>{row.text}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!row.count}
+                          onClick={() => void runPalmCheck(row.key)}
+                          className={`${BTN_BASE} h-[40px] shrink-0 px-3.5 text-sm sm:h-9 ${TAP.md} disabled:cursor-not-allowed disabled:opacity-50 ${primaryBtn(isDark)}`}
+                        >
+                          {row.label}
+                        </button>
+                      </div>
+                    ));
+                  })()
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {palmSync && !palmSync.running &&
+        createPortal(
+          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmSync(null)} onKeyDown={(e) => e.key === "Escape" && setPalmSync(null)}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={palmSync.title ?? "Synced with Palm"}
               onClick={(e) => e.stopPropagation()}
               className={`flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"}`}
             >
               <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
                 <p className="text-sm font-semibold">
-                  {palmSync.error ? "Couldn't sync with Palm" : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
+                  {palmSync.title
+                    ? `${palmSync.title}${palmSync.error ? ": didn't finish" : ` · ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"}`}${palmSync.mode === "test" ? " (test mode)" : ""}`
+                    : palmSync.error ? "Couldn't sync with Palm" : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
                 </p>
-                <button type="button" onClick={() => setPalmSync(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
+                <button type="button" autoFocus onClick={() => setPalmSync(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
                   Close
                 </button>
               </div>

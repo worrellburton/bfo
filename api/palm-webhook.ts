@@ -3,7 +3,8 @@ import { logActivity } from "../lib/activity.js";
 import { sb, sendEmail } from "../lib/auth.js";
 import { palm, palmMode } from "../lib/palm.js";
 import { raPatch, type RaServiceLike } from "../lib/palm-agent.js";
-import { toEventRow, verifyPalmSignature, type PalmEvent } from "../lib/palm-webhook.js";
+import { monitorByBusiness } from "../lib/palm-monitor.js";
+import { monitorPatch, toEventRow, verifyPalmSignature, type PalmEvent } from "../lib/palm-webhook.js";
 import { einPatch, formationPatch, summarizeFiling, type FormationState, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
 
@@ -24,8 +25,14 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  * the same way the page does when it reads the service (lib/palm-agent.ts),
  * so the record follows even when nobody has the page open.
  *
+ * A registration Palm monitors (lib/palm-monitor.ts) changing at the state
+ * (business.registration.updated) or a filing coming due or going overdue
+ * (business.filing.due / .overdue) is written onto its entity (palmMonitor,
+ * palmFilings), shows in activity, and in live mode emails the owners and
+ * admins about a change to the record or an overdue filing.
+ *
  * Set up in Palm Console → Webhooks: URL https://<site>/api/palm-webhook,
- * the document.created, registered_agent.*, filing.* and case.* events, and the signing
+ * the document.created, registered_agent.*, filing.*, case.* and business.* events, and the signing
  * secret in Vercel as PALM_WEBHOOK_SECRET.
  */
 
@@ -59,10 +66,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!event?.id || !event.type) return res.status(400).json({ error: "bad_event" });
 
   const row = toEventRow(event);
+  // Palm redelivers: an event handled before changes nothing (and logs nothing) a second time.
+  const seen = await alreadyStored(row.id);
   const object = (event.data?.object ?? {}) as Record<string, unknown>;
 
+  // A monitored registration: the monitor says which entity and which state.
+  let monitorState: string | null = null;
+  let monitorAsset: string | null = null;
+  if (event.type.startsWith("business.") && row.business_id) {
+    const m = await monitorByBusiness(row.business_id, row.mode).catch(() => null);
+    if (m) {
+      monitorAsset = m.asset_id;
+      monitorState = m.state;
+    }
+  }
+
   // Which BFO entity: the id stamped on the filing, else the entity linked to the business, else the id on the Palm business.
-  let assetId: string | null = (object.metadata as Record<string, string> | undefined)?.bfo_asset_id ?? null;
+  let assetId: string | null = monitorAsset ?? (object.metadata as Record<string, string> | undefined)?.bfo_asset_id ?? null;
   let entityName: string | null = null;
   if (!assetId && row.business_id) {
     const linked = await businessEntity(row.business_id, row.mode).catch(() => null);
@@ -91,14 +111,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await trackFiling(assetId, row.mode, object as unknown as PalmFiling).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
   }
 
+  // Writing an event onto its entity failed: it isn't stored, and Palm is asked to send it again.
+  let retry = false;
+  const fail = (what: string) => (err: unknown) => {
+    console.error(`palm-webhook: couldn't record the ${what}`, err);
+    retry = true;
+  };
+
   // The agent service moving along: the entity's agent follows.
-  if (assetId && event.type.startsWith("registered_agent.") && !(await alreadyStored(row.id))) {
-    await trackAgent(assetId, row.mode, object as RaServiceLike, Date.parse(row.occurred_at) || Date.now()).catch((err) => console.error("palm-webhook: couldn't record the agent", err));
+  if (assetId && event.type.startsWith("registered_agent.") && !seen) {
+    await trackAgent(assetId, row.mode, object as RaServiceLike, Date.parse(row.occurred_at) || Date.now()).catch(fail("agent"));
   }
 
-  if (assetId && event.type.startsWith("case.")) {
-    await onCase(event.id, event.type, assetId, entityName, row.mode, object).catch((err) => console.error("palm-webhook: couldn't record the case", err));
+  if (assetId && monitorState && event.type.startsWith("business.") && !seen) {
+    await onMonitor(event, assetId, entityName, monitorState, row.mode).catch(fail("monitor event"));
   }
+
+  if (assetId && event.type.startsWith("case.") && !seen) {
+    await onCase(event.id, event.type, assetId, entityName, row.mode, object).catch(fail("case"));
+  }
+  if (retry) return res.status(500).json({ error: "record_failed" }); // Palm retries
 
   try {
     const inserted = await sb<unknown[]>("palm_events?on_conflict=id", {
@@ -223,5 +255,66 @@ async function onCase(eventId: string, type: string, assetId: string, entityName
     }
   } else if (type === "case.resolved") {
     await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm closed its question: ${summary}${tag}` }]);
+  }
+}
+
+/** The owners' and admins' email addresses. */
+async function ownerEmails(): Promise<string[]> {
+  const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
+  return [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
+}
+
+/** A monitored registration changed at the state, or a filing came due or went overdue: onto the entity, into activity, and (live) to the owners. */
+async function onMonitor(event: PalmEvent, assetId: string, entityName: string | null, state: string, mode: "test" | "live"): Promise<void> {
+  const row = (await readRows("assets", [assetId]))[0];
+  if (!row) return;
+  const who = entityName || ((row.data ?? {}) as { name?: string }).name || "one of your entities";
+  const at = Date.parse(event.created_at ?? "") || Date.now();
+  const patch = monitorPatch(event, state, mode, at, (row.data ?? {}) as Parameters<typeof monitorPatch>[4]);
+  if (!patch) return;
+  await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }], PALM);
+  const tag = mode === "test" ? " (test)" : "";
+  const link = `${SITE}/assets/${assetId}/compliance`;
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  if (event.type === "business.registration.updated") {
+    const lines = (event.data?.changes ?? []).map((c) => c.summary || `${c.attribute ?? "Record"} ${c.action ?? "updated"}`).filter(Boolean).slice(0, 10);
+    const summary = lines.length ? lines.join("; ") : "Its record changed.";
+    await logActivity(assetId, PALM, [{ kind: "palm", summary: `${state} record changed: ${summary}${tag}` }]);
+    if (mode === "live") {
+      const to = await ownerEmails();
+      if (to.length) {
+        await sendEmail(
+          to,
+          `${who}'s ${state} record changed`,
+          `Palm saw a change to ${who}'s record with ${state}:\n${lines.map((l) => `- ${l}`).join("\n") || summary}\n\nSee it in BFO: ${link}`,
+          `<p>Palm saw a change to <b>${esc(who)}</b>'s record with ${state}:</p><ul>${(lines.length ? lines : [summary]).map((l) => `<li>${esc(l)}</li>`).join("")}</ul><p><a href="${link}">See it in BFO</a></p>`,
+          undefined,
+          undefined,
+          { idempotencyKey: `palm-${event.id}` },
+        ).catch((err) => console.error("palm monitor email failed", err));
+      }
+    }
+    return;
+  }
+
+  const filing = (event.data?.object ?? {}) as { type?: { id?: string; name?: string }; due_date?: string };
+  const name = filing.type?.name || "A filing";
+  const overdue = event.type === "business.filing.overdue";
+  const due = filing.due_date ? ` (due ${filing.due_date.slice(0, 10)})` : "";
+  await logActivity(assetId, PALM, [{ kind: "palm", summary: `${state}: ${name} ${overdue ? "is overdue" : "is coming due"}${due}${tag}` }]);
+  if (overdue && mode === "live") {
+    const to = await ownerEmails();
+    if (to.length) {
+      await sendEmail(
+        to,
+        `${who}: ${name} is overdue in ${state}`,
+        `Palm reports ${who}'s ${name} with ${state} is overdue${due}. Late filings can cost an entity its good standing.\nSee it in BFO: ${link}`,
+        `<p>Palm reports <b>${esc(who)}</b>'s <b>${esc(name)}</b> with ${state} is <b>overdue</b>${esc(due)}.</p><p>Late filings can cost an entity its good standing.</p><p><a href="${link}">See it in BFO</a></p>`,
+        undefined,
+        undefined,
+        { idempotencyKey: `palm-${event.id}` },
+      ).catch((err) => console.error("palm monitor email failed", err));
+    }
   }
 }

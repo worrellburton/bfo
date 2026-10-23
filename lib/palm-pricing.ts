@@ -32,8 +32,9 @@ export function palmProduct(method: string, path: string): PalmProduct | null {
   if (m === "GET" && /^\/v1\/business\/registry\/[^/]+\/[^/]+$/.test(p)) return "detail";
   if (/^\/v1\/(verify|verification)\/(business|entity)/.test(p)) return "verify_business";
   if (/^\/v1\/(verify|verification)\/(person|identity|kyc)/.test(p)) return "verify_person";
-  if (/^\/v1\/(verify|verification)\/(tin|ein)/.test(p)) return "verify_tin";
-  if (m === "POST" && /^\/v1\/(business\/[^/]+\/)?monitor/.test(p)) return "monitor";
+  if (m === "POST" && (p === "/v1/tin/verification" || /^\/v1\/(verify|verification)\/(tin|ein)/.test(p))) return "verify_tin";
+  // A subscription bills monthly from the day it starts; the start is the call logged.
+  if (m === "POST" && /^\/v1\/business\/([^/]+\/)?subscription$/.test(p)) return "monitor";
   return null;
 }
 

@@ -94,9 +94,15 @@ function idList(v: unknown): string[] | null {
   return v.every((x) => typeof x === "string" && UUID_RE.test(x)) ? [...new Set(v as string[])] : null;
 }
 
-/** The conversations these messages are in (thread_key), within the caller's scope. */
-async function threadKeysOf(ids: string[], scope: string): Promise<string[]> {
-  const rows = await sb<{ thread_key: string | null }[]>(`mail_messages?id=in.(${ids.join(",")})&${scope}&select=thread_key`);
+/**
+ * Whole-conversation actions reach the caller's own mail only, admin or not (Active is theirs alone): a
+ * catch-all copy can share a thread_key, and mustn't be deleted, archived or marked read along with it.
+ */
+const ownFilter = (me: AppUser) => `user_id=eq.${me.id}`;
+
+/** The conversations these messages are in (thread_key), among the caller's own mail. */
+async function threadKeysOf(ids: string[], me: AppUser): Promise<string[]> {
+  const rows = await sb<{ thread_key: string | null }[]>(`mail_messages?id=in.(${ids.join(",")})&${ownFilter(me)}&select=thread_key`);
   return [...new Set((rows ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))];
 }
 
@@ -172,7 +178,16 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         pins && active
           ? [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=thread_key&order=starred_at.desc&limit=200`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))].slice(0, 30)
           : [];
-      const keyList = starredKeys.map(pgQuote).join(",");
+      // Each starred conversation's newest message, from one bounded read. Only the conversations that made it
+      // into the read are pinned and kept out of the dated list (on every page), so none shows nowhere.
+      const pinnedHeads = starredKeys.length
+        ? conversationHeads(
+            (await sb<SummaryRow[]>(`mail_messages?${where}&${keysIn(starredKeys)}${inBox}&select=${before ? "id,thread_key" : SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=400`)) ?? [],
+            100,
+            Infinity
+          ).heads
+        : [];
+      const keyList = pinnedHeads.map((r) => r.thread_key).filter((k): k is string => !!k).map(pgQuote).join(",");
       const pinnedRows =
         pins && !active
           ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${before ? "id" : SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=100`)) ?? [])
@@ -191,11 +206,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       ].filter(Boolean);
       const extra = conditions.length ? `&and=(${conditions.join(",")})` : "";
       if (active) {
-        let pinned: SummaryRow[] = [];
-        if (!before && starredKeys.length) {
-          const rows = await sb<SummaryRow[]>(`mail_messages?${where}&thread_key=in.(${keyList})${inBox}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=400`);
-          pinned = conversationHeads(rows ?? [], 100, Infinity).heads;
-        }
+        const pinned = before ? [] : pinnedHeads;
         // A conversation's messages come together, newest first; read enough to fill a page of them.
         const fetched = Math.min(limit * 4, 400);
         const rows = await sb<SummaryRow[]>(
@@ -232,7 +243,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       }
       // Opened from Active, the row stood for the whole conversation: it's all read now.
       if (param(req, "conversation") === "1" && row.thread_key) {
-        await sb(`mail_messages?${keysIn([row.thread_key])}&read_at=is.null&${scopeFilter(me.id, admin)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
+        await sb(`mail_messages?${keysIn([row.thread_key])}&read_at=is.null&${ownFilter(me)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
       }
       return res.status(200).json({ message: toMessage(row) });
     }
@@ -349,21 +360,22 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       const ids = idList(body.ids);
       if (!ids) return fail(res, 400, "bad_ids");
       if (body.folder !== "inbox" && body.folder !== "archive") return fail(res, 400, "bad_folder");
-      const keys = await threadKeysOf(ids, scope);
+      const keys = await threadKeysOf(ids, me);
+      const own = ownFilter(me);
       if (body.folder === "archive" && body.conversation === true && keys.length) {
         // Archived from Active: the conversation's received mail moves, and the whole of it (sent copies
         // too, which stay in Out) leaves Active until a new message arrives in it or it moves back.
-        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.inbox&${scope}`, { method: "PATCH", body: { folder: "archive" } });
-        await sb(`mail_messages?${keysIn(keys)}&${scope}`, { method: "PATCH", body: { active_hidden: true } });
+        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.inbox&${own}`, { method: "PATCH", body: { folder: "archive" } });
+        await sb(`mail_messages?${keysIn(keys)}&${own}`, { method: "PATCH", body: { active_hidden: true } });
         return res.status(200).json({ ok: true });
       }
       await sb(`mail_messages?id=in.(${ids.join(",")})&direction=eq.in&${scope}`, { method: "PATCH", body: { folder: body.folder } });
       // The whole conversation back (undoing an archive from Active): all of its archived received mail.
       if (body.folder === "inbox" && body.conversation === true && keys.length) {
-        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.archive&${scope}`, { method: "PATCH", body: { folder: "inbox" } });
+        await sb(`mail_messages?${keysIn(keys)}&direction=eq.in&folder=eq.archive&${own}`, { method: "PATCH", body: { folder: "inbox" } });
       }
       // Back to the inbox: the conversation is in Active again.
-      if (body.folder === "inbox" && keys.length) await sb(`mail_messages?${keysIn(keys)}&active_hidden=is.true&${scope}`, { method: "PATCH", body: { active_hidden: false } });
+      if (body.folder === "inbox" && keys.length) await sb(`mail_messages?${keysIn(keys)}&active_hidden=is.true&${own}`, { method: "PATCH", body: { active_hidden: false } });
       return res.status(200).json({ ok: true });
     }
 
@@ -388,9 +400,9 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       });
       // Active shows a conversation starred when any message in it is: unstarring it there clears them all.
       if (!body.starred && body.conversation === true) {
-        const keys = [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?id=in.(${ids.join(",")})&${scope}&select=thread_key`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))];
+        const keys = await threadKeysOf(ids, me);
         if (keys.length) {
-          await sb(`mail_messages?thread_key=in.(${keys.map(pgQuote).join(",")})&starred_at=not.is.null&${scope}`, { method: "PATCH", body: { starred_at: null } });
+          await sb(`mail_messages?${keysIn(keys)}&starred_at=not.is.null&${ownFilter(me)}`, { method: "PATCH", body: { starred_at: null } });
         }
       }
       return res.status(200).json({ ok: true });
@@ -402,8 +414,8 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       // From Active, a row is a conversation: every message in it goes.
       let all = ids;
       if (body.conversation === true) {
-        const keys = await threadKeysOf(ids, scope);
-        const rows = keys.length ? await sb<{ id: string }[]>(`mail_messages?${keysIn(keys)}&${scope}&select=id`) : [];
+        const keys = await threadKeysOf(ids, me);
+        const rows = keys.length ? await sb<{ id: string }[]>(`mail_messages?${keysIn(keys)}&${ownFilter(me)}&select=id`) : [];
         all = [...new Set([...ids, ...(rows ?? []).map((r) => r.id)])];
       }
       await deleteMessages(all, scope);

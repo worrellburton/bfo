@@ -190,6 +190,19 @@ export function firebaseFilesOf(assetId: string, asset: Json): FileRef[] {
 
 const safeSegment = (s: string) => s.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "file";
 
+/**
+ * Where a moved file goes in the documents bucket: one safe segment, named
+ * after the file, keeping the extension of the Firebase object (its last path
+ * segment only, sanitised too), so the result is always an isDocumentPath.
+ */
+export function movedFilePath(assetId: string, name: string, firebasePath: string, now = Date.now()): string {
+  const last = firebasePath.split("/").pop() ?? "";
+  const dot = last.lastIndexOf(".");
+  const ext = dot > 0 && dot < last.length - 1 ? safeSegment(last.slice(dot + 1)) : "";
+  const base = safeSegment(name.replace(/\.[^.]+$/, ""));
+  return `assets/${safeSegment(assetId)}/${now}-${base}${ext && !base.endsWith(`.${ext}`) ? `.${ext}` : ""}`;
+}
+
 /** Copy one file into the documents bucket; returns its new path and public URL. */
 async function moveFile(assetId: string, file: FileRef): Promise<{ storagePath: string; url: string }> {
   const t = await firebaseToken();
@@ -206,9 +219,7 @@ async function moveFile(assetId: string, file: FileRef): Promise<{ storagePath: 
   const bytes = new Uint8Array(await res.arrayBuffer());
   if (bytes.byteLength > MAX_FILE_BYTES) throw new Error(`${file.storagePath} is too large to move`);
   const contentType = file.contentType || res.headers.get("content-type")?.split(";")[0] || "application/octet-stream";
-  const ext = file.storagePath.split(".").pop() || "";
-  const base = safeSegment(file.name.replace(/\.[^.]+$/, ""));
-  const storagePath = `assets/${safeSegment(assetId)}/${Date.now()}-${base}${ext && !base.endsWith(`.${ext}`) ? `.${ext}` : ""}`;
+  const storagePath = movedFilePath(assetId, file.name, file.storagePath);
   await storageUpload(storagePath, bytes, contentType, DOCUMENTS_BUCKET);
   // The legacy URL shape is kept on the record; reads go by `storagePath` through signed links.
   const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/storage/v1/object/public/${DOCUMENTS_BUCKET}/${storagePath}`;
