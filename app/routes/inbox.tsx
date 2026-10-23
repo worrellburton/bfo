@@ -1472,7 +1472,7 @@ export default function Inbox() {
                 {x.label}
                 {!!n && <span className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${badge}`}>{n}</span>}
               </button>
-              {live && <span aria-hidden="true" className={`mx-1.5 my-1 w-px shrink-0 self-stretch ${t.dark ? "bg-white/10" : "bg-gray-200"}`} />}
+              {live && <span aria-hidden="true" className={`mx-1.5 my-1 w-px shrink-0 self-stretch max-md:hidden ${t.dark ? "bg-white/10" : "bg-gray-200"}`} />}
             </Fragment>
           );
         })}
@@ -1485,19 +1485,32 @@ export default function Inbox() {
         className="max-md:hidden"
         options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
       />
+      {/* Phones: the same narrowing as two toggles at the row's end (lit when on), not a second row. */}
+      <div role="group" aria-label="Show" className="flex shrink-0 items-center gap-1 md:hidden">
+        {(["unread", "starred"] as const).map((k) => {
+          const on = filter === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={on}
+              aria-label={k === "unread" ? "Unread only" : "Starred only"}
+              title={k === "unread" ? "Unread only" : "Starred only"}
+              onClick={() => chooseFilter(on ? "all" : k)}
+              className={`inline-flex h-[38px] min-w-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-[10px] px-2.5 text-[13px] font-medium transition-colors ${
+                on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-400 hover:text-gray-900"
+              }`}
+            >
+              {k === "unread" ? (
+                <span className={`h-2.5 w-2.5 rounded-full ${on ? "bg-[#818cf8]" : "border-2 border-current"}`} />
+              ) : (
+                <Star on={on} className="h-3.5 w-3.5" />
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
-  );
-
-  /** Phones: the same filter, full width under the title, each choice a thumb-sized segment. */
-  const mobileFilter = !openId && (
-    <Segmented
-      label="Show"
-      value={filter}
-      onChange={chooseFilter}
-      stretch
-      className="md:hidden"
-      options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
-    />
   );
 
   return (
@@ -1551,8 +1564,6 @@ export default function Inbox() {
           ) : (
             <>
               {toolbar}
-              {/* Phones: the filter under the folders it narrows, not above them. */}
-              {mobileFilter && <div className="pb-2 md:hidden">{mobileFilter}</div>}
               <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {bulkBar}
                 {listBody}
@@ -1568,7 +1579,6 @@ export default function Inbox() {
             className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
-            {mobileFilter && <div className="pb-2 md:hidden">{mobileFilter}</div>}
             <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {bulkBar}
                 {listBody}
