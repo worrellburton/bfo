@@ -5,7 +5,7 @@ import { TextButton, useTone } from "./entity/ui";
 /**
  * An HTML email, rendered safely: sanitized with DOMPurify, then shown in a
  * sandboxed iframe that cannot run scripts, under a CSP that blocks every
- * network load except (once allowed) https images. Links open in a new tab.
+ * network load except https images (shown by default; "Hide images" holds them back). Links open in a new tab.
  * The frame grows to its content's height, so the reader scrolls as one page.
  */
 
@@ -82,11 +82,11 @@ pre{white-space:pre-wrap;}
 ${dark ? DARK_CSS : ""}</style></head><body>${body}</body></html>`;
 }
 
-/** The message body. Shows "Show images" when the mail asks for remote images. */
+/** The message body. Remote images show by default; "Hide images" holds them back for this message. */
 export function MailFrame({ html, title = "Message" }: { html: string; title?: string }) {
   const t = useTone();
   const ref = useRef<HTMLIFrameElement>(null);
-  const [images, setImages] = useState(false);
+  const [images, setImages] = useState(true);
   /** Dark mode shows mail dark; this shows it as the sender designed it. */
   const [original, setOriginal] = useState(false);
   const dark = t.dark && !original;
@@ -135,16 +135,19 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
 
   return (
     <div>
-      {((remoteImages && !images) || t.dark) && (
+      {(remoteImages || t.dark) && (
         <div className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${t.muted}`}>
-          {remoteImages && !images && (
-            <>
-              Images hidden
-              <span aria-hidden="true">·</span>
-              <TextButton onClick={() => setImages(true)}>Show images</TextButton>
-            </>
-          )}
-          {remoteImages && !images && t.dark && <span aria-hidden="true">·</span>}
+          {remoteImages &&
+            (images ? (
+              <TextButton onClick={() => setImages(false)}>Hide images</TextButton>
+            ) : (
+              <>
+                Images hidden
+                <span aria-hidden="true">·</span>
+                <TextButton onClick={() => setImages(true)}>Show images</TextButton>
+              </>
+            ))}
+          {remoteImages && t.dark && <span aria-hidden="true">·</span>}
           {t.dark && <TextButton onClick={() => setOriginal((o) => !o)}>{original ? "Dark colors" : "Original colors"}</TextButton>}
         </div>
       )}
