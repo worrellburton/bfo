@@ -2775,7 +2775,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
   const field = `min-w-0 flex-1 bg-transparent py-2.5 text-[13px] placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`;
   const noRing = { outline: "none" } as const;
   const label = `w-[60px] shrink-0 text-[12px] ${t.muted}`;
-  const row = `flex items-center gap-2 border-b px-4 ${t.line}`;
+  const row = `flex items-center gap-2 border-b px-4 max-sm:px-6 ${t.line}`;
 
   return (
     <div
@@ -2809,7 +2809,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         }`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <header className={`flex h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 max-sm:h-14 ${t.line}`}>
+        <header className={`flex h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 max-sm:h-14 max-sm:pl-6 max-sm:pr-3 ${t.line}`}>
           <h2 id="compose-title" className={`flex-1 truncate text-[13.5px] font-semibold ${t.text}`}>
             {draft.title}
           </h2>
@@ -2899,11 +2899,11 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
             setBeforeImprove(null);
           }}
           placeholder="Write your message…"
-          className="min-h-[220px] w-full flex-1 sm:h-[340px] sm:min-h-[120px] sm:flex-initial"
+          className="min-h-[220px] w-full flex-1 max-sm:px-6 max-sm:py-5 sm:h-[340px] sm:min-h-[120px] sm:flex-initial"
         />
 
         {(draft.carried.length > 0 || files.length > 0) && (
-          <div className={`flex shrink-0 flex-wrap gap-1.5 border-t px-4 py-2.5 ${t.line}`}>
+          <div className={`flex shrink-0 flex-wrap gap-1.5 border-t px-4 py-2.5 max-sm:px-6 ${t.line}`}>
             {draft.carried.map((a) => (
               <span key={a.id} title="From the original" className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
                 <Glyph name="clip" className={`h-3 w-3 ${t.muted}`} />
@@ -2935,7 +2935,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
           </div>
         )}
 
-        <footer className={`flex shrink-0 items-center gap-1.5 border-t px-3 py-2.5 ${t.line}`} style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}>
+        <footer className={`flex shrink-0 items-center gap-1.5 border-t px-3 py-2.5 max-sm:px-5 max-sm:py-3 ${t.line}`} style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
           <GlyphButton glyph="clip" label="Attach files" onClick={() => fileRef.current?.click()} />
           {totalBytes > 0 && <span className={`text-[11.5px] tabular-nums ${t.muted}`}>{formatBytes(totalBytes)}</span>}
