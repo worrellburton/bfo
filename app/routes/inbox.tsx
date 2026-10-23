@@ -2201,7 +2201,7 @@ function Reader({
       {!m ? (
         !error && <ReaderSkeleton />
       ) : (
-        <div className="px-5 pb-6 pt-4 sm:px-6 max-md:px-4 max-md:pt-5">
+        <div className="px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6">
           {/* Subject, with the star beside it on phones (as Gmail puts it). */}
           <div className="flex items-start gap-2">
             <h2 className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}>
