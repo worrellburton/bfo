@@ -13,6 +13,8 @@ type Usage = {
   month: { cents: number; calls: number; testCalls: number; byProduct: Partial<Record<PalmProduct, { calls: number; cents: number }>> };
   lastMonth: { cents: number };
   recent: { at: string; mode: PalmMode; product: PalmProduct; cents: number; by: string | null; assetId: string | null; reason: string | null }[];
+  /** Whether Palm's webhooks are reaching BFO (api/palm-webhook.ts). */
+  webhook?: { lastAt: string | null; lastType: string | null; lastMode: string | null; weekCount: number; url: string };
 };
 
 /** "$0.75" next to a button that costs money; the title says what for. */
@@ -115,6 +117,25 @@ export function PalmCostCard({ isDark, names, refreshKey = 0 }: { isDark: boolea
           </div>
 
           <div className="min-w-0">
+            {usage?.webhook && (
+              <div className={`mb-5 rounded-xl border px-3.5 py-3 text-[12.5px] ${usage.webhook.lastAt ? line : isDark ? "border-amber-400/30 bg-amber-400/5" : "border-amber-300 bg-amber-50"}`}>
+                <p className={`mb-1 text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>Webhooks from Palm</p>
+                {usage.webhook.lastAt ? (
+                  <p>
+                    Last received {when(usage.webhook.lastAt)}
+                    <span className={t2}>
+                      {" "}· {usage.webhook.lastType}
+                      {usage.webhook.lastMode === "test" ? " (test)" : ""} · {usage.webhook.weekCount} in the last 7 days
+                    </span>
+                  </p>
+                ) : (
+                  <p className={isDark ? "text-amber-200" : "text-amber-800"}>Nothing has reached BFO from Palm yet.</p>
+                )}
+                <p className={`mt-1 break-all text-[11.5px] ${t3}`}>
+                  Palm Console → Webhooks must point at <span className={isDark ? "text-gray-300" : "text-gray-700"}>{usage.webhook.url}</span>. The bare domain answers with a redirect, which Palm doesn't follow.
+                </p>
+              </div>
+            )}
             <p className={`mb-2 text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>Palm's prices</p>
             <ul className={`divide-y ${isDark ? "divide-white/[0.05]" : "divide-gray-100"}`}>
               {(Object.entries(PALM_PRICES) as [PalmProduct, (typeof PALM_PRICES)[PalmProduct]][]).map(([k, p]) => (

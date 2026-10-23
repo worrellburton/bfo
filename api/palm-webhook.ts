@@ -29,7 +29,7 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  * secret in Vercel as PALM_WEBHOOK_SECRET.
  */
 
-const SITE = process.env.SITE_URL?.replace(/\/$/, "") || "https://burtonfamilyoffice.com";
+const SITE = process.env.SITE_URL?.replace(/\/$/, "") || "https://www.burtonfamilyoffice.com";
 
 async function rawBody(req: VercelRequest): Promise<string> {
   const chunks: Buffer[] = [];

@@ -46,6 +46,19 @@
       "schedule": "40 21 * * *"
     }
   ],
+  "redirects": [
+    {
+      "source": "/((?!api/).*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "burtonfamilyoffice.com"
+        }
+      ],
+      "destination": "https://www.burtonfamilyoffice.com/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

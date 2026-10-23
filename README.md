@@ -131,6 +131,16 @@ prefilled from the entity's principal or mailing address, split the way Palm
 takes them. "Send to Palm" posts the answer to Palm's case API; the case shows
 as answered until Palm resolves it. Only owners and admins can answer.
 
+Palm posts webhooks to `https://www.burtonfamilyoffice.com/api/palm-webhook`
+(use the www host: the bare domain answers every request, `/api` included,
+with a 308 to www, and Palm doesn't follow redirects, so a webhook pointed at
+the bare domain fails silently and Palm disables it after ten failures). Tools
+→ Entity compliance → Palm costs shows when the last webhook arrived. Events
+are stored by id, so a batch Palm resends is taken once. `vercel.json` carries
+a host-conditioned redirect for everything but `/api`, so once the apex
+domain's redirect is turned off in Vercel (Project → Domains), pages still
+canonicalize to www while webhooks hitting the bare domain are served.
+
 ### Forming an entity
 
 "New entity" on `/assets` records an entity that already exists, or hands off to

@@ -109,7 +109,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
   if (action === "usage") {
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
-    return res.status(200).json({ mode, ...(await usageReport()) });
+    const [report, webhook] = await Promise.all([usageReport(), webhookHealth()]);
+    return res.status(200).json({ mode, ...report, webhook });
   }
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
   const mustMatchMode = action === "link" || action === "ra-change" || action === "ra-end" || action === "form-submit" || action === "form-status";
@@ -572,4 +573,15 @@ async function usageReport() {
     lastMonth: { cents: lastCents },
     recent: rows.slice(0, 30).map((r) => ({ at: r.at, mode: r.mode, product: r.product, cents: r.cents, by: r.actor_name, assetId: r.asset_id, reason: r.reason })),
   };
+}
+
+/** Whether Palm's webhooks are reaching BFO: the last event stored, and how many in the past week. */
+async function webhookHealth(): Promise<{ lastAt: string | null; lastType: string | null; lastMode: string | null; weekCount: number; url: string }> {
+  const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const [last, week] = await Promise.all([
+    sb<{ type: string; occurred_at: string; mode: string }[]>("palm_events?select=type,occurred_at,mode&order=occurred_at.desc&limit=1").catch(() => []),
+    sb<{ id: string }[]>(`palm_events?select=id&occurred_at=gte.${encodeURIComponent(since)}&limit=500`).catch(() => []),
+  ]);
+  const site = (process.env.SITE_URL?.replace(/\/$/, "") || "https://www.burtonfamilyoffice.com");
+  return { lastAt: last[0]?.occurred_at ?? null, lastType: last[0]?.type ?? null, lastMode: last[0]?.mode ?? null, weekCount: week.length, url: `${site}/api/palm-webhook` };
 }
