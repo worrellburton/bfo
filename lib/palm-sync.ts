@@ -64,7 +64,8 @@ async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, act
     },
   };
   const slot = [kind, ...(d.types ?? []), d.type ?? ""].map((k) => PALM_SLOT[k]).find(Boolean);
-  if (slot && !data[slot]) {
+  // The slot as it is now (the page may have filled it since this run read the entity), or as this run filled it.
+  if (slot && !now0[slot] && !data[slot]) {
     patch[slot] = { url, fileName: name, size: file.bytes.length, contentType, uploadedAt: now, storagePath: "", docId: key };
     data[slot] = true; // two of the same kind fill the slot once
   }

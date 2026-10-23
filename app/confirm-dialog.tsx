@@ -43,6 +43,7 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
   const confirmRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const danger = opts.tone === "danger";
   const needs = opts.requireText?.trim();
   const ready = !needs || typed.trim().toLowerCase() === needs.toLowerCase();
@@ -56,17 +57,30 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
   useEffect(() => {
     // A danger confirm starts on Cancel, so focus (and typing) leaves whatever is behind it.
     (needs ? inputRef.current : opts.alert || !danger ? confirmRef.current : cancelRef.current)?.focus();
+    // Caught first (capture), so Esc closes only this dialog and nothing behind it hears it.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         finish(!!opts.alert);
+      } else if (e.key === "Tab") {
+        // Focus stays in the dialog: Tab from the last control goes to the first, Shift+Tab the other way.
+        const items = [...(panelRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input, [href], [tabindex]:not([tabindex='-1'])") ?? [])];
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const at = document.activeElement as HTMLElement | null;
+        if (e.shiftKey ? at === first || !panelRef.current?.contains(at) : at === last || !panelRef.current?.contains(at)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        }
       }
     };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = prev;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,6 +101,7 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
         role={opts.alert ? "alertdialog" : "dialog"}
         aria-modal="true"
         aria-labelledby="bfo-dialog-title"
+        ref={panelRef}
         className={`palette-panel relative w-full max-w-[420px] rounded-2xl border p-5 shadow-2xl sm:p-6 ${panel}`}
         style={{ marginBottom: "env(safe-area-inset-bottom)" }}
       >

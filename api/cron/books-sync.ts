@@ -422,9 +422,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         summary.push({ institution: item.institution_name, first_sync: firstSync, added, modified, removed });
       } catch (err: any) {
+        // Plaid's error code is safe to show; anything else stays in the log.
+        console.error(`books-sync: ${item.institution_name} failed:`, err.response?.data || err.message);
         summary.push({
           institution: item.institution_name,
-          error: err.response?.data?.error_code || err.message,
+          error: err.response?.data?.error_code || "sync_failed",
         });
       }
     }
@@ -475,7 +477,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ synced: true, items: summary, intercompany_marked: intercompanyMarked });
   } catch (err: any) {
+    // The detail (raw Plaid or database text) stays in the log.
     console.error("books-sync error:", err.response?.data || err.message);
-    return res.status(500).json({ error: err.response?.data?.error_message || err.message });
+    return res.status(500).json({ error: "sync_failed", message: "The sync didn't finish. Try again." });
   }
 }

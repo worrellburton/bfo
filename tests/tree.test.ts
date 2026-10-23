@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectionValue, compareKeys, parseOps, parsePath, touchedRows, valueAt } from "../lib/tree";
-import { firebaseFilesOf, forgetImports } from "../lib/firebase-bridge";
+import { firebaseFilesOf, forgetImports, movedFilePath } from "../lib/firebase-bridge";
+import { isDocumentPath } from "../lib/document-path";
 
 // ── Mocks: Supabase REST (sb), the session, and Firebase/Storage (global fetch) ──
 
@@ -116,6 +117,13 @@ describe("operations", () => {
     expect(parseOps({ ops: [{ op: "set", path: "secrets/x", value: 1 }] })).toMatchObject({ error: "bad_path" });
   });
 
+  it("refuses update keys with an empty segment, which tree_apply would keep as a field named \"\"", () => {
+    for (const key of ["/abc", "a//b", "a/", ""]) {
+      expect(parseOps({ ops: [{ op: "update", path: "assets/x", value: { [key]: 1 } }] })).toMatchObject({ error: "bad_path" });
+    }
+    expect(parseOps({ ops: [{ op: "update", path: "", value: { "/assets/x/name": "A" } }] })).toMatchObject({ error: "bad_path" });
+  });
+
   it("names the rows an operation touches", () => {
     const ops = parseOps({
       ops: [
@@ -146,6 +154,16 @@ describe("files still in Firebase", () => {
     };
     expect(firebaseFilesOf("a", asset).map((f) => f.path.join("/"))).toEqual(["assets/a/documents/d1", "assets/a/w9"]);
     expect(firebaseFilesOf("a", null)).toEqual([]);
+  });
+
+  it("moves a file to a document path, its extension taken from the last segment and made safe", () => {
+    expect(movedFilePath("a", "Operating Agreement.pdf", "assets/a/oa.pdf", 1)).toBe("assets/a/1-Operating_Agreement.pdf");
+    for (const firebase of ["assets/a.v2/scan", "assets/a/x.p?d#f", "assets/a/x.../..", "assets/a/x.%2e%2e", "noext", "assets/a/.hidden", "assets/a/trailing."]) {
+      const p = movedFilePath("a", "Scan", firebase, 1);
+      expect(isDocumentPath(p), `${firebase} → ${p}`).toBe(true);
+      expect(p.split("/")).toHaveLength(3);
+    }
+    expect(movedFilePath("a", "Scan", "assets/a.v2/scan", 1)).toBe("assets/a/1-Scan");
   });
 });
 
@@ -197,6 +215,21 @@ describe("/api/tree", () => {
     expect((await call("GET", { query: { path: "notes/a/tags/x" } })).json).toEqual({ value: 1 });
     expect((await call("GET", { query: { path: "notes/a/missing" } })).json).toEqual({ value: null });
     expect((await call("GET", { query: { path: "notes", view: "index" } })).json).toEqual({ rows: [] });
+  });
+
+  it("reads a collection past PostgREST's 1,000-row page, in id order", async () => {
+    const all = Array.from({ length: 1500 }, (_, i) => ({ id: `n${String(i).padStart(4, "0")}`, updated_at: "t" }));
+    sbRoutes.push([/GET tree_nodes\?collection=eq\.notes&select=id,updated_at&order=id&limit=1000&offset=\d+$/, (c) => {
+      const offset = Number(/offset=(\d+)/.exec(c.path)![1]);
+      return all.slice(offset, offset + 1000);
+    }]);
+    expect((await call("GET", { query: { path: "notes", view: "index" } })).json.rows).toHaveLength(1500);
+    expect(sbCalls.filter((c) => c.path.includes("select=id,updated_at")).map((c) => /offset=\d+/.exec(c.path)![0])).toEqual(["offset=0", "offset=1000"]);
+  });
+
+  it("quotes backslashes and quotes in the ids it reads", async () => {
+    await call("GET", { query: { path: "notes", ids: 'a\\b,c"d' } });
+    expect(sbCalls.at(-1)!.path).toContain('id=in.("a\\\\b","c\\"d")');
   });
 
   it("copies every collection out of Firebase on the first request", async () => {

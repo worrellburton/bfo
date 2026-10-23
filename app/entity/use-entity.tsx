@@ -274,6 +274,11 @@ export function useEntityPage() {
     let unsub5: (() => void) | undefined;
     let unsub6: (() => void) | undefined;
 
+    // Another entity: nothing of the last one shows while this one loads.
+    setAsset(null);
+    setLoading(true);
+    setEditing(false);
+
     async function setup() {
       const { db, authReady } = await import("../store");
       await authReady;
@@ -285,7 +290,9 @@ export function useEntityPage() {
           const data = snapshot.val();
           // The edit form is seeded when editing starts (startEditing), so a
           // background write (auto-filing, enrichment) never wipes what's typed.
-          if (data) setAsset(fromDatabase(data as Asset));
+          // Null once the collection has loaded means there's no such entity (or it was just deleted):
+          // never keep showing (and saving into) the one before.
+          setAsset(data ? fromDatabase(data as Asset) : null);
           setLoading(false);
           setLoadError(false);
         },

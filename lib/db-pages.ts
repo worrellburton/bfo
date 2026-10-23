@@ -20,9 +20,10 @@ async function rowsOf<T>(r: Response): Promise<T[]> {
 }
 
 /**
- * Every row of a query, paged with Range headers. Give the query an `order=`
- * on a unique column when it can change while being read, so pages don't
- * overlap or skip.
+ * Every row of a query, paged with Range headers. Give any query that can run
+ * past one page an `order=` ending on a unique column (book_transactions:
+ * `transaction_id.asc`): without it Postgres may order each page differently,
+ * so pages overlap or skip rows.
  */
 export async function fetchAll<T>(pathWithFilters: string, db: DbFetch = sbFetch): Promise<T[]> {
   // The first page carries the exact row count, so the remaining pages can
@@ -50,10 +51,15 @@ export async function fetchAll<T>(pathWithFilters: string, db: DbFetch = sbFetch
   return out;
 }
 
-/** Rows matching a PostgREST filter, counted without reading them. */
+/**
+ * Rows matching a PostgREST filter, counted without reading them. Throws when
+ * the server gives no total: the counts guard rate limits (sign-in codes, mail
+ * sent), and an unknown count read as 0 would let everything through.
+ */
 export async function countRows(table: string, filter: string, db: DbFetch = sbFetch): Promise<number> {
   const res = await db(`${table}?${filter}&select=created_at&limit=1`, { headers: { Prefer: "count=exact" } });
   if (!res.ok) throw new Error(`supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const total = Number((res.headers.get("content-range") ?? "").split("/")[1]);
-  return Number.isFinite(total) ? total : 0;
+  if (!Number.isFinite(total)) throw new Error(`supabase: no row count for ${table}`);
+  return total;
 }

@@ -8,6 +8,8 @@ import { DOC_KEYS, documentRules, type DocKey, type DocRule, type PaperworkInput
 import type { ForeignRegistration } from "../entity-addresses";
 import type { Closing } from "../entity-closing";
 import type { PalmLink, PalmMode, StateRecord } from "../palm";
+import type { EinCheck } from "../../lib/palm-monitor";
+import type { PalmFilingDue } from "../../lib/palm-webhook";
 
 export interface Asset {
   name: string;
@@ -49,6 +51,12 @@ export interface Asset {
   palm?: Partial<Record<PalmMode, PalmLink>>;
   /** The state's record as last read through Palm. */
   stateRecord?: StateRecord;
+  /** Filings Palm Monitor says are due or overdue, by state and kind (api/palm-webhook.ts). */
+  palmFilings?: Record<string, PalmFilingDue>;
+  /** The latest change Palm Monitor saw on each state's record. */
+  palmMonitor?: Record<string, { lastChange?: { at: number; mode: PalmMode; changes: { attribute: string | null; action: string | null; summary: string | null; from: string | null; to: string | null }[] } }>;
+  /** What the IRS said about the EIN, through Palm. */
+  einCheck?: EinCheck;
   operatingAgreementDate?: string;
   /** The address before the last change, and when it changed (YYYY-MM-DD). */
   previousAddress?: string;

@@ -94,7 +94,8 @@ export function parseOps(body: unknown): TreeOp[] | { error: string; message: st
     if (op === "update") {
       if (value === null || typeof value !== "object" || Array.isArray(value)) return { error: "bad_value", message: "An update takes an object of fields." };
       for (const key of Object.keys(value)) {
-        const full = parsePathLoose([...path, ...key.split("/")]);
+        // tree_apply splits the key as it is (string_to_array): an empty segment ("/a", "a//b") would be a field named "".
+        const full = key.split("/").includes("") ? null : parsePathLoose([...path, ...key.split("/")]);
         if (!full) return { error: "bad_path", message: `"${key}" isn't a field path.` };
       }
     }
@@ -136,18 +137,30 @@ export function touchedRows(ops: TreeOp[]): { collection: Collection; id: string
 
 const enc = encodeURIComponent;
 
+const PAGE = 1000;
+
+/** Every row of one collection: PostgREST serves at most 1,000 a request, so page by id (unique within it). */
+async function readPaged<T>(query: string): Promise<T[]> {
+  const out: T[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = (await sb<T[]>(`${query}&order=id&limit=${PAGE}&offset=${offset}`)) ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
 export async function readCollection(collection: Collection): Promise<TreeRow[]> {
-  return (await sb<TreeRow[]>(`tree_nodes?collection=eq.${enc(collection)}&select=collection,id,data,updated_at&order=id`)) ?? [];
+  return readPaged<TreeRow>(`tree_nodes?collection=eq.${enc(collection)}&select=collection,id,data,updated_at`);
 }
 
 export async function readRows(collection: Collection, ids: string[]): Promise<TreeRow[]> {
   if (!ids.length) return [];
-  const list = ids.map((id) => `"${id.replace(/"/g, '\\"')}"`).join(",");
+  const list = ids.map((id) => `"${id.replace(/[\\"]/g, (c) => `\\${c}`)}"`).join(",");
   return (await sb<TreeRow[]>(`tree_nodes?collection=eq.${enc(collection)}&id=in.(${enc(list)})&select=collection,id,data,updated_at`)) ?? [];
 }
 
 export async function readIndex(collection: Collection): Promise<{ id: string; updated_at: string }[]> {
-  return (await sb<{ id: string; updated_at: string }[]>(`tree_nodes?collection=eq.${enc(collection)}&select=id,updated_at&order=id`)) ?? [];
+  return readPaged<{ id: string; updated_at: string }>(`tree_nodes?collection=eq.${enc(collection)}&select=id,updated_at`);
 }
 
 /**

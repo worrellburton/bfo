@@ -6,6 +6,15 @@ describe("palmProduct", () => {
     expect(palmProduct("POST", "/v1/business/registry/search")).toBe("search");
     expect(palmProduct("GET", "/v1/business/registry/US-AZ/L12345678")).toBe("detail");
     expect(palmProduct("GET", "/v1/business/registry/US-DE/name-eligibility?name=x")).toBe("name_eligibility");
+    expect(palmProduct("POST", "/v1/tin/verification")).toBe("verify_tin");
+    expect(palmProduct("POST", "/v1/business/subscription")).toBe("monitor");
+    expect(palmProduct("POST", "/v1/business/3f1c2a4e-0000-4000-8000-000000000000/subscription")).toBe("monitor");
+  });
+  it("doesn't bill reading, pausing or stopping a monitor", () => {
+    expect(palmProduct("GET", "/v1/business/abc/subscription")).toBeNull();
+    expect(palmProduct("PATCH", "/v1/business/abc/subscription")).toBeNull();
+    expect(palmProduct("DELETE", "/v1/business/abc/subscription")).toBeNull();
+    expect(palmProduct("GET", "/v1/tin/verification/v_1")).toBeNull();
   });
   it("leaves the rest unbilled", () => {
     expect(palmProduct("GET", "/v1/business/abc")).toBeNull();

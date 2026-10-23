@@ -1,6 +1,6 @@
 import { palm, palmMode, type PalmUsage } from "./palm.js";
 import { baseName, normalizeName, peoplePatch, pickRegistryMatch, searchName, toStateRecord, type RegistryRecord, type StateRecord } from "./registry.js";
-import { applyOps, readCollection, type TreeOp } from "./tree.js";
+import { applyOps, readCollection, readRows, type TreeOp } from "./tree.js";
 import { statesToRead } from "./state-reads.js";
 
 export { statesToRead } from "./state-reads.js";
@@ -123,7 +123,10 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
           out.push({ ...base, outcome: got });
           continue;
         }
-        const patch = { ...patchFor(a, code, home, got, mode === "live", a.ownerId ? names.get(a.ownerId) : null), ...(miss ? { [`registryMiss/${code}`]: null } : {}) };
+        // Blanks are filled against the entity as it is now, not as the run first read it: someone may have
+        // typed in People or the agent while the state answered.
+        const current = (((await readRows("assets", [row.id]))[0]?.data ?? a) as Rec);
+        const patch = { ...patchFor(current, code, home, got, mode === "live", current.ownerId ? names.get(current.ownerId) : null), ...(miss ? { [`registryMiss/${code}`]: null } : {}) };
         const ops: TreeOp[] = [{ op: "update", path: ["assets", row.id], value: patch as never }];
         await applyOps(ops, ACTOR);
         out.push({ ...base, outcome: "read", detail: [got.status, got.agent].filter(Boolean).join(" · ") });

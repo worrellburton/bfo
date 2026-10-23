@@ -10,7 +10,7 @@ import {
   type PlannedInflow,
 } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { cronAuth, currentUser, formatPhone, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { cronAuth, currentUser, formatPhone, handleError, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 import { fetchAll } from "../../lib/db-pages.js";
 
 /**
@@ -1135,10 +1135,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       return res.status(200).json({ sent: true, to: recipients.join(", "), count: recipients.length, loans: loans.length });
     } catch (err) {
-      console.error("sample treasury report failed:", err);
-      return res
-        .status(500)
-        .json({ error: "send_failed", message: err instanceof Error ? err.message : String(err) });
+      // A partner (currentUser refuses them) gets 403; anything else is logged
+      // there and answered with a plain line, not the raw error.
+      return handleError(res, err);
     }
   }
 
@@ -1250,13 +1249,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         results.push({
           user: user.email ?? formatPhone(user.phone),
           ok: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: "send_failed",
         });
       }
     }
     return res.status(200).json({ sent: results.filter((r) => r.ok).length, results });
   } catch (err) {
     console.error("treasury report cron failed:", err);
-    return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: "report_failed" });
   }
 }
