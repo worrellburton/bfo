@@ -4,12 +4,12 @@
  * disagree with each other or the rules.
  */
 
-import { useState, type ReactNode } from "react";
-import { priceSuffix, stateRecordCents } from "../../lib/palm-pricing";
-import { isAdmin } from "../auth";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { dollars, PALM_PRICES, priceSuffix, stateRecordCents } from "../../lib/palm-pricing";
+import { getUser, isAdmin } from "../auth";
 import { formingNow } from "../entity-addresses";
 import { BOI_NOTE, stateCode, stateName, type Obligation, type PaperworkIssue } from "../entity-paperwork";
-import { DOC_LABEL, docKindOf, formatAddress, openPalmDocument, RA_STATUS, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
+import { DOC_LABEL, docKindOf, formatAddress, openPalmDocument, palmCall, RA_STATUS, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
 import { PalmQuestions } from "./palm-questions";
 import { useEntity } from "./context";
 import { fmtDate, fmtStamp } from "./model";
@@ -44,6 +44,7 @@ export function ComplianceTab() {
         <Mail />
       </div>
       <div className="min-w-0 space-y-4">
+        <Monitoring />
         <Deadlines />
         <Checks />
       </div>
@@ -511,6 +512,172 @@ function MailRow({ d, onError }: { d: PalmDocument; onError: (msg: string) => vo
   );
 }
 
+// ── Monitoring and the IRS check (Palm) ──────────────────────────────────
+
+type MonitorReg = { state: string; home: boolean; fileNumber: string | null; monitor: { started_at: string; status: string } | null };
+
+/**
+ * Palm Monitor, one registration at a time (a monthly charge each, so an
+ * owner or admin turns it on), what it last saw change, and the EIN checked
+ * with the IRS.
+ */
+function Monitoring() {
+  const { page, asset } = useEntity();
+  const t = useTone();
+  const mode = page.palmMode;
+  const [regs, setRegs] = useState<MonitorReg[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [fresh, setFresh] = useState<typeof asset.einCheck>(undefined);
+  const id = page.id;
+
+  const load = useCallback(() => {
+    if (!mode || !id) return;
+    palmCall<{ registrations: MonitorReg[] }>("monitor-list", { assetId: id })
+      .then((r) => setRegs(r.registrations))
+      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't read monitoring."));
+  }, [mode, id]);
+  useEffect(load, [load]);
+
+  if (!page.palmStatus?.configured || !mode) return null;
+  const live = mode === "live";
+  const monthly = PALM_PRICES.monitor.cents;
+
+  const toggle = async (r: MonitorReg) => {
+    const on = !r.monitor;
+    if (on && live && !window.confirm(`Palm watches ${stateName(r.state) || r.state}'s record for ${asset.name} and bills ${dollars(monthly)} a month until you turn it off. Turn it on?`)) return;
+    setBusy(r.state);
+    setError("");
+    try {
+      await palmCall(on ? "monitor-on" : "monitor-off", { assetId: id, state: r.state, mode });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Palm didn't answer.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const ein = (asset.ein ?? "").trim();
+  // The answer just given shows at once; the record catches up on its next load.
+  const check = fresh && (!asset.einCheck || asset.einCheck.at < fresh.at) ? fresh : asset.einCheck;
+  const checkFits = !!check && check.mode === mode && check.ein.replace(/\D/g, "") === ein.replace(/\D/g, "");
+  const canCheck = ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+  const runEinCheck = async () => {
+    setBusy("ein");
+    setError("");
+    try {
+      const r = await palmCall<{ check: NonNullable<typeof asset.einCheck> }>("ein-check", { assetId: id, mode });
+      setFresh(r.check);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Palm didn't answer.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Section
+      title={
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          Monitoring
+          {mode === "test" && <Dot tone="warn">Test mode</Dot>}
+        </span>
+      }
+      info={`Palm watches the state's record for a registration and says when it changes (status, standing, agent, people) and when a filing comes due or goes overdue; those show under Deadlines and in Activity, and live changes email the owners. ${live ? `${dollars(monthly)} a month per registration while on.` : "Free in test mode."}`}
+    >
+      {regs === null ? (
+        error ? null : <Empty>Checking…</Empty>
+      ) : regs.length === 0 ? (
+        <Empty>No state registrations to watch.</Empty>
+      ) : (
+        <Rows>
+          {regs.map((r) => {
+            const change = asset.palmMonitor?.[r.state]?.lastChange;
+            const lines = change && change.mode === mode ? change.changes.map((c) => c.summary || c.attribute).filter(Boolean).slice(0, 3) : [];
+            return (
+              <MonitorLine
+                key={r.state}
+                label={`${stateName(r.state) || r.state}${r.home ? "" : " (foreign)"}`}
+                action={
+                  isAdmin() ? (
+                    <Button kind={r.monitor ? "secondary" : "primary"} disabled={!!busy} onClick={() => void toggle(r)}>
+                      {busy === r.state ? "Working…" : r.monitor ? "Turn off" : `Watch${live ? ` · ${dollars(monthly)}/mo` : ""}`}
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {r.monitor ? (
+                  <Dot tone={r.monitor.status === "active" ? "good" : "warn"}>
+                    {r.monitor.status === "active" ? "Watching" : r.monitor.status} · since {fmtDate(r.monitor.started_at.slice(0, 10))}
+                  </Dot>
+                ) : (
+                  <Dot tone="muted">Not watched</Dot>
+                )}
+                {lines.length > 0 && (
+                  <span className={`mt-1 block text-[12px] leading-snug ${t.muted}`}>
+                    Last change {fmtStamp(change!.at)}: {lines.join("; ")}
+                  </span>
+                )}
+              </MonitorLine>
+            );
+          })}
+        </Rows>
+      )}
+      {ein && (
+        <div className={regs?.length ? `border-t ${t.line}` : ""}>
+          <MonitorLine
+            label="EIN with the IRS"
+            info="Palm asks the IRS whether this EIN belongs to this legal name (the state's spelling when its record has been read). A mismatch usually means a typo in the EIN or a name that differs from the IRS letter (CP 575)."
+            action={
+              canCheck ? (
+                <Button disabled={!!busy} onClick={() => void runEinCheck()}>
+                  {busy === "ein" ? "Checking…" : `${checkFits ? "Check again" : "Check"}${priceSuffix(mode, PALM_PRICES.verify_tin.cents)}`}
+                </Button>
+              ) : undefined
+            }
+          >
+            {checkFits ? (
+              <>
+                <Dot tone={check!.matched === true ? "good" : check!.matched === false ? "bad" : "warn"}>
+                  {check!.matched === true ? "Matches" : check!.matched === false ? "Doesn't match" : "IRS didn't answer"}
+                </Dot>
+                <span className={`mt-0.5 block text-[12px] leading-snug ${t.muted}`}>
+                  as {check!.name} · {fmtStamp(check!.at)}
+                </span>
+              </>
+            ) : (
+              <Dot tone="muted">Not checked</Dot>
+            )}
+          </MonitorLine>
+        </div>
+      )}
+      <ErrorLine>{error}</ErrorLine>
+    </Section>
+  );
+}
+
+/** One line in Monitoring: what it is and where it stands on the left, its action on the right (fits the narrow column). */
+function MonitorLine({ label, info, action, children }: { label: string; info?: ReactNode; action?: ReactNode; children: ReactNode }) {
+  const t = useTone();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="px-5 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 text-[13px] leading-snug">
+          <div className={`flex items-center gap-1.5 ${t.text}`}>
+            {label}
+            {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} label="Details" />}
+          </div>
+          <div className="mt-1">{children}</div>
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+      {info && <InfoText open={open}>{info}</InfoText>}
+    </div>
+  );
+}
+
 // ── Deadlines ────────────────────────────────────────────────────────────
 
 function Deadlines() {
@@ -536,6 +703,7 @@ function DeadlineRow({ d }: { d: Obligation }) {
   // Calendar days in local time, so "today" is today wherever you are.
   const days = d.due ? localDayDiff(d.due) : null;
   const soon = days != null && days <= 45;
+  const late = days != null && days < 0;
   const warn = toneText("warn", t.dark);
   return (
     <div className="px-5 py-3">
@@ -548,8 +716,10 @@ function DeadlineRow({ d }: { d: Obligation }) {
         </div>
         {d.due && (
           <div className="shrink-0 text-right tabular-nums leading-snug">
-            <div className={`text-[13px] ${soon ? warn : t.text}`}>{fmtDate(d.due)}</div>
-            <div className={`text-[12px] ${soon ? warn : t.muted}`}>{days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}</div>
+            <div className={`text-[13px] ${late ? toneText("bad", t.dark) : soon ? warn : t.text}`}>{fmtDate(d.due)}</div>
+            <div className={`text-[12px] ${late ? toneText("bad", t.dark) : soon ? warn : t.muted}`}>
+              {days === 0 ? "today" : days === 1 ? "tomorrow" : late ? `${-days!} ${days === -1 ? "day" : "days"} late` : `in ${days} days`}
+            </div>
           </div>
         )}
       </div>

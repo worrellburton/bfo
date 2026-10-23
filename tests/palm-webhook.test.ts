@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { toEventRow, verifyPalmSignature } from "../lib/palm-webhook";
+import { monitorPatch, toEventRow, verifyPalmSignature } from "../lib/palm-webhook";
 
 const SECRET = "whsec_c2VjcmV0LWtleQ==";
 const now = 1_790_000_000_000;
@@ -76,10 +76,12 @@ describe("/api/palm-webhook", () => {
   });
 
   it("stores legal papers against the entity and emails the owners once", async () => {
-    sbMock.mockResolvedValueOnce([{ id: "evt_9" }]).mockResolvedValueOnce([{ email: "o@example.com" }, { email: "o@example.com" }, { email: null }]);
+    // "Not handled before", the event row, then the owners.
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "evt_9" }]).mockResolvedValueOnce([{ email: "o@example.com" }, { email: "o@example.com" }, { email: null }]);
     const r = await call(body, sign(body));
     expect(r.status).toBe(200);
-    const [path, init] = sbMock.mock.calls[0];
+    expect(sbMock.mock.calls[0][0]).toBe("palm_events?id=eq.evt_9&select=id&limit=1");
+    const [path, init] = sbMock.mock.calls[1];
     expect(path).toBe("palm_events?on_conflict=id");
     expect(init.body).toMatchObject({ id: "evt_9", asset_id: "a1", document_type: "service_of_process" });
     expect(emailMock).toHaveBeenCalledTimes(1);
@@ -90,7 +92,7 @@ describe("/api/palm-webhook", () => {
   });
 
   it("does nothing more for a repeat delivery", async () => {
-    sbMock.mockResolvedValueOnce([]);
+    sbMock.mockResolvedValueOnce([{ id: "evt_9" }]).mockResolvedValueOnce([]);
     expect((await call(body, sign(body))).status).toBe(200);
     expect(emailMock).not.toHaveBeenCalled();
   });
@@ -123,11 +125,11 @@ describe("agent events", () => {
 
   it("finds the entity by its linked business and puts Palm on the record", async () => {
     treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC", palm: { live: { businessId: BIZ, ra: { status: "pending", checkedAt: now - 60_000 } } } } });
-    // The entity linked to the business, "not handled before", then the event row.
-    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "x" }]);
+    // "Not handled before", the entity linked to the business, then the event row.
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }]).mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(agentEvent("active", now));
     expect((await call(body, sign(body))).status).toBe(200);
-    expect(sbMock.mock.calls[0][0]).toContain(`data->palm->live->>businessId=eq.${BIZ}`);
+    expect(sbMock.mock.calls[1][0]).toContain(`data->palm->live->>businessId=eq.${BIZ}`);
     const [ops] = applyMock.mock.calls[0] as unknown as [{ value: Record<string, unknown> }[]];
     expect(ops[0].value).toMatchObject({ registeredAgent: "Palm RA", registeredAgentSource: "Palm, active since 2026-10-01", "palm/live/ra": { status: "active", provider: "palm" } });
     expect(activityMock).toHaveBeenCalledTimes(1);
@@ -136,7 +138,7 @@ describe("agent events", () => {
   it("ignores an event older than what was last read", async () => {
     // Ordered by Palm's own event times: the last one applied was newer.
     treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "active", checkedAt: now, eventAt: now } } } } });
-    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "x" }]);
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(agentEvent("pending", now - 3_600_000));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(applyMock).not.toHaveBeenCalled();
@@ -145,10 +147,70 @@ describe("agent events", () => {
 
   it("does nothing for an event it has already handled", async () => {
     treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "pending" } } } } });
-    sbMock.mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([{ id: "seen" }]).mockResolvedValueOnce([]);
+    sbMock.mockResolvedValueOnce([{ id: "seen" }]).mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([]);
     const body = JSON.stringify(agentEvent("active", now));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(applyMock).not.toHaveBeenCalled();
     expect(activityMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("monitor events", () => {
+  const BIZ = "7c1d2e3f-1111-4222-8333-944455556666";
+  const filingEvent = (type: string, created: number, due = "2026-11-01") => ({
+    id: `evt_${type}_${created}`, object: "event", type, mode: "live", created_at: new Date(created).toISOString(),
+    data: { business: { id: BIZ, palm_id: "1234-5678-9012", legal_name: "Ledger Louise, LLC", registration_jurisdiction_id: "US-AZ" }, object: { type: { id: "annual_report", name: "Annual Report" }, frequency: "annual", due_date: due } },
+  });
+  const monitorRow = { business_id: BIZ, mode: "live", asset_id: "asset-0001", state: "AZ", subscription_id: "s1", status: "active", started_at: "2026-10-01T00:00:00Z", started_by: null, ended_at: null };
+  beforeEach(() => {
+    process.env.PALM_WEBHOOK_SECRET = SECRET;
+    sbMock.mockReset();
+    applyMock.mockClear();
+    activityMock.mockClear();
+    emailMock.mockClear();
+    treeRows.length = 0;
+  });
+
+  it("takes the business from data.business", () => {
+    expect(toEventRow(filingEvent("business.filing.due", now) as never)).toMatchObject({ business_id: BIZ, status: null });
+  });
+
+  it("keeps an overdue filing on the entity and emails the owners", async () => {
+    treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC" } });
+    // "Not handled before", the monitor, the owners, then the event row.
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([monitorRow]).mockResolvedValueOnce([{ email: "o@example.com" }]).mockResolvedValueOnce([{ id: "x" }]);
+    const body = JSON.stringify(filingEvent("business.filing.overdue", now));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(sbMock.mock.calls[1][0]).toContain(`palm_monitors?business_id=eq.${BIZ}&mode=eq.live`);
+    const [ops] = applyMock.mock.calls[0] as unknown as [{ value: Record<string, unknown> }[]];
+    expect(ops[0].value).toEqual({ "palmFilings/AZ_annual_report": { state: "AZ", typeId: "annual_report", name: "Annual Report", dueDate: "2026-11-01", frequency: "annual", status: "overdue", mode: "live", at: now } });
+    expect(activityMock).toHaveBeenCalledTimes(1);
+    expect(emailMock).toHaveBeenCalledTimes(1);
+    expect((emailMock.mock.calls[0] as unknown as [string[], string])[1]).toBe("Ledger Louise, LLC: Annual Report is overdue in AZ");
+  });
+
+  it("asks Palm to send it again when it couldn't be written", async () => {
+    treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC" } });
+    applyMock.mockRejectedValueOnce(new Error("db down"));
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([monitorRow]);
+    const body = JSON.stringify(filingEvent("business.filing.due", now));
+    expect((await call(body, sign(body))).status).toBe(500);
+    expect(sbMock).toHaveBeenCalledTimes(2); // not stored, so the retry is handled
+  });
+});
+
+describe("monitorPatch", () => {
+  const ev = (type: string, extra: Record<string, unknown> = {}) => ({ id: "e1", type, mode: "live" as const, ...extra });
+  it("keeps the latest change to a record", () => {
+    const p = monitorPatch(ev("business.registration.updated", { data: { changes: [{ attribute: "status", action: "updated", summary: "Status changed to Inactive", previous_value: "Active", current_value: { v: "Inactive" } }] } }), "AZ", "live", 5);
+    expect(p).toEqual({ "palmMonitor/AZ/lastChange": { at: 5, mode: "live", eventId: "e1", changes: [{ attribute: "status", action: "updated", summary: "Status changed to Inactive", from: "Active", to: '{"v":"Inactive"}' }] } });
+    expect(monitorPatch(ev("business.registration.updated"), "AZ", "live", 5, { palmMonitor: { AZ: { lastChange: { at: 9 } } } })).toBeNull();
+  });
+  it("doesn't set an overdue filing back to due", () => {
+    const due = ev("business.filing.due", { data: { object: { type: { id: "annual/report", name: "Annual" }, due_date: "2026-11-01T00:00:00Z" } } });
+    const prior = { palmFilings: { "AZ_annual_report": { state: "AZ", typeId: "x", name: "Annual", dueDate: "2026-11-01", frequency: null, status: "overdue" as const, mode: "live" as const, at: 1 } } };
+    expect(monitorPatch(due, "AZ", "live", 2, prior)).toBeNull();
+    expect(Object.keys(monitorPatch(due, "AZ", "live", 2)!)).toEqual(["palmFilings/AZ_annual_report"]);
+    expect(monitorPatch(ev("document.created"), "AZ", "live", 2)).toBeNull();
   });
 });

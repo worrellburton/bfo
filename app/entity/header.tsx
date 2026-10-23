@@ -99,7 +99,7 @@ export function EntityHeader() {
         {isTrust && !asset.ein ? (
           <Metric label="Trustees" value={trustees.length ? trustees[0] : "None on record"} sub={trustees.length > 1 ? `+${trustees.length - 1}` : undefined} />
         ) : (
-          <CopyMetric id="ein" label="EIN" value={asset.ein} mono />
+          <CopyMetric id="ein" label="EIN" value={asset.ein} mono badge={einBadge(asset, page.palmMode)} />
         )}
         <CopyMetric
           id="formed"
@@ -221,7 +221,16 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
 }
 
 /** A fact you can click to copy. */
-function CopyMetric({ id, label, value, mono = false }: { id: string; label: string; value?: string; mono?: boolean }) {
+/** What the IRS said about this EIN (through Palm), when it was asked about this EIN in this mode. */
+function einBadge(asset: { ein?: string; einCheck?: { ein: string; matched: boolean | null; mode: string } }, mode: string | null): { tone: "good" | "bad"; text: string } | undefined {
+  const c = asset.einCheck;
+  if (!c || c.mode !== mode || c.ein.replace(/\D/g, "") !== (asset.ein ?? "").replace(/\D/g, "")) return undefined;
+  if (c.matched === true) return { tone: "good", text: "IRS ✓" };
+  if (c.matched === false) return { tone: "bad", text: "IRS mismatch" };
+  return undefined;
+}
+
+function CopyMetric({ id, label, value, mono = false, badge }: { id: string; label: string; value?: string; mono?: boolean; badge?: { tone: "good" | "bad"; text: string } }) {
   const { page } = useEntity();
   const t = useTone();
   if (!value) return <Metric label={label} value="—" />;
@@ -236,6 +245,11 @@ function CopyMetric({ id, label, value, mono = false }: { id: string; label: str
     >
       <span className={`flex items-center gap-1.5 text-[11.5px] ${t.muted}`}>
         {label}
+        {badge && (
+          <span title={badge.tone === "good" ? "The IRS has this EIN under this legal name" : "The IRS doesn't match this EIN to this legal name (Compliance tab)"} className={`font-medium ${toneText(badge.tone, t.dark)}`}>
+            {badge.text}
+          </span>
+        )}
         <span aria-live="polite" className={`inline-flex items-center gap-1 ${done ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
           <Icon name={done ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
           {done ? "Copied" : ""}

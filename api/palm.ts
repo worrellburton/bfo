@@ -5,6 +5,7 @@ import { buildFormationRequest, einPatch, extraFields, formationPatch, stateRule
 import { applyOps, readRows } from "../lib/tree.js";
 import { PALM_PRICES, type PalmProduct } from "../lib/palm-pricing.js";
 import { ownerName, ownerPercent, parentOwnerId } from "../lib/formation-owners.js";
+import { checkEin, einCheckText, einName, MonitorError, monitorsFor, refreshMonitors, registrationsOf, startMonitor, stopMonitor } from "../lib/palm-monitor.js";
 import {
   isJurisdiction,
   normalizeEin,
@@ -50,6 +51,12 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  *   form-submit       { draft, assetId, stateName, mode, idempotencyKey } → files with the state; owner/admin only
  *   form-status       { assetId, filingId, mode }      → the filing now, written to the entity's record
  *   cases             { assetId }                      → Palm's questions on its filings, open ones first
+ *
+ * Monitoring and checks (lib/palm-monitor.ts):
+ *   monitor-list      { assetId }                      → each registration, and whether Palm is watching it
+ *   monitor-on        { assetId, state, mode }         → Palm watches it ($1.99/month live); owner/admin
+ *   monitor-off       { assetId, state, mode }         → Palm stops; owner/admin
+ *   ein-check         { assetId, mode, simulate? }     → the IRS asked whether the EIN is this legal name's (99¢ live)
  *   case-respond      { assetId, caseId, fields, documents? } → answer one; owner/admin only
  *
  * Reads need a signed-in user; adding a business needs write access; moving
@@ -112,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ mode, ...(await usageReport()) });
   }
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
-  const mustMatchMode = action === "link" || action === "ra-change" || action === "ra-end" || action === "form-submit" || action === "form-status";
+  const mustMatchMode = ["link", "ra-change", "ra-end", "form-submit", "form-status", "monitor-on", "monitor-off", "ein-check"].includes(action);
   if ((body.mode !== undefined || mustMatchMode) && body.mode !== mode) {
     return res.status(409).json({ error: "mode_changed", mode, message: `Palm is now in ${mode} mode. Reload the page and check again before going on.` });
   }
@@ -227,6 +234,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           renamed = true;
         }
         return res.status(200).json({ mode, renamed, palmId: business.palm_id, differences: businessDifferences(business.vault ?? {}, e) });
+      }
+
+      case "monitor-list": {
+        const assetId = String(body.assetId || "");
+        if (!/^[\w-]{1,80}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
+        const asset = (await readRows("assets", [assetId]))[0];
+        if (!asset) return res.status(404).json({ error: "not_found" });
+        const monitors = await refreshMonitors(await monitorsFor([assetId], mode));
+        const on = (m: { status: string; ended_at: string | null }) => !m.ended_at && m.status !== "canceled" && m.status !== "expired";
+        const registrations = registrationsOf((asset.data ?? {}) as never).map((r) => ({ ...r, monitor: monitors.find((m) => m.state === r.state && on(m)) ?? null }));
+        return res.status(200).json({ mode, cents: mode === "live" ? PALM_PRICES.monitor.cents : 0, registrations });
+      }
+
+      case "monitor-on":
+      case "monitor-off": {
+        if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin turns monitoring on or off (Palm bills it monthly)." });
+        const assetId = String(body.assetId || "");
+        const state = String(body.state || "").toUpperCase();
+        if (!/^[\w-]{1,80}$/.test(assetId) || !/^[A-Z]{2}$/.test(state)) return res.status(400).json({ error: "missing_params" });
+        const asset = (await readRows("assets", [assetId]))[0];
+        if (!asset) return res.status(404).json({ error: "not_found" });
+        const data = (asset.data ?? {}) as { name?: string; palm?: Record<string, { businessId?: string | null } | undefined> };
+        const tag = mode === "test" ? " (test)" : "";
+        try {
+          if (action === "monitor-off") {
+            const row = (await monitorsFor([assetId], mode)).find((m) => m.state === state);
+            if (row) {
+              await stopMonitor(row);
+              await logActivity(assetId, { id: user.id, name: user.name, source: "user" }, [{ kind: "palm", summary: `Stopped Palm monitoring ${state}${tag}` }]);
+            }
+            return res.status(200).json({ mode, monitor: null });
+          }
+          const reg = registrationsOf(data as never).find((r) => r.state === state);
+          if (!reg) return res.status(400).json({ error: "no_registration", message: `${data.name ?? "This entity"} isn't registered in ${state}.` });
+          const row = await startMonitor({ assetId, reg, linkedBusinessId: data.palm?.[mode]?.businessId ?? null, mode, by: { id: user.id, name: user.name } });
+          await logActivity(assetId, { id: user.id, name: user.name, source: "user" }, [{ kind: "palm", summary: `Palm is now monitoring ${state}${mode === "live" ? " ($1.99/month)" : tag}` }]);
+          return res.status(200).json({ mode, monitor: row });
+        } catch (err) {
+          if (err instanceof MonitorError) return res.status(err.status).json({ error: "monitor_failed", message: err.message });
+          throw err;
+        }
+      }
+
+      case "ein-check": {
+        if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
+        const assetId = String(body.assetId || "");
+        if (!/^[\w-]{1,80}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
+        const asset = (await readRows("assets", [assetId]))[0];
+        if (!asset) return res.status(404).json({ error: "not_found" });
+        const data = (asset.data ?? {}) as Parameters<typeof einName>[0];
+        const ein = normalizeEin(data.ein);
+        if (!ein) return res.status(400).json({ error: "no_ein", message: "Add the EIN (12-3456789) first." });
+        // The IRS matches the legal name as filed: the state's spelling when we've read it, else ours.
+        const name = einName(data);
+        if (!name) return res.status(400).json({ error: "no_name" });
+        const simulate = mode === "test" && ["match", "no_match", "unavailable"].includes(String(body.simulate)) ? (String(body.simulate) as "match" | "no_match" | "unavailable") : undefined;
+        const check = await checkEin({ ein, name, mode, usage: usage("EIN check"), simulate });
+        await applyOps([{ op: "update", path: ["assets", assetId], value: { einCheck: check } as never }], { id: user.id, name: user.name, source: "user" });
+        const verdict = check.matched === true ? "matches" : check.matched === false ? "doesn't match" : "couldn't be checked";
+        await logActivity(assetId, { id: user.id, name: user.name, source: "user" }, [{ kind: "palm", summary: `IRS check: the EIN ${verdict} ${name}${mode === "test" ? " (test)" : ""}` }]);
+        return res.status(200).json({ mode, check, text: einCheckText(check) });
       }
 
       case "ra": {
