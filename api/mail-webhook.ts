@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { sb } from "../lib/auth.js";
 import { getInbound, ingestInbound } from "../lib/mail.js";
 import { verifyWebhook } from "../lib/mail-webhook.js";
+import { smsRow } from "../lib/sms-inbound.js";
 
 /**
  * Bird calls this when mail arrives for the family domain (email.received).
@@ -8,8 +10,12 @@ import { verifyWebhook } from "../lib/mail-webhook.js";
  * inbox (lib/mail.ts). Deliveries can repeat; copies already stored are
  * skipped. The inbox's own sync catches anything this misses.
  *
+ * A text to BFO's Bird number (sms.received) is kept in public.sms_messages
+ * for the Phone page (lib/sms-inbound.ts), once per text.
+ *
  * Set up in Bird → Developers → Webhooks: URL https://<site>/api/mail-webhook,
- * event email.received, and the signing secret in Vercel as BIRD_WEBHOOK_SECRET.
+ * events email.received and sms.received, and the signing secret in Vercel as
+ * BIRD_WEBHOOK_SECRET.
  */
 
 async function rawBody(req: VercelRequest): Promise<string> {
@@ -43,6 +49,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     event = JSON.parse(raw);
   } catch {
     return res.status(400).json({ error: "bad_json" });
+  }
+  if (event?.type === "sms.received") {
+    const row = smsRow(event, header(req, "webhook-id"));
+    if (!row) return res.status(400).json({ error: "bad_event" });
+    try {
+      await sb("sms_messages?on_conflict=id", { method: "POST", body: row, prefer: "resolution=ignore-duplicates,return=minimal" });
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      console.error("sms webhook store failed", err);
+      return res.status(500).json({ error: "store_failed" }); // Bird retries
+    }
   }
   if (event?.type !== "email.received") return res.status(200).json({ ok: true, ignored: true });
 
