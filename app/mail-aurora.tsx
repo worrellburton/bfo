@@ -23,6 +23,7 @@ uniform float u_energy;
 uniform vec2 u_touch;
 uniform float u_touchAge;
 uniform float u_dark;
+uniform float u_sat;
 
 vec3 hsl2rgb(vec3 c) {
   vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
@@ -55,18 +56,20 @@ void main() {
   float bloom = exp(-length(p - tp) * (3.0 + u_touchAge * 1.5)) * max(0.0, 1.0 - u_touchAge * 0.45);
   float breath = 0.9 + 0.1 * sin(u_time * 0.6);
   float light = (band * (0.55 + 0.45 * sky) + bloom * 0.9) * breath * (0.75 + u_energy * 0.6);
-  vec3 c1 = hsl2rgb(vec3(u_hue, 0.75, u_dark > 0.5 ? 0.55 : 0.62));
-  vec3 c2 = hsl2rgb(vec3(fract(u_hue + 0.12), 0.7, u_dark > 0.5 ? 0.6 : 0.7));
+  vec3 c1 = hsl2rgb(vec3(u_hue, u_sat, u_dark > 0.5 ? 0.55 : 0.62));
+  vec3 c2 = hsl2rgb(vec3(fract(u_hue + 0.12), u_sat * 0.93, u_dark > 0.5 ? 0.6 : 0.7));
   vec3 col = mix(c1, c2, n1);
   float alpha = clamp(light, 0.0, 1.0) * (u_dark > 0.5 ? 0.42 : 0.28);
   gl_FragColor = vec4(col * alpha, alpha);
 }
 `;
 
-export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: boolean; className?: string }) {
+export function MailAurora({ hue, dark, saturation = 0.75, className = "" }: { hue: number; dark: boolean; /** 0 for a black-and-white sky. */ saturation?: number; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const hueRef = useRef(hue);
   hueRef.current = hue;
+  const satRef = useRef(saturation);
+  satRef.current = saturation;
 
   useEffect(() => {
     const canvas = ref.current;
@@ -105,6 +108,7 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
       touch: gl.getUniformLocation(prog, "u_touch"),
       touchAge: gl.getUniformLocation(prog, "u_touchAge"),
       dark: gl.getUniformLocation(prog, "u_dark"),
+      sat: gl.getUniformLocation(prog, "u_sat"),
     };
 
     // Drawn at a fraction of the screen's pixels: an aurora has no edges to keep sharp.
@@ -154,6 +158,7 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
     window.addEventListener("pointerdown", onDown, { passive: true });
 
     let hueNow = hueRef.current;
+    let satNow = satRef.current;
     const start = performance.now();
     let raf = 0;
     let running = true;
@@ -165,6 +170,7 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
       if (d > 0.5) d -= 1;
       if (d < -0.5) d += 1;
       hueNow = (hueNow + d * 0.04 + 1) % 1;
+      satNow += (satRef.current - satNow) * 0.05;
       if (now - lastScrollAt > 120) energy *= 0.94;
       pullNow += (pullTarget - pullNow) * 0.12;
       gl.uniform1f(u.time, t);
@@ -175,6 +181,7 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
       // While pulled, the bloom under the thumb holds instead of fading.
       gl.uniform1f(u.touchAge, pullNow > 0.02 ? Math.min((now - touchAt) / 1000, 0.3 + (1 - pullNow) * 1.2) : (now - touchAt) / 1000);
       gl.uniform1f(u.dark, dark ? 1 : 0);
+      gl.uniform1f(u.sat, satNow);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

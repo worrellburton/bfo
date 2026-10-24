@@ -264,9 +264,9 @@ html.light {
 .menu-down { animation: menu-down 240ms cubic-bezier(0.16, 1, 0.3, 1) both; transform-origin: top center; }
 @keyframes sheet-up { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: none; } }
 .sheet-up { animation: sheet-up 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-@keyframes unread-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(129, 140, 248, 0.55); } 50% { box-shadow: 0 0 0 5px rgba(129, 140, 248, 0); } }
+@keyframes unread-glow { 0%, 100% { box-shadow: 0 0 0 0 hsl(var(--mail-hue) var(--mail-sat) 72% / 0.55); } 50% { box-shadow: 0 0 0 5px rgba(129, 140, 248, 0); } }
 .unread-glow { animation: unread-glow 2.4s ease-out infinite; }
-.search-glow:focus-within { box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.45), 0 0 28px rgba(129, 140, 248, 0.22); }
+.search-glow:focus-within { box-shadow: 0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.45), 0 0 28px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.22); }
 .mail-aurora { z-index: 0; opacity: 1; }
 @media (min-width: 768px) { .mail-aurora { opacity: 0.55; } }
 /* A row swiped aside: what's behind it (archive one way, star the other). */
@@ -276,12 +276,12 @@ html.light {
 .swipe-row.swiping { transition: none; }
 /* Pulling the list down: a ring that fills as you pull and spins while it fetches. */
 /* How far through a message you are. */
-.read-progress { position: fixed; left: 0; top: 0; height: 2px; z-index: 60; background: linear-gradient(90deg, #818cf8, #c4b5fd); box-shadow: 0 0 10px rgba(129, 140, 248, 0.7); transition: width 80ms linear; }
+.read-progress { position: fixed; left: 0; top: 0; height: 2px; z-index: 60; background: linear-gradient(90deg, var(--mail-accent), var(--mail-accent-pale)); box-shadow: 0 0 10px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.7); transition: width 80ms linear; }
 /* "New mail" arriving. */
 @keyframes pill-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .pill-in { animation: pill-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 /* Unread: the sender's picture carries the mailbox's light. */
-.unread-ring { box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.55), 0 0 18px rgba(129, 140, 248, 0.4); }
+.unread-ring { box-shadow: 0 0 0 2px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.55), 0 0 18px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.4); }
 .mail-glass-top {
   -webkit-backdrop-filter: blur(22px) saturate(160%);
   backdrop-filter: blur(22px) saturate(160%);
@@ -298,34 +298,34 @@ html.light {
       inset 0 1px 0 rgba(255, 255, 255, 0.14),
       0 8px 28px rgba(0, 0, 0, 0.28);
   }
-  .pill-glass:focus-within { border-color: rgba(165, 180, 252, 0.55); }
+  .pill-glass:focus-within { border-color: hsl(var(--mail-hue) var(--mail-sat) 80% / 0.55); }
   /* The folder pill on Active: the same glass in the mailbox's colour. */
   .pill-glass-live {
-    background: linear-gradient(180deg, hsl(var(--mail-hue) 80% 72% / 0.3), hsl(var(--mail-hue) 75% 62% / 0.16) 60%, hsl(var(--mail-hue) 70% 55% / 0.12));
-    border: 1px solid hsl(var(--mail-hue) 80% 78% / 0.42);
+    background: linear-gradient(180deg, hsl(var(--mail-hue) var(--mail-sat) 72% / 0.3), hsl(var(--mail-hue) var(--mail-sat) 62% / 0.16) 60%, hsl(var(--mail-hue) var(--mail-sat) 55% / 0.12));
+    border: 1px solid hsl(var(--mail-hue) var(--mail-sat) 78% / 0.42);
     -webkit-backdrop-filter: blur(18px) saturate(170%);
     backdrop-filter: blur(18px) saturate(170%);
     box-shadow:
-      inset 0 1px 0 hsl(var(--mail-hue) 90% 90% / 0.3),
-      0 8px 28px hsl(var(--mail-hue) 70% 50% / 0.25);
+      inset 0 1px 0 hsl(var(--mail-hue) var(--mail-sat) 90% / 0.3),
+      0 8px 28px hsl(var(--mail-hue) var(--mail-sat) 50% / 0.25);
   }
   html.light .pill-glass {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.66));
-    border-color: rgba(99, 102, 241, 0.16);
+    border-color: hsl(var(--mail-hue) var(--mail-sat) 64% / 0.16);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.95),
-      0 8px 24px rgba(79, 70, 229, 0.08);
+      0 8px 24px hsl(var(--mail-hue) var(--mail-sat) 55% / 0.08);
   }
   html.light .pill-glass-live {
-    background: linear-gradient(180deg, hsl(var(--mail-hue) 90% 97% / 0.9), hsl(var(--mail-hue) 85% 92% / 0.8));
-    border-color: hsl(var(--mail-hue) 70% 70% / 0.45);
+    background: linear-gradient(180deg, hsl(var(--mail-hue) var(--mail-sat) 97% / 0.9), hsl(var(--mail-hue) var(--mail-sat) 92% / 0.8));
+    border-color: hsl(var(--mail-hue) var(--mail-sat) 70% / 0.45);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.95),
-      0 8px 24px hsl(var(--mail-hue) 70% 55% / 0.14);
+      0 8px 24px hsl(var(--mail-hue) var(--mail-sat) 55% / 0.14);
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .pill-glass { background: rgba(28, 28, 36, 0.92); }
-    .pill-glass-live { background: hsl(var(--mail-hue) 45% 30% / 0.95); }
+    .pill-glass-live { background: hsl(var(--mail-hue) var(--mail-sat) 30% / 0.95); }
 }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -337,59 +337,63 @@ html.light {
    Mail's loaders (app/mail-loaders.tsx), in the mailbox's colour: the page
    sets --mail-hue; everything below reads it.
    ────────────────────────────────────────────────────────────────────── */
-:root { --mail-hue: 245; }
+:root { --mail-hue: 245; --mail-sat: 80%; --mail-accent: #818cf8; --mail-accent-deep: #6366f1; --mail-accent-pale: #c7d2fe; --mail-accent-ink: #4f46e5; }
 /* The small spinner: a ring with a spark going round it (buttons, an uploading file). */
 .loader-orbit {
-  border: 1.5px solid hsl(var(--mail-hue) 70% 65% / 0.3);
-  background: radial-gradient(circle at 50% 50%, hsl(var(--mail-hue) 70% 60% / 0.18), transparent 70%);
+  border: 1.5px solid hsl(var(--mail-hue) var(--mail-sat) 65% / 0.3);
+  background: radial-gradient(circle at 50% 50%, hsl(var(--mail-hue) var(--mail-sat) 60% / 0.18), transparent 70%);
 }
 .loader-spark {
   position: absolute; inset: -1.5px;
   border-radius: 9999px;
   border: 1.5px solid transparent;
-  border-top-color: hsl(var(--mail-hue) 85% 72%);
-  box-shadow: 0 -2px 8px hsl(var(--mail-hue) 85% 72% / 0.6);
+  border-top-color: hsl(var(--mail-hue) var(--mail-sat) 72%);
+  box-shadow: 0 -2px 8px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.6);
   animation: loader-spin 0.9s linear infinite;
 }
 @keyframes loader-spin { to { transform: rotate(360deg); } }
 /* The caption's dot and the dots that take turns. */
-.loader-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: hsl(var(--mail-hue) 80% 70%); box-shadow: 0 0 10px hsl(var(--mail-hue) 80% 70% / 0.8); animation: loader-breathe-dot 1.4s ease-in-out infinite; }
+.loader-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: hsl(var(--mail-hue) var(--mail-sat) 70%); box-shadow: 0 0 10px hsl(var(--mail-hue) var(--mail-sat) 70% / 0.8); animation: loader-breathe-dot 1.4s ease-in-out infinite; }
 @keyframes loader-breathe-dot { 0%, 100% { transform: scale(0.8); opacity: 0.6; } 50% { transform: scale(1.15); opacity: 1; } }
 .loader-dots i { display: inline-block; width: 3px; height: 3px; border-radius: 9999px; background: currentColor; opacity: 0.35; animation: loader-dots 1.2s ease-in-out infinite; }
 .loader-dots i:nth-child(2) { animation-delay: 0.15s; }
 .loader-dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes loader-dots { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
 /* The reader's loader: a letter sliding out of its envelope, over and over. */
-.letter { filter: drop-shadow(0 12px 26px hsl(var(--mail-hue) 70% 50% / 0.35)); animation: letter-float 3.6s ease-in-out infinite; }
+.letter { filter: drop-shadow(0 12px 26px hsl(var(--mail-hue) var(--mail-sat) 50% / 0.35)); animation: letter-float 3.6s ease-in-out infinite; }
 @keyframes letter-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-.letter-pool { fill: hsl(var(--mail-hue) 80% 65% / 0.22); animation: letter-pool 3.6s ease-in-out infinite; }
+.letter-pool { fill: hsl(var(--mail-hue) var(--mail-sat) 65% / 0.22); animation: letter-pool 3.6s ease-in-out infinite; }
 @keyframes letter-pool { 0%, 100% { transform: scaleX(1); opacity: 0.8; } 50% { transform: scaleX(0.86); opacity: 0.5; } }
-.letter-body { fill: hsl(var(--mail-hue) 55% 52%); }
-.letter-pocket { stroke: hsl(var(--mail-hue) 70% 78% / 0.55); }
+.letter-body { fill: hsl(var(--mail-hue) var(--mail-sat) 52%); }
+.letter-pocket { stroke: hsl(var(--mail-hue) var(--mail-sat) 78% / 0.55); }
 .letter-flap {
-  fill: hsl(var(--mail-hue) 55% 42%);
+  fill: hsl(var(--mail-hue) var(--mail-sat) 42%);
   transform-box: fill-box; transform-origin: 50% 100%;
   animation: letter-flap 3.4s cubic-bezier(0.6, 0, 0.3, 1) infinite;
 }
 @keyframes letter-flap { 0%, 8% { transform: scaleY(0.02); } 26%, 86% { transform: scaleY(1); } 96%, 100% { transform: scaleY(0.02); } }
 .letter-paper { animation: letter-paper 3.4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
 @keyframes letter-paper { 0%, 24% { transform: translateY(0); } 52%, 84% { transform: translateY(-58px); } 94%, 100% { transform: translateY(0); } }
-.letter-ink { stroke: hsl(var(--mail-hue) 70% 58%); stroke-dasharray: 80; stroke-dashoffset: 80; animation: letter-ink 3.4s ease-out infinite; }
+.letter-ink { stroke: hsl(var(--mail-hue) var(--mail-sat) 58%); stroke-dasharray: 80; stroke-dashoffset: 80; animation: letter-ink 3.4s ease-out infinite; }
 @keyframes letter-ink { 0%, 48% { stroke-dashoffset: 80; } 66%, 86% { stroke-dashoffset: 0; } 92%, 100% { stroke-dashoffset: 80; } }
 /* Sent: the paper plane darts off and a check takes its place. */
 .plane-off { animation: plane-off 480ms cubic-bezier(0.4, 0, 0.8, 0.4) forwards; }
 @keyframes plane-off { 0% { transform: translate(0, 0) scale(1); opacity: 1; } 100% { transform: translate(16px, -14px) scale(0.6); opacity: 0; } }
 .plane-check { opacity: 0; stroke-dasharray: 24; stroke-dashoffset: 24; animation: plane-check 360ms cubic-bezier(0.16, 1, 0.3, 1) 300ms forwards; }
 @keyframes plane-check { 0% { opacity: 1; stroke-dashoffset: 24; } 100% { opacity: 1; stroke-dashoffset: 0; } }
+/* The shared tone's accent colours, re-lit in the look's colour inside Mail (app/mail-look.ts). */
+[data-mail-look] .text-\[\#a5b4fc\], [data-mail-look] .text-\[\#4f46e5\] { color: var(--mail-accent); }
+html.light [data-mail-look] .text-\[\#4f46e5\] { color: var(--mail-accent-ink); }
+[data-mail-look] .bg-\[\#818cf8\] { background-color: var(--mail-accent); }
 /* Pulling the list down (app/mail-pull.tsx): the list rides the finger on a
    transform; a ring in the gap fills as you pull, spins while checking, and
    draws a check when done. The pull itself is driven without re-rendering. */
 .ptr-list { will-change: transform; }
 .ptr-badge { position: absolute; left: 50%; top: 0; transform: translate(-50%, -40px); opacity: 0; pointer-events: none; will-change: transform, opacity; }
-.ptr-ring { width: 28px; height: 28px; filter: drop-shadow(0 0 8px hsl(var(--mail-hue) 85% 72% / 0.55)); }
-.ptr-track { stroke: hsl(var(--mail-hue) 70% 65% / 0.22); }
-.ptr-arc { stroke: hsl(var(--mail-hue) 85% 74%); transform-origin: 50% 50%; transform: rotate(-90deg); }
-.ptr-check { stroke: hsl(var(--mail-hue) 85% 78%); stroke-dasharray: 20; stroke-dashoffset: 20; opacity: 0; }
+.ptr-ring { width: 28px; height: 28px; filter: drop-shadow(0 0 8px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.55)); }
+.ptr-track { stroke: hsl(var(--mail-hue) var(--mail-sat) 65% / 0.22); }
+.ptr-arc { stroke: hsl(var(--mail-hue) var(--mail-sat) 74%); transform-origin: 50% 50%; transform: rotate(-90deg); }
+.ptr-check { stroke: hsl(var(--mail-hue) var(--mail-sat) 78%); stroke-dasharray: 20; stroke-dashoffset: 20; opacity: 0; }
 .ptr-badge[data-phase="refreshing"] .ptr-arc { stroke-dashoffset: 54 !important; animation: ptr-spin 900ms linear infinite; }
 .ptr-badge[data-phase="done"] .ptr-arc { stroke-dashoffset: 0 !important; opacity: 0.35; }
 .ptr-badge[data-phase="done"] .ptr-check { opacity: 1; animation: ptr-check 360ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
@@ -397,8 +401,8 @@ html.light {
 @keyframes ptr-spin { to { transform: rotate(270deg); } }
 @keyframes ptr-check { to { stroke-dashoffset: 0; } }
 @keyframes ptr-arm { 0% { transform: scale(1); } 50% { transform: scale(1.18); } 100% { transform: scale(1); } }
-.ptr-note { color: hsl(var(--mail-hue) 60% 80% / 0.9); }
-html.light .ptr-note { color: hsl(var(--mail-hue) 60% 40% / 0.9); }
+.ptr-note { color: hsl(var(--mail-hue) var(--mail-sat) 80% / 0.9); }
+html.light .ptr-note { color: hsl(var(--mail-hue) var(--mail-sat) 40% / 0.9); }
 @media (prefers-reduced-motion: reduce) {
   .ptr-list { transition: none !important; }
   .ptr-badge[data-phase="refreshing"] .ptr-arc, .ptr-badge[data-armed="true"] .ptr-ring { animation: none; }
@@ -1054,35 +1058,35 @@ html.light :is(button, a, select, input, textarea, [role="option"]):focus-visibl
 /* The phone's Compose: a glass pill, lit from within, breathing an indigo glow. */
 .fab-glass {
   color: #fff;
-  background: linear-gradient(135deg, rgba(129, 140, 248, 0.42), rgba(99, 102, 241, 0.28) 55%, rgba(196, 181, 253, 0.3));
+  background: linear-gradient(135deg, hsl(var(--mail-hue) var(--mail-sat) 72% / 0.42), hsl(var(--mail-hue) var(--mail-sat) 64% / 0.28) 55%, hsl(var(--mail-hue) var(--mail-sat) 84% / 0.3));
   border: 1px solid rgba(255, 255, 255, 0.22);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   backdrop-filter: blur(18px) saturate(160%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 10px 30px rgba(99, 102, 241, 0.42),
-    0 0 0 1px rgba(129, 140, 248, 0.18),
-    0 0 36px rgba(129, 140, 248, 0.35);
+    0 10px 30px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.42),
+    0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.18),
+    0 0 36px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.35);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   animation: palette-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both, fab-glow 3.2s ease-in-out 260ms infinite;
 }
 html.light .fab-glass {
-  color: #312e81;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(224, 231, 255, 0.78) 55%, rgba(237, 233, 254, 0.75));
-  border-color: rgba(99, 102, 241, 0.3);
+  color: var(--mail-accent-ink);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), hsl(var(--mail-hue) var(--mail-sat) 94% / 0.78) 55%, hsl(var(--mail-hue) var(--mail-sat) 96% / 0.75));
+  border-color: hsl(var(--mail-hue) var(--mail-sat) 64% / 0.3);
   text-shadow: none;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 10px 28px rgba(99, 102, 241, 0.28),
-    0 0 0 1px rgba(99, 102, 241, 0.12),
-    0 0 30px rgba(129, 140, 248, 0.3);
+    0 10px 28px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.28),
+    0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.12),
+    0 0 30px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.3);
 }
 @keyframes fab-glow {
-  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 30px rgba(99, 102, 241, 0.42), 0 0 0 1px rgba(129, 140, 248, 0.18), 0 0 36px rgba(129, 140, 248, 0.35); }
-  50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 12px 34px rgba(99, 102, 241, 0.55), 0 0 0 1px rgba(129, 140, 248, 0.28), 0 0 56px rgba(129, 140, 248, 0.55); }
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 30px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.42), 0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.18), 0 0 36px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.35); }
+  50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 12px 34px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.55), 0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.28), 0 0 56px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.55); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .fab-glass { background: #4f46e5; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .fab-glass { background: var(--mail-accent-deep); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 .route-progress {

@@ -10,6 +10,7 @@ import { MailFrame, htmlToText } from "../mail-frame";
 import { MailAurora, mailboxHue } from "../mail-aurora";
 import { BusyLabel, ListLoader, Orbit, ReaderLoader, SearchLoader } from "../mail-loaders";
 import { PullToRefresh } from "../mail-pull";
+import { LOOKS, lookSpec, lookVars, nextLook, readLook, writeLook, type MailLook } from "../mail-look";
 import {
   addAlias,
   attachmentUrl,
@@ -291,7 +292,7 @@ const EMPTY: Record<MailFolder, string> = {
  * remove extras from the same menu. With one address, the button is that
  * address and the menu holds copy and add.
  */
-function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number }) {
+function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0, fixedHue = false }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number; /** The look has one hue (not Aurora): mailboxes are shades of it rather than their own colours. */ fixedHue?: boolean }) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
   // The server's answer to an add or remove shows at once; the shared count catches up after.
@@ -407,10 +408,13 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
   const current = mine.find((m) => m.toLowerCase() === box) ?? null;
   const label = mine.length === 1 ? address : current ?? "All mailboxes";
   const localPart = (a: string) => a.slice(0, a.indexOf("@"));
-  const hueOf = (a: string) => `hsl(${Math.round(mailboxHue(a) * 360)} 70% ${t.dark ? 62 : 48}%)`;
+  const hueOf = (a: string) => {
+    const h = fixedHue ? `calc(var(--mail-hue) + ${Math.round(mailboxHue(a) * 40) - 20})` : String(Math.round(mailboxHue(a) * 360));
+    return `hsl(${h} var(--mail-sat) ${t.dark ? 62 : 48}%)`;
+  };
   /** The mailbox's mark: its initial on its own colour. */
   const bubble = (a: string, size = "h-7 w-7 text-[12px]") => (
-    <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${size}`} style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})`, boxShadow: `0 0 18px ${hueOf(a)}55` }}>
+    <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${size}`} style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})`, boxShadow: `0 0 18px ${hueOf(a).replace(/\)$/, " / 0.33)")}` }}>
       {a ? localPart(a).slice(0, 1).toUpperCase() : "∗"}
     </span>
   );
@@ -446,13 +450,13 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
             <span className={`flex items-center gap-1.5 font-semibold leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${compact ? "text-[15px]" : "text-[19px]"} ${t.text}`}>
               <span className="min-w-0 break-all">{current ?? (mine.length === 1 ? address : "All mailboxes")}</span>
               <Icon name="chevronDown" className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.2} />
-              {compact && unread > 0 && <span className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>{unread}</span>}
+              {compact && unread > 0 && <span className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{unread}</span>}
             </span>
             <span className={`flex items-center gap-2 overflow-hidden text-[12.5px] transition-all duration-300 ${compact ? "max-h-0 opacity-0" : "mt-0.5 max-h-6 opacity-100"} ${t.muted}`}>
               <span className="truncate">{current ? `${localPart(current)} · ${mine.length > 1 ? `one of ${mine.length} addresses` : "your mailbox"}` : mine.length === 1 ? localPart(address) : `${address}${mine.length > 2 ? ` and ${mine.length - 1} more` : ` and ${mine[1]}`}`}</span>
               {unread > 0 && (
-                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>
-                  <span className="unread-glow h-1.5 w-1.5 rounded-full bg-[#818cf8]" />
+                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>
+                  <span className="unread-glow h-1.5 w-1.5 rounded-full bg-(--mail-accent)" />
                   {unread} unread
                 </span>
               )}
@@ -839,6 +843,26 @@ const FOLDER_META: Record<MailFolder, { glyph: keyof typeof GLYPHS; blurb: strin
   other: { glyph: "at", blurb: "Mail to addresses nobody has" },
 };
 
+/** The appearance button: a half-lit circle; each press moves to the next look. */
+function LookButton({ look, onCycle, className = "" }: { look: MailLook; onCycle: () => void; className?: string }) {
+  const l = lookSpec(look);
+  const next = lookSpec(nextLook(look));
+  return (
+    <button
+      type="button"
+      aria-label={`Appearance: ${l.label}. Switch to ${next.label}`}
+      title={`Appearance: ${l.label} (${LOOKS.map((x) => x.label).join(" → ")})`}
+      onClick={onCycle}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 ${className}`}
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" strokeWidth={1.6} />
+        <path d="M12 3.75a8.25 8.25 0 010 16.5z" fill="var(--mail-accent)" />
+      </svg>
+    </button>
+  );
+}
+
 /**
  * Phones: one control for the folder and the filter, showing only what's
  * chosen ("Active", or "In · Unread"); tapping it opens a glass menu with
@@ -883,15 +907,15 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
         aria-label={`Showing ${cur.label}${filter === "all" ? "" : `, ${filter} only`}. Change folder or filter`}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex h-[48px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-full pl-5 pr-4 text-[15px] font-semibold transition-colors active:scale-[0.99] ${
-          live ? `pill-glass-live ${t.dark ? "text-[#e0e7ff]" : "text-indigo-800"}` : `pill-glass ${t.dark ? "text-white" : "text-gray-900"}`
+          live ? `pill-glass-live ${t.dark ? "text-(--mail-accent-pale)" : "text-(--mail-accent-ink)"}` : `pill-glass ${t.dark ? "text-white" : "text-gray-900"}`
         }`}
       >
         <Glyph name={FOLDER_META[folder].glyph} className="h-4 w-4" />
         <span className="truncate">{cur.label}</span>
-        {n(folder) > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-[#818cf8]/30 text-white" : "bg-indigo-600 text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>{n(folder)}</span>}
+        {n(folder) > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-(--mail-accent)/30 text-white" : "bg-(--mail-accent-deep) text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>{n(folder)}</span>}
         {filter !== "all" && (
           <span className={`inline-flex items-center gap-1 rounded-full py-0.5 pl-1.5 pr-2 text-[12px] font-medium ${t.dark ? "bg-white/10 text-gray-100" : "bg-white text-gray-700 shadow-sm"}`}>
-            {filter === "unread" ? <span className="h-2 w-2 rounded-full bg-[#818cf8]" /> : <Star on className="h-3 w-3" />}
+            {filter === "unread" ? <span className="h-2 w-2 rounded-full bg-(--mail-accent)" /> : <Star on className="h-3 w-3" />}
             {filter === "unread" ? "Unread" : "Starred"}
           </span>
         )}
@@ -916,7 +940,7 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
                   const c = n(x.key);
                   const tone = on
                     ? isLive
-                      ? t.dark ? "bg-[#6366f1]/25 text-[#e0e7ff] ring-1 ring-inset ring-[#818cf8]/60" : "bg-indigo-600 text-white"
+                      ? t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60" : "bg-(--mail-accent-deep) text-white"
                       : t.dark ? "bg-white/[0.12] text-white ring-1 ring-inset ring-white/15" : "bg-gray-900 text-white"
                     : t.dark ? "bg-white/[0.04] text-gray-200 hover:bg-white/[0.08]" : "bg-gray-50 text-gray-800 hover:bg-gray-100";
                   return (
@@ -934,7 +958,7 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="flex items-center gap-2 text-[15px] font-semibold">
                           {x.label}
-                          {c > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${on ? "bg-white/20" : t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>{c}</span>}
+                          {c > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${on ? "bg-white/20" : t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{c}</span>}
                         </span>
                         <span className={`text-[12px] leading-snug ${on ? "opacity-80" : t.muted}`}>{FOLDER_META[x.key].blurb}</span>
                       </span>
@@ -956,7 +980,7 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
                       onClick={() => pick(() => onFilter(f.key))}
                       className={`inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl text-[13.5px] font-medium transition-colors ${on ? (t.dark ? "bg-white/[0.12] text-white shadow" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-400" : "text-gray-500"}`}
                     >
-                      {f.key === "unread" && <span className={`h-2 w-2 rounded-full ${on ? "bg-[#818cf8]" : "border-2 border-current"}`} />}
+                      {f.key === "unread" && <span className={`h-2 w-2 rounded-full ${on ? "bg-(--mail-accent)" : "border-2 border-current"}`} />}
                       {f.key === "starred" && <Star on={on} className="h-3.5 w-3.5" />}
                       {f.label}
                     </button>
@@ -1019,6 +1043,26 @@ export default function Inbox() {
   /** A short note after an action; with `undo`, a button (and "z") puts it back. */
   const [toast, setToastState] = useState<{ text: string; undo?: () => void } | null>(null);
   const setToast = (text: string | null, undo?: () => void) => setToastState(text ? { text, undo } : null);
+  /** The look (app/mail-look.ts): the appearance button cycles it; the device remembers it. */
+  const [look, setLook] = useState<MailLook>("aurora");
+  useEffect(() => setLook(readLook()), []);
+  useEffect(() => {
+    // Portalled pieces (the Compose pill, the toast, the sheets) sit outside the page root: the look's variables go on <html> too.
+    const root = document.documentElement;
+    const vars = lookVars(look, mailboxHue(box));
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    return () => {
+      for (const k of Object.keys(vars)) root.style.removeProperty(k);
+    };
+  }, [look, box]);
+  function cycleLook() {
+    const next = nextLook(look);
+    setLook(next);
+    writeLook(next);
+    tap();
+    const l = lookSpec(next);
+    setToast(`${l.label} · ${l.blurb}`);
+  }
   /** Everyone's chosen pictures, by address; asked for once per visit. */
   const [faces, setFaces] = useState<MailFaces>({});
   useEffect(() => {
@@ -1600,7 +1644,7 @@ export default function Inbox() {
     <div
       role="toolbar"
       aria-label="Selected messages"
-      className={`pick-bar-in sticky top-0 z-[2] flex flex-wrap items-center gap-1 border-b px-3 py-1.5 backdrop-blur-xl ${t.line} ${t.dark ? "bg-[#14152a]/95" : "bg-indigo-50/95"}`}
+      className={`pick-bar-in sticky top-0 z-[2] flex flex-wrap items-center gap-1 border-b px-3 py-1.5 backdrop-blur-xl ${t.line} ${t.dark ? "bg-[#14152a]/95" : "bg-(--mail-accent-deep)/10/95"}`}
     >
       <SelectBox
         on={pickedRows.length === rows.length}
@@ -1650,7 +1694,7 @@ export default function Inbox() {
         <span
           aria-hidden="true"
           className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full text-white"
-          style={{ background: `linear-gradient(135deg, hsl(${Math.round(mailboxHue(box) * 360)} 70% 60%), hsl(${Math.round(mailboxHue(box + "x") * 360)} 70% 62%))`, boxShadow: `0 0 36px hsl(${Math.round(mailboxHue(box) * 360)} 70% 60% / 0.45)` }}
+          style={{ background: `linear-gradient(135deg, hsl(var(--mail-hue) var(--mail-sat) 60%), hsl(calc(var(--mail-hue) + 28) var(--mail-sat) 62%))`, boxShadow: `0 0 36px hsl(var(--mail-hue) var(--mail-sat) 60% / 0.45)` }}
         >
           <Icon name="mail" className="h-6 w-6" strokeWidth={1.6} />
         </span>
@@ -1729,15 +1773,15 @@ export default function Inbox() {
           const live = x.key === "active";
           const tone = live
             ? on
-              ? t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe] ring-1 ring-inset ring-[#818cf8]/50" : "bg-indigo-600 text-white"
-              : t.dark ? "text-[#a5b4fc] ring-1 ring-inset ring-[#818cf8]/25 hover:bg-[#6366f1]/10 hover:text-[#c7d2fe]" : "text-indigo-600 ring-1 ring-inset ring-indigo-200 hover:bg-indigo-50"
+              ? t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/50" : "bg-(--mail-accent-deep) text-white"
+              : t.dark ? "text-(--mail-accent) ring-1 ring-inset ring-(--mail-accent)/25 hover:bg-(--mail-accent-deep)/10 hover:text-(--mail-accent-pale)" : "text-(--mail-accent-ink) ring-1 ring-inset ring-(--mail-accent-deep)/30 hover:bg-(--mail-accent-deep)/10"
             : on
               ? t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white"
               : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900";
           const badge = live
             ? on
-              ? t.dark ? "bg-[#818cf8]/30 text-white" : "bg-white/20 text-white"
-              : t.dark ? "bg-[#6366f1]/20 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"
+              ? t.dark ? "bg-(--mail-accent)/30 text-white" : "bg-white/20 text-white"
+              : t.dark ? "bg-(--mail-accent-deep)/20 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"
             : on
               ? "bg-white/15 text-white"
               : t.dark ? "bg-white/[0.07] text-gray-300" : "bg-gray-100 text-gray-600";
@@ -1803,7 +1847,7 @@ export default function Inbox() {
 
   return (
     <FacesContext.Provider value={faces}>
-    <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
+    <MailAurora hue={lookSpec(look).hue ?? mailboxHue(box)} saturation={lookSpec(look).sat} dark={t.dark} className="mail-aurora" />
     {openId && <ReadingProgress />}
     {freshMail && !openId && (
       <button
@@ -1814,15 +1858,15 @@ export default function Inbox() {
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}
         className={`pill-in fixed left-1/2 z-40 inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border px-4 text-[13px] font-semibold shadow-xl mail-glass-top ${
-          t.dark ? "border-white/15 bg-[#6366f1]/40 text-white" : "border-indigo-200 bg-white/90 text-indigo-700"
+          t.dark ? "border-white/15 bg-(--mail-accent-deep)/40 text-white" : "border-(--mail-accent-deep)/30 bg-white/90 text-(--mail-accent-ink)"
         }`}
         style={{ top: "calc(env(safe-area-inset-top) + 5.25rem)" }}
       >
-        <span className="unread-glow h-1.5 w-1.5 rounded-full bg-[#c7d2fe]" />
+        <span className="unread-glow h-1.5 w-1.5 rounded-full bg-(--mail-accent-pale)" />
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" data-mail-look={look} style={lookVars(look, mailboxHue(box)) as React.CSSProperties}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -1835,12 +1879,13 @@ export default function Inbox() {
             BFO
           </Link>
           <span className="flex-1" />
+          <LookButton look={look} onCycle={cycleLook} className="pill-glass h-10 w-10" />
           {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
         </div>
       )}
       {!openId && address && !noAddress && (
         <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/70" : "border-gray-200 bg-white/75"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
-          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big compact={scrolled} unread={count?.unread ?? 0} />
+          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} fixedHue={lookSpec(look).hue !== null} big compact={scrolled} unread={count?.unread ?? 0} />
         </div>
       )}
       {!openId && noAddress && <p className={`px-2 text-[13px] md:hidden ${t.muted}`}>No address yet. Ask an admin for one.</p>}
@@ -1853,12 +1898,13 @@ export default function Inbox() {
             {noAddress ? (
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
             ) : address && (
-              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} />
+              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} fixedHue={lookSpec(look).hue !== null} />
             )}
           </div>
         </div>
         <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
         <div className="flex shrink-0 items-center gap-2">
+          <LookButton look={look} onCycle={cycleLook} className={`h-8 w-8 ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
           <Segmented
             label="View"
             value={view}
@@ -1956,7 +2002,7 @@ export default function Inbox() {
                   type="button"
                   onClick={() => toast.undo?.()}
                   title="Undo (z)"
-                  className={`-my-1 cursor-pointer rounded-full px-2 py-1 font-semibold underline-offset-2 hover:underline ${t.dark ? "text-indigo-600" : "text-indigo-300"}`}
+                  className={`-my-1 cursor-pointer rounded-full px-2 py-1 font-semibold underline-offset-2 hover:underline ${t.dark ? "text-(--mail-accent-ink)" : "text-(--mail-accent-pale)"}`}
                 >
                   Undo
                 </button>
@@ -2133,7 +2179,7 @@ function SelectBox({ on, mixed = false, onToggle, label, className = "" }: { on:
         key={filled ? "on" : "off"}
         className={`relative grid h-[17px] w-[17px] place-items-center rounded-full border-[1.5px] transition-[background-color,border-color,box-shadow] duration-200 ${filled ? "pick-pop" : ""} ${
           filled
-            ? "border-[#818cf8] bg-[#6366f1] shadow-[0_0_0_3px_rgba(129,140,248,0.18)]"
+            ? "border-(--mail-accent) bg-(--mail-accent-deep) shadow-[0_0_0_3px_rgba(129,140,248,0.18)]"
             : t.dark
               ? "border-white/25 group-hover/pick:border-white/60"
               : "border-gray-300 group-hover/pick:border-gray-500"
@@ -2220,7 +2266,7 @@ function whoOf(m: MailSummary, sent: boolean, me: string): string {
 function UnreadDot({ on }: { on: boolean }) {
   return (
     <>
-      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-[#818cf8]" : "bg-transparent"}`} />
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-(--mail-accent)" : "bg-transparent"}`} />
       {on && <span className="sr-only">Unread. </span>}
     </>
   );
@@ -2308,7 +2354,7 @@ function MailTable({
                 }
               }}
               className={`group cursor-pointer transition-colors duration-150 ${
-                on ? (t.dark ? "bg-[#6366f1]/[0.13] hover:bg-[#6366f1]/[0.17]" : "bg-indigo-50 hover:bg-indigo-100/70") : t.hover
+                on ? (t.dark ? "bg-(--mail-accent-deep)/[0.13] hover:bg-(--mail-accent-deep)/[0.17]" : "bg-(--mail-accent-deep)/10 hover:bg-(--mail-accent-deep)/15/70") : t.hover
               } focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
             >
               <td className="py-1.5 pl-2 pr-0 align-middle">
@@ -2445,7 +2491,7 @@ function ListRow({
   return (
     <div className={`swipe-track ${dx !== 0 ? "" : "md:contents"}`}>
       {dx < 0 && onArchive && (
-        <div aria-hidden="true" className={`swipe-under justify-end ${past ? "bg-[#6366f1] text-white" : t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>
+        <div aria-hidden="true" className={`swipe-under justify-end ${past ? "bg-(--mail-accent-deep) text-white" : t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>
           <Glyph name="archive" className="mr-2 h-[18px] w-[18px]" />
           Archive
         </div>
@@ -2479,7 +2525,7 @@ function ListRow({
       aria-selected={onPick ? picked : undefined}
       style={dx !== 0 ? { transform: `translateX(${dx}px)` } : undefined}
       className={`swipe-row group flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 ${swiping ? "swiping" : "max-md:active:scale-[0.99]"} ${
-        picked ? (t.dark ? "bg-[#6366f1]/[0.13]" : "bg-indigo-50") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : dx !== 0 ? (t.dark ? "bg-[#0b0b0f]" : "bg-white") : t.hover
+        picked ? (t.dark ? "bg-(--mail-accent-deep)/[0.13]" : "bg-(--mail-accent-deep)/10") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : dx !== 0 ? (t.dark ? "bg-[#0b0b0f]" : "bg-white") : t.hover
       } ${t.dark ? "active:bg-white/[0.05] focus-visible:bg-white/[0.05]" : "active:bg-gray-100 focus-visible:bg-gray-50"} focus-visible:outline-none`}
     >
       <span className="relative mt-0.5 shrink-0">
@@ -2493,7 +2539,7 @@ function ListRow({
           </span>
         )}
         {unread && (
-          <span aria-hidden="true" className={`absolute -left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[#818cf8] ring-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
+          <span aria-hidden="true" className={`absolute -left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-(--mail-accent) ring-2 ${t.dark ? "ring-[#0b0b0f]" : "ring-white"}`} />
         )}
         {unread && <span className="sr-only">Unread. </span>}
       </span>

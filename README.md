@@ -177,7 +177,11 @@ On a phone, Mail is its own place: the app's bar and menu stay out of it, a
 dropdown with its own colour and the unread count, so it's always clear whose
 mail is on screen; its menu rises as a glass sheet listing every address.
 Behind the list a WebGL aurora drifts in the mailbox's hue, brightens as you
-scroll and blooms where you touch (one still frame under reduced motion). Rows
+scroll and blooms where you touch (one still frame under reduced motion). The
+appearance button in the corner cycles Mail's look (`app/mail-look.ts`):
+Aurora (indigo, the aurora in each mailbox's own hue), Mono (black and white),
+Ember (amber and gold) and Sea (teal); each sets the page's colour variables
+and the aurora's hue and saturation, and the device remembers the choice. Rows
 arrive one after another under day separators; the reader rises in; a star
 pops. A row swiped left archives (with Undo), swiped right stars; a held
 finger picks it for a bulk action; pulling the list down asks Bird for new

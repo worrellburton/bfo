@@ -23,8 +23,12 @@ function readHue(el: Element): number {
   const v = parseFloat(getComputedStyle(el).getPropertyValue("--mail-hue"));
   return Number.isFinite(v) ? v : 245;
 }
+function readSat(el: Element): number {
+  const v = parseFloat(getComputedStyle(el).getPropertyValue("--mail-sat"));
+  return Number.isFinite(v) ? v : 80;
+}
 
-type Draw = (ctx: CanvasRenderingContext2D, t: number, hue: number) => void;
+type Draw = (ctx: CanvasRenderingContext2D, t: number, hue: number, sat: number) => void;
 type Scene = (w: number, h: number) => Draw;
 
 /** Runs a canvas scene: sized for the device, rebuilt on resize, paused while the tab is hidden. */
@@ -47,14 +51,18 @@ function useScene(ref: RefObject<HTMLCanvasElement | null>, height: number, scen
     };
     size();
     let hue = readHue(canvas);
+    let sat = readSat(canvas);
     const start = performance.now();
     let raf = 0;
     let frames = 0;
     let running = true;
     const tick = () => {
-      if (++frames % 20 === 0) hue = readHue(canvas);
+      if (++frames % 20 === 0) {
+        hue = readHue(canvas);
+        sat = readSat(canvas);
+      }
       ctx.clearRect(0, 0, w, height);
-      draw(ctx, still ? 9000 : performance.now() - start, hue);
+      draw(ctx, still ? 9000 : performance.now() - start, hue, sat);
       if (running && !still) raf = requestAnimationFrame(tick);
     };
     const onVisibility = () => {
@@ -149,8 +157,8 @@ function constellation(table: boolean, dark: boolean): Scene {
     const ys = new Float32Array(pts.length);
     const es = new Float32Array(pts.length);
 
-    return (ctx, t, hue) => {
-      const col = (a: number, l = light) => `hsl(${hue} 80% ${l}% / ${Math.max(0, Math.min(1, a))})`;
+    return (ctx, t, hue, sat) => {
+      const col = (a: number, l = light) => `hsl(${hue} ${sat}% ${l}% / ${Math.max(0, Math.min(1, a))})`;
       // A pulse of light travelling down the rows, over and over.
       const waveY = ((t / 2800) % 1) * (h + 200) - 100;
       const glowAt = (y: number) => Math.exp(-((y - waveY) * (y - waveY)) / (2 * 60 * 60));
@@ -293,8 +301,8 @@ function sonar(dark: boolean): Scene {
     const rings = [0.28, 0.52, 0.76, 1].map((f) => f * R);
     const light = dark ? 72 : 46;
     const grey = (a: number) => (dark ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`);
-    return (ctx, t, hue) => {
-      const col = (a: number, l = light) => `hsl(${hue} 80% ${l}% / ${Math.max(0, Math.min(1, a))})`;
+    return (ctx, t, hue, sat) => {
+      const col = (a: number, l = light) => `hsl(${hue} ${sat}% ${l}% / ${Math.max(0, Math.min(1, a))})`;
       // The beam swings across the lower half like a pendulum.
       const phase = t * 0.0011;
       const ang = Math.PI / 2 + Math.sin(phase) * 0.44 * Math.PI;
