@@ -1784,7 +1784,7 @@ export default function Inbox() {
 
   const reader = (
     <Reader
-      key={open?.id}
+      key={openId ?? undefined}
       message={open?.message ?? null}
       error={open?.error ?? null}
       me={address}
@@ -2866,8 +2866,9 @@ function Reader({
 
       {error && <ErrorLine>{error}</ErrorLine>}
 
+      <div className="relative">
       {envelope && !error && (
-        <div className={`reader-envelope ${m ? "pointer-events-none absolute inset-x-0 top-0 z-[5]" : ""} ${reveal === "go" ? "env-out" : ""}`}>
+        <div className={`reader-envelope relative z-[5] ${m ? "pointer-events-none" : ""} ${reveal === "go" ? "env-out" : ""}`}>
           {preview ? (
             <ReaderLoader
               // Sent mail is sealed with who it went to.
@@ -2882,7 +2883,7 @@ function Reader({
         </div>
       )}
       {m && (
-        <div className={`px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6 ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""}`}>
+        <div className={`px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6 ${envelope ? "absolute inset-x-0 top-0" : ""} ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""}`}>
           {/* Subject, with the star beside it on phones (as Gmail puts it). */}
           <div className="flex items-start gap-2">
             <h2 className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}>
@@ -3020,6 +3021,7 @@ function Reader({
 
         </div>
       )}
+      </div>
 
       {/* Phones: Reply and Forward within thumb's reach, above the browser's bottom bar. */}
       {m &&

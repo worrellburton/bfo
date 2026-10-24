@@ -486,8 +486,10 @@ html[data-vt="theme"]::view-transition-new(root) { animation: theme-in 360ms eas
 .loader-out { animation: loader-out 240ms ease forwards; }
 @keyframes loader-out { to { opacity: 0; transform: scale(0.985); } }
 .reader-under { visibility: hidden; }
-.reader-reveal { animation: reader-reveal 520ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-@keyframes reader-reveal { from { opacity: 0; transform: translateY(10px); } }
+/* Opacity only for the message (it holds an iframe; moving it re-rasterizes): the envelope supplies the motion. */
+.reader-reveal { animation: reader-reveal 480ms ease-out both; }
+@keyframes reader-reveal { from { opacity: 0; } }
+.reader-envelope { will-change: transform, opacity; }
 .reader-envelope.env-out { animation: env-out 420ms cubic-bezier(0.4, 0, 0.6, 1) forwards; }
 @keyframes env-out { to { opacity: 0; transform: translateY(-14px) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) {
