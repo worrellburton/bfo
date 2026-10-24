@@ -13,7 +13,7 @@ import { PullToRefresh } from "../mail-pull";
 import { FileIcon, FileKindIcons } from "../file-icon";
 import { fileKind } from "../../lib/file-kind";
 import { useTheme } from "../theme";
-import { phoneScreen, supportsViewTransitions, transition, transitionSync } from "../view-transition";
+import { phoneScreen, supportsViewTransitions, transition } from "../view-transition";
 import {
   addAlias,
   attachmentUrl,
@@ -827,7 +827,10 @@ const VIEW_KEY = "bfo-mail-view";
  */
 const LIST_LOADER_MS = 1300;
 const SEARCH_LOADER_MS = 1000;
-const READER_LOADER_MS = 1500;
+/** The envelope: the message is revealed as the letter comes toward you (its animation is 1.5 s; the reveal starts at 1.25 s). */
+const ENVELOPE_MS = 1250;
+/** The loader's fade before the rows take its place. */
+const LOADER_OUT_MS = 240;
 const holdFor = (shownAt: number, min: number) => new Promise<void>((r) => setTimeout(r, Math.max(0, min - (performance.now() - shownAt))));
 const MAIL_THEME_KEY = "bfo-mail-theme";
 
@@ -1114,6 +1117,9 @@ export default function Inbox() {
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
   // "reset" re-reads the first page without blanking the list first, and drops older pages: after an action
   // that can move rows anywhere (a star, an archive in Active), merging would keep stale rows or lose moved ones.
+  /** The loader on its way out, and rows that have just arrived (they animate in once, not again when the list comes back into view). */
+  const [loaderLeaving, setLoaderLeaving] = useState(false);
+  const [rowsFresh, setRowsFresh] = useState(false);
   const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh" | "reset") => {
     const req = ++listReq.current;
     const shownAt = performance.now();
@@ -1126,12 +1132,16 @@ export default function Inbox() {
       if (req !== listReq.current) return;
       setListError(null);
       if (mode === "replace") {
-        // The loader plays through (the constellation assembles, the sonar sweeps), then fades into the rows.
+        // The loader plays through (the constellation assembles, the sonar sweeps), fades out in place, and the rows come in.
         await holdFor(shownAt, term ? SEARCH_LOADER_MS : LIST_LOADER_MS);
         if (req !== listReq.current) return;
-        void transitionSync("mail-swap", "forward", () => {
-          if (req === listReq.current) setList({ folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] });
-        });
+        setLoaderLeaving(true);
+        await new Promise((r) => setTimeout(r, LOADER_OUT_MS));
+        if (req !== listReq.current) return;
+        setLoaderLeaving(false);
+        setList({ folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] });
+        setRowsFresh(true);
+        window.setTimeout(() => setRowsFresh(false), 1500);
         return;
       }
       setList((prev) => {
@@ -1225,24 +1235,15 @@ export default function Inbox() {
     // A cached copy will do, unless the list says it's unread again (fetching marks it read).
     if (hit && (!row || row.read)) return;
     let alive = true;
-    const shownAt = performance.now();
     // From Active, the row stood for the whole conversation: opening it reads all of it.
     const cur = listRef.current;
     getMessage(openId, { conversation: cur?.folder === "active" && !cur.q })
-      .then(async ({ message }) => {
+      .then(({ message }) => {
         if (!alive) return;
         cache.current.set(openId, message);
-        if (hit) {
-          // The page already shows the message: take the fresh copy quietly, no second fade.
-          setOpen({ id: openId, message, error: null });
-        } else {
-          // The envelope plays through once, then fades into the message (after any page slide under way).
-          await holdFor(shownAt, READER_LOADER_MS);
-          if (!alive) return;
-          void transitionSync("mail-swap", "forward", () => {
-            if (alive) setOpen({ id: openId, message, error: null });
-          });
-        }
+        // The Reader has it at once: it renders under the envelope (so its pictures and frame load meanwhile)
+        // and is revealed as the letter comes forward. A page already showing the message takes the fresh copy quietly.
+        setOpen({ id: openId, message, error: null });
         if (!row || !row.read) {
           patchRow(openId, { read: true });
           notifyMailChanged();
@@ -1300,8 +1301,12 @@ export default function Inbox() {
   }
 
   function select(id: string) {
-    // From the list: push, so Back returns to it. Between messages: replace.
-    go("forward", () => setParams(query({ m: id }), openId ? { replace: true, state: location.state } : { state: { fromList: true } }));
+    if (!openId) tap();
+    // From the list: push, so Back returns to it. Between messages: replace. The message's page starts at its top.
+    go("forward", () => {
+      setParams(query({ m: id }), openId ? { replace: true, state: location.state } : { state: { fromList: true } });
+      if (!openId) window.scrollTo(0, 0);
+    });
   }
 
   // Read through refs, so a move/delete that resolves later acts on what's open now.
@@ -1774,7 +1779,9 @@ export default function Inbox() {
   );
 
   const listBody = !rows ? (
-    listError ? <ErrorLine>{listError}</ErrorLine> : q ? <SearchLoader term={q} /> : <ListLoader table={view === "table"} label={folder === "sent" ? "Fetching sent mail" : folder === "archive" ? "Fetching the archive" : "Fetching mail"} />
+    listError ? <ErrorLine>{listError}</ErrorLine> : (
+      <div className={loaderLeaving ? "loader-out" : ""}>{q ? <SearchLoader term={q} /> : <ListLoader table={view === "table"} label={folder === "sent" ? "Fetching sent mail" : folder === "archive" ? "Fetching the archive" : "Fetching mail"} />}</div>
+    )
   ) : rows.length === 0 ? (
     <div className="px-5 py-10 text-center">
       <div className={`row-in mx-auto max-w-[320px] rounded-3xl border px-6 py-8 mail-glass-top ${t.dark ? "border-white/[0.08] bg-white/[0.03]" : "border-gray-200 bg-white/70"}`}>
@@ -1804,11 +1811,11 @@ export default function Inbox() {
               return (
                 <Fragment key={m.id}>
                   {first && !q && (
-                    <li aria-hidden="true" className={`row-in px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.14em] first:pt-1 ${t.faint}`} style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                    <li aria-hidden="true" className={`${rowsFresh ? "row-in" : ""} px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.14em] first:pt-1 ${t.faint}`} style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
                       {group}
                     </li>
                   )}
-                  <li className="row-in" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                  <li className={rowsFresh ? "row-in" : ""} style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
                     <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} onArchive={m.folder === "archive" ? undefined : () => void archiveRow(m)} />
                   </li>
                 </Fragment>
@@ -2691,6 +2698,21 @@ function Reader({
 }) {
   const t = useTone();
   const [details, setDetails] = useState(false);
+  // Opened without the message in hand: the envelope plays over the message, which renders underneath as soon as it
+  // arrives (its frame and pictures load meanwhile), and lifts off to reveal it as the letter comes forward.
+  const openedAt = useRef(performance.now());
+  const [reveal, setReveal] = useState<"hold" | "go" | "done">(() => (m ? "done" : "hold"));
+  useEffect(() => {
+    if (!m || reveal === "done") return;
+    const wait = Math.max(0, ENVELOPE_MS - (performance.now() - openedAt.current));
+    const a = window.setTimeout(() => setReveal("go"), wait);
+    const b = window.setTimeout(() => setReveal("done"), wait + 520);
+    return () => {
+      window.clearTimeout(a);
+      window.clearTimeout(b);
+    };
+  }, [m, reveal]);
+  const envelope = reveal !== "done";
   const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : senderLabel(a))).join(", ");
   const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
   const canReplyAll = !!m && m.to.length + m.cc.length > 1;
@@ -2717,7 +2739,7 @@ function Reader({
   const bar = `max-md:h-[48px] max-md:w-[48px] max-md:rounded-xl ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
   const barGlyph = "h-3.5 w-3.5 max-md:h-6 max-md:w-6";
   return (
-    <article className="max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+    <article className="relative max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
       {/* Top bar. Phones: Back, then the message's housekeeping; Reply and Forward live in the bar at the bottom. */}
       <div
         className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl max-md:gap-1.5 max-md:px-3 max-md:py-2 md:rounded-t-2xl lg:top-0 ${t.line} ${
@@ -2768,21 +2790,23 @@ function Reader({
 
       {error && <ErrorLine>{error}</ErrorLine>}
 
-      {!m ? (
-        !error &&
-        (preview ? (
-          <ReaderLoader
-            // Sent mail is sealed with who it went to.
-            seal={<Avatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} size="h-9 w-9 text-[12px]" trusted={!preview.unverified} />}
-            subject={preview.subject || "(no subject)"}
-            from={preview.direction === "out" ? `To ${preview.to.map((a) => senderLabel(a)).join(", ") || "—"}` : senderLabel(preview.from)}
-            snippet={preview.snippet}
-          />
-        ) : (
-          <ReaderLoader />
-        ))
-      ) : (
-        <div className="px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6">
+      {envelope && !error && (
+        <div className={`reader-envelope ${m ? "pointer-events-none absolute inset-x-0 top-0 z-[5]" : ""} ${reveal === "go" ? "env-out" : ""}`}>
+          {preview ? (
+            <ReaderLoader
+              // Sent mail is sealed with who it went to.
+              seal={<Avatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} size="h-9 w-9 text-[12px]" trusted={!preview.unverified} />}
+              subject={preview.subject || "(no subject)"}
+              from={preview.direction === "out" ? `To ${preview.to.map((a) => senderLabel(a)).join(", ") || "—"}` : senderLabel(preview.from)}
+              snippet={preview.snippet}
+            />
+          ) : (
+            <ReaderLoader />
+          )}
+        </div>
+      )}
+      {m && (
+        <div className={`px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6 ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""}`}>
           {/* Subject, with the star beside it on phones (as Gmail puts it). */}
           <div className="flex items-start gap-2">
             <h2 className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}>
@@ -2925,7 +2949,7 @@ function Reader({
       {m &&
         createPortal(
           <div
-            className={`fixed inset-x-0 bottom-0 z-40 flex items-center gap-2.5 border-t px-4 pt-3 backdrop-blur-xl md:hidden ${t.line} ${t.dark ? "bg-black/80" : "bg-white/90"}`}
+            className={`fixed inset-x-0 bottom-0 z-40 flex items-center gap-2.5 border-t px-4 pt-3 backdrop-blur-xl md:hidden ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""} ${t.line} ${t.dark ? "bg-black/80" : "bg-white/90"}`}
             style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
           >
             <button
