@@ -359,23 +359,49 @@ html.light {
 .loader-dots i:nth-child(2) { animation-delay: 0.15s; }
 .loader-dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes loader-dots { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
-/* The reader's loader: a letter sliding out of its envelope, over and over. */
-.letter { filter: drop-shadow(0 12px 26px hsl(var(--mail-hue) var(--mail-sat) 50% / 0.35)); animation: letter-float 3.6s ease-in-out infinite; }
-@keyframes letter-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-.letter-pool { fill: hsl(var(--mail-hue) var(--mail-sat) 65% / 0.22); animation: letter-pool 3.6s ease-in-out infinite; }
-@keyframes letter-pool { 0%, 100% { transform: scaleX(1); opacity: 0.8; } 50% { transform: scaleX(0.86); opacity: 0.5; } }
-.letter-body { fill: hsl(var(--mail-hue) var(--mail-sat) 52%); }
-.letter-pocket { stroke: hsl(var(--mail-hue) var(--mail-sat) 78% / 0.55); }
-.letter-flap {
-  fill: hsl(var(--mail-hue) var(--mail-sat) 42%);
-  transform-box: fill-box; transform-origin: 50% 100%;
-  animation: letter-flap 3.4s cubic-bezier(0.6, 0, 0.3, 1) infinite;
-}
-@keyframes letter-flap { 0%, 8% { transform: scaleY(0.02); } 26%, 86% { transform: scaleY(1); } 96%, 100% { transform: scaleY(0.02); } }
-.letter-paper { animation: letter-paper 3.4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
-@keyframes letter-paper { 0%, 24% { transform: translateY(0); } 52%, 84% { transform: translateY(-58px); } 94%, 100% { transform: translateY(0); } }
-.letter-ink { stroke: hsl(var(--mail-hue) var(--mail-sat) 58%); stroke-dasharray: 80; stroke-dashoffset: 80; animation: letter-ink 3.4s ease-out infinite; }
-@keyframes letter-ink { 0%, 48% { stroke-dashoffset: 80; } 66%, 86% { stroke-dashoffset: 0; } 92%, 100% { stroke-dashoffset: 80; } }
+/* The reader's loader (ReaderLoader): the message being opened, opened. Played
+   once: the seal pops (0–0.46s), the flap swings open in 3D (0.3–0.82s), the
+   letter rises (0.7–1.15s) and comes toward you (1.15–1.5s), its first words
+   write in, and a shine runs over it until the message is here. Dark by
+   default; .env-light is the light page's paper and ink. */
+.env-scene { --env-back: hsl(var(--mail-hue) 28% 15%); --env-front: hsl(var(--mail-hue) 30% 19%); --env-flap: hsl(var(--mail-hue) 32% 23%); --env-edge: hsl(var(--mail-hue) 60% 70% / 0.14); --env-glow: hsl(var(--mail-hue) var(--mail-sat) 55% / 0.35); --env-paper: #fbfaf7; --env-ink: #17181c; --env-ink-soft: #5b5e6b; --env-bar: hsl(var(--mail-hue) 25% 82%); }
+.env-scene.env-light { --env-back: hsl(var(--mail-hue) 45% 89%); --env-front: hsl(var(--mail-hue) 70% 97%); --env-flap: hsl(var(--mail-hue) 60% 94%); --env-edge: hsl(var(--mail-hue) 40% 50% / 0.16); --env-glow: hsl(var(--mail-hue) 60% 45% / 0.18); --env-paper: #ffffff; --env-ink: #111827; --env-ink-soft: #6b7280; --env-bar: hsl(var(--mail-hue) 30% 88%); }
+.env { position: relative; width: 232px; height: 150px; perspective: 700px; filter: drop-shadow(0 18px 34px var(--env-glow)); animation: env-settle 1500ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes env-settle { 0% { transform: translateY(10px) scale(0.94); opacity: 0; } 18% { transform: none; opacity: 1; } 76% { transform: none; } 100% { transform: translateY(26px); } }
+.env-back, .env-front, .env-flap { position: absolute; left: 0; right: 0; border-radius: 12px; }
+.env-back { top: 0; bottom: 0; background: var(--env-back); box-shadow: inset 0 0 0 1px var(--env-edge); z-index: 1; }
+/* The pocket: the body's front with its V cut, over the letter. */
+.env-front { top: 0; bottom: 0; z-index: 4; background: linear-gradient(180deg, transparent, hsl(var(--mail-hue) 40% 50% / 0.06)), var(--env-front); clip-path: polygon(0 34%, 50% 70%, 100% 34%, 100% 100%, 0 100%); box-shadow: inset 0 0 0 1px var(--env-edge); }
+/* The flap: folds down over the letter, swings up and over to open. */
+.env-flap { top: 0; height: 66%; z-index: 5; background: var(--env-flap); clip-path: polygon(0 0, 100% 0, 50% 100%); transform-origin: 50% 0; backface-visibility: visible; animation: env-flap 1500ms cubic-bezier(0.55, 0, 0.25, 1) both; }
+@keyframes env-flap { 0%, 20% { transform: rotateX(0deg); z-index: 5; } 37% { z-index: 5; } 38% { z-index: 0; } 55%, 100% { transform: rotateX(180deg); z-index: 0; filter: brightness(0.92); } }
+/* The seal, on the flap's tip: the sender's face, in wax of the mailbox's colour. */
+.env-seal { position: absolute; left: 50%; top: 66%; z-index: 6; transform: translate(-50%, -50%); animation: env-seal 1500ms cubic-bezier(0.3, 0, 0.2, 1) both; }
+.env-seal-ring { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 9999px; background: radial-gradient(circle at 35% 30%, hsl(var(--mail-hue) var(--mail-sat) 70%), hsl(var(--mail-hue) var(--mail-sat) 46%) 70%); box-shadow: 0 6px 16px hsl(var(--mail-hue) var(--mail-sat) 40% / 0.45), inset 0 -2px 4px hsl(var(--mail-hue) var(--mail-sat) 25% / 0.5), inset 0 2px 3px hsl(0 0% 100% / 0.35); padding: 5px; }
+.env-seal-ring > * { width: 100% !important; height: 100% !important; font-size: 12px !important; }
+.env-seal-blank { display: block; border-radius: 9999px; background: radial-gradient(circle at 40% 35%, hsl(0 0% 100% / 0.5), transparent 60%); }
+@keyframes env-seal { 0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } 10% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; } 17% { transform: translate(-50%, -50%) scale(1); } 26% { transform: translate(-50%, -50%) scale(1.16); opacity: 1; } 34% { transform: translate(-50%, -62%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -62%) scale(0.5); opacity: 0; } }
+/* The letter: rises out of the pocket, then comes forward. */
+.env-letter { position: absolute; left: 14px; right: 14px; top: 12px; height: 128px; z-index: 3; animation: env-letter 1500ms cubic-bezier(0.2, 0.9, 0.25, 1) both; }
+/* z-index animates as a number between keyframes, so it's pinned: behind the pocket until the letter is out, then in front. */
+@keyframes env-letter { 0%, 22% { transform: translateY(0); opacity: 0; z-index: 3; } 30% { opacity: 1; } 46% { transform: translateY(0); z-index: 3; } 76% { transform: translateY(-84px); z-index: 3; } 77% { z-index: 7; } 100% { transform: translateY(-58px) scale(1.14); z-index: 7; opacity: 1; } }
+.env-letter-inner { position: relative; height: 100%; overflow: hidden; border-radius: 9px; background: var(--env-paper); box-shadow: 0 1px 0 hsl(0 0% 100% / 0.6) inset, 0 10px 24px hsl(var(--mail-hue) 40% 20% / 0.18), 0 0 0 1px hsl(var(--mail-hue) 30% 40% / 0.08); padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+.env-subject { font-size: 11.5px; font-weight: 650; line-height: 1.25; color: var(--env-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.env-from { font-size: 9.5px; line-height: 1.2; color: hsl(var(--mail-hue) var(--mail-sat) 50%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -2px; }
+.env-light .env-from { color: hsl(var(--mail-hue) var(--mail-sat) 42%); }
+.env-rule { height: 1px; background: hsl(var(--mail-hue) 30% 50% / 0.14); margin: 2px 0 1px; }
+.env-line { font-size: 9.5px; line-height: 1.35; color: var(--env-ink-soft); white-space: nowrap; overflow: hidden; clip-path: inset(0 100% 0 0); animation: env-write 520ms steps(18, end) forwards; }
+@keyframes env-write { to { clip-path: inset(0 0 0 0); } }
+.env-bar { display: block; height: 6px; border-radius: 9999px; background: var(--env-bar); }
+.env-bar-strong { width: 72%; height: 8px; background: hsl(var(--mail-hue) 20% 70% / 0.7); }
+.env-bar-short { width: 40%; background: hsl(var(--mail-hue) var(--mail-sat) 70% / 0.6); }
+.env-ink { transform-origin: 0 50%; transform: scaleX(0); animation: env-ink 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+@keyframes env-ink { to { transform: scaleX(1); } }
+/* While the message is still on its way: a soft shine across the letter. */
+.env-shine { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 35%, hsl(var(--mail-hue) var(--mail-sat) 75% / 0.22) 50%, transparent 65%); transform: translateX(-120%); animation: env-shine 1.6s ease-in-out 1.6s infinite; }
+@keyframes env-shine { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(120%); } }
+.env-caption { animation: env-caption 600ms ease 300ms both; }
+@keyframes env-caption { from { opacity: 0; transform: translateY(4px); } }
 /* Sent: the paper plane darts off and a check takes its place. */
 .plane-off { animation: plane-off 480ms cubic-bezier(0.4, 0, 0.8, 0.4) forwards; }
 @keyframes plane-off { 0% { transform: translate(0, 0) scale(1); opacity: 1; } 100% { transform: translate(16px, -14px) scale(0.6); opacity: 0; } }
@@ -404,10 +430,9 @@ html.light .ptr-note { color: hsl(var(--mail-hue) var(--mail-sat) 40% / 0.9); }
   .ptr-badge[data-phase="refreshing"] .ptr-arc, .ptr-badge[data-armed="true"] .ptr-ring { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .loader-spark, .loader-dot, .loader-dots i, .letter, .letter-pool, .letter-flap, .letter-paper, .letter-ink, .plane-off { animation: none; }
-  .letter-flap { transform: scaleY(1); }
-  .letter-paper { transform: translateY(-58px); }
-  .letter-ink { stroke-dashoffset: 0; }
+  .loader-spark, .loader-dot, .loader-dots i, .plane-off { animation: none; }
+  /* The reader's loader holds its last frame: the letter out, the words written. */
+  .env, .env-flap, .env-seal, .env-letter, .env-line, .env-ink, .env-shine, .env-caption { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; }
   .plane-off { opacity: 0; }
   .plane-check { animation: none; opacity: 1; stroke-dashoffset: 0; }
 }
