@@ -1,6 +1,6 @@
 import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
 import { composeText, htmlFromPlain } from "../../lib/mail-compose";
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
@@ -11,6 +11,7 @@ import { MailAurora, mailboxHue } from "../mail-aurora";
 import { BusyLabel, ListLoader, Orbit, ReaderLoader, SearchLoader } from "../mail-loaders";
 import { PullToRefresh } from "../mail-pull";
 import { useTheme } from "../theme";
+import { phoneScreen, supportsViewTransitions, transition, transitionSync } from "../view-transition";
 import {
   addAlias,
   attachmentUrl,
@@ -1099,9 +1100,16 @@ export default function Inbox() {
       const head = await listMail({ folder: which, filter: narrow, q: term, to: to || undefined });
       if (req !== listReq.current) return;
       setListError(null);
+      if (mode === "replace") {
+        // From the loader to the rows: a fade, after any page transition under way.
+        void transitionSync("mail-swap", "forward", () => {
+          if (req === listReq.current) setList({ folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] });
+        });
+        return;
+      }
       setList((prev) => {
         const fresh = { folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] };
-        if (mode === "replace" || mode === "reset" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
+        if (mode === "reset" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
         const ids = new Set([...head.messages, ...fresh.pinned].map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
@@ -1196,7 +1204,10 @@ export default function Inbox() {
       .then(({ message }) => {
         if (!alive) return;
         cache.current.set(openId, message);
-        setOpen({ id: openId, message, error: null });
+        // From the loader to the message: a fade, once the page has finished arriving.
+        void transitionSync("mail-swap", "forward", () => {
+          if (alive) setOpen({ id: openId, message, error: null });
+        });
         if (!row || !row.read) {
           patchRow(openId, { read: true });
           notifyMailChanged();
@@ -1232,9 +1243,30 @@ export default function Inbox() {
     return { ...next, ...extra };
   }
 
+  // The page's transitions (view-transition.ts) wait for the navigation to land: a location change settles them.
+  const settle = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    settle.current?.();
+    settle.current = null;
+  }, [location.key]);
+  /** Navigate inside a page transition on phones (list → message, message → list); plain on larger screens. */
+  function go(dir: "forward" | "back", nav: () => void) {
+    if (!phoneScreen() || !supportsViewTransitions()) return nav();
+    void transition(
+      "mail",
+      dir,
+      () =>
+        new Promise<void>((resolve) => {
+          settle.current = resolve;
+          window.setTimeout(resolve, 800); // never hang on a navigation that didn't change the location
+          nav();
+        }),
+    );
+  }
+
   function select(id: string) {
     // From the list: push, so Back returns to it. Between messages: replace.
-    setParams(query({ m: id }), openId ? { replace: true, state: location.state } : { state: { fromList: true } });
+    go("forward", () => setParams(query({ m: id }), openId ? { replace: true, state: location.state } : { state: { fromList: true } }));
   }
 
   // Read through refs, so a move/delete that resolves later acts on what's open now.
@@ -1253,8 +1285,10 @@ export default function Inbox() {
   }, []);
 
   function closeMessage() {
-    if ((navStateRef.current as { fromList?: boolean } | null)?.fromList) navigate(-1);
-    else setParams(queryRef.current(), { replace: true });
+    go("back", () => {
+      if ((navStateRef.current as { fromList?: boolean } | null)?.fromList) navigate(-1);
+      else setParams(queryRef.current(), { replace: true });
+    });
   }
 
   /** Picking a folder ends a search; changing the filter narrows it. */
@@ -1873,7 +1907,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
+    <div className="mail-page relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -1941,7 +1975,7 @@ export default function Inbox() {
           className={`flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
         >
           {tableReading ? (
-            <div className="reader-in min-h-0 flex-1 md:[animation:none] lg:overflow-y-auto">{reader}</div>
+            <div className={`min-h-0 flex-1 lg:overflow-y-auto ${supportsViewTransitions() ? "" : "reader-in md:[animation:none]"}`}>{reader}</div>
           ) : (
             <>
               {toolbar}
@@ -1986,12 +2020,12 @@ export default function Inbox() {
           <button
             type="button"
             aria-label="New message"
+            title="New message"
             onClick={() => setDraft(blankDraft(box || undefined))}
-            className="fab-in fab-glass fixed left-1/2 z-40 flex h-[54px] -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full pl-6 pr-7 text-[15px] font-semibold transition-transform active:scale-95 sm:hidden"
+            className="mail-fab fab-in fab-glass fixed right-5 z-40 flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 sm:hidden"
             style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
           >
-            <Icon name="edit" className="h-5 w-5" strokeWidth={1.9} />
-            Compose
+            <Icon name="edit" className="h-[26px] w-[26px]" strokeWidth={1.9} />
           </button>,
           document.body
         )}
@@ -2001,7 +2035,7 @@ export default function Inbox() {
 
       {toast &&
         createPortal(
-          <div role="status" className={`pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4 ${!draft && !openId ? "bottom-[calc(5.75rem+env(safe-area-inset-bottom))] sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))]" : "bottom-[calc(1.25rem+env(safe-area-inset-bottom))]"}`}>
+          <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
             <span className={`toast-in pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
               {toast.text}
               {toast.undo && (

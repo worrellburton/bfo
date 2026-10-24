@@ -274,7 +274,7 @@ export function ListLoader({ table = false, label = "Fetching mail" }: { table?:
       {table && <canvas ref={wide} aria-hidden="true" className="block w-full max-md:hidden" style={{ height: wideH }} />}
       <div className={table ? "md:hidden" : ""}>
         <canvas ref={phone} aria-hidden="true" className="block w-full" style={{ height: phoneH }} />
-        <p className={`loader-caption mt-1 flex items-center justify-center gap-2 pb-24 text-[12px] sm:pb-2 ${t.muted}`}>
+        <p className={`loader-caption mt-1 flex items-center justify-center gap-2 pb-6 text-[12px] sm:pb-2 ${t.muted}`}>
           <span className="loader-dot" />
           {label}
           <Dots />

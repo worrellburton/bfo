@@ -182,8 +182,12 @@ has its own light/dark setting, light unless switched: the appearance button
 in the corner (a moon in the light, a sun in the dark) flips it, the device
 remembers it, and it applies only while Mail is on screen; the rest of the
 app keeps its own theme. Rows
-arrive one after another under day separators; the reader rises in; a star
-pops. A row swiped left archives (with Undo), swiped right stars; a held
+arrive one after another under day separators; a star pops. Moving between the
+list and a message is a view transition (`app/view-transition.ts`): one page
+slides out as the other slides in (and back the other way), a loader fades
+into what it was waiting for, and transitions queue rather than cut each
+other short, so each plays to its end; the aurora and the round Compose
+button in the corner stay put. A row swiped left archives (with Undo), swiped right stars; a held
 finger picks it for a bulk action; pulling the list down asks Bird for new
 mail (`app/mail-pull.tsx`: the list rides the finger, a ring fills, spins, then
 draws a check and says "3 new" or "Up to date", and the aurora brightens with

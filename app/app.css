@@ -412,6 +412,37 @@ html.light .ptr-note { color: hsl(var(--mail-hue) var(--mail-sat) 40% / 0.9); }
   .plane-check { animation: none; opacity: 1; stroke-dashoffset: 0; }
 }
 
+/* ──────────────────────────────────────────────────────────────────────
+   Mail's page transitions (app/view-transition.ts). On a phone the list and
+   the open message are whole pages: one slides out as the other slides in,
+   and back again the other way. A loader fades into what it was waiting
+   for. The sky (the aurora) and the Compose button are their own layers
+   and stay put. <html> carries data-vt / data-vt-dir while one runs; the
+   public site's root animations (below) don't apply during Mail's.
+   ────────────────────────────────────────────────────────────────────── */
+.mail-page { view-transition-name: mail-page; }
+.mail-aurora { view-transition-name: mail-aurora; }
+.mail-fab { view-transition-name: mail-fab; }
+::view-transition-group(mail-aurora), ::view-transition-old(mail-aurora), ::view-transition-new(mail-aurora) { animation: none; }
+::view-transition-old(mail-aurora) { display: none; }
+::view-transition-old(mail-fab), ::view-transition-new(mail-fab) { animation-duration: 260ms; }
+html[data-vt^="mail"]::view-transition-old(root), html[data-vt^="mail"]::view-transition-new(root) { animation: none; }
+html[data-vt]::view-transition-old(mail-page), html[data-vt]::view-transition-new(mail-page) { mix-blend-mode: normal; }
+html[data-vt="mail"]::view-transition-old(mail-page) { animation: mail-leave 380ms cubic-bezier(0.4, 0, 0.6, 1) both; }
+html[data-vt="mail"]::view-transition-new(mail-page) { animation: mail-enter 560ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+html[data-vt="mail"][data-vt-dir="back"]::view-transition-old(mail-page) { animation-name: mail-leave-back; }
+html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(mail-page) { animation-name: mail-enter-back; }
+html[data-vt="mail"]::view-transition-group(mail-page) { animation-duration: 560ms; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes mail-leave { to { opacity: 0; transform: translateX(-9%) scale(0.98); filter: blur(5px); } }
+@keyframes mail-enter { from { opacity: 0; transform: translateX(11%); filter: blur(5px); } }
+@keyframes mail-leave-back { to { opacity: 0; transform: translateX(9%) scale(0.98); filter: blur(5px); } }
+@keyframes mail-enter-back { from { opacity: 0; transform: translateX(-11%); filter: blur(5px); } }
+html[data-vt="mail-swap"]::view-transition-old(mail-page) { animation: mail-fade-out 200ms ease both; }
+html[data-vt="mail-swap"]::view-transition-new(mail-page) { animation: mail-fade-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+html[data-vt="mail-swap"]::view-transition-group(mail-page) { animation-duration: 380ms; }
+@keyframes mail-fade-out { to { opacity: 0; } }
+@keyframes mail-fade-in { from { opacity: 0; transform: translateY(6px); } }
+
 /* The document reader coming and going. */
 @keyframes doc-viewer-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes doc-viewer-out { from { opacity: 1; } to { opacity: 0; } }
@@ -1051,7 +1082,7 @@ html.light :is(button, a, select, input, textarea, [role="option"]):focus-visibl
 .toast-in { animation: palette-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .fab-in { animation: palette-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* The phone's Compose: a glass pill, lit from within, breathing an indigo glow. */
+/* The phone's Compose: a round glass button in the corner, lit from within, breathing the mailbox's glow. */
 .fab-glass {
   color: #fff;
   background: linear-gradient(135deg, hsl(var(--mail-hue) var(--mail-sat) 72% / 0.42), hsl(var(--mail-hue) var(--mail-sat) 64% / 0.28) 55%, hsl(var(--mail-hue) var(--mail-sat) 84% / 0.3));
