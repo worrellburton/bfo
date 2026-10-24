@@ -118,6 +118,15 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    to: "/phone",
+    label: "Phone",
+    icon: (
+      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+      </svg>
+    ),
+  },
+  {
     to: "/assets",
     label: "Entities",
     icon: (
@@ -311,6 +320,26 @@ export default function AppLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Unread texts to the office's number, for the Phone badge (owners and admins only).
+  const [textsUnread, setTextsUnread] = useState(0);
+  useEffect(() => {
+    if (!isAdmin(user)) return;
+    const load = () =>
+      authFetch("/api/texts?view=count")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j && setTextsUnread(j.unread ?? 0))
+        .catch(() => {});
+    void load();
+    // Often enough that a verification code is noticed while it's still good.
+    const id = window.setInterval(() => document.visibilityState === "visible" && load(), 30_000);
+    window.addEventListener("bfo-texts-changed", load);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("bfo-texts-changed", load);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Partners (invited entity owners) see their entities and nothing else.
   const partner = isPartner(user);
   const [myEntities, setMyEntities] = useState<{ id: string; name: string }[]>([]);
@@ -461,8 +490,10 @@ export default function AppLayout() {
   const canSeeOther = mail ? mail.canSeeOther : isAdmin(user);
   const entitiesItem = navItems.find((i) => i.to === "/assets")!;
   const partnerItems: NavItem[] = myEntities.map((e) => ({ to: `/assets/${e.id}`, label: e.name, icon: entitiesItem.icon }));
-  const withMailbox = (i: NavItem): NavItem => (i.to === "/mailbox" ? { ...i, badge: paperUnread } : i);
-  const items: NavItem[] = (partner ? partnerItems : emailOnly ? navItems.filter((i) => i.to === "/inbox") : navItems).map((i) =>
+  const withMailbox = (i: NavItem): NavItem => (i.to === "/mailbox" ? { ...i, badge: paperUnread } : i.to === "/phone" ? { ...i, badge: textsUnread } : i);
+  // Phone holds the office's verification codes: owners and admins only.
+  const staffItems = isAdmin(user) ? navItems : navItems.filter((i) => i.to !== "/phone");
+  const items: NavItem[] = (partner ? partnerItems : emailOnly ? navItems.filter((i) => i.to === "/inbox") : staffItems).map((i) =>
     i.to === "/inbox" && i.children
       ? {
           ...i,
