@@ -211,6 +211,17 @@ const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Time today, "Oct 3" this year, else "3/4/25". */
+/** A snippet stored before the server learned to leave out a help desk's wrapping: the same tidy, on the way in. */
+function cleanSnippet(snippet: string): string {
+  let out = snippet;
+  for (let i = 0; i < 4; i++) {
+    const next = out.replace(/^\s*(#+-?\s*please type your reply above this line\s*-?#+|[-_=*]{4,}|\[[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})+\])\s*/i, "");
+    if (next === out) break;
+    out = next;
+  }
+  return out.replace(/\s*(this (?:email|message) is a service from\b.*|delivered by zendesk.*|sent from my (?:iphone|ipad|android|galaxy|phone).*)$/i, "").trim();
+}
+
 /** "Today", "Yesterday", a weekday within the week, else the date: the phone list's separators. */
 function dayGroup(iso: string): string {
   const d = new Date(iso);
@@ -299,7 +310,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
       const vw = window.innerWidth;
       // Phones: a sheet rising from the bottom, within thumb's reach. Larger screens: a menu under the button.
       if (vw < 640) {
-        setPlace({ bottom: 12, left: 12, width: vw - 24, sheet: true });
+        setPlace({ top: r.bottom + 8, left: 12, width: vw - 24, sheet: true });
         return;
       }
       const width = Math.min(360, vw - 32);
@@ -425,13 +436,13 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
         >
           {bubble(current ?? (mine.length === 1 ? address : ""), compact ? "h-8 w-8 text-[13px] transition-all duration-300" : "h-11 w-11 text-[17px] transition-all duration-300")}
           <span className="min-w-0 flex-1">
-            <span className={`flex items-center gap-1.5 font-semibold leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${compact ? "text-[17px]" : "text-[22px]"} ${t.text}`}>
-              <span className="truncate">{current ? localPart(current) : mine.length === 1 ? localPart(address) : "All mailboxes"}</span>
+            <span className={`flex items-center gap-1.5 font-semibold leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${compact ? "text-[15px]" : "text-[19px]"} ${t.text}`}>
+              <span className="min-w-0 break-all">{current ?? (mine.length === 1 ? address : "All mailboxes")}</span>
               <Icon name="chevronDown" className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.2} />
               {compact && unread > 0 && <span className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>{unread}</span>}
             </span>
             <span className={`flex items-center gap-2 overflow-hidden text-[12.5px] transition-all duration-300 ${compact ? "max-h-0 opacity-0" : "mt-0.5 max-h-6 opacity-100"} ${t.muted}`}>
-              <span className="truncate">{current ?? (mine.length === 1 ? address : `${mine.length} addresses`)}</span>
+              <span className="truncate">{current ? `${localPart(current)} · ${mine.length > 1 ? `one of ${mine.length} addresses` : "your mailbox"}` : mine.length === 1 ? localPart(address) : `${address}${mine.length > 2 ? ` and ${mine.length - 1} more` : ` and ${mine[1]}`}`}</span>
               {unread > 0 && (
                 <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>
                   <span className="unread-glow h-1.5 w-1.5 rounded-full bg-[#818cf8]" />
@@ -464,13 +475,13 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
             role="menu"
             aria-label="Mailbox"
             style={{ position: "fixed", top: place.top, bottom: place.bottom !== undefined ? `calc(${place.bottom}px + env(safe-area-inset-bottom))` : undefined, left: place.left, width: place.width }}
-            className={`z-[65] overflow-hidden border shadow-2xl ${place.sheet ? "sheet-up rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
+            className={`z-[65] overflow-hidden border shadow-2xl ${place.sheet ? "menu-down rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
               t.dark ? (place.sheet ? "border-white/10 bg-[#0f0f16]/85" : "border-white/10 bg-[#101016]") : place.sheet ? "border-gray-200 bg-white/90" : "border-gray-200 bg-white"
             }`}
           >
           {place.sheet && (
             <div className="px-4 pb-2 pt-2">
-              <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`}>Mailbox</p>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`}>Show mail for</p>
             </div>
           )}
           {mine.length > 1 && (
@@ -1508,8 +1519,10 @@ export default function Inbox() {
           <MailTable rows={rows} sent={sent} mixed={mixed} me={address} onOpen={select} onStar={star} picked={picked} onPick={pick} onPickAll={pickAll} className="max-md:hidden" />
           <ul className="md:hidden">
             {rows.map((m, i) => {
-              const group = dayGroup(m.occurredAt);
-              const first = i === 0 || dayGroup(rows[i - 1].occurredAt) !== group;
+              const pinnedIds = new Set((list?.pinned ?? []).map((p) => p.id));
+              const groupOf = (x: MailSummary) => (pinnedIds.has(x.id) ? "Starred" : dayGroup(x.occurredAt));
+              const group = groupOf(m);
+              const first = i === 0 || groupOf(rows[i - 1]) !== group;
               return (
                 <Fragment key={m.id}>
                   {first && !q && (
@@ -2421,7 +2434,7 @@ function ListRow({
             </span>
           )}
         </span>
-        <span className={`block truncate text-[12px] leading-5 max-md:text-[11.5px] max-md:leading-5 ${t.muted}`}>{m.snippet || "\u00a0"}</span>
+        <span className={`block truncate text-[12px] leading-5 max-md:text-[11.5px] max-md:leading-5 ${t.muted}`}>{cleanSnippet(m.snippet) || "\u00a0"}</span>
       </span>
       {/* Right rail: when, and the star. Desktop shows the star on hover; phones always, as Gmail does. */}
       <span className="flex shrink-0 flex-col items-end justify-between self-stretch">
