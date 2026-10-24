@@ -882,7 +882,7 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
         aria-expanded={open}
         aria-label={`Showing ${cur.label}${filter === "all" ? "" : `, ${filter} only`}. Change folder or filter`}
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex h-[42px] max-w-full cursor-pointer items-center gap-2 rounded-[13px] pl-3.5 pr-2.5 text-[14.5px] font-semibold transition-colors active:scale-[0.98] ${
+        className={`inline-flex h-[48px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-full pl-5 pr-4 text-[15px] font-semibold transition-colors active:scale-[0.99] ${
           live ? (t.dark ? "bg-[#6366f1]/20 text-[#c7d2fe] ring-1 ring-inset ring-[#818cf8]/40" : "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200") : t.dark ? "bg-white/[0.07] text-white ring-1 ring-inset ring-white/10" : "bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-200"
         }`}
       >
@@ -895,7 +895,8 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
             {filter === "unread" ? "Unread" : "Starred"}
           </span>
         )}
-        <Icon name="chevronDown" className={`ml-0.5 h-3.5 w-3.5 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.2} />
+        <span className="flex-1" />
+        <Icon name="chevronDown" className={`h-4 w-4 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.2} />
       </button>
       {open &&
         createPortal(
@@ -925,7 +926,7 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
                       role="menuitemradio"
                       aria-checked={on}
                       onClick={() => pick(() => onFolder(x.key))}
-                      className={`flex cursor-pointer flex-col items-start gap-1.5 rounded-2xl p-3.5 text-left transition-colors active:scale-[0.98] ${isLive ? "col-span-2 flex-row items-center gap-3" : ""} ${tone}`}
+                      className={`flex cursor-pointer flex-col items-start gap-1.5 rounded-2xl p-4 text-left transition-colors active:scale-[0.98] ${isLive ? "col-span-2 flex-row items-center gap-3" : ""} ${tone}`}
                     >
                       <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${on ? "bg-white/15" : t.dark ? "bg-white/[0.06]" : "bg-white shadow-sm"}`}>
                         <Glyph name={FOLDER_META[x.key].glyph} className="h-[18px] w-[18px]" />
@@ -1717,7 +1718,7 @@ export default function Inbox() {
         </div>
       ) : (
       <>
-      <div className="flex min-w-0 flex-1 md:hidden">
+      <div className="mx-1 flex min-w-0 flex-1 md:hidden">
         <FolderMenu folders={folders} folder={folder} filter={filter} count={count ? { unread: count.unread, otherUnread: count.otherUnread } : null} onFolder={chooseFolder} onFilter={chooseFilter} />
       </div>
       <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:hidden">
@@ -2046,7 +2047,7 @@ function SearchField({ value, onSearch, className = "" }: { value: string; onSea
   return (
     <div
       role="search"
-      className={`flex items-center gap-2 rounded-2xl border px-3.5 transition-colors max-md:h-12 md:h-9 md:rounded-xl md:px-3 ${
+      className={`flex items-center gap-2 rounded-full border px-3.5 transition-colors max-md:h-[48px] max-md:px-5 md:h-9 md:rounded-xl md:px-3 ${
         t.dark ? "border-white/[0.08] bg-white/[0.04] focus-within:border-white/20 focus-within:bg-white/[0.06]" : "border-gray-200 bg-white focus-within:border-gray-400"
       } ${className}`}
     >
@@ -2582,7 +2583,7 @@ function Reader({
   );
 
   // Phones: the top bar's buttons are big and bright, with 24px icons; larger screens keep the small ones.
-  const bar = `max-md:h-12 max-md:w-12 max-md:rounded-xl ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
+  const bar = `max-md:h-[48px] max-md:w-[48px] max-md:rounded-xl ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
   const barGlyph = "h-3.5 w-3.5 max-md:h-6 max-md:w-6";
   return (
     <article className="max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
@@ -2597,7 +2598,7 @@ function Reader({
           aria-label="Back"
           title="Back"
           onClick={onBack}
-          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-12 max-md:w-auto max-md:gap-0.5 max-md:rounded-xl max-md:pl-1.5 max-md:pr-3.5 max-md:text-[16px] max-md:font-medium ${backAlways ? "" : "lg:hidden"} ${
+          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[48px] max-md:w-auto max-md:gap-0.5 max-md:rounded-xl max-md:pl-1.5 max-md:pr-3.5 max-md:text-[16px] max-md:font-medium ${backAlways ? "" : "lg:hidden"} ${
             t.dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white max-md:text-gray-100" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900 max-md:text-gray-900"
           }`}
         >
