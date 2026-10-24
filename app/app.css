@@ -443,6 +443,19 @@ html[data-vt="mail-swap"]::view-transition-group(mail-page) { animation-duration
 @keyframes mail-fade-out { to { opacity: 0; } }
 @keyframes mail-fade-in { from { opacity: 0; transform: translateY(6px); } }
 
+/* Phones: Mail's list and reader aren't cards. The pill, the rows and the message float on the aurora like the
+   search field above them, so no card edge shows under the pill. Larger screens keep the glass cards. */
+@media (width < 48rem) {
+  .mail-page .mail-card.glass-card {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Attachment icons by kind (app/file-icon.tsx): each kind's mark moves a little, slowly, and the folded corner lifts now and then. */
 .fi { overflow: visible; }
 .fi-fold { transform-box: fill-box; transform-origin: 0% 100%; animation: fi-fold 4.2s ease-in-out infinite; }

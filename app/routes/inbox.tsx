@@ -1995,7 +1995,7 @@ export default function Inbox() {
         /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
         <section
           aria-label={tableReading ? "Message" : "Messages"}
-          className={`flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
+          className={`mail-card flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
         >
           {tableReading ? (
             <div className={`min-h-0 flex-1 lg:overflow-y-auto ${supportsViewTransitions() ? "" : "reader-in md:[animation:none]"}`}>{reader}</div>
@@ -2014,7 +2014,7 @@ export default function Inbox() {
           {/* The list */}
           <section
             aria-label="Messages"
-            className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
+            className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
             <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
@@ -2024,7 +2024,7 @@ export default function Inbox() {
           </section>
 
           {/* The reader */}
-          <section aria-label="Message" className={`min-w-0 flex-1 rounded-2xl border max-md:rounded-none max-md:border-0 max-md:bg-transparent lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}>
+          <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}>
             {!open ? (
               <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
                 <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
