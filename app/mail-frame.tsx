@@ -17,8 +17,9 @@ function getPurifier(): DOMPurify {
   return purifier;
 }
 
-const REMOTE = /^\s*(https?:)?\/\//i;
-const REMOTE_IN_SRCSET = /(^|,)\s*(https?:)?\/\//i;
+// A remote picture: a web address, or one BFO fetches on the reader's behalf (/api/mail-image).
+const REMOTE = /^\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
+const REMOTE_IN_SRCSET = /(^|,)\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
 const REMOTE_URL_IN_CSS = /url\(\s*['"]?\s*(https?:)?\/\//i;
 
 /** Sanitizes mail HTML. Remote images are dropped unless `images` is true. */
@@ -71,7 +72,7 @@ img,picture,video,svg,canvas,[style*="background-image"],[background]{filter:inv
 `;
 
 function frameDocument(body: string, images: boolean, dark: boolean): string {
-  const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? " https:" : ""}; font-src data:`;
+  const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? " 'self' https:" : ""}; font-src data:`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>
 html,body{margin:0;padding:0;background:#fff;color:#111;}
 body{padding:20px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-wrap:anywhere;}

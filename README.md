@@ -189,7 +189,12 @@ help desk's wrapping ("type your reply above this line", footers, ticket codes).
 shown: "All mailboxes" or one address; its menu lists every address on the
 account with a copy on each, and admins add and remove extras there. Compose's
 From line is the same kind of dropdown. Mail to an address nobody has
-lands in "Other", which owners and admins see.
+lands in "Other", which owners and admins see. Pictures in a message are
+served through `/api/mail-image`: the server rewrites each remote image to a
+signed BFO address and fetches it on the reader's behalf, so a phone's browser
+or content blocker has no third-party image to refuse inside the sandboxed
+frame, and a sender's tracking pixel sees BFO's server rather than the reader.
+Images show by default; "Hide images" holds them back for a message.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open
 message.

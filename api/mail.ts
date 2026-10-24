@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { proxyRemoteImages } from "../lib/mail-image.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { currentUser, fail, handleError, isAdmin, sb, type AppUser } from "../lib/auth.js";
 import {
@@ -245,7 +246,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       if (param(req, "conversation") === "1" && row.thread_key) {
         await sb(`mail_messages?${keysIn([row.thread_key])}&read_at=is.null&${ownFilter(me)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
       }
-      return res.status(200).json({ message: toMessage(row) });
+      return res.status(200).json({ message: withProxiedImages(toMessage(row)) });
     }
 
     case "thread": {
@@ -264,7 +265,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         if (next.length === ids.length) break;
         ids = next;
       }
-      const messages = [...found.values()].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))).slice(0, 40).map(toMessage);
+      const messages = [...found.values()].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))).slice(0, 40).map(toMessage).map(withProxiedImages);
       return res.status(200).json({ messages });
     }
 
@@ -494,4 +495,9 @@ async function send(res: VercelResponse, me: AppUser, admin: boolean, body: Reco
     if (err instanceof BirdError) return fail(res, 502, "send_failed", err.message);
     throw err;
   }
+}
+
+/** A message as served: its remote pictures pointed at /api/mail-image (lib/mail-image.ts). */
+function withProxiedImages<T extends { html: string | null }>(m: T): T {
+  return m.html ? { ...m, html: proxyRemoteImages(m.html) } : m;
 }
