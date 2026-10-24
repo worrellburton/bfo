@@ -2,11 +2,12 @@ import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
 import { composeText, htmlFromPlain } from "../../lib/mail-compose";
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Link, useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
 import { Button, Dot, ErrorLine, Icon, IconButton, TextButton, buttonClass, formatBytes, useTone } from "../entity/ui";
 import { MailFrame, htmlToText } from "../mail-frame";
+import { MailAurora, mailboxHue } from "../mail-aurora";
 import {
   addAlias,
   attachmentUrl,
@@ -210,6 +211,20 @@ const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Time today, "Oct 3" this year, else "3/4/25". */
+/** "Today", "Yesterday", a weekday within the week, else the date: the phone list's separators. */
+function dayGroup(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((start(now) - start(d)) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return d.toLocaleDateString("en-US", { weekday: "long" });
+  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
 function listDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -258,7 +273,7 @@ const EMPTY: Record<MailFolder, string> = {
  * remove extras from the same menu. With one address, the button is that
  * address and the menu holds copy and add.
  */
-function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean }) {
+function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; unread?: number }) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
   // The server's answer to an add or remove shows at once; the shared count catches up after.
@@ -275,15 +290,20 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: s
   const wrap = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   /** The menu sits under the button but inside the screen (a phone's header is narrow and the button sits well in from the left). */
-  const [place, setPlace] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [place, setPlace] = useState<{ top?: number; bottom?: number; left: number; width: number; sheet: boolean } | null>(null);
   useEffect(() => {
     if (!open) return;
     const measure = () => {
       const r = wrap.current?.getBoundingClientRect();
       if (!r) return;
       const vw = window.innerWidth;
+      // Phones: a sheet rising from the bottom, within thumb's reach. Larger screens: a menu under the button.
+      if (vw < 640) {
+        setPlace({ bottom: 12, left: 12, width: vw - 24, sheet: true });
+        return;
+      }
       const width = Math.min(360, vw - 32);
-      setPlace({ top: r.bottom + 6, left: Math.max(16, Math.min(r.left, vw - 16 - width)), width });
+      setPlace({ top: r.bottom + 6, left: Math.max(16, Math.min(r.left, vw - 16 - width)), width, sheet: false });
     };
     measure();
     window.addEventListener("resize", measure);
@@ -368,7 +388,15 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: s
 
   const current = mine.find((m) => m.toLowerCase() === box) ?? null;
   const label = mine.length === 1 ? address : current ?? "All mailboxes";
-  const row = `flex w-full cursor-pointer items-center gap-2.5 px-3 text-left text-[13px] transition-colors max-sm:min-h-[44px] sm:h-9 ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`;
+  const localPart = (a: string) => a.slice(0, a.indexOf("@"));
+  const hueOf = (a: string) => `hsl(${Math.round(mailboxHue(a) * 360)} 70% ${t.dark ? 62 : 48}%)`;
+  /** The mailbox's mark: its initial on its own colour. */
+  const bubble = (a: string, size = "h-7 w-7 text-[12px]") => (
+    <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${size}`} style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})`, boxShadow: `0 0 18px ${hueOf(a)}55` }}>
+      {a ? localPart(a).slice(0, 1).toUpperCase() : "∗"}
+    </span>
+  );
+  const row = `flex w-full cursor-pointer items-center gap-2.5 px-3 text-left text-[13px] transition-colors max-sm:min-h-[52px] max-sm:gap-3 max-sm:px-3.5 max-sm:text-[14px] sm:h-9 ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`;
   const copyBtn = (a: string) => (
     <button
       type="button"
@@ -385,28 +413,75 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: s
   );
 
   return (
-    <div ref={wrap} className="relative mt-1 min-w-0">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`group/pick inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg py-0.5 pr-1 text-[13px] transition-colors max-sm:min-h-[36px] ${t.muted} ${t.dark ? "hover:text-gray-100" : "hover:text-gray-900"}`}
-      >
-        {mine.length > 1 && <Icon name="mail" className="h-3.5 w-3.5 shrink-0" />}
-        <span className="truncate">{label}</span>
-        {mine.length > 1 && !current && <span className={`shrink-0 text-[12px] ${t.faint}`}>· {mine.length}</span>}
-        <Icon name="chevronDown" className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.faint}`} />
-      </button>
+    <div ref={wrap} className={`relative min-w-0 ${big ? "" : "mt-1"}`}>
+      {big ? (
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Mailbox: ${label}. Change`}
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl py-1 pr-2 text-left transition-transform active:scale-[0.99]"
+        >
+          {bubble(current ?? (mine.length === 1 ? address : ""), "h-11 w-11 text-[17px]")}
+          <span className="min-w-0 flex-1">
+            <span className={`flex items-center gap-1.5 text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] ${t.text}`}>
+              <span className="truncate">{current ? localPart(current) : mine.length === 1 ? localPart(address) : "All mailboxes"}</span>
+              <Icon name="chevronDown" className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.2} />
+            </span>
+            <span className={`mt-0.5 flex items-center gap-2 text-[12.5px] ${t.muted}`}>
+              <span className="truncate">{current ?? (mine.length === 1 ? address : `${mine.length} addresses`)}</span>
+              {unread > 0 && (
+                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>
+                  <span className="unread-glow h-1.5 w-1.5 rounded-full bg-[#818cf8]" />
+                  {unread} unread
+                </span>
+              )}
+            </span>
+          </span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className={`group/pick inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg py-0.5 pr-1 text-[13px] transition-colors max-sm:min-h-[36px] ${t.muted} ${t.dark ? "hover:text-gray-100" : "hover:text-gray-900"}`}
+        >
+          {mine.length > 1 && <Icon name="mail" className="h-3.5 w-3.5 shrink-0" />}
+          <span className="truncate">{label}</span>
+          {mine.length > 1 && !current && <span className={`shrink-0 text-[12px] ${t.faint}`}>· {mine.length}</span>}
+          <Icon name="chevronDown" className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.faint}`} />
+        </button>
+      )}
 
       {open && place && createPortal(
-        <div ref={menuRef} role="menu" aria-label="Mailbox" style={{ position: "fixed", top: place.top, left: place.left, width: place.width }} className={`z-[65] overflow-hidden rounded-xl border py-1 shadow-xl ${t.dark ? "border-white/10 bg-[#101016]" : "border-gray-200 bg-white"}`}>
+        <>
+          {place.sheet && <div className="fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px]" onClick={() => setOpen(false)} aria-hidden="true" />}
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label="Mailbox"
+            style={{ position: "fixed", top: place.top, bottom: place.bottom !== undefined ? `calc(${place.bottom}px + env(safe-area-inset-bottom))` : undefined, left: place.left, width: place.width }}
+            className={`z-[65] overflow-hidden border shadow-2xl ${place.sheet ? "sheet-up rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
+              t.dark ? (place.sheet ? "border-white/10 bg-[#0f0f16]/85" : "border-white/10 bg-[#101016]") : place.sheet ? "border-gray-200 bg-white/90" : "border-gray-200 bg-white"
+            }`}
+          >
+          {place.sheet && (
+            <div className="px-4 pb-2 pt-2">
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`}>Mailbox</p>
+            </div>
+          )}
           {mine.length > 1 && (
             <button type="button" role="menuitemradio" aria-checked={!current} onClick={() => { onChoose(""); setOpen(false); }} className={`${row} ${!current ? t.text : t.soft}`}>
-              <span className={`inline-flex h-4 w-4 items-center justify-center ${!current ? "" : "opacity-0"}`}>
-                <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.25} />
+              {place.sheet ? bubble("", "h-9 w-9 text-[14px]") : null}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">All mailboxes</span>
+                {place.sheet && <span className={`block truncate text-[12px] ${t.muted}`}>Everything, in one list</span>}
               </span>
-              <span className="min-w-0 flex-1 truncate font-medium">All mailboxes</span>
+              <span className={`inline-flex h-4 w-4 items-center justify-center ${!current ? t.accent : "opacity-0"}`}>
+                <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />
+              </span>
             </button>
           )}
           {mine.map((m) => {
@@ -414,12 +489,16 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: s
             const extra = m !== address;
             return (
               <div key={m} className={`${row} ${on ? t.text : t.soft}`} role="none">
+                {place.sheet ? bubble(m, "h-9 w-9 text-[14px]") : null}
                 {mine.length > 1 ? (
                   <button type="button" role="menuitemradio" aria-checked={on} onClick={() => { onChoose(m.toLowerCase()); setOpen(false); }} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-left">
-                    <span className={`inline-flex h-4 w-4 items-center justify-center ${on ? "" : "opacity-0"}`}>
-                      <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.25} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{place.sheet ? localPart(m) : m}</span>
+                      {place.sheet && <span className={`block truncate text-[12px] ${t.muted}`}>{m}</span>}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">{m}</span>
+                    <span className={`inline-flex h-4 w-4 items-center justify-center ${on ? t.accent : "opacity-0"}`}>
+                      <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />
+                    </span>
                   </button>
                 ) : (
                   <span className="min-w-0 flex-1 truncate">{m}</span>
@@ -471,7 +550,8 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd }: { address: s
               {error && <p className={`mt-1.5 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
             </div>
           )}
-        </div>,
+          </div>
+        </>,
         document.body
       )}
     </div>
@@ -1400,11 +1480,22 @@ export default function Inbox() {
         <>
           <MailTable rows={rows} sent={sent} mixed={mixed} me={address} onOpen={select} onStar={star} picked={picked} onPick={pick} onPickAll={pickAll} className="max-md:hidden" />
           <ul className="md:hidden">
-            {rows.map((m) => (
-              <li key={m.id}>
-                <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
-              </li>
-            ))}
+            {rows.map((m, i) => {
+              const group = dayGroup(m.occurredAt);
+              const first = i === 0 || dayGroup(rows[i - 1].occurredAt) !== group;
+              return (
+                <Fragment key={m.id}>
+                  {first && !q && (
+                    <li aria-hidden="true" className={`row-in px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.14em] first:pt-1 ${t.faint}`} style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                      {group}
+                    </li>
+                  )}
+                  <li className="row-in" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                    <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
+                  </li>
+                </Fragment>
+              );
+            })}
           </ul>
         </>
       ) : (
@@ -1515,9 +1606,31 @@ export default function Inbox() {
 
   return (
     <FacesContext.Provider value={faces}>
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
-      {/* Phones give an open message the whole screen; the reader's Back returns here. */}
-      <header className={`flex items-start justify-between gap-3 pt-1 ${openId ? "max-lg:hidden" : ""}`}>
+    <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
+      {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
+      {!openId && (
+        <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
+          <Link
+            to="/home"
+            aria-label="Back to BFO"
+            className={`inline-flex h-10 shrink-0 items-center gap-1 rounded-full pl-1.5 pr-3 text-[13px] font-medium transition-colors ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+          >
+            <Icon name="chevronLeft" className="h-4 w-4" strokeWidth={2.2} />
+            BFO
+          </Link>
+          <span className="flex-1" />
+          {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
+        </div>
+      )}
+      {!openId && address && !noAddress && (
+        <div className="px-1 md:hidden">
+          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big unread={count?.unread ?? 0} />
+        </div>
+      )}
+      {!openId && noAddress && <p className={`px-2 text-[13px] md:hidden ${t.muted}`}>No address yet. Ask an admin for one.</p>}
+      {/* Larger screens: the title, the addresses, search and the view switch on one line. */}
+      <header className={`flex items-start justify-between gap-3 pt-1 max-md:hidden ${openId ? "max-lg:hidden" : ""}`}>
         <div className="flex min-w-0 items-center gap-3">
           {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
           <div className="min-w-0">
@@ -1548,7 +1661,7 @@ export default function Inbox() {
         </div>
       </header>
 
-      {!openId && <SearchField value={q} onSearch={search} className="md:hidden" />}
+      {!openId && <SearchField value={q} onSearch={search} className="search-glow mx-1 md:hidden" />}
 
       {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
 
@@ -1560,7 +1673,7 @@ export default function Inbox() {
           className={`flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
         >
           {tableReading ? (
-            <div className="min-h-0 flex-1 lg:overflow-y-auto">{reader}</div>
+            <div className="reader-in min-h-0 flex-1 md:[animation:none] lg:overflow-y-auto">{reader}</div>
           ) : (
             <>
               {toolbar}
@@ -1825,6 +1938,7 @@ function SelectBox({ on, mixed = false, onToggle, label, className = "" }: { on:
 
 function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { on: boolean; onToggle: (next: boolean) => void; className?: string; alwaysOnPhones?: boolean }) {
   const t = useTone();
+  const [pop, setPop] = useState(false);
   return (
     <button
       type="button"
@@ -1833,15 +1947,29 @@ function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { 
       title={on ? "Unstar" : "Star"}
       onClick={(e) => {
         e.stopPropagation();
+        if (!on) {
+          setPop(true);
+          setTimeout(() => setPop(false), 400);
+          tap();
+        }
         onToggle(!on);
       }}
       className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[40px] max-md:w-[40px] ${
         on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${alwaysOnPhones ? "" : "max-md:hidden"} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
       } ${className}`}
     >
-      <Star on={on} className="h-3.5 w-3.5 max-md:h-[18px] max-md:w-[18px]" strokeWidth={on ? 1.6 : 1.4} />
+      <Star on={on} className={`h-3.5 w-3.5 max-md:h-[18px] max-md:w-[18px] ${pop ? "star-pop" : ""}`} strokeWidth={on ? 1.6 : 1.4} />
     </button>
   );
+}
+
+/** A tick of haptics on phones that have it (Android; iOS Safari ignores it). */
+function tap() {
+  try {
+    (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(8);
+  } catch {
+    // no haptics here
+  }
 }
 
 // ── List ─────────────────────────────────────────────────────────────────
@@ -2054,7 +2182,7 @@ function ListRow({
       }}
       aria-current={selected ? "true" : undefined}
       aria-selected={onPick ? picked : undefined}
-      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3 max-md:rounded-2xl max-md:px-3 max-md:py-3 ${
+      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 max-md:active:scale-[0.99] ${
         picked ? (t.dark ? "bg-[#6366f1]/[0.13]" : "bg-indigo-50") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
       } ${t.dark ? "active:bg-white/[0.05] focus-visible:bg-white/[0.05]" : "active:bg-gray-100 focus-visible:bg-gray-50"} focus-visible:outline-none`}
     >
@@ -2161,7 +2289,7 @@ function Reader({
     <article className="max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
       {/* Top bar. Phones: Back, then the message's housekeeping; Reply and Forward live in the bar at the bottom. */}
       <div
-        className={`sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl md:rounded-t-2xl lg:top-0 ${t.line} ${
+        className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl md:rounded-t-2xl lg:top-0 ${t.line} ${
           t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
         }`}
       >
@@ -2602,6 +2730,85 @@ function readBase64(file: File): Promise<string> {
   });
 }
 
+/**
+ * A From line that opens a menu of the account's addresses (the mailbox
+ * picker's look), in place of the browser's own select.
+ */
+function AddressDropdown({ id, labelledBy, value, options, onChange, className = "" }: { id: string; labelledBy: string; value: string; options: string[]; onChange: (next: string) => void; className?: string }) {
+  const t = useTone();
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ top: number; left: number; width: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const r = wrap.current?.getBoundingClientRect();
+      if (!r) return;
+      const vw = window.innerWidth;
+      const width = Math.min(Math.max(r.width, 300), vw - 24);
+      setPlace({ top: r.bottom + 4, left: Math.max(12, Math.min(r.left, vw - 12 - width)), width });
+    };
+    measure();
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const n = e.target as Node;
+      if (!wrap.current?.contains(n) && !menuRef.current?.contains(n)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("resize", measure);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("resize", measure);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const localPart = (a: string) => a.slice(0, a.indexOf("@"));
+  const hueOf = (a: string) => `hsl(${Math.round(mailboxHue(a) * 360)} 70% ${t.dark ? 62 : 48}%)`;
+  return (
+    <div ref={wrap} className="flex min-w-0 flex-1 items-center">
+      <button id={id} type="button" aria-haspopup="listbox" aria-expanded={open} aria-labelledby={`${labelledBy} ${id}`} onClick={() => setOpen((o) => !o)} className={`flex items-center gap-2 text-left ${className}`}>
+        <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: hueOf(value), boxShadow: `0 0 10px ${hueOf(value)}88` }} />
+        <span className="min-w-0 flex-1 truncate">{value}</span>
+        <Icon name="chevronDown" className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} />
+      </button>
+      {open && place && createPortal(
+        <div ref={menuRef} role="listbox" aria-label="Send from" style={{ position: "fixed", top: place.top, left: place.left, width: place.width }} className={`sheet-up z-[70] overflow-hidden rounded-2xl border py-1 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/90" : "border-gray-200 bg-white/95"}`}>
+          {options.map((a) => {
+            const on = a === value;
+            return (
+              <button
+                key={a}
+                type="button"
+                role="option"
+                aria-selected={on}
+                onClick={() => {
+                  onChange(a);
+                  setOpen(false);
+                }}
+                className={`flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left transition-colors max-sm:min-h-[50px] ${on ? t.text : t.soft} ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+              >
+                <span aria-hidden="true" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12.5px] font-semibold text-white" style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})` }}>
+                  {localPart(a).slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] font-medium">{localPart(a)}</span>
+                  <span className={`block truncate text-[12px] ${t.muted}`}>{a}</span>
+                </span>
+                {on && <Icon name="check" className={`h-4 w-4 shrink-0 ${t.accent}`} strokeWidth={2.5} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresses: string[]; onClose: () => void; onSent: (m: MailSummary) => void }) {
   const t = useTone();
   const [sendId] = useState(() => crypto.randomUUID());
@@ -2854,15 +3061,8 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
 
         {addresses.length > 1 && (
           <div className={row}>
-            <label htmlFor="compose-from" className={label}>From</label>
-            <select id="compose-from" value={from} onChange={(e) => setFrom(e.target.value)} className={`${field} cursor-pointer appearance-none`} style={noRing}>
-              {addresses.map((a) => (
-                <option key={a} value={a} className={t.dark ? "bg-[#111113]" : undefined}>
-                  {a}
-                </option>
-              ))}
-            </select>
-            <Icon name="chevronDown" className={`h-3.5 w-3.5 pointer-events-none ${t.muted}`} />
+            <span id="compose-from-label" className={label}>From</span>
+            <AddressDropdown id="compose-from" labelledBy="compose-from-label" value={from} options={addresses} onChange={setFrom} className={`${field} cursor-pointer`} />
           </div>
         )}
         <div className={row}>

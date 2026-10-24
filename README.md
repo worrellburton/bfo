@@ -172,9 +172,17 @@ Every user has an address on the family domain (assigned from their first name;
 admins can change it on `/users`) and a Mail page at `/inbox`. Bird receives the
 mail and BFO keeps each mailbox's copy in Supabase (`mail_messages`, attachments
 in the private `mail` bucket; `read_at` and `starred_at` mark unread and starred).
-Under the page title, one control says whose mail is shown: "All mailboxes"
-or one address; its menu lists every address on the account with a copy on
-each, and admins add and remove extras there. Mail to an address nobody has
+On a phone, Mail is its own place: the app's bar and menu stay out of it, a
+"BFO" link at the top leads back, and the mailbox is the title, a large
+dropdown with its own colour and the unread count, so it's always clear whose
+mail is on screen; its menu rises as a glass sheet listing every address.
+Behind the list a WebGL aurora drifts in the mailbox's hue, brightens as you
+scroll and blooms where you touch (one still frame under reduced motion). Rows
+arrive one after another under day separators; the reader slides in; a star
+pops. On larger screens, one control under the page title says whose mail is
+shown: "All mailboxes" or one address; its menu lists every address on the
+account with a copy on each, and admins add and remove extras there. Compose's
+From line is the same kind of dropdown. Mail to an address nobody has
 lands in "Other", which owners and admins see.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open

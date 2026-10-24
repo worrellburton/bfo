@@ -273,6 +273,8 @@ export default function AppLayout() {
   const lockup = lockupOf(logo);
   const navigate = useNavigate();
   const location = useLocation();
+  /** Mail on a phone has its own top (a way back, the mailbox); the app's bar and particles stay out of it. */
+  const mailOnly = location.pathname.startsWith("/inbox");
   const { theme, toggle } = useTheme();
   const hoverCapable = useHoverCapable();
 
@@ -517,12 +519,13 @@ export default function AppLayout() {
 
       {/* Drifting aurora — the app shell shares the landing atmosphere and the
           glass surfaces let it show through. */}
-      <div aria-hidden className="app-aurora fixed inset-0 pointer-events-none">
+      {/* Clipped: the orbs reach past the screen, and on a phone an unclipped overflow widens the layout viewport and zooms the whole app out. */}
+      <div aria-hidden className="app-aurora fixed inset-0 overflow-hidden pointer-events-none">
         <div className="landing-orb landing-orb-1" />
         <div className="landing-orb landing-orb-2" />
         <div className="landing-orb landing-orb-3" />
       </div>
-      <ParticleCanvas className="particle-field" />
+      {!mailOnly && <ParticleCanvas className="particle-field" />}
 
       {drawerOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setDrawerOpen(false)} />
@@ -752,7 +755,7 @@ export default function AppLayout() {
       {/* Mobile top bar — menu upper-left, the wordmark centred. The drawer
           holds every destination, so there is no bottom dock. */}
       <header
-        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl lg:hidden ${
+        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl lg:hidden ${mailOnly ? "hidden" : ""} ${
           isDark ? "border-white/10 bg-black/60" : "border-gray-200 bg-white/70"
         }`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}
@@ -798,7 +801,13 @@ export default function AppLayout() {
         </div>
       </header>
 
-      <main id="main" tabIndex={-1} className="sidebar-content outline-none relative z-10 p-4 pt-[calc(4.5rem+env(safe-area-inset-top))] sm:p-6 sm:pt-[calc(5rem+env(safe-area-inset-top))] lg:p-8 lg:ml-[var(--inset)]">
+      <main
+        id="main"
+        tabIndex={-1}
+        className={`sidebar-content outline-none relative z-10 p-4 sm:p-6 lg:p-8 lg:ml-[var(--inset)] ${
+          mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))] lg:pt-8" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
+        }`}
+      >
         {/* Email-only members see the inbox and nothing else; redirect before any other page mounts. */}
         {emailOnly && location.pathname !== "/inbox" ? (
           <Navigate to="/inbox" replace />

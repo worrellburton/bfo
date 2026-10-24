@@ -249,6 +249,32 @@ html.light {
   animation: landing-shimmer 9s linear infinite, landing-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 /* Sign-in uses the same wordmark, sized to leave room for the form. */
+/* ──────────────────────────────────────────────────────────────────────
+   Mail, alive: rows arriving, the reader sliding in, a star popping, the
+   mailbox menu rising, the search field lit when it has focus.
+   ────────────────────────────────────────────────────────────────────── */
+@keyframes row-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.row-in { animation: row-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* Rises, never slides sideways: a sideways offset on a full-width article overflows the phone for a moment and the layout viewport stays zoomed out. */
+@keyframes reader-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.reader-in { animation: reader-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes star-pop { 0% { transform: scale(1); } 40% { transform: scale(1.45) rotate(-8deg); } 70% { transform: scale(0.92); } 100% { transform: scale(1); } }
+.star-pop { animation: star-pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes sheet-up { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: none; } }
+.sheet-up { animation: sheet-up 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes unread-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(129, 140, 248, 0.55); } 50% { box-shadow: 0 0 0 5px rgba(129, 140, 248, 0); } }
+.unread-glow { animation: unread-glow 2.4s ease-out infinite; }
+.search-glow:focus-within { box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.45), 0 0 28px rgba(129, 140, 248, 0.22); }
+.mail-aurora { z-index: 0; opacity: 1; }
+@media (min-width: 768px) { .mail-aurora { opacity: 0.55; } }
+.mail-glass-top {
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-in, .reader-in, .star-pop, .sheet-up, .unread-glow { animation: none; }
+}
+
 /* The document reader coming and going. */
 @keyframes doc-viewer-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes doc-viewer-out { from { opacity: 1; } to { opacity: 0; } }
@@ -959,8 +985,9 @@ html.light .fab-glass {
   pointer-events: none;
 }
 
-/* Phones: no grey tap flash, no rubber-band scroll chaining behind sheets. */
-html { -webkit-tap-highlight-color: transparent; }
+/* Phones: no grey tap flash, no rubber-band scroll chaining behind sheets, and nothing
+   that reaches past the right edge (a glow, an animation mid-flight) may widen the page. */
+html { -webkit-tap-highlight-color: transparent; overflow-x: clip; }
 body { overscroll-behavior-y: none; }
 
 @media (prefers-reduced-motion: reduce) {
