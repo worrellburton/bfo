@@ -110,7 +110,7 @@ function constellation(table: boolean, dark: boolean): Scene {
         ty,
         sx: w * 0.5 + (Math.random() - 0.5) * w * 0.9,
         sy: -30 - Math.random() * 180,
-        delay: row * 150 + Math.random() * 300,
+        delay: row * 90 + Math.random() * 180,
         r: 1.1 + Math.random() * 1.2,
         ph: Math.random() * TAU,
       });
@@ -151,7 +151,7 @@ function constellation(table: boolean, dark: boolean): Scene {
     const flights = Array.from({ length: 3 }, (_, i) => {
       const to = avatars[(i * 2 + 1) % avatars.length];
       const fromX = w * (0.25 + 0.5 * Math.random());
-      return { from: { x: fromX, y: -40 }, ctrl: { x: (fromX + to.x) / 2 + (Math.random() - 0.5) * w * 0.6, y: to.y * 0.35 }, to, offset: 700 + i * 1500, dur: 2800 + i * 250 };
+      return { from: { x: fromX, y: -40 }, ctrl: { x: (fromX + to.x) / 2 + (Math.random() - 0.5) * w * 0.6, y: to.y * 0.35 }, to, offset: 400 + i * 1200, dur: 2400 + i * 250 };
     });
     const light = dark ? 72 : 46;
     const xs = new Float32Array(pts.length);
@@ -167,7 +167,7 @@ function constellation(table: boolean, dark: boolean): Scene {
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const local = t - p.delay;
-        const e = local <= 0 ? 0 : easeOut(Math.min(1, local / 1200));
+        const e = local <= 0 ? 0 : easeOut(Math.min(1, local / 800));
         es[i] = e;
         const drift = (1 - e) * 6 + 0.7;
         xs[i] = p.sx + (p.tx - p.sx) * e + Math.sin(t * 0.0021 + p.ph) * drift;

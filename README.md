@@ -184,9 +184,11 @@ remembers it, and it applies only while Mail is on screen; the rest of the
 app keeps its own theme. Rows
 arrive one after another under day separators; a star pops. Moving between the
 list and a message is a view transition (`app/view-transition.ts`, on the viewport's snapshot, no blur, so a phone keeps up): one page
-slides out as the other slides in (and back the other way), a loader fades
-into what it was waiting for, and transitions queue rather than cut each
-other short, so each plays to its end; the aurora and the round Compose
+slides out as the other slides in (and back the other way), a loader stays
+long enough for its scene to play through (the constellation assembling, the
+envelope opening) and then fades into what it was waiting for, a cached
+message opens at once, and transitions queue rather than cut each other
+short, so each plays to its end; the aurora and the round Compose
 button in the corner stay put. A row swiped left archives (with Undo), swiped right stars; a held
 finger picks it for a bulk action; pulling the list down asks Bird for new
 mail (`app/mail-pull.tsx`: the list rides the finger, a ring fills, spins, then

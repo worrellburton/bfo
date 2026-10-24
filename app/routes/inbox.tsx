@@ -818,6 +818,17 @@ const eachRow = (l: ListState, fn: (rows: MailSummary[]) => MailSummary[]): List
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
 type View = "table" | "columns";
 const VIEW_KEY = "bfo-mail-view";
+
+/**
+ * How long each loader stays once shown, so its scene plays to the end rather
+ * than being cut off by a quick answer: the list's constellation assembling,
+ * a search's sweep, the envelope opening (its one-shot animation is 1.5 s).
+ * A cached message skips the envelope altogether.
+ */
+const LIST_LOADER_MS = 1300;
+const SEARCH_LOADER_MS = 1000;
+const READER_LOADER_MS = 1500;
+const holdFor = (shownAt: number, min: number) => new Promise<void>((r) => setTimeout(r, Math.max(0, min - (performance.now() - shownAt))));
 const MAIL_THEME_KEY = "bfo-mail-theme";
 
 function savedView(): View {
@@ -1105,6 +1116,7 @@ export default function Inbox() {
   // that can move rows anywhere (a star, an archive in Active), merging would keep stale rows or lose moved ones.
   const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh" | "reset") => {
     const req = ++listReq.current;
+    const shownAt = performance.now();
     if (mode === "replace") {
       setList(null);
       setListError(null);
@@ -1114,7 +1126,9 @@ export default function Inbox() {
       if (req !== listReq.current) return;
       setListError(null);
       if (mode === "replace") {
-        // From the loader to the rows: a fade, after any page transition under way.
+        // The loader plays through (the constellation assembles, the sonar sweeps), then fades into the rows.
+        await holdFor(shownAt, term ? SEARCH_LOADER_MS : LIST_LOADER_MS);
+        if (req !== listReq.current) return;
         void transitionSync("mail-swap", "forward", () => {
           if (req === listReq.current) setList({ folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] });
         });
@@ -1211,16 +1225,24 @@ export default function Inbox() {
     // A cached copy will do, unless the list says it's unread again (fetching marks it read).
     if (hit && (!row || row.read)) return;
     let alive = true;
+    const shownAt = performance.now();
     // From Active, the row stood for the whole conversation: opening it reads all of it.
     const cur = listRef.current;
     getMessage(openId, { conversation: cur?.folder === "active" && !cur.q })
-      .then(({ message }) => {
+      .then(async ({ message }) => {
         if (!alive) return;
         cache.current.set(openId, message);
-        // From the loader to the message: a fade, once the page has finished arriving.
-        void transitionSync("mail-swap", "forward", () => {
-          if (alive) setOpen({ id: openId, message, error: null });
-        });
+        if (hit) {
+          // The page already shows the message: take the fresh copy quietly, no second fade.
+          setOpen({ id: openId, message, error: null });
+        } else {
+          // The envelope plays through once, then fades into the message (after any page slide under way).
+          await holdFor(shownAt, READER_LOADER_MS);
+          if (!alive) return;
+          void transitionSync("mail-swap", "forward", () => {
+            if (alive) setOpen({ id: openId, message, error: null });
+          });
+        }
         if (!row || !row.read) {
           patchRow(openId, { read: true });
           notifyMailChanged();
@@ -1700,7 +1722,7 @@ export default function Inbox() {
       thread={thread && thread.id === open?.id ? thread.messages : []}
       wholeConversation={folder === "active" && !q}
       freshId={freshId}
-      preview={open ? (rows ?? []).find((r) => r.id === open.id) ?? null : null}
+      preview={openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null}
     />
   );
 
