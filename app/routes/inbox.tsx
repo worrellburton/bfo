@@ -1700,6 +1700,7 @@ export default function Inbox() {
       thread={thread && thread.id === open?.id ? thread.messages : []}
       wholeConversation={folder === "active" && !q}
       freshId={freshId}
+      preview={open ? (rows ?? []).find((r) => r.id === open.id) ?? null : null}
     />
   );
 
@@ -2643,6 +2644,7 @@ function Reader({
   thread,
   freshId,
   wholeConversation = false,
+  preview = null,
 }: {
   /** The whole conversation, newest first (the open message included). */
   thread: MailMessage[];
@@ -2650,6 +2652,8 @@ function Reader({
   freshId: string | null;
   /** Opened from Active: Archive takes the whole conversation, whoever wrote this message. */
   wholeConversation?: boolean;
+  /** The list's row for it, so the loader can open this very message (sender, subject, first words). */
+  preview?: MailSummary | null;
   message: MailMessage | null;
   error: string | null;
   me: string;
@@ -2743,7 +2747,18 @@ function Reader({
       {error && <ErrorLine>{error}</ErrorLine>}
 
       {!m ? (
-        !error && <ReaderLoader />
+        !error &&
+        (preview ? (
+          <ReaderLoader
+            // Sent mail is sealed with who it went to.
+            seal={<Avatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} size="h-9 w-9 text-[12px]" trusted={!preview.unverified} />}
+            subject={preview.subject || "(no subject)"}
+            from={preview.direction === "out" ? `To ${preview.to.map((a) => senderLabel(a)).join(", ") || "—"}` : senderLabel(preview.from)}
+            snippet={preview.snippet}
+          />
+        ) : (
+          <ReaderLoader />
+        ))
       ) : (
         <div className="px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6">
           {/* Subject, with the star beside it on phones (as Gmail puts it). */}

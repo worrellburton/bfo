@@ -10,7 +10,8 @@ import { useTone } from "./entity/ui";
  *                 down them, and a few envelopes glide in to land on the rows
  *   SearchLoader  a sonar sweep over a field of mail: the beam swings, each
  *                 message it passes lights up, and the ones that match ping
- *   ReaderLoader  a letter sliding out of its envelope, the ink arriving
+ *   ReaderLoader  the message itself, opened: sealed with the sender's face,
+ *                 the flap swings open and the letter rises with its subject
  *   Orbit         the small spinner for buttons (Send, Improve design, a file)
  *   SentPlane     a paper plane darting off once a message has gone
  *
@@ -377,29 +378,54 @@ export function SearchLoader({ term }: { term: string }) {
   );
 }
 
-/* ───────────────────────── the reader: a letter coming out ───────────────────────── */
+/* ───────────────────────── the reader: this message, opened ───────────────────────── */
 
-export function ReaderLoader() {
+/**
+ * The message being opened, opened: an envelope sealed with the sender's own
+ * face (their photo, their company's logo or their initials, as the list
+ * shows them). The seal pops, the flap swings open, and the letter rises out
+ * with the real subject and sender, the first words writing themselves in;
+ * then it comes toward you and a soft shine runs over it until the message is
+ * here. It plays once (a quick load never looks busy), in the page's light or
+ * dark, in the mailbox's colour. Without a preview (a link straight to a
+ * message) the seal is a plain one and the lines are ink.
+ */
+export function ReaderLoader({ seal, subject, from, snippet }: { seal?: ReactNode; subject?: string; from?: string; snippet?: string }) {
   const t = useTone();
+  const words = (snippet ?? "").replace(/\s+/g, " ").trim();
+  // The first words, in three short lines, as the letter would start.
+  const lines = words ? [words.slice(0, 34), words.slice(34, 66), words.slice(66, 92)].map((l) => l.trim()).filter(Boolean) : [];
   return (
-    <div role="status" aria-label="Opening the message" className="flex flex-col items-center px-5 pb-10 pt-14">
-      <svg viewBox="0 0 160 150" className="letter h-[150px] w-[160px] overflow-visible" aria-hidden="true">
-        {/* A pool of light under the envelope. */}
-        <ellipse cx="80" cy="142" rx="56" ry="6" className="letter-pool" />
-        {/* The flap, behind everything, opening upward from the envelope's top edge. */}
-        <path d="M24 72 L80 30 L136 72 Z" className="letter-flap" />
-        {/* The letter, rising from behind the envelope's body. */}
-        <g className="letter-paper">
-          <rect x="36" y="76" width="88" height="60" rx="5" className={t.dark ? "fill-white/95" : "fill-white stroke-black/10"} strokeWidth="1" />
-          <path d="M48 90 H112" className="letter-ink" strokeWidth="3" strokeLinecap="round" fill="none" />
-          <path d="M48 102 H100" className="letter-ink" strokeWidth="3" strokeLinecap="round" fill="none" style={{ animationDelay: "120ms" }} />
-          <path d="M48 114 H108" className="letter-ink" strokeWidth="3" strokeLinecap="round" fill="none" style={{ animationDelay: "240ms" }} />
-        </g>
-        {/* The envelope's body in front, with the pocket's fold lines. */}
-        <rect x="24" y="72" width="112" height="66" rx="8" className="letter-body" />
-        <path d="M24 136 L80 100 L136 136" className="letter-pocket" fill="none" strokeWidth="1.2" />
-      </svg>
-      <p className={`mt-6 flex items-center gap-2 text-[12px] ${t.muted}`}>
+    <div role="status" aria-label={subject ? `Opening “${subject}”` : "Opening the message"} className={`env-scene flex flex-col items-center px-5 pb-10 ${t.dark ? "" : "env-light"}`}
+      // Headroom for the letter as it rises out of the envelope.
+      style={{ paddingTop: 104 }}
+    >
+      <div className="env" aria-hidden="true">
+        <div className="env-back" />
+        <div className="env-letter">
+          <div className="env-letter-inner">
+            {subject ? <p className="env-subject">{subject}</p> : <span className="env-bar env-bar-strong" />}
+            {from ? <p className="env-from">{from}</p> : <span className="env-bar env-bar-short" />}
+            <div className="env-rule" />
+            {(lines.length ? lines : ["", "", ""]).map((l, i) =>
+              l ? (
+                <p key={i} className="env-line" style={{ animationDelay: `${1080 + i * 160}ms` }}>
+                  {l}
+                </p>
+              ) : (
+                <span key={i} className="env-bar env-ink" style={{ animationDelay: `${1080 + i * 160}ms`, width: `${[92, 78, 86][i]}%` }} />
+              ),
+            )}
+            <span className="env-shine" />
+          </div>
+        </div>
+        <div className="env-front" />
+        <div className="env-flap" />
+        <div className="env-seal">
+          <span className="env-seal-ring">{seal ?? <span className="env-seal-blank" />}</span>
+        </div>
+      </div>
+      <p className={`env-caption mt-7 flex items-center gap-2 text-[12px] ${t.muted}`}>
         <span className="loader-dot" />
         Opening
         <Dots />

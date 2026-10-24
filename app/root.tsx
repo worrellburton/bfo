@@ -12,11 +12,17 @@ import "./app.css";
 import { homePath } from "./auth";
 import { ThemeProvider } from "./theme";
 import { SIDEBAR_BOOT_SCRIPT } from "./sidebar";
+import { startPwa } from "./pwa";
+
+// Early, so Chrome's install offer (beforeinstallprompt) isn't missed.
+startPwa();
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
   { rel: "icon", href: "/favicon-32.png", type: "image/png", sizes: "32x32" },
   { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+  // Installable as an app (Chrome's "Install BFO"; app/pwa.ts).
+  { rel: "manifest", href: "/manifest.webmanifest" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
