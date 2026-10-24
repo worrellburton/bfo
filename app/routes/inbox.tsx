@@ -883,7 +883,7 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
         aria-label={`Showing ${cur.label}${filter === "all" ? "" : `, ${filter} only`}. Change folder or filter`}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex h-[48px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-full pl-5 pr-4 text-[15px] font-semibold transition-colors active:scale-[0.99] ${
-          live ? (t.dark ? "bg-[#6366f1]/20 text-[#c7d2fe] ring-1 ring-inset ring-[#818cf8]/40" : "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200") : t.dark ? "bg-white/[0.07] text-white ring-1 ring-inset ring-white/10" : "bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-200"
+          live ? `pill-glass-live ${t.dark ? "text-[#e0e7ff]" : "text-indigo-800"}` : `pill-glass ${t.dark ? "text-white" : "text-gray-900"}`
         }`}
       >
         <Glyph name={FOLDER_META[folder].glyph} className="h-4 w-4" />
@@ -2047,8 +2047,8 @@ function SearchField({ value, onSearch, className = "" }: { value: string; onSea
   return (
     <div
       role="search"
-      className={`flex items-center gap-2 rounded-full border px-3.5 transition-colors max-md:h-[48px] max-md:px-5 md:h-9 md:rounded-xl md:px-3 ${
-        t.dark ? "border-white/[0.08] bg-white/[0.04] focus-within:border-white/20 focus-within:bg-white/[0.06]" : "border-gray-200 bg-white focus-within:border-gray-400"
+      className={`flex items-center gap-2 rounded-full border px-3.5 transition-colors pill-glass max-md:h-[48px] max-md:px-5 md:h-9 md:rounded-xl md:px-3 ${
+        t.dark ? "md:border-white/[0.08] md:bg-white/[0.04] md:focus-within:border-white/20 md:focus-within:bg-white/[0.06]" : "md:border-gray-200 md:bg-white md:focus-within:border-gray-400"
       } ${className}`}
     >
       <svg className={`h-[18px] w-[18px] shrink-0 md:h-4 md:w-4 ${t.muted}`} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
