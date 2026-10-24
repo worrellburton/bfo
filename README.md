@@ -212,7 +212,9 @@ or content blocker has no third-party image to refuse inside the sandboxed
 frame, and a sender's tracking pixel sees BFO's server rather than the reader.
 Images show by default; "Hide images" holds them back for a message. Mail
 laid out wider than the screen (a fixed 600px table) is scaled down to fit the
-frame's width, the way a phone's mail app does, and refits when the phone turns.
+frame's width, the way a phone's mail app does, and refits when the phone turns;
+the frame's document opts out of iOS Safari's text inflation so the scaled
+layout keeps the sender's type sizes.
 Each wait has its own scene rather than a skeleton, drawn in the mailbox's
 colour (`app/mail-loaders.tsx`): while the list loads, hundreds of points of
 light stream down and settle into the shape of the rows, a pulse runs down them

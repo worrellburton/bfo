@@ -74,7 +74,10 @@ img,picture,video,svg,canvas,[style*="background-image"],[background]{filter:inv
 
 function frameDocument(body: string, images: boolean, dark: boolean): string {
   const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? " 'self' https:" : ""}; font-src data:`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>
+  // The viewport meta and text-size-adjust keep iOS Safari from inflating the text of a wide (fixed-width) layout on its own.
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+*{-webkit-text-size-adjust:100%;}
 html,body{margin:0;padding:0;background:#fff;color:#111;}
 body{padding:20px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-wrap:anywhere;}
 img{max-width:100%;height:auto;}
