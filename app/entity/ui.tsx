@@ -106,7 +106,7 @@ export function Button({
 }
 
 /** A square icon-only button. `label` is its accessible name and tooltip. */
-export function IconButton({ icon, label, tone = "ghost", className = "", ...rest }: { icon: IconName; label: string; tone?: "ghost" | "danger" } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function IconButton({ icon, label, tone = "ghost", className = "", iconClassName = "h-3.5 w-3.5", ...rest }: { icon: IconName; label: string; tone?: "ghost" | "danger"; /** The icon's size, when the button is bigger than usual (a phone's toolbar). */ iconClassName?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { dark } = useTone();
   const t =
     tone === "danger"
@@ -120,7 +120,7 @@ export function IconButton({ icon, label, tone = "ghost", className = "", ...res
       className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40 max-sm:h-[40px] max-sm:w-[40px] ${t} ${className}`}
       {...rest}
     >
-      <Icon name={icon} className="h-3.5 w-3.5" />
+      <Icon name={icon} className={iconClassName} />
     </button>
   );
 }

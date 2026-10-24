@@ -75,7 +75,7 @@ function Glyph({ name, className = "h-3.5 w-3.5" }: { name: keyof typeof GLYPHS;
 }
 
 /** IconButton with one of this page's glyphs. */
-function GlyphButton({ glyph, label, tone = "ghost", className = "", ...rest }: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger" } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function GlyphButton({ glyph, label, tone = "ghost", className = "", glyphClassName, ...rest }: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger"; glyphClassName?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { dark } = useTone();
   const t =
     tone === "danger"
@@ -90,7 +90,7 @@ function GlyphButton({ glyph, label, tone = "ghost", className = "", ...rest }: 
       // Added to the button's own classes, never in place of them (a caller's size only adds a phone size).
       className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40 max-sm:h-[40px] max-sm:w-[40px] ${t} ${className}`}
     >
-      <Glyph name={glyph} />
+      <Glyph name={glyph} className={glyphClassName} />
     </button>
   );
 }
@@ -2581,15 +2581,29 @@ function Reader({
     </button>
   );
 
+  // Phones: the top bar's buttons are big and bright, with 24px icons; larger screens keep the small ones.
+  const bar = `max-md:h-12 max-md:w-12 max-md:rounded-xl ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
+  const barGlyph = "h-3.5 w-3.5 max-md:h-6 max-md:w-6";
   return (
     <article className="max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
       {/* Top bar. Phones: Back, then the message's housekeeping; Reply and Forward live in the bar at the bottom. */}
       <div
-        className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl md:rounded-t-2xl lg:top-0 ${t.line} ${
+        className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl max-md:gap-1.5 max-md:px-3 max-md:py-2 md:rounded-t-2xl lg:top-0 ${t.line} ${
           t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
         }`}
       >
-        <IconButton icon="chevronLeft" label="Back" onClick={onBack} className={`${backAlways ? "" : "lg:hidden"} max-md:h-[44px] max-md:w-[44px]`} />
+        <button
+          type="button"
+          aria-label="Back"
+          title="Back"
+          onClick={onBack}
+          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-12 max-md:w-auto max-md:gap-0.5 max-md:rounded-xl max-md:pl-1.5 max-md:pr-3.5 max-md:text-[16px] max-md:font-medium ${backAlways ? "" : "lg:hidden"} ${
+            t.dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white max-md:text-gray-100" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900 max-md:text-gray-900"
+          }`}
+        >
+          <Icon name="chevronLeft" className="h-3.5 w-3.5 max-md:h-7 max-md:w-7" strokeWidth={2} />
+          <span className="md:hidden">Back</span>
+        </button>
         {m && (
           <>
             <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply" className="max-md:hidden">
@@ -2608,14 +2622,14 @@ function Reader({
             </Button>
             <span className="flex-1" />
             {starButton(m, "max-md:hidden")}
-            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} className="max-md:h-[44px] max-md:w-[44px]" />}
+            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} className={bar} glyphClassName={barGlyph} />}
             {(m.direction === "in" || (wholeConversation && m.folder !== "archive")) &&
               (m.folder === "archive" ? (
-                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} className="max-md:h-[44px] max-md:w-[44px]" />
+                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} className={bar} glyphClassName={barGlyph} />
               ) : (
-                <GlyphButton glyph="archive" label="Archive" onClick={() => onMove(m, "archive")} className="max-md:h-[44px] max-md:w-[44px]" />
+                <GlyphButton glyph="archive" label="Archive" onClick={() => onMove(m, "archive")} className={bar} glyphClassName={barGlyph} />
               ))}
-            <IconButton icon="trash" label="Delete" tone="danger" onClick={() => onDelete(m)} className="max-md:h-[44px] max-md:w-[44px]" />
+            <IconButton icon="trash" label="Delete" tone="danger" onClick={() => onDelete(m)} className={bar} iconClassName={barGlyph} />
           </>
         )}
       </div>
