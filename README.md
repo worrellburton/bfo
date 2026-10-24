@@ -195,13 +195,15 @@ signed BFO address and fetches it on the reader's behalf, so a phone's browser
 or content blocker has no third-party image to refuse inside the sandboxed
 frame, and a sender's tracking pixel sees BFO's server rather than the reader.
 Images show by default; "Hide images" holds them back for a message.
-Each wait has its own loader, drawn in the mailbox's colour (`app/mail-loaders.tsx`):
-the list arriving is ghost rows whose pictures orbit while a light sweeps their
-lines; a search is a scan line passing over faint rows, naming the words looked
-for; a message opening writes its subject line out, the sender's mark orbits
-and the body's lines appear one by one; Send shows a spark circling, then a
-check that draws itself before the sheet closes; Improve design, an uploading
-file and the pull-to-refresh ring use the same spark.
+Each wait has its own scene rather than a skeleton, drawn in the mailbox's
+colour (`app/mail-loaders.tsx`): while the list loads, hundreds of points of
+light stream down and settle into the shape of the rows, a pulse runs down them
+and envelopes glide in to land on the rows; a search is a sonar sweep over a
+field of mail, lighting each message the beam passes and pinging the ones that
+match; a message opening is a letter sliding out of its envelope as the ink
+arrives; Send shows a spark circling, then a paper plane darting off and a
+check in its place; Improve design, an uploading file and the pull-to-refresh
+ring use the same spark. Under reduced motion each scene is one still frame.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open
 message.
