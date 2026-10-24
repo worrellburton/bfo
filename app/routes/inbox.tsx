@@ -57,6 +57,10 @@ const GLYPHS = {
   columns: "M9 4.5v15m6-15v15M3 6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 17.25V6.75z",
   chats:
     "M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155",
+  inbox:
+    "M9 3.75H6.912a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M12 3v8.25m0 0l-3-3m3 3l3-3",
+  send: "M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5",
+  at: "M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zm0 0c0 1.657 1.007 3 2.25 3S21 13.657 21 12a9 9 0 10-2.636 6.364",
   unread: "M21.75 9v.906a2.25 2.25 0 01-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 001.183 1.981l6.478 3.488m8.839 2.51l-4.66-2.51m0 0l-1.023-.55a2.25 2.25 0 00-2.134 0l-1.022.55m0 0l-4.661 2.51m16.5 1.615a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V8.844a2.25 2.25 0 011.183-1.981l7.5-4.039a2.25 2.25 0 012.134 0l7.5 4.039a2.25 2.25 0 011.183 1.98V19.5z",
 } as const;
 
@@ -825,6 +829,145 @@ const FILTERS: { key: MailFilter; label: string }[] = [
 
 const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred." };
 
+const FOLDER_META: Record<MailFolder, { glyph: keyof typeof GLYPHS; blurb: string }> = {
+  active: { glyph: "chats", blurb: "In and Out together, a row per conversation" },
+  inbox: { glyph: "inbox", blurb: "Mail that came to you" },
+  sent: { glyph: "send", blurb: "Mail you sent" },
+  archive: { glyph: "archive", blurb: "Put away, out of the list" },
+  other: { glyph: "at", blurb: "Mail to addresses nobody has" },
+};
+
+/**
+ * Phones: one control for the folder and the filter, showing only what's
+ * chosen ("Active", or "In · Unread"); tapping it opens a glass menu with
+ * every folder as a card, each with its count, and the three ways to narrow.
+ */
+function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { folders: { key: MailFolder; label: string }[]; folder: MailFolder; filter: MailFilter; count: { unread: number; otherUnread: number } | null; onFolder: (f: MailFolder) => void; onFilter: (f: MailFilter) => void }) {
+  const t = useTone();
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const r = wrap.current?.getBoundingClientRect();
+      if (r) setTop(r.bottom + 8);
+    };
+    measure();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const n = (key: MailFolder) => (key === "inbox" || key === "active" ? count?.unread : key === "other" ? count?.otherUnread : 0) || 0;
+  const cur = folders.find((x) => x.key === folder) ?? folders[0];
+  const live = folder === "active";
+  const pick = (f: () => void) => {
+    f();
+    setOpen(false);
+  };
+  const label = `text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`;
+  return (
+    <div ref={wrap} className="flex min-w-0 flex-1 items-center">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Showing ${cur.label}${filter === "all" ? "" : `, ${filter} only`}. Change folder or filter`}
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex h-[42px] max-w-full cursor-pointer items-center gap-2 rounded-[13px] pl-3.5 pr-2.5 text-[14.5px] font-semibold transition-colors active:scale-[0.98] ${
+          live ? (t.dark ? "bg-[#6366f1]/20 text-[#c7d2fe] ring-1 ring-inset ring-[#818cf8]/40" : "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200") : t.dark ? "bg-white/[0.07] text-white ring-1 ring-inset ring-white/10" : "bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-200"
+        }`}
+      >
+        <Glyph name={FOLDER_META[folder].glyph} className="h-4 w-4" />
+        <span className="truncate">{cur.label}</span>
+        {n(folder) > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-[#818cf8]/30 text-white" : "bg-indigo-600 text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>{n(folder)}</span>}
+        {filter !== "all" && (
+          <span className={`inline-flex items-center gap-1 rounded-full py-0.5 pl-1.5 pr-2 text-[12px] font-medium ${t.dark ? "bg-white/10 text-gray-100" : "bg-white text-gray-700 shadow-sm"}`}>
+            {filter === "unread" ? <span className="h-2 w-2 rounded-full bg-[#818cf8]" /> : <Star on className="h-3 w-3" />}
+            {filter === "unread" ? "Unread" : "Starred"}
+          </span>
+        )}
+        <Icon name="chevronDown" className={`ml-0.5 h-3.5 w-3.5 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.2} />
+      </button>
+      {open &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px]" onClick={() => setOpen(false)} aria-hidden="true" />
+            <div
+              role="menu"
+              aria-label="Folder and filter"
+              style={{ position: "fixed", top, left: 12, width: "calc(100vw - 24px)" }}
+              className={`menu-down z-[65] overflow-hidden rounded-3xl border p-3 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/85" : "border-gray-200 bg-white/90"}`}
+            >
+              <p className={`px-1.5 pb-2 pt-1 ${label}`}>Folder</p>
+              <div className="grid grid-cols-2 gap-2">
+                {folders.map((x) => {
+                  const on = x.key === folder;
+                  const isLive = x.key === "active";
+                  const c = n(x.key);
+                  const tone = on
+                    ? isLive
+                      ? t.dark ? "bg-[#6366f1]/25 text-[#e0e7ff] ring-1 ring-inset ring-[#818cf8]/60" : "bg-indigo-600 text-white"
+                      : t.dark ? "bg-white/[0.12] text-white ring-1 ring-inset ring-white/15" : "bg-gray-900 text-white"
+                    : t.dark ? "bg-white/[0.04] text-gray-200 hover:bg-white/[0.08]" : "bg-gray-50 text-gray-800 hover:bg-gray-100";
+                  return (
+                    <button
+                      key={x.key}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={on}
+                      onClick={() => pick(() => onFolder(x.key))}
+                      className={`flex cursor-pointer flex-col items-start gap-1.5 rounded-2xl p-3.5 text-left transition-colors active:scale-[0.98] ${isLive ? "col-span-2 flex-row items-center gap-3" : ""} ${tone}`}
+                    >
+                      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${on ? "bg-white/15" : t.dark ? "bg-white/[0.06]" : "bg-white shadow-sm"}`}>
+                        <Glyph name={FOLDER_META[x.key].glyph} className="h-[18px] w-[18px]" />
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="flex items-center gap-2 text-[15px] font-semibold">
+                          {x.label}
+                          {c > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${on ? "bg-white/20" : t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>{c}</span>}
+                        </span>
+                        <span className={`text-[12px] leading-snug ${on ? "opacity-80" : t.muted}`}>{FOLDER_META[x.key].blurb}</span>
+                      </span>
+                      {isLive && <span className={`inline-flex h-5 w-5 items-center justify-center ${on ? "" : "opacity-0"}`}><Icon name="check" className="h-4 w-4" strokeWidth={2.5} /></span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className={`px-1.5 pb-2 pt-4 ${label}`}>Show</p>
+              <div className={`grid grid-cols-3 gap-1 rounded-2xl p-1 ${t.dark ? "bg-white/[0.04]" : "bg-gray-100"}`}>
+                {FILTERS.map((f) => {
+                  const on = f.key === filter;
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={on}
+                      onClick={() => pick(() => onFilter(f.key))}
+                      className={`inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl text-[13.5px] font-medium transition-colors ${on ? (t.dark ? "bg-white/[0.12] text-white shadow" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-400" : "text-gray-500"}`}
+                    >
+                      {f.key === "unread" && <span className={`h-2 w-2 rounded-full ${on ? "bg-[#818cf8]" : "border-2 border-current"}`} />}
+                      {f.key === "starred" && <Star on={on} className="h-3.5 w-3.5" />}
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
 export default function Inbox() {
   const t = useTone();
   const me = getUser();
@@ -1571,7 +1714,11 @@ export default function Inbox() {
           </TextButton>
         </div>
       ) : (
-      <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:gap-1">
+      <>
+      <div className="flex min-w-0 flex-1 md:hidden">
+        <FolderMenu folders={folders} folder={folder} filter={filter} count={count ? { unread: count.unread, otherUnread: count.otherUnread } : null} onFolder={chooseFolder} onFilter={chooseFilter} />
+      </div>
+      <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:hidden">
         {folders.map((x) => {
           const on = x.key === folder;
           const n = x.key === "inbox" || x.key === "active" ? count?.unread : x.key === "other" ? count?.otherUnread : 0;
@@ -1609,6 +1756,7 @@ export default function Inbox() {
           );
         })}
       </nav>
+      </>
       )}
       <Segmented
         label="Show"
@@ -1617,31 +1765,6 @@ export default function Inbox() {
         className="max-md:hidden"
         options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
       />
-      {/* Phones: the same narrowing as two toggles at the row's end (lit when on), not a second row. */}
-      <div role="group" aria-label="Show" className="flex shrink-0 items-center gap-1 md:hidden">
-        {(["unread", "starred"] as const).map((k) => {
-          const on = filter === k;
-          return (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={on}
-              aria-label={k === "unread" ? "Unread only" : "Starred only"}
-              title={k === "unread" ? "Unread only" : "Starred only"}
-              onClick={() => chooseFilter(on ? "all" : k)}
-              className={`inline-flex h-[38px] min-w-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-[10px] px-2.5 text-[13px] font-medium transition-colors ${
-                on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-400 hover:text-gray-900"
-              }`}
-            >
-              {k === "unread" ? (
-                <span className={`h-2.5 w-2.5 rounded-full ${on ? "bg-[#818cf8]" : "border-2 border-current"}`} />
-              ) : (
-                <Star on={on} className="h-3.5 w-3.5" />
-              )}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 

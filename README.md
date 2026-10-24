@@ -206,7 +206,10 @@ check in its place; Improve design, an uploading file and the pull-to-refresh
 ring use the same spark. Under reduced motion each scene is one still frame.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open
-message.
+message. On a phone the folder row is one control that shows only what's
+chosen ("Active", or "In · Unread" with its count); tapping it opens a glass
+menu with every folder as a card, each described and counted, and the three
+ways to narrow.
 
 To set it up in Bird:
 
