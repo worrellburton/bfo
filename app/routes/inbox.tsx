@@ -834,14 +834,6 @@ const FILTERS: { key: MailFilter; label: string }[] = [
 
 const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred." };
 
-const FOLDER_META: Record<MailFolder, { glyph: keyof typeof GLYPHS; blurb: string }> = {
-  active: { glyph: "chats", blurb: "In and Out together, a row per conversation" },
-  inbox: { glyph: "inbox", blurb: "Mail that came to you" },
-  sent: { glyph: "send", blurb: "Mail you sent" },
-  archive: { glyph: "archive", blurb: "Put away, out of the list" },
-  other: { glyph: "at", blurb: "Mail to addresses nobody has" },
-};
-
 /** The appearance button: Mail's own light/dark switch. A sun in the dark, a moon in the light. */
 function ThemeButton({ dark, onToggle, className = "" }: { dark: boolean; onToggle: () => void; className?: string }) {
   return (
@@ -866,12 +858,17 @@ function ThemeButton({ dark, onToggle, className = "" }: { dark: boolean; onTogg
   );
 }
 
+const FOLDER_GLYPH: Record<MailFolder, keyof typeof GLYPHS> = { active: "chats", inbox: "inbox", sent: "send", archive: "archive", other: "at" };
+
 /**
- * Phones: one control for the folder and the filter, showing only what's
- * chosen ("Active", or "In · Unread"); tapping it opens a glass menu with
- * every folder as a card, each with its count, and the three ways to narrow.
+ * Phones: one control for where you are, showing only what's chosen ("Active",
+ * "Starred", "In · Unread"); tapping it opens a glass menu of cards: Active
+ * across the top, then In, Out, Archive and Starred, with an All / Unread
+ * switch underneath. Starred is a place here, not a filter: it shows every
+ * starred conversation. "Other" (mail to addresses nobody has) is a desktop
+ * tab; it appears here only while you're in it.
  */
-function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { folders: { key: MailFolder; label: string }[]; folder: MailFolder; filter: MailFilter; count: { unread: number; otherUnread: number } | null; onFolder: (f: MailFolder) => void; onFilter: (f: MailFilter) => void }) {
+function FolderMenu({ folders, folder, filter, count, onPick }: { folders: { key: MailFolder; label: string }[]; folder: MailFolder; filter: MailFilter; count: { unread: number; otherUnread: number } | null; onPick: (folder: MailFolder, filter: MailFilter) => void }) {
   const t = useTone();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -894,32 +891,36 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
     };
   }, [open]);
   const n = (key: MailFolder) => (key === "inbox" || key === "active" ? count?.unread : key === "other" ? count?.otherUnread : 0) || 0;
-  const cur = folders.find((x) => x.key === folder) ?? folders[0];
-  const live = folder === "active";
-  const pick = (f: () => void) => {
-    f();
+  const starred = filter === "starred";
+  const unread = filter === "unread";
+  const shown = folders.filter((x) => x.key !== "other" || folder === "other");
+  const cur = shown.find((x) => x.key === folder) ?? shown[0];
+  const live = folder === "active" && !starred;
+  const pick = (f: MailFolder, v: MailFilter) => {
+    onPick(f, v);
     setOpen(false);
   };
   const label = `text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`;
+  const gold = t.dark ? "text-amber-300" : "text-amber-600";
   return (
     <div ref={wrap} className="flex min-w-0 flex-1 items-center">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Showing ${cur.label}${filter === "all" ? "" : `, ${filter} only`}. Change folder or filter`}
+        aria-label={`Showing ${starred ? "Starred" : cur.label}${unread ? ", unread only" : ""}. Change folder or filter`}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex h-[48px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-full pl-5 pr-4 text-[15px] font-semibold transition-colors active:scale-[0.99] ${
-          live ? `pill-glass-live ${t.dark ? "text-(--mail-accent-pale)" : "text-(--mail-accent-ink)"}` : `pill-glass ${t.dark ? "text-white" : "text-gray-900"}`
+          live ? `pill-glass-live ${t.dark ? "text-(--mail-accent-pale)" : "text-(--mail-accent-ink)"}` : `pill-glass ${starred ? gold : t.dark ? "text-white" : "text-gray-900"}`
         }`}
       >
-        <Glyph name={FOLDER_META[folder].glyph} className="h-4 w-4" />
-        <span className="truncate">{cur.label}</span>
-        {n(folder) > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-(--mail-accent)/30 text-white" : "bg-(--mail-accent-deep) text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>{n(folder)}</span>}
-        {filter !== "all" && (
+        {starred ? <Star on className="h-[18px] w-[18px]" /> : <Glyph name={FOLDER_GLYPH[folder]} className="h-4 w-4" />}
+        <span className="truncate">{starred ? "Starred" : cur.label}</span>
+        {!starred && n(folder) > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-(--mail-accent)/30 text-white" : "bg-(--mail-accent-deep) text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>{n(folder)}</span>}
+        {unread && (
           <span className={`inline-flex items-center gap-1 rounded-full py-0.5 pl-1.5 pr-2 text-[12px] font-medium ${t.dark ? "bg-white/10 text-gray-100" : "bg-white text-gray-700 shadow-sm"}`}>
-            {filter === "unread" ? <span className="h-2 w-2 rounded-full bg-(--mail-accent)" /> : <Star on className="h-3 w-3" />}
-            {filter === "unread" ? "Unread" : "Starred"}
+            <span className="h-2 w-2 rounded-full bg-(--mail-accent)" />
+            Unread
           </span>
         )}
         <span className="flex-1" />
@@ -935,15 +936,14 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
               style={{ position: "fixed", top, left: 12, width: "calc(100vw - 24px)" }}
               className={`menu-down z-[65] overflow-hidden rounded-3xl border p-3 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/85" : "border-gray-200 bg-white/90"}`}
             >
-              <p className={`px-1.5 pb-2 pt-1 ${label}`}>Folder</p>
               <div className="grid grid-cols-2 gap-2">
-                {folders.map((x) => {
-                  const on = x.key === folder;
+                {shown.map((x) => {
+                  const on = x.key === folder && !starred;
                   const isLive = x.key === "active";
                   const c = n(x.key);
                   const tone = on
                     ? isLive
-                      ? t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60" : "bg-(--mail-accent-deep) text-white"
+                      ? t.dark ? "bg-(--mail-accent-deep)/30 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60" : "bg-(--mail-accent-deep) text-white"
                       : t.dark ? "bg-white/[0.12] text-white ring-1 ring-inset ring-white/15" : "bg-gray-900 text-white"
                     : t.dark ? "bg-white/[0.04] text-gray-200 hover:bg-white/[0.08]" : "bg-gray-50 text-gray-800 hover:bg-gray-100";
                   return (
@@ -952,40 +952,51 @@ function FolderMenu({ folders, folder, filter, count, onFolder, onFilter }: { fo
                       type="button"
                       role="menuitemradio"
                       aria-checked={on}
-                      onClick={() => pick(() => onFolder(x.key))}
-                      className={`flex cursor-pointer flex-col items-start gap-1.5 rounded-2xl p-4 text-left transition-colors active:scale-[0.98] ${isLive ? "col-span-2 flex-row items-center gap-3" : ""} ${tone}`}
+                      onClick={() => pick(x.key, unread ? "unread" : "all")}
+                      className={`flex h-[64px] cursor-pointer items-center gap-3 rounded-2xl px-3.5 text-left transition-colors active:scale-[0.98] ${isLive ? "col-span-2" : ""} ${tone}`}
                     >
-                      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${on ? "bg-white/15" : t.dark ? "bg-white/[0.06]" : "bg-white shadow-sm"}`}>
-                        <Glyph name={FOLDER_META[x.key].glyph} className="h-[18px] w-[18px]" />
+                      <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${on ? "bg-white/15" : t.dark ? "bg-white/[0.06]" : "bg-white shadow-sm"}`}>
+                        <Glyph name={FOLDER_GLYPH[x.key]} className="h-5 w-5" />
                       </span>
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="flex items-center gap-2 text-[15px] font-semibold">
-                          {x.label}
-                          {c > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${on ? "bg-white/20" : t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{c}</span>}
-                        </span>
-                        <span className={`text-[12px] leading-snug ${on ? "opacity-80" : t.muted}`}>{FOLDER_META[x.key].blurb}</span>
-                      </span>
-                      {isLive && <span className={`inline-flex h-5 w-5 items-center justify-center ${on ? "" : "opacity-0"}`}><Icon name="check" className="h-4 w-4" strokeWidth={2.5} /></span>}
+                      <span className="min-w-0 flex-1 truncate text-[16px] font-semibold">{x.label}</span>
+                      {c > 0 && <span className={`min-w-[22px] rounded-full px-1.5 text-center text-[12px] tabular-nums leading-[22px] ${on ? "bg-white/20" : t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{c}</span>}
+                      {isLive && on && <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />}
                     </button>
                   );
                 })}
+                {/* Starred: a place of its own, in gold. */}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={starred}
+                  onClick={() => pick("active", "starred")}
+                  className={`flex h-[64px] cursor-pointer items-center gap-3 rounded-2xl px-3.5 text-left transition-colors active:scale-[0.98] ${
+                    starred
+                      ? "bg-amber-400 text-gray-950"
+                      : t.dark ? "bg-amber-400/10 text-amber-200 ring-1 ring-inset ring-amber-300/25 hover:bg-amber-400/15" : "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-100"
+                  }`}
+                >
+                  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${starred ? "bg-white/30" : t.dark ? "bg-amber-400/15" : "bg-white shadow-sm"}`}>
+                    <Star on className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[16px] font-semibold">Starred</span>
+                </button>
               </div>
               <p className={`px-1.5 pb-2 pt-4 ${label}`}>Show</p>
-              <div className={`grid grid-cols-3 gap-1 rounded-2xl p-1 ${t.dark ? "bg-white/[0.04]" : "bg-gray-100"}`}>
-                {FILTERS.map((f) => {
-                  const on = f.key === filter;
+              <div className={`grid grid-cols-2 gap-1 rounded-2xl p-1 ${t.dark ? "bg-white/[0.04]" : "bg-gray-100"}`}>
+                {(["all", "unread"] as const).map((f) => {
+                  const on = starred ? f === "all" : f === filter;
                   return (
                     <button
-                      key={f.key}
+                      key={f}
                       type="button"
                       role="menuitemradio"
                       aria-checked={on}
-                      onClick={() => pick(() => onFilter(f.key))}
+                      onClick={() => pick(starred && f === "all" ? "active" : folder, f)}
                       className={`inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl text-[13.5px] font-medium transition-colors ${on ? (t.dark ? "bg-white/[0.12] text-white shadow" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-400" : "text-gray-500"}`}
                     >
-                      {f.key === "unread" && <span className={`h-2 w-2 rounded-full ${on ? "bg-(--mail-accent)" : "border-2 border-current"}`} />}
-                      {f.key === "starred" && <Star on={on} className="h-3.5 w-3.5" />}
-                      {f.label}
+                      {f === "unread" && <span className={`h-2 w-2 rounded-full ${on ? "bg-(--mail-accent)" : "border-2 border-current"}`} />}
+                      {f === "all" ? "All mail" : "Unread only"}
                     </button>
                   );
                 })}
@@ -1289,6 +1300,16 @@ export default function Inbox() {
       if ((navStateRef.current as { fromList?: boolean } | null)?.fromList) navigate(-1);
       else setParams(queryRef.current(), { replace: true });
     });
+  }
+
+  /** The phone menu: folder and filter in one step (Starred is a place there). Ends a search. */
+  function choosePlace(nextFolder: MailFolder, nextFilter: MailFilter) {
+    if (nextFolder === folder && nextFilter === filter && !openId && !q) return;
+    const p: Record<string, string> = {};
+    if (nextFolder !== "active") p.f = nextFolder;
+    if (nextFilter !== "all") p.v = nextFilter;
+    if (box) p.a = box;
+    setParams(p);
   }
 
   /** Picking a folder ends a search; changing the filter narrows it. */
@@ -1804,7 +1825,7 @@ export default function Inbox() {
       ) : (
       <>
       <div className="mx-1 flex min-w-0 flex-1 md:hidden">
-        <FolderMenu folders={folders} folder={folder} filter={filter} count={count ? { unread: count.unread, otherUnread: count.otherUnread } : null} onFolder={chooseFolder} onFilter={chooseFilter} />
+        <FolderMenu folders={folders} folder={folder} filter={filter} count={count ? { unread: count.unread, otherUnread: count.otherUnread } : null} onPick={choosePlace} />
       </div>
       <nav aria-label="Folders" className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:hidden">
         {folders.map((x) => {

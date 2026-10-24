@@ -220,9 +220,10 @@ ring use the same spark. Under reduced motion each scene is one still frame.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open
 message. On a phone the folder row is one control that shows only what's
-chosen ("Active", or "In · Unread" with its count); tapping it opens a glass
-menu with every folder as a card, each described and counted, and the three
-ways to narrow.
+chosen ("Active", "Starred", or "In · Unread" with its count); tapping it opens
+a glass menu of cards: Active across the top, then In, Out, Archive and a gold
+Starred (a place of its own there, every starred conversation), with an All
+mail / Unread only switch underneath. Other stays a desktop tab.
 
 To set it up in Bird:
 
