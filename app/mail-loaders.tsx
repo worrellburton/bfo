@@ -396,9 +396,9 @@ export function ReaderLoader({ seal, subject, from, snippet }: { seal?: ReactNod
   // The first words, in three short lines, as the letter would start.
   const lines = words ? [words.slice(0, 34), words.slice(34, 66), words.slice(66, 92)].map((l) => l.trim()).filter(Boolean) : [];
   return (
-    <div role="status" aria-label={subject ? `Opening “${subject}”` : "Opening the message"} className={`env-scene flex flex-col items-center px-5 pb-10 ${t.dark ? "" : "env-light"}`}
-      // Headroom for the letter as it rises out of the envelope.
-      style={{ paddingTop: 104 }}
+    <div role="status" aria-label={subject ? `Opening “${subject}”` : "Opening the message"} className={`env-scene flex flex-col items-center justify-center px-5 pb-8 max-md:min-h-[calc(100dvh-8rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] ${t.dark ? "" : "env-light"}`}
+      // Headroom for the letter as it rises out of the envelope; on phones the scene is centred in the screen.
+      style={{ paddingTop: 88 }}
     >
       <div className="env" aria-hidden="true">
         <div className="env-back" />
@@ -425,7 +425,7 @@ export function ReaderLoader({ seal, subject, from, snippet }: { seal?: ReactNod
           <span className="env-seal-ring">{seal ?? <span className="env-seal-blank" />}</span>
         </div>
       </div>
-      <p className={`env-caption mt-7 flex items-center gap-2 text-[12px] ${t.muted}`}>
+      <p className={`env-caption mt-[54px] flex items-center gap-2 text-[12px] ${t.muted}`}>
         <span className="loader-dot" />
         Opening
         <Dots />
