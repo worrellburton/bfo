@@ -10,7 +10,7 @@ import { MailFrame, htmlToText } from "../mail-frame";
 import { MailAurora, mailboxHue } from "../mail-aurora";
 import { BusyLabel, ListLoader, Orbit, ReaderLoader, SearchLoader } from "../mail-loaders";
 import { PullToRefresh } from "../mail-pull";
-import { LOOKS, lookSpec, lookVars, nextLook, readLook, writeLook, type MailLook } from "../mail-look";
+import { useTheme } from "../theme";
 import {
   addAlias,
   attachmentUrl,
@@ -292,7 +292,7 @@ const EMPTY: Record<MailFolder, string> = {
  * remove extras from the same menu. With one address, the button is that
  * address and the menu holds copy and add.
  */
-function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0, fixedHue = false }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number; /** The look has one hue (not Aurora): mailboxes are shades of it rather than their own colours. */ fixedHue?: boolean }) {
+function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number }) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
   // The server's answer to an add or remove shows at once; the shared count catches up after.
@@ -408,10 +408,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
   const current = mine.find((m) => m.toLowerCase() === box) ?? null;
   const label = mine.length === 1 ? address : current ?? "All mailboxes";
   const localPart = (a: string) => a.slice(0, a.indexOf("@"));
-  const hueOf = (a: string) => {
-    const h = fixedHue ? `calc(var(--mail-hue) + ${Math.round(mailboxHue(a) * 40) - 20})` : String(Math.round(mailboxHue(a) * 360));
-    return `hsl(${h} var(--mail-sat) ${t.dark ? 62 : 48}%)`;
-  };
+  const hueOf = (a: string) => `hsl(${Math.round(mailboxHue(a) * 360)} 70% ${t.dark ? 62 : 48}%)`;
   /** The mailbox's mark: its initial on its own colour. */
   const bubble = (a: string, size = "h-7 w-7 text-[12px]") => (
     <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${size}`} style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})`, boxShadow: `0 0 18px ${hueOf(a).replace(/\)$/, " / 0.33)")}` }}>
@@ -818,6 +815,7 @@ const eachRow = (l: ListState, fn: (rows: MailSummary[]) => MailSummary[]): List
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
 type View = "table" | "columns";
 const VIEW_KEY = "bfo-mail-view";
+const MAIL_THEME_KEY = "bfo-mail-theme";
 
 function savedView(): View {
   try {
@@ -843,22 +841,26 @@ const FOLDER_META: Record<MailFolder, { glyph: keyof typeof GLYPHS; blurb: strin
   other: { glyph: "at", blurb: "Mail to addresses nobody has" },
 };
 
-/** The appearance button: a half-lit circle; each press moves to the next look. */
-function LookButton({ look, onCycle, className = "" }: { look: MailLook; onCycle: () => void; className?: string }) {
-  const l = lookSpec(look);
-  const next = lookSpec(nextLook(look));
+/** The appearance button: Mail's own light/dark switch. A sun in the dark, a moon in the light. */
+function ThemeButton({ dark, onToggle, className = "" }: { dark: boolean; onToggle: () => void; className?: string }) {
   return (
     <button
       type="button"
-      aria-label={`Appearance: ${l.label}. Switch to ${next.label}`}
-      title={`Appearance: ${l.label} (${LOOKS.map((x) => x.label).join(" → ")})`}
-      onClick={onCycle}
+      aria-label={dark ? "Appearance: dark. Switch to light" : "Appearance: light. Switch to dark"}
+      title={dark ? "Switch to light" : "Switch to dark"}
+      onClick={onToggle}
       className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 ${className}`}
     >
-      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-        <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" strokeWidth={1.6} />
-        <path d="M12 3.75a8.25 8.25 0 010 16.5z" fill="var(--mail-accent)" />
-      </svg>
+      {dark ? (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2.5v2M12 19.5v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2.5 12h2M19.5 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20.5 14.5A8.5 8.5 0 019.5 3.5a8.5 8.5 0 1011 11z" />
+        </svg>
+      )}
     </button>
   );
 }
@@ -1043,25 +1045,30 @@ export default function Inbox() {
   /** A short note after an action; with `undo`, a button (and "z") puts it back. */
   const [toast, setToastState] = useState<{ text: string; undo?: () => void } | null>(null);
   const setToast = (text: string | null, undo?: () => void) => setToastState(text ? { text, undo } : null);
-  /** The look (app/mail-look.ts): the appearance button cycles it; the device remembers it. */
-  const [look, setLook] = useState<MailLook>("aurora");
-  useEffect(() => setLook(readLook()), []);
+  /** Mail's own light/dark setting: light unless switched, kept on the device, applied only while Mail is on screen. */
+  const { setOverride } = useTheme();
+  const [mailTheme, setMailTheme] = useState<"light" | "dark">("light");
   useEffect(() => {
-    // Portalled pieces (the Compose pill, the toast, the sheets) sit outside the page root: the look's variables go on <html> too.
-    const root = document.documentElement;
-    const vars = lookVars(look, mailboxHue(box));
-    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
-    return () => {
-      for (const k of Object.keys(vars)) root.style.removeProperty(k);
-    };
-  }, [look, box]);
-  function cycleLook() {
-    const next = nextLook(look);
-    setLook(next);
-    writeLook(next);
+    try {
+      setMailTheme(localStorage.getItem(MAIL_THEME_KEY) === "dark" ? "dark" : "light");
+    } catch {
+      // Private mode: light it is.
+    }
+  }, []);
+  useEffect(() => {
+    setOverride(mailTheme);
+    return () => setOverride(null);
+  }, [mailTheme, setOverride]);
+  function toggleMailTheme() {
+    const next = mailTheme === "dark" ? "light" : "dark";
+    setMailTheme(next);
+    try {
+      localStorage.setItem(MAIL_THEME_KEY, next);
+    } catch {
+      // Then it lasts the visit.
+    }
     tap();
-    const l = lookSpec(next);
-    setToast(`${l.label} · ${l.blurb}`);
+    setToast(next === "dark" ? "Dark" : "Light");
   }
   /** Everyone's chosen pictures, by address; asked for once per visit. */
   const [faces, setFaces] = useState<MailFaces>({});
@@ -1847,7 +1854,7 @@ export default function Inbox() {
 
   return (
     <FacesContext.Provider value={faces}>
-    <MailAurora hue={lookSpec(look).hue ?? mailboxHue(box)} saturation={lookSpec(look).sat} dark={t.dark} className="mail-aurora" />
+    <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
     {openId && <ReadingProgress />}
     {freshMail && !openId && (
       <button
@@ -1866,7 +1873,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" data-mail-look={look} style={lookVars(look, mailboxHue(box)) as React.CSSProperties}>
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -1879,13 +1886,13 @@ export default function Inbox() {
             BFO
           </Link>
           <span className="flex-1" />
-          <LookButton look={look} onCycle={cycleLook} className="pill-glass h-10 w-10" />
+          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`pill-glass h-10 w-10 ${t.dark ? "text-gray-100" : "text-gray-700"}`} />
           {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
         </div>
       )}
       {!openId && address && !noAddress && (
         <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/70" : "border-gray-200 bg-white/75"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
-          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} fixedHue={lookSpec(look).hue !== null} big compact={scrolled} unread={count?.unread ?? 0} />
+          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big compact={scrolled} unread={count?.unread ?? 0} />
         </div>
       )}
       {!openId && noAddress && <p className={`px-2 text-[13px] md:hidden ${t.muted}`}>No address yet. Ask an admin for one.</p>}
@@ -1898,13 +1905,13 @@ export default function Inbox() {
             {noAddress ? (
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
             ) : address && (
-              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} fixedHue={lookSpec(look).hue !== null} />
+              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} />
             )}
           </div>
         </div>
         <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
         <div className="flex shrink-0 items-center gap-2">
-          <LookButton look={look} onCycle={cycleLook} className={`h-8 w-8 ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
+          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`h-8 w-8 ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
           <Segmented
             label="View"
             value={view}

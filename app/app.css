@@ -381,10 +381,6 @@ html.light {
 @keyframes plane-off { 0% { transform: translate(0, 0) scale(1); opacity: 1; } 100% { transform: translate(16px, -14px) scale(0.6); opacity: 0; } }
 .plane-check { opacity: 0; stroke-dasharray: 24; stroke-dashoffset: 24; animation: plane-check 360ms cubic-bezier(0.16, 1, 0.3, 1) 300ms forwards; }
 @keyframes plane-check { 0% { opacity: 1; stroke-dashoffset: 24; } 100% { opacity: 1; stroke-dashoffset: 0; } }
-/* The shared tone's accent colours, re-lit in the look's colour inside Mail (app/mail-look.ts). */
-[data-mail-look] .text-\[\#a5b4fc\], [data-mail-look] .text-\[\#4f46e5\] { color: var(--mail-accent); }
-html.light [data-mail-look] .text-\[\#4f46e5\] { color: var(--mail-accent-ink); }
-[data-mail-look] .bg-\[\#818cf8\] { background-color: var(--mail-accent); }
 /* Pulling the list down (app/mail-pull.tsx): the list rides the finger on a
    transform; a ring in the gap fills as you pull, spins while checking, and
    draws a check when done. The pull itself is driven without re-rendering. */

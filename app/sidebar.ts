@@ -20,7 +20,10 @@ export const SIDEBAR_BOOT_SCRIPT = `
   try {
     // Apply the saved theme before first paint so the page and the browser
     // chrome (theme-color) never flash the other colour.
-    var light = localStorage.getItem("bfo-theme") === "light";
+    // Mail keeps its own setting (light unless switched); the rest of the app its own.
+    var light = location.pathname.indexOf("/inbox") === 0
+      ? localStorage.getItem("bfo-mail-theme") !== "dark"
+      : localStorage.getItem("bfo-theme") === "light";
     document.documentElement.classList.toggle("light", light);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", light ? "#f9fafb" : "#000000");
