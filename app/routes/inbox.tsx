@@ -9,6 +9,7 @@ import { Button, Dot, ErrorLine, Icon, IconButton, TextButton, buttonClass, form
 import { MailFrame, htmlToText } from "../mail-frame";
 import { MailAurora, mailboxHue } from "../mail-aurora";
 import { BusyLabel, ListLoader, Orbit, ReaderLoader, SearchLoader } from "../mail-loaders";
+import { PullToRefresh } from "../mail-pull";
 import {
   addAlias,
   attachmentUrl,
@@ -26,6 +27,7 @@ import {
   sendMail,
   setMailPhoto,
   starMail,
+  syncMail,
   useMailCount,
   type MailAddress,
   type MailAttachment,
@@ -1787,31 +1789,16 @@ export default function Inbox() {
     seenUnread.current = n;
   }, [count?.unread, folder, q]);
   useEffect(() => setFreshMail(false), [list?.messages[0]?.id, folder, box, q]);
-  const [pulling, setPulling] = useState<{ y: number; refreshing: boolean }>({ y: 0, refreshing: false });
-  const pull = useRef<{ y0: number; active: boolean } | null>(null);
-  const onPullStart = (e: React.TouchEvent) => {
-    if (window.scrollY > 2 || openId || pulling.refreshing) return;
-    pull.current = { y0: e.touches[0].clientY, active: false };
-  };
-  const onPullMove = (e: React.TouchEvent) => {
-    const pz = pull.current;
-    if (!pz) return;
-    const dy = e.touches[0].clientY - pz.y0;
-    if (dy <= 0 && !pz.active) return;
-    pz.active = true;
-    setPulling({ y: Math.min(110, dy * 0.5), refreshing: false });
-  };
-  const onPullEnd = () => {
-    const pz = pull.current;
-    pull.current = null;
-    if (!pz?.active) return;
-    if (pulling.y >= 56) {
-      tap();
-      setPulling({ y: 56, refreshing: true });
-      resetList();
-      window.setTimeout(() => setPulling({ y: 0, refreshing: false }), 900);
-    } else setPulling({ y: 0, refreshing: false });
-  };
+  /** Pulled down on a phone: ask Bird for new mail, then read the list and the count again. */
+  async function refreshFromPull(): Promise<{ fresh: number }> {
+    const r = await syncMail().catch(() => ({ ingested: 0 }));
+    const cur = listRef.current;
+    if (cur) await loadList(cur.folder, cur.filter, cur.q, cur.to, "reset");
+    // What this pull brought in is already on screen: no "New mail" pill for it.
+    seenUnread.current = Number.POSITIVE_INFINITY;
+    notifyMailChanged();
+    return { fresh: r.ingested ?? 0 };
+  }
 
   return (
     <FacesContext.Provider value={faces}>
@@ -1904,16 +1891,10 @@ export default function Inbox() {
           ) : (
             <>
               {toolbar}
-              <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]" onTouchStart={onPullStart} onTouchMove={onPullMove} onTouchEnd={onPullEnd} onTouchCancel={onPullEnd}>
-                {(pulling.y > 0 || pulling.refreshing) && (
-                  <div className="flex items-center justify-center overflow-hidden transition-[height] md:hidden" style={{ height: pulling.y }} aria-live="polite">
-                    <span className={`pull-ring ${pulling.refreshing ? "spinning" : ""}`} style={pulling.refreshing ? undefined : { transform: `rotate(${pulling.y * 4}deg)`, opacity: Math.min(1, pulling.y / 56) }} />
-                    <span className="sr-only">{pulling.refreshing ? "Checking for new mail" : "Pull to refresh"}</span>
-                  </div>
-                )}
+              <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {bulkBar}
                 {listBody}
-              </div>
+              </PullToRefresh>
             </>
           )}
         </section>
@@ -1925,10 +1906,10 @@ export default function Inbox() {
             className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
-            <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
-                {bulkBar}
-                {listBody}
-              </div>
+            <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+              {bulkBar}
+              {listBody}
+            </PullToRefresh>
           </section>
 
           {/* The reader */}

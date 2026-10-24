@@ -180,8 +180,11 @@ Behind the list a WebGL aurora drifts in the mailbox's hue, brightens as you
 scroll and blooms where you touch (one still frame under reduced motion). Rows
 arrive one after another under day separators; the reader rises in; a star
 pops. A row swiped left archives (with Undo), swiped right stars; a held
-finger picks it for a bulk action; pulling the list down checks for new mail,
-and a "New mail" pill offers mail that arrived since the list was read. The
+finger picks it for a bulk action; pulling the list down asks Bird for new
+mail (`app/mail-pull.tsx`: the list rides the finger, a ring fills, spins, then
+draws a check and says "3 new" or "Up to date", and the aurora brightens with
+the pull), and a "New mail" pill offers mail that arrived since the list was
+read. The
 title shrinks into a glass bar as the list scrolls, a thin line across the top
 shows how far through a message you are, unread senders' pictures carry the
 mailbox's light, and an empty folder gets a quiet card. Snippets leave out a

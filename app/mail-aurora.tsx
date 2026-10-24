@@ -108,11 +108,15 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
     };
 
     // Drawn at a fraction of the screen's pixels: an aurora has no edges to keep sharp.
+    // Resized only when the size really changed: a phone's toolbar sliding away must not blank it.
     const resize = () => {
       const scale = Math.min(window.devicePixelRatio || 1, 1.5) * 0.5;
-      canvas.width = Math.max(2, Math.floor(canvas.clientWidth * scale));
-      canvas.height = Math.max(2, Math.floor(canvas.clientHeight * scale));
-      gl.viewport(0, 0, canvas.width, canvas.height);
+      const w = Math.max(2, Math.floor(canvas.clientWidth * scale));
+      const h = Math.max(2, Math.floor(canvas.clientHeight * scale));
+      if (w === canvas.width && h === canvas.height) return;
+      canvas.width = w;
+      canvas.height = h;
+      gl.viewport(0, 0, w, h);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -123,13 +127,22 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
     let lastScrollAt = 0;
     const onScroll = (e: Event) => {
       const el = e.target as HTMLElement | Document;
-      const y = el instanceof Document ? window.scrollY : el.scrollTop;
+      // A rubber-band past the top reports negative positions: not scrolling, so no energy from it.
+      const y = Math.max(0, el instanceof Document ? window.scrollY : el.scrollTop);
       const prev = lastY.get(el);
-      if (prev !== undefined) energy = Math.min(1, energy + Math.min(Math.abs(y - prev), 120) / 400);
+      if (prev !== undefined && pullTarget === 0) energy = Math.min(1, energy + Math.min(Math.abs(y - prev), 120) / 400);
       lastY.set(el, y);
       lastScrollAt = performance.now();
     };
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+
+    // Pulling the list down (mail-pull.tsx): the sky brightens with the pull and blooms under the thumb.
+    let pullTarget = 0;
+    let pullNow = 0;
+    const onPull = (e: Event) => {
+      pullTarget = Math.max(0, Math.min(1, Number((e as CustomEvent).detail) || 0));
+    };
+    window.addEventListener("mail-pull", onPull);
 
     // A touch blooms where it lands.
     let touch: [number, number] = [0.5, 1.3];
@@ -153,12 +166,14 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
       if (d < -0.5) d += 1;
       hueNow = (hueNow + d * 0.04 + 1) % 1;
       if (now - lastScrollAt > 120) energy *= 0.94;
+      pullNow += (pullTarget - pullNow) * 0.12;
       gl.uniform1f(u.time, t);
       gl.uniform2f(u.res, canvas.width, canvas.height);
       gl.uniform1f(u.hue, hueNow);
-      gl.uniform1f(u.energy, energy);
+      gl.uniform1f(u.energy, Math.min(1, energy + pullNow * 0.5));
       gl.uniform2f(u.touch, touch[0], touch[1]);
-      gl.uniform1f(u.touchAge, (now - touchAt) / 1000);
+      // While pulled, the bloom under the thumb holds instead of fading.
+      gl.uniform1f(u.touchAge, pullNow > 0.02 ? Math.min((now - touchAt) / 1000, 0.3 + (1 - pullNow) * 1.2) : (now - touchAt) / 1000);
       gl.uniform1f(u.dark, dark ? 1 : 0);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -182,6 +197,7 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
       document.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
+      window.removeEventListener("mail-pull", onPull);
       window.removeEventListener("pointerdown", onDown);
       document.removeEventListener("visibilitychange", onVisibility);
       gl.deleteBuffer(buf);
@@ -191,7 +207,7 @@ export function MailAurora({ hue, dark, className = "" }: { hue: number; dark: b
     };
   }, [dark]);
 
-  return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none fixed inset-0 h-full w-full ${className}`} />;
+  return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none fixed inset-x-0 top-0 h-[100lvh] w-full ${className}`} />;
 }
 
 /** A mailbox's hue on the colour wheel (0–1): "All" is indigo; each address gets its own, spread around the wheel. */

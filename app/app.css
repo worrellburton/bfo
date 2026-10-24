@@ -275,9 +275,6 @@ html.light {
 .swipe-row { position: relative; will-change: transform; transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1); touch-action: pan-y; }
 .swipe-row.swiping { transition: none; }
 /* Pulling the list down: a ring that fills as you pull and spins while it fetches. */
-.pull-ring { width: 22px; height: 22px; border-radius: 9999px; border: 2px solid rgba(129, 140, 248, 0.25); border-top-color: #818cf8; }
-.pull-ring.spinning { animation: pull-spin 800ms linear infinite; }
-@keyframes pull-spin { to { transform: rotate(360deg); } }
 /* How far through a message you are. */
 .read-progress { position: fixed; left: 0; top: 0; height: 2px; z-index: 60; background: linear-gradient(90deg, #818cf8, #c4b5fd); box-shadow: 0 0 10px rgba(129, 140, 248, 0.7); transition: width 80ms linear; }
 /* "New mail" arriving. */
@@ -290,7 +287,7 @@ html.light {
   backdrop-filter: blur(22px) saturate(160%);
 }
 @media (prefers-reduced-motion: reduce) {
-  .row-in, .reader-in, .star-pop, .sheet-up, .menu-down, .unread-glow, .pill-in, .pull-ring.spinning { animation: none; }
+  .row-in, .reader-in, .star-pop, .sheet-up, .menu-down, .unread-glow, .pill-in { animation: none; }
   .swipe-row { transition: none; }
 }
 
@@ -342,8 +339,28 @@ html.light {
 @keyframes plane-off { 0% { transform: translate(0, 0) scale(1); opacity: 1; } 100% { transform: translate(16px, -14px) scale(0.6); opacity: 0; } }
 .plane-check { opacity: 0; stroke-dasharray: 24; stroke-dashoffset: 24; animation: plane-check 360ms cubic-bezier(0.16, 1, 0.3, 1) 300ms forwards; }
 @keyframes plane-check { 0% { opacity: 1; stroke-dashoffset: 24; } 100% { opacity: 1; stroke-dashoffset: 0; } }
-/* Pulling the list: the same ring. */
-.pull-ring { border-color: hsl(var(--mail-hue) 70% 65% / 0.3); border-top-color: hsl(var(--mail-hue) 85% 72%); box-shadow: 0 0 10px hsl(var(--mail-hue) 85% 72% / 0.35); }
+/* Pulling the list down (app/mail-pull.tsx): the list rides the finger on a
+   transform; a ring in the gap fills as you pull, spins while checking, and
+   draws a check when done. The pull itself is driven without re-rendering. */
+.ptr-list { will-change: transform; }
+.ptr-badge { position: absolute; left: 50%; top: 0; transform: translate(-50%, -40px); opacity: 0; pointer-events: none; will-change: transform, opacity; }
+.ptr-ring { width: 28px; height: 28px; filter: drop-shadow(0 0 8px hsl(var(--mail-hue) 85% 72% / 0.55)); }
+.ptr-track { stroke: hsl(var(--mail-hue) 70% 65% / 0.22); }
+.ptr-arc { stroke: hsl(var(--mail-hue) 85% 74%); transform-origin: 50% 50%; transform: rotate(-90deg); }
+.ptr-check { stroke: hsl(var(--mail-hue) 85% 78%); stroke-dasharray: 20; stroke-dashoffset: 20; opacity: 0; }
+.ptr-badge[data-phase="refreshing"] .ptr-arc { stroke-dashoffset: 54 !important; animation: ptr-spin 900ms linear infinite; }
+.ptr-badge[data-phase="done"] .ptr-arc { stroke-dashoffset: 0 !important; opacity: 0.35; }
+.ptr-badge[data-phase="done"] .ptr-check { opacity: 1; animation: ptr-check 360ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.ptr-badge[data-armed="true"] .ptr-ring { animation: ptr-arm 320ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes ptr-spin { to { transform: rotate(270deg); } }
+@keyframes ptr-check { to { stroke-dashoffset: 0; } }
+@keyframes ptr-arm { 0% { transform: scale(1); } 50% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.ptr-note { color: hsl(var(--mail-hue) 60% 80% / 0.9); }
+html.light .ptr-note { color: hsl(var(--mail-hue) 60% 40% / 0.9); }
+@media (prefers-reduced-motion: reduce) {
+  .ptr-list { transition: none !important; }
+  .ptr-badge[data-phase="refreshing"] .ptr-arc, .ptr-badge[data-armed="true"] .ptr-ring { animation: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .loader-spark, .loader-dot, .loader-dots i, .letter, .letter-pool, .letter-flap, .letter-paper, .letter-ink, .plane-off { animation: none; }
   .letter-flap { transform: scaleY(1); }
