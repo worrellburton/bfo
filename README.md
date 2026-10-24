@@ -178,8 +178,14 @@ dropdown with its own colour and the unread count, so it's always clear whose
 mail is on screen; its menu rises as a glass sheet listing every address.
 Behind the list a WebGL aurora drifts in the mailbox's hue, brightens as you
 scroll and blooms where you touch (one still frame under reduced motion). Rows
-arrive one after another under day separators; the reader slides in; a star
-pops. On larger screens, one control under the page title says whose mail is
+arrive one after another under day separators; the reader rises in; a star
+pops. A row swiped left archives (with Undo), swiped right stars; a held
+finger picks it for a bulk action; pulling the list down checks for new mail,
+and a "New mail" pill offers mail that arrived since the list was read. The
+title shrinks into a glass bar as the list scrolls, a thin line across the top
+shows how far through a message you are, unread senders' pictures carry the
+mailbox's light, and an empty folder gets a quiet card. Snippets leave out a
+help desk's wrapping ("type your reply above this line", footers, ticket codes). On larger screens, one control under the page title says whose mail is
 shown: "All mailboxes" or one address; its menu lists every address on the
 account with a copy on each, and admins add and remove extras there. Compose's
 From line is the same kind of dropdown. Mail to an address nobody has

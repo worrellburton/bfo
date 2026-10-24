@@ -235,6 +235,11 @@ describe("routing", () => {
 describe("bodies", () => {
   it("snips text, or HTML stripped to text", () => {
     expect(snippetOf("  Hello\n\n  there  ")).toBe("Hello there");
+    // A help desk's wrapping says nothing about the message.
+    expect(snippetOf("##- Please type your reply above this line -##\n----------------\nLawrence P., Oct 22\nIt is rejected and returned to sender.\n\nThis email is a service from Earth Class Mail. Delivered by Zendesk\n[209REE-6G6XY]")).toBe(
+      "Lawrence P., Oct 22 It is rejected and returned to sender. This email is a service from Earth Class Mail. Delivered by Zendesk"
+    );
+    expect(snippetOf("Sounds good.\n\nSent from my iPhone")).toBe("Sounds good.");
     expect(snippetOf(null, "<html><head><style>p{color:red}</style></head><body><p>Hi&nbsp;<b>Robert</b> &amp; co</p></body></html>")).toBe("Hi Robert & co");
     const long = snippetOf("word ".repeat(100));
     expect(long.length).toBeLessThanOrEqual(160);

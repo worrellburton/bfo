@@ -273,7 +273,7 @@ const EMPTY: Record<MailFolder, string> = {
  * remove extras from the same menu. With one address, the button is that
  * address and the menu holds copy and add.
  */
-function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; unread?: number }) {
+function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number }) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
   // The server's answer to an add or remove shows at once; the shared count catches up after.
@@ -423,13 +423,14 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, u
           onClick={() => setOpen((o) => !o)}
           className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl py-1 pr-2 text-left transition-transform active:scale-[0.99]"
         >
-          {bubble(current ?? (mine.length === 1 ? address : ""), "h-11 w-11 text-[17px]")}
+          {bubble(current ?? (mine.length === 1 ? address : ""), compact ? "h-8 w-8 text-[13px] transition-all duration-300" : "h-11 w-11 text-[17px] transition-all duration-300")}
           <span className="min-w-0 flex-1">
-            <span className={`flex items-center gap-1.5 text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] ${t.text}`}>
+            <span className={`flex items-center gap-1.5 font-semibold leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${compact ? "text-[17px]" : "text-[22px]"} ${t.text}`}>
               <span className="truncate">{current ? localPart(current) : mine.length === 1 ? localPart(address) : "All mailboxes"}</span>
               <Icon name="chevronDown" className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.2} />
+              {compact && unread > 0 && <span className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>{unread}</span>}
             </span>
-            <span className={`mt-0.5 flex items-center gap-2 text-[12.5px] ${t.muted}`}>
+            <span className={`flex items-center gap-2 overflow-hidden text-[12.5px] transition-all duration-300 ${compact ? "max-h-0 opacity-0" : "mt-0.5 max-h-6 opacity-100"} ${t.muted}`}>
               <span className="truncate">{current ?? (mine.length === 1 ? address : `${mine.length} addresses`)}</span>
               {unread > 0 && (
                 <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>
@@ -1127,6 +1128,22 @@ export default function Inbox() {
     }
   }
 
+  /** Archive straight from a row (a swipe): the same as from the reader, with Undo. */
+  async function archiveRow(m: MailSummary) {
+    try {
+      const cur = listRef.current;
+      const whole = cur?.folder === "active" && !cur.q;
+      await moveMail([m.id], "archive", { conversation: whole });
+      cache.current.delete(m.id);
+      dropFromList(m.id);
+      refreshActive();
+      notifyMailChanged();
+      setToast("Archived", () => undoWith(() => moveMail([m.id], "inbox", { conversation: whole })));
+    } catch (e) {
+      setToast((e as Error).message || "Couldn't archive it.");
+    }
+  }
+
   async function remove(m: MailMessage) {
     const ok = await confirmDialog({ title: "Delete this message?", confirmLabel: "Delete", tone: "danger" });
     if (!ok) return;
@@ -1470,9 +1487,19 @@ export default function Inbox() {
   const listBody = !rows ? (
     listError ? <ErrorLine>{listError}</ErrorLine> : <ListSkeleton table={view === "table"} />
   ) : rows.length === 0 ? (
-    <div className={`px-5 py-12 text-center text-[12.5px] ${t.muted}`}>
-      <p>{emptyText()}</p>
-      {(folder === "inbox" || folder === "active") && filter === "all" && !q && address && <p className={`mt-1 ${t.faint}`}>{address}</p>}
+    <div className="px-5 py-10 text-center">
+      <div className={`row-in mx-auto max-w-[320px] rounded-3xl border px-6 py-8 mail-glass-top ${t.dark ? "border-white/[0.08] bg-white/[0.03]" : "border-gray-200 bg-white/70"}`}>
+        <span
+          aria-hidden="true"
+          className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full text-white"
+          style={{ background: `linear-gradient(135deg, hsl(${Math.round(mailboxHue(box) * 360)} 70% 60%), hsl(${Math.round(mailboxHue(box + "x") * 360)} 70% 62%))`, boxShadow: `0 0 36px hsl(${Math.round(mailboxHue(box) * 360)} 70% 60% / 0.45)` }}
+        >
+          <Icon name="mail" className="h-6 w-6" strokeWidth={1.6} />
+        </span>
+        <p className={`text-[14px] font-medium ${t.text}`}>{emptyText()}</p>
+        {(folder === "inbox" || folder === "active") && filter === "all" && !q && address && <p className={`mt-1 text-[12.5px] ${t.muted}`}>{address}</p>}
+        {(folder === "inbox" || folder === "active") && filter === "all" && !q && <p className={`mt-3 text-[12px] ${t.faint}`}>Enjoy the quiet.</p>}
+      </div>
     </div>
   ) : (
     <>
@@ -1491,7 +1518,7 @@ export default function Inbox() {
                     </li>
                   )}
                   <li className="row-in" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
-                    <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
+                    <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} onArchive={m.folder === "archive" ? undefined : () => void archiveRow(m)} />
                   </li>
                 </Fragment>
               );
@@ -1604,9 +1631,72 @@ export default function Inbox() {
     </div>
   );
 
+  // Phones: the title shrinks into a glass bar as the list scrolls under it.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 28);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  // Mail that arrived since the list was read: offer it, don't shuffle the list under a thumb.
+  const seenUnread = useRef<number | null>(null);
+  const [freshMail, setFreshMail] = useState(false);
+  useEffect(() => {
+    const n = count?.unread;
+    if (n === undefined) return;
+    if (seenUnread.current === null) seenUnread.current = n;
+    else if (n > seenUnread.current && (folder === "active" || folder === "inbox") && !q) setFreshMail(true);
+    seenUnread.current = n;
+  }, [count?.unread, folder, q]);
+  useEffect(() => setFreshMail(false), [list?.messages[0]?.id, folder, box, q]);
+  const [pulling, setPulling] = useState<{ y: number; refreshing: boolean }>({ y: 0, refreshing: false });
+  const pull = useRef<{ y0: number; active: boolean } | null>(null);
+  const onPullStart = (e: React.TouchEvent) => {
+    if (window.scrollY > 2 || openId || pulling.refreshing) return;
+    pull.current = { y0: e.touches[0].clientY, active: false };
+  };
+  const onPullMove = (e: React.TouchEvent) => {
+    const pz = pull.current;
+    if (!pz) return;
+    const dy = e.touches[0].clientY - pz.y0;
+    if (dy <= 0 && !pz.active) return;
+    pz.active = true;
+    setPulling({ y: Math.min(110, dy * 0.5), refreshing: false });
+  };
+  const onPullEnd = () => {
+    const pz = pull.current;
+    pull.current = null;
+    if (!pz?.active) return;
+    if (pulling.y >= 56) {
+      tap();
+      setPulling({ y: 56, refreshing: true });
+      resetList();
+      window.setTimeout(() => setPulling({ y: 0, refreshing: false }), 900);
+    } else setPulling({ y: 0, refreshing: false });
+  };
+
   return (
     <FacesContext.Provider value={faces}>
     <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
+    {openId && <ReadingProgress />}
+    {freshMail && !openId && (
+      <button
+        type="button"
+        onClick={() => {
+          setFreshMail(false);
+          resetList();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        className={`pill-in fixed left-1/2 z-40 inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border px-4 text-[13px] font-semibold shadow-xl mail-glass-top ${
+          t.dark ? "border-white/15 bg-[#6366f1]/40 text-white" : "border-indigo-200 bg-white/90 text-indigo-700"
+        }`}
+        style={{ top: "calc(env(safe-area-inset-top) + 5.25rem)" }}
+      >
+        <span className="unread-glow h-1.5 w-1.5 rounded-full bg-[#c7d2fe]" />
+        New mail
+      </button>
+    )}
     <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
@@ -1624,8 +1714,8 @@ export default function Inbox() {
         </div>
       )}
       {!openId && address && !noAddress && (
-        <div className="px-1 md:hidden">
-          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big unread={count?.unread ?? 0} />
+        <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/70" : "border-gray-200 bg-white/75"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
+          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big compact={scrolled} unread={count?.unread ?? 0} />
         </div>
       )}
       {!openId && noAddress && <p className={`px-2 text-[13px] md:hidden ${t.muted}`}>No address yet. Ask an admin for one.</p>}
@@ -1677,7 +1767,13 @@ export default function Inbox() {
           ) : (
             <>
               {toolbar}
-              <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+              <div className="min-h-0 flex-1 overflow-y-auto max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]" onTouchStart={onPullStart} onTouchMove={onPullMove} onTouchEnd={onPullEnd} onTouchCancel={onPullEnd}>
+                {(pulling.y > 0 || pulling.refreshing) && (
+                  <div className="flex items-center justify-center overflow-hidden transition-[height] md:hidden" style={{ height: pulling.y }} aria-live="polite">
+                    <span className={`pull-ring ${pulling.refreshing ? "spinning" : ""}`} style={pulling.refreshing ? undefined : { transform: `rotate(${pulling.y * 4}deg)`, opacity: Math.min(1, pulling.y / 56) }} />
+                    <span className="sr-only">{pulling.refreshing ? "Checking for new mail" : "Pull to refresh"}</span>
+                  </div>
+                )}
                 {bulkBar}
                 {listBody}
               </div>
@@ -1963,6 +2059,26 @@ function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { 
   );
 }
 
+/** Phones: a thin line across the top that fills as you read down a message. */
+function ReadingProgress() {
+  const [pct, setPct] = useState(0);
+  useEffect(() => {
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      setPct(max > 40 ? Math.min(100, Math.max(0, (window.scrollY / max) * 100)) : 0);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+  if (pct <= 0) return null;
+  return <div aria-hidden="true" className="read-progress md:hidden" style={{ width: `${pct}%`, top: "env(safe-area-inset-top)" }} />;
+}
+
 /** A tick of haptics on phones that have it (Android; iOS Safari ignores it). */
 function tap() {
   try {
@@ -2152,6 +2268,7 @@ function ListRow({
   picked = false,
   picking = false,
   onPick,
+  onArchive,
 }: {
   m: MailSummary;
   sent: boolean;
@@ -2163,17 +2280,109 @@ function ListRow({
   picked?: boolean;
   picking?: boolean;
   onPick?: (shift: boolean) => void;
+  /** Phones: a swipe left archives (when given). */
+  onArchive?: () => void;
 }) {
   const t = useTone();
   const unread = !m.read;
+  // Phones: a finger across the row drags it; past the threshold it archives (left) or stars (right). A held finger picks it.
+  const [dx, setDx] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const gesture = useRef<{ x: number; y: number; id: number; moved: boolean; held: boolean; timer: number } | null>(null);
+  const THRESHOLD = 72;
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse" || e.button !== 0) return;
+    const g = { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false, held: false, timer: 0 };
+    g.timer = window.setTimeout(() => {
+      if (!g.moved && onPick) {
+        g.held = true;
+        tap();
+        onPick(false);
+      }
+    }, 450);
+    gesture.current = g;
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g || g.id !== e.pointerId || g.held) return;
+    const ddx = e.clientX - g.x;
+    const ddy = e.clientY - g.y;
+    if (!g.moved) {
+      if (Math.abs(ddx) < 10 && Math.abs(ddy) < 10) return;
+      window.clearTimeout(g.timer);
+      if (Math.abs(ddy) > Math.abs(ddx)) {
+        gesture.current = null; // a scroll, not a swipe
+        return;
+      }
+      g.moved = true;
+      setSwiping(true);
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // a pointer the browser won't capture: the row still follows the finger while it stays over it
+      }
+    }
+    // Only the ways that do something; the row resists past the threshold.
+    const allowed = ddx < 0 ? !!onArchive : true;
+    const raw = allowed ? ddx : ddx * 0.25;
+    setDx(Math.max(-140, Math.min(140, Math.abs(raw) > THRESHOLD ? Math.sign(raw) * (THRESHOLD + (Math.abs(raw) - THRESHOLD) * 0.35) : raw)));
+  };
+  const endGesture = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g || g.id !== e.pointerId) return;
+    window.clearTimeout(g.timer);
+    gesture.current = null;
+    if (g.moved) {
+      setSwiping(false);
+      if (dx <= -THRESHOLD && onArchive) {
+        tap();
+        onArchive();
+      } else if (dx >= THRESHOLD) {
+        tap();
+        onStar(!m.starred);
+      }
+      setDx(0);
+    }
+  };
+  /** The click that follows a swipe or a hold isn't an open. */
+  const swallowClick = useRef(false);
+  const onClickRow = () => {
+    if (swallowClick.current) {
+      swallowClick.current = false;
+      return;
+    }
+    onOpen();
+  };
   const who = sent ? `To ${whoOf(m, true, me)}` : whoOf(m, false, me);
   const face: MailAddress = sent ? (m.to.find((a) => !same(a.email, me)) ?? m.to[0] ?? m.from) : m.from;
+  const past = Math.abs(dx) >= THRESHOLD;
   return (
+    <div className={`swipe-track ${dx !== 0 ? "" : "md:contents"}`}>
+      {dx < 0 && onArchive && (
+        <div aria-hidden="true" className={`swipe-under justify-end ${past ? "bg-[#6366f1] text-white" : t.dark ? "bg-[#6366f1]/25 text-[#c7d2fe]" : "bg-indigo-100 text-indigo-700"}`}>
+          <Glyph name="archive" className="mr-2 h-[18px] w-[18px]" />
+          Archive
+        </div>
+      )}
+      {dx > 0 && (
+        <div aria-hidden="true" className={`swipe-under ${past ? "bg-amber-400 text-gray-950" : t.dark ? "bg-amber-400/20 text-amber-200" : "bg-amber-100 text-amber-800"}`}>
+          <Star on className="mr-2 h-[18px] w-[18px]" />
+          {m.starred ? "Unstar" : "Star"}
+        </div>
+      )}
     <div
       role="button"
       data-mail-row={m.id}
       tabIndex={0}
-      onClick={onOpen}
+      onClick={onClickRow}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={(e) => {
+        const g = gesture.current;
+        if (g && (g.moved || g.held)) swallowClick.current = true;
+        endGesture(e);
+      }}
+      onPointerCancel={endGesture}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -2182,13 +2391,14 @@ function ListRow({
       }}
       aria-current={selected ? "true" : undefined}
       aria-selected={onPick ? picked : undefined}
-      className={`group relative flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 max-md:active:scale-[0.99] ${
-        picked ? (t.dark ? "bg-[#6366f1]/[0.13]" : "bg-indigo-50") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : t.hover
+      style={dx !== 0 ? { transform: `translateX(${dx}px)` } : undefined}
+      className={`swipe-row group flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 ${swiping ? "swiping" : "max-md:active:scale-[0.99]"} ${
+        picked ? (t.dark ? "bg-[#6366f1]/[0.13]" : "bg-indigo-50") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : dx !== 0 ? (t.dark ? "bg-[#0b0b0f]" : "bg-white") : t.hover
       } ${t.dark ? "active:bg-white/[0.05] focus-visible:bg-white/[0.05]" : "active:bg-gray-100 focus-visible:bg-gray-50"} focus-visible:outline-none`}
     >
       <span className="relative mt-0.5 shrink-0">
-        {/* The avatar turns into its select box on hover, and stays one while anything is picked. */}
-        <span className={`block transition-opacity duration-150 ${onPick && (picked || picking) ? "opacity-0" : onPick ? "md:group-hover:opacity-0" : ""}`}>
+        {/* The avatar turns into its select box on hover, and stays one while anything is picked. Unread: it carries the light. */}
+        <span className={`block rounded-full transition-opacity duration-150 ${unread && !picked ? "unread-ring" : ""} ${onPick && (picked || picking) ? "opacity-0" : onPick ? "md:group-hover:opacity-0" : ""}`}>
           <Avatar a={face} trusted={sent || !m.unverified} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
         </span>
         {onPick && (
@@ -2220,6 +2430,7 @@ function ListRow({
         </time>
         <StarButton on={m.starred} onToggle={onStar} className="-mb-1.5 max-md:-mr-1" alwaysOnPhones />
       </span>
+    </div>
     </div>
   );
 }
@@ -3011,7 +3222,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         role="dialog"
         aria-modal="true"
         aria-labelledby="compose-title"
-        className={`palette-panel relative flex w-full flex-col overflow-hidden shadow-2xl sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
+        className={`palette-panel sheet-up relative flex w-full flex-col overflow-hidden shadow-2xl sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
           t.dark ? "border-white/10 bg-[#111113]" : "border-gray-200 bg-white"
         }`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}

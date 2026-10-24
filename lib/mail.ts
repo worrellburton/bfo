@@ -268,10 +268,30 @@ export function htmlWithoutQuotes(html: string): string {
   return out;
 }
 
+/** Lines a help desk wraps around a reply, which say nothing about it: Zendesk's "type above this line", rules, footers, ticket codes. */
+const BOILERPLATE_LINE = [
+  /^#+-.*-#+$/, // ##- Please type your reply above this line -##
+  /^please type your reply above this line/i,
+  /^[-_=*]{4,}$/,
+  /^this (email|message) is a service from/i,
+  /^delivered by zendesk/i,
+  /^\[[A-Z0-9]{3,}(-[A-Z0-9]{3,})+\]$/, // [209REE-6G6XY]
+  /^(sent from my (iphone|ipad|android|galaxy|phone)|get outlook for (ios|android))\b/i,
+];
+
+/** Text without the lines a support desk wraps around it. Exported for tests. */
+export function withoutBoilerplate(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .filter((l) => !BOILERPLATE_LINE.some((re) => re.test(l.trim())))
+    .join("\n");
+}
+
 /** The first ~160 characters of a message's own words, on one line. */
 export function snippetOf(text: string | null | undefined, html?: string | null, max = SNIPPET_LEN): string {
-  const full = text?.trim() ? text : html ? htmlToText(html) : "";
-  const own = text?.trim() ? withoutQuotes(text) : html ? withoutQuotes(htmlToText(htmlWithoutQuotes(html))) : "";
+  const full = withoutBoilerplate(text?.trim() ? text : html ? htmlToText(html) : "");
+  const own = withoutBoilerplate(text?.trim() ? withoutQuotes(text) : html ? withoutQuotes(htmlToText(htmlWithoutQuotes(html))) : "");
   // A reply that says nothing new: show the quote rather than nothing.
   const source = own.trim() ? own : full;
   const flat = storable(source).replace(/\s+/g, " ").trim();
