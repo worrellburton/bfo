@@ -6,7 +6,8 @@ import { TextButton, useTone } from "./entity/ui";
  * An HTML email, rendered safely: sanitized with DOMPurify, then shown in a
  * sandboxed iframe that cannot run scripts, under a CSP that blocks every
  * network load except https images (shown by default; "Hide images" holds them back). Links open in a new tab.
- * The frame grows to its content's height, so the reader scrolls as one page.
+ * The frame grows to its content's height, so the reader scrolls as one page,
+ * and mail laid out wider than the frame is scaled down to fit its width.
  */
 
 let purifier: DOMPurify | null = null;
@@ -100,16 +101,43 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     const frame = ref.current;
     if (!frame) return;
     let observer: ResizeObserver | null = null;
+    let frameObserver: ResizeObserver | null = null;
     let stuck = false;
+    let scale = 1;
+    const zoomable = typeof CSS !== "undefined" && CSS.supports?.("zoom", "0.5");
+    /** Mail laid out wider than the frame (a fixed 600px table, say) is scaled down to fit, the way a phone's mail app does. */
+    const fitWidth = () => {
+      const doc = frame.contentDocument;
+      const body = doc?.body;
+      if (!doc || !body) return;
+      // Measure at natural size, then scale.
+      if (zoomable) body.style.zoom = "";
+      else {
+        body.style.transform = "";
+        body.style.width = "";
+      }
+      const want = frame.clientWidth;
+      const have = Math.max(doc.documentElement.scrollWidth, body.scrollWidth);
+      scale = want > 0 && have > want + 1 ? Math.max(0.45, want / have) : 1;
+      if (scale === 1) return;
+      if (zoomable) body.style.zoom = String(scale);
+      else {
+        body.style.transformOrigin = "top left";
+        body.style.transform = `scale(${scale})`;
+        body.style.width = `${100 / scale}%`;
+      }
+    };
     const measure = () => {
       const body = frame.contentDocument?.body;
       if (!body) return 0;
       const cs = frame.contentWindow?.getComputedStyle(body);
       const margin = cs ? parseFloat(cs.marginTop) + parseFloat(cs.marginBottom) : 0;
-      return Math.min(20000, Math.ceil(body.scrollHeight + (margin || 0)));
+      const h = body.scrollHeight + (margin || 0);
+      return Math.min(20000, Math.ceil(zoomable ? h : h * scale));
     };
     const fit = () => {
       if (stuck) return;
+      fitWidth();
       const h = measure();
       if (!h || `${h}px` === frame.style.height) return;
       frame.style.height = `${h}px`;
@@ -119,10 +147,14 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     const onLoad = () => {
       fit();
       observer?.disconnect();
+      frameObserver?.disconnect();
       const body = frame.contentDocument?.body;
       if (body && typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(fit);
         observer.observe(body);
+        // The frame's own width changes too (a phone turning): fit again.
+        frameObserver = new ResizeObserver(fit);
+        frameObserver.observe(frame);
       }
     };
     frame.addEventListener("load", onLoad);
@@ -131,6 +163,7 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     return () => {
       frame.removeEventListener("load", onLoad);
       observer?.disconnect();
+      frameObserver?.disconnect();
     };
   }, [srcDoc]);
 
