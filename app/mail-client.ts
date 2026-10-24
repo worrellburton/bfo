@@ -13,8 +13,8 @@ export type MailAddress = { email: string; name?: string | null };
 export type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
 /** "active": inbox and sent together, one row per conversation, latest activity first. */
 export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other";
-/** Narrows a folder's list: everything, only unread, or only starred. */
-export type MailFilter = "all" | "unread" | "starred";
+/** Narrows a folder: everything, only unread, only starred, or only mail that is both. */
+export type MailFilter = "all" | "unread" | "starred" | "unread-starred";
 
 export type MailSummary = {
   id: string;

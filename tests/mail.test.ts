@@ -1195,3 +1195,18 @@ describe("/api/mail", () => {
     });
   });
 });
+
+describe("filters", () => {
+  it("narrows to unread, starred, or both", async () => {
+    const { filterClause, filterOf, filterFlags } = await import("../lib/mail");
+    expect(filterClause("all")).toBe("");
+    expect(filterClause("unread")).toBe("&read_at=is.null");
+    expect(filterClause("starred")).toBe("&starred_at=not.is.null");
+    expect(filterClause("unread-starred")).toBe("&read_at=is.null&starred_at=not.is.null");
+    expect(filterOf(true, true)).toBe("unread-starred");
+    expect(filterOf(false, true)).toBe("starred");
+    expect(filterOf(false, false)).toBe("all");
+    expect(filterFlags("unread-starred")).toEqual({ unread: true, starred: true });
+    expect(filterFlags("all")).toEqual({ unread: false, starred: false });
+  });
+});

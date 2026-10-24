@@ -45,7 +45,7 @@ import { storageSignedUrl } from "../lib/storage.js";
  * is for owners and admins only. Email-only users may use this endpoint.
  *
  * GET ?view=
- *   list&folder=inbox|sent|archive|other&filter=all|unread|starred&to=<one of my addresses>&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
+ *   list&folder=inbox|sent|archive|other&filter=all|unread|starred|unread-starred&to=<one of my addresses>&before=<ISO>&beforeId=<uuid>&limit=50 → { messages, hasMore }
  *     folder=active                  inbox and sent together: each conversation's newest message, latest activity
  *                                    first; pages with before=<threadAt>&beforeKey=<threadKey> of the last row
  *     …&q=<text>                     searches every folder the caller can see (folder is ignored)
@@ -79,7 +79,7 @@ import { storageSignedUrl } from "../lib/storage.js";
 export const config = { api: { bodyParser: { sizeLimit: "5mb" } } };
 
 const FOLDERS: MailFolder[] = ["active", "inbox", "sent", "archive", "other"];
-const FILTERS: MailFilter[] = ["all", "unread", "starred"];
+const FILTERS: MailFilter[] = ["all", "unread", "starred", "unread-starred"];
 /** A timestamp as the API hands it out (occurredAt), kept exact for paging. */
 const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}(:?\d{2})?)$/;
 /** Keep the badge poll quick; anything left is picked up by the next sync. */

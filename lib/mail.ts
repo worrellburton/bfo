@@ -51,7 +51,9 @@ export type MailSummary = {
   unverified?: boolean;
 };
 /** Narrows a folder's list: everything, only unread, or only starred. */
-export type MailFilter = "all" | "unread" | "starred";
+import type { MailFilter } from "./mail-filter.js";
+export type { MailFilter } from "./mail-filter.js";
+export { filterOf, filterFlags } from "./mail-filter.js";
 export type MailMessage = MailSummary & {
   bcc: MailAddress[];
   text: string | null;
@@ -488,8 +490,10 @@ export function conversationHeads<T extends { id: string; thread_key?: string | 
 export function filterClause(filter: MailFilter): string {
   if (filter === "unread") return "&read_at=is.null";
   if (filter === "starred") return "&starred_at=not.is.null";
+  if (filter === "unread-starred") return "&read_at=is.null&starred_at=not.is.null";
   return "";
 }
+
 
 export const SEARCH_MAX = 100;
 
