@@ -195,7 +195,10 @@ the pull), and a "New mail" pill offers mail that arrived since the list was
 read. The
 title shrinks into a glass bar as the list scrolls, a thin line across the top
 shows how far through a message you are, unread senders' pictures carry the
-mailbox's light, and an empty folder gets a quiet card. Snippets leave out a
+mailbox's light, and an empty folder gets a quiet card. Attachments show as
+icons by kind (`lib/file-kind.ts`, `app/file-icon.tsx`): a red PDF page, a
+photo, a spreadsheet, a document, slides, an archive, audio, video, an invite,
+code, and each mark moves a little. Snippets leave out a
 help desk's wrapping ("type your reply above this line", footers, ticket codes). On larger screens, one control under the page title says whose mail is
 shown: "All mailboxes" or one address; its menu lists every address on the
 account with a copy on each, and admins add and remove extras there. Compose's

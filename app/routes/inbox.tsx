@@ -10,6 +10,8 @@ import { MailFrame, htmlToText } from "../mail-frame";
 import { MailAurora, mailboxHue } from "../mail-aurora";
 import { BusyLabel, ListLoader, Orbit, ReaderLoader, SearchLoader } from "../mail-loaders";
 import { PullToRefresh } from "../mail-pull";
+import { FileIcon, FileKindIcons } from "../file-icon";
+import { fileKind } from "../../lib/file-kind";
 import { useTheme } from "../theme";
 import { phoneScreen, supportsViewTransitions, transition, transitionSync } from "../view-transition";
 import {
@@ -2432,12 +2434,7 @@ function MailTable({
               <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</td>
               <td className={`truncate px-2 py-2.5 align-middle ${t.muted}`}>{m.snippet}</td>
               <td className={`px-1 py-2.5 align-middle ${t.muted}`}>
-                {m.attachmentCount > 0 && (
-                  <span className="inline-flex" title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
-                    <Glyph name="clip" className="h-3.5 w-3.5" />
-                    <span className="sr-only">{m.attachmentCount} attachments</span>
-                  </span>
-                )}
+                {m.attachmentCount > 0 && <FileKindIcons kinds={m.attachmentKinds?.length ? m.attachmentKinds : ["file"]} count={m.attachmentCount} className="h-4 w-4" />}
               </td>
               <td className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? t.text : t.muted}`}>
                 <time dateTime={m.occurredAt} title={fullDate(m.occurredAt)}>
@@ -2610,8 +2607,8 @@ function ListRow({
         <span className="flex items-center gap-1.5">
           <span className={`min-w-0 flex-1 truncate text-[12.5px] leading-5 max-md:text-[12px] max-md:leading-5 ${unread ? `font-semibold max-md:font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
           {m.attachmentCount > 0 && (
-            <span className={`shrink-0 ${t.muted}`} title={`${m.attachmentCount} attachment${m.attachmentCount === 1 ? "" : "s"}`}>
-              <Glyph name="clip" className="h-3 w-3" />
+            <span className="shrink-0">
+              <FileKindIcons kinds={m.attachmentKinds?.length ? m.attachmentKinds : ["file"]} count={m.attachmentCount} className="h-[15px] w-[15px] max-md:h-4 max-md:w-4" />
             </span>
           )}
         </span>
@@ -3065,7 +3062,7 @@ function AttachmentChip({ messageId, a }: { messageId: string; a: MailAttachment
         t.dark ? "border-white/[0.08] hover:bg-white/[0.04]" : "border-gray-200 hover:bg-gray-50"
       } ${off ? "opacity-50" : ""}`}
     >
-      <Glyph name="clip" className={`h-3.5 w-3.5 ${t.muted}`} />
+      <FileIcon kind={fileKind(a.filename, a.contentType)} className="h-5 w-5" />
       <span className={`min-w-0 truncate ${t.text}`}>{a.filename || "attachment"}</span>
       <span className={`shrink-0 tabular-nums ${failed ? (t.dark ? "text-red-300" : "text-red-600") : t.muted}`}>
         {failed ? "Failed" : off ? "Expired" : busy ? <Orbit className="h-3 w-3 align-[-2px]" /> : formatBytes(a.size)}
@@ -3515,14 +3512,14 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
           <div className={`flex shrink-0 flex-wrap gap-1.5 border-t px-4 py-2.5 max-sm:px-6 ${t.line}`}>
             {draft.carried.map((a) => (
               <span key={a.id} title="From the original" className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
-                <Glyph name="clip" className={`h-3 w-3 ${t.muted}`} />
+                <FileIcon kind={fileKind(a.filename, a.contentType)} className="h-4 w-4" />
                 <span className={`min-w-0 truncate ${t.text}`}>{a.filename}</span>
                 <span className={`shrink-0 ${t.muted}`}>{formatBytes(a.size)}</span>
               </span>
             ))}
             {files.map((file, i) => (
               <span key={`${file.name}-${i}`} className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border py-0.5 pl-2 pr-0.5 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
-                <Glyph name="clip" className={`h-3 w-3 ${t.muted}`} />
+                <FileIcon kind={fileKind(file.name, file.type)} className="h-4 w-4" />
                 <span className={`min-w-0 truncate ${t.text}`}>{file.name}</span>
                 <span className={`shrink-0 ${t.muted}`}>{formatBytes(file.size)}</span>
                 <button

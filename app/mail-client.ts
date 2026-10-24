@@ -1,3 +1,4 @@
+import type { FileKind } from "../lib/file-kind";
 import { useEffect, useSyncExternalStore } from "react";
 import { authFetch, getToken } from "./auth";
 
@@ -28,6 +29,8 @@ export type MailSummary = {
   read: boolean;
   starred: boolean;
   attachmentCount: number;
+  /** The distinct kinds among them (pdf, image, sheet…), for the list's icons. Older rows may lack it. */
+  attachmentKinds?: FileKind[];
   status: string | null;
   /** A catch-all copy (mail to an address nobody owns). */
   other: boolean;

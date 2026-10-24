@@ -316,7 +316,7 @@ describe("rows to the API", () => {
     const r = row({ attachments: [{ id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" }, { id: "rea_2", filename: "", contentType: "", size: 1, path: null }] });
     expect(toSummary(r)).toEqual({
       id: MSG, folder: "inbox", direction: "in", from: { email: "jane@example.com", name: "Jane" }, to: [{ email: ROBERT }], cc: [],
-      subject: "Hello", snippet: "Hi Robert", occurredAt: "2026-10-14T12:00:00.000Z", read: false, starred: false, attachmentCount: 2, status: null, other: false,
+      subject: "Hello", snippet: "Hi Robert", occurredAt: "2026-10-14T12:00:00.000Z", read: false, starred: false, attachmentCount: 2, attachmentKinds: ["pdf", "file"], status: null, other: false,
     });
     const m = toMessage(r);
     expect(m.attachments).toEqual([

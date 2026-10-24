@@ -1,3 +1,4 @@
+import { fileKinds, type FileKind } from "./file-kind.js";
 import { createHash, randomUUID } from "node:crypto";
 import { birdPlatformFetch, sb } from "./auth.js";
 import { countRows } from "./db-pages.js";
@@ -38,6 +39,8 @@ export type MailSummary = {
   read: boolean;
   starred: boolean;
   attachmentCount: number;
+  /** The distinct kinds among them (pdf, image, sheet…), first-seen order, for the list's icons. */
+  attachmentKinds: FileKind[];
   status: string | null;
   /** A catch-all copy (mail for an address nobody has). */
   other: boolean;
@@ -392,6 +395,7 @@ export function toSummary(row: SummaryRow): MailSummary {
     read: !!row.read_at,
     starred: !!row.starred_at,
     attachmentCount: row.attachments?.length ?? 0,
+    attachmentKinds: fileKinds(row.attachments ?? []),
     status: row.status ?? null,
     other: row.user_id === null,
     ...(row.thread_key ? { threadKey: row.thread_key, threadAt: row.thread_at ?? row.occurred_at ?? row.created_at } : {}),
