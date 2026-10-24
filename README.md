@@ -183,7 +183,7 @@ in the corner (a moon in the light, a sun in the dark) flips it, the device
 remembers it, and it applies only while Mail is on screen; the rest of the
 app keeps its own theme. Rows
 arrive one after another under day separators; a star pops. Moving between the
-list and a message is a view transition (`app/view-transition.ts`): one page
+list and a message is a view transition (`app/view-transition.ts`, on the viewport's snapshot, no blur, so a phone keeps up): one page
 slides out as the other slides in (and back the other way), a loader fades
 into what it was waiting for, and transitions queue rather than cut each
 other short, so each plays to its end; the aurora and the round Compose

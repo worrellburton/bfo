@@ -1931,7 +1931,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="mail-page relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">

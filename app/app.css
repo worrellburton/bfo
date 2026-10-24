@@ -445,33 +445,32 @@ html.light .ptr-note { color: hsl(var(--mail-hue) var(--mail-sat) 40% / 0.9); }
    and stay put. <html> carries data-vt / data-vt-dir while one runs; the
    public site's root animations (below) don't apply during Mail's.
    ────────────────────────────────────────────────────────────────────── */
-.mail-page { view-transition-name: mail-page; }
+/* The page is the root snapshot (the viewport, not the whole scrollable list: a tall element's snapshot is
+   heavy on a phone). The aurora and the Compose button are named, so they're left out of it and stay put.
+   No blur in these: a blurred full-screen snapshot drops frames on a phone. */
 .mail-aurora { view-transition-name: mail-aurora; }
 .mail-fab { view-transition-name: mail-fab; }
 ::view-transition-group(mail-aurora), ::view-transition-old(mail-aurora), ::view-transition-new(mail-aurora) { animation: none; }
 ::view-transition-old(mail-aurora) { display: none; }
 ::view-transition-old(mail-fab), ::view-transition-new(mail-fab) { animation-duration: 260ms; }
-html[data-vt^="mail"]::view-transition-old(root), html[data-vt^="mail"]::view-transition-new(root) { animation: none; }
-html[data-vt]::view-transition-old(mail-page), html[data-vt]::view-transition-new(mail-page) { mix-blend-mode: normal; }
-html[data-vt="mail"]::view-transition-old(mail-page) { animation: mail-leave 380ms cubic-bezier(0.4, 0, 0.6, 1) both; }
-html[data-vt="mail"]::view-transition-new(mail-page) { animation: mail-enter 560ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-html[data-vt="mail"][data-vt-dir="back"]::view-transition-old(mail-page) { animation-name: mail-leave-back; }
-html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(mail-page) { animation-name: mail-enter-back; }
-html[data-vt="mail"]::view-transition-group(mail-page) { animation-duration: 560ms; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
-@keyframes mail-leave { to { opacity: 0; transform: translateX(-9%) scale(0.98); filter: blur(5px); } }
-@keyframes mail-enter { from { opacity: 0; transform: translateX(11%); filter: blur(5px); } }
-@keyframes mail-leave-back { to { opacity: 0; transform: translateX(9%) scale(0.98); filter: blur(5px); } }
-@keyframes mail-enter-back { from { opacity: 0; transform: translateX(-11%); filter: blur(5px); } }
-html[data-vt="mail-swap"]::view-transition-old(mail-page) { animation: mail-fade-out 200ms ease both; }
-html[data-vt="mail-swap"]::view-transition-new(mail-page) { animation: mail-fade-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-html[data-vt="mail-swap"]::view-transition-group(mail-page) { animation-duration: 380ms; }
+html[data-vt]::view-transition-old(root), html[data-vt]::view-transition-new(root) { mix-blend-mode: normal; }
+html[data-vt="mail"]::view-transition-old(root) { animation: mail-leave 340ms cubic-bezier(0.4, 0, 0.6, 1) both; }
+html[data-vt="mail"]::view-transition-new(root) { animation: mail-enter 480ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+html[data-vt="mail"][data-vt-dir="back"]::view-transition-old(root) { animation-name: mail-leave-back; }
+html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(root) { animation-name: mail-enter-back; }
+@keyframes mail-leave { to { opacity: 0; transform: translateX(-10%); } }
+@keyframes mail-enter { from { opacity: 0; transform: translateX(12%); } }
+@keyframes mail-leave-back { to { opacity: 0; transform: translateX(10%); } }
+@keyframes mail-enter-back { from { opacity: 0; transform: translateX(-12%); } }
+html[data-vt="mail-swap"]::view-transition-old(root) { animation: mail-fade-out 180ms ease both; }
+html[data-vt="mail-swap"]::view-transition-new(root) { animation: mail-fade-in 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes mail-fade-out { to { opacity: 0; } }
 @keyframes mail-fade-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* Phones: Mail's list and reader aren't cards. The pill, the rows and the message float on the aurora like the
    search field above them, so no card edge shows under the pill. Larger screens keep the glass cards. */
 @media (width < 48rem) {
-  .mail-page .mail-card.glass-card {
+  .mail-card.mail-card.glass-card {
     background: none;
     border: 0;
     border-radius: 0;
@@ -1381,8 +1380,8 @@ html.light .cmp-map-bg { background-image: radial-gradient(circle at 1px 1px, rg
 ::view-transition-old(bfo-backdrop),
 ::view-transition-new(bfo-backdrop) { animation: none; }
 ::view-transition-old(bfo-backdrop) { display: none; }
-::view-transition-old(root) { animation: public-out 420ms cubic-bezier(0.4, 0, 1, 1) both; }
-::view-transition-new(root) { animation: public-in 760ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
+html:not([data-vt])::view-transition-old(root) { animation: public-out 420ms cubic-bezier(0.4, 0, 1, 1) both; }
+html:not([data-vt])::view-transition-new(root) { animation: public-in 760ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
 ::view-transition-group(bfo-mark) { animation-duration: 820ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
 ::view-transition-old(bfo-mark),
 ::view-transition-new(bfo-mark) { animation-duration: 820ms; height: 100%; object-fit: contain; }
