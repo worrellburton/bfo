@@ -8,6 +8,7 @@ import { confirmDialog } from "../confirm-dialog";
 import { Button, Dot, ErrorLine, Icon, IconButton, TextButton, buttonClass, formatBytes, useTone } from "../entity/ui";
 import { MailFrame, htmlToText } from "../mail-frame";
 import { MailAurora, mailboxHue } from "../mail-aurora";
+import { BusyLabel, ListLoader, Orbit, ReaderLoader, SearchLoader } from "../mail-loaders";
 import {
   addAlias,
   attachmentUrl,
@@ -1496,7 +1497,7 @@ export default function Inbox() {
   );
 
   const listBody = !rows ? (
-    listError ? <ErrorLine>{listError}</ErrorLine> : <ListSkeleton table={view === "table"} />
+    listError ? <ErrorLine>{listError}</ErrorLine> : q ? <SearchLoader term={q} /> : <ListLoader table={view === "table"} label={folder === "sent" ? "Fetching sent mail" : folder === "archive" ? "Fetching the archive" : "Fetching mail"} />
   ) : rows.length === 0 ? (
     <div className="px-5 py-10 text-center">
       <div className={`row-in mx-auto max-w-[320px] rounded-3xl border px-6 py-8 mail-glass-top ${t.dark ? "border-white/[0.08] bg-white/[0.03]" : "border-gray-200 bg-white/70"}`}>
@@ -1710,7 +1711,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]">
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -1842,7 +1843,7 @@ export default function Inbox() {
 
       {toast &&
         createPortal(
-          <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
+          <div role="status" className={`pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4 ${!draft && !openId ? "bottom-[calc(5.75rem+env(safe-area-inset-bottom))] sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))]" : "bottom-[calc(1.25rem+env(safe-area-inset-bottom))]"}`}>
             <span className={`toast-in pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
               {toast.text}
               {toast.undo && (
@@ -2103,39 +2104,6 @@ function tap() {
 
 // ── List ─────────────────────────────────────────────────────────────────
 
-function ListSkeleton({ table = false }: { table?: boolean }) {
-  const { dark } = useTone();
-  const bar = dark ? "bg-white/[0.06]" : "bg-gray-100";
-  if (table) {
-    return (
-      <div aria-label="Loading" className="animate-pulse">
-        {Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="flex items-center gap-4 px-4 py-3">
-            <div className={`h-3 w-3 rounded ${bar}`} />
-            <div className={`h-3 w-[160px] rounded ${bar}`} />
-            <div className={`h-3 w-[220px] rounded ${bar}`} />
-            <div className={`h-3 flex-1 rounded ${bar}`} />
-            <div className={`h-3 w-12 rounded ${bar}`} />
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div aria-label="Loading" className="animate-pulse">
-      {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className="space-y-2 px-4 py-3.5">
-          <div className="flex justify-between gap-6">
-            <div className={`h-3 w-1/3 rounded ${bar}`} />
-            <div className={`h-3 w-10 rounded ${bar}`} />
-          </div>
-          <div className={`h-3 w-3/4 rounded ${bar}`} />
-          <div className={`h-3 w-5/6 rounded ${bar}`} />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /** Who a row is from — or, in Sent, who it went to. */
 function whoOf(m: MailSummary, sent: boolean, me: string): string {
@@ -2551,7 +2519,7 @@ function Reader({
       {error && <ErrorLine>{error}</ErrorLine>}
 
       {!m ? (
-        !error && <ReaderSkeleton />
+        !error && <ReaderLoader />
       ) : (
         <div className="px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6">
           {/* Subject, with the star beside it on phones (as Gmail puts it). */}
@@ -2778,19 +2746,6 @@ function ThreadCard({ m, me, open: startOpen, fresh }: { m: MailMessage; me: str
   );
 }
 
-function ReaderSkeleton() {
-  const { dark } = useTone();
-  const bar = dark ? "bg-white/[0.06]" : "bg-gray-100";
-  return (
-    <div aria-label="Loading" className="animate-pulse space-y-3 px-5 pt-5 sm:px-6">
-      <div className={`h-4 w-2/3 rounded ${bar}`} />
-      <div className={`h-3 w-1/3 rounded ${bar}`} />
-      <div className={`mt-6 h-3 w-full rounded ${bar}`} />
-      <div className={`h-3 w-5/6 rounded ${bar}`} />
-      <div className={`h-3 w-4/6 rounded ${bar}`} />
-    </div>
-  );
-}
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g;
 
@@ -2886,7 +2841,7 @@ function AttachmentChip({ messageId, a }: { messageId: string; a: MailAttachment
       <Glyph name="clip" className={`h-3.5 w-3.5 ${t.muted}`} />
       <span className={`min-w-0 truncate ${t.text}`}>{a.filename || "attachment"}</span>
       <span className={`shrink-0 tabular-nums ${failed ? (t.dark ? "text-red-300" : "text-red-600") : t.muted}`}>
-        {failed ? "Failed" : off ? "Expired" : busy ? "…" : formatBytes(a.size)}
+        {failed ? "Failed" : off ? "Expired" : busy ? <Orbit className="h-3 w-3 align-[-2px]" /> : formatBytes(a.size)}
       </span>
     </button>
   );
@@ -3053,6 +3008,8 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
   const [beforeImprove, setBeforeImprove] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  /** The check after a send, shown for a moment before the panel goes. */
+  const [sentOk, setSentOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<MailEditorHandle>(null);
@@ -3195,7 +3152,8 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         ...(draft.forwardId ? { forwardId: draft.forwardId } : {}),
         ...(attachments.length ? { attachments } : {}),
       });
-      onSent(message);
+      setSentOk(true);
+      window.setTimeout(() => onSent(message), 520);
     } catch (e) {
       setError((e as Error).message);
       setSending(false);
@@ -3380,15 +3338,17 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
             </Button>
           ) : (
             <Button kind="ghost" icon="sparkle" disabled={sending || improving || !composeText(html).trim()} onClick={() => void improveDesign()}>
-              {improving ? "Improving…" : "Improve design"}
+              <BusyLabel busy={improving}>{improving ? "Improving…" : "Improve design"}</BusyLabel>
             </Button>
           )}
           <span className={`mr-1 text-[11px] max-sm:hidden ${t.faint}`}>⌘↵</span>
           <Button kind="ghost" onClick={() => void close()} disabled={sending}>
             Discard
           </Button>
-          <button type="button" onClick={() => void send()} disabled={sending} className={`${buttonClass("primary", t.dark)} min-w-[72px]`}>
-            {sending ? "Sending…" : "Send"}
+          <button type="button" onClick={() => void send()} disabled={sending || sentOk} className={`${buttonClass("primary", t.dark)} min-w-[72px]`}>
+            <BusyLabel busy={sending} done={sentOk} doneLabel="Sent">
+              {sending ? "Sending…" : "Send"}
+            </BusyLabel>
           </button>
         </footer>
       </div>

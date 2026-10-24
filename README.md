@@ -195,6 +195,13 @@ signed BFO address and fetches it on the reader's behalf, so a phone's browser
 or content blocker has no third-party image to refuse inside the sandboxed
 frame, and a sender's tracking pixel sees BFO's server rather than the reader.
 Images show by default; "Hide images" holds them back for a message.
+Each wait has its own loader, drawn in the mailbox's colour (`app/mail-loaders.tsx`):
+the list arriving is ghost rows whose pictures orbit while a light sweeps their
+lines; a search is a scan line passing over faint rows, naming the words looked
+for; a message opening writes its subject line out, the sender's mark orbits
+and the body's lines appear one by one; Send shows a spark circling, then a
+check that draws itself before the sheet closes; Improve design, an uploading
+file and the pull-to-refresh ring use the same spark.
 Each folder can be narrowed to unread or starred mail, and shown either as a
 table (sender, subject, summary, attachment, time) or as a list beside the open
 message.
