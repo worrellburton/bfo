@@ -29,6 +29,7 @@ import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
 import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
+import { useInstall } from "../pwa";
 
 const iconCls = "w-4 h-4 shrink-0";
 
@@ -298,6 +299,8 @@ export default function AppLayout() {
   const [pending, setPending] = useState(0);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
+  // Chrome's "Install BFO", offered from the user menu while it's available.
+  const { canInstall, install } = useInstall();
   const mail = useMailCount();
   // "Email only" members get a reduced shell: the wordmark, the inbox and the user menu.
   const emailOnly = isEmailOnly(user);
@@ -719,6 +722,23 @@ export default function AppLayout() {
                 </button>
               </div>
               <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
+
+              {canInstall && (
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    void install();
+                  }}
+                  className={menuItemCls}
+                  role="menuitem"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25M12 7v5m0 0l-2-2m2 2l2-2" />
+                  </svg>
+                  <span className="flex-1">Install app</span>
+                  <span className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>its own window</span>
+                </button>
+              )}
 
               <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
                 {isDark ? (
