@@ -56,10 +56,10 @@ void main() {
   float bloom = exp(-length(p - tp) * (3.0 + u_touchAge * 1.5)) * max(0.0, 1.0 - u_touchAge * 0.45);
   float breath = 0.9 + 0.1 * sin(u_time * 0.6);
   float light = (band * (0.55 + 0.45 * sky) + bloom * 0.9) * breath * (0.75 + u_energy * 0.6);
-  vec3 c1 = hsl2rgb(vec3(u_hue, u_sat, u_dark > 0.5 ? 0.55 : 0.62));
-  vec3 c2 = hsl2rgb(vec3(fract(u_hue + 0.12), u_sat * 0.93, u_dark > 0.5 ? 0.6 : 0.7));
+  vec3 c1 = hsl2rgb(vec3(u_hue, u_sat, mix(0.62, 0.55, u_dark)));
+  vec3 c2 = hsl2rgb(vec3(fract(u_hue + 0.12), u_sat * 0.93, mix(0.7, 0.6, u_dark)));
   vec3 col = mix(c1, c2, n1);
-  float alpha = clamp(light, 0.0, 1.0) * (u_dark > 0.5 ? 0.42 : 0.28);
+  float alpha = clamp(light, 0.0, 1.0) * mix(0.28, 0.42, u_dark);
   gl_FragColor = vec4(col * alpha, alpha);
 }
 `;
@@ -70,6 +70,9 @@ export function MailAurora({ hue, dark, saturation = 0.75, className = "" }: { h
   hueRef.current = hue;
   const satRef = useRef(saturation);
   satRef.current = saturation;
+  // Light/dark eases in the shader rather than rebuilding the scene (a rebuild would blink).
+  const darkRef = useRef(dark ? 1 : 0);
+  darkRef.current = dark ? 1 : 0;
 
   useEffect(() => {
     const canvas = ref.current;
@@ -159,6 +162,7 @@ export function MailAurora({ hue, dark, saturation = 0.75, className = "" }: { h
 
     let hueNow = hueRef.current;
     let satNow = satRef.current;
+    let darkNow = darkRef.current;
     const start = performance.now();
     let raf = 0;
     let running = true;
@@ -171,6 +175,7 @@ export function MailAurora({ hue, dark, saturation = 0.75, className = "" }: { h
       if (d < -0.5) d += 1;
       hueNow = (hueNow + d * 0.04 + 1) % 1;
       satNow += (satRef.current - satNow) * 0.05;
+      darkNow += (darkRef.current - darkNow) * 0.08;
       if (now - lastScrollAt > 120) energy *= 0.94;
       pullNow += (pullTarget - pullNow) * 0.12;
       gl.uniform1f(u.time, t);
@@ -180,7 +185,7 @@ export function MailAurora({ hue, dark, saturation = 0.75, className = "" }: { h
       gl.uniform2f(u.touch, touch[0], touch[1]);
       // While pulled, the bloom under the thumb holds instead of fading.
       gl.uniform1f(u.touchAge, pullNow > 0.02 ? Math.min((now - touchAt) / 1000, 0.3 + (1 - pullNow) * 1.2) : (now - touchAt) / 1000);
-      gl.uniform1f(u.dark, dark ? 1 : 0);
+      gl.uniform1f(u.dark, darkNow);
       gl.uniform1f(u.sat, satNow);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -212,7 +217,8 @@ export function MailAurora({ hue, dark, saturation = 0.75, className = "" }: { h
       gl.deleteShader(vs);
       gl.deleteShader(fs);
     };
-  }, [dark]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none fixed inset-x-0 top-0 h-[100lvh] w-full ${className}`} />;
 }

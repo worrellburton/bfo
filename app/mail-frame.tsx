@@ -143,6 +143,8 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
       fitWidth();
       const h = measure();
       if (!h || `${h}px` === frame.style.height) return;
+      // The first size is set at once; later growth (pictures arriving) eases rather than jumps.
+      if (frame.style.height) frame.style.transition = "height 280ms cubic-bezier(0.16, 1, 0.3, 1)";
       frame.style.height = `${h}px`;
       // Mail sized off the viewport (100vh, html,body{height:100%}) outgrows any height we give it: stop following it.
       if (measure() > h) stuck = true;

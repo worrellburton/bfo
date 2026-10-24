@@ -464,6 +464,25 @@ html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(root) { animation-
 @keyframes mail-enter-back { from { opacity: 0; transform: translateX(-12%); } }
 /* In place, not as page transitions: a loader fading out before the rows come in, and the envelope lifting off
    the message it was covering (the message rendered underneath meanwhile, so it's whole when it shows). */
+/* Exits, so nothing vanishes: menus and sheets go the way they came, the toast fades, a backdrop clears. */
+.menu-out { animation: menu-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards; transform-origin: top center; }
+@keyframes menu-out { to { opacity: 0; transform: translateY(-8px) scale(0.98); } }
+.sheet-down { animation: sheet-down 200ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+@keyframes sheet-down { to { opacity: 0; transform: translateY(24px) scale(0.98); } }
+.backdrop-in { animation: backdrop-in 200ms ease both; }
+.backdrop-out { animation: backdrop-out 180ms ease forwards; }
+@keyframes backdrop-in { from { opacity: 0; } }
+@keyframes backdrop-out { to { opacity: 0; } }
+.toast-out { animation: toast-out 200ms ease forwards; }
+@keyframes toast-out { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
+/* Back from a message: its row glows once, in the mailbox's colour. */
+.row-return { animation: row-return 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; border-radius: 16px; }
+@keyframes row-return { 0% { background-color: hsl(var(--mail-hue) var(--mail-sat) 70% / 0.28); } 100% { background-color: transparent; } }
+/* Light ↔ dark: the page crossfades (the aurora eases its own colours). */
+html[data-vt="theme"]::view-transition-old(root) { animation: theme-out 360ms ease both; }
+html[data-vt="theme"]::view-transition-new(root) { animation: theme-in 360ms ease both; }
+@keyframes theme-out { to { opacity: 0; } }
+@keyframes theme-in { from { opacity: 0; } }
 .loader-out { animation: loader-out 240ms ease forwards; }
 @keyframes loader-out { to { opacity: 0; transform: scale(0.985); } }
 .reader-under { visibility: hidden; }
@@ -472,7 +491,7 @@ html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(root) { animation-
 .reader-envelope.env-out { animation: env-out 420ms cubic-bezier(0.4, 0, 0.6, 1) forwards; }
 @keyframes env-out { to { opacity: 0; transform: translateY(-14px) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) {
-  .loader-out, .reader-reveal, .reader-envelope.env-out { animation-duration: 1ms; }
+  .loader-out, .reader-reveal, .reader-envelope.env-out, .menu-out, .sheet-down, .backdrop-in, .backdrop-out, .toast-out, .row-return { animation-duration: 1ms; }
 }
 
 /* Phones: Mail's list and reader aren't cards. The pill, the rows and the message float on the aurora like the

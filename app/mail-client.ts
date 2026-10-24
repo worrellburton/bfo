@@ -149,8 +149,8 @@ export function listMail({ folder, filter = "all", q = "", to, before, beforeId,
 }
 
 /** Opens a message; the server marks it read (with `conversation`, its whole conversation: opened from Active). */
-export function getMessage(id: string, opts: { conversation?: boolean } = {}) {
-  return call<{ message: MailMessage }>(`/api/mail?view=message&id=${encodeURIComponent(id)}${opts.conversation ? "&conversation=1" : ""}`);
+export function getMessage(id: string, opts: { conversation?: boolean; /** Fetched ahead of a tap: don't mark it read. */ peek?: boolean } = {}) {
+  return call<{ message: MailMessage }>(`/api/mail?view=message&id=${encodeURIComponent(id)}${opts.conversation ? "&conversation=1" : ""}${opts.peek ? "&peek=1" : ""}`);
 }
 
 /** The conversation a message is in, newest first (itself included). */

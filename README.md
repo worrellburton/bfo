@@ -189,7 +189,11 @@ long enough for its scene to play through (the constellation assembling, the
 envelope opening) and then gives way in place: the message renders under
 the envelope as soon as it arrives, so its frame and pictures load meanwhile,
 and the envelope lifts off as the letter comes forward; a cached message
-opens at once; rows animate in once, not again when the list comes back; the aurora and the round Compose
+opens at once, and a finger landing on a row fetches its message ahead of
+the tap (without marking it read) so most opens are instant; rows animate in
+once, not again when the list comes back, and the row you came back from
+glows for a moment; menus, sheets and the toast leave the way they came;
+the light/dark switch crossfades while the aurora eases its colours; the aurora and the round Compose
 button in the corner stay put. A row swiped left archives (with Undo), swiped right stars; a held
 finger picks it for a bulk action; pulling the list down asks Bird for new
 mail (`app/mail-pull.tsx`: the list rides the finger, a ring fills, spins, then

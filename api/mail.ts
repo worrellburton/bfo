@@ -238,12 +238,14 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
     case "message": {
       const row = await findMessage(me, admin, param(req, "id"));
       if (!row) return fail(res, 404, "not_found");
-      if (!row.read_at) {
+      // peek=1: fetched ahead of a tap (the finger is on the row); nothing is marked read until it's really opened.
+      const peek = param(req, "peek") === "1";
+      if (!row.read_at && !peek) {
         row.read_at = new Date().toISOString();
         await sb(`mail_messages?id=eq.${row.id}`, { method: "PATCH", body: { read_at: row.read_at } });
       }
       // Opened from Active, the row stood for the whole conversation: it's all read now.
-      if (param(req, "conversation") === "1" && row.thread_key) {
+      if (!peek && param(req, "conversation") === "1" && row.thread_key) {
         await sb(`mail_messages?${keysIn([row.thread_key])}&read_at=is.null&${ownFilter(me)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
       }
       return res.status(200).json({ message: withProxiedImages(toMessage(row)) });

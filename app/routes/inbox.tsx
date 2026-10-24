@@ -1,6 +1,7 @@
 import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
 import { composeText, htmlFromPlain } from "../../lib/mail-compose";
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { createPortal } from "react-dom";
 import { Link, useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
@@ -159,10 +160,25 @@ function Avatar({ a, size = "h-10 w-10 text-[13px]", trusted = true }: { a: Mail
   const faces = useContext(FacesContext);
   const photo = trusted ? faces[a.email.toLowerCase()] : undefined;
   const [broken, setBroken] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<string | null>(null);
   if (photo && broken !== photo) {
+    // The initials show until the picture has arrived; then it fades in over them.
     return (
       <span aria-hidden="true" className={`relative inline-flex shrink-0 overflow-hidden rounded-full ${size}`}>
-        <img src={photo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" onError={() => setBroken(photo)} />
+        {loaded !== photo && (
+          <span className="absolute inset-0">
+            <InitialsAvatar a={a} size={`h-full w-full ${size.split(" ").filter((c) => c.startsWith("text-")).join(" ")}`} />
+          </span>
+        )}
+        <img
+          src={photo}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className={`relative h-full w-full object-cover transition-opacity duration-300 ${loaded === photo ? "opacity-100" : "opacity-0"}`}
+          onLoad={() => setLoaded(photo)}
+          onError={() => setBroken(photo)}
+        />
       </span>
     );
   }
@@ -304,6 +320,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
   useEffect(() => setShown(null), [aliases]);
   const mine = [address, ...list];
   const [open, setOpen] = useState(false);
+  const exit = useExit(open, 180);
   const [copied, setCopied] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState("");
@@ -478,15 +495,15 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
         </button>
       )}
 
-      {open && place && createPortal(
+      {exit.shown && place && createPortal(
         <>
-          {place.sheet && <div className="fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px]" onClick={() => setOpen(false)} aria-hidden="true" />}
+          {place.sheet && <div className={`fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px] ${exit.leaving ? "backdrop-out" : "backdrop-in"}`} onClick={() => setOpen(false)} aria-hidden="true" />}
           <div
             ref={menuRef}
             role="menu"
             aria-label="Mailbox"
             style={{ position: "fixed", top: place.top, bottom: place.bottom !== undefined ? `calc(${place.bottom}px + env(safe-area-inset-bottom))` : undefined, left: place.left, width: place.width }}
-            className={`z-[65] overflow-hidden border shadow-2xl ${place.sheet ? "menu-down rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
+            className={`z-[65] overflow-hidden border shadow-2xl ${exit.leaving ? "menu-out" : place.sheet ? "menu-down" : "menu-down"} ${place.sheet ? "rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
               t.dark ? (place.sheet ? "border-white/10 bg-[#0f0f16]/85" : "border-white/10 bg-[#101016]") : place.sheet ? "border-gray-200 bg-white/90" : "border-gray-200 bg-white"
             }`}
           >
@@ -874,6 +891,28 @@ function ThemeButton({ dark, onToggle, className = "" }: { dark: boolean; onTogg
   );
 }
 
+/** Open/closed with an exit: `shown` stays true for `ms` after closing so the exit animation can play; `leaving` marks that stretch. */
+function useExit(open: boolean, ms: number): { shown: boolean; leaving: boolean } {
+  const [shown, setShown] = useState(open);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setShown(true);
+      setLeaving(false);
+      return;
+    }
+    if (!shown) return;
+    setLeaving(true);
+    const id = window.setTimeout(() => {
+      setShown(false);
+      setLeaving(false);
+    }, ms);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  return { shown, leaving };
+}
+
 const FOLDER_GLYPH: Record<MailFolder, keyof typeof GLYPHS> = { active: "chats", inbox: "inbox", sent: "send", archive: "archive", other: "at" };
 
 /**
@@ -887,6 +926,7 @@ const FOLDER_GLYPH: Record<MailFolder, keyof typeof GLYPHS> = { active: "chats",
 function FolderMenu({ folders, folder, filter, count, onPick }: { folders: { key: MailFolder; label: string }[]; folder: MailFolder; filter: MailFilter; count: { unread: number; otherUnread: number } | null; onPick: (folder: MailFolder, filter: MailFilter) => void }) {
   const t = useTone();
   const [open, setOpen] = useState(false);
+  const exit = useExit(open, 180);
   const wrap = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(0);
   useEffect(() => {
@@ -942,15 +982,15 @@ function FolderMenu({ folders, folder, filter, count, onPick }: { folders: { key
         <span className="flex-1" />
         <Icon name="chevronDown" className={`h-4 w-4 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.2} />
       </button>
-      {open &&
+      {exit.shown &&
         createPortal(
           <>
-            <div className="fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px]" onClick={() => setOpen(false)} aria-hidden="true" />
+            <div className={`fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px] ${exit.leaving ? "backdrop-out" : "backdrop-in"}`} onClick={() => setOpen(false)} aria-hidden="true" />
             <div
               role="menu"
               aria-label="Folder and filter"
               style={{ position: "fixed", top, left: 12, width: "calc(100vw - 24px)" }}
-              className={`menu-down z-[65] overflow-hidden rounded-3xl border p-3 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/85" : "border-gray-200 bg-white/90"}`}
+              className={`${exit.leaving ? "menu-out" : "menu-down"} z-[65] overflow-hidden rounded-3xl border p-3 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/85" : "border-gray-200 bg-white/90"}`}
             >
               <div className="grid grid-cols-2 gap-2">
                 {shown.map((x) => {
@@ -1072,7 +1112,11 @@ export default function Inbox() {
   const [draft, setDraft] = useState<Draft | null>(null);
   /** A short note after an action; with `undo`, a button (and "z") puts it back. */
   const [toast, setToastState] = useState<{ text: string; undo?: () => void } | null>(null);
-  const setToast = (text: string | null, undo?: () => void) => setToastState(text ? { text, undo } : null);
+  const [toastLeaving, setToastLeaving] = useState(false);
+  const setToast = (text: string | null, undo?: () => void) => {
+    setToastLeaving(false);
+    setToastState(text ? { text, undo } : null);
+  };
   /** Mail's own light/dark setting: light unless switched, kept on the device, applied only while Mail is on screen. */
   const { setOverride } = useTheme();
   const [mailTheme, setMailTheme] = useState<"light" | "dark">("light");
@@ -1089,7 +1133,11 @@ export default function Inbox() {
   }, [mailTheme, setOverride]);
   function toggleMailTheme() {
     const next = mailTheme === "dark" ? "light" : "dark";
-    setMailTheme(next);
+    // The page crossfades between light and dark (the aurora eases its own colours underneath).
+    void transition("theme", "forward", () => {
+      flushSync(() => setMailTheme(next));
+      return new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    });
     try {
       localStorage.setItem(MAIL_THEME_KEY, next);
     } catch {
@@ -1300,6 +1348,20 @@ export default function Inbox() {
     );
   }
 
+  /** The finger is on a row: fetch its message now (without marking it read), so the open is instant when the tap lands. */
+  const prefetching = useRef(new Set<string>());
+  function prefetch(id: string) {
+    if (cache.current.has(id) || prefetching.current.has(id)) return;
+    prefetching.current.add(id);
+    const cur = listRef.current;
+    getMessage(id, { conversation: cur?.folder === "active" && !cur.q, peek: true })
+      .then(({ message }) => cache.current.set(id, message))
+      .catch(() => undefined)
+      .finally(() => prefetching.current.delete(id));
+  }
+  /** Back from a message: its row glows for a moment, so the eye lands where it left. */
+  const [returnedId, setReturnedId] = useState<string | null>(null);
+
   function select(id: string) {
     if (!openId) tap();
     // From the list: push, so Back returns to it. Between messages: replace. The message's page starts at its top.
@@ -1325,6 +1387,11 @@ export default function Inbox() {
   }, []);
 
   function closeMessage() {
+    const was = openIdRef.current;
+    if (was) {
+      setReturnedId(was);
+      window.setTimeout(() => setReturnedId((r) => (r === was ? null : r)), 1600);
+    }
     go("back", () => {
       if ((navStateRef.current as { fromList?: boolean } | null)?.fromList) navigate(-1);
       else setParams(queryRef.current(), { replace: true });
@@ -1606,8 +1673,13 @@ export default function Inbox() {
   useEffect(() => {
     if (!toast) return;
     // Long enough to reach Undo when there is one.
-    const id = setTimeout(() => setToastState(null), toast.undo ? 6000 : 2200);
-    return () => clearTimeout(id);
+    const total = toast.undo ? 6000 : 2200;
+    const leave = setTimeout(() => setToastLeaving(true), total - 200);
+    const id = setTimeout(() => {
+      setToastState(null);
+      setToastLeaving(false);
+    }, total);
+    return () => { clearTimeout(id); clearTimeout(leave); };
   }, [toast]);
 
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
@@ -1815,8 +1887,8 @@ export default function Inbox() {
                       {group}
                     </li>
                   )}
-                  <li className={rowsFresh ? "row-in" : ""} style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
-                    <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} onArchive={m.folder === "archive" ? undefined : () => void archiveRow(m)} />
+                  <li className={`${rowsFresh ? "row-in" : ""} ${m.id === returnedId ? "row-return" : ""}`} style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                    <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={false} onOpen={() => select(m.id)} onPrefetch={() => prefetch(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} onArchive={m.folder === "archive" ? undefined : () => void archiveRow(m)} />
                   </li>
                 </Fragment>
               );
@@ -1827,7 +1899,7 @@ export default function Inbox() {
         <ul className={`divide-y ${t.divide}`}>
           {rows.map((m) => (
             <li key={m.id}>
-              <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
+              <ListRow m={m} sent={sent || (mixed && m.direction === "out")} me={address} selected={m.id === openId} onOpen={() => select(m.id)} onPrefetch={() => prefetch(m.id)} onStar={(on) => star(m, on)} picked={picked.has(m.id)} picking={picked.size > 0} onPick={(shift) => pick(m.id, shift)} />
             </li>
           ))}
         </ul>
@@ -2089,7 +2161,7 @@ export default function Inbox() {
       {toast &&
         createPortal(
           <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
-            <span className={`toast-in pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
+            <span className={`${toastLeaving ? "toast-out" : "toast-in"} pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
               {toast.text}
               {toast.undo && (
                 <button
@@ -2485,6 +2557,7 @@ function ListRow({
   me,
   selected,
   onOpen,
+  onPrefetch,
   onStar,
   picked = false,
   picking = false,
@@ -2496,6 +2569,8 @@ function ListRow({
   me: string;
   selected: boolean;
   onOpen: () => void;
+  /** The finger has landed on the row: fetch its message ahead of the tap. */
+  onPrefetch?: () => void;
   onStar: (on: boolean) => void;
   /** Picked for a bulk action; `picking`: some message is, so every row shows its box. */
   picked?: boolean;
@@ -2512,6 +2587,7 @@ function ListRow({
   const gesture = useRef<{ x: number; y: number; id: number; moved: boolean; held: boolean; timer: number } | null>(null);
   const THRESHOLD = 72;
   const onPointerDown = (e: React.PointerEvent) => {
+    onPrefetch?.();
     if (e.pointerType === "mouse" || e.button !== 0) return;
     const g = { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false, held: false, timer: 0 };
     g.timer = window.setTimeout(() => {
@@ -3330,15 +3406,18 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
     return () => window.removeEventListener("beforeunload", onUnload);
   }, [dirty]);
 
+  const [leaving, setLeaving] = useState(false);
   async function close() {
-    if (sending || asking.current) return;
+    if (sending || asking.current || leaving) return;
     if (dirty) {
       asking.current = true;
       const ok = await confirmDialog({ title: "Discard this message?", confirmLabel: "Discard", tone: "danger" });
       asking.current = false;
       if (!ok) return;
     }
-    onClose();
+    // The sheet goes the way it came, then unmounts.
+    setLeaving(true);
+    window.setTimeout(onClose, 200);
   }
 
   useEffect(() => {
@@ -3472,13 +3551,13 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         }
       }}
     >
-      <div className="palette-backdrop absolute inset-0 bg-black/55 backdrop-blur-[2px] max-sm:hidden" onClick={() => !dirty && onClose()} />
+      <div className={`palette-backdrop absolute inset-0 bg-black/55 backdrop-blur-[2px] max-sm:hidden ${leaving ? "backdrop-out" : ""}`} onClick={() => !dirty && void close()} />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="compose-title"
-        className={`palette-panel sheet-up relative flex w-full flex-col overflow-hidden shadow-2xl sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
+        className={`palette-panel ${leaving ? "sheet-down" : "sheet-up"} relative flex w-full flex-col overflow-hidden shadow-2xl sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
           t.dark ? "border-white/10 bg-[#111113]" : "border-gray-200 bg-white"
         }`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}
