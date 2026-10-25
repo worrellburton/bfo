@@ -246,6 +246,16 @@ To set it up in Bird:
    `https://www.burtonfamilyoffice.com/api/mail-webhook` (the www host; the bare domain redirects, and webhooks don't follow redirects) for `email.received`, and
    save its signing secret as `BIRD_WEBHOOK_SECRET`.
 
+## iPhone app
+
+BFO is also an iPhone app: a [Capacitor](https://capacitorjs.com) shell
+(`capacitor.config.ts`, `ios/`) that opens the live site, so web deploys reach
+it at once. Inside the app the site uses native haptics and a theme-aware
+status bar (`app/native.ts`). A GitHub Actions workflow builds it on a cloud
+Mac and uploads it to App Store Connect for TestFlight. Setup, the App Store
+listing, privacy answers and the decisions left before App Review are in
+[docs/ios-app.md](docs/ios-app.md).
+
 ## Building for Production
 
 Create a production build:

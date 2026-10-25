@@ -11,6 +11,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "@netlify/vite-plugin-react-router": "^3.1.1",
     "@prisma/adapter-libsql": "^7.5.0",
     "@prisma/client": "^7.5.0",
@@ -31,6 +36,8 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
     "@react-router/dev": "7.13.1",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22",

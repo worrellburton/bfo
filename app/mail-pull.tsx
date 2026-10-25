@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTone } from "./entity/ui";
+import { haptic } from "./native";
 
 /**
  * Pull the list down on a phone to check for new mail.
@@ -176,10 +177,7 @@ export function PullToRefresh({ enabled, onRefresh, className = "", children }: 
   );
 }
 
+/** A light tap: native haptics in the iPhone app (app/native.ts). */
 function tap() {
-  try {
-    (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(8);
-  } catch {
-    // no haptics here
-  }
+  haptic();
 }

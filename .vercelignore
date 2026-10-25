@@ -1,0 +1,6 @@
+# The iPhone app's native project and App Store assets: not part of the site.
+ios/
+resources/
+appstore/
+native/
+docs/

@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useLayoutEffect } from 
 /** Before paint in the browser (no flash of the other theme); a plain effect on the server. */
 const useBeforePaint = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import type { BackgroundId } from "./webgl-backgrounds";
+import { statusBarFor } from "./native";
 
 type Theme = "dark" | "light";
 
@@ -39,6 +40,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useBeforePaint(() => {
     document.documentElement.classList.toggle("light", effective === "light");
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", effective === "light" ? "#f9fafb" : "#000000");
+    statusBarFor(effective === "dark");
   }, [effective]);
 
   function toggle() {

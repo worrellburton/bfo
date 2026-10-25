@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isNativeApp } from "./native";
 
 /**
  * BFO as an installed app (Chrome's "Install BFO"; public/manifest.webmanifest
@@ -25,8 +26,9 @@ export function startPwa() {
     offer = null;
     changed();
   });
-  // Dev servers serve their own modules; only the built site gets the worker.
-  if ("serviceWorker" in navigator && !import.meta.env.DEV) {
+  // Dev servers serve their own modules; only the built site gets the worker. The iPhone app has its own
+  // offline page and doesn't need one (and WKWebView only allows workers on app-bound domains).
+  if ("serviceWorker" in navigator && !import.meta.env.DEV && !isNativeApp()) {
     const register = () => navigator.serviceWorker.register("/sw.js").catch((err) => console.warn("service worker didn't register", err));
     if (document.readyState === "complete") void register();
     else window.addEventListener("load", () => void register(), { once: true });
@@ -36,6 +38,7 @@ export function startPwa() {
 /** Running as the installed app (its own window), not in a browser tab. */
 export function installed(): boolean {
   if (typeof window === "undefined") return false;
+  if (isNativeApp()) return true;
   return window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
 }
 

@@ -14,6 +14,7 @@ import { FileIcon, FileKindIcons } from "../file-icon";
 import { fileKind } from "../../lib/file-kind";
 import { filterFlags, filterOf } from "../../lib/mail-filter";
 import { useTheme } from "../theme";
+import { haptic } from "../native";
 import { phoneScreen, supportsViewTransitions, transition } from "../view-transition";
 import {
   addAlias,
@@ -2450,12 +2451,9 @@ function ReadingProgress() {
 }
 
 /** A tick of haptics on phones that have it (Android; iOS Safari ignores it). */
+/** A light tap: native haptics in the iPhone app (app/native.ts). */
 function tap() {
-  try {
-    (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(8);
-  } catch {
-    // no haptics here
-  }
+  haptic();
 }
 
 // ── List ─────────────────────────────────────────────────────────────────
