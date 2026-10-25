@@ -2469,7 +2469,7 @@ function whoOf(m: MailSummary, sent: boolean, me: string): string {
 function UnreadDot({ on }: { on: boolean }) {
   return (
     <>
-      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-(--mail-accent)" : "bg-transparent"}`} />
+      <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${on ? "bg-(--mail-accent) shadow-[0_0_8px_var(--mail-accent)]" : "bg-transparent"}`} />
       {on && <span className="sr-only">Unread. </span>}
     </>
   );
@@ -2557,25 +2557,30 @@ function MailTable({
                 }
               }}
               className={`group cursor-pointer transition-colors duration-150 ${
-                on ? (t.dark ? "bg-(--mail-accent-deep)/[0.13] hover:bg-(--mail-accent-deep)/[0.17]" : "bg-(--mail-accent-deep)/10 hover:bg-(--mail-accent-deep)/15/70") : t.hover
+                on
+                  ? t.dark ? "bg-(--mail-accent-deep)/[0.13] hover:bg-(--mail-accent-deep)/[0.17]" : "bg-(--mail-accent-deep)/10 hover:bg-(--mail-accent-deep)/15"
+                  : unread
+                    ? t.dark ? "bg-(--mail-accent-deep)/[0.09] hover:bg-(--mail-accent-deep)/[0.14]" : "bg-(--mail-accent-deep)/[0.055] hover:bg-(--mail-accent-deep)/[0.09]"
+                    : t.hover
               } focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
             >
-              <td className="py-1.5 pl-2 pr-0 align-middle">
+              {/* Unread: an accent bar down the row's left edge. */}
+              <td className={`py-1.5 pl-2 pr-0 align-middle ${unread ? "shadow-[inset_3px_0_0_var(--mail-accent)]" : ""}`}>
                 <div className="flex items-center gap-0.5">
                   <UnreadDot on={unread} />
                   <SelectBox on={on} onToggle={(shift) => onPick(m.id, shift)} label={on ? "Unselect" : "Select"} />
                   <StarButton on={m.starred} onToggle={(next) => onStar(m, next)} />
                 </div>
               </td>
-              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`} title={out ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
+              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-bold ${t.text}` : `font-normal ${t.soft}`}`} title={out ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
                 {who}
               </td>
-              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</td>
-              <td className={`truncate px-2 py-2.5 align-middle ${t.muted}`}>{m.snippet}</td>
+              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-normal ${t.soft}`}`}>{m.subject || "(no subject)"}</td>
+              <td className={`truncate px-2 py-2.5 align-middle ${unread ? t.soft : t.muted}`}>{m.snippet}</td>
               <td className={`px-1 py-2.5 align-middle ${t.muted}`}>
                 {m.attachmentCount > 0 && <FileKindIcons kinds={m.attachmentKinds?.length ? m.attachmentKinds : ["file"]} count={m.attachmentCount} className="h-4 w-4" />}
               </td>
-              <td className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? t.text : t.muted}`}>
+              <td className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? `font-semibold ${t.dark ? "text-(--mail-accent)" : "text-(--mail-accent-ink)"}` : t.muted}`}>
                 <time dateTime={m.occurredAt} title={fullDate(m.occurredAt)}>
                   {listDate(m.occurredAt)}
                 </time>
@@ -2727,7 +2732,7 @@ function ListRow({
       aria-selected={onPick ? picked : undefined}
       style={dx !== 0 ? { transform: `translateX(${dx}px)` } : undefined}
       className={`swipe-row group flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 ${swiping ? "swiping" : "max-md:active:scale-[0.99]"} ${
-        picked ? (t.dark ? "bg-(--mail-accent-deep)/[0.13]" : "bg-(--mail-accent-deep)/10") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : dx !== 0 ? (t.dark ? "bg-[#0b0b0f]" : "bg-white") : t.hover
+        picked ? (t.dark ? "bg-(--mail-accent-deep)/[0.13]" : "bg-(--mail-accent-deep)/10") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : dx !== 0 ? (t.dark ? "bg-[#0b0b0f]" : "bg-white") : unread ? (t.dark ? "bg-(--mail-accent-deep)/[0.09] hover:bg-(--mail-accent-deep)/[0.14]" : "bg-(--mail-accent-deep)/[0.055] hover:bg-(--mail-accent-deep)/[0.09]") : t.hover
       } ${t.dark ? "active:bg-white/[0.05] focus-visible:bg-white/[0.05]" : "active:bg-gray-100 focus-visible:bg-gray-50"} focus-visible:outline-none`}
     >
       <span className="relative mt-0.5 shrink-0">
@@ -2746,9 +2751,9 @@ function ListRow({
         {unread && <span className="sr-only">Unread. </span>}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={`block truncate text-[13.5px] leading-5 max-md:text-[13px] max-md:leading-5 ${unread ? `font-semibold ${t.text}` : `font-medium ${t.soft}`}`}>{who}</span>
+        <span className={`block truncate text-[13.5px] leading-5 max-md:text-[13px] max-md:leading-5 ${unread ? `font-bold ${t.text}` : `font-normal ${t.soft}`}`}>{who}</span>
         <span className="flex items-center gap-1.5">
-          <span className={`min-w-0 flex-1 truncate text-[12.5px] leading-5 max-md:text-[12px] max-md:leading-5 ${unread ? `font-semibold max-md:font-medium ${t.text}` : t.soft}`}>{m.subject || "(no subject)"}</span>
+          <span className={`min-w-0 flex-1 truncate text-[12.5px] leading-5 max-md:text-[12px] max-md:leading-5 ${unread ? `font-semibold ${t.text}` : `font-normal ${t.soft}`}`}>{m.subject || "(no subject)"}</span>
           {m.attachmentCount > 0 && (
             <span className="shrink-0">
               <FileKindIcons kinds={m.attachmentKinds?.length ? m.attachmentKinds : ["file"]} count={m.attachmentCount} className="h-[15px] w-[15px] max-md:h-4 max-md:w-4" />
@@ -2759,7 +2764,7 @@ function ListRow({
       </span>
       {/* Right rail: when, and the star. Desktop shows the star on hover; phones always, as Gmail does. */}
       <span className="flex shrink-0 flex-col items-end justify-between self-stretch">
-        <time dateTime={m.occurredAt} className={`pr-1 text-[11.5px] leading-5 tabular-nums max-md:text-[10.5px] max-md:leading-5 ${unread ? `font-semibold ${t.text}` : t.muted}`}>
+        <time dateTime={m.occurredAt} className={`pr-1 text-[11.5px] leading-5 tabular-nums max-md:text-[10.5px] max-md:leading-5 ${unread ? `font-semibold ${t.dark ? "text-(--mail-accent)" : "text-(--mail-accent-ink)"}` : t.muted}`}>
           {listDate(m.occurredAt)}
         </time>
         <StarButton on={m.starred} onToggle={onStar} className="-mb-1.5 max-md:-mr-1" alwaysOnPhones />
