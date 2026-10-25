@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { APPEARANCE_BOOT } from "./appearance";
 
 /**
  * The sidebar is an auto-collapsing rail: 60px of icons at rest, expanding to
@@ -28,6 +29,7 @@ export const SIDEBAR_BOOT_SCRIPT = `
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", light ? "#f9fafb" : "#000000");
   } catch (e) {}
+  ${APPEARANCE_BOOT}
 })();
 `.trim();
 
