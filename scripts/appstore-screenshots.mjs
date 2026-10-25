@@ -114,7 +114,7 @@ await shoot("02-message-light", "light", async (page) => {
 });
 await shoot("03-filters-light", "light", async (page) => {
   await list(page);
-  await page.locator('button[aria-haspopup="dialog"]').locator("visible=true").first().click();
+  await page.locator('button[aria-label^="Showing "]').locator("visible=true").first().click();
   await page.waitForTimeout(400);
   await page.locator('[role="switch"]').filter({ hasText: "Starred" }).click();
   await page.waitForTimeout(500);
