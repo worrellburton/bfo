@@ -2076,8 +2076,8 @@ export default function Inbox() {
             BFO
           </Link>
           <span className="flex-1" />
+          {/* Your own photo is set from the desktop header; on a phone its menu had no room. */}
           <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`pill-glass h-10 w-10 ${t.dark ? "text-gray-100" : "text-gray-700"}`} />
-          {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
         </div>
       )}
       {!openId && address && !noAddress && (
