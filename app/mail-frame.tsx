@@ -107,6 +107,7 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     let frameObserver: ResizeObserver | null = null;
     let stuck = false;
     let scale = 1;
+    let naturalHeight = 0;
     const zoomable = typeof CSS !== "undefined" && CSS.supports?.("zoom", "0.5");
     /** Mail laid out wider than the frame (a fixed 600px table, say) is scaled down to fit, the way a phone's mail app does. */
     const fitWidth = () => {
@@ -121,6 +122,9 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
       }
       const want = frame.clientWidth;
       const have = Math.max(doc.documentElement.scrollWidth, body.scrollWidth);
+      // The content's own height at natural size; the frame is that times the scale (browsers disagree on what a zoomed body reports).
+      const cs = frame.contentWindow?.getComputedStyle(body);
+      naturalHeight = body.scrollHeight + (cs ? parseFloat(cs.marginTop) + parseFloat(cs.marginBottom) || 0 : 0);
       scale = want > 0 && have > want + 1 ? Math.max(0.45, want / have) : 1;
       if (scale === 1) return;
       if (zoomable) body.style.zoom = String(scale);
@@ -133,10 +137,10 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     const measure = () => {
       const body = frame.contentDocument?.body;
       if (!body) return 0;
+      if (scale !== 1) return Math.min(20000, Math.ceil(naturalHeight * scale));
       const cs = frame.contentWindow?.getComputedStyle(body);
       const margin = cs ? parseFloat(cs.marginTop) + parseFloat(cs.marginBottom) : 0;
-      const h = body.scrollHeight + (margin || 0);
-      return Math.min(20000, Math.ceil(zoomable ? h : h * scale));
+      return Math.min(20000, Math.ceil(body.scrollHeight + (margin || 0)));
     };
     const fit = () => {
       if (stuck) return;

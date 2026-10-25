@@ -445,7 +445,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
       }}
       aria-label={`Copy ${a}`}
       title="Copy address"
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-9 max-sm:w-9 ${copied === a ? (t.dark ? "text-emerald-400" : "text-emerald-600") : t.dark ? "text-gray-500 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-[40px] max-sm:w-[40px] ${copied === a ? (t.dark ? "text-emerald-400" : "text-emerald-600") : t.dark ? "text-gray-500 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}
     >
       <Icon name={copied === a ? "check" : "copy"} className="h-3.5 w-3.5" strokeWidth={2} />
     </button>
@@ -460,7 +460,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
           aria-expanded={open}
           aria-label={`Mailbox: ${label}. Change`}
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl py-1 pr-2 text-left transition-transform active:scale-[0.99]"
+          className="flex min-h-[44px] w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl py-1 pr-2 text-left transition-transform active:scale-[0.99]"
         >
           {bubble(current ?? (mine.length === 1 ? address : ""), compact ? "h-8 w-8 text-[13px] transition-all duration-300" : "h-11 w-11 text-[17px] transition-all duration-300")}
           <span className="min-w-0 flex-1">
@@ -545,7 +545,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
                 )}
                 {copyBtn(m)}
                 {extra && canAdd && (
-                  <button type="button" onClick={() => void remove(m)} aria-label={`Remove ${m}`} title="Remove address" className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-9 max-sm:w-9 ${t.dark ? "text-gray-600 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}>
+                  <button type="button" onClick={() => void remove(m)} aria-label={`Remove ${m}`} title="Remove address" className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-[40px] max-sm:w-[40px] ${t.dark ? "text-gray-600 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}>
                     <Icon name="x" className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -1077,14 +1077,14 @@ function FolderMenu({ folders, folder, filter, count, onPick }: { folders: { key
               </div>
               <div className="mt-3 flex items-center gap-2">
                 {(dUnread || dStarred) && (
-                  <button type="button" onClick={() => { setDUnread(false); setDStarred(false); }} className={`h-12 shrink-0 cursor-pointer rounded-2xl px-4 text-[14px] font-medium ${t.dark ? "text-gray-300 hover:bg-white/[0.06]" : "text-gray-600 hover:bg-gray-100"}`}>
+                  <button type="button" onClick={() => { setDUnread(false); setDStarred(false); }} className={`h-[48px] shrink-0 cursor-pointer rounded-2xl px-4 text-[14px] font-medium ${t.dark ? "text-gray-300 hover:bg-white/[0.06]" : "text-gray-600 hover:bg-gray-100"}`}>
                     Clear
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={apply}
-                  className={`fab-glass h-12 flex-1 cursor-pointer rounded-2xl text-[15px] font-semibold transition-transform active:scale-[0.98] ${changed ? "" : "opacity-80"}`}
+                  className={`fab-glass h-[48px] flex-1 cursor-pointer rounded-2xl text-[15px] font-semibold transition-transform active:scale-[0.98] ${changed ? "" : "opacity-80"}`}
                 >
                   {changed ? "Apply" : "Done"}
                 </button>
@@ -2078,7 +2078,7 @@ export default function Inbox() {
           <Link
             to="/home"
             aria-label="Back to BFO"
-            className={`inline-flex h-10 shrink-0 items-center gap-1 rounded-full pl-1.5 pr-3 text-[13px] font-medium transition-colors ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+            className={`inline-flex h-[44px] shrink-0 items-center gap-1 rounded-full pl-1.5 pr-3 text-[13px] font-medium transition-colors ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
           >
             <Icon name="chevronLeft" className="h-4 w-4" strokeWidth={2.2} />
             BFO
@@ -2089,7 +2089,7 @@ export default function Inbox() {
         </div>
       )}
       {!openId && address && !noAddress && (
-        <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/70" : "border-gray-200 bg-white/75"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
+        <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/[0.92]" : "border-gray-200 bg-white/[0.92]"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
           <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big compact={scrolled} unread={count?.unread ?? 0} />
         </div>
       )}
@@ -2337,7 +2337,7 @@ function SearchField({ value, onSearch, className = "" }: { value: string; onSea
             submit("");
             ref.current?.focus();
           }}
-          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:h-9 max-md:w-9 ${t.dark ? "text-gray-400 hover:bg-white/[0.08] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:-mr-2 max-md:h-[40px] max-md:w-[40px] ${t.dark ? "text-gray-400 hover:bg-white/[0.08] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
         >
           <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
@@ -2963,7 +2963,7 @@ function Reader({
                 type="button"
                 aria-expanded={details}
                 onClick={() => setDetails((d) => !d)}
-                className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[32px] max-md:text-[13.5px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+                className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[40px] max-md:text-[13.5px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
               >
                 <span className="truncate">
                   {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}
@@ -3072,7 +3072,7 @@ function Reader({
             <button
               type="button"
               onClick={() => onReply(m, "reply")}
-              className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
+              className={`flex h-[48px] flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
                 t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
               }`}
             >
@@ -3082,7 +3082,7 @@ function Reader({
             <button
               type="button"
               onClick={() => onForward(m)}
-              className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
+              className={`flex h-[48px] flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
                 t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
               }`}
             >
@@ -3649,7 +3649,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         {addresses.length > 1 && (
           <div className={row}>
             <span id="compose-from-label" className={label}>From</span>
-            <AddressDropdown id="compose-from" labelledBy="compose-from-label" value={from} options={addresses} onChange={setFrom} className={`${field} cursor-pointer`} />
+            <AddressDropdown id="compose-from" labelledBy="compose-from-label" value={from} options={addresses} onChange={setFrom} className={`${field} cursor-pointer max-sm:min-h-[44px]`} />
           </div>
         )}
         <div className={row}>

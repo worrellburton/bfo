@@ -131,7 +131,7 @@ export function TextButton({ children, className = "", ...rest }: React.ButtonHT
   return (
     <button
       type="button"
-      className={`relative inline-flex cursor-pointer items-center gap-1 text-[12px] font-medium hover:underline disabled:cursor-wait disabled:opacity-50 max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-[''] ${accent} ${className}`}
+      className={`relative inline-flex cursor-pointer items-center gap-1 text-[12px] font-medium hover:underline disabled:cursor-wait disabled:opacity-50 max-sm:after:absolute max-sm:after:-inset-y-[13px] max-sm:after:-inset-x-2 max-sm:after:content-[''] ${accent} ${className}`}
       {...rest}
     >
       {children}

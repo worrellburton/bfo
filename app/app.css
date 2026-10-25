@@ -464,6 +464,11 @@ html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(root) { animation-
 @keyframes mail-enter-back { from { opacity: 0; transform: translateX(-12%); } }
 /* In place, not as page transitions: a loader fading out before the rows come in, and the envelope lifting off
    the message it was covering (the message rendered underneath meanwhile, so it's whole when it shows). */
+/* The search sonar fades out at its edges instead of ending in a hard rectangle. */
+.sonar-canvas {
+  -webkit-mask-image: radial-gradient(120% 110% at 50% 0%, #000 55%, transparent 92%);
+  mask-image: radial-gradient(120% 110% at 50% 0%, #000 55%, transparent 92%);
+}
 /* Exits, so nothing vanishes: menus and sheets go the way they came, the toast fades, a backdrop clears. */
 .menu-out { animation: menu-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards; transform-origin: top center; }
 @keyframes menu-out { to { opacity: 0; transform: translateY(-8px) scale(0.98); } }

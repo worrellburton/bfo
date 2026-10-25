@@ -369,7 +369,7 @@ export function SearchLoader({ term }: { term: string }) {
   useScene(ref, H, sonar(t.dark), [t.dark]);
   return (
     <div role="status" aria-label={`Searching for ${term}`} className="py-1">
-      <canvas ref={ref} aria-hidden="true" className="block w-full" style={{ height: H }} />
+      <canvas ref={ref} aria-hidden="true" className="sonar-canvas block w-full" style={{ height: H }} />
       <p className={`mt-3 flex items-center justify-center gap-2 pb-2 text-[12px] ${t.muted}`}>
         Searching all mail for <span className={`font-medium ${t.text}`}>“{term}”</span>
         <Dots />
