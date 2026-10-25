@@ -9,14 +9,16 @@ type Theme = "dark" | "light";
 const ThemeContext = createContext<{
   theme: Theme;
   toggle: () => void;
+  /** Light or dark, chosen outright (the Appearance panel). */
+  setTheme: (theme: Theme) => void;
   backgroundId: BackgroundId;
   setBackgroundId: (id: BackgroundId) => void;
   /** A page with its own light/dark setting (Mail) applies it while it's on screen; null gives the app's back. */
   setOverride: (theme: Theme | null) => void;
-}>({ theme: "dark", toggle: () => {}, backgroundId: "none", setBackgroundId: () => {}, setOverride: () => {} });
+}>({ theme: "dark", toggle: () => {}, setTheme: () => {}, backgroundId: "none", setBackgroundId: () => {}, setOverride: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
+  const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("bfo-theme") as Theme) || "dark";
     }
@@ -42,8 +44,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [effective]);
 
   function toggle() {
-    setTheme((t) => (t === "dark" ? "light" : "dark"));
+    setThemeState((t) => (t === "dark" ? "light" : "dark"));
   }
+  const setTheme = (t: Theme) => setThemeState(t);
 
   function setBackgroundId(id: BackgroundId) {
     setBackgroundIdState(id);
@@ -51,7 +54,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ThemeContext.Provider value={{ theme: effective, toggle, backgroundId, setBackgroundId, setOverride }}>
+    <ThemeContext.Provider value={{ theme: effective, toggle, setTheme, backgroundId, setBackgroundId, setOverride }}>
       {children}
     </ThemeContext.Provider>
   );

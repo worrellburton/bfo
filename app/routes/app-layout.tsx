@@ -30,6 +30,7 @@ import { Logo3D } from "../logo-3d";
 import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
 import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
 import { useInstall } from "../pwa";
+import { AppearancePanel } from "../appearance-panel";
 
 const iconCls = "w-4 h-4 shrink-0";
 
@@ -301,6 +302,8 @@ export default function AppLayout() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   // Chrome's "Install BFO", offered from the user menu while it's available.
   const { canInstall, install } = useInstall();
+  // The Appearance panel (theme, how solid the cards are, row density).
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const mail = useMailCount();
   // "Email only" members get a reduced shell: the wordmark, the inbox and the user menu.
   const emailOnly = isEmailOnly(user);
@@ -641,6 +644,30 @@ export default function AppLayout() {
           </div>
         )}
 
+        {/* How it looks: light or dark, glass or solid cards, row density. */}
+        <div className="px-2 pb-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setDrawerOpen(false);
+              setAppearanceOpen(true);
+            }}
+            title={showLabels ? undefined : "Appearance"}
+            aria-label="Appearance"
+            aria-haspopup="dialog"
+            className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 max-lg:h-[44px] ${
+              labelsVisible ? "" : "lg:justify-center lg:px-0"
+            } ${isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.05]" : "text-gray-500 hover:text-black hover:bg-black/[0.04]"}`}
+          >
+            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+              <circle cx="16" cy="7" r="2.5" />
+              <circle cx="10" cy="17" r="2.5" />
+            </svg>
+            <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "lg:hidden"}`}>Appearance</span>
+          </button>
+        </div>
+
         <SidebarNav items={items} isDark={isDark} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
@@ -872,6 +899,7 @@ export default function AppLayout() {
       {!emailOnly && !partner && (
         <>
           <ShellShortcuts pages={pages} openPalette={openPalette} openSheet={openSheet} />
+          {appearanceOpen && <AppearancePanel onClose={() => setAppearanceOpen(false)} />}
           <CommandPalette
             open={paletteOpen}
             onClose={() => setPaletteOpen(false)}
