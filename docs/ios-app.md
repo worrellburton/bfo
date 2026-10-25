@@ -16,6 +16,23 @@ or dark with the page, and no service worker. If the site can't be reached the
 shell shows its own offline page (`native/www/offline.html`) with Try again.
 Links to other sites open in Safari.
 
+**Push notifications for new mail** (`app/push.ts`, `lib/push.ts`,
+`lib/apns.ts`, `api/push.ts`). Mail invites each person once ("Know when mail
+arrives"), and the account menu has Turn on notifications or, once on, Send a
+test notification. A phone registers its token under whoever is signed in
+(table `push_devices`); signing out removes it. When new mail is stored, each
+recipient's phones get a notice with the sender, subject and first words;
+tapping it opens the message, and with the app open the list refreshes. Mail
+older than 30 minutes (a backfill) is stored quietly. Tokens Apple says are
+dead are forgotten.
+
+**Face ID lock** (`app/app-lock.tsx`). On by default wherever the phone has
+Face ID, Touch ID or a passcode. BFO opens behind a cover and asks for Face ID
+before showing anything; leaving the app covers it at once, so the app
+switcher never shows mail or accounts; coming back after more than a minute
+asks again. The passcode works when Face ID fails. The account menu turns it
+off ("Face ID lock: On").
+
 | What | Where |
 | --- | --- |
 | App ID (bundle identifier) | `com.burtonfamilyoffice.app` |
@@ -74,7 +91,32 @@ repository secret, four times:
 | `ASC_ISSUER_ID` | the Issuer ID |
 | `ASC_KEY_P8` | the whole text of the `.p8` file, from `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----` |
 
-### 5. Build and upload
+### 5. Push notifications: an APNs key
+
+The App Store Connect key in step 3 can't send notifications; Apple uses a
+separate key for that.
+
+1. developer.apple.com → Certificates, Identifiers & Profiles → **Identifiers**
+   → `com.burtonfamilyoffice.app` → tick **Push Notifications** → Save. (The
+   build turns this on itself through automatic signing; ticking it first
+   makes sure.)
+2. **Keys** → **+** → name it "BFO push", tick **Apple Push Notifications
+   service (APNs)** → Continue → Register → **Download** the `.p8` (once only)
+   and note its **Key ID**.
+3. Vercel → the bfo project → Settings → **Environment Variables**, for
+   Production:
+
+| Variable | Value |
+| --- | --- |
+| `APNS_KEY_ID` | the push key's Key ID |
+| `APNS_TEAM_ID` | your Team ID (same as `APPLE_TEAM_ID`) |
+| `APNS_KEY_P8` | the whole text of the push key's `.p8` |
+
+Redeploy once so the functions see them. Then, in the app, the account menu's
+**Send a test notification** confirms it end to end. Until these are set, the
+site stores mail as usual and simply sends no notices.
+
+### 6. Build and upload
 
 GitHub → Actions → **iOS → TestFlight** → Run workflow. It runs on a cloud Mac
 with the current Xcode, signs the app, and uploads it. The build appears in App
@@ -82,7 +124,7 @@ Store Connect → TestFlight after Apple processes it, usually 5 to 15 minutes.
 Each run gets the next build number automatically. Enter a version (such as
 `1.0.1`) only when you want the App Store version to change.
 
-### 6. TestFlight
+### 7. TestFlight
 
 App Store Connect → the app → TestFlight → Internal Testing → **+** to create
 a group (for example "Family"), and add people. They must be users on your App
@@ -153,6 +195,7 @@ advertising, and nothing is shared with data brokers.
 | Data type | Collected | Linked to the person | Used for |
 | --- | --- | --- | --- |
 | Contact info: name, email address, phone number | Yes | Yes | App functionality (accounts and sign-in) |
+| Identifiers: device ID (the push token) | Yes | Yes | App functionality (notifications) |
 | User content: emails or text messages | Yes | Yes | App functionality (Mail) |
 | User content: photos or videos | Yes | Yes | App functionality (attachments, profile photo) |
 | User content: other (documents) | Yes | Yes | App functionality |
@@ -183,11 +226,10 @@ external TestFlight testers, does.
    a direct link and suits a private office better. A **Custom app** through
    Apple Business Manager limits it to your organization.
 3. **Guideline 4.2 (minimum functionality).** Apple can reject apps that are
-   mostly a website. BFO has real native touches (haptics, its own offline
-   screen, a theme-aware status bar), and members-only business apps are
-   reviewed more leniently. Native push notifications for new mail and Face ID
-   unlock would make approval much more likely and are the natural next native
-   features.
+   mostly a website. BFO now has substantial native features (push
+   notifications for new mail, a Face ID lock, haptics, its own offline screen,
+   a theme-aware status bar), and members-only business apps are reviewed more
+   leniently, so this risk is much lower than for a plain wrapper.
 4. **The privacy policy** at `/legal/privacy` describes "BFO Finance" and bank
    connections. Before a public submission it should also cover Mail, photos,
    and the iPhone app.

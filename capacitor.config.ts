@@ -8,7 +8,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * so every web deploy reaches the app at once and only native changes (this
  * file, ios/, the plugins) need a new build. The site uses the bridge for
  * native touches (app/native.ts): haptics, a status bar that follows the
- * theme, the splash screen. native/www is the bundled fallback the shell shows
+ * theme, the splash screen, push notifications for new mail (app/push.ts) and
+ * a Face ID lock (app/app-lock.tsx). native/www is the bundled fallback the shell shows
  * when the site can't be reached.
  *
  * Links to other sites open in Safari; only the BFO host stays in the app.
@@ -39,6 +40,10 @@ const config: CapacitorConfig = {
       launchFadeOutDuration: 250,
       backgroundColor: "#0a0a0a",
       showSpinner: false,
+    },
+    // New-mail notices show as banners even while the app is open (app/push.ts refreshes the list too).
+    PushNotifications: {
+      presentationOptions: ["banner", "list", "sound"],
     },
     StatusBar: {
       overlaysWebView: true,

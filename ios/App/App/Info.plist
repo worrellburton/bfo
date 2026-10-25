@@ -69,5 +69,7 @@
 	<false/>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleDefault</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>BFO uses Face ID to unlock the app, so your family office stays private if someone else picks up your phone.</string>
 </dict>
 </plist>

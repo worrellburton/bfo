@@ -1,4 +1,5 @@
 import { fileKinds, type FileKind } from "./file-kind.js";
+import { notifyNewMail, type NewMail } from "./push.js";
 import { createHash, randomUUID } from "node:crypto";
 import { birdPlatformFetch, sb } from "./auth.js";
 import { countRows } from "./db-pages.js";
@@ -844,12 +845,16 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
     starred_at: null,
     occurred_at: occurredAt,
   };
-  const inserted = await sb<{ id: string }[]>("mail_messages?on_conflict=dedupe_key&select=id", {
+  // Only rows actually stored come back (duplicates are ignored), so each new message is announced once.
+  const inserted = await sb<NewMail[]>("mail_messages?on_conflict=dedupe_key&select=id,user_id,thread_key,from_email,from_name,subject,snippet,occurred_at", {
     method: "POST",
     body: todo.map((t) => ({ ...shared, user_id: t.userId, dedupe_key: keyFor(t.userId), delivered_to: storableOrNull(t.deliveredTo) })),
     prefer: "resolution=ignore-duplicates,return=representation",
   });
-  return Array.isArray(inserted) ? inserted.length : 0;
+  if (!Array.isArray(inserted)) return 0;
+  // A notice on the recipients' phones (the iPhone app); never holds the mail up or fails it.
+  await notifyNewMail(inserted);
+  return inserted.length;
 }
 
 export type SyncResult = { ingested: number; error?: string; skipped?: boolean };

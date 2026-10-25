@@ -31,6 +31,8 @@ import { SIDEBAR_OPEN_W, SIDEBAR_RAIL_W, useHoverCapable } from "../sidebar";
 import { SidebarNav, type NavChild, type NavItem } from "../sidebar-nav";
 import { useInstall } from "../pwa";
 import { AppearancePanel } from "../appearance-panel";
+import { AppLock, useAppLockSetting } from "../app-lock";
+import { enablePush, forgetPushDevice, usePush, usePushState } from "../push";
 
 const iconCls = "w-4 h-4 shrink-0";
 
@@ -283,6 +285,10 @@ export default function AppLayout() {
   const logoModel = modelOf(logo);
   const lockup = lockupOf(logo);
   const navigate = useNavigate();
+  // The iPhone app: notices for new mail, and the Face ID lock (app/push.ts, app/app-lock.tsx).
+  const lock = useAppLockSetting();
+  const [push, setPush] = usePushState();
+  const [pushNote, setPushNote] = useState<string | null>(null);
   const location = useLocation();
   /** Mail on a phone has its own top (a way back, the mailbox); the app's bar and particles stay out of it. */
   const mailOnly = location.pathname.startsWith("/inbox");
@@ -290,6 +296,7 @@ export default function AppLayout() {
   const hoverCapable = useHoverCapable();
 
   const [user, setUser] = useState(() => getUser());
+  usePush(user?.id ?? null, navigate);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -530,6 +537,7 @@ export default function AppLayout() {
     setUserMenuOpen(false);
     setDrawerOpen(false);
     setPaletteOpen(false);
+    forgetPushDevice();
     const next = logout();
     resetStore();
     if (next) window.location.assign(homePath(next));
@@ -767,6 +775,37 @@ export default function AppLayout() {
                 </button>
               )}
 
+              {push !== "unsupported" && (
+                <button
+                  onClick={async () => {
+                    if (push === "granted") {
+                      const r = await authFetch("/api/push", { method: "POST", body: JSON.stringify({ action: "test" }) })
+                        .then((x) => x.json())
+                        .catch(() => null);
+                      setPushNote(!r ? "Couldn't reach BFO" : r.error === "not_configured" ? "Not set up on the server yet" : r.sent ? "Sent. Check your lock screen" : r.devices ? `Apple refused it (${r.error ?? "unknown"})` : "This phone isn't registered yet");
+                    } else setPush(await enablePush());
+                  }}
+                  className={menuItemCls}
+                  role="menuitem"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                  </svg>
+                  <span className="flex-1">{push === "granted" ? "Send a test notification" : push === "denied" ? "Notifications are off" : "Turn on notifications"}</span>
+                  {(pushNote || push === "denied") && <span className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>{pushNote ?? "in iPhone Settings"}</span>}
+                </button>
+              )}
+
+              {lock.kind && (
+                <button onClick={() => lock.set(!lock.on)} className={menuItemCls} role="menuitemcheckbox" aria-checked={lock.on}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                  </svg>
+                  <span className="flex-1">{lock.kind} lock</span>
+                  <span className={`text-[11px] font-medium ${lock.on ? (isDark ? "text-emerald-400" : "text-emerald-600") : isDark ? "text-gray-500" : "text-gray-400"}`}>{lock.on ? "On" : "Off"}</span>
+                </button>
+              )}
+
               <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
                 {isDark ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
@@ -900,6 +939,7 @@ export default function AppLayout() {
         <>
           <ShellShortcuts pages={pages} openPalette={openPalette} openSheet={openSheet} />
           {appearanceOpen && <AppearancePanel onClose={() => setAppearanceOpen(false)} />}
+          <AppLock />
           <CommandPalette
             open={paletteOpen}
             onClose={() => setPaletteOpen(false)}

@@ -251,7 +251,9 @@ To set it up in Bird:
 BFO is also an iPhone app: a [Capacitor](https://capacitorjs.com) shell
 (`capacitor.config.ts`, `ios/`) that opens the live site, so web deploys reach
 it at once. Inside the app the site uses native haptics and a theme-aware
-status bar (`app/native.ts`). A GitHub Actions workflow builds it on a cloud
+status bar (`app/native.ts`), sends push notifications for new mail
+(`lib/push.ts`, needs the `APNS_*` variables) and locks with Face ID
+(`app/app-lock.tsx`). A GitHub Actions workflow builds it on a cloud
 Mac and uploads it to App Store Connect for TestFlight. Setup, the App Store
 listing, privacy answers and the decisions left before App Review are in
 [docs/ios-app.md](docs/ios-app.md).

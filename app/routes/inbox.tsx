@@ -15,6 +15,7 @@ import { fileKind } from "../../lib/file-kind";
 import { filterFlags, filterOf } from "../../lib/mail-filter";
 import { useTheme } from "../theme";
 import { haptic } from "../native";
+import { enablePush, usePushState } from "../push";
 import { phoneScreen, supportsViewTransitions, transition } from "../view-transition";
 import {
   addAlias,
@@ -1890,6 +1891,52 @@ export default function Inbox() {
     </div>
   );
 
+  // The iPhone app: invite notifications for new mail once, until answered (app/push.ts).
+  const [pushAsk, setPushAsk] = usePushState();
+  const [pushDismissed, setPushDismissed] = useState(true);
+  useEffect(() => {
+    try {
+      setPushDismissed(localStorage.getItem("bfo-push-ask") === "no");
+    } catch {
+      setPushDismissed(false);
+    }
+  }, []);
+  const pushInvite =
+    pushAsk === "prompt" && !pushDismissed && rows && !q ? (
+      <div className={`row-in mx-4 mb-2 mt-1 rounded-2xl border p-3.5 md:hidden ${t.dark ? "border-white/[0.08] bg-white/[0.05]" : "border-gray-200 bg-white/80"}`}>
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/10 text-(--mail-accent-ink)"}`}>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+            </svg>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block text-[14px] font-semibold ${t.text}`}>Know when mail arrives</span>
+            <span className={`block text-[12.5px] ${t.muted}`}>A notification on this phone for new mail.</span>
+          </span>
+        </div>
+        <div className="mt-2.5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.setItem("bfo-push-ask", "no");
+              } catch {
+                // for this visit
+              }
+              setPushDismissed(true);
+            }}
+            className={`h-[40px] shrink-0 cursor-pointer rounded-full px-3 text-[13px] font-medium ${t.muted}`}
+          >
+            Not now
+          </button>
+          <button type="button" onClick={async () => setPushAsk(await enablePush())} className="fab-glass h-[40px] shrink-0 cursor-pointer rounded-full px-5 text-[13px] font-semibold">
+            Turn on
+          </button>
+        </div>
+      </div>
+    ) : null;
+
   const listBody = !rows ? (
     listError ? <ErrorLine>{listError}</ErrorLine> : (
       <div className={loaderLeaving ? "loader-out" : ""}>{q ? <SearchLoader term={q} /> : <ListLoader table={view === "table"} label={folder === "sent" ? "Fetching sent mail" : folder === "archive" ? "Fetching the archive" : "Fetching mail"} />}</div>
@@ -2145,6 +2192,7 @@ export default function Inbox() {
             <>
               {toolbar}
               <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+                {pushInvite}
                 {bulkBar}
                 {listBody}
               </PullToRefresh>
@@ -2160,6 +2208,7 @@ export default function Inbox() {
           >
             {toolbar}
             <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+              {pushInvite}
               {bulkBar}
               {listBody}
             </PullToRefresh>
