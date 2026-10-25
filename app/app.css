@@ -478,11 +478,12 @@ html[data-vt="mail"][data-vt-dir="back"]::view-transition-new(root) { animation-
 /* Back from a message: its row glows once, in the mailbox's colour. */
 .row-return { animation: row-return 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; border-radius: 16px; }
 @keyframes row-return { 0% { background-color: hsl(var(--mail-hue) var(--mail-sat) 70% / 0.28); } 100% { background-color: transparent; } }
-/* Light ↔ dark: the page crossfades (the aurora eases its own colours). */
-html[data-vt="theme"]::view-transition-old(root) { animation: theme-out 360ms ease both; }
-html[data-vt="theme"]::view-transition-new(root) { animation: theme-in 360ms ease both; }
-@keyframes theme-out { to { opacity: 0; } }
-@keyframes theme-in { from { opacity: 0; } }
+/* Light ↔ dark: colours ease across for a moment (the aurora eases its own). No page snapshot, so nothing freezes. */
+html.theme-switching, html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
+  transition: background-color 320ms ease, color 320ms ease, border-color 320ms ease, fill 320ms ease, stroke 320ms ease !important;
+}
+.theme-icon-in { animation: theme-icon-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes theme-icon-in { from { opacity: 0; transform: rotate(-90deg) scale(0.6); } }
 .loader-out { animation: loader-out 240ms ease forwards; }
 @keyframes loader-out { to { opacity: 0; transform: scale(0.985); } }
 .reader-under { visibility: hidden; }
@@ -493,7 +494,8 @@ html[data-vt="theme"]::view-transition-new(root) { animation: theme-in 360ms eas
 .reader-envelope.env-out { animation: env-out 420ms cubic-bezier(0.4, 0, 0.6, 1) forwards; }
 @keyframes env-out { to { opacity: 0; transform: translateY(-14px) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) {
-  .loader-out, .reader-reveal, .reader-envelope.env-out, .menu-out, .sheet-down, .backdrop-in, .backdrop-out, .toast-out, .row-return { animation-duration: 1ms; }
+  .loader-out, .reader-reveal, .reader-envelope.env-out, .menu-out, .sheet-down, .backdrop-in, .backdrop-out, .toast-out, .row-return, .theme-icon-in { animation-duration: 1ms; }
+  html.theme-switching, html.theme-switching * { transition: none !important; }
 }
 
 /* Phones: Mail's list and reader aren't cards. The pill, the rows and the message float on the aurora like the

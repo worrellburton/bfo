@@ -1,4 +1,7 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useLayoutEffect } from "react";
+
+/** Before paint in the browser (no flash of the other theme); a plain effect on the server. */
+const useBeforePaint = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import type { BackgroundId } from "./webgl-backgrounds";
 
 type Theme = "dark" | "light";
@@ -33,7 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.setItem("bfo-theme", theme);
   }, [theme]);
-  useEffect(() => {
+  useBeforePaint(() => {
     document.documentElement.classList.toggle("light", effective === "light");
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", effective === "light" ? "#f9fafb" : "#000000");
   }, [effective]);

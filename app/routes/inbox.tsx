@@ -1,7 +1,6 @@
 import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
 import { composeText, htmlFromPlain } from "../../lib/mail-compose";
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { flushSync } from "react-dom";
 import { createPortal } from "react-dom";
 import { Link, useBlocker, useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
@@ -870,7 +869,7 @@ const FILTERS: { key: MailFilter; label: string }[] = [
 const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred.", "unread-starred": "Nothing both unread and starred." };
 
 /** The appearance button: Mail's own light/dark switch. A sun in the dark, a moon in the light. */
-function ThemeButton({ dark, onToggle, className = "" }: { dark: boolean; onToggle: () => void; className?: string }) {
+function ThemeButton({ dark, onToggle, className = "", iconClassName = "h-5 w-5" }: { dark: boolean; onToggle: () => void; className?: string; iconClassName?: string }) {
   return (
     <button
       type="button"
@@ -879,16 +878,18 @@ function ThemeButton({ dark, onToggle, className = "" }: { dark: boolean; onTogg
       onClick={onToggle}
       className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 ${className}`}
     >
+      <span key={dark ? "sun" : "moon"} className="theme-icon-in inline-flex">
       {dark ? (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2.5v2M12 19.5v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2.5 12h2M19.5 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
         </svg>
       ) : (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M20.5 14.5A8.5 8.5 0 019.5 3.5a8.5 8.5 0 1011 11z" />
         </svg>
       )}
+      </span>
     </button>
   );
 }
@@ -1150,6 +1151,7 @@ export default function Inbox() {
   };
   /** Mail's own light/dark setting: light unless switched, kept on the device, applied only while Mail is on screen. */
   const { setOverride } = useTheme();
+  const themeFadeTimer = useRef<number | undefined>(undefined);
   const [mailTheme, setMailTheme] = useState<"light" | "dark">("light");
   useEffect(() => {
     try {
@@ -1158,24 +1160,30 @@ export default function Inbox() {
       // Private mode: light it is.
     }
   }, []);
-  useEffect(() => {
+  // Applied before paint, so the page never shows a frame of the other theme.
+  useLayoutEffect(() => {
     setOverride(mailTheme);
-    return () => setOverride(null);
   }, [mailTheme, setOverride]);
+  useEffect(() => () => setOverride(null), [setOverride]);
+  const mailThemeRef = useRef(mailTheme);
+  mailThemeRef.current = mailTheme;
   function toggleMailTheme() {
-    const next = mailTheme === "dark" ? "light" : "dark";
-    // The page crossfades between light and dark (the aurora eases its own colours underneath).
-    void transition("theme", "forward", () => {
-      flushSync(() => setMailTheme(next));
-      return new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-    });
+    // Read from the ref, so two quick taps go there and back.
+    const next = mailThemeRef.current === "dark" ? "light" : "dark";
+    mailThemeRef.current = next;
+    // Colours ease across for a moment (app.css, .theme-switching); the aurora eases its own underneath.
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    window.clearTimeout(themeFadeTimer.current);
+    themeFadeTimer.current = window.setTimeout(() => root.classList.remove("theme-switching"), 420);
+    setMailTheme(next);
+    setOverride(next);
     try {
       localStorage.setItem(MAIL_THEME_KEY, next);
     } catch {
       // Then it lasts the visit.
     }
     tap();
-    setToast(next === "dark" ? "Dark" : "Light");
   }
   /** Everyone's chosen pictures, by address; asked for once per visit. */
   const [faces, setFaces] = useState<MailFaces>({});
@@ -2077,7 +2085,7 @@ export default function Inbox() {
           </Link>
           <span className="flex-1" />
           {/* Your own photo is set from the desktop header; on a phone its menu had no room. */}
-          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`pill-glass h-10 w-10 ${t.dark ? "text-gray-100" : "text-gray-700"}`} />
+          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`pill-glass h-[44px] w-[44px] ${t.dark ? "text-gray-100" : "text-gray-700"}`} iconClassName="h-[22px] w-[22px]" />
         </div>
       )}
       {!openId && address && !noAddress && (
