@@ -168,27 +168,28 @@ export default function Login() {
 
       <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
 
-      <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
+      {/* No card: the lockup, a hairline and the type, set on the same field as the landing page. */}
+      <div className={`relative z-10 w-full max-w-[21rem] px-6 text-center ${shake ? "landing-shake" : ""}`}>
         <h1 className="m-0 select-none">
           <BrandLockup font={lockup.font} finish={lockup.finish} size="compact" />
         </h1>
 
         {returnTo && (
-          <p className="auth-in mt-8 text-[12.5px] text-white/55">
+          <p className="auth-in auth-hint mt-8">
             Adding another account.{" "}
             <button
               type="button"
               onClick={() => {
                 if (cancelAddAccount()) window.location.assign(homePath(returnTo));
               }}
-              className="cursor-pointer text-white/85 underline-offset-4 hover:underline"
+              className="cursor-pointer text-[#f4ede0]/85 underline-offset-4 hover:underline"
             >
               Back to {displayName(returnTo)}
             </button>
           </p>
         )}
 
-        <div className={`auth-card ${returnTo ? "mt-4" : "mt-10"} p-6 text-left`}>
+        <div className={returnTo ? "mt-6" : "mt-12"}>
           {step === "identifier" && (
             <form
               key="identifier"
@@ -197,17 +198,10 @@ export default function Login() {
                 if (valid) void send(identifier);
               }}
             >
-              <div className="auth-in flex items-center justify-between mb-3">
-                <label
-                  htmlFor="identifier"
-                  className="block text-[11px] uppercase tracking-[0.2em] text-white/40"
-                >
-                  Sign in
-                </label>
-                <span className="text-[11px] text-white/35">Phone number</span>
-              </div>
+              <p className="auth-in auth-eyebrow">Sign in</p>
+              <h2 className="auth-in auth-title mt-2.5">Your phone number.</h2>
 
-              <div className="relative">
+              <div className="sign-field-wrap auth-in auth-delay-1 mt-7">
                 <input
                   ref={idInput}
                   id="identifier"
@@ -217,18 +211,20 @@ export default function Login() {
                   autoComplete="tel"
                   autoFocus
                   required
+                  aria-label="Phone number"
                   value={identifier}
                   onChange={(e) => onIdentifierChange(e.target.value)}
                   placeholder="(555) 123-4567"
-                  className={`auth-field auth-delay-1 auth-field-ghost text-[16px] ${error ? "auth-field-error" : ""}`}
+                  className={`sign-field ${error ? "sign-field-error" : ""}`}
                 />
                 <AnimatedValue value={identifier} />
               </div>
+              <p className="auth-in auth-delay-1 auth-hint mt-3">We'll text you a six-digit code.</p>
 
-              <button type="submit" disabled={busy || !valid} className="auth-btn auth-in auth-delay-2 mt-4">
+              <button type="submit" disabled={busy || !valid} className="auth-btn auth-in auth-delay-2 mt-7">
                 {busy ? (
                   <>
-                    <Spinner /> Sending…
+                    <Spinner /> Sending
                   </>
                 ) : (
                   "Send code"
@@ -245,20 +241,12 @@ export default function Login() {
                 void submitCode(code);
               }}
             >
-              <label
-                htmlFor="code"
-                className="auth-in block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1"
-              >
-                Enter code
-              </label>
-              <p className="auth-in text-white/50 text-xs mb-4">Sent to {masked}</p>
+              <p className="auth-in auth-eyebrow">One-time code</p>
+              <h2 className="auth-in auth-title mt-2.5">Check your phone.</h2>
+              <p className="auth-in auth-hint mt-2">Sent to {masked}</p>
 
-              {/* Six cells; a hidden input keeps typing, paste and iOS
-                  code-autofill working exactly as before */}
-              <div
-                className="relative auth-in auth-delay-1"
-                onClick={() => codeInput.current?.focus()}
-              >
+              {/* Six digits on six rules; a hidden input keeps typing, paste and iOS code-autofill working */}
+              <div className="relative auth-in auth-delay-1 mt-6" onClick={() => codeInput.current?.focus()}>
                 <input
                   ref={codeInput}
                   id="code"
@@ -276,43 +264,40 @@ export default function Login() {
                   className="absolute inset-0 opacity-0 cursor-pointer"
                   aria-label="6-digit code"
                 />
-                <div className="flex gap-2 justify-between" aria-hidden>
+                <div className="flex gap-3 justify-between" aria-hidden>
                   {cells.map((ch, i) => (
                     <div
                       key={i}
-                      className={`auth-otp-cell ${ch ? "auth-otp-filled" : ""} ${
-                        !success && !error && i === activeCell && code.length < CODE_LEN
-                          ? "auth-otp-active"
-                          : ""
-                      } ${success ? "auth-otp-success" : ""} ${error ? "auth-otp-error" : ""}`}
+                      className={`sign-cell ${ch ? "sign-cell-filled" : ""} ${
+                        !success && !error && i === activeCell && code.length < CODE_LEN ? "sign-cell-active" : ""
+                      } ${success ? "sign-cell-success" : ""} ${error ? "sign-cell-error" : ""}`}
                     >
-                      {ch && <span key={`${i}-${ch}`} className="auth-char">{ch}</span>}
+                      {ch && (
+                        <span key={`${i}-${ch}`} className="auth-char">
+                          {ch}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={busy || code.length !== CODE_LEN}
-                className="auth-btn auth-in auth-delay-2 mt-5"
-              >
+              <button type="submit" disabled={busy || code.length !== CODE_LEN} className="auth-btn auth-in auth-delay-2 mt-7">
                 {success ? (
-                  "Welcome back"
+                  "Welcome"
                 ) : busy ? (
                   <>
-                    <Spinner /> Verifying…
+                    <Spinner /> Verifying
                   </>
                 ) : (
                   "Continue"
                 )}
               </button>
 
-              <p className="auth-in auth-delay-3 text-white/25 text-[11px] mt-3 text-center">
-                You'll stay signed in on this device for 30 days.
-              </p>
+              <p className="auth-in auth-delay-3 auth-foot mt-4">Signed in on this device for 30 days.</p>
 
-              <div className="flex items-center justify-between mt-4 text-xs">
+              <div className="auth-in auth-delay-3 auth-rule mt-6" />
+              <div className="flex items-center justify-between mt-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -320,41 +305,28 @@ export default function Login() {
                     setCode("");
                     setError("");
                   }}
-                  className="text-white/50 hover:text-white/80 transition-colors cursor-pointer min-h-[40px] -ml-1 px-1"
+                  className="auth-link min-h-[40px] -ml-1 px-1"
                 >
                   ← Change
                 </button>
-                <button
-                  type="button"
-                  disabled={cooldown > 0 || busy}
-                  onClick={() => void send(sentTo)}
-                  className="relative overflow-hidden px-3 py-1.5 min-h-[40px] rounded-full border border-white/10 text-white/50 hover:text-white/80 transition-colors cursor-pointer disabled:hover:text-white/40 disabled:cursor-not-allowed"
-                >
-                  {cooldown > 0 && (
-                    <span
-                      className="absolute inset-y-0 left-0 bg-white/[0.06]"
-                      style={{ width: `${(cooldown / RESEND_SECONDS) * 100}%` }}
-                    />
-                  )}
-                  <span className="relative">
-                    {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
-                  </span>
+                <button type="button" disabled={cooldown > 0 || busy} onClick={() => void send(sentTo)} className="auth-link sign-resend">
+                  {cooldown > 0 && <span className="sign-resend-fill" style={{ width: `${(cooldown / RESEND_SECONDS) * 100}%` }} />}
+                  <span className="relative tabular-nums">{cooldown > 0 ? `Resend · ${cooldown}s` : "Resend code"}</span>
                 </button>
               </div>
             </form>
           )}
 
           {step === "pending" && (
-            <div key="pending" className="text-center py-2 auth-in">
-              <div className="mx-auto w-10 h-10 rounded-full border border-white/15 bg-[rgba(255,255,255,0.06)] flex items-center justify-center mb-4">
-                <svg className="w-5 h-5 text-white/70" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <div key="pending" className="auth-in">
+              <div className="mx-auto w-11 h-11 rounded-full border border-[#f4ede0]/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-[#f4ede0]/75" fill="none" stroke="currentColor" strokeWidth={1.4} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-white font-medium">You're verified</p>
-              <p className="text-white/45 text-sm mt-2 leading-relaxed">
-                An owner needs to approve access for {masked}. You'll be able to sign in once they do.
-              </p>
+              <p className="auth-eyebrow mt-6">Verified</p>
+              <h2 className="auth-title mt-2.5">One more step.</h2>
+              <p className="auth-hint mt-3">An owner needs to approve access for {masked}. You'll be able to sign in once they do.</p>
               <button
                 type="button"
                 onClick={() => {
@@ -362,14 +334,18 @@ export default function Login() {
                   setCode("");
                   setError("");
                 }}
-                className="mt-3 min-h-[40px] px-2 text-xs text-white/50 hover:text-white/80 transition-colors cursor-pointer"
+                className="auth-link mt-6 min-h-[40px] px-2"
               >
                 ← Start over
               </button>
             </div>
           )}
 
-          {error && <p role="alert" className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
+          {error && (
+            <p role="alert" className="mt-5 text-[12.5px] text-red-300/85">
+              {error}
+            </p>
+          )}
         </div>
       </div>
     </div>
