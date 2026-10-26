@@ -8,12 +8,12 @@ import { authFetch } from "./auth";
 import { stateCode } from "./entity-paperwork";
 import type { FormationState } from "./formation";
 import type { RaSnapshot } from "../lib/palm-agent";
-import { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateRecord } from "../lib/registry";
+import { activeConfirmation, effectiveRecord, formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateConfirmation, type StateRecord } from "../lib/registry";
 
-export type { PalmAddress, PalmMode, RegistryRecord, StateRecord } from "../lib/registry";
+export type { PalmAddress, PalmMode, RegistryRecord, StateConfirmation, StateRecord } from "../lib/registry";
 export { DOC_LABEL, docKindOf } from "../lib/palm-docs";
 import { docKindOf } from "../lib/palm-docs";
-export { formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord } from "../lib/registry";
+export { activeConfirmation, effectiveRecord, formatAddress, normalizeName, pickRegistryMatch, recordLapsed, sameAddressText, toStateRecord } from "../lib/registry";
 
 export type RaService = {
   provider: "palm" | "external" | null;
@@ -60,8 +60,19 @@ export type Finding = { tone: "bad" | "warn" | "info"; text: string };
 
 /** What the state's record says that our record doesn't — the things to act on. */
 
-export function stateFindings(rec: StateRecord, asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string }): Finding[] {
+export function stateFindings(
+  palmRec: StateRecord,
+  asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string; stateConfirmed?: StateConfirmation | null },
+): Finding[] {
   const out: Finding[] = [];
+  // Palm's copy lagging the state's own site, as someone confirmed: judged as the state has it.
+  const confirmed = activeConfirmation(palmRec, asset.stateConfirmed);
+  const rec = effectiveRecord(palmRec, asset.stateConfirmed);
+  if (confirmed) {
+    const said = [palmRec.status && palmRec.status !== "active" ? palmRec.status : null, palmRec.standing?.registration === "not_compliant" ? "not in good standing" : null].filter(Boolean).join(", ");
+    const when = new Date(confirmed.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    out.push({ tone: "info", text: `Active and in good standing on the state's own site (confirmed ${when}${confirmed.by ? ` by ${confirmed.by}` : ""}${confirmed.note ? `: ${confirmed.note}` : ""}). Palm's copy still says ${said}; it's behind the state.` });
+  }
   if (rec.status && rec.status !== "active") out.push({ tone: "bad", text: `The state lists it as ${rec.status}, not active.` });
   const s = rec.standing ?? {};
   if (s.registration === "not_compliant") out.push({ tone: "bad", text: "Not in good standing: a required state filing or fee is outstanding." });

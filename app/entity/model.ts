@@ -7,7 +7,7 @@ import { entityType } from "../entity-completeness";
 import { DOC_KEYS, documentRules, type DocKey, type DocRule, type PaperworkInput } from "../entity-paperwork";
 import type { ForeignRegistration } from "../entity-addresses";
 import type { Closing } from "../entity-closing";
-import type { PalmLink, PalmMode, StateRecord } from "../palm";
+import type { PalmLink, PalmMode, StateConfirmation, StateRecord } from "../palm";
 import type { EinCheck } from "../../lib/palm-monitor";
 import type { PalmFilingDue } from "../../lib/palm-webhook";
 
@@ -51,6 +51,8 @@ export interface Asset {
   palm?: Partial<Record<PalmMode, PalmLink>>;
   /** The state's record as last read through Palm. */
   stateRecord?: StateRecord;
+  /** The state's own site seen to say active, while Palm's copy says otherwise. */
+  stateConfirmed?: StateConfirmation | null;
   /** Filings Palm Monitor says are due or overdue, by state and kind (api/palm-webhook.ts). */
   palmFilings?: Record<string, PalmFilingDue>;
   /** The latest change Palm Monitor saw on each state's record. */
