@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { deleteChat, getChat, listChats, sendMessage, speakText, transcribeAudio, type ChatMessage, type ChatSummary } from "../ask-client";
+import { deleteChat, getChat, listChats, logTurn, sendMessage, speakText, transcribeAudio, type ChatMessage, type ChatSummary } from "../ask-client";
+import { canLive, LiveVoice, type LiveStatus } from "../realtime-voice";
 import { canRecord, Player, Recorder } from "../ask-voice";
 import { VoiceStage, type Caption, type VoiceStatus } from "../ask-voice-stage";
 import { Markdown } from "../ask-markdown";
@@ -86,8 +87,83 @@ export default function Ask() {
   /** The words on the voice stage: what was just said, or the answer being spoken. */
   const [caption, setCaption] = useState<Caption>(null);
   const [fetchingSpeech, setFetchingSpeech] = useState(false);
-  const level = useCallback(() => recorder.current?.level() ?? 0, []);
-  const progress = useCallback(() => player.current?.progress() ?? 0, []);
+  // The live voice (OpenAI Realtime, app/realtime-voice.ts): one call for the whole conversation.
+  // When it can't connect, the recorded path (mic → transcribe → answer → speech) takes over.
+  const liveCall = useRef<LiveVoice | null>(null);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
+  const [liveFailed, setLiveFailed] = useState(false);
+  const [liveTools, setLiveTools] = useState<string[]>([]);
+  const holdingRef = useRef(false);
+  const chatIdRef = useRef(chatId);
+  chatIdRef.current = chatId;
+  const level = useCallback(() => (liveCall.current && liveStatus ? liveCall.current.level() : (recorder.current?.level() ?? 0)), [liveStatus]);
+  const progress = useCallback(() => (liveCall.current ? 1 : (player.current?.progress() ?? 0)), []);
+  useEffect(
+    () => () => {
+      liveCall.current?.close();
+      liveCall.current = null;
+    },
+    []
+  );
+  // Leaving the voice stage hangs up.
+  useEffect(() => {
+    if (voiceMode) return;
+    liveCall.current?.close();
+    liveCall.current = null;
+    setLiveStatus(null);
+  }, [voiceMode]);
+
+  /** A spoken turn into the transcript and the kept conversation. */
+  function keepTurn(role: "user" | "assistant", text: string) {
+    setMessages((m) => [...m, { role, text, at: new Date().toISOString() }]);
+    logTurn(chatIdRef.current, role, text)
+      .then((r) => {
+        if (chatIdRef.current) return;
+        started.current = r.chatId;
+        chatIdRef.current = r.chatId;
+        setParams({ c: r.chatId }, { replace: true });
+        setChats((list) => (list && !list.some((c) => c.id === r.chatId) ? [{ id: r.chatId, title: r.title, updatedAt: new Date().toISOString() }, ...list] : list));
+      })
+      .catch(() => undefined);
+  }
+
+  async function startLive(): Promise<LiveVoice | null> {
+    if (liveCall.current) return liveCall.current;
+    let spoken = "";
+    const call = new LiveVoice({
+      onStatus: setLiveStatus,
+      onUserText: (text) => {
+        setCaption({ role: "user", text });
+        setLiveTools([]);
+        keepTurn("user", text);
+      },
+      onAssistantDelta: (delta) => {
+        spoken += delta;
+        const text = spoken;
+        setCaption({ role: "assistant", text });
+      },
+      onAssistantDone: (text) => {
+        spoken = "";
+        setCaption({ role: "assistant", text });
+        keepTurn("assistant", text);
+      },
+      onTool: (label) => setLiveTools((t) => [...t, label]),
+      onError: (message) => setError(message),
+    });
+    liveCall.current = call;
+    try {
+      await call.connect();
+      setError(null);
+      return call;
+    } catch (e) {
+      call.close();
+      liveCall.current = null;
+      setLiveStatus(null);
+      setLiveFailed(true);
+      setError(`${(e as Error).message} Using the recorded voice instead.`);
+      return null;
+    }
+  }
   useEffect(() => {
     setMicAvailable(canRecord());
     const on = readSpeak();
@@ -181,6 +257,7 @@ export default function Ask() {
   }
 
   function hush() {
+    liveCall.current?.hush();
     player.current?.stop();
     setSpeaking(false);
   }
@@ -240,6 +317,7 @@ export default function Ask() {
   /** The mic opens (a tap in the written layout, a press on the voice stage). */
   const beginListening = useCallback(async () => {
     if (micRef.current !== "off" || liveRef.current) return;
+    if (liveCall.current) return;
     try {
       // Inside the gesture, so the phone lets the answer sound later.
       if (speakRef.current || voiceRef.current) (player.current ??= new Player()).unlock();
@@ -284,7 +362,32 @@ export default function Ask() {
   }
   const finishRef = useRef(finishListening);
   finishRef.current = finishListening;
-  const onHoldEnd = useCallback(() => void finishRef.current(), []);
+
+  /** The press on the voice stage: the live voice when it can be had, else the recorder. */
+  async function holdStart() {
+    holdingRef.current = true;
+    if (!liveFailed && canLive()) {
+      const call = await startLive();
+      if (call) {
+        if (holdingRef.current) call.holdStart();
+        return;
+      }
+    }
+    if (holdingRef.current) await beginListening();
+  }
+  const holdStartRef = useRef(holdStart);
+  holdStartRef.current = holdStart;
+  const onHoldStart = useCallback(() => void holdStartRef.current(), []);
+  const onHoldEnd = useCallback(() => {
+    holdingRef.current = false;
+    const call = liveCall.current;
+    if (call && call.status !== "connecting") {
+      call.holdEnd();
+      return;
+    }
+    if (call) return; // still connecting: the press ended before the mic opened
+    void finishRef.current();
+  }, []);
 
   /** Tap: the mic opens. Tap again: what was said becomes the question and goes. */
   function toggleMic() {
@@ -334,7 +437,20 @@ export default function Ask() {
 
   const firstName = me?.name?.split(" ")[0];
   const empty = !chatId && !messages.length && !live;
-  const voiceStatus: VoiceStatus = mic === "listening" ? "listening" : mic === "transcribing" ? "transcribing" : live || fetchingSpeech ? "thinking" : speaking ? "speaking" : "idle";
+  const voiceStatus: VoiceStatus =
+    liveCall.current && liveStatus
+      ? liveStatus === "ready"
+        ? "idle"
+        : liveStatus
+      : mic === "listening"
+        ? "listening"
+        : mic === "transcribing"
+          ? "transcribing"
+          : live || fetchingSpeech
+            ? "thinking"
+            : speaking
+              ? "speaking"
+              : "idle";
   const list = (
     <nav aria-label="Conversations" className="flex h-full min-h-0 flex-col">
       <button
@@ -459,7 +575,7 @@ export default function Ask() {
         {voiceMode ? (
           <VoiceStage
             status={voiceStatus}
-            tools={live?.tools ?? []}
+            tools={liveCall.current ? liveTools : (live?.tools ?? [])}
             caption={caption}
             messages={messages}
             micAvailable={micAvailable}
@@ -467,7 +583,7 @@ export default function Ask() {
             firstName={firstName}
             level={level}
             progress={progress}
-            onHoldStart={() => void beginListening()}
+            onHoldStart={onHoldStart}
             onHoldEnd={onHoldEnd}
             onHush={hush}
             onType={() => setMode("text")}
