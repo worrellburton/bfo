@@ -1671,3 +1671,14 @@ html.light .wiz-seal { color: #b45309; border-color: rgba(217, 119, 6, 0.4); }
 @media (prefers-reduced-motion: reduce) {
   .thread-fresh { animation: none; }
 }
+
+/*
+ * Touch screens wide enough for the desktop layout (an iPad, the iPad app)
+ * can't hover, so controls that wait for a hover show all the time there.
+ * `touch-keep-hover` opts one out (a select box that takes over an avatar).
+ */
+@media (hover: none) and (pointer: coarse) {
+  [class*="group-hover:opacity-100"]:not(.touch-keep-hover) {
+    opacity: 1 !important;
+  }
+}

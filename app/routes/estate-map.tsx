@@ -668,6 +668,63 @@ export function EstateMapView({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Two-finger pinch on a touch screen (iPad): zoom around the fingers, and
+  // pan with them. The canvas is touch-none, so the browser doesn't zoom the page.
+  const pinching = useRef(false);
+  // Touch screens get the touch hints (tap, pinch) instead of hover and scroll.
+  const [touchScreen, setTouchScreen] = useState(false);
+  useEffect(() => {
+    setTouchScreen(window.matchMedia("(hover: none) and (pointer: coarse)").matches);
+  }, []);
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    let start: { d: number; m: { x: number; y: number }; v: typeof viewRef.current } | null = null;
+    const two = (e: TouchEvent) => {
+      const rect = el.getBoundingClientRect();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      return {
+        d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+        m: { x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top },
+      };
+    };
+    function onStart(e: TouchEvent) {
+      if (e.touches.length !== 2) return;
+      pinching.current = true;
+      autoFit.current = false;
+      setSmooth(false);
+      start = { ...two(e), v: viewRef.current };
+    }
+    function onMove(e: TouchEvent) {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault();
+      const { d, m } = two(e);
+      const v0 = start.v;
+      const k = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v0.k * (d / start.d)));
+      // The scene point first under the fingers stays under them.
+      const px = (start.m.x - v0.x) / v0.k;
+      const py = (start.m.y - v0.y) / v0.k;
+      setView({ k, x: m.x - px * k, y: m.y - py * k });
+    }
+    function onEnd(e: TouchEvent) {
+      if (e.touches.length < 2) {
+        start = null;
+        // Lifting one finger ends the pinch; the pan it began with doesn't resume.
+        if (!e.touches.length) pinching.current = false;
+      }
+    }
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
+
   function toScene(clientX: number, clientY: number) {
     const rect = canvasRef.current!.getBoundingClientRect();
     const v = viewRef.current;
@@ -698,6 +755,7 @@ export function EstateMapView({
     const v0 = viewRef.current;
     let moved = false;
     function move(ev: PointerEvent) {
+      if (pinching.current) return;
       const dx = ev.clientX - start.x;
       const dy = ev.clientY - start.y;
       if (!moved && dx * dx + dy * dy < 9) return;
@@ -1353,15 +1411,29 @@ export function EstateMapView({
           data-hud
           className={`absolute bottom-3 left-3 hidden items-center gap-3 rounded-lg border px-2.5 py-1.5 text-[11px] backdrop-blur-md md:inline-flex ${hudChip}`}
         >
-          <span>Hover · actions</span>
-          <span className="opacity-40">/</span>
-          <span>Drag onto entity · re-parent</span>
-          <span className="opacity-40">/</span>
-          <span>Double-click · rename</span>
-          <span className="opacity-40">/</span>
-          <span>Scroll · zoom</span>
-          <span className="opacity-40">/</span>
-          <span>F · fit</span>
+          {touchScreen ? (
+            <>
+              <span>Tap · actions</span>
+              <span className="opacity-40">/</span>
+              <span>Drag onto entity · re-parent</span>
+              <span className="opacity-40">/</span>
+              <span>Drag the background · pan</span>
+              <span className="opacity-40">/</span>
+              <span>Pinch · zoom</span>
+            </>
+          ) : (
+            <>
+              <span>Hover · actions</span>
+              <span className="opacity-40">/</span>
+              <span>Drag onto entity · re-parent</span>
+              <span className="opacity-40">/</span>
+              <span>Double-click · rename</span>
+              <span className="opacity-40">/</span>
+              <span>Scroll · zoom</span>
+              <span className="opacity-40">/</span>
+              <span>F · fit</span>
+            </>
+          )}
         </div>
 
         {/* HUD corner brackets */}
