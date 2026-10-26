@@ -10,6 +10,7 @@ export default [
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   layout("routes/app-layout.tsx", [
     route("home", "routes/home.tsx"),
+    route("ask", "routes/ask.tsx"),
     route("assets", "routes/assets.tsx"),
     route("assets/:id/:tab?", "routes/asset-detail.tsx"),
     route("assets/:id/contract/:contractId", "routes/contract-pdf.tsx"),
