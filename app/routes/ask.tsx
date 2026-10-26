@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useSearchParams } from "react-router";
 import { deleteChat, getChat, listChats, sendMessage, speakText, transcribeAudio, type ChatMessage, type ChatSummary } from "../ask-client";
 import { canRecord, Player, Recorder } from "../ask-voice";
+import { VoiceStage, type Caption, type VoiceStatus } from "../ask-voice-stage";
 import { Markdown } from "../ask-markdown";
 import { getUser } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
@@ -12,9 +13,12 @@ export function meta() {
 }
 
 /**
- * Ask BFO: a conversation with the office's own records (lib/ask.ts). The
- * answer streams in as it's written; while the assistant looks things up,
- * a line says what. Conversations are kept, newest first, down the side.
+ * Ask BFO: a conversation with the office's own records (lib/ask.ts).
+ *
+ * Voice first (app/ask-voice-stage.tsx): hold to talk, the words show as
+ * they're said, the answer is spoken with its words keeping pace. "Type"
+ * (?mode=text) gives the written layout: the answer streams in, a line says
+ * what's being looked up, conversations are kept down the side.
  */
 
 const SUGGESTIONS = [
@@ -49,7 +53,14 @@ export default function Ask() {
   const t = useTone();
   const [params, setParams] = useSearchParams();
   const chatId = params.get("c");
+  const voiceMode = params.get("mode") !== "text";
   const me = getUser();
+  function setMode(next: "voice" | "text") {
+    const q: Record<string, string> = {};
+    if (chatId) q.c = chatId;
+    if (next === "text") q.mode = "text";
+    setParams(q, { replace: true });
+  }
 
   const [chats, setChats] = useState<ChatSummary[] | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -70,6 +81,13 @@ export default function Ask() {
   const recorder = useRef<Recorder | null>(null);
   const player = useRef<Player | null>(null);
   const speakRef = useRef(false);
+  const voiceRef = useRef(voiceMode);
+  voiceRef.current = voiceMode;
+  /** The words on the voice stage: what was just said, or the answer being spoken. */
+  const [caption, setCaption] = useState<Caption>(null);
+  const [fetchingSpeech, setFetchingSpeech] = useState(false);
+  const level = useCallback(() => recorder.current?.level() ?? 0, []);
+  const progress = useCallback(() => player.current?.progress() ?? 0, []);
   useEffect(() => {
     setMicAvailable(canRecord());
     const on = readSpeak();
@@ -111,6 +129,7 @@ export default function Ask() {
     abort.current?.abort();
     setLive(null);
     setError(null);
+    setCaption(null);
     if (!chatId) {
       setMessages([]);
       input.current?.focus();
@@ -143,23 +162,34 @@ export default function Ask() {
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }
 
-  /** The answer, read aloud, when that's on. */
+  /** The answer, read aloud: always on the voice stage, by choice in the written layout. */
   async function readAloud(text: string) {
-    if (!speakRef.current || !text.trim()) return;
+    if (!(speakRef.current || voiceRef.current) || !text.trim()) return;
     try {
       const p = (player.current ??= new Player());
+      setFetchingSpeech(true);
+      const clip = await speakText(text);
+      setFetchingSpeech(false);
+      setCaption({ role: "assistant", text });
       setSpeaking(true);
-      await p.play(await speakText(text), () => setSpeaking(false));
+      await p.play(clip, () => setSpeaking(false));
     } catch {
+      setFetchingSpeech(false);
+      setCaption({ role: "assistant", text });
       setSpeaking(false);
     }
+  }
+
+  function hush() {
+    player.current?.stop();
+    setSpeaking(false);
   }
 
   async function send(text: string) {
     const message = text.trim();
     if (!message || live) return;
     // Inside the tap, so the phone lets the answer sound later.
-    if (speakRef.current) (player.current ??= new Player()).unlock();
+    if (speakRef.current || voiceRef.current) (player.current ??= new Player()).unlock();
     player.current?.stop();
     setSpeaking(false);
     setDraft("");
@@ -179,7 +209,7 @@ export default function Ask() {
             id = e.id;
             if (!chatId) {
               started.current = e.id;
-              setParams({ c: e.id }, { replace: true });
+              setParams(voiceRef.current ? { c: e.id } : { c: e.id, mode: "text" }, { replace: true });
             }
             setChats((list) => (list && !list.some((c) => c.id === e.id) ? [{ id: e.id, title: e.title, updatedAt: new Date().toISOString() }, ...list] : list));
           } else if (e.type === "tool") setLive((l) => (l ? { ...l, tools: [...l.tools, e.label] } : l));
@@ -202,36 +232,17 @@ export default function Ask() {
     }
   }
 
-  /** Tap: the mic opens. Tap again: what was said becomes the question and goes. */
-  async function toggleMic() {
-    if (mic === "transcribing" || live) return;
-    if (mic === "listening") {
-      const rec = recorder.current;
-      if (!rec) return setMic("off");
-      if (speakRef.current) (player.current ??= new Player()).unlock();
-      setMic("transcribing");
-      try {
-        const clip = await rec.stop();
-        const short = Date.now() - rec.startedAt < 600;
-        if (short || clip.size < 1500) {
-          setMic("off");
-          return;
-        }
-        const lastAsked = [...messages].reverse().find((m) => m.role === "user")?.text;
-        const text = await transcribeAudio(clip, lastAsked);
-        setMic("off");
-        if (!text) {
-          setError("I didn't catch that. Try again, a little closer to the mic.");
-          return;
-        }
-        await send(text);
-      } catch (e) {
-        setMic("off");
-        setError((e as Error).message);
-      }
-      return;
-    }
+  const micRef = useRef(mic);
+  micRef.current = mic;
+  const liveRef = useRef(live);
+  liveRef.current = live;
+
+  /** The mic opens (a tap in the written layout, a press on the voice stage). */
+  const beginListening = useCallback(async () => {
+    if (micRef.current !== "off" || liveRef.current) return;
     try {
+      // Inside the gesture, so the phone lets the answer sound later.
+      if (speakRef.current || voiceRef.current) (player.current ??= new Player()).unlock();
       player.current?.stop();
       setSpeaking(false);
       const rec = new Recorder();
@@ -242,6 +253,43 @@ export default function Ask() {
     } catch {
       setError("The microphone isn't available. Allow it for this site and try again.");
     }
+  }, []);
+
+  /** The mic closes: what was said becomes the question and goes. */
+  async function finishListening() {
+    if (micRef.current !== "listening") return;
+    const rec = recorder.current;
+    if (!rec) return setMic("off");
+    setMic("transcribing");
+    try {
+      const clip = await rec.stop();
+      const short = Date.now() - rec.startedAt < 600;
+      if (short || clip.size < 1500) {
+        setMic("off");
+        return;
+      }
+      const lastAsked = [...messages].reverse().find((m) => m.role === "user")?.text;
+      const text = await transcribeAudio(clip, lastAsked);
+      setMic("off");
+      if (!text) {
+        setError("I didn't catch that. Try again, a little closer to the mic.");
+        return;
+      }
+      setCaption({ role: "user", text });
+      await send(text);
+    } catch (e) {
+      setMic("off");
+      setError((e as Error).message);
+    }
+  }
+  const finishRef = useRef(finishListening);
+  finishRef.current = finishListening;
+  const onHoldEnd = useCallback(() => void finishRef.current(), []);
+
+  /** Tap: the mic opens. Tap again: what was said becomes the question and goes. */
+  function toggleMic() {
+    if (mic === "listening") void finishListening();
+    else void beginListening();
   }
 
   function stop() {
@@ -250,7 +298,9 @@ export default function Ask() {
 
   function newChat() {
     abort.current?.abort();
-    setParams({}, { replace: false });
+    hush();
+    setCaption(null);
+    setParams(voiceMode ? {} : { mode: "text" }, { replace: false });
     setHistoryOpen(false);
     setTimeout(() => input.current?.focus(), 0);
   }
@@ -284,6 +334,7 @@ export default function Ask() {
 
   const firstName = me?.name?.split(" ")[0];
   const empty = !chatId && !messages.length && !live;
+  const voiceStatus: VoiceStatus = mic === "listening" ? "listening" : mic === "transcribing" ? "transcribing" : live || fetchingSpeech ? "thinking" : speaking ? "speaking" : "idle";
   const list = (
     <nav aria-label="Conversations" className="flex h-full min-h-0 flex-col">
       <button
@@ -316,7 +367,7 @@ export default function Ask() {
                   <button
                     type="button"
                     onClick={() => {
-                      setParams({ c: c.id });
+                      setParams(voiceMode ? { c: c.id } : { c: c.id, mode: "text" });
                       setHistoryOpen(false);
                     }}
                     className={`block w-full cursor-pointer rounded-lg px-2.5 py-2 pr-8 text-left transition-colors ${on ? (t.dark ? "bg-white/[0.07]" : "bg-gray-100") : t.hover}`}
@@ -353,6 +404,19 @@ export default function Ask() {
           <p className={`mt-0.5 text-[12.5px] ${t.muted}`}>Answers from the office's own records: entities, filings, mail, treasury, books.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {!voiceMode && (
+            <button
+              type="button"
+              onClick={() => setMode("voice")}
+              className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${t.line} ${t.soft} ${t.hover}`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+              </svg>
+              Voice
+            </button>
+          )}
+          {!voiceMode && (
           <button
             type="button"
             onClick={toggleSpeak}
@@ -367,11 +431,12 @@ export default function Ask() {
             </svg>
             {speaking ? <span className="ask-pulse">Speaking</span> : speakOn ? "Speaking on" : "Speak answers"}
           </button>
+          )}
         <button
           type="button"
           onClick={() => setHistoryOpen((o) => !o)}
           aria-expanded={historyOpen}
-          className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors lg:hidden ${t.line} ${t.soft} ${t.hover}`}
+          className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${voiceMode ? "" : "lg:hidden"} ${t.line} ${t.soft} ${t.hover}`}
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -381,16 +446,33 @@ export default function Ask() {
         </div>
       </header>
 
-      <div className={`relative grid min-h-0 flex-1 overflow-hidden rounded-2xl border lg:grid-cols-[240px_minmax(0,1fr)] ${t.surface} ${t.line}`}>
-        {/* Conversations: a column on wide screens, a sheet over the thread on phones. */}
-        <aside className={`hidden min-h-0 border-r lg:block ${t.line}`}>{list}</aside>
+      <div className={`relative grid min-h-0 flex-1 overflow-hidden rounded-2xl border ${voiceMode ? "border-[#f4ede0]/10" : `lg:grid-cols-[240px_minmax(0,1fr)] ${t.surface} ${t.line}`}`}>
+        {/* Conversations: a column on wide screens, a sheet over the thread on phones (and over the voice stage). */}
+        {!voiceMode && <aside className={`hidden min-h-0 border-r lg:block ${t.line}`}>{list}</aside>}
         {historyOpen && (
-          <div className="absolute inset-0 z-20 lg:hidden">
+          <div className={`absolute inset-0 z-20 ${voiceMode ? "" : "lg:hidden"}`}>
             <button type="button" aria-label="Close history" onClick={() => setHistoryOpen(false)} className="absolute inset-0 bg-black/40" />
-            <div className={`absolute inset-y-0 left-0 w-[280px] max-w-[85%] border-r shadow-2xl ${t.dark ? "bg-[#0d0d12]" : "bg-white"} ${t.line}`}>{list}</div>
+            <div className={`absolute inset-y-0 left-0 w-[280px] max-w-[85%] border-r shadow-2xl ${t.dark || voiceMode ? "bg-[#0d0d12]" : "bg-white"} ${t.line}`}>{list}</div>
           </div>
         )}
 
+        {voiceMode ? (
+          <VoiceStage
+            status={voiceStatus}
+            tools={live?.tools ?? []}
+            caption={caption}
+            messages={messages}
+            micAvailable={micAvailable}
+            error={error}
+            firstName={firstName}
+            level={level}
+            progress={progress}
+            onHoldStart={() => void beginListening()}
+            onHoldEnd={onHoldEnd}
+            onHush={hush}
+            onType={() => setMode("text")}
+          />
+        ) : (
         <section className="flex min-h-0 flex-col">
           <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
             {empty ? (
@@ -509,6 +591,7 @@ export default function Ask() {
             <p className={`mx-auto mt-1.5 max-w-[720px] text-[10.5px] ${t.faint}`}>Enter to send · Shift+Enter for a new line{micAvailable ? " · Tap the mic to ask by voice" : ""} · It reads the records and can be wrong; check anything that matters.</p>
           </form>
         </section>
+        )}
       </div>
     </div>
   );
