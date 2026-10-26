@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
 import { currentUser, fail, handleError, sb } from "../lib/auth.js";
+import { speak, transcribe, VoiceError } from "../lib/voice.js";
 import { ASK_MODEL, MAX_TOOL_ROUNDS, runTool, scopeFor, systemPrompt, titleFrom, toolLabel, toolsFor, transcript, type ChatMessageRow, type ChatRow } from "../lib/ask.js";
 
 /**
@@ -16,6 +17,8 @@ import { ASK_MODEL, MAX_TOOL_ROUNDS, runTool, scopeFor, systemPrompt, titleFrom,
  *          { type: "done" } | { type: "error", message }
  *   POST { action: "delete", chatId }
  *   POST { action: "rename", chatId, title }
+ *   POST { action: "transcribe", audio (base64), mime, hint? } → { text }     spoken question → words (lib/voice.ts)
+ *   POST { action: "speak", text }                             → audio/mpeg    an answer read aloud
  */
 
 // Vercel buffers a function's response unless told to stream it.
@@ -23,6 +26,8 @@ export const config = { supportsResponseStreaming: true };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MESSAGE_MAX = 8000;
+/** A spoken question, as base64: about a minute of opus. */
+const AUDIO_MAX = 3 * 1024 * 1024;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -66,10 +71,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sb(`chats?id=eq.${id}`, { method: "PATCH", body: { title } });
         return res.status(200).json({ ok: true });
       }
+      case "transcribe": {
+        const b64 = String(body.audio ?? "");
+        if (!b64 || b64.length > AUDIO_MAX * 1.4) return fail(res, 400, "bad_audio", b64 ? "That recording is too long." : "No audio came through.");
+        const mime = /^audio\/[\w.+-]+$/.test(String(body.mime ?? "")) ? String(body.mime) : "audio/webm";
+        const text = await transcribe(new Uint8Array(Buffer.from(b64, "base64")), mime, typeof body.hint === "string" ? body.hint : undefined);
+        return res.status(200).json({ text });
+      }
+      case "speak": {
+        const text = String(body.text ?? "").trim();
+        if (!text) return fail(res, 400, "empty");
+        const bytes = await speak(text);
+        res.setHeader("Content-Type", "audio/mpeg");
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        return res.status(200).send(Buffer.from(bytes));
+      }
       default:
         return fail(res, 400, "bad_action");
     }
   } catch (err) {
+    if (err instanceof VoiceError) return fail(res, err.status >= 500 ? 502 : err.status, "voice_failed", err.message);
     return handleError(res, err);
   }
 }

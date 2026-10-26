@@ -27,6 +27,28 @@ export const getChat = (id: string) => call<{ chat: ChatSummary; messages: ChatM
 export const deleteChat = (chatId: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "delete", chatId }) });
 export const renameChat = (chatId: string, title: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "rename", chatId, title }) });
 
+/** What was said, as text. `hint` steers spelling (names the office uses). */
+export async function transcribeAudio(blob: Blob, hint?: string): Promise<string> {
+  const audio = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(new Error("Couldn't read the recording."));
+    r.readAsDataURL(blob);
+  });
+  const r = await call<{ text: string }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "transcribe", audio, mime: blob.type || "audio/webm", hint }) });
+  return r.text;
+}
+
+/** An answer read aloud: mp3 bytes to play. */
+export async function speakText(text: string): Promise<Blob> {
+  const res = await authFetch("/api/ask", { method: "POST", body: JSON.stringify({ action: "speak", text }) });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? "Couldn't read that aloud.");
+  }
+  return res.blob();
+}
+
 /**
  * Send a message and hand each event to `onEvent` as it arrives. Resolves
  * when the stream ends; rejects when the request itself fails.

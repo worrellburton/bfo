@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { deleteChat, getChat, listChats, sendMessage, type ChatMessage, type ChatSummary } from "../ask-client";
+import { deleteChat, getChat, listChats, sendMessage, speakText, transcribeAudio, type ChatMessage, type ChatSummary } from "../ask-client";
+import { canRecord, Player, Recorder } from "../ask-voice";
 import { Markdown } from "../ask-markdown";
 import { getUser } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
@@ -27,6 +28,15 @@ const SUGGESTIONS = [
 
 type Live = { text: string; tools: string[]; done: boolean };
 
+const SPEAK_KEY = "bfo-ask-speak";
+function readSpeak(): boolean {
+  try {
+    return localStorage.getItem(SPEAK_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function when(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -52,6 +62,38 @@ export default function Ask() {
   const input = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  // Voice: the mic while a question is spoken, and the speaker for answers (app/ask-voice.ts).
+  const [mic, setMic] = useState<"off" | "listening" | "transcribing">("off");
+  const [speakOn, setSpeakOn] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [micAvailable, setMicAvailable] = useState(false);
+  const recorder = useRef<Recorder | null>(null);
+  const player = useRef<Player | null>(null);
+  const speakRef = useRef(false);
+  useEffect(() => {
+    setMicAvailable(canRecord());
+    const on = readSpeak();
+    setSpeakOn(on);
+    speakRef.current = on;
+    return () => {
+      recorder.current?.cancel();
+      player.current?.stop();
+    };
+  }, []);
+  function toggleSpeak() {
+    const next = !speakOn;
+    setSpeakOn(next);
+    speakRef.current = next;
+    try {
+      localStorage.setItem(SPEAK_KEY, next ? "1" : "0");
+    } catch {
+      /* a preference that doesn't stick is no loss */
+    }
+    if (!next) {
+      player.current?.stop();
+      setSpeaking(false);
+    } else (player.current ??= new Player()).unlock();
+  }
   /** The conversation this page just started: its id lands in the address bar without a reload. */
   const started = useRef<string | null>(null);
 
@@ -101,9 +143,25 @@ export default function Ask() {
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }
 
+  /** The answer, read aloud, when that's on. */
+  async function readAloud(text: string) {
+    if (!speakRef.current || !text.trim()) return;
+    try {
+      const p = (player.current ??= new Player());
+      setSpeaking(true);
+      await p.play(await speakText(text), () => setSpeaking(false));
+    } catch {
+      setSpeaking(false);
+    }
+  }
+
   async function send(text: string) {
     const message = text.trim();
     if (!message || live) return;
+    // Inside the tap, so the phone lets the answer sound later.
+    if (speakRef.current) (player.current ??= new Player()).unlock();
+    player.current?.stop();
+    setSpeaking(false);
     setDraft("");
     setError(null);
     stickToBottom.current = true;
@@ -140,6 +198,49 @@ export default function Ask() {
       if (answer.trim()) setMessages((m) => [...m, { role: "assistant", text: answer.trim(), at: new Date().toISOString() }]);
       if (id) setChats((list) => list && list.map((c) => (c.id === id ? { ...c, updatedAt: new Date().toISOString() } : c)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
       input.current?.focus();
+      void readAloud(answer.trim());
+    }
+  }
+
+  /** Tap: the mic opens. Tap again: what was said becomes the question and goes. */
+  async function toggleMic() {
+    if (mic === "transcribing" || live) return;
+    if (mic === "listening") {
+      const rec = recorder.current;
+      if (!rec) return setMic("off");
+      if (speakRef.current) (player.current ??= new Player()).unlock();
+      setMic("transcribing");
+      try {
+        const clip = await rec.stop();
+        const short = Date.now() - rec.startedAt < 600;
+        if (short || clip.size < 1500) {
+          setMic("off");
+          return;
+        }
+        const lastAsked = [...messages].reverse().find((m) => m.role === "user")?.text;
+        const text = await transcribeAudio(clip, lastAsked);
+        setMic("off");
+        if (!text) {
+          setError("I didn't catch that. Try again, a little closer to the mic.");
+          return;
+        }
+        await send(text);
+      } catch (e) {
+        setMic("off");
+        setError((e as Error).message);
+      }
+      return;
+    }
+    try {
+      player.current?.stop();
+      setSpeaking(false);
+      const rec = new Recorder();
+      await rec.start();
+      recorder.current = rec;
+      setError(null);
+      setMic("listening");
+    } catch {
+      setError("The microphone isn't available. Allow it for this site and try again.");
     }
   }
 
@@ -251,6 +352,21 @@ export default function Ask() {
           <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Ask BFO</h1>
           <p className={`mt-0.5 text-[12.5px] ${t.muted}`}>Answers from the office's own records: entities, filings, mail, treasury, books.</p>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleSpeak}
+            aria-pressed={speakOn}
+            title={speakOn ? "Answers are read aloud" : "Read answers aloud"}
+            className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${
+              speakOn ? (t.dark ? "border-[#818cf8]/40 bg-[#818cf8]/15 text-[#c7d2fe]" : "border-[#4f46e5]/30 bg-[#4f46e5]/[0.08] text-[#4338ca]") : `${t.line} ${t.soft} ${t.hover}`
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+            </svg>
+            {speaking ? <span className="ask-pulse">Speaking</span> : speakOn ? "Speaking on" : "Speak answers"}
+          </button>
         <button
           type="button"
           onClick={() => setHistoryOpen((o) => !o)}
@@ -262,6 +378,7 @@ export default function Ask() {
           </svg>
           History
         </button>
+        </div>
       </header>
 
       <div className={`relative grid min-h-0 flex-1 overflow-hidden rounded-2xl border lg:grid-cols-[240px_minmax(0,1fr)] ${t.surface} ${t.line}`}>
@@ -331,11 +448,42 @@ export default function Ask() {
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={onKey}
                 rows={1}
-                placeholder={live ? "Answering…" : "Ask about the office…"}
+                placeholder={live ? "Answering…" : mic === "listening" ? "Listening… tap the square when you're done" : mic === "transcribing" ? "Writing down what you said…" : "Ask about the office…"}
                 aria-label="Your question"
                 style={{ outline: "none", boxShadow: "none", border: 0 }}
                 className={`min-h-[44px] flex-1 resize-none bg-transparent py-2.5 text-[14px] leading-relaxed placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
               />
+              {micAvailable && !live && (
+                <button
+                  type="button"
+                  onClick={() => void toggleMic()}
+                  disabled={mic === "transcribing"}
+                  aria-label={mic === "listening" ? "Stop and send" : "Ask by voice"}
+                  aria-pressed={mic === "listening"}
+                  title={mic === "listening" ? "Tap when you're done" : "Ask by voice"}
+                  className={`mb-1 grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default ${
+                    mic === "listening"
+                      ? "ask-listening bg-red-500 text-white"
+                      : mic === "transcribing"
+                        ? t.dark
+                          ? "bg-white/10 text-gray-300"
+                          : "bg-gray-100 text-gray-500"
+                        : t.dark
+                          ? "text-gray-400 hover:bg-white/10 hover:text-white"
+                          : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                  }`}
+                >
+                  {mic === "transcribing" ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : mic === "listening" ? (
+                    <span className="h-3 w-3 rounded-[2px] bg-current" />
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                    </svg>
+                  )}
+                </button>
+              )}
               {live ? (
                 <button
                   type="button"
@@ -358,7 +506,7 @@ export default function Ask() {
                 </button>
               )}
             </div>
-            <p className={`mx-auto mt-1.5 max-w-[720px] text-[10.5px] ${t.faint}`}>Enter to send · Shift+Enter for a new line · It reads the records and can be wrong; check anything that matters.</p>
+            <p className={`mx-auto mt-1.5 max-w-[720px] text-[10.5px] ${t.faint}`}>Enter to send · Shift+Enter for a new line{micAvailable ? " · Tap the mic to ask by voice" : ""} · It reads the records and can be wrong; check anything that matters.</p>
           </form>
         </section>
       </div>
