@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * BFO for iPhone (ios/, built with Capacitor).
+ * BFO for iPhone and iPad (ios/, built with Capacitor).
  *
  * The app is a native shell around the live site: it opens
  * https://www.burtonfamilyoffice.com in a WKWebView with Capacitor's bridge,
@@ -25,6 +25,8 @@ const config: CapacitorConfig = {
   ios: {
     // The site lays itself out under the status bar and home indicator (viewport-fit=cover + safe-area insets).
     contentInset: "never",
+    // iPads get the site at their real width (iPad Safari's default "desktop" mode lays smaller iPads out at 980px and shrinks it).
+    preferredContentMode: "mobile",
     backgroundColor: "#0a0a0a",
     scrollEnabled: true,
     allowsLinkPreview: false,

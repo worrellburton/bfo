@@ -1,6 +1,6 @@
-# BFO for iPhone
+# BFO for iPhone and iPad
 
-The iPhone app is a native shell around the live site, built with
+The app (one build, for iPhone and iPad) is a native shell around the live site, built with
 [Capacitor](https://capacitorjs.com) 8. It opens
 `https://www.burtonfamilyoffice.com/home` in a WKWebView with Capacitor's
 bridge, so:
@@ -15,6 +15,14 @@ haptics (Safari on iPhone ignores web vibration), a status bar that turns light
 or dark with the page, and no service worker. If the site can't be reached the
 shell shows its own offline page (`native/www/offline.html`) with Try again.
 Links to other sites open in Safari.
+
+**On iPad** the app shows the site at the iPad's real width
+(`preferredContentMode: "mobile"`; iPad Safari's default desktop mode would lay
+an 11-inch iPad out at 980px and shrink it). So a 13-inch iPad gets the sidebar
+and Mail's table or columns, an 11-inch iPad in portrait gets the touch layout
+with the compose button, and Split View and Stage Manager windows get whichever
+fits. The page keeps clear of the iPad's status bar and home indicator. Face ID
+lock uses Touch ID on iPads that have it.
 
 **Push notifications for new mail** (`app/push.ts`, `lib/push.ts`,
 `lib/apns.ts`, `api/push.ts`). Mail invites each person once ("Know when mail
@@ -37,10 +45,10 @@ off ("Face ID lock: On").
 | --- | --- |
 | App ID (bundle identifier) | `com.burtonfamilyoffice.app` |
 | Name on the home screen | BFO |
-| Devices | iPhone, portrait (iOS 15 and later) |
+| Devices | iPhone (portrait) and iPad (every orientation, Split View and Stage Manager), iOS 15 and later |
 | Xcode project | `ios/App/App.xcodeproj` (Swift Package Manager, no CocoaPods) |
 | Icon and splash sources | `resources/` |
-| App Store screenshots | `appstore/screenshots/iphone-6.9/` (1320 × 2868) |
+| App Store screenshots | `appstore/screenshots/iphone-6.9/` (1320 × 2868) and `appstore/screenshots/ipad-13/` (2064 × 2752) |
 | Cloud build and upload | `.github/workflows/ios-testflight.yml` |
 
 ## Getting it into App Store Connect
@@ -151,7 +159,7 @@ team. Everything below is ready to paste.
 | Privacy Policy URL | https://www.burtonfamilyoffice.com/legal/privacy |
 | Copyright | 2026 Burton Family Office |
 | Age rating | 4+ (answer "None" to every content question) |
-| Screenshots | the five files in `appstore/screenshots/iphone-6.9/`, in order |
+| Screenshots | iPhone 6.9": the five files in `appstore/screenshots/iphone-6.9/`; iPad 13": the five in `appstore/screenshots/ipad-13/` (in order) |
 
 **Promotional text (170)**
 
@@ -251,5 +259,6 @@ that run (don't commit it).
 
 After changing `capacitor.config.ts` or adding a plugin, run
 `npx cap sync ios` again. To regenerate the App Store screenshots, start the
-dev server and run `node scripts/appstore-screenshots.mjs`; it uses fictional
-sample mail only.
+dev server and run `node scripts/appstore-screenshots.mjs iphone` or
+`node scripts/appstore-screenshots.mjs ipad`; they use fictional sample mail
+only.

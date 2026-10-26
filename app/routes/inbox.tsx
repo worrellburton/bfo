@@ -313,6 +313,12 @@ const EMPTY: Record<MailFolder, string> = {
  * remove extras from the same menu. With one address, the button is that
  * address and the menu holds copy and add.
  */
+/** A long address on a narrow screen wraps after the @, not mid-word. */
+function wrapAddress(a: string) {
+  const at = a.indexOf("@");
+  return at < 0 ? a : <>{a.slice(0, at + 1)}<wbr />{a.slice(at + 1)}</>;
+}
+
 function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number }) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
@@ -467,7 +473,7 @@ function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, c
           {bubble(current ?? (mine.length === 1 ? address : ""), compact ? "h-8 w-8 text-[13px] transition-all duration-300" : "h-11 w-11 text-[17px] transition-all duration-300")}
           <span className="min-w-0 flex-1">
             <span className={`flex items-center gap-1.5 font-semibold leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${compact ? "text-[15px]" : "text-[19px]"} ${t.text}`}>
-              <span className="min-w-0 break-all">{current ?? (mine.length === 1 ? address : "All mailboxes")}</span>
+              <span className="min-w-0 break-words">{wrapAddress(current ?? (mine.length === 1 ? address : "All mailboxes"))}</span>
               <Icon name="chevronDown" className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.2} />
               {compact && unread > 0 && <span className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{unread}</span>}
             </span>
@@ -2119,7 +2125,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem)]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -2145,6 +2151,14 @@ export default function Inbox() {
       {/* Larger screens: the title, the addresses, search and the view switch on one line. */}
       <header className={`flex items-start justify-between gap-3 pt-1 max-md:hidden ${openId ? "max-lg:hidden" : ""}`}>
         <div className="flex min-w-0 items-center gap-3">
+          {/* Tablets and narrow windows have no rail beside Mail: the way back to BFO. */}
+          <Link
+            to="/home"
+            aria-label="Back to BFO"
+            className={`-ml-2 inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full transition-colors lg:hidden ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+          >
+            <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={2.2} />
+          </Link>
           {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
           <div className="min-w-0">
             <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
@@ -2191,7 +2205,7 @@ export default function Inbox() {
           ) : (
             <>
               {toolbar}
-              <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+              <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {pushInvite}
                 {bulkBar}
                 {listBody}
@@ -2207,7 +2221,7 @@ export default function Inbox() {
             className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
           >
             {toolbar}
-            <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-sm:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+            <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
               {pushInvite}
               {bulkBar}
               {listBody}
@@ -2228,7 +2242,7 @@ export default function Inbox() {
         </div>
       )}
 
-      {/* Phones: compose floats above the list, clear of the browser's bottom bar. */}
+      {/* Phones and small tablets: compose floats above the list, clear of the browser's bottom bar. */}
       {!openId && !draft && !noAddress &&
         createPortal(
           <button
@@ -2236,7 +2250,7 @@ export default function Inbox() {
             aria-label="New message"
             title="New message"
             onClick={() => setDraft(blankDraft(box || undefined))}
-            className="mail-fab fab-in fab-glass fixed right-5 z-40 flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 sm:hidden"
+            className="mail-fab fab-in fab-glass fixed right-5 z-40 flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 md:hidden"
             style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
           >
             <Icon name="edit" className="h-[26px] w-[26px]" strokeWidth={1.9} />
@@ -3650,10 +3664,9 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         role="dialog"
         aria-modal="true"
         aria-labelledby="compose-title"
-        className={`palette-panel ${leaving ? "sheet-down" : "sheet-up"} relative flex w-full flex-col overflow-hidden shadow-2xl sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
+        className={`palette-panel ${leaving ? "sheet-down" : "sheet-up"} relative flex w-full flex-col overflow-hidden shadow-2xl max-sm:pt-[env(safe-area-inset-top)] sm:max-h-[min(760px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-2xl sm:border ${
           t.dark ? "border-white/10 bg-[#111113]" : "border-gray-200 bg-white"
         }`}
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         <header className={`flex h-12 shrink-0 items-center gap-2 border-b pl-4 pr-2 max-sm:h-14 max-sm:pl-6 max-sm:pr-3 ${t.line}`}>
           <h2 id="compose-title" className={`flex-1 truncate text-[13.5px] font-semibold ${t.text}`}>
@@ -3663,7 +3676,7 @@ function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; addresse
         </header>
 
         {needsFrom && (
-          <div className={`absolute inset-x-0 bottom-0 top-12 z-10 flex flex-col max-sm:top-14 ${t.dark ? "bg-[#111113]" : "bg-white"}`} style={{ top: "calc(env(safe-area-inset-top) + 3rem)" }}>
+          <div className={`absolute inset-x-0 bottom-0 top-12 z-10 flex flex-col max-sm:top-[calc(env(safe-area-inset-top)+3.5rem)] ${t.dark ? "bg-[#111113]" : "bg-white"}`}>
             <div className="px-5 pb-3 pt-6 sm:px-6">
               <p className={`text-[15px] font-semibold ${t.text}`}>Send from which mailbox?</p>
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>You're looking at all your mail, so pick the address this goes out from. It can be changed in the From line after.</p>

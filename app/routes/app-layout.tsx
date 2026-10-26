@@ -595,7 +595,7 @@ export default function AppLayout() {
         onMouseEnter={() => hoverCapable && setHovering(true)}
         onMouseLeave={() => setHovering(false)}
         className={`
-          sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r
+          sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]
           w-[240px] lg:w-[var(--rail)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
           ${isDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
@@ -922,8 +922,8 @@ export default function AppLayout() {
         id="main"
         tabIndex={-1}
         className={`sidebar-content outline-none relative z-10 p-4 sm:p-6 lg:p-8 lg:ml-[var(--inset)] ${
-          mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))] lg:pt-8" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
-        }`}
+          mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))]" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
+        } lg:pt-[calc(2rem+env(safe-area-inset-top))]`}
       >
         {/* Email-only members see the inbox and nothing else; redirect before any other page mounts. */}
         {emailOnly && location.pathname !== "/inbox" ? (

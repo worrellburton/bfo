@@ -1,9 +1,13 @@
-// App Store screenshots: 6.9" iPhone (1320 x 2868), fictional sample data only.
+// App Store screenshots, fictional sample data only:
+//   iphone  6.9" iPhone (1320 x 2868)
+//   ipad    13" iPad (2064 x 2752)
 import { chromium, devices } from "playwright-core";
 import fs from "node:fs";
 
-// Usage (with the dev server on :5173): node scripts/appstore-screenshots.mjs [out-dir]
-const OUT = process.argv[2] ?? "appstore/screenshots/iphone-6.9";
+// Usage (with the dev server on :5173): node scripts/appstore-screenshots.mjs [iphone|ipad] [out-dir]
+const DEVICE = process.argv[2] === "ipad" ? "ipad" : "iphone";
+const IPAD = DEVICE === "ipad";
+const OUT = process.argv[3] ?? (IPAD ? "appstore/screenshots/ipad-13" : "appstore/screenshots/iphone-6.9");
 fs.mkdirSync(OUT, { recursive: true });
 const BASE = "http://127.0.0.1:5173";
 const ME = "office@burtonfamilyoffice.com";
@@ -43,7 +47,11 @@ const full = (m) => ({
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 
 async function shoot(name, theme, fn) {
-  const ctx = await browser.newContext({ ...devices["iPhone 15 Pro Max"], viewport: { width: 440, height: 956 }, deviceScaleFactor: 3, timezoneId: "America/Chicago", locale: "en-US" });
+  const ctx = await browser.newContext(
+    IPAD
+      ? { viewport: { width: 1032, height: 1376 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 BFO-iOS", timezoneId: "America/Chicago", locale: "en-US" }
+      : { ...devices["iPhone 15 Pro Max"], viewport: { width: 440, height: 956 }, deviceScaleFactor: 3, timezoneId: "America/Chicago", locale: "en-US" }
+  );
   await ctx.addInitScript((s) => {
     localStorage.setItem("bfo-session", JSON.stringify(s.session));
     localStorage.setItem("bfo-theme", s.theme);
@@ -57,6 +65,13 @@ async function shoot(name, theme, fn) {
       el.id = "ios-bar";
       el.setAttribute("style", `position:fixed;inset:0 0 auto 0;height:54px;z-index:2147483647;display:flex;align-items:flex-end;justify-content:space-between;padding:0 34px 12px 48px;pointer-events:none;font:600 17px -apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;color:${c}`);
       el.innerHTML = `<span style="letter-spacing:-0.2px">9:41</span><span style="display:flex;gap:7px;align-items:center"><svg width="19" height="12" viewBox="0 0 19 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="${c}"/><rect x="5" y="5.5" width="3" height="6.5" rx="1" fill="${c}"/><rect x="10" y="3" width="3" height="9" rx="1" fill="${c}"/><rect x="15" y="0" width="3" height="12" rx="1" fill="${c}"/></svg><svg width="17" height="12" viewBox="0 0 17 12"><path d="M8.5 2.6c2.4 0 4.6.9 6.3 2.5l1.2-1.3C14 1.9 11.4.8 8.5.8S3 1.9 1 3.8l1.2 1.3C3.9 3.5 6.1 2.6 8.5 2.6zm0 3.6c1.4 0 2.7.5 3.7 1.4l1.2-1.3C12.1 5.1 10.4 4.4 8.5 4.4S4.9 5.1 3.6 6.3l1.2 1.3c1-.9 2.3-1.4 3.7-1.4zm0 3.6c-.6 0-1.1.2-1.5.6L8.5 12 10 10.4c-.4-.4-.9-.6-1.5-.6z" fill="${c}"/></svg><svg width="27" height="13" viewBox="0 0 27 13"><rect x="0.5" y="0.5" width="23" height="12" rx="3.8" fill="none" stroke="${c}" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2.5" fill="${c}"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2z" fill="${c}" fill-opacity="0.45"/></svg></span>`;
+      if (s.ipad) {
+        // iPad: a 24pt bar with the date, and the page keeps clear of it through the safe-area inset (set below).
+        el.setAttribute("style", `position:fixed;inset:0 0 auto 0;height:24px;z-index:2147483647;display:flex;align-items:center;justify-content:space-between;padding:0 22px;pointer-events:none;font:600 13px -apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;color:${c}`);
+        el.innerHTML = el.innerHTML.replace(">9:41<", ">9:41 AM&nbsp;&nbsp;Fri Oct 23<");
+        document.documentElement.appendChild(el);
+        return;
+      }
       document.documentElement.appendChild(el);
       const st = document.createElement("style");
       st.textContent = "body{padding-top:50px!important} .sticky{top:50px!important} [aria-labelledby=compose-title]{padding-top:50px!important}";
@@ -64,7 +79,7 @@ async function shoot(name, theme, fn) {
     };
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bar);
     else bar();
-  }, { session: { token: "t", expiresAt: "2027-01-01T00:00:00Z", user }, theme });
+  }, { session: { token: "t", expiresAt: "2027-01-01T00:00:00Z", user }, theme, ipad: IPAD });
   // Sender logos come from a favicon service; the sample senders are fictional, so show initials.
   await ctx.route("**/s2/favicons**", (r) => r.abort());
   await ctx.route("**/api/**", async (route) => {
@@ -95,6 +110,7 @@ async function shoot(name, theme, fn) {
     };
   }, now);
   const page = await ctx.newPage();
+  if (IPAD) await (await ctx.newCDPSession(page)).send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 24, bottom: 20, left: 0, right: 0 } });
   await fn(page);
   await page.screenshot({ path: `${OUT}/${name}.png` });
   await ctx.close();
@@ -102,15 +118,53 @@ async function shoot(name, theme, fn) {
 
 const list = async (page) => {
   await page.goto(`${BASE}/inbox`);
-  await page.waitForSelector("ul.md\\:hidden li [data-mail-row]", { timeout: 20000 });
+  await page.locator(IPAD ? "[data-mail-row]" : "ul.md\\:hidden li [data-mail-row]").locator("visible=true").first().waitFor({ timeout: 20000 });
   await page.waitForTimeout(2500);
 };
+const open = async (page) => {
+  await page.getByText("Closing documents for 14 Elm Street", { exact: true }).locator("visible=true").first().click();
+  await page.waitForTimeout(3200);
+};
+
+if (IPAD) {
+  // The list beside the open message, the starred filter, compose over the table, and dark.
+  await shoot("01-message-light", "light", async (page) => {
+    await list(page);
+    await page.locator('[aria-label="Columns"]').locator("visible=true").first().click();
+    await page.waitForTimeout(600);
+    await open(page);
+  });
+  await shoot("02-inbox-light", "light", list);
+  await shoot("03-starred-light", "light", async (page) => {
+    await list(page);
+    await page.getByRole("button", { name: "Starred", exact: true }).locator("visible=true").first().click();
+    await page.waitForTimeout(1200);
+  });
+  await shoot("04-compose-light", "light", async (page) => {
+    await list(page);
+    await page.getByRole("button", { name: "New", exact: true }).locator("visible=true").first().click();
+    await page.waitForTimeout(500);
+    await page.fill("#compose-to", "elena@parkpartners.example");
+    await page.fill("#compose-subject", "Re: Closing documents for 14 Elm Street");
+    await page.locator('[contenteditable="true"]').first().click();
+    await page.keyboard.type("Thank you, Elena. I'll pick up the keys on Monday afternoon.");
+    await page.waitForTimeout(400);
+  });
+  await shoot("05-message-dark", "dark", async (page) => {
+    await list(page);
+    await page.locator('[aria-label="Columns"]').locator("visible=true").first().click();
+    await page.waitForTimeout(600);
+    await open(page);
+  });
+  await browser.close();
+  console.log("done");
+  process.exit(0);
+}
 
 await shoot("01-inbox-light", "light", list);
 await shoot("02-message-light", "light", async (page) => {
   await list(page);
-  await page.getByText("Closing documents for 14 Elm Street", { exact: true }).locator("visible=true").first().click();
-  await page.waitForTimeout(3200);
+  await open(page);
 });
 await shoot("03-filters-light", "light", async (page) => {
   await list(page);
