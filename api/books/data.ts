@@ -573,7 +573,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           for (let i = 5; i >= 0; i--) monthKeys.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7));
           const since = `${monthKeys[0]}-01`;
           const rows = await fetchAll<BookTxn>(
-            "book_transactions?select=date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id" +
+            "book_transactions?select=transaction_id,date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id,merchant_name,name,entity_name" +
               `&pending=eq.false&date=gte.${since < priorFrom ? since : priorFrom}` +
               scopeFilter(prefs, null) +
               "&order=transaction_id.asc"
@@ -585,6 +585,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Where the last 30 days' money came from and went, by books account.
           const topIn = new Map<string, number>();
           const topOut = new Map<string, number>();
+          // The last 30 days' own transactions, newest first, for the cards to list.
+          type Recent = { id: string; date: string; who: string; amount: number; entity: string | null; account: string };
+          const recentIn: Recent[] = [];
+          const recentOut: Recent[] = [];
           for (const t of rows) {
             if (effType(t) !== "normal" || sectionOf(label(t)) === "flow") continue;
             const amt = Number(t.amount);
@@ -601,6 +605,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               const top = amt < 0 ? topIn : topOut;
               const key = label(t);
               top.set(key, (top.get(key) ?? 0) + Math.abs(amt));
+              const r = t as BookTxn & { transaction_id?: string; merchant_name?: string | null; name?: string | null; entity_name?: string | null };
+              (amt < 0 ? recentIn : recentOut).push({
+                id: String(r.transaction_id ?? ""),
+                date: t.date,
+                who: r.merchant_name || r.name || "—",
+                amount: Math.round(Math.abs(amt)),
+                entity: prefs.get(t.account_id)?.entity_name ?? r.entity_name ?? null,
+                account: key.replace(/^\d{4}\s+/, ""),
+              });
             }
           }
           for (const w of [current, prior]) {
@@ -613,12 +626,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .sort((a, b) => b[1] - a[1])
               .slice(0, 3)
               .map(([name, amount]) => ({ name, amount: Math.round(amount) }));
+          const newest = (list: Recent[]) => list.sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount);
           return {
             current,
             prior,
             months: [...months.values()].map((m) => ({ month: m.month, in: Math.round(m.in), out: Math.round(m.out) })),
             topIn: ranked(topIn),
             topOut: ranked(topOut),
+            recentIn: newest(recentIn).slice(0, 40),
+            recentOut: newest(recentOut).slice(0, 40),
+            countIn: recentIn.length,
+            countOut: recentOut.length,
           };
         } catch (err: any) {
           console.error("home flow failed:", err?.message ?? err);

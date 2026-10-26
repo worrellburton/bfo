@@ -36,6 +36,16 @@ interface Asset {
 
 type TreasuryRow = { day: string; cash: number; invested: number; credit: number };
 type FlowWindow = { in: number; out: number; net: number };
+type FlowTxn = { id: string; date: string; who: string; amount: number; entity: string | null; account: string };
+
+const FLOW_VIEW_KEY = "bfo-home-flow-view";
+function readFlowView(): "transactions" | "accounts" {
+  try {
+    return localStorage.getItem(FLOW_VIEW_KEY) === "accounts" ? "accounts" : "transactions";
+  } catch {
+    return "transactions";
+  }
+}
 type Stream = {
   source: string;
   entity: string | null;
@@ -47,7 +57,17 @@ type Stream = {
 };
 type HomeData = {
   treasury: TreasuryRow[] | null;
-  flow: { current: FlowWindow; prior: FlowWindow; months?: { month: string; in: number; out: number }[]; topIn?: { name: string; amount: number }[]; topOut?: { name: string; amount: number }[] } | null;
+  flow: {
+    current: FlowWindow;
+    prior: FlowWindow;
+    months?: { month: string; in: number; out: number }[];
+    topIn?: { name: string; amount: number }[];
+    topOut?: { name: string; amount: number }[];
+    recentIn?: FlowTxn[];
+    recentOut?: FlowTxn[];
+    countIn?: number;
+    countOut?: number;
+  } | null;
   review: { uncategorized: number } | null;
   inflows: { monthly: number; streams: Stream[] } | null;
 };
@@ -498,6 +518,20 @@ function FlowCard({
   const months = flow?.months ?? [];
   const peak = Math.max(1, ...months.map((m) => m[kind]));
   const top = (revenue ? flow?.topIn : flow?.topOut) ?? [];
+  const recent = (revenue ? flow?.recentIn : flow?.recentOut) ?? [];
+  const count = (revenue ? flow?.countIn : flow?.countOut) ?? recent.length;
+  // The transactions themselves, or the accounts they roll up to; the choice sticks.
+  const [view, setView] = useState<"transactions" | "accounts">("transactions");
+  useEffect(() => setView(readFlowView()), []);
+  const choose = (v: "transactions" | "accounts") => {
+    setView(v);
+    try {
+      localStorage.setItem(FLOW_VIEW_KEY, v);
+    } catch {
+      /* a preference that doesn't stick is no loss */
+    }
+  };
+  const SHOWN = 7;
   const bar = revenue ? (isDark ? "bg-emerald-400/70" : "bg-emerald-500/70") : isDark ? "bg-rose-400/60" : "bg-rose-500/60";
   const barNow = revenue ? (isDark ? "bg-emerald-300" : "bg-emerald-600") : isDark ? "bg-rose-300" : "bg-rose-600";
   const chip = good
@@ -552,15 +586,57 @@ function FlowCard({
               })}
             </div>
           )}
-          {top.length > 0 && (
-            <ul className={`mt-4 space-y-1.5 border-t pt-3 ${hairline}`}>
-              {top.map((t) => (
-                <li key={t.name} className="flex items-baseline justify-between gap-3 text-[11.5px]">
-                  <span className="truncate">{t.name.replace(/^\d{4}\s+/, "")}</span>
-                  <span className={`shrink-0 tabular-nums ${textMuted}`}>{fmtUSD(t.amount)}</span>
-                </li>
-              ))}
-            </ul>
+          {(top.length > 0 || recent.length > 0) && (
+            <div className={`mt-4 border-t pt-3 ${hairline}`}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex gap-1" role="tablist" aria-label="Show">
+                  {(["transactions", "accounts"] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      role="tab"
+                      aria-selected={view === v}
+                      onClick={() => choose(v)}
+                      className={`cursor-pointer rounded-full px-2 py-0.5 text-[10.5px] font-medium capitalize transition-colors ${
+                        view === v ? (isDark ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900") : `${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`
+                      }`}
+                    >
+                      {v === "accounts" ? "By account" : "Transactions"}
+                    </button>
+                  ))}
+                </div>
+                {view === "transactions" && count > SHOWN && (
+                  <Link to="/books/transactions" className={`text-[10.5px] tabular-nums ${textMuted} hover:underline`}>
+                    All {count} →
+                  </Link>
+                )}
+              </div>
+              {view === "accounts" ? (
+                <ul className="space-y-1.5">
+                  {top.map((t) => (
+                    <li key={t.name} className="flex items-baseline justify-between gap-3 text-[11.5px]">
+                      <span className="truncate">{t.name.replace(/^\d{4}\s+/, "")}</span>
+                      <span className={`shrink-0 tabular-nums ${textMuted}`}>{fmtUSD(t.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className={`-mx-2 divide-y ${isDark ? "divide-white/[0.05]" : "divide-gray-100"}`}>
+                  {recent.slice(0, SHOWN).map((t) => (
+                    <li key={t.id || `${t.date}-${t.who}-${t.amount}`}>
+                      <Link to={`/books/transactions?q=${encodeURIComponent(t.who)}`} className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}>
+                        <span className={`w-[38px] shrink-0 text-[10.5px] tabular-nums ${textMuted}`}>{new Date(`${t.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11.5px]">{t.who}</span>
+                          <span className={`block truncate text-[10px] ${textMuted}`}>{[t.entity, t.account].filter(Boolean).join(" · ")}</span>
+                        </span>
+                        <span className="shrink-0 text-[11.5px] tabular-nums">{fmtUSD(t.amount)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       )}
