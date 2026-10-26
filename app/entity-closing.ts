@@ -54,7 +54,7 @@ const SOS: Record<string, { llc: string; corp: string; where: { label: string; u
   AZ: {
     llc: "Articles of Termination",
     corp: "Articles of Dissolution",
-    where: { label: "Arizona eCorp", url: "https://ecorp.azcc.gov/" },
+    where: { label: "Arizona Business Center", url: "https://arizonabusinesscenter.azcc.gov/" },
   },
   NV: {
     llc: "Certificate of Dissolution",

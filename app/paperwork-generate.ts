@@ -618,9 +618,9 @@ export function stateAddressStep(state: string | undefined | null, type: string 
     return {
       needed: true,
       agency: "Arizona Corporation Commission",
-      how: `Sign in to eCorp, open the ${corp ? "corporation" : "entity"}, and file the change of its ${corp ? "known place of business" : "principal / known place of business"} address. The new address shows on the public record once the ACC processes it.`,
-      url: "https://ecorp.azcc.gov/",
-      linkLabel: "Open eCorp",
+      how: `Sign in to the Arizona Business Center (the ACC's portal since January 2026, replacing eCorp), open the ${corp ? "corporation" : "entity"}, and file a Statement of Change for its ${corp ? "known place of business" : "principal / known place of business"} address. The new address shows on the public record once the ACC processes it.`,
+      url: "https://arizonabusinesscenter.azcc.gov/",
+      linkLabel: "Open Arizona Business Center",
     };
   if (st === "NV")
     return {

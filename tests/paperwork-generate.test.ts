@@ -137,7 +137,7 @@ describe("address change", () => {
   it("knows who needs one and where it's mailed", () => {
     expect(f8822bData({ ...moved, ein: "00-0000000" }).ein).toBeNull();
     expect(f8822bMailTo("540 Hudson #6, New York, NY 10014")).toBe("Internal Revenue Service, Kansas City, MO 64999");
-    expect(stateAddressStep("Arizona", "LLC")).toMatchObject({ needed: true, url: "https://ecorp.azcc.gov/" });
+    expect(stateAddressStep("Arizona", "LLC")).toMatchObject({ needed: true, url: "https://arizonabusinesscenter.azcc.gov/" });
     expect(stateAddressStep("Nevada", "LLC").needed).toBe(true);
     expect(stateAddressStep("Delaware", "LLC").needed).toBe(false);
   });

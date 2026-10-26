@@ -204,7 +204,7 @@ export function taxClassOf(a: PaperworkInput): { value: TaxClass | null; isDefau
 
 const LINKS = {
   azForms: { label: "Arizona Corporation Commission — forms", url: "https://azcc.gov/corporations/forms/llc-forms" },
-  azBusiness: { label: "Arizona Business Center (ACC)", url: "https://azcc.gov/corporations" },
+  azBusiness: { label: "Arizona Business Center (ACC)", url: "https://arizonabusinesscenter.azcc.gov/" },
   azSos: { label: "Arizona Secretary of State — business services", url: "https://azsos.gov/business" },
   azL025: {
     label: "ACC Form L025 instructions",
