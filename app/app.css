@@ -836,76 +836,100 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
 /* ──────────────────────────────────────────────────────────────────────
    Auth surfaces (/login, /complete-profile).
 
-   Elevated glass: gradient hairline ring, deep blur, ambient indigo glow,
-   fields that rise in staggered, and a green success glow on the code
-   field when the right key lands.
+   The brand set in type: ivory (#f4ede0) on black, hairline rules, tracked
+   small caps and the brand serif for what's typed, as on the landing
+   lockup. No coloured glow; the only colour is the backdrop's.
    ────────────────────────────────────────────────────────────────────── */
 .auth-card {
   position: relative;
   isolation: isolate;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018) 55%, rgba(120, 140, 255, 0.045));
+  border-radius: 22px;
+  border: 1px solid rgba(244, 237, 224, 0.10);
+  background: linear-gradient(170deg, rgba(244, 237, 224, 0.05), rgba(244, 237, 224, 0.012) 60%);
   backdrop-filter: blur(26px);
   -webkit-backdrop-filter: blur(26px);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.09) inset,
-    0 24px 64px -28px rgba(0, 0, 0, 0.9),
-    0 0 90px -32px rgba(99, 102, 241, 0.4);
+    0 1px 0 rgba(244, 237, 224, 0.08) inset,
+    0 30px 80px -40px rgba(0, 0, 0, 0.95);
   animation: landing-rise 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.45s both;
 }
-/* Gradient hairline ring that catches the light top-left. */
+/* Hairline ring that catches the light top-left. */
 .auth-card::before {
   content: "";
   position: absolute;
   inset: -1px;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(140deg, rgba(147, 197, 253, 0.4), rgba(196, 181, 253, 0.18) 40%, transparent 70%);
+  background: linear-gradient(140deg, rgba(244, 237, 224, 0.32), rgba(244, 237, 224, 0.08) 40%, transparent 70%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
   pointer-events: none;
 }
-/* Specular sheen across the top of the glass. */
-.auth-card::after {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 55%;
-  border-radius: inherit;
-  background: radial-gradient(80% 60% at 30% 0%, rgba(255, 255, 255, 0.10), transparent 70%);
-  pointer-events: none;
-  z-index: -1;
-}
 
+/* Eyebrow: the lockup's tracked caps. The trailing margin recentres it. */
+.auth-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.34em;
+  margin-right: -0.34em;
+  text-transform: uppercase;
+  color: rgba(244, 237, 224, 0.5);
+}
+/* Headline in the brand serif. */
+.auth-title {
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: clamp(1.5rem, 6.5vw, 1.75rem);
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+  color: #f4ede0;
+}
+.auth-hint { font-size: 12.5px; line-height: 1.5; color: rgba(244, 237, 224, 0.48); }
+.auth-foot { font-size: 11px; line-height: 1.5; color: rgba(244, 237, 224, 0.3); }
+/* A hairline rule, as under the lockup's name. */
+.auth-rule { height: 1px; background: rgba(244, 237, 224, 0.14); }
+/* Small text links: tracked caps that brighten. */
+.auth-link {
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  color: rgba(244, 237, 224, 0.45);
+  transition: color 0.2s;
+  cursor: pointer;
+}
+.auth-link:hover:not(:disabled) { color: rgba(244, 237, 224, 0.9); }
+.auth-link:disabled { cursor: not-allowed; color: rgba(244, 237, 224, 0.35); }
+
+/* Boxed field (complete-profile). */
 .auth-field {
   width: 100%;
   padding: 12px 16px;
   border-radius: 12px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  color: #f4ede0;
+  background: rgba(244, 237, 224, 0.05);
+  border: 1px solid rgba(244, 237, 224, 0.14);
   transition: border-color 0.2s, box-shadow 0.3s, background 0.2s;
   animation: auth-field-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.auth-field::placeholder { color: rgba(255, 255, 255, 0.28); }
+.auth-field::placeholder { color: rgba(244, 237, 224, 0.28); }
 .auth-field:focus {
   outline: none;
-  border-color: rgba(147, 197, 253, 0.55);
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow:
-    0 0 0 4px rgba(99, 102, 241, 0.16),
-    0 0 28px -6px rgba(99, 102, 241, 0.55);
+  border-color: rgba(244, 237, 224, 0.5);
+  background: rgba(244, 237, 224, 0.07);
+  box-shadow: 0 0 0 4px rgba(244, 237, 224, 0.07);
 }
-/* Autofill was painting the field opaque white — keep the glass. */
+/* Autofill was painting the field opaque white — keep it dark. */
 .auth-field:-webkit-autofill,
 .auth-field:-webkit-autofill:hover,
-.auth-field:-webkit-autofill:focus {
-  -webkit-text-fill-color: #fff;
-  -webkit-box-shadow: 0 0 0 1000px #12151c inset;
-  caret-color: #fff;
+.auth-field:-webkit-autofill:focus,
+.sign-field:-webkit-autofill,
+.sign-field:-webkit-autofill:hover,
+.sign-field:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f4ede0;
+  -webkit-box-shadow: 0 0 0 1000px #0a0a0a inset;
+  caret-color: #f4ede0;
   transition: background-color 999999s ease-out;
 }
 
@@ -919,42 +943,45 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
 .auth-delay-2 { animation-delay: 0.15s; }
 .auth-delay-3 { animation-delay: 0.23s; }
 
-/* The correct key glows green. */
+/* The right key: a warm gold, the lockup's other finish. */
 .auth-field-success {
-  border-color: rgba(52, 211, 153, 0.8) !important;
-  background: rgba(52, 211, 153, 0.10) !important;
-  color: #6ee7b7 !important;
-  box-shadow:
-    0 0 0 4px rgba(52, 211, 153, 0.18),
-    0 0 36px -4px rgba(52, 211, 153, 0.7) !important;
+  border-color: rgba(216, 181, 106, 0.8) !important;
+  background: rgba(216, 181, 106, 0.08) !important;
+  color: #f3dc9a !important;
+  box-shadow: 0 0 0 4px rgba(216, 181, 106, 0.12) !important;
   animation: auth-success-pulse 0.9s ease-out;
 }
 @keyframes auth-success-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55), 0 0 20px -6px rgba(52, 211, 153, 0.6); }
-  100% { box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.18), 0 0 36px -4px rgba(52, 211, 153, 0.7); }
+  0% { box-shadow: 0 0 0 0 rgba(216, 181, 106, 0.45); }
+  100% { box-shadow: 0 0 0 4px rgba(216, 181, 106, 0.12); }
 }
 .auth-field-error {
-  border-color: rgba(248, 113, 113, 0.6) !important;
-  box-shadow: 0 0 28px -6px rgba(248, 113, 113, 0.55) !important;
+  border-color: rgba(248, 113, 113, 0.55) !important;
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.08) !important;
 }
 
+/* The one button: ivory, tracked caps, a pill. */
 .auth-btn {
   width: 100%;
-  padding: 12px 0;
-  border-radius: 12px;
-  background: #fff;
-  color: #000;
+  padding: 15px 0 15px 0.26em; /* the left padding balances the trailing letter-spacing */
+  border-radius: 999px;
+  background: #f4ede0;
+  color: #0a0a0a;
+  font-size: 11.5px;
   font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.25s, opacity 0.15s;
-  box-shadow: 0 10px 34px -14px rgba(255, 255, 255, 0.55);
+  transition: transform 0.15s, box-shadow 0.25s, opacity 0.15s, background 0.2s;
+  box-shadow: 0 16px 44px -20px rgba(244, 237, 224, 0.55);
 }
 .auth-btn:hover:not(:disabled) {
+  background: #fff8ea;
   transform: translateY(-1px);
-  box-shadow: 0 14px 40px -14px rgba(255, 255, 255, 0.7);
+  box-shadow: 0 20px 50px -20px rgba(244, 237, 224, 0.7);
 }
 .auth-btn:active:not(:disabled) { transform: scale(0.98); }
-.auth-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.auth-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
   .auth-card, .auth-field, .auth-in, .auth-field-success { animation: none; }
@@ -993,23 +1020,56 @@ html.light .app-aurora { opacity: 0.4; }
   padding-left: 0.16em; /* balance the trailing letter-spacing so it centres */
 }
 
-/* ── Sign-in micro-interactions ──────────────────────────────────────── */
+/* ── Sign-in: the phone number and the code, set in the brand serif ──── */
 
-/* The input's own glyphs go invisible; the animated layer renders them so
-   each typed character can pop in. The caret stays. */
-.auth-field-ghost {
-  color: transparent !important;
-  caret-color: #fff;
+/* The phone number: one rule under big serif digits, nothing boxed. The
+   wrapper carries the type so the input and its animated layer line up. */
+.sign-field-wrap {
+  position: relative;
+  font-family: var(--font-brand);
+  font-size: clamp(1.7rem, 8vw, 2rem);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
 }
+.sign-field {
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(244, 237, 224, 0.22);
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font: inherit;
+  letter-spacing: inherit;
+  color: transparent; /* the animated layer draws the glyphs */
+  caret-color: #f4ede0;
+  transition: border-color 0.25s, box-shadow 0.25s;
+  animation: auth-field-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.sign-field::placeholder { color: rgba(244, 237, 224, 0.2); -webkit-text-fill-color: rgba(244, 237, 224, 0.2); }
+.sign-field:focus {
+  outline: none;
+  border-bottom-color: rgba(244, 237, 224, 0.75);
+  box-shadow: 0 1px 0 0 rgba(244, 237, 224, 0.35);
+}
+.sign-field-error, .sign-field-error:focus {
+  border-bottom-color: rgba(248, 113, 113, 0.6);
+  box-shadow: 0 1px 0 0 rgba(248, 113, 113, 0.3);
+}
+/* Each typed character pops in over the (invisible) input text. */
 .auth-anim-layer {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  justify-content: center;
+  padding: 0;
   pointer-events: none;
-  font-size: 16px;
-  color: #fff;
+  font: inherit;
+  letter-spacing: inherit;
+  color: #f4ede0;
   white-space: pre;
   overflow: hidden;
 }
@@ -1022,54 +1082,60 @@ html.light .app-aurora { opacity: 0.4; }
   to { opacity: 1; transform: none; filter: none; }
 }
 
-/* Six-cell one-time-code entry */
-.auth-otp-cell {
+/* Six digits on six rules. */
+.sign-cell {
   flex: 1;
-  height: 52px;
-  border-radius: 12px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  font-weight: 600;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  transition: border-color 0.2s, box-shadow 0.25s, background 0.2s;
+  border-bottom: 1px solid rgba(244, 237, 224, 0.22);
+  font-family: var(--font-brand);
+  font-size: clamp(1.75rem, 8vw, 2.1rem);
+  font-weight: 500;
+  color: #f4ede0;
+  transition: border-color 0.25s, box-shadow 0.25s, color 0.25s;
 }
-.auth-otp-filled {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.22);
+.sign-cell-filled { border-bottom-color: rgba(244, 237, 224, 0.55); }
+.sign-cell-active {
+  border-bottom-color: #f4ede0;
+  box-shadow: 0 1px 0 0 rgba(244, 237, 224, 0.5);
+  animation: sign-cell-breathe 1.6s ease-in-out infinite;
 }
-.auth-otp-active {
-  border-color: rgba(147, 197, 253, 0.6);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16), 0 0 20px -6px rgba(99, 102, 241, 0.55);
-  animation: auth-otp-breathe 1.6s ease-in-out infinite;
+@keyframes sign-cell-breathe {
+  50% { border-bottom-color: rgba(244, 237, 224, 0.45); box-shadow: 0 1px 0 0 rgba(244, 237, 224, 0.1); }
 }
-@keyframes auth-otp-breathe {
-  50% { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.10), 0 0 24px -6px rgba(99, 102, 241, 0.4); }
+.sign-cell-success {
+  color: #f3dc9a;
+  border-bottom-color: rgba(216, 181, 106, 0.9) !important;
+  box-shadow: 0 1px 0 0 rgba(216, 181, 106, 0.45);
 }
-.auth-otp-success {
-  border-color: rgba(52, 211, 153, 0.8) !important;
-  background: rgba(52, 211, 153, 0.12) !important;
-  color: #6ee7b7;
-  box-shadow: 0 0 22px -6px rgba(52, 211, 153, 0.65);
+.sign-cell-error {
+  border-bottom-color: rgba(248, 113, 113, 0.6) !important;
+  box-shadow: 0 1px 0 0 rgba(248, 113, 113, 0.3);
 }
-.auth-otp-error {
-  border-color: rgba(248, 113, 113, 0.55) !important;
-  box-shadow: 0 0 18px -8px rgba(248, 113, 113, 0.5);
+
+/* Resend: a hairline pill whose fill drains as the wait runs down. */
+.sign-resend {
+  position: relative;
+  overflow: hidden;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 237, 224, 0.14);
 }
+.sign-resend-fill { position: absolute; inset: 0 auto 0 0; background: rgba(244, 237, 224, 0.06); }
 
 /* Inline button spinner */
 .auth-spinner {
   display: inline-block;
-  width: 13px;
-  height: 13px;
-  margin-right: 7px;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
   vertical-align: -2px;
   border-radius: 999px;
-  border: 2px solid rgba(0, 0, 0, 0.25);
-  border-top-color: #000;
+  border: 2px solid rgba(10, 10, 10, 0.2);
+  border-top-color: #0a0a0a;
   animation: auth-spin 0.7s linear infinite;
 }
 @keyframes auth-spin {
@@ -1077,7 +1143,7 @@ html.light .app-aurora { opacity: 0.4; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .auth-char, .auth-otp-active, .auth-spinner { animation: none; }
+  .auth-char, .sign-cell-active, .auth-spinner, .sign-field { animation: none; }
 }
 
 /* ── Books design system ─────────────────────────────────────────────── */
