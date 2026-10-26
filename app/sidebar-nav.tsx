@@ -26,6 +26,8 @@ export type NavItem = {
   badge?: number;
   /** Starts the second half of the nav, after a little air. */
   breakBefore?: boolean;
+  /** A heading over this item and the ones after it, in the phone drawer ("The office"). */
+  section?: string;
   children?: NavChild[];
 };
 
@@ -68,10 +70,13 @@ export function SidebarNav({
   isDark,
   showLabels,
   labelsVisible,
+  phone = false,
   onNavigate,
 }: {
   items: NavItem[];
   isDark: boolean;
+  /** The phone drawer: section headings over the groups of rows. */
+  phone?: boolean;
   /** The desktop rail is expanded. */
   showLabels: boolean;
   /** Labels show (expanded rail, or the phone drawer). */
@@ -122,6 +127,7 @@ export function SidebarNav({
         const active = kids ? groupOf(item) : childActive({ to: item.to, label: item.label }, location.pathname, search);
         const gap = item.breakBefore ? (labelsVisible ? "mt-4" : "mt-3") : "";
         const total = item.badge ?? kids?.reduce((s, c) => s + (c.badge ?? 0), 0) ?? 0;
+        const heading = phone && item.section ? <p className="nav-eyebrow">{item.section}</p> : null;
 
         const iconWithDot = (
           <span className="relative inline-flex shrink-0">
@@ -142,6 +148,7 @@ export function SidebarNav({
         if (!kids || !labelsVisible) {
           return (
             <div key={item.to} className={gap}>
+              {heading}
               <Link
                 to={kids ? kids[0].to : item.to}
                 onClick={onNavigate}
@@ -162,6 +169,7 @@ export function SidebarNav({
         const panel = `nav-panel-${item.to.replace(/\W+/g, "-")}`;
         return (
           <div key={item.to} className={gap}>
+            {heading}
             <button
               type="button"
               onClick={() => toggle(item.to)}
