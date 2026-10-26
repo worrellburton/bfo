@@ -17,16 +17,47 @@ export class Recorder {
   private rec: MediaRecorder | null = null;
   private chunks: Blob[] = [];
   private stream: MediaStream | null = null;
+  private ctx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private buf: Uint8Array<ArrayBuffer> | null = null;
   startedAt = 0;
 
   async start(): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    // The level meter, for the globe to breathe with the voice.
+    try {
+      this.ctx = new AudioContext();
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 512;
+      this.ctx.createMediaStreamSource(this.stream).connect(this.analyser);
+      this.buf = new Uint8Array(this.analyser.fftSize);
+    } catch {
+      this.analyser = null;
+    }
     const mime = MIME_PREFERENCE.find((m) => MediaRecorder.isTypeSupported?.(m));
     this.rec = new MediaRecorder(this.stream, mime ? { mimeType: mime, audioBitsPerSecond: 32_000 } : undefined);
     this.chunks = [];
     this.rec.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
     this.rec.start(250);
     this.startedAt = Date.now();
+  }
+
+  /** How loud the voice is right now, 0–1. */
+  level(): number {
+    if (!this.analyser || !this.buf) return 0;
+    this.analyser.getByteTimeDomainData(this.buf);
+    let sum = 0;
+    for (const v of this.buf) {
+      const d = (v - 128) / 128;
+      sum += d * d;
+    }
+    return Math.min(1, Math.sqrt(sum / this.buf.length) * 4);
+  }
+
+  private closeMeter() {
+    void this.ctx?.close().catch(() => undefined);
+    this.ctx = null;
+    this.analyser = null;
   }
 
   /** The clip so far; the mic is released. */
@@ -36,6 +67,7 @@ export class Recorder {
       const done = () => {
         this.stream?.getTracks().forEach((t) => t.stop());
         this.stream = null;
+        this.closeMeter();
         const type = rec?.mimeType || this.chunks[0]?.type || "audio/webm";
         resolve(new Blob(this.chunks, { type }));
         this.rec = null;
@@ -54,9 +86,27 @@ export class Recorder {
     }
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
+    this.closeMeter();
     this.rec = null;
     this.chunks = [];
   }
+}
+
+/** The first `fraction` of a text, whole words: the caption keeping pace with the voice. */
+export function revealWords(text: string, fraction: number): string {
+  const words = text.split(/(\s+)/);
+  const spoken = words.filter((w) => w.trim()).length;
+  const want = Math.max(0, Math.min(spoken, Math.ceil(spoken * Math.max(0, Math.min(1, fraction)))));
+  let seen = 0;
+  const out: string[] = [];
+  for (const w of words) {
+    if (w.trim()) {
+      if (seen >= want) break;
+      seen++;
+    }
+    out.push(w);
+  }
+  return out.join("");
 }
 
 // A tenth of a second of silence, so a tap can "play" before there's anything to play.
@@ -97,6 +147,13 @@ export class Player {
 
   get playing() {
     return !!this.el && !this.el.paused && !!this.url;
+  }
+
+  /** How far through the clip, 0–1 (0 before it starts). */
+  progress(): number {
+    const el = this.el;
+    if (!el || !this.url || !Number.isFinite(el.duration) || el.duration <= 0) return 0;
+    return Math.max(0, Math.min(1, el.currentTime / el.duration));
   }
 
   private release() {
