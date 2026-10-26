@@ -66,7 +66,23 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          # Rebuilt as a proper PEM whatever the paste lost: line breaks, the
+          # BEGIN/END lines, or stray spaces and quotes around it.
+          body=$(printf '%s' "$ASC_KEY_P8" | sed -e 's/-----[A-Z ]*-----//g' | tr -d ' \t\r\n"')
+          if ! printf '%s' "$body" | base64 --decode > /dev/null 2>&1 || [ "${#body}" -lt 100 ] || [ "${#body}" -gt 400 ]; then
+            echo "::error::ASC_KEY_P8 isn't the text of an App Store Connect .p8 key (${#body} characters of key data). Paste the whole file, from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY-----."
+            exit 1
+          fi
+          {
+            echo "-----BEGIN PRIVATE KEY-----"
+            printf '%s\n' "$body" | fold -w 64
+            echo "-----END PRIVATE KEY-----"
+          } > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          # Must parse as an EC private key, or Xcode refuses it.
+          if ! openssl pkey -in "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8" -noout 2>/dev/null; then
+            echo "::error::ASC_KEY_P8 doesn't read as a private key. Download the key again (or make a new one) and paste the whole .p8 file."
+            exit 1
+          fi
 
       - name: Archive
         env:
