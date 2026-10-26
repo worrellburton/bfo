@@ -15,7 +15,7 @@
  */
 
 import { documentRules, entityType, obligations, paperworkChecks, stateCode, stateName, agentTerm, type PaperworkInput } from "./entity-paperwork";
-import { normalizeName, type PalmLink, type PalmMode, type StateRecord } from "./palm";
+import { effectiveRecord, normalizeName, type PalmLink, type PalmMode, type StateConfirmation, type StateRecord } from "./palm";
 
 export type PillarKey = "palm" | "state" | "standing" | "tax" | "agent" | "paperwork" | "records" | "deadlines";
 export type PillarStatus = "good" | "warn" | "bad" | "missing" | "na";
@@ -70,6 +70,7 @@ export type EntityInput = PaperworkInput & {
   status?: string;
   palm?: Partial<Record<PalmMode, PalmLink>>;
   stateRecord?: StateRecord;
+  stateConfirmed?: StateConfirmation | null;
 };
 
 const POINTS: Record<PillarStatus, number | null> = { good: 1, warn: 0.5, bad: 0, missing: 0, na: null };
@@ -97,7 +98,8 @@ export function assessEntity(
   const page = (tab: string) => `/assets/${encodeURIComponent(id)}/${tab}`;
   const owner = a.ownerId ? all[a.ownerId] : undefined;
   const paper: PaperworkInput = { ...a, owner: owner ? { name: owner.name, type: owner.type, llcType: owner.llcType } : null };
-  const rec = mode && a.stateRecord?.mode === mode ? a.stateRecord : undefined;
+  // Judged as the state has it, where its own site was confirmed to say active over Palm's lagging copy.
+  const rec = mode && a.stateRecord?.mode === mode ? effectiveRecord(a.stateRecord, a.stateConfirmed) : undefined;
   const link = mode ? a.palm?.[mode] : undefined;
   const dissolved = /dissolv|closed|cancel/i.test(a.status ?? "");
   const check: Fix = { text: "", action: "check-state", cta: "Check with the state" };
