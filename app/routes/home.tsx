@@ -47,7 +47,7 @@ type Stream = {
 };
 type HomeData = {
   treasury: TreasuryRow[] | null;
-  flow: { current: FlowWindow; prior: FlowWindow } | null;
+  flow: { current: FlowWindow; prior: FlowWindow; months?: { month: string; in: number; out: number }[]; topIn?: { name: string; amount: number }[]; topOut?: { name: string; amount: number }[] } | null;
   review: { uncategorized: number } | null;
   inflows: { monthly: number; streams: Stream[] } | null;
 };
@@ -460,6 +460,114 @@ type TreeGroup = { key: string; head: Scored | null; title: string; caption: str
  *    below them share one block, and entities with no parent on file share
  *    another.
  */
+/**
+ * Revenue or expenses over the last 30 days: the amount, how it compares with
+ * the 30 days before, six months of bars, and where most of it came from or
+ * went (the books accounts).
+ */
+function FlowCard({
+  kind,
+  flow,
+  loading,
+  isDark,
+  surface,
+  enter,
+  kicker,
+  hairline,
+  textMuted,
+  late,
+}: {
+  kind: "in" | "out";
+  flow: HomeData["flow"];
+  loading: boolean;
+  isDark: boolean;
+  surface: string;
+  enter: string;
+  kicker: string;
+  hairline: string;
+  textMuted: string;
+  late: string;
+}) {
+  const revenue = kind === "in";
+  const now = flow?.current[kind] ?? 0;
+  const before = flow?.prior[kind] ?? 0;
+  const delta = now - before;
+  const pct = before > 0 ? (delta / before) * 100 : null;
+  // More revenue is good; more spending isn't.
+  const good = revenue ? delta >= 0 : delta <= 0;
+  const months = flow?.months ?? [];
+  const peak = Math.max(1, ...months.map((m) => m[kind]));
+  const top = (revenue ? flow?.topIn : flow?.topOut) ?? [];
+  const bar = revenue ? (isDark ? "bg-emerald-400/70" : "bg-emerald-500/70") : isDark ? "bg-rose-400/60" : "bg-rose-500/60";
+  const barNow = revenue ? (isDark ? "bg-emerald-300" : "bg-emerald-600") : isDark ? "bg-rose-300" : "bg-rose-600";
+  const chip = good
+    ? isDark
+      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : isDark
+      ? "border-rose-500/20 bg-rose-500/10 text-rose-300"
+      : "border-rose-200 bg-rose-50 text-rose-700";
+  return (
+    <section data-bg-solid className={`flex flex-col overflow-hidden rounded-2xl lg:col-span-4 ${surface} ${enter}`}>
+      <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <p className={kicker}>{revenue ? "Revenue" : "Expenses"}</p>
+          <span className={`text-[11px] ${textMuted}`}>last 30 days</span>
+        </div>
+        <Link to={revenue ? "/books/reports" : "/books/vendors"} className={`${TAP_Y} shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
+          {revenue ? "Reports →" : "Vendors →"}
+        </Link>
+      </div>
+      {loading || !flow ? (
+        <div className="space-y-3 p-5">
+          <Bone className="h-8 w-36" />
+          <Bone className="h-3 w-24" />
+          <Bone className="h-12 w-full" />
+          <Bone className="h-3 w-3/4" />
+          <Bone className="h-3 w-1/2" />
+        </div>
+      ) : (
+        <div className={`flex flex-1 flex-col px-5 pb-4 pt-4 ${late}`}>
+          <p className="text-[26px] font-semibold leading-none tabular-nums tracking-[-0.02em]">{fmtUSD(now)}</p>
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+            {before > 0 || now > 0 ? (
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium tabular-nums ${chip}`}>
+                {delta >= 0 ? "↑" : "↓"} {fmtCompact(Math.abs(delta))}
+                {pct != null && <span className="opacity-80">· {pct >= 0 ? "+" : "−"}{Math.abs(pct).toFixed(0)}%</span>}
+              </span>
+            ) : null}
+            <span className={textMuted}>vs the 30 days before</span>
+          </p>
+          {months.length > 0 && (
+            <div className="mt-4 flex h-16 items-end gap-1.5" aria-label={`${revenue ? "Revenue" : "Expenses"} by month`}>
+              {months.map((m, i) => {
+                const last = i === months.length - 1;
+                const h = Math.max(3, Math.round((m[kind] / peak) * 44));
+                return (
+                  <span key={m.month} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${m.month}: ${fmtUSD(m[kind])}`}>
+                    <span className={`w-full rounded-sm ${last ? barNow : bar}`} style={{ height: h }} />
+                    <span className={`text-[9px] uppercase ${last ? "" : textMuted}`}>{new Date(`${m.month}-15T00:00:00`).toLocaleDateString("en-US", { month: "short" }).slice(0, 1)}</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {top.length > 0 && (
+            <ul className={`mt-4 space-y-1.5 border-t pt-3 ${hairline}`}>
+              {top.map((t) => (
+                <li key={t.name} className="flex items-baseline justify-between gap-3 text-[11.5px]">
+                  <span className="truncate">{t.name.replace(/^\d{4}\s+/, "")}</span>
+                  <span className={`shrink-0 tabular-nums ${textMuted}`}>{fmtUSD(t.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function buildStructure(scored: Scored[], byId: Map<string, Scored>, childrenOf: Map<string, string[]>) {
   const byName = (a: Scored, b: Scored) => a.name.localeCompare(b.name);
   const kids = (id: string) =>
@@ -1103,67 +1211,12 @@ export default function Home() {
 
       </div>
 
-      {/* ── Needs attention + Coming in ──────────────────────────────── */}
+      {/* ── Revenue · Expenses · Coming in ───────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
-        <section data-bg-solid className={`overflow-hidden rounded-2xl ${showComing ? "lg:col-span-7" : "lg:col-span-12"} ${surface} ${enter}`}>
-          <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
-            <div className="flex items-center gap-2.5">
-              <p className={kicker}>Needs attention</p>
-              {attentionReady && attention.length > 0 && <span className={`${chipBase} ${warnChip}`}>{attention.length}</span>}
-            </div>
-            <Link to="/books/review" className={`${TAP_Y} shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
-              Review desk →
-            </Link>
-          </div>
-          {!attentionReady && attention.length === 0 ? (
-            <div className="space-y-3 p-5">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <Bone className="h-8 w-8 shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <Bone className="h-3" style={{ width: `${70 - i * 12}%` }} />
-                    <Bone className="h-2.5" style={{ width: `${50 - i * 8}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : attention.length === 0 && assetsError ? (
-            <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-10 text-center text-[12.5px]">{assetsFailed}</p>
-          ) : attention.length === 0 ? (
-            <div className={`flex flex-col items-center justify-center gap-2 px-5 py-10 text-center ${late.home || late.assets ? "home-late" : ""}`}>
-              <span className={`flex h-10 w-10 items-center justify-center rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}>
-                <Icon name="check" className="h-5 w-5" />
-              </span>
-              <p className="text-[13px] font-medium">All clear</p>
-              <p className={`text-[12px] ${textMuted}`}>Books are categorized, inflows on time and records complete.</p>
-            </div>
-          ) : (
-            <ul className={`divide-y ${rowBorder} ${late.home || late.assets ? "home-late" : ""}`}>
-              {attention.map((a) => (
-                <li key={a.key}>
-                  <Link to={a.to} className={`group flex items-center gap-3 px-5 py-3 transition-colors ${rowHover}`}>
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneTile[a.tone]}`}>
-                      <Icon name={a.icon} className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] font-medium">{a.title}</span>
-                      <span className={`block truncate text-[11px] ${textMuted}`}>{a.detail}</span>
-                    </span>
-                    {a.aside}
-                    <Icon
-                      name="chevron"
-                      className={`h-3.5 w-3.5 shrink-0 ${textMuted} transition-transform motion-safe:group-hover:translate-x-0.5`}
-                      strokeWidth={2}
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
+        <FlowCard kind="in" flow={flow} loading={homeLoading} isDark={isDark} surface={surface} enter={enter} kicker={kicker} hairline={hairline} textMuted={textMuted} late={lateHome} />
+        <FlowCard kind="out" flow={flow} loading={homeLoading} isDark={isDark} surface={surface} enter={enter} kicker={kicker} hairline={hairline} textMuted={textMuted} late={lateHome} />
         {showComing && (
-          <section data-bg-solid className={`overflow-hidden rounded-2xl lg:col-span-5 ${surface} ${enter}`}>
+          <section data-bg-solid className={`overflow-hidden rounded-2xl lg:col-span-4 ${surface} ${enter}`}>
             <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
               <div className="flex min-w-0 items-baseline gap-2.5">
                 <p className={kicker}>Coming in</p>
@@ -1235,6 +1288,67 @@ export default function Home() {
             )}
           </section>
         )}
+      </div>
+
+      {/* ── Needs attention ──────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
+        <section data-bg-solid className={`overflow-hidden rounded-2xl lg:col-span-12 ${surface} ${enter}`}>
+          <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
+            <div className="flex items-center gap-2.5">
+              <p className={kicker}>Needs attention</p>
+              {attentionReady && attention.length > 0 && <span className={`${chipBase} ${warnChip}`}>{attention.length}</span>}
+            </div>
+            <Link to="/books/review" className={`${TAP_Y} shrink-0 text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`}>
+              Review desk →
+            </Link>
+          </div>
+          {!attentionReady && attention.length === 0 ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Bone className="h-8 w-8 shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <Bone className="h-3" style={{ width: `${70 - i * 12}%` }} />
+                    <Bone className="h-2.5" style={{ width: `${50 - i * 8}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : attention.length === 0 && assetsError ? (
+            <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-10 text-center text-[12.5px]">{assetsFailed}</p>
+          ) : attention.length === 0 ? (
+            <div className={`flex flex-col items-center justify-center gap-2 px-5 py-10 text-center ${late.home || late.assets ? "home-late" : ""}`}>
+              <span className={`flex h-10 w-10 items-center justify-center rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}>
+                <Icon name="check" className="h-5 w-5" />
+              </span>
+              <p className="text-[13px] font-medium">All clear</p>
+              <p className={`text-[12px] ${textMuted}`}>Books are categorized, inflows on time and records complete.</p>
+            </div>
+          ) : (
+            <ul className={`divide-y ${rowBorder} ${late.home || late.assets ? "home-late" : ""}`}>
+              {attention.map((a) => (
+                <li key={a.key}>
+                  <Link to={a.to} className={`group flex items-center gap-3 px-5 py-3 transition-colors ${rowHover}`}>
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneTile[a.tone]}`}>
+                      <Icon name={a.icon} className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-medium">{a.title}</span>
+                      <span className={`block truncate text-[11px] ${textMuted}`}>{a.detail}</span>
+                    </span>
+                    {a.aside}
+                    <Icon
+                      name="chevron"
+                      className={`h-3.5 w-3.5 shrink-0 ${textMuted} transition-transform motion-safe:group-hover:translate-x-0.5`}
+                      strokeWidth={2}
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
       </div>
 
       {/* ── Entities ─────────────────────────────────────────────────── */}

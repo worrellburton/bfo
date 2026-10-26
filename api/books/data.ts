@@ -568,28 +568,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!prefs) return null;
           const curFrom = iso(now.getTime() - 30 * DAY);
           const priorFrom = iso(now.getTime() - 60 * DAY);
+          // Six calendar months, for the revenue and expense cards' bars.
+          const monthKeys: string[] = [];
+          for (let i = 5; i >= 0; i--) monthKeys.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7));
+          const since = `${monthKeys[0]}-01`;
           const rows = await fetchAll<BookTxn>(
             "book_transactions?select=date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id" +
-              `&pending=eq.false&date=gt.${priorFrom}` +
+              `&pending=eq.false&date=gte.${since < priorFrom ? since : priorFrom}` +
               scopeFilter(prefs, null) +
               "&order=transaction_id.asc"
           );
           const win = () => ({ in: 0, out: 0, net: 0 });
           const current = win();
           const prior = win();
+          const months = new Map(monthKeys.map((m) => [m, { month: m, in: 0, out: 0 }]));
+          // Where the last 30 days' money came from and went, by books account.
+          const topIn = new Map<string, number>();
+          const topOut = new Map<string, number>();
           for (const t of rows) {
             if (effType(t) !== "normal" || sectionOf(label(t)) === "flow") continue;
-            const w = t.date > curFrom ? current : prior;
             const amt = Number(t.amount);
+            const m = months.get(t.date.slice(0, 7));
+            if (m) {
+              if (amt < 0) m.in += -amt;
+              else m.out += amt;
+            }
+            if (t.date <= priorFrom) continue;
+            const w = t.date > curFrom ? current : prior;
             if (amt < 0) w.in += -amt;
             else w.out += amt;
+            if (t.date > curFrom) {
+              const top = amt < 0 ? topIn : topOut;
+              const key = label(t);
+              top.set(key, (top.get(key) ?? 0) + Math.abs(amt));
+            }
           }
           for (const w of [current, prior]) {
             w.in = Math.round(w.in);
             w.out = Math.round(w.out);
             w.net = w.in - w.out;
           }
-          return { current, prior };
+          const ranked = (m: Map<string, number>) =>
+            [...m.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 3)
+              .map(([name, amount]) => ({ name, amount: Math.round(amount) }));
+          return {
+            current,
+            prior,
+            months: [...months.values()].map((m) => ({ month: m.month, in: Math.round(m.in), out: Math.round(m.out) })),
+            topIn: ranked(topIn),
+            topOut: ranked(topOut),
+          };
         } catch (err: any) {
           console.error("home flow failed:", err?.message ?? err);
           return null;
