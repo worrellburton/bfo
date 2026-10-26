@@ -834,6 +834,172 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────
+   The phone drawer (app/routes/app-layout.tsx <aside>, under lg). The
+   brand's black and ivory whatever the theme, like the landing page and
+   sign-in: the serif lockup up top, tracked eyebrows over each group of
+   rows, thumb-sized rows with an ivory sliver marking the current page,
+   and the signed-in person on a quiet card at the foot. These rules sit
+   outside Tailwind's layers, so they win over the rail's utility classes. */
+@media (max-width: 1023.98px) {
+  .sidebar-rail {
+    --ivory: #f4ede0;
+    width: min(84vw, 320px);
+    background: #0b0a08;
+    border-right: 1px solid rgba(244, 237, 224, 0.1);
+    box-shadow: 24px 0 80px rgba(0, 0, 0, 0.45);
+    color: var(--ivory);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .sidebar-rail .sidebar-head {
+    height: auto;
+    align-items: flex-start;
+    padding: 18px 12px 14px 20px;
+  }
+  .sidebar-rail .sidebar-head .sidebar-lockup .brand-lockup-mark { font-size: 34px; letter-spacing: 0.1em; }
+  .sidebar-rail .sidebar-head .sidebar-lockup .brand-ivory { color: var(--ivory); }
+  .sidebar-rail .sidebar-head .brand-lockup { align-items: flex-start; }
+  /* The name under the mark, as a tracked eyebrow. */
+  .sidebar-rail .sidebar-head .brand-lockup::after {
+    content: "Burton Family Office";
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(244, 237, 224, 0.42);
+    margin-top: 7px;
+    -webkit-text-fill-color: rgba(244, 237, 224, 0.42);
+  }
+  .sidebar-rail .sidebar-head > button { margin-top: -6px; color: rgba(244, 237, 224, 0.55); }
+  .sidebar-rail .sidebar-head > button:hover { background: rgba(244, 237, 224, 0.08); color: var(--ivory); }
+
+  /* Search: a hairline field, the palette's front door. */
+  .sidebar-rail .sidebar-search { padding: 0 16px 14px; }
+  .sidebar-rail .sidebar-search > button {
+    height: 42px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(244, 237, 224, 0.16);
+    color: rgba(244, 237, 224, 0.55);
+    font-size: 13.5px;
+    background: transparent;
+  }
+  .sidebar-rail .sidebar-search > button:hover { color: var(--ivory); border-color: rgba(244, 237, 224, 0.35); background: transparent; }
+  .sidebar-rail .sidebar-search > button svg { opacity: 0.8; }
+
+  /* Appearance moves below the nav, just above the person. */
+  .sidebar-rail .sidebar-appearance { order: 5; padding: 6px 12px 0; }
+  .sidebar-rail .sidebar-appearance > button {
+    height: 40px;
+    padding: 0 10px;
+    font-size: 13px;
+    color: rgba(244, 237, 224, 0.5);
+  }
+  .sidebar-rail .sidebar-appearance > button:hover { color: var(--ivory); background: rgba(244, 237, 224, 0.06); }
+  .sidebar-rail .sidebar-user { order: 6; }
+
+  /* The rows. */
+  .sidebar-rail nav[aria-label="Main"] {
+    padding: 0 12px 24px;
+    gap: 1px;
+    /* The list fades out where it scrolls under Appearance. */
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  }
+  .sidebar-rail .nav-eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(244, 237, 224, 0.38);
+    padding: 12px 10px 8px;
+  }
+  .sidebar-rail .nav-row {
+    height: 46px;
+    padding: 0 10px;
+    border-radius: 12px;
+    font-size: 15px;
+    letter-spacing: 0.005em;
+    color: rgba(244, 237, 224, 0.72);
+    background: transparent;
+  }
+  .sidebar-rail .nav-row svg { width: 19px; height: 19px; opacity: 0.85; }
+  /* The group's chevron. */
+  .sidebar-rail .nav-row > svg { width: 14px; height: 14px; color: rgba(244, 237, 224, 0.45); }
+  .sidebar-rail .nav-row > span:first-child + span { margin-left: 12px; }
+  .sidebar-rail .nav-row:hover { color: var(--ivory); background: rgba(244, 237, 224, 0.05); }
+  .sidebar-rail .nav-row.nav-row-on { color: var(--ivory); background: rgba(244, 237, 224, 0.07); }
+  .sidebar-rail .nav-row.nav-row-on svg { opacity: 1; }
+  .sidebar-rail .nav-row-on::before {
+    display: block;
+    left: -12px;
+    top: 13px;
+    bottom: 13px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--ivory);
+    box-shadow: none;
+  }
+  .sidebar-rail .nav-tree { padding-left: 34px; --nav-line: rgba(244, 237, 224, 0.16); }
+  .sidebar-rail .nav-tree-dark, .sidebar-rail .nav-tree-light { --nav-line: rgba(244, 237, 224, 0.16); }
+  .sidebar-rail .nav-branch > a {
+    height: 42px;
+    border-radius: 10px;
+    font-size: 14px;
+    color: rgba(244, 237, 224, 0.6);
+    background: transparent;
+  }
+  .sidebar-rail .nav-branch > a:hover { color: var(--ivory); background: rgba(244, 237, 224, 0.05); }
+  .sidebar-rail .nav-branch > a[aria-current="page"] { color: var(--ivory); background: rgba(244, 237, 224, 0.07); font-weight: 500; }
+  .sidebar-rail .nav-tree .nav-branch:has(> [aria-current="page"])::before,
+  html.light .sidebar-rail .nav-tree .nav-branch:has(> [aria-current="page"])::before { border-color: var(--ivory); }
+  /* Counts: ivory, not indigo. */
+  .sidebar-rail .nav-row > span.rounded-full, .sidebar-rail .nav-branch > a > span.rounded-full {
+    background: rgba(244, 237, 224, 0.12);
+    color: var(--ivory);
+    min-width: 20px;
+    height: 18px;
+    font-size: 10.5px;
+  }
+
+  /* The person. */
+  .sidebar-rail .sidebar-user { padding: 10px 12px 12px; }
+  .sidebar-rail .sidebar-user::before {
+    content: "";
+    display: block;
+    height: 1px;
+    margin: 0 8px 10px;
+    background: rgba(244, 237, 224, 0.12);
+  }
+  .sidebar-rail .sidebar-user > button {
+    padding: 8px 10px;
+    border-radius: 12px;
+    gap: 12px;
+    color: var(--ivory);
+    background: transparent;
+  }
+  .sidebar-rail .sidebar-user > button:hover { background: rgba(244, 237, 224, 0.05); }
+  .sidebar-rail .sidebar-user > button > div {
+    width: 36px;
+    height: 36px;
+    font-family: var(--font-brand);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    background: transparent;
+    color: var(--ivory);
+    box-shadow: inset 0 0 0 1px rgba(244, 237, 224, 0.28);
+  }
+  .sidebar-rail .sidebar-user > button > span > span:first-child { font-size: 14px; font-weight: 500; }
+  .sidebar-rail .sidebar-user > button > span > span:last-child { color: rgba(244, 237, 224, 0.42); font-size: 12px; }
+  .sidebar-rail .sidebar-user [role="menu"] {
+    background: #16140f;
+    border-color: rgba(244, 237, 224, 0.12);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
    Auth surfaces (/login, /complete-profile).
 
    The brand set in type: ivory (#f4ede0) on black, hairline rules, tracked

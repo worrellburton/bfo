@@ -55,6 +55,7 @@ const navItems: NavItem[] = [
   {
     to: "/home",
     label: "Home",
+    section: "The office",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
@@ -170,6 +171,7 @@ const navItems: NavItem[] = [
     to: "/books/transactions",
     label: "Books",
     breakBefore: true,
+    section: "Books & paperwork",
     children: [
       {
         to: "/books/transactions",
@@ -506,6 +508,8 @@ export default function AppLayout() {
   const showLabels = expanded;
   // The mobile drawer always shows labels, so groups open there too.
   const labelsVisible = expanded || drawerOpen;
+  // The phone drawer is the brand's black and ivory whatever the theme (app.css .sidebar-rail on phones), so it takes the dark classes.
+  const railDark = isDark || !isDesktop;
   // Mail carries its unread count; "Email only" members see Mail and nothing else.
   // Its folders carry their own counts; Other only for those who can see it.
   const unread = mail?.unread ?? 0;
@@ -607,11 +611,11 @@ export default function AppLayout() {
           sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]
           w-[240px] lg:w-[var(--rail)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
-          ${isDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
+          ${railDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
         `}
       >
         {/* Top: the wordmark */}
-        <div className={`flex items-center gap-2 px-3 h-12 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
+        <div className={`sidebar-head flex items-center gap-2 px-3 h-12 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
           {logoModel ? (
             <span className="sidebar-logo" aria-label="BFO">
               <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
@@ -626,7 +630,7 @@ export default function AppLayout() {
             onClick={() => setDrawerOpen(false)}
             aria-label="Close menu"
             className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full lg:hidden ${
-              isDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
+              railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
@@ -637,7 +641,7 @@ export default function AppLayout() {
 
         {/* Jump to anything — the palette's front door in the rail. */}
         {!emailOnly && !partner && (
-          <div className="px-2 pb-1.5">
+          <div className="sidebar-search px-2 pb-1.5">
             <button
               type="button"
               onClick={openPalette}
@@ -646,7 +650,7 @@ export default function AppLayout() {
               className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 ${
                 labelsVisible ? "" : "lg:justify-center lg:px-0"
               } ${
-                isDark
+                railDark
                   ? "text-gray-400 hover:text-white hover:bg-white/[0.05]"
                   : "text-gray-500 hover:text-black hover:bg-black/[0.04]"
               }`}
@@ -656,13 +660,13 @@ export default function AppLayout() {
                   <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
                 </svg>
               <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "lg:hidden"}`}>Search</span>
-              <kbd className={`hidden text-[10.5px] ${labelsVisible ? "lg:inline" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
+              <kbd className={`hidden text-[10.5px] ${labelsVisible ? "lg:inline" : ""} ${railDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
             </button>
           </div>
         )}
 
         {/* How it looks: light or dark, glass or solid cards, row density. */}
-        <div className="px-2 pb-1.5">
+        <div className="sidebar-appearance px-2 pb-1.5">
           <button
             type="button"
             onClick={() => {
@@ -674,7 +678,7 @@ export default function AppLayout() {
             aria-haspopup="dialog"
             className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 max-lg:h-[44px] ${
               labelsVisible ? "" : "lg:justify-center lg:px-0"
-            } ${isDark ? "text-gray-400 hover:text-white hover:bg-white/[0.05]" : "text-gray-500 hover:text-black hover:bg-black/[0.04]"}`}
+            } ${railDark ? "text-gray-400 hover:text-white hover:bg-white/[0.05]" : "text-gray-500 hover:text-black hover:bg-black/[0.04]"}`}
           >
             <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" />
@@ -685,10 +689,10 @@ export default function AppLayout() {
           </button>
         </div>
 
-        <SidebarNav items={items} isDark={isDark} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
+        <SidebarNav items={items} isDark={railDark} phone={!isDesktop} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
-        <div className="relative mt-auto p-2" ref={userMenuRef}>
+        <div className="sidebar-user relative mt-auto p-2" ref={userMenuRef}>
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             aria-expanded={userMenuOpen}
@@ -697,21 +701,21 @@ export default function AppLayout() {
             aria-label={showLabels ? undefined : displayName(user)}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer ${
               showLabels ? "" : "lg:justify-center lg:px-0"
-            } ${isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
+            } ${railDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
           >
             <div
               className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold shrink-0 ${
-                isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
+                railDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
               }`}
             >
               {initials(user)}
               {pending > 0 && isAdmin(user) && (
-                <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${isDark ? "ring-black" : "ring-white"}`} aria-label={`${pending} waiting for approval`} />
+                <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${railDark ? "ring-black" : "ring-white"}`} aria-label={`${pending} waiting for approval`} />
               )}
             </div>
             <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "lg:hidden"}`}>
               <span className="block truncate font-medium">{displayName(user)}</span>
-              <span className={`block truncate text-[11.5px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+              <span className={`block truncate text-[11.5px] ${railDark ? "text-gray-500" : "text-gray-500"}`}>
                 {user?.email || user?.phoneFormatted || "Signed in"}
               </span>
             </span>
@@ -721,12 +725,12 @@ export default function AppLayout() {
             <div
               role="menu"
               className={`absolute bottom-full left-3 mb-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border shadow-lg overflow-hidden z-50 ${
-                isDark ? "bg-[#1a1a1a] border-white/10" : "bg-white border-gray-200"
+                railDark ? "bg-[#1a1a1a] border-white/10" : "bg-white border-gray-200"
               }`}
             >
               {/* Accounts signed in on this browser: the current one, the others to switch to, and one more. */}
               <div className="py-1.5">
-                <p className={`px-4 pb-1 pt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] ${isDark ? "text-gray-500" : "text-gray-400"}`}>Accounts</p>
+                <p className={`px-4 pb-1 pt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] ${railDark ? "text-gray-500" : "text-gray-400"}`}>Accounts</p>
                 {[user, ...others].filter((u): u is User => !!u).map((u, i) => {
                   const current = i === 0;
                   return (
@@ -735,21 +739,21 @@ export default function AppLayout() {
                       onClick={() => (current ? setUserMenuOpen(false) : switchTo(u))}
                       role="menuitemradio"
                       aria-checked={current}
-                      className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors cursor-pointer ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
+                      className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors cursor-pointer ${railDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
                     >
                       <span
                         className={`w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-bold shrink-0 ${
-                          current ? (isDark ? "bg-white text-black" : "bg-gray-900 text-white") : isDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
+                          current ? (railDark ? "bg-white text-black" : "bg-gray-900 text-white") : railDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
                         }`}
                       >
                         {initials(u)}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className={`block truncate text-[13px] ${current ? "font-semibold" : ""} ${isDark ? "text-gray-100" : "text-gray-900"}`}>{displayName(u)}</span>
-                        <span className={`block truncate text-[11.5px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>{u.mailAddress || u.email || u.phoneFormatted}</span>
+                        <span className={`block truncate text-[13px] ${current ? "font-semibold" : ""} ${railDark ? "text-gray-100" : "text-gray-900"}`}>{displayName(u)}</span>
+                        <span className={`block truncate text-[11.5px] ${railDark ? "text-gray-500" : "text-gray-500"}`}>{u.mailAddress || u.email || u.phoneFormatted}</span>
                       </span>
                       {current && (
-                        <svg className={`w-4 h-4 shrink-0 ${isDark ? "text-indigo-300" : "text-indigo-600"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                        <svg className={`w-4 h-4 shrink-0 ${railDark ? "text-indigo-300" : "text-indigo-600"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                         </svg>
                       )}
@@ -757,7 +761,7 @@ export default function AppLayout() {
                   );
                 })}
                 <button onClick={addAccount} className={menuItemCls} role="menuitem">
-                  <span className={`w-7 h-7 -ml-0.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${isDark ? "border-white/25" : "border-gray-300"}`}>
+                  <span className={`w-7 h-7 -ml-0.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${railDark ? "border-white/25" : "border-gray-300"}`}>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
                       <path strokeLinecap="round" d="M12 5v14M5 12h14" />
                     </svg>
@@ -765,7 +769,7 @@ export default function AppLayout() {
                   Add another account
                 </button>
               </div>
-              <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
+              <div className={`border-t ${railDark ? "border-white/5" : "border-gray-100"}`} />
 
               {canInstall && (
                 <button
@@ -780,7 +784,7 @@ export default function AppLayout() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25M12 7v5m0 0l-2-2m2 2l2-2" />
                   </svg>
                   <span className="flex-1">Install app</span>
-                  <span className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>its own window</span>
+                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>its own window</span>
                 </button>
               )}
 
@@ -801,7 +805,7 @@ export default function AppLayout() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
                   </svg>
                   <span className="flex-1">{push === "granted" ? "Send a test notification" : push === "denied" ? "Notifications are off" : "Turn on notifications"}</span>
-                  {(pushNote || push === "denied") && <span className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>{pushNote ?? "in iPhone Settings"}</span>}
+                  {(pushNote || push === "denied") && <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>{pushNote ?? "in iPhone Settings"}</span>}
                 </button>
               )}
 
@@ -811,12 +815,12 @@ export default function AppLayout() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                   </svg>
                   <span className="flex-1">{lock.kind} lock</span>
-                  <span className={`text-[11px] font-medium ${lock.on ? (isDark ? "text-emerald-400" : "text-emerald-600") : isDark ? "text-gray-500" : "text-gray-400"}`}>{lock.on ? "On" : "Off"}</span>
+                  <span className={`text-[11px] font-medium ${lock.on ? (railDark ? "text-emerald-400" : "text-emerald-600") : railDark ? "text-gray-500" : "text-gray-400"}`}>{lock.on ? "On" : "Off"}</span>
                 </button>
               )}
 
               <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
-                {isDark ? (
+                {railDark ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
@@ -825,7 +829,7 @@ export default function AppLayout() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                   </svg>
                 )}
-                {isDark ? "Light mode" : "Dark mode"}
+                {railDark ? "Light mode" : "Dark mode"}
               </button>
 
               {!emailOnly && isAdmin(user) && (
@@ -859,13 +863,13 @@ export default function AppLayout() {
                 </>
               )}
 
-              <div className={`border-t ${isDark ? "border-white/5" : "border-gray-100"}`} />
+              <div className={`border-t ${railDark ? "border-white/5" : "border-gray-100"}`} />
 
               <button
                 onClick={signOut}
                 role="menuitem"
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
-                  isDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
+                  railDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
                 }`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
