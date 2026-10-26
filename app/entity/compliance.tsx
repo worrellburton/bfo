@@ -9,7 +9,7 @@ import { dollars, PALM_PRICES, priceSuffix, stateRecordCents } from "../../lib/p
 import { getUser, isAdmin } from "../auth";
 import { formingNow } from "../entity-addresses";
 import { BOI_NOTE, stateCode, stateName, type Obligation, type PaperworkIssue } from "../entity-paperwork";
-import { DOC_LABEL, docKindOf, formatAddress, openPalmDocument, palmCall, RA_STATUS, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
+import { activeConfirmation, DOC_LABEL, docKindOf, effectiveRecord, formatAddress, openPalmDocument, palmCall, RA_STATUS, recordLapsed, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
 import { PalmQuestions } from "./palm-questions";
 import { useEntity } from "./context";
 import { fmtDate, fmtStamp } from "./model";
@@ -310,6 +310,10 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
   const rec = asset.stateRecord;
   const findings = rec ? stateFindings(rec, asset) : [];
   const choices = page.registryChoices ?? [];
+  // The state's own site seen to say active over Palm's lagging copy.
+  const confirmed = rec ? activeConfirmation(rec, asset.stateConfirmed) : null;
+  const shown = rec ? effectiveRecord(rec, asset.stateConfirmed) : undefined;
+  const canConfirm = !!rec && rec.mode === "live" && recordLapsed(rec) && !confirmed && isAdmin(getUser());
   const stale = !!rec && palmIsAgent && !!startedAt && rec.checkedAt < Date.parse(startedAt);
   const standing = rec?.standing ? (["registration", "tax", "agent"] as const).filter((k) => rec.standing?.[k]) : [];
   // Everyone the state lists (records read before titles and addresses were kept have names only).
@@ -354,18 +358,28 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
       {rec && hasRows && (
         <Rows>
           {rec.status && (
-            <Row label="Status">
-              <Dot tone={rec.status === "active" ? "good" : "bad"} className="capitalize">
-                {rec.status}
+            <Row
+              label="Status"
+              actions={
+                confirmed ? (
+                  <TextButton onClick={() => void page.undoStateConfirmation()}>Undo</TextButton>
+                ) : canConfirm ? (
+                  <TextButton onClick={() => void page.confirmStateActive()}>The state's site says active</TextButton>
+                ) : undefined
+              }
+            >
+              <Dot tone={shown?.status === "active" ? "good" : "bad"} className="capitalize">
+                {shown?.status}
               </Dot>
+              {confirmed && <span className={`ml-2 text-[12px] ${t.muted}`}>on the state's site · Palm's copy says {rec.status}</span>}
             </Row>
           )}
           {standing.length > 0 && (
             <Row label="Standing">
               <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
                 {standing.map((k) => (
-                  <Dot key={k} tone={rec.standing?.[k] === "compliant" ? "good" : "bad"}>
-                    {k === "registration" ? "Filings" : k === "tax" ? "Tax" : "Agent"} {rec.standing?.[k] === "compliant" ? "current" : "behind"}
+                  <Dot key={k} tone={shown?.standing?.[k] === "compliant" ? "good" : "bad"}>
+                    {k === "registration" ? "Filings" : k === "tax" ? "Tax" : "Agent"} {shown?.standing?.[k] === "compliant" ? "current" : "behind"}
                   </Dot>
                 ))}
               </span>

@@ -184,3 +184,43 @@ export function sameAddressText(a?: string | null, b?: string | null): boolean {
       .trim();
   return !!norm(a) && norm(a) === norm(b);
 }
+
+/**
+ * Someone looked at the state's own site and found the entity active and in
+ * good standing while Palm's copy of the record said otherwise (Palm's data
+ * lags the state's). Kept with what Palm said at the time, so it covers only
+ * that stale reading: a newer Palm reading that agrees makes it moot, and one
+ * that says something else again shows as read.
+ */
+export type StateConfirmation = {
+  at: number;
+  by?: string | null;
+  /** What was seen on the state's site ("Active; annual list filed Oct 13, 2026"). */
+  note?: string;
+  /** Palm's reading it overrides. */
+  palmStatus?: StateRecord["status"] | null;
+  palmRegistration?: "compliant" | "not_compliant" | null;
+};
+
+/** A confirmation older than this no longer stands in for the state's record. */
+export const CONFIRMATION_DAYS = 365;
+
+/** Whether Palm's reading looks lapsed: not active, or not in good standing. */
+export function recordLapsed(rec: StateRecord | null | undefined): boolean {
+  return !!rec && ((!!rec.status && rec.status !== "active") || rec.standing?.registration === "not_compliant");
+}
+
+/** The confirmation, when it still covers Palm's current reading of the record. */
+export function activeConfirmation(rec: StateRecord | null | undefined, c: StateConfirmation | null | undefined, now = Date.now()): StateConfirmation | null {
+  if (!rec || !c || !recordLapsed(rec)) return null;
+  if (now - c.at > CONFIRMATION_DAYS * 86_400_000) return null;
+  if ((c.palmStatus ?? null) !== (rec.status ?? null)) return null;
+  if ((c.palmRegistration ?? null) !== (rec.standing?.registration ?? null)) return null;
+  return c;
+}
+
+/** The record to judge by: Palm's, or active and in good standing where the state's own site was confirmed to say so. */
+export function effectiveRecord(rec: StateRecord, c: StateConfirmation | null | undefined, now = Date.now()): StateRecord {
+  if (!activeConfirmation(rec, c, now)) return rec;
+  return { ...rec, status: "active", standing: { ...rec.standing, registration: "compliant" } };
+}

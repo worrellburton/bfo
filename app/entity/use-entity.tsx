@@ -17,6 +17,7 @@ import {
   DOC_LABEL,
   docKindOf,
   fetchPalmDocument,
+  effectiveRecord,
   formatAddress as formatPalmAddress,
   lookupStateRecord,
   normalizeName,
@@ -26,6 +27,7 @@ import {
   palmJurisdiction,
   PalmUnavailable,
   RA_STATUS,
+  recordLapsed,
   sameAddressText,
   sortDocuments,
   stateFindings,
@@ -1232,7 +1234,9 @@ export function useEntityPage() {
         if (why) say({ label, tone: "warn", text: why });
         else {
           const findings = st.home && rec ? stateFindings(rec, assetRef.current ?? current).filter((f) => f.tone !== "info") : [];
-          say({ label, tone: findings.length ? "warn" : "good", text: [rec?.status ? `Read · ${rec.status}` : "Read", ...findings.map((f) => f.text)].join(" ") });
+          const shown = st.home && rec ? effectiveRecord(rec, (assetRef.current ?? current).stateConfirmed) : rec;
+          const notes = st.home && rec ? stateFindings(rec, assetRef.current ?? current).filter((f) => f.tone === "info").map((f) => f.text) : [];
+          say({ label, tone: findings.length ? "warn" : "good", text: [shown?.status ? `Read · ${shown.status}` : "Read", ...findings.map((f) => f.text), ...notes].join(" ") });
         }
       }
       if (!plan.states.length) say({ label: "State records", tone: "muted", text: formingNow(current) ? "Read once the state approves the formation." : "Nothing to read: no state on record, or it's a trust or dissolved." });
@@ -1348,7 +1352,7 @@ export function useEntityPage() {
     }
     const live = mode === "live";
     const oldAgent = current.registeredAgentSource?.startsWith("Palm") ? undefined : current.registeredAgent?.replace(/\.+$/, "");
-    const lapsed = rec && ((rec.status && rec.status !== "active") || rec.standing?.registration === "not_compliant");
+    const lapsed = rec && recordLapsed(effectiveRecord(rec, current.stateConfirmed));
     const ok = await confirmDialog({
       title: live ? "Make Palm the registered agent?" : "Try the agent change in test mode?",
       message: live ? (
@@ -1834,6 +1838,29 @@ export function useEntityPage() {
     });
     if (!ok) return;
     await patchAsset({ closing: { startedAt: today(), steps: {} } });
+  }
+
+  /** Someone checked the state's own site: active and in good standing, whatever Palm's copy says. */
+  async function confirmStateActive() {
+    const current = assetRef.current;
+    const rec = current?.stateRecord;
+    if (!current || !rec || !recordLapsed(rec)) return;
+    const where = stateName(stateCode(current.state) ?? "") || current.state || "the state";
+    const ok = await confirmDialog({
+      title: `Does ${where}'s own site show it active?`,
+      message: `Palm's copy of the record says ${rec.status && rec.status !== "active" ? rec.status : "it isn't in good standing"}. If the ${where} Secretary of State's business search shows it active, with its filings current, BFO goes by that until Palm's copy changes.`,
+      details: ["Look it up on the state's site first: the entity's status, and the date of its last annual list or report.", "A later reading from Palm that says something different shows again."],
+      confirmLabel: "Yes, it's active there",
+    });
+    if (!ok) return;
+    const me = getUser();
+    await patchAsset({
+      stateConfirmed: { at: Date.now(), by: me?.name ?? null, palmStatus: rec.status ?? null, palmRegistration: rec.standing?.registration ?? null },
+    });
+  }
+
+  async function undoStateConfirmation() {
+    await patchAsset({ stateConfirmed: null });
   }
 
   async function cancelClosing() {
@@ -2491,6 +2518,8 @@ export function useEntityPage() {
     refreshPalm,
     checkStateRecord,
     checkForeignRecord,
+    confirmStateActive,
+    undoStateConfirmation,
     palmSync,
     setPalmSync,
     palmSyncPlan,

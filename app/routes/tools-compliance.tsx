@@ -15,7 +15,7 @@ import {
   type Tier,
 } from "../compliance-map";
 import { dollars, PALM_PRICES, priceSuffix, STATE_RECORD_CENTS, stateRecordCents } from "../../lib/palm-pricing";
-import { lookupStateRecord, palmCall, PalmUnavailable, type PalmMode } from "../palm";
+import { effectiveRecord, lookupStateRecord, palmCall, PalmUnavailable, type PalmMode } from "../palm";
 import { PalmCostCard, PriceTag } from "../palm-usage";
 import { useTheme } from "../theme";
 
@@ -227,7 +227,7 @@ export default function EntityCompliance() {
       if (found.kind === "record") {
         const { db, ref, update } = await import("../store");
         await update(ref(db, `assets/${id}`), found.patch);
-        const st = found.record.status;
+        const st = effectiveRecord(found.record, a.stateConfirmed).status;
         setNotes((n) => ({ ...n, [id]: st && st !== "active" ? { tone: "bad", text: `Read just now: the state lists it as ${st}.` } : { tone: "ok", text: "Read from the state just now." } }));
         return "ok";
       }
