@@ -12,7 +12,7 @@ import { ParticleGlobe, type GlobeMode } from "./particle-globe";
  * Always dark, like the landing page, whatever the app's theme.
  */
 
-export type VoiceStatus = "idle" | "listening" | "transcribing" | "thinking" | "speaking";
+export type VoiceStatus = "idle" | "connecting" | "listening" | "transcribing" | "thinking" | "speaking";
 
 export type Caption = { role: "user" | "assistant"; text: string } | null;
 
@@ -35,7 +35,7 @@ type Props = {
   onType: () => void;
 };
 
-const globeMode = (s: VoiceStatus): GlobeMode => (s === "listening" ? "listening" : s === "transcribing" || s === "thinking" ? "thinking" : s === "speaking" ? "speaking" : "idle");
+const globeMode = (s: VoiceStatus): GlobeMode => (s === "listening" ? "listening" : s === "transcribing" || s === "thinking" || s === "connecting" ? "thinking" : s === "speaking" ? "speaking" : "idle");
 
 export function VoiceStage({ status, tools, caption, messages, micAvailable, error, firstName, level, progress, onHoldStart, onHoldEnd, onHush, onType }: Props) {
   const holding = useRef(false);
@@ -87,10 +87,12 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
     };
   }, [onHoldStart, onHoldEnd]);
 
-  const busy = status === "transcribing" || status === "thinking";
+  const busy = status === "transcribing" || status === "thinking" || status === "connecting";
   const statusLine =
     status === "listening"
       ? "Listening"
+      : status === "connecting"
+        ? "Connecting"
       : status === "transcribing"
         ? "Writing down what you said"
         : status === "thinking"

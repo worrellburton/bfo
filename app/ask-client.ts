@@ -27,6 +27,14 @@ export const getChat = (id: string) => call<{ chat: ChatSummary; messages: ChatM
 export const deleteChat = (chatId: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "delete", chatId }) });
 export const renameChat = (chatId: string, title: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "rename", chatId, title }) });
 
+export type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" | "beta"; expiresAt: number };
+/** A short-lived key for the live voice (OpenAI Realtime), with BFO's lookups in the session. */
+export const realtimeSecret = () => call<RealtimeSecret>("/api/ask", { method: "POST", body: JSON.stringify({ action: "realtime-secret" }) });
+/** One lookup the live voice asked for, run as this person. */
+export const runAskTool = (name: string, input: Record<string, unknown>) => call<{ label: string; output: string }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "tool", name, input }) });
+/** A spoken turn, kept with the conversation (started here when there's none yet). */
+export const logTurn = (chatId: string | null, role: "user" | "assistant", text: string) => call<{ chatId: string; title: string }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "log", chatId: chatId ?? undefined, role, text }) });
+
 /** What was said, as text. `hint` steers spelling (names the office uses). */
 export async function transcribeAudio(blob: Blob, hint?: string): Promise<string> {
   const audio = await new Promise<string>((resolve, reject) => {

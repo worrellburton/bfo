@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
 import { currentUser, fail, handleError, sb } from "../lib/auth.js";
 import { speak, transcribe, VoiceError } from "../lib/voice.js";
+import { mintRealtimeSecret, RealtimeError, spokenInstructions } from "../lib/realtime.js";
+import { readCollection } from "../lib/tree.js";
 import { ASK_MODEL, MAX_TOOL_ROUNDS, runTool, scopeFor, systemPrompt, titleFrom, toolLabel, toolsFor, transcript, type ChatMessageRow, type ChatRow } from "../lib/ask.js";
 
 /**
@@ -19,6 +21,11 @@ import { ASK_MODEL, MAX_TOOL_ROUNDS, runTool, scopeFor, systemPrompt, titleFrom,
  *   POST { action: "rename", chatId, title }
  *   POST { action: "transcribe", audio (base64), mime, hint? } → { text }     spoken question → words (lib/voice.ts)
  *   POST { action: "speak", text }                             → audio/mpeg    an answer read aloud
+ *
+ * The live voice (lib/realtime.ts), run from the browser over WebRTC:
+ *   POST { action: "realtime-secret" }          → { secret, model, voice, api, expiresAt } a short-lived key, with BFO's tools in the session
+ *   POST { action: "tool", name, input }        → { label, output }  one lookup, run as this person
+ *   POST { action: "log", chatId?, role, text } → { chatId }         a spoken turn, kept with the conversation
  */
 
 // Vercel buffers a function's response unless told to stream it.
@@ -71,6 +78,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sb(`chats?id=eq.${id}`, { method: "PATCH", body: { title } });
         return res.status(200).json({ ok: true });
       }
+      case "realtime-secret": {
+        const scope = await scopeFor(me);
+        const names = (await readCollection("assets").catch(() => []))
+          .filter((r) => !scope.assetIds || scope.assetIds.has(r.id))
+          .map((r) => String((r.data as { name?: string } | null)?.name ?? ""))
+          .filter(Boolean);
+        const made = await mintRealtimeSecret({ instructions: spokenInstructions(systemPrompt(scope)), tools: toolsFor(scope), names });
+        return res.status(200).json(made);
+      }
+      case "tool": {
+        const name = String(body.name ?? "");
+        if (!/^[a-z_]{1,40}$/.test(name)) return fail(res, 400, "bad_tool");
+        const input = body.input && typeof body.input === "object" ? (body.input as Record<string, unknown>) : {};
+        const scope = await scopeFor(me);
+        const output = await runTool(name, input, scope);
+        return res.status(200).json({ label: toolLabel(name, input), output });
+      }
+      case "log": {
+        const role = body.role === "assistant" ? "assistant" : body.role === "user" ? "user" : null;
+        const text = String(body.text ?? "").trim().slice(0, MESSAGE_MAX);
+        if (!role || !text) return fail(res, 400, "bad_turn");
+        let chat: ChatRow | null = body.chatId ? await ownChat(me.id, String(body.chatId)) : null;
+        if (!chat) {
+          const made = await sb<ChatRow[]>("chats", { method: "POST", body: { user_id: me.id, title: titleFrom(role === "user" ? text : "Voice conversation") }, prefer: "return=representation" });
+          chat = made?.[0] ?? null;
+          if (!chat) return fail(res, 500, "store_failed");
+        }
+        await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role, content: { text } }, prefer: "return=minimal" });
+        await sb(`chats?id=eq.${chat.id}`, { method: "PATCH", body: { updated_at: new Date().toISOString() } }).catch(() => {});
+        return res.status(200).json({ chatId: chat.id, title: chat.title ?? "New chat" });
+      }
       case "transcribe": {
         const b64 = String(body.audio ?? "");
         if (!b64 || b64.length > AUDIO_MAX * 1.4) return fail(res, 400, "bad_audio", b64 ? "That recording is too long." : "No audio came through.");
@@ -91,6 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err) {
     if (err instanceof VoiceError) return fail(res, err.status >= 500 ? 502 : err.status, "voice_failed", err.message);
+    if (err instanceof RealtimeError) return fail(res, err.status >= 500 ? 502 : err.status, "realtime_failed", err.message);
     return handleError(res, err);
   }
 }
