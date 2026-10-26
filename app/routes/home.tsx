@@ -542,7 +542,7 @@ function FlowCard({
       ? "border-rose-500/20 bg-rose-500/10 text-rose-300"
       : "border-rose-200 bg-rose-50 text-rose-700";
   return (
-    <section data-bg-solid className={`flex flex-col overflow-hidden rounded-2xl lg:col-span-4 ${surface} ${enter}`}>
+    <section data-bg-solid className={`flex flex-col overflow-hidden rounded-2xl md:col-span-6 lg:col-span-4 ${surface} ${enter}`}>
       <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
         <div className="flex min-w-0 items-baseline gap-2.5">
           <p className={kicker}>{revenue ? "Revenue" : "Expenses"}</p>
@@ -1162,9 +1162,9 @@ export default function Home() {
       </header>
 
       {/* ── Hero + KPI tiles ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
         {showHero && (
-          <section data-bg-solid className={`relative order-last overflow-hidden rounded-2xl lg:col-span-12 ${surface} ${enter}`}>
+          <section data-bg-solid className={`relative order-last overflow-hidden rounded-2xl md:col-span-12 ${surface} ${enter}`}>
             <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent ${isDark ? "via-[#818cf8]/70" : "via-[#4f46e5]/50"} to-transparent`} />
             <div className={`pointer-events-none absolute -top-28 left-1/3 h-48 w-1/2 rounded-full blur-3xl ${isDark ? "bg-[#818cf8]/[0.09]" : "bg-[#4f46e5]/[0.05]"}`} />
             <div
@@ -1288,11 +1288,11 @@ export default function Home() {
       </div>
 
       {/* ── Revenue · Expenses · Coming in ───────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-12">
         <FlowCard kind="in" flow={flow} loading={homeLoading} isDark={isDark} surface={surface} enter={enter} kicker={kicker} hairline={hairline} textMuted={textMuted} late={lateHome} />
         <FlowCard kind="out" flow={flow} loading={homeLoading} isDark={isDark} surface={surface} enter={enter} kicker={kicker} hairline={hairline} textMuted={textMuted} late={lateHome} />
         {showComing && (
-          <section data-bg-solid className={`overflow-hidden rounded-2xl lg:col-span-4 ${surface} ${enter}`}>
+          <section data-bg-solid className={`overflow-hidden rounded-2xl md:col-span-12 lg:col-span-4 ${surface} ${enter}`}>
             <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
               <div className="flex min-w-0 items-baseline gap-2.5">
                 <p className={kicker}>Coming in</p>
@@ -1367,8 +1367,8 @@ export default function Home() {
       </div>
 
       {/* ── Needs attention ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
-        <section data-bg-solid className={`overflow-hidden rounded-2xl lg:col-span-12 ${surface} ${enter}`}>
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-12">
+        <section data-bg-solid className={`overflow-hidden rounded-2xl md:col-span-12 ${surface} ${enter}`}>
           <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
             <div className="flex items-center gap-2.5">
               <p className={kicker}>Needs attention</p>

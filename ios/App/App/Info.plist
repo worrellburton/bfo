@@ -64,6 +64,8 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>BFO uses the camera when you take a photo to attach to a message or to use as your picture.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -603,7 +603,7 @@ html.light .app-shell-brand .brand-silver { color: #3a3f46; }
 html.light .app-shell-brand .brand-silver .brand-lockup-mark { background-image: linear-gradient(115deg, #2b3036 10%, #6b7380 45%, #2b3036 90%); }
 html.light .app-shell-brand .brand-ivory { color: #1c1915; }
 .sidebar-lockup .brand-lockup-mark { font-size: 26px; letter-spacing: 0.06em; transition: font-size 180ms ease; }
-@media (min-width: 1024px) { .sidebar-lockup-sm .brand-lockup-mark { font-size: 14px; } }
+@media (min-width: 768px) { .sidebar-lockup-sm .brand-lockup-mark { font-size: 14px; } }
 .mobile-lockup .brand-lockup-mark { font-size: 19px; letter-spacing: 0.12em; }
 @media (prefers-reduced-motion: reduce) {
   .brand-lockup-hero, .brand-gold .brand-lockup-mark, .brand-silver .brand-lockup-mark { animation: none; }
@@ -834,13 +834,13 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────
-   The phone drawer (app/routes/app-layout.tsx <aside>, under lg). The
+   The phone drawer (app/routes/app-layout.tsx <aside>, under md; tablets get the rail). The
    brand's black and ivory whatever the theme, like the landing page and
    sign-in: the serif lockup up top, tracked eyebrows over each group of
    rows, thumb-sized rows with an ivory sliver marking the current page,
    and the signed-in person on a quiet card at the foot. These rules sit
    outside Tailwind's layers, so they win over the rail's utility classes. */
-@media (max-width: 1023.98px) {
+@media (max-width: 767.98px) {
   .sidebar-rail {
     --ivory: #f4ede0;
     width: min(84vw, 320px);
@@ -1163,7 +1163,7 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
   transition: font-size 180ms ease, letter-spacing 180ms ease;
   white-space: nowrap;
 }
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .sidebar-brand-sm {
     font-size: 12px;
     letter-spacing: 0.06em;

@@ -315,6 +315,9 @@ export default function AppLayout() {
   const drawerRef = useRef<HTMLElement>(null);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [hovering, setHovering] = useState(false);
+  // On a touch screen (iPad) there's no hover: a tap on the wordmark opens the rail over the page until a tap elsewhere.
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => setPinned(false), [location.pathname]);
   const [pending, setPending] = useState(0);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -485,11 +488,12 @@ export default function AppLayout() {
     };
   }, [drawerOpen]);
 
-  // Below lg the rail is an off-canvas drawer; while it's closed its links
+  // From md up (tablets and desktops) the rail is always on screen; below it
+  // the rail is an off-canvas drawer, and while that's closed its links
   // must not be reachable by Tab.
   const [isDesktop, setIsDesktop] = useState(true);
   useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
+    const mq = window.matchMedia("(min-width: 768px)");
     const sync = () => setIsDesktop(mq.matches);
     sync();
     mq.addEventListener("change", sync);
@@ -502,9 +506,10 @@ export default function AppLayout() {
 
   // The content reflows with the rail: expanding the sidebar pushes the page
   // over (animated by the .sidebar-content transition) instead of covering it.
-  const expanded = hovering && hoverCapable;
+  const expanded = (hovering && hoverCapable) || pinned;
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
-  const contentInset = railWidth;
+  // Hover pushes the page over; a pinned rail lies over it.
+  const contentInset = pinned ? SIDEBAR_RAIL_W : railWidth;
   const showLabels = expanded;
   // The mobile drawer always shows labels, so groups open there too.
   const labelsVisible = expanded || drawerOpen;
@@ -560,6 +565,7 @@ export default function AppLayout() {
   function go(to: string) {
     setUserMenuOpen(false);
     setDrawerOpen(false);
+    setPinned(false);
     navigate(to);
   }
 
@@ -586,8 +592,9 @@ export default function AppLayout() {
       {!mailOnly && <ParticleCanvas className="particle-field" />}
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setDrawerOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setDrawerOpen(false)} />
       )}
+      {pinned && <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setPinned(false)} aria-hidden />}
 
       <aside
         ref={drawerRef}
@@ -609,27 +616,37 @@ export default function AppLayout() {
         onMouseLeave={() => setHovering(false)}
         className={`
           sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]
-          w-[240px] lg:w-[var(--rail)]
-          ${drawerOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
-          ${railDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
+          w-[240px] md:w-[var(--rail)]
+          ${drawerOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
+          ${railDark ? (pinned ? "border-white/10 bg-[#0b0b0d]/95 backdrop-blur-2xl" : "border-white/10 bg-black/55 backdrop-blur-2xl") : pinned ? "border-gray-200 bg-white/95 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
         `}
       >
         {/* Top: the wordmark */}
-        <div className={`sidebar-head flex items-center gap-2 px-3 h-12 shrink-0 ${showLabels ? "" : "lg:justify-center lg:px-0"}`}>
-          {logoModel ? (
-            <span className="sidebar-logo" aria-label="BFO">
-              <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
-            </span>
-          ) : (
-            <span className={`app-shell-brand sidebar-lockup ${showLabels ? "" : "sidebar-lockup-sm"}`}>
-              <BrandLockup font={lockup.font} finish={lockup.finish} size="mark" />
-            </span>
-          )}
+        <div className={`sidebar-head flex items-center gap-2 px-3 h-12 shrink-0 ${showLabels ? "" : "md:justify-center md:px-0"}`}>
+          {(() => {
+            const mark = logoModel ? (
+              <span className="sidebar-logo" aria-label="BFO">
+                <Logo3D src={logoModel.glbUrl} poster={logoModel.posterUrl} className={`sidebar-logo-model ${showLabels ? "" : "sidebar-logo-model-sm"}`} />
+              </span>
+            ) : (
+              <span className={`app-shell-brand sidebar-lockup ${showLabels ? "" : "sidebar-lockup-sm"}`}>
+                <BrandLockup font={lockup.font} finish={lockup.finish} size="mark" />
+              </span>
+            );
+            // Touch screens from md up (iPad): the wordmark opens and closes the rail.
+            return isDesktop && !hoverCapable ? (
+              <button type="button" onClick={() => setPinned((p) => !p)} aria-label={pinned ? "Collapse menu" : "Expand menu"} aria-expanded={pinned} className="flex cursor-pointer items-center rounded-lg">
+                {mark}
+              </button>
+            ) : (
+              mark
+            );
+          })()}
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
             aria-label="Close menu"
-            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full lg:hidden ${
+            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
               railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
@@ -648,7 +665,7 @@ export default function AppLayout() {
               title={showLabels ? undefined : "Search (⌘K)"}
               aria-label="Search and jump to"
               className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 ${
-                labelsVisible ? "" : "lg:justify-center lg:px-0"
+                labelsVisible ? "" : "md:justify-center md:px-0"
               } ${
                 railDark
                   ? "text-gray-400 hover:text-white hover:bg-white/[0.05]"
@@ -659,8 +676,8 @@ export default function AppLayout() {
                   <circle cx="11" cy="11" r="7" />
                   <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
                 </svg>
-              <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "lg:hidden"}`}>Search</span>
-              <kbd className={`hidden text-[10.5px] ${labelsVisible ? "lg:inline" : ""} ${railDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
+              <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "md:hidden"}`}>Search</span>
+              <kbd className={`hidden text-[10.5px] ${labelsVisible ? "md:inline" : ""} ${railDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
             </button>
           </div>
         )}
@@ -676,8 +693,8 @@ export default function AppLayout() {
             title={showLabels ? undefined : "Appearance"}
             aria-label="Appearance"
             aria-haspopup="dialog"
-            className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 max-lg:h-[44px] ${
-              labelsVisible ? "" : "lg:justify-center lg:px-0"
+            className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 max-md:h-[44px] ${
+              labelsVisible ? "" : "md:justify-center md:px-0"
             } ${railDark ? "text-gray-400 hover:text-white hover:bg-white/[0.05]" : "text-gray-500 hover:text-black hover:bg-black/[0.04]"}`}
           >
             <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
@@ -685,11 +702,11 @@ export default function AppLayout() {
               <circle cx="16" cy="7" r="2.5" />
               <circle cx="10" cy="17" r="2.5" />
             </svg>
-            <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "lg:hidden"}`}>Appearance</span>
+            <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "md:hidden"}`}>Appearance</span>
           </button>
         </div>
 
-        <SidebarNav items={items} isDark={railDark} phone={!isDesktop} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
+        <SidebarNav items={items} isDark={railDark} phone={!isDesktop} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => { setDrawerOpen(false); setPinned(false); }} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
         <div className="sidebar-user relative mt-auto p-2" ref={userMenuRef}>
@@ -700,7 +717,7 @@ export default function AppLayout() {
             title={showLabels ? undefined : displayName(user)}
             aria-label={showLabels ? undefined : displayName(user)}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer ${
-              showLabels ? "" : "lg:justify-center lg:px-0"
+              showLabels ? "" : "md:justify-center md:px-0"
             } ${railDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
           >
             <div
@@ -713,7 +730,7 @@ export default function AppLayout() {
                 <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${railDark ? "ring-black" : "ring-white"}`} aria-label={`${pending} waiting for approval`} />
               )}
             </div>
-            <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "lg:hidden"}`}>
+            <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "md:hidden"}`}>
               <span className="block truncate font-medium">{displayName(user)}</span>
               <span className={`block truncate text-[11.5px] ${railDark ? "text-gray-500" : "text-gray-500"}`}>
                 {user?.email || user?.phoneFormatted || "Signed in"}
@@ -885,7 +902,7 @@ export default function AppLayout() {
       {/* Mobile top bar — menu upper-left, the wordmark centred. The drawer
           holds every destination, so there is no bottom dock. */}
       <header
-        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl lg:hidden ${mailOnly ? "hidden" : ""} ${
+        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl md:hidden ${mailOnly ? "hidden" : ""} ${
           isDark ? "border-white/10 bg-black/60" : "border-gray-200 bg-white/70"
         }`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}
@@ -934,9 +951,9 @@ export default function AppLayout() {
       <main
         id="main"
         tabIndex={-1}
-        className={`sidebar-content outline-none relative z-10 p-4 sm:p-6 lg:p-8 lg:ml-[var(--inset)] ${
+        className={`sidebar-content outline-none relative z-10 p-4 sm:p-6 md:p-8 md:ml-[var(--inset)] ${
           mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))]" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
-        } lg:pt-[calc(2rem+env(safe-area-inset-top))]`}
+        } md:pt-[calc(2rem+env(safe-area-inset-top))]`}
       >
         {/* Email-only members see the inbox and nothing else; redirect before any other page mounts. */}
         {emailOnly && location.pathname !== "/inbox" ? (

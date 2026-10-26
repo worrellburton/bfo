@@ -114,11 +114,11 @@ export function SidebarNav({
 
   // Compact rows: 30px, 13px type, 16px icons, a soft fill for the current page. In the phone drawer, thumb-sized
   // (44px): sizes are px because the root font is 11.9px, so rem classes come out at 74% (app/app.css).
-  const rowBase = "nav-row group/row relative flex items-center rounded-lg text-[13px] transition-colors duration-150 h-[30px] px-2 max-lg:h-[44px] max-lg:text-[15px]";
+  const rowBase = "nav-row group/row relative flex items-center rounded-lg text-[13px] transition-colors duration-150 h-[30px] px-2 max-md:h-[44px] max-md:text-[15px]";
   const idle = isDark ? "text-gray-300/90 hover:text-white hover:bg-white/[0.05]" : "text-gray-600 hover:text-black hover:bg-black/[0.04]";
   const lit = isDark ? "bg-white/[0.08] text-white" : "bg-black/[0.06] text-black";
   const on = `nav-row-on ${lit}`;
-  const collapsed = showLabels ? "" : "lg:justify-center lg:px-0";
+  const collapsed = showLabels ? "" : "md:justify-center md:px-0";
 
   return (
     <nav className="flex flex-col gap-px flex-1 px-2 pb-3 overflow-y-auto overscroll-contain" aria-label="Main">
@@ -158,7 +158,7 @@ export function SidebarNav({
                 className={`${rowBase} ${collapsed} ${active ? on : idle}`}
               >
                 {iconWithDot}
-                <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "lg:hidden"}`}>{item.label}</span>
+                <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "md:hidden"}`}>{item.label}</span>
                 {showLabels || labelsVisible ? <Badge n={total} tone="accent" isDark={isDark} /> : null}
               </Link>
             </div>
@@ -201,7 +201,7 @@ export function SidebarNav({
                         to={c.to}
                         onClick={onNavigate}
                         aria-current={here ? "page" : undefined}
-                        className={`flex items-center gap-2 rounded-lg h-7 px-2 text-[12.5px] transition-colors duration-150 max-lg:h-[40px] max-lg:text-[14px] ${
+                        className={`flex items-center gap-2 rounded-lg h-7 px-2 text-[12.5px] transition-colors duration-150 max-md:h-[40px] max-md:text-[14px] ${
                           here
                             ? isDark
                               ? "bg-white/[0.08] text-white font-medium"

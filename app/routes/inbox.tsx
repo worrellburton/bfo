@@ -2009,7 +2009,8 @@ export default function Inbox() {
   );
 
   const toolbar = (
-    <div className={`flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 max-md:border-0 max-md:px-0 max-md:pb-2 max-md:pt-0 ${t.line}`}>
+    /* A container, so the narrow list of a tablet's split view can drop the filters (the folder chips scroll). */
+    <div className={`@container flex shrink-0 items-center gap-2 border-b px-1.5 py-1.5 max-md:border-0 max-md:px-0 max-md:pb-2 max-md:pt-0 ${t.line}`}>
       {q ? (
         <div className={`flex min-w-0 flex-1 items-center gap-2 px-2 text-[12.5px] max-md:px-1 max-md:text-[13.5px] ${t.muted}`}>
           <span className="truncate">
@@ -2068,7 +2069,7 @@ export default function Inbox() {
         label="Show"
         value={filter}
         onChange={chooseFilter}
-        className="max-md:hidden"
+        className="max-md:hidden @max-[440px]:hidden"
         options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
       />
     </div>
@@ -2125,7 +2126,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
+    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -2149,16 +2150,8 @@ export default function Inbox() {
       )}
       {!openId && noAddress && <p className={`px-2 text-[13px] md:hidden ${t.muted}`}>No address yet. Ask an admin for one.</p>}
       {/* Larger screens: the title, the addresses, search and the view switch on one line. */}
-      <header className={`flex items-start justify-between gap-3 pt-1 max-md:hidden ${openId ? "max-lg:hidden" : ""}`}>
+      <header className="flex items-start justify-between gap-3 pt-1 max-md:hidden">
         <div className="flex min-w-0 items-center gap-3">
-          {/* Tablets and narrow windows have no rail beside Mail: the way back to BFO. */}
-          <Link
-            to="/home"
-            aria-label="Back to BFO"
-            className={`-ml-2 inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full transition-colors lg:hidden ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
-          >
-            <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={2.2} />
-          </Link>
           {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
           <div className="min-w-0">
             <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
@@ -2198,10 +2191,10 @@ export default function Inbox() {
         /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
         <section
           aria-label={tableReading ? "Message" : "Messages"}
-          className={`mail-card flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible ${tableReading ? "lg:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
+          className={`mail-card flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible ${tableReading ? "md:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
         >
           {tableReading ? (
-            <div className={`min-h-0 flex-1 lg:overflow-y-auto ${supportsViewTransitions() ? "" : "reader-in md:[animation:none]"}`}>{reader}</div>
+            <div className={`min-h-0 flex-1 md:overflow-y-auto ${supportsViewTransitions() ? "" : "reader-in md:[animation:none]"}`}>{reader}</div>
           ) : (
             <>
               {toolbar}
@@ -2218,7 +2211,7 @@ export default function Inbox() {
           {/* The list */}
           <section
             aria-label="Messages"
-            className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible lg:w-[400px] lg:flex-none ${t.surface} ${openId ? "max-lg:hidden" : ""}`}
+            className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible md:w-[300px] md:flex-none lg:w-[400px] ${t.surface} ${openId ? "max-md:hidden" : ""}`}
           >
             {toolbar}
             <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
@@ -2229,7 +2222,7 @@ export default function Inbox() {
           </section>
 
           {/* The reader */}
-          <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border lg:overflow-y-auto ${t.surface} ${openId ? "" : "max-lg:hidden"}`}>
+          <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border md:overflow-y-auto ${t.surface} ${openId ? "" : "max-md:hidden"}`}>
             {!open ? (
               <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
                 <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
