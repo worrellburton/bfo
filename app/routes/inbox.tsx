@@ -1198,7 +1198,7 @@ export default function Inbox() {
   useEffect(() => {
     let alive = true;
     getFaces()
-      .then((r) => alive && setFaces(r.faces))
+      .then((r) => alive && setFaces(r.faces ?? {}))
       .catch(() => {}); // Initials and logos will do.
     return () => {
       alive = false;
@@ -2804,7 +2804,7 @@ function ListRow({
           <Avatar a={face} trusted={sent || !m.unverified} size="h-10 w-10 text-[13px] max-md:text-[12.5px]" />
         </span>
         {onPick && (
-          <span className={`absolute inset-0 grid place-items-center transition-opacity duration-150 ${picked || picking ? "opacity-100" : "opacity-0 md:group-hover:opacity-100 max-md:opacity-0"}`}>
+          <span className={`touch-keep-hover absolute inset-0 grid place-items-center transition-opacity duration-150 ${picked || picking ? "opacity-100" : "opacity-0 md:group-hover:opacity-100 max-md:opacity-0"}`}>
             <SelectBox on={picked} onToggle={onPick} label={picked ? "Unselect" : "Select"} className="!h-10 !w-10" />
           </span>
         )}

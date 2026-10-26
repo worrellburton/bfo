@@ -2112,7 +2112,8 @@ function StaffAssets() {
               {searchBox()}
               <p className={`order-1 flex-1 min-w-0 truncate text-sm ${t2} hidden lg:block lg:ml-1`}>
                 {needle ? `${mapHighlight?.size ?? 0} matching ${mapHighlight?.size === 1 ? "entity is" : "entities are"} lit` : stateF.length ? "Entities in the chosen states are lit" : "Ownership map"}
-                <span className="hidden lg:inline"> — drag to pan, scroll to zoom</span>
+                <span className="hidden lg:inline [@media(pointer:coarse)]:!hidden"> — drag to pan, scroll to zoom</span>
+                <span className="hidden [@media(pointer:coarse)]:lg:inline"> — drag to pan, pinch to zoom</span>
               </p>
               <div className="order-1 shrink-0 ml-auto">{viewToggle()}</div>
             </div>
