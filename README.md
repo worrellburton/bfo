@@ -1,311 +1,107 @@
-# Welcome to React Router!
+# BFO
 
-A modern, production-ready template for building full-stack React applications using React Router.
+BFO is the Burton family office's private web app: one place for the family's
+entities (LLCs, corporations, trusts), their documents and compliance, bank and
+brokerage balances (Treasury), bookkeeping (Books), everyone's mail on the
+family domain, paper mail from the Phoenix mailbox, texts to the office number,
+and an assistant ("Ask BFO") that answers from those records. It is also an
+iPhone and iPad app that wraps the live site.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+## Stack
 
-## Features
+A React Router 7 single-page app (`app/`, SSR off, Vite, Tailwind v4,
+TypeScript) served as static files from Vercel, with Vercel serverless
+functions under `api/` for everything that needs a secret or a database.
+Shared server code lives in `lib/`. Data is Supabase Postgres, reached over
+PostgREST with the service key through `sb()` in `lib/auth.ts` (no ORM; the
+`prisma/` folder is an unused template leftover). Files live in private
+Supabase Storage buckets (`documents`, `mail`, `receipts`; `brand` is public).
+Integrations: Plaid (banks, brokerages), Mercury (bank history), Palm (state
+registries, registered agent, formations), Bird (SMS codes, email in and out,
+inbound texts), Stable (paper mail), Apple APNs (push), OpenAI (voice and the
+logo studio), Anthropic (Ask BFO and document reading), Meshy (3D logo), and
+a one-way bridge out of the old Firebase project. The iOS shell is Capacitor
+(`ios/`, `capacitor.config.ts`).
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
-
-## Getting Started
-
-### Installation
-
-Install the dependencies:
+## Run it locally
 
 ```bash
 npm install
+npm run dev        # the SPA at http://localhost:5173
 ```
 
-### Development
+`npm run dev` serves only the SPA. Every `/api/*` function needs the Vercel
+runtime: run `vercel dev` (Vercel CLI, linked to the project) with the
+variables below in `.env` or pulled with `vercel env pull`. Without the API you
+can look at the public pages and the sign-in screen, nothing more.
 
-Start the development server with HMR:
+### Environment variables
 
-```bash
-npm run dev
-```
+Set these on the Vercel project (Production, and Preview if you use it).
+Optional ones are marked. Never commit values.
 
-Your application will be available at `http://localhost:5173`.
-
-Note that `npm run dev` serves the SPA only — the `/api/*` serverless functions
-(sign-in, Plaid, Mercury, documents) need `vercel dev` or a deployment.
-
-## Environment
-
-Set these in the Vercel project:
-
-| Variable | Used for |
+| Variable | Meaning |
 | --- | --- |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | everything stored: users, sessions, sign-in codes, Plaid tokens, Books, mail, and the entity tree (entities, documents, estate map, notes, agents) with its files |
-| `BIRD_ACCESS_KEY` | Bird API access key (sent as `Authorization: AccessKey …`) |
-| `BIRD_WORKSPACE_ID` | Bird workspace the channels live in |
-| `BIRD_SMS_CHANNEL_ID` | *optional* — pins the SMS channel; otherwise the workspace's SMS channel is discovered automatically |
-| `BIRD_EMAIL_CHANNEL_ID` | *optional* — same, for email |
-| `AUTH_SECRET` | *optional* — pepper mixed into the hash of each one-time code |
-| `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | bank links on `/treasury`, brokerage links on `/investments` |
-| `PLAID_REDIRECT_URI` | *optional* — required for Production OAuth banks; must match an Allowed redirect URI in the Plaid dashboard |
-| `ANTHROPIC_API_KEY` | reading, filing and verifying entity documents |
-| `CRON_SECRET` | authenticates the scheduled Books sync and Treasury report |
-| `BIRD_WEBHOOK_SECRET` | *optional* — signing secret of the Bird webhook that delivers new mail to `/api/mail-webhook`; without it, the inbox fetches new mail when it checks |
-| `MAIL_DOMAIN` | *optional* — the domain inboxes live on (default `burtonfamilyoffice.com`) |
-| `PALM_API_KEY` | Palm (getpalm.com): the state's record of each entity, Palm as registered agent, and forming new entities. A `sk_test_…` key files nothing with any state; `sk_live_…` does |
-| `OPENAI_API_KEY` | drawing the logo reference sheet on Settings (gpt-image): six "Burton Family Office / BFO" lockups, each in a typeface the site can set |
-| `MESHY_API_KEY` | turning the chosen logo into a 3D model (Meshy image-to-3D) |
-| `PALM_WEBHOOK_SECRET` | *optional* — signing secret of the Palm webhook at `/api/palm-webhook` (agent mail, filing progress) |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | The Supabase project and its service-role key. Every read and write goes through them. |
+| `AUTH_SECRET` | optional. Pepper for hashed codes; also the fallback signing key for mail image links. |
+| `SIGNIN_COUNTRY_CODES` | optional. Comma list of country codes that may receive sign-in texts (default `+1`; `*` = any). |
+| `SIGNIN_HOURLY_CAP` | optional. Sign-in codes sent to everyone per hour (default 60). |
+| `BIRD_ACCESS_KEY` | Bird API key (`bk_<region>_…`). Sends codes, email, reads inbound mail. |
+| `BIRD_WORKSPACE_ID` | optional. Bird workspace UUID; discovered from the key when unset. |
+| `BIRD_SMS_CHANNEL_ID`, `BIRD_EMAIL_CHANNEL_ID` | optional. Pin a channel instead of discovering it. |
+| `BIRD_SMS_FROM` | optional. The number texts are sent from (and texts arrive on). |
+| `BIRD_EMAIL_FROM`, `BIRD_EMAIL_REPLY_TO` | optional. Sender for system email (default `BFO <reports@burtonfamilyoffice.com>`). |
+| `BIRD_WEBHOOK_SECRET` | optional. Signing secret of the Bird webhook at `/api/mail-webhook`. Without it, mail arrives by polling only. |
+| `MAIL_DOMAIN` | optional. The mail domain (default `burtonfamilyoffice.com`). |
+| `MAIL_IMAGE_SECRET` | optional. Signs proxied image URLs in mail (falls back to `AUTH_SECRET`, then the service key). |
+| `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Plaid credentials; `PLAID_ENV` names a key of the SDK's `PlaidEnvironments` (`sandbox` by default, `production` live). |
+| `PLAID_REDIRECT_URI` | optional. Needed for OAuth banks in production; must match the Plaid dashboard. |
+| `MERCURY_API_TOKEN` | optional. Mercury's own API, for history older than Plaid serves. |
+| `REPORT_ACTIVITY_MASK` | optional. Account last-fours whose activity rides in the Treasury report (default `1886,1116`). |
+| `CRON_SECRET` | Vercel sends `Authorization: Bearer $CRON_SECRET` on cron fires; without it every cron is refused. |
+| `PALM_API_KEY` | Palm key. `sk_test_…` files nothing and bills nothing; `sk_live_…` files with states and is billed. |
+| `PALM_WEBHOOK_SECRET` | optional. Signing secret of the Palm webhook at `/api/palm-webhook`. |
+| `STABLE_API_KEY` | Stable (paper mail) API key. |
+| `STABLE_WEBHOOK_TOKEN` | Shared token in the Stable webhook URL (`/api/stable-webhook?token=…`). |
+| `ANTHROPIC_API_KEY` | Ask BFO, document classification, profile and verification, document renaming. |
+| `OPENAI_API_KEY` | Voice (transcription, speech, Realtime) and the logo reference sheet. |
+| `MESHY_API_KEY` | optional. Image-to-3D for the logo studio. |
+| `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8` | Apple push key for the iPhone app. `APNS_BUNDLE_ID` optional (default `com.burtonfamilyoffice.app`). |
+| `SITE_URL` | optional. Site origin used in emails (default `https://www.burtonfamilyoffice.com`). |
 
-### The entity tree
-
-Entities, their documents and contracts, the estate map, notes and office
-agents are one JSON tree in Supabase (`tree_nodes`, one row per entity /
-note / … with the record as JSON; `supabase/migrations/20261017_tree_nodes.sql`).
-The browser reads and writes it through `/api/tree`, which keeps the small
-Firebase-style surface the pages were written against (`app/store.ts`:
-`ref`, `get`, `onValue`, `update`, `set`, `push`, `remove`). Other people's
-changes arrive by polling every 30 s while the tab is visible.
-
-This replaced Firebase. The first time a collection is asked for after
-deploying, the server copies it out of the old Firebase Realtime Database
-(`tree_imports` records that it happened); files kept in Firebase Storage are
-moved into the private `documents` bucket as their entities are opened
-(`lib/firebase-bridge.ts`). When every row of `tree_imports` is `done` with
-`files_done` set, Firebase is no longer read and the project can be deleted.
-
-### Sign-in
-
-`/login` takes a phone number, sends a 6-digit code through
-Bird, and exchanges it for a 30-day session stored in `app_sessions`. Anyone who
-verifies a code lands in `app_users` as `incoming` — an owner or admin approves
-them from `/users` before they can get in. Roles are `owner`, `admin`, `member`,
-`viewer` and `email` ("Email only": their own inbox and nothing else); owners and
-admins can manage users.
-
-### The 3D logo
-
-Settings has a logo studio for owners and admins. "Draw the style sheet" asks
-OpenAI for six takes on a "BFO" mark, each rendered as one physical object on a
-plain backdrop so it scans well (Monolith, Liquid chrome, Aurora glass, Signet,
-Three faces, Inline serif; "Adjust" adds a note before a redraw). "Make it 3D"
-sends the picture to Meshy, which returns a textured GLB in a few minutes; the
-model and its poster are copied into the public `brand` bucket (Meshy's links
-expire) and shown in the card. "Use on site" puts it on the landing page (where
-it turns and can be dragged) and in the app's corner; "Back to the wordmark"
-undoes it. State lives in `brand_settings`; `/api/brand` serves the current
-logo to anyone and the studio to admins.
-
-### The operating agreement's execution page
-
-The drafted agreement ends with a signature page built for signing: one
-full-width block per signer with their capacity and share, a clear space above
-each line for a pen or an e-signature stamp, and the lines a signer expects. A
-company member signs "By:" an authorized signature with printed name, title and
-date; a person signs with signature and date, their name already printed.
-Blocks that don't fit flow to another signature page. Exhibit A follows.
-
-### Reading documents
-
-A stored PDF or picture opens in BFO's own reader (a full-screen page with
-Back, Download and New tab) rather than in the browser's viewer at a storage
-URL: pages are drawn with pdf.js, continuous and fitted to the width, with the
-page count as you scroll. A modifier or middle click still opens the signed
-link in a new tab, as do file types the reader doesn't show. Paperwork BFO
-drafted itself (the operating agreement, the W-9) can be drafted again from
-the filled slot, so a draft made before a layout change can be refreshed; the
-earlier file stays in Documents.
-
-### Palm cases
-
-When Palm can't finish something (a registered agent change, a formation)
-without information only you have, it opens a *case* listing what it needs and
-sends a `case.opened` webhook; owners and admins get an email and the activity
-log notes it. The entity page shows the case with a form built from Palm's own
-field list: on the Formation card for an entity BFO formed, and under "Palm
-needs" on the Compliance tab for any entity linked to Palm. Address fields are
-prefilled from the entity's principal or mailing address, split the way Palm
-takes them. "Send to Palm" posts the answer to Palm's case API; the case shows
-as answered until Palm resolves it. Only owners and admins can answer.
-
-Palm posts webhooks to `https://www.burtonfamilyoffice.com/api/palm-webhook`
-(use the www host: the bare domain answers every request, `/api` included,
-with a 308 to www, and Palm doesn't follow redirects, so a webhook pointed at
-the bare domain fails silently and Palm disables it after ten failures). Tools
-→ Entity compliance → Palm costs shows when the last webhook arrived. Events
-are stored by id, so a batch Palm resends is taken once. `vercel.json` carries
-a host-conditioned redirect for everything but `/api`, so once the apex
-domain's redirect is turned off in Vercel (Project → Domains), pages still
-canonicalize to www while webhooks hitting the bare domain are served.
-
-### Forming an entity
-
-"New entity" on `/assets` records an entity that already exists, or hands off to
-a wizard that forms a new LLC or corporation through Palm: the name is checked
-against the state as it's typed (with alternatives when it's taken), then
-addresses and contact, the people (organizers or incorporators, and optionally
-members/managers or directors/officers), Palm's services (Palm as registered
-agent or your own; an EIN application, whose responsible-party SSN goes straight
-to Palm and is never stored), whatever else the state asks for (from Palm's
-requirement schema), and a review with the state's fee, processing speed and
-Palm's own validation. Nothing is filed until the final confirmation, which
-spells out the state and the cost; in live mode it also asks you to type the
-entity's name, since a filing with the state can't be undone. In test mode the
-confirmation says so and the entity is created here as a test.
-
-The operating agreement is not part of the filing: states form an LLC from the
-articles alone, and Palm's formation request has no field for one. Draft it
-after formation and keep it on the entity's Documents tab.
-
-Submitting creates the entity (status "Forming") with the filing under
-`palm.<mode>.formation`. Palm's `filing.*` webhooks and a poll every 30 seconds
-while the page is open move it along (queued → ready to file → processing →
-filed → formed); on completion the file number, formation date, registered agent
-and, once issued, the EIN land on the record. Only owners and admins can submit.
-
-### Mail
-
-Every user has an address on the family domain (assigned from their first name;
-admins can change it on `/users`) and a Mail page at `/inbox`. Bird receives the
-mail and BFO keeps each mailbox's copy in Supabase (`mail_messages`, attachments
-in the private `mail` bucket; `read_at` and `starred_at` mark unread and starred).
-On a phone, Mail is its own place: the app's bar and menu stay out of it, a
-"BFO" link at the top leads back, and the mailbox is the title, a large
-dropdown with its own colour and the unread count, so it's always clear whose
-mail is on screen; its menu rises as a glass sheet listing every address.
-Behind the list a WebGL aurora drifts in the mailbox's hue, brightens as you
-scroll and blooms where you touch (one still frame under reduced motion). Mail
-has its own light/dark setting, light unless switched: the appearance button
-in the corner (a moon in the light, a sun in the dark) flips it, the device
-remembers it, and it applies only while Mail is on screen; the rest of the
-app keeps its own theme. Rows
-arrive one after another under day separators; a star pops. Moving between the
-list and a message is a view transition (`app/view-transition.ts`, on the viewport's snapshot, no blur, so a phone keeps up): one page
-slides out as the other slides in (and back the other way), a loader stays
-long enough for its scene to play through (the constellation assembling, the
-envelope opening) and then gives way in place: the message renders under
-the envelope as soon as it arrives, so its frame and pictures load meanwhile,
-and the envelope lifts off as the letter comes forward; a cached message
-opens at once, and a finger landing on a row fetches its message ahead of
-the tap (without marking it read) so most opens are instant; rows animate in
-once, not again when the list comes back, and the row you came back from
-glows for a moment; menus, sheets and the toast leave the way they came;
-the light/dark switch changes at once, colours easing across for a moment while the aurora eases its own; the aurora and the round Compose
-button in the corner stay put. A row swiped left archives (with Undo), swiped right stars; a held
-finger picks it for a bulk action; pulling the list down asks Bird for new
-mail (`app/mail-pull.tsx`: the list rides the finger, a ring fills, spins, then
-draws a check and says "3 new" or "Up to date", and the aurora brightens with
-the pull), and a "New mail" pill offers mail that arrived since the list was
-read. The
-title shrinks into a glass bar as the list scrolls, a thin line across the top
-shows how far through a message you are, unread senders' pictures carry the
-mailbox's light, and an empty folder gets a quiet card. Attachments show as
-icons by kind (`lib/file-kind.ts`, `app/file-icon.tsx`): a red PDF page, a
-photo, a spreadsheet, a document, slides, an archive, audio, video, an invite,
-code, and each mark moves a little. Snippets leave out a
-help desk's wrapping ("type your reply above this line", footers, ticket codes). On larger screens, one control under the page title says whose mail is
-shown: "All mailboxes" or one address; its menu lists every address on the
-account with a copy on each, and admins add and remove extras there. Compose's
-From line is the same kind of dropdown. Mail to an address nobody has
-lands in "Other", which owners and admins see. Pictures in a message are
-served through `/api/mail-image`: the server rewrites each remote image to a
-signed BFO address and fetches it on the reader's behalf, so a phone's browser
-or content blocker has no third-party image to refuse inside the sandboxed
-frame, and a sender's tracking pixel sees BFO's server rather than the reader.
-Images show by default; "Hide images" holds them back for a message. Mail
-laid out wider than the screen (a fixed 600px table) is scaled down to fit the
-frame's width, the way a phone's mail app does, and refits when the phone turns;
-the frame's document opts out of iOS Safari's text inflation so the scaled
-layout keeps the sender's type sizes.
-Each wait has its own scene rather than a skeleton, drawn in the mailbox's
-colour (`app/mail-loaders.tsx`): while the list loads, hundreds of points of
-light stream down and settle into the shape of the rows, a pulse runs down them
-and envelopes glide in to land on the rows; a search is a sonar sweep over a
-field of mail, lighting each message the beam passes and pinging the ones that
-match; a message opening is a letter sliding out of its envelope as the ink
-arrives; Send shows a spark circling, then a paper plane darting off and a
-check in its place; Improve design, an uploading file and the pull-to-refresh
-ring use the same spark. Under reduced motion each scene is one still frame.
-Each folder can be narrowed to unread or starred mail, and shown either as a
-table (sender, subject, summary, attachment, time) or as a list beside the open
-message. On a phone the folder row is one control that shows only what's
-chosen ("Active", "Starred", or "In · Unread" with its count); tapping it opens
-a glass sheet: pick a folder (Active across the top, then In, Out, Archive),
-switch Unread and Starred on or off in any combination, and Apply; the pill
-then reads "In · Unread · Starred". Other stays a desktop tab.
-
-To set it up in Bird:
-
-1. Email → Domains → burtonfamilyoffice.com: turn on **Receiving** (the MX
-   records already point at Bird).
-2. Developers → API keys: let the `BIRD_ACCESS_KEY` key read received mail.
-3. Optional, for instant delivery: add a webhook to
-   `https://www.burtonfamilyoffice.com/api/mail-webhook` (the www host; the bare domain redirects, and webhooks don't follow redirects) for `email.received`, and
-   save its signing secret as `BIRD_WEBHOOK_SECRET`.
-
-## iPhone and iPad app
-
-BFO is also an iPhone and iPad app: a [Capacitor](https://capacitorjs.com) shell
-(`capacitor.config.ts`, `ios/`) that opens the live site, so web deploys reach
-it at once. Inside the app the site uses native haptics and a theme-aware
-status bar (`app/native.ts`), sends push notifications for new mail
-(`lib/push.ts`, needs the `APNS_*` variables) and locks with Face ID
-(`app/app-lock.tsx`). A GitHub Actions workflow builds it on a cloud
-Mac and uploads it to App Store Connect for TestFlight. Setup, the App Store
-listing, privacy answers and the decisions left before App Review are in
-[docs/ios-app.md](docs/ios-app.md).
-
-## Building for Production
-
-Create a production build:
+## Check, test, build
 
 ```bash
-npm run build
+npm run typecheck   # react-router typegen, then tsc
+npm test            # vitest run (tests/*.test.ts and lib/*.test.ts)
+npm run build       # react-router build → build/client
 ```
 
-## Deployment
+CI (`.github/workflows/ci.yml`) runs typegen, `tsc --noEmit`, the tests and the
+build on every push and pull request to `main`. Tests are pure-function tests
+plus mocked `sb()`; none touches a network.
 
-### Docker Deployment
+## Deploy
 
-To build and run using Docker:
+Vercel builds `main` on every push (`vercel.json`: `npm run build`, output
+`build/client`, functions from `api/**/*.ts`). There is no manual deploy step.
+Pull requests get preview deployments. Crons, function memory and timeouts,
+redirects and headers are all in `vercel.json`. The `Dockerfile` is the React
+Router template's and is not used.
 
-```bash
-docker build -t my-app .
+The iPhone app opens the live site, so a web deploy reaches it at once. Only
+changes to `ios/`, `capacitor.config.ts` or the Capacitor plugins need a new
+build, which the "iOS → TestFlight" GitHub Action makes (see the runbook).
 
-# Run the container
-docker run -p 3000:3000 my-app
-```
+## Where to look next
 
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how a request flows, auth and
+  roles, the JSON tree, mail, Books, entities, push, Ask BFO, directory map.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): each integration, its env vars and
+  dashboard, key rotation, failure modes and log lines, crons, migrations,
+  shipping an iOS build.
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): branches, commits, code style,
+  how to add a route, an endpoint, a migration, a test.
+- [docs/ios-app.md](docs/ios-app.md): App Store Connect setup, listing,
+  privacy answers.
+- [CLAUDE.md](CLAUDE.md): the short version for tools and new contributors.
