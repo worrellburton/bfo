@@ -2126,7 +2126,7 @@ export default function Inbox() {
         New mail
       </button>
     )}
-    <div className="relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
+    <div className="@container relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
       {!openId && (
         <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
@@ -2211,7 +2211,7 @@ export default function Inbox() {
           {/* The list */}
           <section
             aria-label="Messages"
-            className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible md:w-[300px] md:flex-none lg:w-[400px] ${t.surface} ${openId ? "max-md:hidden" : ""}`}
+            className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible @min-[680px]:w-[300px] @min-[680px]:flex-none @min-[900px]:w-[400px] ${t.surface} ${openId ? "@max-[680px]:hidden" : ""}`}
           >
             {toolbar}
             <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
@@ -2222,7 +2222,7 @@ export default function Inbox() {
           </section>
 
           {/* The reader */}
-          <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border md:overflow-y-auto ${t.surface} ${openId ? "" : "max-md:hidden"}`}>
+          <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border md:overflow-y-auto ${t.surface} ${openId ? "" : "@max-[680px]:hidden"}`}>
             {!open ? (
               <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
                 <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
@@ -2889,7 +2889,7 @@ function Reader({
   const envelope = reveal !== "done";
   const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : senderLabel(a))).join(", ");
   const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
-  const canReplyAll = !!m && m.to.length + m.cc.length > 1;
+  const canReplyAll = !!m && (m.to?.length ?? 0) + (m.cc?.length ?? 0) > 1;
   const others = m ? thread.filter((x) => x.id !== m.id) : [];
   const newer = m ? others.filter((x) => x.occurredAt > m.occurredAt) : [];
   const older = m ? others.filter((x) => x.occurredAt <= m.occurredAt) : [];
@@ -3061,9 +3061,9 @@ function Reader({
             {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
           </div>
 
-          {m.attachments.length > 0 && (
+          {(m.attachments?.length ?? 0) > 0 && (
             <div className="mt-5 flex flex-wrap gap-2 max-md:mt-6">
-              {m.attachments.map((a) => (
+              {(m.attachments ?? []).map((a) => (
                 <AttachmentChip key={a.id} messageId={m.id} a={a} />
               ))}
             </div>
@@ -3194,9 +3194,9 @@ function ThreadCard({ m, me, open: startOpen, fresh }: { m: MailMessage; me: str
       {open && (
         <div className="px-3.5 pb-3.5">
           {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
-          {m.attachments.length > 0 && (
+          {(m.attachments?.length ?? 0) > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {m.attachments.map((a) => (
+              {(m.attachments ?? []).map((a) => (
                 <AttachmentChip key={a.id} messageId={m.id} a={a} />
               ))}
             </div>
