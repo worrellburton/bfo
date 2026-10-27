@@ -6,6 +6,7 @@ import { mailboxHue } from "../mail-aurora";
 import { addAlias, notifyMailChanged, removeAlias } from "../mail-client";
 import { useExit } from "./controls";
 
+// ── My addresses ─────────────────────────────────────────────────────────
 
 /**
  * The header's one control for whose mail is shown: "All mailboxes", or one
@@ -306,5 +307,3 @@ export function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = f
     </div>
   );
 }
-
-// ── Page ─────────────────────────────────────────────────────────────────

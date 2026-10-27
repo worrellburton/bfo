@@ -47,7 +47,7 @@ export function meta() {
   return [{ title: "BFO - Mail" }];
 }
 
-// ── My addresses ─────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────
 
 export default function Inbox() {
   const t = useTone();
