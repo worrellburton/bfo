@@ -98,6 +98,14 @@ vi.mock("../lib/auth.js", () => ({
   currentUser: vi.fn(async () => (role ? { id: "u1", role } : null)),
   canWrite: (u: { role: string }) => u.role !== "viewer",
   isAdmin: (u: { role: string }) => u.role === "owner" || u.role === "admin",
+  // The webhook inbox (palm_events) is empty in these tests.
+  sb: vi.fn(async () => []),
+}));
+/** The entity rows the endpoint reads (lib/tree.js readRows); set per test. */
+let rows: { collection: string; id: string; data: Record<string, unknown> }[] = [];
+vi.mock("../lib/tree.js", () => ({
+  readRows: vi.fn(async (_c: string, ids: string[]) => rows.filter((r) => ids.includes(r.id))),
+  applyOps: vi.fn(async () => {}),
 }));
 
 import handler from "../api/palm";
@@ -151,6 +159,69 @@ describe("/api/palm", () => {
     const r = await call({ action: "ra", businessId: BID });
     expect(r.status).toBe(200);
     expect(r.json.service).toBeNull();
+  });
+
+  describe("entity-bundle", () => {
+    const ASSET = "-OprRTmsfKGWRaRz9_l0";
+    beforeEach(() => {
+      rows = [{ collection: "assets", id: ASSET, data: { name: "Ledger Louise, LLC", state: "Nevada", palm: { test: { businessId: BID } } } }];
+    });
+    afterEach(() => {
+      rows = [];
+    });
+
+    it("answers the status alone when Palm isn't connected", async () => {
+      delete process.env.PALM_API_KEY;
+      const r = await call({ action: "entity-bundle", assetId: ASSET });
+      expect(r.status).toBe(200);
+      expect(r.json).toEqual({ mode: null, status: { ok: true, value: { configured: false, mode: null } } });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("reads the linked business's agent, documents and questions in one go, a failed part on its own", async () => {
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.endsWith("/registered-agent")) return reply(200, { object: "registered_agent", status: "active", provider: "palm" });
+        if (url.includes("/document?")) return reply(500, { title: "Server Error" });
+        if (url.includes("/v1/case?")) return reply(200, { data: [{ id: "c1", status: "needs_response", opened_at: "2025-01-02" }, { id: "c2", status: "resolved", opened_at: "2025-01-03" }] });
+        throw new Error(`unexpected ${url}`);
+      });
+      const r = await call({ action: "entity-bundle", assetId: ASSET, parts: ["ra", "documents", "cases", "inboxUnread"] });
+      expect(r.status).toBe(200);
+      expect(r.json.mode).toBe("test");
+      expect(r.json.businessId).toBe(BID);
+      expect(r.json.status).toEqual({ ok: true, value: { configured: true, mode: "test" } });
+      expect(r.json.ra).toEqual({ ok: true, value: { service: { object: "registered_agent", status: "active", provider: "palm" } } });
+      expect(r.json.documents).toEqual({ ok: false, error: { code: "palm_error", status: 502, message: "Server Error" } });
+      expect(r.json.cases.ok).toBe(true);
+      expect(r.json.cases.value.cases.map((c: { id: string }) => c.id)).toEqual(["c1", "c2"]);
+      expect(r.json.inboxUnread).toEqual({ ok: true, value: { events: [] } });
+      // Not asked for, so not read.
+      expect(r.json.inbox).toBeUndefined();
+      expect(r.json.monitors).toBeUndefined();
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls).toContain(`https://api.getpalm.com/v1/business/${BID}/registered-agent`);
+      expect(urls.some((u) => u.includes(`/v1/business/${BID}/document?`))).toBe(true);
+      expect(urls.some((u) => u.includes(`parent_id=${BID}`))).toBe(true);
+    });
+
+    it("skips the business reads for an entity that isn't in Palm, and names a missing entity", async () => {
+      rows = [{ collection: "assets", id: ASSET, data: { name: "Worrell Burton, LLC" } }];
+      const r = await call({ action: "entity-bundle", assetId: ASSET, parts: ["ra", "documents", "cases", "monitors"] });
+      expect(r.json.businessId).toBeNull();
+      expect(r.json.ra).toBeUndefined();
+      expect(r.json.documents).toBeUndefined();
+      expect(r.json.cases).toEqual({ ok: true, value: { cases: [] } });
+      expect(fetchMock).not.toHaveBeenCalled();
+      rows = [];
+      const gone = await call({ action: "entity-bundle", assetId: "nope", parts: ["monitors"] });
+      expect(gone.json.monitors).toEqual({ ok: false, error: { code: "not_found", status: 404, message: "That entity isn't on record." } });
+    });
+
+    it("answers the registered-agent 404 as no service, as the ra action does", async () => {
+      fetchMock.mockResolvedValue(reply(404, { title: "Not Found" }));
+      const r = await call({ action: "entity-bundle", assetId: ASSET, parts: ["ra"] });
+      expect(r.json.ra).toEqual({ ok: true, value: { service: null } });
+    });
   });
 
   it("only lets an owner or admin move the agent, in the mode the page saw", async () => {
