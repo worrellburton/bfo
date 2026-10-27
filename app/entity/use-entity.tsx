@@ -175,6 +175,7 @@ export function useEntityPage() {
     services: [...MSA_SERVICES] as string[],
     referralCredit: false,
     letterhead: "bfo" as "bfo" | "robert",
+    entityNameOnly: false,
   });
 
   // Doc form
@@ -256,6 +257,7 @@ export function useEntityPage() {
     services: [...MSA_SERVICES] as string[],
     referralCredit: false,
     letterhead: "bfo" as "bfo" | "robert",
+    entityNameOnly: false,
   });
 
   useEffect(() => {
@@ -2369,6 +2371,7 @@ export function useEntityPage() {
       status: contractForm.status,
       referralCredit: contractForm.referralCredit,
       letterhead: contractForm.letterhead,
+      entityNameOnly: contractForm.entityNameOnly,
       createdAt: Date.now(),
     });
     setContractForm({
@@ -2381,6 +2384,7 @@ export function useEntityPage() {
       services: [...MSA_SERVICES],
       referralCredit: false,
       letterhead: "bfo",
+      entityNameOnly: false,
     });
     setAddingContract(false);
   }
@@ -2409,6 +2413,7 @@ export function useEntityPage() {
       services: normalizeServices(Array.isArray(c.services) && c.services.length > 0 ? c.services : MSA_SERVICES),
       referralCredit: c.referralCredit ?? false,
       letterhead: c.letterhead ?? "bfo",
+      entityNameOnly: c.entityNameOnly ?? false,
     });
     setAddingContract(false);
   }
@@ -2429,6 +2434,7 @@ export function useEntityPage() {
       services,
       referralCredit: editContractForm.referralCredit,
       letterhead: editContractForm.letterhead,
+      entityNameOnly: editContractForm.entityNameOnly,
     });
     setEditingContractId(null);
   }

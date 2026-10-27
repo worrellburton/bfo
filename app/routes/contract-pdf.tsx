@@ -24,6 +24,7 @@ interface OperatingContract {
   status: string;
   referralCredit?: boolean;
   letterhead?: "bfo" | "robert";
+  entityNameOnly?: boolean;
 }
 
 interface SignatureRequest {
@@ -149,7 +150,9 @@ export default function ContractPDF() {
       // Nevada operating agreement when Ledger Louise is the Manager.
       const isLedgerLouise = String(asset.name).toLowerCase().includes("ledger louise");
       const managerState = isLedgerLouise ? "Nevada" : asset.state || "Arizona";
-      const dba = isLedgerLouise ? " doing business as Burton Family Office" : "";
+      // The d/b/a can be left off (the contract's "Entity name only" switch).
+      const showDba = isLedgerLouise && !contract.entityNameOnly;
+      const dba = showDba ? " doing business as Burton Family Office" : "";
       const officeSentence = isLedgerLouise
         ? "Manager's principal office is 401 Ryland Street, Suite 200-A, Reno, NV 89502; its notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028."
         : "Manager's notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028.";
@@ -430,7 +433,7 @@ export default function ContractPDF() {
       doc.setTextColor(...ink);
       doc.text(asset.name, leftX, rowY + 18);
       doc.text(contract.counterparty, rightX, rowY + 18);
-      if (isLedgerLouise) {
+      if (showDba) {
         doc.setFont("times", "italic");
         doc.setFontSize(9);
         doc.setTextColor(...muted);
@@ -746,16 +749,16 @@ export default function ContractPDF() {
         </div>
       )}
       {pdfUrl ? (
-        <div className={`max-sm:hidden flex-1 rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`} style={{ minHeight: "700px" }}>
+        // Fills the window below the header (the page's padding and the header bar come off the height) so the viewer scrolls the pages, not the page.
+        <div className={`max-sm:hidden h-[calc(100dvh-10.5rem)] min-h-[480px] rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`}>
           <iframe
-            src={pdfUrl}
-            className="w-full h-full"
-            style={{ minHeight: "700px" }}
+            src={`${pdfUrl}#view=FitH&navpanes=0`}
+            className="block h-full w-full"
             title="Contract PDF"
           />
         </div>
       ) : (
-        <div className={`flex-1 flex items-center justify-center rounded-lg border min-h-[240px] sm:min-h-[700px] ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
+        <div className={`flex items-center justify-center rounded-lg border min-h-[240px] sm:h-[calc(100dvh-10.5rem)] sm:min-h-[480px] ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
           <p className="text-gray-500">Generating PDF...</p>
         </div>
       )}
