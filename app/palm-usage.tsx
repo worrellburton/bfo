@@ -53,7 +53,7 @@ export function PalmCostCard({ isDark, names, refreshKey = 0 }: { isDark: boolea
   const t3 = isDark ? "text-gray-500" : "text-gray-400";
   const line = isDark ? "border-white/[0.06]" : "border-gray-100";
   const month = new Date().toLocaleString("en-US", { month: "long" });
-  const products = Object.entries(usage?.month.byProduct ?? {}) as [PalmProduct, { calls: number; cents: number }][];
+  const products = Object.entries(usage?.month?.byProduct ?? {}) as [PalmProduct, { calls: number; cents: number }][];
 
   return (
     <section className={`mt-5 rounded-2xl border ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`}>

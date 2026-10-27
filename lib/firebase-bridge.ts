@@ -28,7 +28,7 @@ const IMPORT_WAIT_MS = 25_000;
 const INSERT_CHUNK = 40;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
-type ImportRow = { collection: string; status: "running" | "done" | "error"; started_at: string; files_done: boolean };
+type ImportRow = { collection: string; status: "running" | "done" | "error"; started_at: string; files_done: boolean; files_given_up?: boolean };
 
 let token: { value: string; until: number } | null = null;
 
@@ -147,6 +147,8 @@ const importedCache = new Map<Collection, boolean>();
 /** Forget what this process knows about copies (tests). */
 export function forgetImports(): void {
   importedCache.clear();
+  filesSettled = false;
+  failedFiles.clear();
 }
 
 export async function importAll(): Promise<void> {
@@ -232,17 +234,31 @@ async function moveFile(assetId: string, file: FileRef): Promise<{ storagePath: 
  * is spent. Returns how many files moved and whether any are left.
  */
 export async function migrateFirebaseFiles(opts: { assetId?: string; budgetMs?: number } = {}): Promise<{ moved: number; remaining: number }> {
+  if (filesSettled) return { moved: 0, remaining: 0 };
   const started = Date.now();
   const budget = opts.budgetMs ?? 8_000;
   const status = await importStatus("assets");
-  if (status?.files_done) return { moved: 0, remaining: 0 };
+  if (status?.files_done || status?.files_given_up) {
+    filesSettled = true;
+    return { moved: 0, remaining: 0 };
+  }
 
   const rows = opts.assetId ? await readRows("assets", [opts.assetId]) : await readCollection("assets");
   const todo = rows.flatMap((r) => firebaseFilesOf(r.id, r.data).map((f) => ({ row: r, file: f })));
   let moved = 0;
   let failed = 0;
+  let skipped = 0;
+  let exhausted = false;
   for (const { row, file } of todo) {
-    if (Date.now() - started > budget) break;
+    if (Date.now() - started > budget) {
+      exhausted = true;
+      break;
+    }
+    // A file that already failed in this process isn't fetched again; the next instance gets one more try.
+    if (failedFiles.has(file.storagePath)) {
+      skipped++;
+      continue;
+    }
     try {
       const next = await moveFile(row.id, file);
       const value = file.path.length === 4 ? { url: next.url, storagePath: next.storagePath, storageProvider: "supabase" } : { url: next.url, storagePath: next.storagePath };
@@ -250,12 +266,27 @@ export async function migrateFirebaseFiles(opts: { assetId?: string; budgetMs?: 
       moved++;
     } catch (err) {
       failed++;
+      failedFiles.add(file.storagePath);
       console.error(`firebase-bridge: couldn't move ${file.storagePath}`, err);
     }
   }
   const remaining = todo.length - moved;
   if (!opts.assetId && remaining === 0 && !failed) {
+    filesSettled = true;
     await sb("tree_imports?collection=eq.assets", { method: "PATCH", body: { files_done: true } }).catch(() => {});
+  } else if (!opts.assetId && !exhausted && moved === 0 && remaining > 0 && failed + skipped === remaining) {
+    // Every file still in Firebase has failed to move at least once: stop
+    // scanning on each request, here and in every later instance.
+    filesSettled = true;
+    console.warn(`firebase-bridge: giving up on ${remaining} Firebase file(s) that couldn't be moved; marking files_given_up`);
+    await sb("tree_imports?collection=eq.assets", { method: "PATCH", body: { files_given_up: true } }).catch((err) =>
+      console.error("firebase-bridge: couldn't record files_given_up", err)
+    );
   }
   return { moved, remaining };
 }
+
+/** Whether this instance knows the file move is finished (files_done or files_given_up). */
+let filesSettled = false;
+/** Firebase object paths that failed to move in this process; not retried until the next instance. */
+const failedFiles = new Set<string>();

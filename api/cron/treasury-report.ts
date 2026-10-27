@@ -1171,7 +1171,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.
-    const cronHeaders = { "x-internal-cron": secret ?? "" };
+    const cronHeaders = { Authorization: `Bearer ${secret}` };
     let pulled: { accounts: Account[]; connections: Connection[] };
     try {
       pulled = await fetchTreasury(origin, cronHeaders);

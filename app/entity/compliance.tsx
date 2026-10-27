@@ -602,7 +602,7 @@ function Monitoring() {
     >
       {regs === null ? (
         error ? null : <Empty>Checking…</Empty>
-      ) : regs.length === 0 ? (
+      ) : !regs?.length ? (
         <Empty>No state registrations to watch.</Empty>
       ) : (
         <Rows>

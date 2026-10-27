@@ -1,28 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { currentUser, secretMatches } from "../../lib/auth.js";
+import { cronAuth, currentUser, sb } from "../../lib/auth.js";
 
 // A visit older than this counts as a new "login" for change-since purposes.
 const ROTATE_AFTER_MS = 30 * 60 * 1000;
 
-function db(path: string, init: RequestInit = {}) {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_KEY!;
-  return fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-}
-
 async function getItems() {
-  const r = await db("plaid_items?select=*");
-  if (!r.ok) throw new Error(`DB error: ${await r.text()}`);
-  return r.json();
+  return (await sb<any[] | null>("plaid_items?select=*")) ?? [];
 }
 
 type AccountState = {
@@ -41,25 +25,24 @@ type AccountPrefs = {
   entity_name: string | null;
 };
 
+/** A read whose failure just means "nothing known" — the report degrades rather than fails. */
+async function readOrEmpty<T>(path: string): Promise<T[]> {
+  return (await sb<T[] | null>(path).catch(() => null)) ?? [];
+}
+
 async function getAccountPrefs(): Promise<Map<string, AccountPrefs>> {
-  const r = await db("plaid_account_prefs?select=*");
-  if (!r.ok) return new Map();
-  const rows = (await r.json()) as AccountPrefs[];
+  const rows = await readOrEmpty<AccountPrefs>("plaid_account_prefs?select=*");
   return new Map(rows.map((row) => [row.account_id, row]));
 }
 
 /** When each account last moved money, from the synced Books history. */
 async function getAccountActivity(): Promise<Map<string, string>> {
-  const r = await db("book_account_activity?select=account_id,last_activity");
-  if (!r.ok) return new Map();
-  const rows = (await r.json()) as Array<{ account_id: string; last_activity: string | null }>;
+  const rows = await readOrEmpty<{ account_id: string; last_activity: string | null }>("book_account_activity?select=account_id,last_activity");
   return new Map(rows.filter((x) => x.last_activity).map((x) => [x.account_id, x.last_activity!]));
 }
 
 async function getAccountStates(): Promise<Map<string, AccountState>> {
-  const r = await db("plaid_account_state?select=*");
-  if (!r.ok) return new Map();
-  const rows = (await r.json()) as AccountState[];
+  const rows = await readOrEmpty<AccountState>("plaid_account_state?select=*");
   return new Map(rows.map((row) => [row.account_id, row]));
 }
 
@@ -79,11 +62,9 @@ async function saveAccountState(
     prev_balance: rotate ? prior?.balance ?? null : prior?.prev_balance ?? null,
     prev_seen_at: rotate ? prior?.seen_at ?? null : prior?.prev_seen_at ?? null,
   };
-  await db("plaid_account_state", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify(row),
-  }).catch(() => {});
+  await sb("plaid_account_state", { method: "POST", body: row, prefer: "resolution=merge-duplicates" }).catch((err) =>
+    console.error("plaid: couldn't save account state", err)
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -92,11 +73,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // The scheduled report runs without a session; it proves itself with the
-  // cron secret instead.
-  const cronSecret = process.env.CRON_SECRET;
-  const fromCron = secretMatches(req.headers["x-internal-cron"], cronSecret);
-  if (!fromCron) {
+  // The scheduled report runs without a session; it proves itself with
+  // Authorization: Bearer $CRON_SECRET, the same credential every cron uses.
+  if (cronAuth(req) !== "ok") {
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: "unauthorized" });
   }
@@ -202,11 +181,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         credit: shown.filter((a) => a.type === "credit").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
         updated_at: now.toISOString(),
       };
-      await db("treasury_daily", {
-        method: "POST",
-        headers: { Prefer: "resolution=merge-duplicates" },
-        body: JSON.stringify(totals),
-      }).catch(() => {});
+      await sb("treasury_daily", { method: "POST", body: totals, prefer: "resolution=merge-duplicates" }).catch((err) =>
+        console.error("plaid: couldn't record daily totals", err)
+      );
 
       return res.json({ connections, accounts });
     }
@@ -274,9 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const [items, prefs, history] = await Promise.all([
         getItems() as Promise<any[]>,
         getAccountPrefs(),
-        db("treasury_daily?select=day,invested&order=day.desc&limit=365")
-          .then(async (r) => (r.ok ? ((await r.json()) as Array<{ day: string; invested: number | null }>) : []))
-          .catch(() => [] as Array<{ day: string; invested: number | null }>),
+        readOrEmpty<{ day: string; invested: number | null }>("treasury_daily?select=day,invested&order=day.desc&limit=365"),
       ]);
 
       // A bank connection is only asked for holdings when it actually carries

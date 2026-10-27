@@ -23,6 +23,7 @@ import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 import { anticipateInflows, type InflowRow, type PlannedInflow } from "../../lib/books-inflows.js";
 import { fetchAll } from "../../lib/db-pages.js";
+import { effType, eliminated as eliminatedIn, flowMonths, flowSummary, label, prettyCategory } from "../../lib/books-report.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -43,12 +44,6 @@ import { fetchAll } from "../../lib/db-pages.js";
  * 'normal' rows hit the P&L, 'transfer' rows sit in the Transfers section,
  * 'intercompany' rows are eliminated when both legs' entities are selected.
  */
-
-function prettyCategory(primary: string | null): string {
-  if (!primary) return "Uncategorized";
-  const s = primary.replace(/_/g, " ").toLowerCase();
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 /**
  * Record field-level changes to the immutable audit log — one row per field
@@ -196,43 +191,6 @@ function withLiveEntity(rows: BookTxn[], prefs: Map<string, Pref>): BookTxn[] {
   });
 }
 
-type EffType = "normal" | "transfer" | "intercompany" | "loan";
-
-function effType(t: BookTxn): EffType {
-  // A transaction attached to a loan is a balance-sheet movement — that
-  // attachment is the user's most explicit signal, so it wins outright.
-  if (t.loan_id) return "loan";
-  if (t.type_override === "normal" || t.type_override === "transfer" || t.type_override === "intercompany") {
-    return t.type_override;
-  }
-  if (t.intercompany) return "intercompany";
-  return t.txn_type === "transfer" ? "transfer" : "normal";
-}
-
-function label(t: BookTxn): string {
-  return t.book_category || prettyCategory(t.plaid_category);
-}
-
-/**
- * Should this intercompany row vanish from the report? Only when we can see
- * both legs inside the current selection — for "all entities" that is every
- * row; under a partial selection the counterparty's entity must be selected
- * too. Unpaired rows under a partial selection stay visible rather than
- * silently disappearing.
- */
-function eliminated(t: BookTxn, selection: string[] | null, prefs: Map<string, Pref>): boolean {
-  // The all-entities rollup eliminates every intercompany movement — that's
-  // the family-wide view the user asked for, and these rows never touch the
-  // operating net (income − expense) either way, so dropping them from the
-  // rollup doesn't distort it. Under a partial selection, a movement is
-  // eliminated only when its counterparty's entity is also selected.
-  if (selection === null) return true;
-  const counterEntity = t.counterparty_account_id
-    ? prefs.get(t.counterparty_account_id)?.entity_id ?? null
-    : null;
-  return !!counterEntity && selection.includes(counterEntity);
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
@@ -315,7 +273,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "POST" && req.body?.action === "delete_rule") {
       const ruleId = String(req.body.rule_id ?? "");
       if (!/^[0-9a-f-]{36}$/i.test(ruleId)) return res.status(400).json({ error: "missing_rule_id" });
-      await db(`book_rules?id=eq.${ruleId}`, { method: "DELETE" });
+      const del = await db(`book_rules?id=eq.${ruleId}`, { method: "DELETE" });
+      if (!del.ok) {
+        console.error("rule delete failed:", (await del.text()).slice(0, 200));
+        return res.status(500).json({ error: "rule_failed", message: "Couldn't delete that rule." });
+      }
       return res.json({ deleted: true });
     }
 
@@ -340,7 +302,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         method: "POST",
         body: JSON.stringify({ match, book_category: category }),
       });
-      if (!ruleRes.ok) console.error("rule save failed:", (await ruleRes.text()).slice(0, 200));
+      if (!ruleRes.ok) {
+        console.error("rule save failed:", (await ruleRes.text()).slice(0, 200));
+        return res.status(500).json({ error: "rule_failed", message: "Couldn't save that rule, so nothing was changed." });
+      }
 
       // Apply to everything already synced that literally contains the text.
       const applied = await patchMatching(db, match, "", categoryPatch(category));
@@ -428,6 +393,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_update" });
 
       let updated = 0;
+      let failedChunk: string | null = null;
       for (let i = 0; i < ids.length; i += 200) {
         const list = ids.slice(i, i + 200).map((id) => `"${id.replace(/"/g, "")}"`).join(",");
         const r = await db(`book_transactions?transaction_id=in.(${list})`, {
@@ -435,6 +401,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body: JSON.stringify(patch),
         });
         if (r.ok) updated += Math.min(200, ids.length - i);
+        else failedChunk ??= (await r.text().catch(() => "")).slice(0, 200);
+      }
+      if (failedChunk !== null) {
+        console.error("batch update failed:", failedChunk);
+        return res.status(500).json({ error: "update_failed", message: updated ? `Only ${updated} of ${ids.length} were updated.` : "Couldn't update those.", updated });
       }
       // Log only the fields the user actually chose. loan_id here is an
       // automatic side-effect of an account move, not an edit — logging it
@@ -464,10 +435,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Toggle the daily sync-at-sunrise behavior.
     if (req.method === "POST" && req.body?.action === "set_sunrise_sync") {
       const enabled = !!req.body.enabled;
-      await db("books_settings?id=eq.1", {
+      const saved = await db("books_settings?id=eq.1", {
         method: "PATCH",
         body: JSON.stringify({ sync_at_sunrise: enabled, updated_at: new Date().toISOString() }),
       });
+      if (!saved.ok) {
+        console.error("sunrise sync save failed:", (await saved.text()).slice(0, 200));
+        return res.status(500).json({ error: "settings_failed", message: "Couldn't save that setting." });
+      }
       return res.json({ sync_at_sunrise: enabled });
     }
 
@@ -566,78 +541,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           const prefs = await prefsP;
           if (!prefs) return null;
-          const curFrom = iso(now.getTime() - 30 * DAY);
           const priorFrom = iso(now.getTime() - 60 * DAY);
           // Six calendar months, for the revenue and expense cards' bars.
-          const monthKeys: string[] = [];
-          for (let i = 5; i >= 0; i--) monthKeys.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7));
-          const since = `${monthKeys[0]}-01`;
+          const since = `${flowMonths(now)[0]}-01`;
           const rows = await fetchAll<BookTxn>(
             "book_transactions?select=transaction_id,date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id,merchant_name,name,entity_name" +
               `&pending=eq.false&date=gte.${since < priorFrom ? since : priorFrom}` +
               scopeFilter(prefs, null) +
               "&order=transaction_id.asc"
           );
-          const win = () => ({ in: 0, out: 0, net: 0 });
-          const current = win();
-          const prior = win();
-          const months = new Map(monthKeys.map((m) => [m, { month: m, in: 0, out: 0 }]));
-          // Where the last 30 days' money came from and went, by books account.
-          const topIn = new Map<string, number>();
-          const topOut = new Map<string, number>();
-          // The last 30 days' own transactions, newest first, for the cards to list.
-          type Recent = { id: string; date: string; who: string; amount: number; entity: string | null; account: string };
-          const recentIn: Recent[] = [];
-          const recentOut: Recent[] = [];
-          for (const t of rows) {
-            if (effType(t) !== "normal" || sectionOf(label(t)) === "flow") continue;
-            const amt = Number(t.amount);
-            const m = months.get(t.date.slice(0, 7));
-            if (m) {
-              if (amt < 0) m.in += -amt;
-              else m.out += amt;
-            }
-            if (t.date <= priorFrom) continue;
-            const w = t.date > curFrom ? current : prior;
-            if (amt < 0) w.in += -amt;
-            else w.out += amt;
-            if (t.date > curFrom) {
-              const top = amt < 0 ? topIn : topOut;
-              const key = label(t);
-              top.set(key, (top.get(key) ?? 0) + Math.abs(amt));
-              const r = t as BookTxn & { transaction_id?: string; merchant_name?: string | null; name?: string | null; entity_name?: string | null };
-              (amt < 0 ? recentIn : recentOut).push({
-                id: String(r.transaction_id ?? ""),
-                date: t.date,
-                who: r.merchant_name || r.name || "—",
-                amount: Math.round(Math.abs(amt)),
-                entity: prefs.get(t.account_id)?.entity_name ?? r.entity_name ?? null,
-                account: key.replace(/^\d{4}\s+/, ""),
-              });
-            }
-          }
-          for (const w of [current, prior]) {
-            w.in = Math.round(w.in);
-            w.out = Math.round(w.out);
-            w.net = w.in - w.out;
-          }
-          const ranked = (m: Map<string, number>) =>
-            [...m.entries()]
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 3)
-              .map(([name, amount]) => ({ name, amount: Math.round(amount) }));
-          const newest = (list: Recent[]) => list.sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount);
-          return {
-            current,
-            prior,
-            months: [...months.values()].map((m) => ({ month: m.month, in: Math.round(m.in), out: Math.round(m.out) })),
-            topIn: ranked(topIn),
-            topOut: ranked(topOut),
-            recentIn: newest(recentIn).slice(0, 40),
-            recentOut: newest(recentOut).slice(0, 40),
-            countIn: recentIn.length,
-            countOut: recentOut.length,
-          };
+          return flowSummary(rows, now, (id) => prefs.get(id)?.entity_name);
         } catch (err: any) {
           console.error("home flow failed:", err?.message ?? err);
           return null;
@@ -956,7 +869,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               );
             }
             if (section === "intercompany") {
-              return eff === "intercompany" && !eliminated(t, selection, prefs);
+              return eff === "intercompany" && !eliminatedIn(t, selection, (id) => prefs.get(id)?.entity_id);
             }
             return false;
           })
@@ -981,7 +894,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const eff = effType(t);
 
         if (eff === "intercompany") {
-          if (eliminated(t, selection, prefs)) {
+          if (eliminatedIn(t, selection, (id) => prefs.get(id)?.entity_id)) {
             eliminatedCount += 1;
             continue;
           }
