@@ -1066,7 +1066,7 @@ export function useEntityPage() {
       if (seq !== palmSeq.current) return null;
       const found: { service?: RaService | null; documents?: number; saved?: number; failed?: number; truncated?: boolean; error?: string } = {};
       if (docsR.status === "fulfilled") {
-        setPalmDocs(sortDocuments(docsR.value.documents));
+        setPalmDocs(sortDocuments(Array.isArray(docsR.value.documents) ? docsR.value.documents : []));
         found.documents = docsR.value.documents.length;
         found.truncated = !!docsR.value.truncated;
         const saving = importPalmDocuments(docsR.value.documents, mode);
