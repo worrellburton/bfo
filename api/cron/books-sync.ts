@@ -4,6 +4,7 @@ import { canWrite, cronAuth, currentUser, refuseCron, sbFetch as db } from "../.
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
 import { fetchAll } from "../../lib/db-pages.js";
+import { inList } from "../../lib/pg-filter.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 
@@ -163,7 +164,7 @@ async function markIntercompany(sinceDate: string): Promise<number> {
     await db(`book_transactions?transaction_id=eq.${encodeURIComponent(u.id)}`, {
       method: "PATCH",
       body: JSON.stringify({ intercompany: true, counterparty_account_id: u.counterparty }),
-    }).catch(() => {});
+    }).catch((err) => console.error(`books-sync: couldn't mark ${u.id} intercompany`, err));
   }
   // Fresh intercompany rows default to "transfer"; a user's reclassification
   // (distribution/loan) is never overwritten because we only fill nulls.
@@ -171,7 +172,7 @@ async function markIntercompany(sinceDate: string): Promise<number> {
     await db(`book_transactions?intercompany=eq.true&intercompany_class=is.null`, {
       method: "PATCH",
       body: JSON.stringify({ intercompany_class: "transfer" }),
-    }).catch(() => {});
+    }).catch((err) => console.error("books-sync: couldn't default intercompany_class", err));
   }
   return updates.length;
 }
@@ -268,7 +269,7 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
           patch.intercompany = false;
         }
         for (let i = 0; i < ids.length; i += 200) {
-          const list = ids.slice(i, i + 200).map((id: string) => `"${id}"`).join(",");
+          const list = inList(ids.slice(i, i + 200));
           const r = await db(`book_transactions?transaction_id=in.(${list})`, {
             method: "PATCH",
             body: JSON.stringify(patch),
@@ -399,11 +400,7 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
           modified += data.modified.length;
 
           if (data.removed.length) {
-            const ids = data.removed
-              .map((t) => t.transaction_id)
-              .filter(Boolean)
-              .map((id) => `"${id}"`)
-              .join(",");
+            const ids = inList(data.removed.map((t) => t.transaction_id).filter(Boolean));
             // fetch resolves on HTTP errors, so check ok: a failed delete must
             // throw before the cursor below moves past these removals for good.
             const del = await db(`book_transactions?transaction_id=in.(${ids})`, { method: "DELETE" });
@@ -464,8 +461,9 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
           await patchMatching(db, rule.match, "loan_id=is.null", { loan_id: rule.loan_id });
         }
       }
-    } catch {
+    } catch (err) {
       // loan attachment is retried next sync
+      console.error("books-sync: loan rules didn't apply", err);
     }
 
     // Keep entity stamps in step with the mappings page — remapping an account
@@ -478,7 +476,7 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
           entity_name: pref.entity_name ?? null,
           hidden: pref.hidden ?? false,
         }),
-      }).catch(() => {});
+      }).catch((err) => console.error(`books-sync: couldn't restamp entity on ${accountId}`, err));
     }
 
     // Mark today's automatic run complete, so later morning fires skip it.
@@ -486,7 +484,7 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
       await db("books_settings?id=eq.1", {
         method: "PATCH",
         body: JSON.stringify({ last_auto_sync_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }),
-      }).catch(() => {});
+      }).catch((err) => console.error("books-sync: couldn't record today's automatic run", err));
     }
 
     return res.status(200).json({ synced: true, items: summary, intercompany_marked: intercompanyMarked });

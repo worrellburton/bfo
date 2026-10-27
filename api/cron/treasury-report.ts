@@ -110,7 +110,8 @@ async function lastDeliveryDate(): Promise<string | null> {
       day: "numeric",
       timeZone: "America/New_York",
     });
-  } catch {
+  } catch (err) {
+    console.error("treasury-report: couldn't read the last delivery date", err);
     return null;
   }
 }
@@ -121,7 +122,8 @@ async function loadHistory(): Promise<DailyTotal[]> {
       "treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=365"
     );
     return (rows ?? []).reverse();
-  } catch {
+  } catch (err) {
+    console.error("treasury-report: couldn't read the daily history", err);
     return [];
   }
 }
@@ -1029,7 +1031,8 @@ async function fetchRecentTxns(
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, ACTIVITY_COUNT);
     return txns.length ? { account, txns } : null;
-  } catch {
+  } catch (err) {
+    console.error(`treasury-report: couldn't read activity for ${account.account_id}`, err);
     return null;
   }
 }
@@ -1075,7 +1078,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       // Each loan carries its own "show on Treasury report" toggle.
       return (await computeLoans()).loans.filter((l) => l.show_on_report);
-    } catch {
+    } catch (err) {
+      console.error("treasury-report: loans left off the report", err);
       return []; // the report still sends if the loan ledger hiccups
     }
   };
@@ -1180,8 +1184,9 @@ async function scheduled(
       const done = new Set((delivered ?? []).map((d) => d.user_id));
       due = due.filter((u) => !done.has(u.id));
       if (due.length === 0) return res.status(200).json({ sent: 0, alreadyDelivered: done.size });
-    } catch {
+    } catch (err) {
       // If the guard can't be read, sending is the safer failure.
+      console.error("treasury-report: couldn't read today's deliveries", err);
     }
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.

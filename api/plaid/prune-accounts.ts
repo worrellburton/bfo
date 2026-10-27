@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { canWrite, currentUser, sb, sbFetch } from "../../lib/auth.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
+import { inList as quotedList } from "../../lib/pg-filter.js";
 
 /**
  * Reconcile what we store against what the banks still report.
@@ -92,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const inList = (ids: Set<string>) => [...ids].map((id) => `"${id}"`).join(",");
+    const inList = (ids: Set<string>) => quotedList(ids);
     let removedTxns = 0;
     if (stale.size) {
       // Mappings are archived rather than deleted: an account that comes back

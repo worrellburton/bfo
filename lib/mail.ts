@@ -1,4 +1,5 @@
 import { fileKinds, type FileKind } from "./file-kind.js";
+import { likeTerm } from "./pg-filter.js";
 import { notifyNewMail, type NewMail } from "./push.js";
 import { createHash, randomUUID } from "node:crypto";
 import { birdPlatformFetch, sb } from "./auth.js";
@@ -505,9 +506,9 @@ export const SEARCH_MAX = 100;
  * and its wildcards are dropped: `*` around it does the matching.
  */
 export function searchCondition(q: string): string {
-  const term = q.replace(/[*%]/g, " ").replace(/\s+/g, " ").trim().slice(0, SEARCH_MAX);
+  const term = likeTerm(q.replace(/\s+/g, " ").trim().slice(0, SEARCH_MAX));
   if (!term) return "";
-  const quoted = encodeURIComponent(`"*${term.replace(/[\\"]/g, (c) => `\\${c}`)}*"`);
+  const quoted = `*${term}*`;
   return `or(subject.ilike.${quoted},from_email.ilike.${quoted},from_name.ilike.${quoted},snippet.ilike.${quoted},text_body.ilike.${quoted})`;
 }
 
@@ -708,7 +709,9 @@ async function inboundHeaders(id: string): Promise<string | null> {
       if (/\r?\n\r?\n/.test(text)) break;
     }
   } finally {
-    void reader.cancel().catch(() => {});
+    void reader.cancel().catch(() => {
+      /* the stream is being abandoned; a cancel error changes nothing */
+    });
   }
   return headerBlock(text);
 }
@@ -726,7 +729,8 @@ async function inboundAttachment(id: string, attachmentId: string): Promise<Uint
  */
 async function usersAt(addresses: string[]): Promise<{ id: string; mail_address: string }[]> {
   if (!addresses.length) return [];
-  const list = addresses.map((a) => enc(`"${a}"`)).join(",");
+  // Addresses come from the inbound message, so each is quoted with its quotes escaped.
+  const list = addresses.map(pgQuote).join(",");
   const [main, extra] = await Promise.all([
     sb<{ id: string; mail_address: string }[]>(`app_users?status=eq.approved&mail_address=in.(${list})&select=id,mail_address`),
     sb<{ address: string; user_id: string }[]>(`mail_aliases?address=in.(${list})&select=address,user_id`),
@@ -976,7 +980,7 @@ export async function syncInbound(opts: { budgetMs?: number } = {}): Promise<Syn
 
 /** The last sync's time and problem, for admins. */
 export async function lastSync(): Promise<{ at: string | null; error: string | null }> {
-  const rows = await sb<SyncState[]>("mail_sync?id=eq.inbound&select=synced_at,error&limit=1").catch(() => []);
+  const rows = await sb<SyncState[]>("mail_sync?id=eq.inbound&select=synced_at,error&limit=1").catch((err) => (console.error("mail: couldn't read the sync state", err), [] as SyncState[]));
   return { at: rows?.[0]?.synced_at ?? null, error: rows?.[0]?.error ?? null };
 }
 

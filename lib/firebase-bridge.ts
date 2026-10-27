@@ -105,7 +105,7 @@ async function runImport(collection: Collection): Promise<void> {
     await sb(`tree_imports?collection=eq.${encodeURIComponent(collection)}`, {
       method: "PATCH",
       body: { status: "error", error: (err instanceof Error ? err.message : String(err)).slice(0, 300) },
-    }).catch(() => {});
+    }).catch((e) => console.error("firebase-bridge: couldn't record the import error", e));
     throw err;
   }
 }
@@ -273,7 +273,7 @@ export async function migrateFirebaseFiles(opts: { assetId?: string; budgetMs?: 
   const remaining = todo.length - moved;
   if (!opts.assetId && remaining === 0 && !failed) {
     filesSettled = true;
-    await sb("tree_imports?collection=eq.assets", { method: "PATCH", body: { files_done: true } }).catch(() => {});
+    await sb("tree_imports?collection=eq.assets", { method: "PATCH", body: { files_done: true } }).catch((err) => console.error("firebase-bridge: couldn't mark files done", err));
   } else if (!opts.assetId && !exhausted && moved === 0 && remaining > 0 && failed + skipped === remaining) {
     // Every file still in Firebase has failed to move at least once: stop
     // scanning on each request, here and in every later instance.

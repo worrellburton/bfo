@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       case "realtime-secret": {
         const scope = await scopeFor(me);
-        const names = (await readCollection("assets").catch(() => []))
+        const names = (await readCollection("assets").catch((err) => (console.error("ask: couldn't read entity names for the title", err), [] as Awaited<ReturnType<typeof readCollection>>)))
           .filter((r) => !scope.assetIds || scope.assetIds.has(r.id))
           .map((r) => String((r.data as { name?: string } | null)?.name ?? ""))
           .filter(Boolean);
@@ -106,7 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!chat) return fail(res, 500, "store_failed");
         }
         await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role, content: { text } }, prefer: "return=minimal" });
-        await sb(`chats?id=eq.${chat.id}`, { method: "PATCH", body: { updated_at: new Date().toISOString() } }).catch(() => {});
+        await sb(`chats?id=eq.${chat.id}`, { method: "PATCH", body: { updated_at: new Date().toISOString() } }).catch((err) => console.error("ask: couldn't touch the chat", err));
         return res.status(200).json({ chatId: chat.id, title: chat.title ?? "New chat" });
       }
       case "transcribe": {
@@ -209,13 +209,13 @@ async function send(res: VercelResponse, me: NonNullable<Awaited<ReturnType<type
       emit({ type: "text", delta: answer });
     }
     await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: { text: answer.trim() } }, prefer: "return=minimal" });
-    await sb(`chats?id=eq.${chat.id}`, { method: "PATCH", body: { updated_at: new Date().toISOString() } }).catch(() => {});
+    await sb(`chats?id=eq.${chat.id}`, { method: "PATCH", body: { updated_at: new Date().toISOString() } }).catch((err) => console.error("ask: couldn't touch the chat", err));
     emit({ type: "done" });
   } catch (err) {
     console.error("ask:", err);
     const text = err instanceof Anthropic.APIError ? `The assistant couldn't answer (${err.status}).` : "Something went wrong while answering.";
     emit({ type: "error", message: text });
-    if (answer.trim()) await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: { text: answer.trim() } }, prefer: "return=minimal" }).catch(() => {});
+    if (answer.trim()) await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: { text: answer.trim() } }, prefer: "return=minimal" }).catch((e) => console.error("ask: couldn't save the partial answer", e));
   }
   res.end();
 }

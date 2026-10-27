@@ -769,15 +769,16 @@ describe("/api/mail", () => {
     expect((await call("GET", { query: { view: "list", folder: "archive", q: "Fourton, (SOW)" } })).status).toBe(200);
     const q = sbCalls[0].path;
     // Scope, not folder: the search covers everything the caller may see.
-    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&and=\\(or\\(subject\\.ilike\\."\\*Fourton, \\(SOW\\)\\*"`));
-    expect(q).toContain('text_body.ilike."*Fourton, (SOW)*")');
+    // List punctuation in the term becomes wildcards, so the query's shape can't change.
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&and=\\(or\\(subject\\.ilike\\.\\*Fourton\\* \\*SOW\\*\\*`));
+    expect(q).toContain("text_body.ilike.*Fourton* *SOW**)");
     expect(q).not.toContain("folder=eq.archive");
     // Paging and search share one and=(…).
     sbCalls.length = 0;
     await call("GET", { query: { view: "list", q: "sow", before: "2026-10-15T00:00:00Z", beforeId: MSG } });
-    expect(sbCalls[0].path).toMatch(/&and=\(or\(occurred_at\.lt\."2026-10-15T00:00:00Z",and\(occurred_at\.eq\."2026-10-15T00:00:00Z",id\.lt\.[-0-9a-f]+\)\),or\(subject\.ilike\."\*sow\*"/);
-    // Wildcards and quotes in the term can't change the query's shape.
-    expect(searchCondition('a*b%c"d\\e')).toContain(encodeURIComponent('"*a b c\\"d\\\\e*"'));
+    expect(sbCalls[0].path).toMatch(/&and=\(or\(occurred_at\.lt\."2026-10-15T00:00:00Z",and\(occurred_at\.eq\."2026-10-15T00:00:00Z",id\.lt\.[-0-9a-f]+\)\),or\(subject\.ilike\.\*sow\*/);
+    // LIKE metacharacters in the term are escaped and typed wildcards are just wildcards.
+    expect(searchCondition('a*b%c_d\\e')).toContain(`*${encodeURIComponent("a*b\\%c\\_d\\\\e")}*`);
     expect(searchCondition("   ")).toBe("");
   });
 
