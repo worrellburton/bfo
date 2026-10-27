@@ -7,7 +7,6 @@ import { Button, ErrorLine, Icon, IconButton, TextButton, useTone } from "../ent
 import { MailAurora, mailboxHue } from "../mail-aurora";
 import { ListLoader, SearchLoader } from "../mail-loaders";
 import { PullToRefresh } from "../mail-pull";
-import { useTheme } from "../theme";
 import { enablePush, usePushState } from "../push";
 import { phoneScreen, supportsViewTransitions, transition } from "../view-transition";
 import {
@@ -30,7 +29,7 @@ import {
 import { Glyph, Star } from "../mail/glyphs";
 import { dayGroup, same, tap } from "../mail/helpers";
 import { FacesContext } from "../mail/avatar";
-import { EMPTY, FILTERS, FOLDERS, MAIL_THEME_KEY, NOTHING, VIEW_KEY, savedView, type View } from "../mail/constants";
+import { EMPTY, FILTERS, FOLDERS, NOTHING, VIEW_KEY, savedView, type View } from "../mail/constants";
 import { eachRow, listRows } from "../mail/list-state";
 import { ReadingProgress, SearchField, Segmented, SelectBox, ThemeButton } from "../mail/controls";
 import { FolderMenu } from "../mail/folder-menu";
@@ -42,6 +41,7 @@ import { Reader } from "../mail/reader";
 import { ListRow } from "../mail/list-row";
 import { MailTable } from "../mail/table";
 import { useMailList } from "../mail/use-mail-list";
+import { useMailTheme } from "../mail/use-mail-theme";
 
 export function meta() {
   return [{ title: "BFO - Mail" }];
@@ -94,42 +94,7 @@ export default function Inbox() {
     setToastLeaving(false);
     setToastState(text ? { text, undo } : null);
   };
-  /** Mail's own light/dark setting: light unless switched, kept on the device, applied only while Mail is on screen. */
-  const { setOverride } = useTheme();
-  const themeFadeTimer = useRef<number | undefined>(undefined);
-  const [mailTheme, setMailTheme] = useState<"light" | "dark">("light");
-  useEffect(() => {
-    try {
-      setMailTheme(localStorage.getItem(MAIL_THEME_KEY) === "dark" ? "dark" : "light");
-    } catch {
-      // Private mode: light it is.
-    }
-  }, []);
-  // Applied before paint, so the page never shows a frame of the other theme.
-  useLayoutEffect(() => {
-    setOverride(mailTheme);
-  }, [mailTheme, setOverride]);
-  useEffect(() => () => setOverride(null), [setOverride]);
-  const mailThemeRef = useRef(mailTheme);
-  mailThemeRef.current = mailTheme;
-  function toggleMailTheme() {
-    // Read from the ref, so two quick taps go there and back.
-    const next = mailThemeRef.current === "dark" ? "light" : "dark";
-    mailThemeRef.current = next;
-    // Colours ease across for a moment (app.css, .theme-switching); the aurora eases its own underneath.
-    const root = document.documentElement;
-    root.classList.add("theme-switching");
-    window.clearTimeout(themeFadeTimer.current);
-    themeFadeTimer.current = window.setTimeout(() => root.classList.remove("theme-switching"), 420);
-    setMailTheme(next);
-    setOverride(next);
-    try {
-      localStorage.setItem(MAIL_THEME_KEY, next);
-    } catch {
-      // Then it lasts the visit.
-    }
-    tap();
-  }
+  const { toggleMailTheme } = useMailTheme();
   /** Everyone's chosen pictures, by address; asked for once per visit. */
   const [faces, setFaces] = useState<MailFaces>({});
   useEffect(() => {
