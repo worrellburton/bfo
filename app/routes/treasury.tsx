@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { useNavigate } from "react-router";
+import { loadPlaid } from "../plaid-link";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
 import { money, signed } from "../currency";
@@ -9,7 +10,6 @@ export function meta() {
   return [{ title: "BFO - Treasury" }];
 }
 
-const PLAID_SCRIPT = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
 
 type Connection = {
   item_id: string;
@@ -44,35 +44,6 @@ type Account = {
   last_activity: string | null;
 };
 
-declare global {
-  interface Window {
-    Plaid?: {
-      create(config: {
-        token: string;
-        onSuccess: (publicToken: string, metadata: any) => void;
-        onExit: (err: any) => void;
-      }): { open: () => void };
-    };
-  }
-}
-
-function loadPlaid(): Promise<void> {
-  if (window.Plaid) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${PLAID_SCRIPT}"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Couldn't load Plaid.")));
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = PLAID_SCRIPT;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Couldn't load Plaid."));
-    document.head.appendChild(script);
-  });
-}
 
 
 function sinceLabel(iso: string | null): string {

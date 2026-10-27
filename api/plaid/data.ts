@@ -320,14 +320,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           };
           const failure = (err: any) => {
             const code: string | undefined = err?.response?.data?.error_code;
-            if (code && NOT_APPLICABLE.has(code)) return { skip: true as const };
+            // A brokerage linked through Treasury (transactions only) can't give its holdings until consent for
+            // Investments is collected in update mode: the page offers that rather than staying silent.
+            const consent = kind === "bank" && BROKERAGE.test(item.institution_name ?? "") && (code === "ADDITIONAL_CONSENT_REQUIRED" || (!!code && NOT_APPLICABLE.has(code)));
+            if (code && NOT_APPLICABLE.has(code) && !consent) return { skip: true as const };
             return {
               error: {
                 item_id: item.item_id,
                 institution: item.institution_name,
                 code: code ?? null,
                 reconnect: code === "ITEM_LOGIN_REQUIRED" || code === "PENDING_EXPIRATION" || code === "ITEM_LOCKED",
-                message: err?.response?.data?.display_message || err?.response?.data?.error_message || err?.message || "Unavailable",
+                consent,
+                message: consent ? "Connected without access to its holdings." : err?.response?.data?.display_message || err?.response?.data?.error_message || err?.message || "Unavailable",
               },
             };
           };
