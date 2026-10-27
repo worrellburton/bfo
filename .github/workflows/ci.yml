@@ -29,12 +29,37 @@ jobs:
       # `react-router typegen && tsc` — typegen writes .react-router/types first.
       - run: npm run typecheck
 
-      # eslint.config.js. Skipped until eslint is in devDependencies
-      # (npm i -D eslint @eslint/js typescript-eslint eslint-plugin-react-hooks eslint-plugin-react-refresh globals).
+      # eslint.config.js. ESLint isn't in devDependencies yet (add it with
+      # `npm i -D eslint @eslint/js typescript-eslint eslint-plugin-react-hooks eslint-plugin-react-refresh globals`
+      # and drop the install line here); until then it's fetched for the run.
       - name: Lint
-        if: ${{ hashFiles('node_modules/.bin/eslint') != '' }}
-        run: npm run lint
+        run: |
+          if [ ! -x node_modules/.bin/eslint ]; then
+            npm i --no-save eslint@9 @eslint/js@9 typescript-eslint@8 eslint-plugin-react-hooks@5 eslint-plugin-react-refresh@0.4 globals@15
+          fi
+          npm run lint
 
       - run: npm test
 
       - run: npm run build
+
+  # The app in a real browser: every route at phone, iPad and desktop widths,
+  # an accessibility pass, and the flows that must keep working (e2e/run.cjs).
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm i --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
+      - name: Start the dev server
+        run: |
+          npx react-router dev --host 127.0.0.1 --port 5173 > dev.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:5173/ > /dev/null && break; sleep 1; done
+      - run: BASE=http://127.0.0.1:5173 npm run e2e
+      - if: failure()
+        run: tail -50 dev.log

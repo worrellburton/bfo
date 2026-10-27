@@ -103,7 +103,9 @@ async function a11y(browser) {
   const page = await ctx.newPage();
   for (const route of [...ROUTES, "login"]) {
     await open(page, `${BASE}/${route}`);
-    await page.waitForTimeout(1200);
+    // A page is judged once it has its heading (the entity page loads for a moment first).
+    await page.locator("h1").first().waitFor({ timeout: 8000 }).catch(() => undefined);
+    await page.waitForTimeout(600);
     const r = await evaluate(page, () => {
       const vis = (el) => { const s = getComputedStyle(el); const b = el.getBoundingClientRect(); return s.display !== "none" && s.visibility !== "hidden" && b.width > 0 && b.height > 0; };
       const name = (el) => (el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent || "").trim() || el.getAttribute("aria-labelledby");

@@ -35,6 +35,8 @@ function vendorChunk(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+  // vitest: the repo's own tests only (Claude Code worktrees under .claude/ carry copies).
+  test: { exclude: ["**/node_modules/**", "**/build/**", "**/.claude/**", "**/ios/**", "**/native/**"] },
   build: {
     // Vite's default "assets" folder shares its URL with the /assets
     // (Entities) route: once a chunk named index.* landed in it, the CDN

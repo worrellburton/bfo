@@ -8,6 +8,7 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
     "lint": "eslint .",
+    "e2e": "node e2e/run.cjs",
     "test": "vitest run"
   },
   "dependencies": {
