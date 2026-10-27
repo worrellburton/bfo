@@ -25,7 +25,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // stops returning them entirely.
   const updateItemId = typeof req.body?.item_id === "string" ? req.body.item_id.trim() : "";
   // A bank connection that turns out to hold a brokerage (Vanguard through Treasury): update mode collecting consent
-  // for Investments, after which its holdings can be read. Plaid bills Investments only once it's used.
+  // for Investments, after which its holdings can be read. Plaid bills Investments only once it's used. (Needs the
+  // Investments product enabled on the Plaid account: Plaid answers INVALID_PRODUCT until it is.)
   const addInvestments = !!updateItemId && req.body?.add_investments === true;
 
   // Production OAuth banks (Chase, Wells Fargo, BoA…) bounce through a
@@ -50,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Update mode takes no products — the Item already has them.
       ...(accessToken
         ? { access_token: accessToken, update: { account_selection_enabled: true }, ...(addInvestments ? { additional_consented_products: [Products.Investments] } : {}) }
-        : { products, ...(kind === "bank" ? { additional_consented_products: [Products.Investments] } : {}) }),
+        : { products }),
       country_codes: [CountryCode.Us],
       language: "en",
       // Request the full 730-day window. NOTE: Plaid only honours this on the
@@ -65,6 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.json({ link_token: response.data.link_token });
   } catch (err: any) {
     console.error("Plaid link token error:", err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data?.error_message || err.message });
+    const code = err.response?.data?.error_code;
+    const message =
+      code === "INVALID_PRODUCT" && addInvestments
+        ? "Plaid hasn't enabled Investments for BFO's account yet. In the Plaid dashboard, Overview → Request products → Investments; then try again."
+        : err.response?.data?.error_message || err.message;
+    res.status(500).json({ error: message, code: code ?? null });
   }
 }
