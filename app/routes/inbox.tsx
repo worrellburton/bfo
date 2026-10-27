@@ -47,26 +47,11 @@ import {
 import { GLYPHS, Glyph, GlyphButton, Star } from "../mail/glyphs";
 import { cleanSnippet, dayGroup, fullAddress, fullDate, listDate, nameOf, same, senderLabel, tap } from "../mail/helpers";
 import { Avatar, FacesContext } from "../mail/avatar";
+import { EMPTY, ENVELOPE_MS, FILTERS, FOLDERS, LIST_LOADER_MS, LOADER_OUT_MS, MAIL_THEME_KEY, NOTHING, SEARCH_LOADER_MS, VIEW_KEY, holdFor, savedView, type View } from "../mail/constants";
 
 export function meta() {
   return [{ title: "BFO - Mail" }];
 }
-
-const FOLDERS: { key: MailFolder; label: string }[] = [
-  { key: "active", label: "Active" },
-  { key: "inbox", label: "In" },
-  { key: "sent", label: "Out" },
-  { key: "archive", label: "Archive" },
-  { key: "other", label: "Other" },
-];
-
-const EMPTY: Record<MailFolder, string> = {
-  active: "No conversations yet.",
-  inbox: "No mail yet.",
-  sent: "Nothing sent yet.",
-  archive: "Nothing archived.",
-  other: "Nothing here.",
-};
 
 // ── My addresses ─────────────────────────────────────────────────────────
 
@@ -603,42 +588,6 @@ const listRows = (l: ListState | null): MailSummary[] => (l ? [...l.pinned, ...l
 
 /** The same change to the starred rows and the rest. */
 const eachRow = (l: ListState, fn: (rows: MailSummary[]) => MailSummary[]): ListState => ({ ...l, pinned: fn(l.pinned), messages: fn(l.messages) });
-
-/** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
-type View = "table" | "columns";
-const VIEW_KEY = "bfo-mail-view";
-
-/**
- * How long each loader stays once shown, so its scene plays to the end rather
- * than being cut off by a quick answer: the list's constellation assembling,
- * a search's sweep, the envelope opening (its one-shot animation is 1.5 s).
- * A cached message skips the envelope altogether.
- */
-const LIST_LOADER_MS = 1300;
-const SEARCH_LOADER_MS = 1000;
-/** The envelope: the message is revealed as the letter comes toward you (its animation is 1.5 s; the reveal starts at 1.25 s). */
-const ENVELOPE_MS = 1250;
-/** The loader's fade before the rows take its place. */
-const LOADER_OUT_MS = 240;
-const holdFor = (shownAt: number, min: number) => new Promise<void>((r) => setTimeout(r, Math.max(0, min - (performance.now() - shownAt))));
-const MAIL_THEME_KEY = "bfo-mail-theme";
-
-function savedView(): View {
-  try {
-    return localStorage.getItem(VIEW_KEY) === "columns" ? "columns" : "table";
-  } catch {
-    return "table";
-  }
-}
-
-const FILTERS: { key: MailFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "unread", label: "Unread" },
-  { key: "starred", label: "Starred" },
-  { key: "unread-starred", label: "Unread ★" },
-];
-
-const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred.", "unread-starred": "Nothing both unread and starred." };
 
 /** The appearance button: Mail's own light/dark switch. A sun in the dark, a moon in the light. */
 function ThemeButton({ dark, onToggle, className = "", iconClassName = "h-5 w-5" }: { dark: boolean; onToggle: () => void; className?: string; iconClassName?: string }) {
