@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link } from "react-router";
 import { authFetch } from "../auth";
+import { loadPlaid } from "../plaid-link";
 import { useTheme } from "../theme";
 import { Icon, Menu, PATHS, tiers, textInput, ruleBorder, hairline as hairlineOf } from "../books-shared";
 
@@ -50,7 +51,15 @@ type Holding = {
   currency: string | null;
 };
 
-type InvError = { item_id: string; institution: string; code: string | null; reconnect: boolean; message: string };
+type InvError = {
+  item_id: string;
+  institution: string;
+  code: string | null;
+  reconnect: boolean;
+  /** Linked through Treasury without consent for its holdings: update mode adds it. */
+  consent?: boolean;
+  message: string;
+};
 
 type Income = {
   last90: number;
@@ -386,6 +395,33 @@ export default function Investments() {
     void load();
   }, [load]);
 
+  // A brokerage that came in through Treasury: collect consent for its holdings, then read them.
+  const [consenting, setConsenting] = useState<string | null>(null);
+  async function connectHoldings(itemId: string) {
+    setConsenting(itemId);
+    setFailed(null);
+    try {
+      const [res] = await Promise.all([authFetch("/api/plaid/create-link-token", { method: "POST", body: JSON.stringify({ kind: "bank", item_id: itemId, add_investments: true }) }), loadPlaid()]);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.link_token) throw new Error(data?.message || data?.error || "Couldn't start Plaid.");
+      if (!window.Plaid) throw new Error("Couldn't load Plaid.");
+      window.Plaid.create({
+        token: data.link_token,
+        onSuccess: () => {
+          setConsenting(null);
+          void load();
+        },
+        onExit: (err) => {
+          setConsenting(null);
+          if (err) setFailed(err.display_message || err.error_message || "Plaid was closed before finishing.");
+        },
+      }).open();
+    } catch (err) {
+      setConsenting(null);
+      setFailed(err instanceof Error ? err.message : "Couldn't start Plaid.");
+    }
+  }
+
   // ── Derived ────────────────────────────────────────────────────────────
   const accounts = data?.accounts ?? [];
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.account_id, a])), [accounts]);
@@ -648,23 +684,36 @@ export default function Investments() {
             {data.errors.map((e) => (
               <p key={e.item_id} className={isDark ? "text-amber-100" : "text-amber-900"}>
                 <span className="font-medium">{e.institution}</span>{" "}
-                {e.reconnect ? "needs reconnecting" : "couldn't be reached just now"}
+                {e.consent ? "is connected through Treasury without access to its holdings" : e.reconnect ? "needs reconnecting" : "couldn't be reached just now"}
                 <span className={isDark ? "text-amber-200/60" : "text-amber-800/70"}>
                   {" "}
-                  — {e.reconnect ? "its positions aren't included below." : "showing everything else."}
+                  — {e.consent ? "a minute with Plaid adds them." : e.reconnect ? "its positions aren't included below." : "showing everything else."}
                 </span>
               </p>
             ))}
           </div>
         </div>
-        <Link
-          to="/treasury"
-          className={`shrink-0 self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto relative after:absolute after:inset-x-0 after:-inset-y-[8px] after:content-[''] lg:after:inset-0 ${
-            isDark ? "border-amber-500/25 text-amber-200 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
-          }`}
-        >
-          Reconnect in Treasury →
-        </Link>
+        {data.errors.some((e) => e.consent) ? (
+          <button
+            type="button"
+            disabled={!!consenting}
+            onClick={() => void connectHoldings(data.errors.find((e) => e.consent)!.item_id)}
+            className={`shrink-0 cursor-pointer self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto relative after:absolute after:inset-x-0 after:-inset-y-[8px] after:content-[''] lg:after:inset-0 disabled:opacity-60 ${
+              isDark ? "border-amber-500/25 text-amber-200 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
+            }`}
+          >
+            {consenting ? "Opening Plaid…" : "Connect holdings →"}
+          </button>
+        ) : (
+          <Link
+            to="/treasury"
+            className={`shrink-0 self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto relative after:absolute after:inset-x-0 after:-inset-y-[8px] after:content-[''] lg:after:inset-0 ${
+              isDark ? "border-amber-500/25 text-amber-200 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
+            }`}
+          >
+            Reconnect in Treasury →
+          </Link>
+        )}
       </div>
     ) : null;
 
@@ -1262,12 +1311,18 @@ export default function Investments() {
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] font-medium">{e.institution}</span>
                         <span className={`block truncate text-[11px] ${textMuted}`}>
-                          {e.reconnect ? "Needs reconnecting" : "Temporarily unavailable"}
+                          {e.consent ? "Holdings not shared yet" : e.reconnect ? "Needs reconnecting" : "Temporarily unavailable"}
                         </span>
                       </span>
-                      <Link to="/treasury" className={`${TAP_Y} shrink-0 text-[11.5px] font-medium ${accentText} hover:underline`}>
-                        Reconnect →
-                      </Link>
+                      {e.consent ? (
+                        <button type="button" disabled={!!consenting} onClick={() => void connectHoldings(e.item_id)} className={`${TAP_Y} shrink-0 cursor-pointer text-[11.5px] font-medium ${accentText} hover:underline disabled:opacity-60`}>
+                          {consenting === e.item_id ? "Opening Plaid…" : "Connect holdings →"}
+                        </button>
+                      ) : (
+                        <Link to="/treasury" className={`${TAP_Y} shrink-0 text-[11.5px] font-medium ${accentText} hover:underline`}>
+                          Reconnect →
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -24,6 +24,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // were closed (or shouldn't be shared) can be deselected — after which Plaid
   // stops returning them entirely.
   const updateItemId = typeof req.body?.item_id === "string" ? req.body.item_id.trim() : "";
+  // A bank connection that turns out to hold a brokerage (Vanguard through Treasury): update mode collecting consent
+  // for Investments, after which its holdings can be read. Plaid bills Investments only once it's used.
+  const addInvestments = !!updateItemId && req.body?.add_investments === true;
 
   // Production OAuth banks (Chase, Wells Fargo, BoA…) bounce through a
   // redirect that has to be registered in the Plaid dashboard as well.
@@ -46,8 +49,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       client_name: "Burton Family Office",
       // Update mode takes no products — the Item already has them.
       ...(accessToken
-        ? { access_token: accessToken, update: { account_selection_enabled: true } }
-        : { products }),
+        ? { access_token: accessToken, update: { account_selection_enabled: true }, ...(addInvestments ? { additional_consented_products: [Products.Investments] } : {}) }
+        : { products, ...(kind === "bank" ? { additional_consented_products: [Products.Investments] } : {}) }),
       country_codes: [CountryCode.Us],
       language: "en",
       // Request the full 730-day window. NOTE: Plaid only honours this on the
