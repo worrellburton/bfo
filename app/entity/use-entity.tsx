@@ -1025,7 +1025,7 @@ export function useEntityPage() {
       return;
     }
     if (bundledFor.current !== id) return;
-    const status = b.status.ok ? b.status.value : { configured: false, mode: null, error: b.status.error.message };
+    const status = b.status?.ok ? b.status.value : { configured: false, mode: null, error: b.status?.error?.message ?? "Palm didn't answer." };
     const mode = status.mode;
     const businessId = mode ? b.businessId ?? null : null;
     bundled.current = mode && businessId ? `${mode}:${businessId}` : null;

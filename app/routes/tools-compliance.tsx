@@ -451,6 +451,8 @@ export default function EntityCompliance() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Find an entity"
+                aria-label="Find an entity"
+                type="search"
                 className={`h-9 w-full rounded-full border px-4 text-[16px] outline-none sm:text-[12.5px] ${
                   isDark ? "border-white/10 bg-white/[0.03] text-white placeholder:text-gray-600 focus:border-white/25" : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-400"
                 }`}

@@ -17,7 +17,7 @@ const messages = [0, 1, 2].map((i) => ({
 const session = { token: "t", user, expiresAt: "2099-01-01T00:00:00Z" };
 
 /** Answer a mocked API request. Returns [status, body] or null to pass through. */
-function mock(url, method) {
+function mock(url, method, body) {
   const u = url.replace(/^https?:\/\/[^/]+/, "");
   if (u.startsWith("/api/tree")) return [200, u.includes("path=assets") ? { value: assets } : { value: null }];
   if (u.startsWith("/api/auth/session")) return [200, { user }];
@@ -29,7 +29,15 @@ function mock(url, method) {
     if (u.includes("view=message") || u.includes("view=thread")) return [200, { message: { ...messages[0], html: "<p>Hello there</p>", text: "Hello there" }, messages: [] }];
     return [200, { unread: 1, otherUnread: 0, canSeeOther: true, address: user.mail_address, aliases: [] }];
   }
-  if (u.startsWith("/api/palm")) return [200, { configured: true, mode: "live", events: [], documents: [], status: { configured: true, mode: "live" } }];
+  if (u.startsWith("/api/palm")) {
+    const action = body && body.action;
+    if (action === "usage") return [200, { configured: true, mode: "live", month: { cents: 0, calls: 0, testCalls: 0, byProduct: {} }, lastMonth: { cents: 0 }, recent: [], webhook: { ok: true } }];
+    if (action === "entity-bundle") {
+      const ok = (value) => ({ ok: true, value });
+      return [200, { mode: "live", businessId: null, status: ok({ configured: true, mode: "live" }), ra: ok(null), documents: ok({ documents: [] }), inbox: ok({ events: [] }), inboxUnread: ok({ events: [] }), cases: ok({ cases: [] }), monitors: ok({ monitors: [] }) }];
+    }
+    return [200, { configured: true, mode: "live", events: [], documents: [], cases: [], monitors: [], status: { configured: true, mode: "live" } }];
+  }
   if (u.startsWith("/api/ask")) return method === "POST" ? null : [200, { chats: [], chat: {}, messages: [] }];
   if (u.startsWith("/api/brand")) return [200, { logo: null }];
   if (u.startsWith("/api/push")) return [200, { configured: true, devices: 1, prefs: {} }];

@@ -37,7 +37,10 @@ async function context(browser, size, theme) {
     localStorage.setItem("bfo-mail-theme", a.theme);
   }, { session, theme });
   await ctx.route("**/api/**", async (route) => {
-    const r = mock(route.request().url(), route.request().method());
+    const req = route.request();
+    let body = null;
+    try { body = req.postDataJSON(); } catch { /* not JSON */ }
+    const r = mock(req.url(), req.method(), body);
     if (!r) return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'data: {"type":"done"}\n\n' });
     return route.fulfill({ status: r[0], contentType: "application/json", body: JSON.stringify(r[1]) });
   });
