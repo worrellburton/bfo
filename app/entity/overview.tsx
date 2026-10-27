@@ -17,21 +17,24 @@ import { StoredFileLink } from "../stored-file";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
 import { ClosingCard } from "./closing";
+import { addressChangeRemaining, Standing } from "./standing";
 import { WITH_FORMATION } from "./derive";
 import { useEntity } from "./context";
 import { BY_HAND, einLooksRight, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
 
 export function OverviewTab() {
-  const { page } = useEntity();
-  // Desktop: Details and About on the left, Mail and To do on the right. Phones: Details, Mail, To do, About.
+  const { page, view } = useEntity();
+  // What it needs comes first, always. Then, on a desktop: the record on the left, Mail and To do on the right.
+  // Phones: the same, top to bottom. (Address change lives in the Addresses card; a trust has no such card.)
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr]">
       <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
         <ClosingCard />
-        <AddressChange />
+        <Standing />
         <Formation />
         {page.editing ? <EditForm /> : <><Addresses /><Details /></>}
+        {view.isTrust && !page.editing && <AddressChange />}
       </div>
       <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <Mail />
@@ -52,11 +55,11 @@ export function OverviewTab() {
  * here), the W-9, and the banks. Each step is marked done with its date;
  * the card goes once they all are.
  */
-function AddressChange() {
+function AddressChange({ embedded = false }: { embedded?: boolean }) {
   const { page, asset } = useEntity();
   const t = useTone();
   const [busy, setBusy] = useState<string | null>(null);
-  if (!asset.previousAddress || isPartner()) return null;
+  if (!asset.previousAddress || isPartner() || !addressChangeRemaining(asset)) return null;
   const done = asset.addressUpdates ?? {};
   const step = stateAddressStep(asset.state, asset.type);
   const rec = asset.stateRecord;
@@ -69,7 +72,6 @@ function AddressChange() {
   const w9Old = !!asset.w9 && (!asset.addressChangedAt || (asset.w9.uploadedAt ?? 0) < Date.parse(asset.addressChangedAt));
   const banksDone = !!done.banks;
   const remaining = [!stateDone, !irsDone, w9Old, !banksDone].filter(Boolean).length;
-  if (!remaining) return null;
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -86,14 +88,18 @@ function AddressChange() {
     </TextButton>
   );
 
-  return (
-    <Section
-      title="Address change"
-      count={remaining}
-      alert
-      info={`BFO's record moved from ${asset.previousAddress} to ${asset.address}${asset.addressChangedAt ? ` on ${fmtDate(asset.addressChangedAt)}` : ""}. These still have the old one.`}
-    >
-      <Rows>
+  const moved = `Moved from ${asset.previousAddress}${asset.addressChangedAt ? ` on ${fmtDate(asset.addressChangedAt)}` : ""}. These still have the old one.`;
+  const rows = (
+      <Rows className={embedded ? `border-t ${t.line}` : ""}>
+        {embedded && (
+          <div className="px-5 pb-1 pt-3">
+            <div className={`flex items-center gap-2 text-[12.5px] font-medium ${t.text}`}>
+              Address change
+              <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums ${t.dark ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-800"}`}>{remaining}</span>
+            </div>
+            <p className={`mt-0.5 text-[12px] ${t.muted}`}>{moved}</p>
+          </div>
+        )}
         <Row
           label={step.agency}
           info={step.how}
@@ -159,6 +165,11 @@ function AddressChange() {
           {banksDone ? doneMark(done.banks!) : <Dot tone="warn">To update</Dot>}
         </Row>
       </Rows>
+  );
+  if (embedded) return rows;
+  return (
+    <Section title="Address change" count={remaining} alert info={moved}>
+      {rows}
     </Section>
   );
 }
@@ -498,6 +509,8 @@ function Addresses() {
           </Row>
         )}
       </Rows>
+      {/* After a move: who still has the old address. */}
+      <AddressChange embedded />
     </Section>
   );
 }
