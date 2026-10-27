@@ -216,7 +216,7 @@ export function htmlToText(html: string): string {
   const doc = new DOMParser().parseFromString(marked, "text/html");
   doc.querySelectorAll("style").forEach((s) => s.remove());
   return (doc.body.textContent ?? "")
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

@@ -203,6 +203,8 @@ export interface OperatingContract {
   status: "draft" | "active" | "terminated";
   referralCredit?: boolean;
   letterhead?: "bfo" | "robert";
+  /** Name the Manager by its entity name alone: no "doing business as Burton Family Office". */
+  entityNameOnly?: boolean;
   createdAt: number;
 }
 

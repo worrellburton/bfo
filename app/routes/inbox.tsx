@@ -111,7 +111,7 @@ export default function Inbox() {
 
   const { prefetch, returnedId, select, closeMessage, choosePlace, chooseFolder, chooseFilter, search, chooseBox, openIdRef, navStateRef, queryRef, mountedRef } = useMailNavigation({ folder, filter, q, box, openId, cache, listRef, setParams, navigate, location });
 
-  const { dropFromList, resetList, move, archiveRow, remove, star, undoWith, markUnread, onSent } = useMailActions({ folder, filter, q, cache, listRef, setList, setListError, loadList, refreshActive, patchRow, setOpen, thread, setThread, setFreshId, setDraft, setToast, setToastState, closeMessage, setParams, openIdRef, navStateRef, queryRef, mountedRef });
+  const { resetList, move, archiveRow, remove, star, undoWith, markUnread, onSent } = useMailActions({ folder, filter, q, cache, listRef, setList, setListError, loadList, refreshActive, patchRow, setOpen, thread, setThread, setFreshId, setDraft, setToast, setToastState, closeMessage, setParams, openIdRef, navStateRef, queryRef, mountedRef });
 
   useEffect(() => {
     if (!toast) return;

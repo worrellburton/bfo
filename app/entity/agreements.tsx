@@ -317,6 +317,14 @@ function ContractEditor({
         >
           Letterhead: {robert ? "Robert Burton" : "BFO"}
         </Toggle>
+        <Toggle
+          on={!!f.entityNameOnly}
+          onToggle={() => setF({ ...f, entityNameOnly: !f.entityNameOnly })}
+          label="Entity name only"
+          info='Names the Manager by its entity name alone in the contract, without "doing business as Burton Family Office".'
+        >
+          Entity name only (no DBA)
+        </Toggle>
       </div>
 
       <div className="mt-4 flex items-center gap-2 sm:justify-end">

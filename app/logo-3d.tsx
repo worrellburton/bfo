@@ -29,6 +29,8 @@ function loadViewer(): Promise<boolean> {
 }
 
 declare module "react" {
+  // The custom element's typing has to be added inside React's JSX namespace.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
       "model-viewer": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & Record<string, unknown>;
