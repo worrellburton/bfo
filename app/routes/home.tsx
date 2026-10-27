@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { HomeSearch } from "../home-search";
 import { Link } from "react-router";
 import { authFetch, getUser } from "../auth";
 import { entityCompleteness, entityType } from "../entity-completeness";
@@ -1160,6 +1161,11 @@ export default function Home() {
           </p>
         )}
       </header>
+
+      {/* ── Search ───────────────────────────────────────────────────── */}
+      <div className={enter}>
+        <HomeSearch isDark={isDark} />
+      </div>
 
       {/* ── Hero + KPI tiles ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-12">

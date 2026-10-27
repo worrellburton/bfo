@@ -676,32 +676,6 @@ export default function AppLayout() {
           </button>
         </div>
 
-        {/* Jump to anything — the palette's front door in the rail. */}
-        {!emailOnly && !partner && (
-          <div className="sidebar-search px-2 pb-1.5">
-            <button
-              type="button"
-              onClick={openPalette}
-              title={showLabels ? undefined : "Search (⌘K)"}
-              aria-label="Search and jump to"
-              className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 ${
-                labelsVisible ? "" : "md:justify-center md:px-0"
-              } ${
-                railDark
-                  ? "text-gray-400 hover:text-white hover:bg-white/[0.05]"
-                  : "text-gray-500 hover:text-black hover:bg-black/[0.04]"
-              }`}
-            >
-              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-                  <circle cx="11" cy="11" r="7" />
-                  <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
-                </svg>
-              <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "md:hidden"}`}>Search</span>
-              <kbd className={`hidden text-[10.5px] ${labelsVisible ? "md:inline" : ""} ${railDark ? "text-gray-500" : "text-gray-400"}`}>⌘K</kbd>
-            </button>
-          </div>
-        )}
-
         {/* How it looks: light or dark, glass or solid cards, row density. */}
         <div className="sidebar-appearance px-2 pb-1.5 max-md:hidden">
           <button
@@ -981,7 +955,7 @@ export default function AppLayout() {
         ) : partner && !location.pathname.startsWith("/assets") ? (
           <Navigate to="/assets" replace />
         ) : (
-          <Outlet />
+          <Outlet context={{ pages }} />
         )}
       </main>
 
