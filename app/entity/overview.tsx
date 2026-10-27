@@ -12,7 +12,7 @@ import { entityAddresses, foreignStates, formingNow, type Check } from "../entit
 import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
 import { STABLE_ADDRESS } from "../paper-mail";
 import { f8822bData, stateAddressStep } from "../paperwork-generate";
-import { isAdmin, isPartner } from "../auth";
+import { isPartner } from "../auth";
 import { StoredFileLink } from "../stored-file";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
@@ -266,7 +266,7 @@ function Formation() {
 // ── Details ──────────────────────────────────────────────────────────────
 
 function Details() {
-  const { page, view, asset } = useEntity();
+  const { view, asset } = useEntity();
   const t = useTone();
   const corp = view.etype === "C-Corp";
   const formed = fmtDate(asset.formationDate);
@@ -1056,7 +1056,7 @@ function List({ items }: { items: string[] }) {
 
 
 function ToDo() {
-  const { page, view, asset, goToTab } = useEntity();
+  const { view, asset, goToTab } = useEntity();
   const t = useTone();
   const { checklist } = view;
   const forming = !!formingNow(asset);

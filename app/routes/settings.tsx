@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { useTheme } from "../theme";
-import { BACKGROUNDS, WebGLPreview, type BackgroundId } from "../webgl-backgrounds";
+import { BACKGROUNDS, WebGLPreview } from "../webgl-backgrounds";
 import { getUser, isAdmin } from "../auth";
 import { BrandStudio } from "../brand-studio";
 

@@ -402,58 +402,6 @@ function ModelBadge({ model }: { model: string }) {
   );
 }
 
-function MaleSprite({ color, frame, facing }: { color: string; frame: number; facing: string }) {
-  const flip = facing === "left";
-  return (
-    <svg viewBox="0 0 16 22" className="w-8 h-11" style={{ imageRendering: "pixelated", transform: flip ? "scaleX(-1)" : "" }}>
-      <rect x="5" y="0" width="6" height="2" fill="#3b2f1e" />
-      <rect x="4" y="1" width="8" height="1" fill="#3b2f1e" />
-      <rect x="5" y="2" width="6" height="5" fill="#f5c6a0" />
-      <rect x="6" y="4" width="1" height="1" fill="#222" />
-      <rect x="9" y="4" width="1" height="1" fill="#222" />
-      <rect x="4" y="7" width="8" height="5" fill={color} />
-      <rect x="7" y="7" width="2" height="1" fill="#fff" opacity="0.4" />
-      <rect x="2" y={frame % 2 === 0 ? "8" : "9"} width="2" height="4" fill={color} />
-      <rect x="12" y={frame % 2 === 0 ? "9" : "8"} width="2" height="4" fill={color} />
-      <rect x="2" y={frame % 2 === 0 ? "12" : "13"} width="2" height="1" fill="#f5c6a0" />
-      <rect x="12" y={frame % 2 === 0 ? "13" : "12"} width="2" height="1" fill="#f5c6a0" />
-      <rect x="5" y="12" width="6" height="4" fill="#2d4a7a" />
-      <rect x="5" y="16" width="2" height={frame % 2 === 0 ? "3" : "2"} fill="#2d4a7a" />
-      <rect x="9" y="16" width="2" height={frame % 2 === 0 ? "2" : "3"} fill="#2d4a7a" />
-      <rect x="4" y={frame % 2 === 0 ? "19" : "18"} width="3" height="2" fill="#333" />
-      <rect x="9" y={frame % 2 === 0 ? "18" : "19"} width="3" height="2" fill="#333" />
-    </svg>
-  );
-}
-
-function FemaleSprite({ color, frame, facing }: { color: string; frame: number; facing: string }) {
-  const flip = facing === "left";
-  return (
-    <svg viewBox="0 0 16 22" className="w-8 h-11" style={{ imageRendering: "pixelated", transform: flip ? "scaleX(-1)" : "" }}>
-      <rect x="4" y="0" width="8" height="2" fill="#6b3a2a" />
-      <rect x="3" y="1" width="10" height="2" fill="#6b3a2a" />
-      <rect x="3" y="3" width="2" height="4" fill="#6b3a2a" />
-      <rect x="11" y="3" width="2" height="4" fill="#6b3a2a" />
-      <rect x="5" y="2" width="6" height="5" fill="#f5c6a0" />
-      <rect x="6" y="4" width="1" height="1" fill="#222" />
-      <rect x="9" y="4" width="1" height="1" fill="#222" />
-      <rect x="7" y="6" width="2" height="1" fill="#d4758a" />
-      <rect x="4" y="7" width="8" height="4" fill={color} />
-      <rect x="7" y="7" width="2" height="1" fill="#f5c6a0" />
-      <rect x="2" y={frame % 2 === 0 ? "8" : "9"} width="2" height="3" fill={color} />
-      <rect x="12" y={frame % 2 === 0 ? "9" : "8"} width="2" height="3" fill={color} />
-      <rect x="2" y={frame % 2 === 0 ? "11" : "12"} width="2" height="1" fill="#f5c6a0" />
-      <rect x="12" y={frame % 2 === 0 ? "12" : "11"} width="2" height="1" fill="#f5c6a0" />
-      <rect x="3" y="11" width="10" height="3" fill={color} />
-      <rect x="4" y="14" width="8" height="1" fill={color} />
-      <rect x="5" y="15" width="2" height={frame % 2 === 0 ? "3" : "2"} fill="#f5c6a0" />
-      <rect x="9" y="15" width="2" height={frame % 2 === 0 ? "2" : "3"} fill="#f5c6a0" />
-      <rect x="4" y={frame % 2 === 0 ? "18" : "17"} width="3" height="1" fill="#c44" />
-      <rect x="9" y={frame % 2 === 0 ? "17" : "18"} width="3" height="1" fill="#c44" />
-    </svg>
-  );
-}
-
 const COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 const WATER_COOLER = { x: 7, y: 50 };
 
@@ -1349,7 +1297,6 @@ export default function Office() {
             if (!pos) return null;
             const color = COLORS[i % COLORS.length];
             const isActive = chatAgent?.id === agent.id;
-            const female = isFemale(agent.name);
             const isWalking = pos.state === "walking";
             const traits = parseTraits(agent.systemPrompt, agent.jobTitle, agent.name, color);
             return (

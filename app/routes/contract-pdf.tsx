@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { confirmDialog } from "../confirm-dialog";
 import { Link, useParams } from "react-router";
 import { useTheme } from "../theme";
 

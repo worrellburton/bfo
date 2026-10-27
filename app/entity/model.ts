@@ -3,7 +3,6 @@
  * No React, no styling — shared by the page's logic (use-entity) and its views.
  */
 
-import { entityType } from "../entity-completeness";
 import { DOC_KEYS, documentRules, type DocKey, type DocRule, type PaperworkInput } from "../entity-paperwork";
 import type { ForeignRegistration } from "../entity-addresses";
 import type { Closing } from "../entity-closing";

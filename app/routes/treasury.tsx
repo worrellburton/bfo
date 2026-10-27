@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { confirmDialog } from "../confirm-dialog";
 import { useNavigate } from "react-router";
 import { loadPlaid } from "../plaid-link";
 import { authFetch } from "../auth";
