@@ -14,7 +14,7 @@ TypeScript) served as static files from Vercel, with Vercel serverless
 functions under `api/` for everything that needs a secret or a database.
 Shared server code lives in `lib/`. Data is Supabase Postgres, reached over
 PostgREST with the service key through `sb()` in `lib/auth.ts` (no ORM; the
-`prisma/` folder is an unused template leftover). Files live in private
+Files live in private
 Supabase Storage buckets (`documents`, `mail`, `receipts`; `brand` is public).
 Integrations: Plaid (banks, brokerages), Mercury (bank history), Palm (state
 registries, registered agent, formations), Bird (SMS codes, email in and out,
@@ -86,8 +86,7 @@ plus mocked `sb()`; none touches a network.
 Vercel builds `main` on every push (`vercel.json`: `npm run build`, output
 `build/client`, functions from `api/**/*.ts`). There is no manual deploy step.
 Pull requests get preview deployments. Crons, function memory and timeouts,
-redirects and headers are all in `vercel.json`. The `Dockerfile` is the React
-Router template's and is not used.
+redirects and headers are all in `vercel.json`.
 
 The iPhone app opens the live site, so a web deploy reaches it at once. Only
 changes to `ios/`, `capacitor.config.ts` or the Capacitor plugins need a new

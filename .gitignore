@@ -11,3 +11,6 @@
 # Database
 *.db
 *.db-journal
+
+# Claude Code worktrees
+/.claude/worktrees/

@@ -278,5 +278,4 @@ foreign registrations, documents, people, Palm links per mode, closing).
 | `ios/`, `capacitor.config.ts`, `native/www`, `resources/`, `appstore/` | The iPhone/iPad shell, its offline fallback, icon and splash sources, App Store screenshots. Excluded from the Vercel upload (`.vercelignore`). |
 | `scripts/appstore-screenshots.mjs` | Playwright script that makes App Store screenshots from fictional data. |
 | `docs/` | This folder. |
-| `prisma/`, `prisma.config.ts`, `Dockerfile` | Leftovers from the React Router template. Not used by the app (no code imports Prisma). |
 | `*.pdf`, `*.doc` at the root | Family documents checked into the repo root. Not read by the code. |
