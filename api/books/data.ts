@@ -876,7 +876,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // strip above the ledger (count, outflows, inflows, date span). Later
       // pages skip it; the numbers don't change as you scroll.
       let summary: { count: number; expenses: number; income: number; first: string | null; last: string | null } | null = null;
-      if (offset === 0) {
+      // summary=0 skips it: a quick lookup (the home page's search) wants a few rows, not the totals.
+      if (offset === 0 && req.query.summary !== "0") {
         const all = await fetchAll<{ date: string; amount: number | string }>(
           `book_transactions?select=date,amount${filter}&order=date.asc,transaction_id.asc`
         );

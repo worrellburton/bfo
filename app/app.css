@@ -872,7 +872,6 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
     -webkit-text-fill-color: rgba(244, 237, 224, 0.42);
   }
   .sidebar-rail .sidebar-head > button { margin-top: -6px; color: rgba(244, 237, 224, 0.55); }
-  .sidebar-rail .sidebar-head > button + button { margin-left: -4px; }
   .sidebar-rail .sidebar-head > button:hover { background: rgba(244, 237, 224, 0.08); color: var(--ivory); }
 
   /* The rows. */

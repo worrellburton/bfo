@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router";
-import { rememberRecent, useEntities, usePaletteResults, type PageLink } from "./command-palette";
+import { authFetch } from "./auth";
+import { rememberRecent, useEntities, usePaletteResults, type Command, type PageLink } from "./command-palette";
 
 /**
  * The search box on the home page: type, and what matches appears under it
@@ -9,6 +10,34 @@ import { rememberRecent, useEntities, usePaletteResults, type PageLink } from ".
  */
 
 export type ShellContext = { pages: PageLink[] };
+
+type Txn = { transaction_id: string; date: string; amount: number | string; merchant_name: string | null; name: string | null; entity_name: string | null; book_category: string | null };
+
+const money = (n: number) => `${n < 0 ? "+" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const when = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+/** A few book transactions matching the words typed, a moment after typing stops. */
+function useTransactionHits(q: string): Txn[] {
+  const [hits, setHits] = useState<{ q: string; rows: Txn[] }>({ q: "", rows: [] });
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) return;
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      authFetch(`/api/books/data?report=transactions&q=${encodeURIComponent(query)}&limit=5&summary=0`, { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((body) => {
+          if (body) setHits({ q: query, rows: (body.transactions ?? []) as Txn[] });
+        })
+        .catch(() => undefined);
+    }, 180);
+    return () => {
+      clearTimeout(t);
+      ctl.abort();
+    };
+  }, [q]);
+  return hits.q === q.trim() ? hits.rows : [];
+}
 
 export function HomeSearch({ isDark }: { isDark: boolean }) {
   const navigate = useNavigate();
@@ -29,7 +58,25 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
     },
     [navigate]
   );
-  const results = usePaletteResults({ q, pages, entities, actions: [], go });
+  const base = usePaletteResults({ q, pages, entities, actions: [], go });
+  const txns = useTransactionHits(focused ? q : "");
+  // Transactions sit between the places and the searches.
+  const results = useMemo<Command[]>(() => {
+    if (!txns.length) return base;
+    const rows: Command[] = txns.map((x) => {
+      const who = x.merchant_name || x.name || "Transaction";
+      const amt = Number(x.amount);
+      return {
+        id: `txn:${x.transaction_id}`,
+        label: who,
+        hint: [when(x.date), x.entity_name, money(amt)].filter(Boolean).join(" · "),
+        group: "Search",
+        run: () => go(`/books/transactions?q=${encodeURIComponent(who)}`),
+      };
+    });
+    const i = base.findIndex((c) => c.group === "Search");
+    return i < 0 ? [...base, ...rows] : [...base.slice(0, i), ...rows, ...base.slice(i)];
+  }, [base, txns, go]);
   const open = focused && q.trim().length > 0;
 
   useEffect(() => setActive(0), [q]);
@@ -127,8 +174,9 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
         >
           {results.length === 0 && <p className={`px-3 py-6 text-center text-sm ${muted}`}>Nothing matches “{q}”.</p>}
           {results.map((c, i) => {
-            const header = c.group !== lastGroup ? c.group : null;
-            lastGroup = c.group;
+            const groupLabel = c.id.startsWith("txn:") ? "Transactions" : c.group;
+            const header = groupLabel !== lastGroup ? groupLabel : null;
+            lastGroup = groupLabel;
             return (
               <div key={c.id}>
                 {header && <div className={`px-3 pb-1 pt-2.5 text-[11px] font-medium ${muted}`}>{header}</div>}

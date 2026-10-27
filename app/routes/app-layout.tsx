@@ -643,60 +643,17 @@ export default function AppLayout() {
               mark
             );
           })()}
-          {/* The phone drawer: Appearance beside the close button. */}
-          <button
-            type="button"
-            onClick={() => {
-              setDrawerOpen(false);
-              setAppearanceOpen(true);
-            }}
-            aria-label="Appearance"
-            aria-haspopup="dialog"
-            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
-              railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-              <circle cx="16" cy="7" r="2.5" />
-              <circle cx="10" cy="17" r="2.5" />
-            </svg>
-          </button>
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
             aria-label="Close menu"
-            className={`flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
+            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
               railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
             </svg>
-          </button>
-        </div>
-
-        {/* How it looks: light or dark, glass or solid cards, row density. */}
-        <div className="sidebar-appearance px-2 pb-1.5 max-md:hidden">
-          <button
-            type="button"
-            onClick={() => {
-              setDrawerOpen(false);
-              setAppearanceOpen(true);
-            }}
-            title={showLabels ? undefined : "Appearance"}
-            aria-label="Appearance"
-            aria-haspopup="dialog"
-            className={`flex h-[30px] w-full items-center rounded-lg text-[13px] transition-colors cursor-pointer px-2 max-md:h-[44px] ${
-              labelsVisible ? "" : "md:justify-center md:px-0"
-            } ${railDark ? "text-gray-400 hover:text-white hover:bg-white/[0.05]" : "text-gray-500 hover:text-black hover:bg-black/[0.04]"}`}
-          >
-            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-              <circle cx="16" cy="7" r="2.5" />
-              <circle cx="10" cy="17" r="2.5" />
-            </svg>
-            <span className={`ml-2 flex-1 truncate text-left ${labelsVisible ? "" : "md:hidden"}`}>Appearance</span>
           </button>
         </div>
 
@@ -854,6 +811,25 @@ export default function AppLayout() {
                   )}
                 </button>
               )}
+
+              {/* How it looks: light or dark, glass or solid cards, row density. */}
+              <button
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  setDrawerOpen(false);
+                  setAppearanceOpen(true);
+                }}
+                className={menuItemCls}
+                role="menuitem"
+                aria-haspopup="dialog"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+                  <circle cx="16" cy="7" r="2.5" />
+                  <circle cx="10" cy="17" r="2.5" />
+                </svg>
+                Appearance
+              </button>
 
               {!emailOnly && !partner && (
                 <>
