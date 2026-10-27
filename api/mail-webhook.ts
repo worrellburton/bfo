@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { alertAdmins, alertOnThrow } from "../lib/alert.js";
 import { sb } from "../lib/auth.js";
 import { getInbound, ingestInbound } from "../lib/mail.js";
 import { verifyWebhook } from "../lib/mail-webhook.js";
@@ -32,7 +33,10 @@ const header = (req: VercelRequest, name: string) => {
 
 type BirdEvent = { type?: string; data?: { inbound_message_id?: unknown } };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+// An error nothing below caught alerts the admins (lib/alert.ts) and still answers 500, so Bird retries.
+export default alertOnThrow("webhook:mail", "Mail webhook crashed", handle);
+
+async function handle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   const secret = process.env.BIRD_WEBHOOK_SECRET?.trim();
   if (!secret) return res.status(503).json({ error: "not_configured" });
@@ -60,6 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     } catch (err) {
       console.error("sms webhook store failed", err);
+      await alertAdmins("webhook:mail", "A text to the office couldn't be stored", err);
       return res.status(500).json({ error: "store_failed" }); // Bird retries
     }
   }
@@ -75,6 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true, ingested });
   } catch (err) {
     console.error("mail webhook ingest failed", err);
+    await alertAdmins("webhook:mail", "Incoming mail couldn't be filed", `message ${id}: ${err instanceof Error ? err.message : String(err)}`);
     return res.status(500).json({ error: "ingest_failed" }); // Bird retries
   }
 }

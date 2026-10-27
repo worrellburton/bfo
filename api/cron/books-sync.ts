@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { canWrite, cronAuth, currentUser, refuseCron, sbFetch as db } from "../../lib/auth.js";
+import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
 import { fetchAll } from "../../lib/db-pages.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
@@ -193,6 +194,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
   }
 
+  // The scheduled run is recorded (cron_runs) and alerts the admins when a
+  // bank's sync fails or the run doesn't finish; a person's "Sync now" isn't.
+  if (fromCron) return recordCronRun("books-sync", (run) => sync(req, res, true, run));
+  return sync(req, res, false, null);
+}
+
+async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, run: CronRun | null) {
   // Sunrise gate — only for the automatic cron run. The cron fires a few times
   // across the morning window; on each fire we sync once, at the first fire on
   // or after today's local sunrise, and only if the toggle is on. A person
@@ -202,15 +210,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sRes = await db("books_settings?id=eq.1&select=*&limit=1");
       const s = sRes.ok ? ((await sRes.json()) as any[])[0] : null;
       if (!s?.sync_at_sunrise) {
+        run?.note("skipped: sunrise sync is off");
         return res.status(200).json({ skipped: "sunrise_sync_disabled" });
       }
       const now = new Date();
       const today = now.toISOString().slice(0, 10);
       if (s.last_auto_sync_date === today) {
+        run?.note("skipped: already synced today");
         return res.status(200).json({ skipped: "already_synced_today" });
       }
       const sunrise = sunriseUtcDate(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate(), s.sync_lat, s.sync_lng);
       if (sunrise && now < sunrise) {
+        run?.note(`skipped: before sunrise (${sunrise.toISOString()})`);
         return res.status(200).json({ skipped: "before_sunrise", sunrise_utc: sunrise.toISOString() });
       }
       // Fall through and sync; today's date is claimed only after it succeeds
@@ -219,6 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // two morning fires is harmless.
     } catch (err: any) {
       console.error("sunrise gate error:", err.message);
+      run?.note(`sunrise gate couldn't be read (${err.message}); synced anyway`);
       // On a gate failure, fall through and sync — missing a sync is worse.
     }
   }
@@ -424,6 +436,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (err: any) {
         // Plaid's error code is safe to show; anything else stays in the log.
         console.error(`books-sync: ${item.institution_name} failed:`, err.response?.data || err.message);
+        // That bank's transactions are now stale: the admins hear about it (once per run).
+        run?.failed(`Plaid sync failed for ${item.institution_name}: ${err.response?.data?.error_code || err.message || "sync_failed"}`);
         summary.push({
           institution: item.institution_name,
           error: err.response?.data?.error_code || "sync_failed",
@@ -479,6 +493,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     // The detail (raw Plaid or database text) stays in the log.
     console.error("books-sync error:", err.response?.data || err.message);
+    run?.failed(`The sync didn't finish: ${err.response?.data?.error_code || err.message || "sync_failed"}`);
     return res.status(500).json({ error: "sync_failed", message: "The sync didn't finish. Try again." });
   }
 }

@@ -11,6 +11,7 @@ import {
 } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { cronAuth, currentUser, formatPhone, handleError, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { fetchAll } from "../../lib/db-pages.js";
 
 /**
@@ -1148,13 +1149,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cron = cronAuth(req);
   if (cron !== "ok") return refuseCron(req, res, "treasury-report", cron);
 
+  // Recorded in cron_runs; a report that couldn't be sent alerts the admins.
+  return recordCronRun("treasury-report", (run) => scheduled(res, run, { secret, origin, now, loadLoans }));
+}
+
+async function scheduled(
+  res: VercelResponse,
+  run: CronRun,
+  ctx: { secret: string | undefined; origin: string; now: Date; loadLoans: () => Promise<Loan[]> }
+) {
+  const { secret, origin, now, loadLoans } = ctx;
   try {
     // "Email only" members can't see Treasury, so they never get the report.
     const users = await sb<Array<AppUser & { notification_prefs: Prefs }>>(
       "app_users?status=eq.approved&role=neq.email&select=id,name,email,phone,role,status,notification_prefs"
     );
     let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
-    if (due.length === 0) return res.status(200).json({ sent: 0, considered: users.length });
+    if (due.length === 0) {
+      run.note("nobody due today");
+      return res.status(200).json({ sent: 0, considered: users.length });
+    }
 
     // A retried cron must not email anyone twice: skip users whose delivery
     // is already recorded today.
@@ -1179,6 +1193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Silence is the worst failure mode for a scheduled report — tell the
       // subscribers their numbers couldn't be refreshed today.
       const reason = err instanceof Error ? err.message : String(err);
+      run.failed(`Balances couldn't be refreshed, so no report went out: ${reason}`);
       let notices = 0;
       for (const user of due) {
         if (!user.email) continue;
@@ -1246,6 +1261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         results.push({ user: user.email ?? user.id, ok: true });
       } catch (err) {
         console.error(`treasury report failed for ${user.id}:`, err);
+        run.failed(`Report to ${user.email ?? user.id} didn't send: ${err instanceof Error ? err.message : String(err)}`);
         results.push({
           user: user.email ?? formatPhone(user.phone),
           ok: false,
@@ -1256,6 +1272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ sent: results.filter((r) => r.ok).length, results });
   } catch (err) {
     console.error("treasury report cron failed:", err);
+    run.failed(`The report run didn't finish: ${err instanceof Error ? err.message : String(err)}`);
     return res.status(500).json({ error: "report_failed" });
   }
 }

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { alertAdmins, alertOnThrow } from "../lib/alert.js";
 import { secretMatches } from "../lib/auth.js";
 import { getMailItem, saveMail, StableNotConfigured } from "../lib/stable.js";
 
@@ -11,7 +12,10 @@ import { getMailItem, saveMail, StableNotConfigured } from "../lib/stable.js";
  * Set up in Stable → Settings → Webhooks: the URL
  * https://<site>/api/stable-webhook?token=<STABLE_WEBHOOK_TOKEN>, with the mailItem events.
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+// An error nothing below caught alerts the admins (lib/alert.ts) and still answers 500, so Stable retries.
+export default alertOnThrow("webhook:stable", "Stable webhook crashed", handle);
+
+async function handle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   const token = process.env.STABLE_WEBHOOK_TOKEN;
   if (!token) return res.status(503).json({ error: "not_configured" });
@@ -31,6 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Stable doesn't know the piece (deleted, or not ours): nothing to retry.
     if (err instanceof Error && /^stable 404\b/.test(err.message)) return res.status(200).json({ ok: true, ignored: true });
     console.error("stable webhook failed", body?.eventType, id, err);
+    await alertAdmins("webhook:stable", "Stable webhook couldn't store a piece of mail", `${body?.eventType ?? "event"} ${id}: ${err instanceof Error ? err.message : String(err)}`);
     // 500 so Stable tries again; the hourly sync catches it otherwise.
     return res.status(500).json({ error: "failed" });
   }
