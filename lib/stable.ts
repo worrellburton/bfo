@@ -1,5 +1,6 @@
 import { logActivity } from "./activity.js";
 import { sb } from "./auth.js";
+import { notifyNewPaperMail } from "./push.js";
 import { storageUpload } from "./storage.js";
 import { readCollection } from "./tree.js";
 
@@ -174,6 +175,8 @@ export async function saveMail(items: StableMailItem[], entities?: { id: string;
     });
   }
   await sb("stable_mail?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: rows });
+  // A piece seen for the first time rings the phones of those who want to know.
+  await notifyNewPaperMail(rows.filter((r) => !existing.has(r.id)));
   // A piece that's new here, or newly matched, shows in its entity's activity.
   for (const r of rows) {
     if (!r.asset_id || existing.get(r.id)?.asset_id === r.asset_id) continue;

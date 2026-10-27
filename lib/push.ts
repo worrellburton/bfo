@@ -25,6 +25,31 @@ export async function unregisterDevice(userId: string, token: string): Promise<v
   await sb(`push_devices?token=eq.${encodeURIComponent(token.toLowerCase())}&user_id=eq.${encodeURIComponent(userId)}`, { method: "DELETE" });
 }
 
+/**
+ * What each person wants told about, from their notification_prefs.push
+ * (the Notifications page). Everything is on until switched off.
+ */
+export type PushPrefs = { mail: boolean; texts: boolean; paper: boolean };
+export function pushPrefsOf(prefs: unknown): PushPrefs {
+  const p = ((prefs as { push?: Partial<PushPrefs> } | null)?.push ?? {}) as Partial<PushPrefs>;
+  return { mail: p.mail !== false, texts: p.texts !== false, paper: p.paper !== false };
+}
+
+type Person = { id: string; role: string; status: string; notification_prefs: unknown };
+
+/** Approved members in these roles, with what they want told about. */
+async function peopleIn(roles: string[]): Promise<Array<{ id: string; prefs: PushPrefs }>> {
+  const rows = (await sb<Person[]>(`app_users?select=id,role,status,notification_prefs&role=in.(${roles.join(",")})&status=eq.approved`)) ?? [];
+  return rows.map((r) => ({ id: r.id, prefs: pushPrefsOf(r.notification_prefs) }));
+}
+
+async function prefsFor(userIds: string[]): Promise<Map<string, PushPrefs>> {
+  const ids = [...new Set(userIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (!ids.length) return new Map();
+  const rows = (await sb<Person[]>(`app_users?select=id,role,status,notification_prefs&id=in.(${ids.join(",")})`)) ?? [];
+  return new Map(rows.map((r) => [r.id, pushPrefsOf(r.notification_prefs)]));
+}
+
 export async function devicesFor(userIds: string[]): Promise<Device[]> {
   const ids = [...new Set(userIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
   if (!ids.length) return [];
@@ -52,26 +77,26 @@ export function mailPayload(m: NewMail) {
 /** Mail older than this (a backfill catching up) arrives without a notice. */
 const FRESH_MS = 30 * 60_000;
 
+type Notice = { to: string[]; payload: Record<string, unknown>; collapseId?: string };
+
 /**
- * A notice to every device of everyone who just received one of these
- * messages. Never throws: mail is stored whatever happens here. Devices Apple
- * says are gone are forgotten; the environment that took each one is kept.
+ * Notices to every device of the people named. Never throws: what's being
+ * stored is stored whatever happens here. Devices Apple says are gone are
+ * forgotten; the environment that took each one is kept.
  */
-export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<number> {
+export async function deliver(notices: Notice[], what: string): Promise<number> {
   const cfg = apnsConfig();
-  if (!cfg) return 0;
-  const fresh = rows.filter((r) => r.user_id && (!r.occurred_at || now - Date.parse(r.occurred_at) < FRESH_MS));
-  if (!fresh.length) return 0;
+  if (!cfg || !notices.length) return 0;
   try {
-    const devices = await devicesFor(fresh.map((r) => r.user_id!));
+    const devices = await devicesFor(notices.flatMap((n) => n.to));
     if (!devices.length) return 0;
     let sent = 0;
     const dead: string[] = [];
     const moved: { token: string; env: ApnsEnv }[] = [];
-    for (const m of fresh) {
-      const mine = devices.filter((d) => d.user_id === m.user_id);
+    for (const n of notices) {
+      const mine = devices.filter((d) => n.to.includes(d.user_id));
       if (!mine.length) continue;
-      const results = await sendApns(cfg, mine.map((d) => ({ token: d.token, env: d.environment })), mailPayload(m), { collapseId: m.id });
+      const results = await sendApns(cfg, mine.map((d) => ({ token: d.token, env: d.environment })), n.payload, n.collapseId ? { collapseId: n.collapseId } : undefined);
       for (const d of mine) {
         const r = results.get(d.token);
         if (!r) continue;
@@ -88,7 +113,89 @@ export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<
     ]).catch((err) => console.error("push: couldn't tidy devices", err));
     return sent;
   } catch (err) {
+    console.error(`push: ${what} notices failed`, err);
+    return 0;
+  }
+}
+
+/** A notice to everyone who just received one of these messages (and wants to hear about mail). */
+export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<number> {
+  if (!apnsConfig()) return 0;
+  const fresh = rows.filter((r) => r.user_id && (!r.occurred_at || now - Date.parse(r.occurred_at) < FRESH_MS));
+  if (!fresh.length) return 0;
+  try {
+    const prefs = await prefsFor(fresh.map((r) => r.user_id!));
+    const wanted = fresh.filter((r) => prefs.get(r.user_id!)?.mail !== false);
+    return await deliver(
+      wanted.map((m) => ({ to: [m.user_id!], payload: mailPayload(m), collapseId: m.id })),
+      "new-mail"
+    );
+  } catch (err) {
     console.error("push: new-mail notices failed", err);
+    return 0;
+  }
+}
+
+export type NewText = { id: string; from_number?: string | null; body?: string | null; code?: string | null };
+
+/** A text to the office's number: owners and admins who want them (the Phone page). */
+export async function notifyNewTexts(rows: NewText[]): Promise<number> {
+  if (!apnsConfig() || !rows.length) return 0;
+  try {
+    const to = (await peopleIn(["owner", "admin"])).filter((p) => p.prefs.texts).map((p) => p.id);
+    if (!to.length) return 0;
+    return await deliver(
+      rows.map((r) => {
+        const body = (r.body ?? "").replace(/\s+/g, " ").trim();
+        return {
+          to,
+          payload: {
+            aps: {
+              alert: { title: r.code ? `Code ${r.code}` : "Text to the office", subtitle: clip(r.from_number || "Unknown number", 80), body: clip(body, 180) },
+              sound: "default",
+              "thread-id": "texts",
+            },
+            url: "/phone",
+          },
+          collapseId: r.id,
+        };
+      }),
+      "text"
+    );
+  } catch (err) {
+    console.error("push: text notices failed", err);
+    return 0;
+  }
+}
+
+export type NewPaperMail = { id: string; from_name?: string | null; recipient?: string | null; received_at?: string | null };
+
+/** Physical mail at the office's address: staff who want to know (the Mailbox page). */
+export async function notifyNewPaperMail(rows: NewPaperMail[], now = Date.now()): Promise<number> {
+  if (!apnsConfig()) return 0;
+  // A catch-up sync can bring older pieces: only today's arrivals ring.
+  const fresh = rows.filter((r) => !r.received_at || now - Date.parse(r.received_at) < 24 * 60 * 60_000);
+  if (!fresh.length) return 0;
+  try {
+    const to = (await peopleIn(["owner", "admin", "member"])).filter((p) => p.prefs.paper).map((p) => p.id);
+    if (!to.length) return 0;
+    return await deliver(
+      fresh.map((r) => ({
+        to,
+        payload: {
+          aps: {
+            alert: { title: "Physical mail", subtitle: clip(r.from_name?.trim() || "Unknown sender", 80), body: r.recipient ? clip(`For ${r.recipient}`, 180) : "Arrived at the office's address." },
+            sound: "default",
+            "thread-id": "paper-mail",
+          },
+          url: "/mailbox",
+        },
+        collapseId: r.id,
+      })),
+      "paper-mail"
+    );
+  } catch (err) {
+    console.error("push: paper-mail notices failed", err);
     return 0;
   }
 }

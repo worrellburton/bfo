@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
-import { authFetch, getUser, type User } from "../auth";
+import { authFetch, getUser, isAdmin, type User } from "../auth";
+import { isNativeApp } from "../native";
+import { enablePush, usePushState } from "../push";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -30,6 +32,27 @@ function set(prefs: Prefs, path: string, value: unknown): Prefs {
     }
   });
   return next;
+}
+
+/** A switch, with its label and what it's for. */
+function Switch({ on, onToggle, label, hint, isDark }: { on: boolean; onToggle: () => void; label: string; hint: string; isDark: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      className={`flex w-full cursor-pointer items-center gap-4 py-3 text-left ${isDark ? "border-white/5" : "border-gray-100"} border-t first:border-t-0`}
+    >
+      <span className="min-w-0 flex-1">
+        <span className={`block text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>{label}</span>
+        <span className={`block text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>{hint}</span>
+      </span>
+      <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${on ? "bg-[#6366f1]" : isDark ? "bg-white/15" : "bg-gray-300"}`} aria-hidden>
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+      </span>
+    </button>
+  );
 }
 
 export default function Notifications() {
@@ -153,6 +176,46 @@ export default function Notifications() {
     }
   }
 
+  // Push notifications: the iPhone app's permission, the phones set up, and what to be told about.
+  const [push, setPush] = usePushState();
+  const [phones, setPhones] = useState<{ configured: boolean; devices: number } | null>(null);
+  const [pushNote, setPushNote] = useState("");
+  const [testing, setTesting] = useState(false);
+  const loadPhones = () =>
+    authFetch("/api/push")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setPhones({ configured: !!d.configured, devices: Number(d.devices ?? 0) }))
+      .catch(() => undefined);
+  useEffect(() => {
+    void loadPhones();
+  }, []);
+  const pushPrefs = { mail: prefs.push?.mail !== false, texts: prefs.push?.texts !== false, paper: prefs.push?.paper !== false };
+  const admin = isAdmin(getUser());
+
+  async function turnOn() {
+    setPushNote("");
+    const next = await enablePush();
+    setPush(next);
+    if (next === "granted") {
+      setPushNote("On. This phone will get BFO's notices.");
+      setTimeout(() => void loadPhones(), 1500);
+    } else if (next === "denied") setPushNote("Notifications are off for BFO in iPhone Settings.");
+  }
+  async function sendTest() {
+    setTesting(true);
+    setPushNote("");
+    try {
+      const r = await authFetch("/api/push", { method: "POST", body: JSON.stringify({ action: "test" }) }).then((x) => x.json());
+      setPushNote(
+        r.error === "not_configured" ? "Not set up on the server yet." : r.sent ? "Sent. Check your lock screen." : r.devices ? `Apple refused it (${r.error ?? "unknown"}).` : "No phone is set up yet. Turn notifications on in the BFO app."
+      );
+    } catch {
+      setPushNote("Couldn't reach BFO.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const card = isDark ? "glass-card" : "glass-card";
   const divider = isDark ? "border-white/5" : "border-gray-100";
@@ -182,6 +245,52 @@ export default function Notifications() {
         <p className={`text-sm ${subtle}`}>Loading…</p>
       ) : (
         <>
+          {/* Push notifications: the iPhone app */}
+          <section className={`rounded-xl border p-6 mb-6 ${card}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>Push notifications</h2>
+                <p className={`text-sm mt-1 ${subtle}`}>On your iPhone, the moment something arrives.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {isNativeApp() && push !== "granted" && push !== "unsupported" && (
+                  <button type="button" onClick={() => void turnOn()} className="rounded-full bg-[#6366f1] px-4 py-2 text-sm font-medium text-white hover:bg-[#4f46e5] max-sm:min-h-[44px]">
+                    Turn on notifications
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void sendTest()}
+                  disabled={testing}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium max-sm:min-h-[44px] ${isDark ? "border-white/15 text-gray-200 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"} disabled:opacity-50`}
+                >
+                  {testing ? "Sending…" : "Send a test notification"}
+                </button>
+              </div>
+            </div>
+            <p className={`mt-3 flex items-center gap-2 text-xs ${subtle}`}>
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${phones === null ? (isDark ? "bg-white/20" : "bg-gray-300") : !phones.configured ? "bg-amber-400" : phones.devices ? "bg-emerald-400" : "bg-amber-400"}`}
+                aria-hidden
+              />
+              {phones === null
+                ? "Checking…"
+                : !phones.configured
+                  ? "Not set up on the server yet."
+                  : phones.devices
+                    ? `${phones.devices} phone${phones.devices === 1 ? "" : "s"} set up${isNativeApp() ? (push === "granted" ? ", this one included." : push === "denied" ? "; this one has notifications off in iPhone Settings." : "; this one hasn't allowed them yet.") : "."}`
+                    : isNativeApp()
+                      ? "No phone set up yet. Turn them on here."
+                      : "No phone set up yet. Open BFO on your iPhone and turn them on."}
+              {pushNote && <span className={isDark ? "text-gray-300" : "text-gray-700"}>{pushNote}</span>}
+            </p>
+            <div className="mt-4">
+              <Switch isDark={isDark} on={pushPrefs.mail} onToggle={() => void save(set(prefs, "push.mail", !pushPrefs.mail))} label="New email" hint="Mail to your BFO address, with the sender and subject." />
+              {admin && <Switch isDark={isDark} on={pushPrefs.texts} onToggle={() => void save(set(prefs, "push.texts", !pushPrefs.texts))} label="Texts to the office" hint="Texts to BFO's number, including verification codes." />}
+              <Switch isDark={isDark} on={pushPrefs.paper} onToggle={() => void save(set(prefs, "push.paper", !pushPrefs.paper))} label="Physical mail" hint="Paper mail arriving at the office's address." />
+            </div>
+          </section>
+
           {/* Scheduled Treasury report */}
           <section className={`rounded-xl border p-6 mb-6 ${card}`}>
             <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>

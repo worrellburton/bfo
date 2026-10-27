@@ -3,6 +3,7 @@ import { sb } from "../lib/auth.js";
 import { getInbound, ingestInbound } from "../lib/mail.js";
 import { verifyWebhook } from "../lib/mail-webhook.js";
 import { smsRow } from "../lib/sms-inbound.js";
+import { notifyNewTexts } from "../lib/push.js";
 
 /**
  * Bird calls this when mail arrives for the family domain (email.received).
@@ -55,6 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!row) return res.status(400).json({ error: "bad_event" });
     try {
       await sb("sms_messages?on_conflict=id", { method: "POST", body: row, prefer: "resolution=ignore-duplicates,return=minimal" });
+      await notifyNewTexts([row]);
       return res.status(200).json({ ok: true });
     } catch (err) {
       console.error("sms webhook store failed", err);

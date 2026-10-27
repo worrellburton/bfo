@@ -1,13 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, fail, guard, handleError } from "../lib/auth.js";
 import { apnsConfig } from "../lib/apns.js";
-import { TOKEN_RE, devicesFor, notifyTest, registerDevice, unregisterDevice } from "../lib/push.js";
+import { TOKEN_RE, devicesFor, notifyTest, pushPrefsOf, registerDevice, unregisterDevice } from "../lib/push.js";
+import { sb } from "../lib/auth.js";
 
 /**
  * The iPhone app's push notifications (lib/push.ts). Any signed-in member,
  * for their own devices only.
  *
- * GET                                   → { configured, devices }
+ * GET                                   → { configured, devices, prefs }  (prefs: what I've asked to be told about)
  * POST { action: "register", token }    → this phone gets notices for my new mail
  * POST { action: "unregister", token }  → it stops
  * POST { action: "test" }               → a test notice to my phones
@@ -19,8 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!me) return fail(res, 401, "unauthorized");
 
     if (req.method === "GET") {
-      const devices = await devicesFor([me.id]);
-      return res.status(200).json({ configured: !!apnsConfig(), devices: devices.length });
+      const [devices, rows] = await Promise.all([devicesFor([me.id]), sb<Array<{ notification_prefs: unknown }>>(`app_users?id=eq.${me.id}&select=notification_prefs&limit=1`)]);
+      return res.status(200).json({ configured: !!apnsConfig(), devices: devices.length, prefs: pushPrefsOf(rows?.[0]?.notification_prefs) });
     }
 
     const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { action?: string; token?: unknown; platform?: unknown };
