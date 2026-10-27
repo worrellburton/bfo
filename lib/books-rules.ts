@@ -117,17 +117,20 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
 // meta endpoint and the rule engine share one source of truth.
 export { ACCOUNTS, sectionOf, CHART } from "./books-accounts.js";
 
+import { fetchAll } from "./db-pages.js";
+
 type Db = (path: string, init?: RequestInit) => Promise<Response>;
 
 /**
  * Apply `patch` to every transaction whose merchant/description literally
  * contains `needle` (case-insensitive) and satisfies `baseFilter`.
  *
- * Filtering happens in JS so it mirrors the nightly rule engine's
- * `text.includes()` exactly. A PostgREST `ilike` would instead treat `_` and
- * `%` — common in bank descriptors like ACH_PMT — as SQL wildcards, matching
- * unintended rows and disagreeing with the nightly pass. Returns the count
- * patched.
+ * The database narrows the candidates with an `ilike` whose LIKE
+ * metacharacters are escaped (bank descriptors like ACH_PMT carry `_`), and
+ * JS makes the final call with the same `includes()` the nightly rule engine
+ * uses, so the two never disagree. Pages are ordered, so none are skipped
+ * or read twice. Returns the count patched; a failed patch is logged, not
+ * counted.
  */
 export async function patchMatching(
   db: Db,
@@ -138,25 +141,15 @@ export async function patchMatching(
   const n = needle.trim().toLowerCase();
   if (n.length < 2) return 0;
 
-  const ids: string[] = [];
-  for (let from = 0; ; from += 1000) {
-    const path =
-      `book_transactions?select=transaction_id,name,merchant_name` +
-      (baseFilter ? `&${baseFilter}` : "");
-    const r = await db(path, { headers: { Range: `${from}-${from + 999}` } });
-    if (!r.ok) break;
-    const rows = (await r.json()) as Array<{
-      transaction_id: string;
-      name: string | null;
-      merchant_name: string | null;
-    }>;
-    for (const t of rows) {
-      if (`${t.merchant_name ?? ""} ${t.name ?? ""}`.toLowerCase().includes(n)) {
-        ids.push(t.transaction_id);
-      }
-    }
-    if (rows.length < 1000) break;
-  }
+  // `, ( ) *` are PostgREST structure in an or=() filter: widened to wildcards (the JS check below is exact).
+  const safe = encodeURIComponent(n.replace(/[,()*]/g, "*").replace(/([\\%_])/g, "\\$1"));
+  const path =
+    `book_transactions?select=transaction_id,name,merchant_name` +
+    `&or=(name.ilike.*${safe}*,merchant_name.ilike.*${safe}*)` +
+    (baseFilter ? `&${baseFilter}` : "") +
+    `&order=transaction_id.asc`;
+  const rows = await fetchAll<{ transaction_id: string; name: string | null; merchant_name: string | null }>(path, db);
+  const ids = rows.filter((t) => `${t.merchant_name ?? ""} ${t.name ?? ""}`.toLowerCase().includes(n)).map((t) => t.transaction_id);
 
   let done = 0;
   for (let i = 0; i < ids.length; i += 200) {
@@ -167,6 +160,7 @@ export async function patchMatching(
       body: JSON.stringify(patch),
     });
     if (r.ok) done += chunk.length;
+    else console.error("books: rule patch failed", r.status, (await r.text().catch(() => "")).slice(0, 200));
   }
   return done;
 }

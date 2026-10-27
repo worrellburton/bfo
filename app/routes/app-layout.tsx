@@ -64,19 +64,9 @@ const navItems: NavItem[] = [
   {
     to: "/home",
     label: "Home",
-    section: "The office",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-      </svg>
-    ),
-  },
-  {
-    to: "/ask",
-    label: "Ask",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
       </svg>
     ),
   },
@@ -170,8 +160,6 @@ const navItems: NavItem[] = [
   {
     to: "/books/transactions",
     label: "Books",
-    breakBefore: true,
-    section: "Books & paperwork",
     children: [
       {
         to: "/books/transactions",
@@ -245,15 +233,6 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    to: "/msas",
-    label: "MSAs",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M9 3v18M15 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
-      </svg>
-    ),
-  },
-  {
     to: "/tools",
     label: "Tools",
     icon: (
@@ -262,6 +241,13 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
+      {
+        to: "/msas",
+        label: "MSAs",
+        icon: <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M9 3v18M15 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
+      </svg>,
+      },
       {
         to: "/tools/compliance",
         label: "Entity compliance",
@@ -679,11 +665,11 @@ export default function AppLayout() {
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             aria-expanded={userMenuOpen}
             aria-haspopup="menu"
-            title={showLabels ? undefined : displayName(user)}
-            aria-label={showLabels ? undefined : displayName(user)}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer ${
-              showLabels ? "" : "md:justify-center md:px-0"
-            } ${railDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"}`}
+            title={displayName(user)}
+            aria-label={`${displayName(user)}: account menu`}
+            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors cursor-pointer md:w-full md:justify-center md:px-0 ${
+              railDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"
+            }`}
           >
             <div
               className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold shrink-0 ${
@@ -695,12 +681,6 @@ export default function AppLayout() {
                 <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${railDark ? "ring-black" : "ring-white"}`} aria-label={`${pending} waiting for approval`} />
               )}
             </div>
-            <span className={`min-w-0 flex-1 text-left ${showLabels ? "" : "md:hidden"}`}>
-              <span className="block truncate font-medium">{displayName(user)}</span>
-              <span className={`block truncate text-[11.5px] ${railDark ? "text-gray-500" : "text-gray-500"}`}>
-                {user?.email || user?.phoneFormatted || "Signed in"}
-              </span>
-            </span>
           </button>
 
           {userMenuOpen && (
