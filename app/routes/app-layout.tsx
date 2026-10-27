@@ -315,9 +315,25 @@ export default function AppLayout() {
   const drawerRef = useRef<HTMLElement>(null);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [hovering, setHovering] = useState(false);
-  // On a touch screen (iPad) there's no hover: a tap on the wordmark opens the rail over the page until a tap elsewhere.
-  const [pinned, setPinned] = useState(false);
-  useEffect(() => setPinned(false), [location.pathname]);
+  // On a touch screen (iPad) there's no hover: the rail stays open with its labels, pushing the page over, and a tap
+  // on the wordmark closes or opens it. The choice is kept on this device.
+  const [railOpen, setRailOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bfo.rail.open") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setPinned = (next: boolean | ((p: boolean) => boolean)) =>
+    setRailOpen((p) => {
+      const v = typeof next === "function" ? next(p) : next;
+      try {
+        localStorage.setItem("bfo.rail.open", v ? "1" : "0");
+      } catch {
+        /* kept for this visit */
+      }
+      return v;
+    });
   const [pending, setPending] = useState(0);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -506,10 +522,10 @@ export default function AppLayout() {
 
   // The content reflows with the rail: expanding the sidebar pushes the page
   // over (animated by the .sidebar-content transition) instead of covering it.
+  const pinned = isDesktop && !hoverCapable && railOpen;
   const expanded = (hovering && hoverCapable) || pinned;
   const railWidth = expanded ? SIDEBAR_OPEN_W : SIDEBAR_RAIL_W;
-  // Hover pushes the page over; a pinned rail lies over it.
-  const contentInset = pinned ? SIDEBAR_RAIL_W : railWidth;
+  const contentInset = railWidth;
   const showLabels = expanded;
   // The mobile drawer always shows labels, so groups open there too.
   const labelsVisible = expanded || drawerOpen;
@@ -566,7 +582,6 @@ export default function AppLayout() {
   function go(to: string) {
     setUserMenuOpen(false);
     setDrawerOpen(false);
-    setPinned(false);
     navigate(to);
   }
 
@@ -595,7 +610,6 @@ export default function AppLayout() {
       {drawerOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setDrawerOpen(false)} />
       )}
-      {pinned && <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setPinned(false)} aria-hidden />}
 
       <aside
         ref={drawerRef}
@@ -619,7 +633,7 @@ export default function AppLayout() {
           sidebar-rail fixed inset-y-0 left-0 z-50 flex flex-col border-r pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]
           w-[240px] md:w-[var(--rail)]
           ${drawerOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
-          ${railDark ? (pinned ? "border-white/10 bg-[#0b0b0d]/95 backdrop-blur-2xl" : "border-white/10 bg-black/55 backdrop-blur-2xl") : pinned ? "border-gray-200 bg-white/95 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
+          ${railDark ? "border-white/10 bg-black/55 backdrop-blur-2xl" : "border-gray-200 bg-white/65 backdrop-blur-2xl"}
         `}
       >
         {/* Top: the wordmark */}
@@ -657,7 +671,7 @@ export default function AppLayout() {
           </button>
         </div>
 
-        <SidebarNav items={items} isDark={railDark} phone={!isDesktop} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => { setDrawerOpen(false); setPinned(false); }} />
+        <SidebarNav items={items} isDark={railDark} phone={!isDesktop} showLabels={showLabels} labelsVisible={labelsVisible} onNavigate={() => setDrawerOpen(false)} />
 
         {/* Bottom: the signed-in user, as the menu trigger */}
         <div className="sidebar-user relative mt-auto p-2" ref={userMenuRef}>
@@ -787,18 +801,6 @@ export default function AppLayout() {
                 </button>
               )}
 
-              <button onClick={() => toggle()} className={menuItemCls} role="menuitem">
-                {railDark ? (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                )}
-                {railDark ? "Light mode" : "Dark mode"}
-              </button>
 
               {!emailOnly && isAdmin(user) && (
                 <button onClick={() => go("/users")} className={menuItemCls} role="menuitem">

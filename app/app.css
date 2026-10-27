@@ -773,6 +773,12 @@ html.light .app-shell-brand .brand-ivory { color: #1c1915; }
 @media (prefers-reduced-motion: reduce) {
   .sidebar-rail, .sidebar-content { transition: none; }
 }
+/* A tablet held in the hand (iPad): more air around the page than a desktop window needs. */
+@media (hover: none) and (pointer: coarse) and (min-width: 768px) {
+  .sidebar-content {
+    padding: calc(36px + env(safe-area-inset-top)) 40px calc(40px + env(safe-area-inset-bottom));
+  }
+}
 
 /* The rail's nav tree (app/sidebar-nav.tsx). A group opens by animating its
    row track from 0fr to 1fr; its pages hang off a thin vertical line that

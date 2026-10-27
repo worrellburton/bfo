@@ -9,7 +9,7 @@ export function meta() {
 }
 
 export default function Settings() {
-  const { theme, toggle, backgroundId, setBackgroundId } = useTheme();
+  const { theme, backgroundId, setBackgroundId } = useTheme();
   const isDark = theme === "dark";
   const admin = isAdmin(getUser());
 
@@ -39,36 +39,8 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Theme Toggle */}
-        <div className="mb-6">
-          <label className={`text-xs font-medium uppercase tracking-wider mb-3 block ${isDark ? "text-gray-400" : "text-gray-500"}`}>Theme</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => { if (isDark) toggle(); }}
-              aria-pressed={!isDark}
-              className={`flex items-center gap-2 px-4 py-2.5 max-sm:min-h-[44px] rounded-lg text-xs font-medium transition-all ${
-                !isDark
-                  ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
-                  : isDark ? "border border-white/10 text-gray-400 hover:border-white/20" : "border border-gray-200 text-gray-500 hover:border-gray-400"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-              Light
-            </button>
-            <button
-              onClick={() => { if (!isDark) toggle(); }}
-              aria-pressed={isDark}
-              className={`flex items-center gap-2 px-4 py-2.5 max-sm:min-h-[44px] rounded-lg text-xs font-medium transition-all ${
-                isDark
-                  ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                  : "border border-gray-200 text-gray-500 hover:border-gray-400"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-              Dark
-            </button>
-          </div>
-        </div>
+        {/* Light or dark lives in Appearance (the user menu), with the rest of how the app looks. */}
+        <p className={`mb-6 text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>Light or dark, how solid the cards are and row density are under Appearance in your menu.</p>
 
         {/* WebGL Background Picker */}
         <div>
