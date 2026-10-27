@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { getUser, isAdmin } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
-import { Button, Icon, useTone } from "../entity/ui";
+import { Icon, useTone } from "../entity/ui";
 import { MailAurora, mailboxHue } from "../mail-aurora";
 import { PullToRefresh } from "../mail-pull";
 import { usePushState } from "../push";
@@ -20,14 +20,11 @@ import {
   type MailFilter,
   type MailFolder,
 } from "../mail-client";
-import { Glyph } from "../mail/glyphs";
 import { FacesContext } from "../mail/avatar";
 import { EMPTY, FOLDERS, NOTHING, VIEW_KEY, savedView, type View } from "../mail/constants";
 import { eachRow, listRows } from "../mail/list-state";
-import { ReadingProgress, SearchField, Segmented, ThemeButton } from "../mail/controls";
+import { ReadingProgress, SearchField } from "../mail/controls";
 import { blankDraft, forwardDraft, replyDraft, type Draft } from "../mail/drafts";
-import { MyPhoto } from "../mail/my-photo";
-import { MailboxPicker } from "../mail/mailbox-picker";
 import { Compose } from "../mail/composer";
 import { Reader } from "../mail/reader";
 import { useMailList } from "../mail/use-mail-list";
@@ -38,6 +35,7 @@ import { useMailActions } from "../mail/use-mail-actions";
 import { useMailShortcuts } from "../mail/shortcuts";
 import { BulkBar, Toolbar } from "../mail/toolbar";
 import { ListBody, PushInvite } from "../mail/list-body";
+import { MailHeader } from "../mail/header";
 
 export function meta() {
   return [{ title: "BFO - Mail" }];
@@ -321,60 +319,7 @@ export default function Inbox() {
       </button>
     )}
     <div className="@container relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
-      {/* Phones: Mail is its own place. A way back to BFO, then the mailbox as the title, the way out to its menu. */}
-      {!openId && (
-        <div className="flex items-center gap-2 px-1 pt-1 md:hidden">
-          <Link
-            to="/home"
-            aria-label="Back to BFO"
-            className={`inline-flex h-[44px] shrink-0 items-center gap-1 rounded-full pl-1.5 pr-3 text-[13px] font-medium transition-colors ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
-          >
-            <Icon name="chevronLeft" className="h-4 w-4" strokeWidth={2.2} />
-            BFO
-          </Link>
-          <span className="flex-1" />
-          {/* Your own photo is set from the desktop header; on a phone its menu had no room. */}
-          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`pill-glass h-[44px] w-[44px] ${t.dark ? "text-gray-100" : "text-gray-700"}`} iconClassName="h-[22px] w-[22px]" />
-        </div>
-      )}
-      {!openId && address && !noAddress && (
-        <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/[0.92]" : "border-gray-200 bg-white/[0.92]"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
-          <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big compact={scrolled} unread={count?.unread ?? 0} />
-        </div>
-      )}
-      {!openId && noAddress && <p className={`px-2 text-[13px] md:hidden ${t.muted}`}>No address yet. Ask an admin for one.</p>}
-      {/* Larger screens: the title, the addresses, search and the view switch on one line. */}
-      <header className="flex items-start justify-between gap-3 pt-1 max-md:hidden">
-        <div className="flex min-w-0 items-center gap-3">
-          {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
-          <div className="min-w-0">
-            <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
-            {noAddress ? (
-              <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
-            ) : address && (
-              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} />
-            )}
-          </div>
-        </div>
-        <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
-        <div className="flex shrink-0 items-center gap-2">
-          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`h-8 w-8 ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
-          <Segmented
-            label="View"
-            value={view}
-            onChange={chooseView}
-            iconsOnly
-            className="max-md:hidden"
-            options={[
-              { key: "table", label: "Table", icon: <Glyph name="rows" className="h-3.5 w-3.5" /> },
-              { key: "columns", label: "Columns", icon: <Glyph name="columns" className="h-3.5 w-3.5" /> },
-            ]}
-          />
-          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft(box || undefined))} className="max-sm:hidden">
-            New
-          </Button>
-        </div>
-      </header>
+      <MailHeader openId={openId} me={me} address={address} noAddress={noAddress} aliases={aliases} box={box} chooseBox={chooseBox} scrolled={scrolled} count={count} toggleMailTheme={toggleMailTheme} setFaces={setFaces} q={q} search={search} view={view} chooseView={chooseView} setDraft={setDraft} />
 
       {!openId && <SearchField value={q} onSearch={search} className="search-glow mx-1 md:hidden" />}
 
