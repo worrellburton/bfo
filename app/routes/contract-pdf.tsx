@@ -65,6 +65,18 @@ export default function ContractPDF() {
         if (data) setAsset(data as Asset);
       });
 
+      // A preview of an unsaved form (app/entity/agreements.tsx PREVIEW_KEY): no record, no signatures.
+      if (contractId === "preview") {
+        try {
+          const draft = JSON.parse(sessionStorage.getItem("bfo.contract.preview") ?? "null") as OperatingContract | null;
+          if (draft) setContract(draft);
+        } catch {
+          /* nothing to preview */
+        }
+        setLoading(false);
+        return;
+      }
+
       unsub2 = onValue(ref(db, `assets/${id}/contracts/${contractId}`), (snapshot) => {
         const data = snapshot.val();
         if (data) setContract(data as OperatingContract);
@@ -347,8 +359,12 @@ export default function ContractPDF() {
       }
 
       kicker("Article III · Term and Termination");
-      const autoRenew = String(contract.term || "").toLowerCase().includes("auto-renew");
-      body(autoRenew
+      const termText = String(contract.term || "").toLowerCase();
+      const autoRenew = termText.includes("auto-renew");
+      const monthToMonth = termText.includes("month");
+      body(monthToMonth
+        ? "3.1  This Agreement shall commence on the Effective Date and shall continue on a month-to-month basis until terminated. Either party may terminate this Agreement for any reason upon thirty (30) days’ written notice to the other party."
+        : autoRenew
         ? "3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term."
         : "3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"). This Agreement shall not automatically renew; any renewal shall require the written agreement of both parties prior to the expiration of the Initial Term.");
       gap(6);
@@ -579,6 +595,7 @@ export default function ContractPDF() {
               Robert Burton
             </button>
           </div>
+          {contractId !== "preview" && (
           <button
             onClick={() => setShowSigForm(!showSigForm)}
             aria-expanded={showSigForm}
@@ -591,6 +608,7 @@ export default function ContractPDF() {
             </svg>
             Request Signature
           </button>
+          )}
           <button
             onClick={handleDownload}
             disabled={!pdfUrl}

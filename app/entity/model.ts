@@ -221,6 +221,7 @@ export const MSA_SERVICES = [
   "Solutions Engineering",
   "Fractional CFO",
   "Fractional CTO",
+  "Software Development",
 ];
 
 export const LEDGER_LOUISE_SUBS = [

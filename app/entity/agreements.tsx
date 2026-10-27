@@ -23,6 +23,15 @@ const STATUSES: { value: Status; label: string; tone: Tone }[] = [
 const FREQUENCIES = ["Monthly", "Quarterly", "Annually", "One-time"];
 const AUTO = "Annual, auto-renewing";
 const FIXED = "Annual, fixed term";
+const MONTHLY = "Month to month";
+/** The term, and what the contract says about it (Article III). */
+const TERMS: Array<{ value: string; hint: string }> = [
+  { value: MONTHLY, hint: "Runs month to month; either party may end it on 30 days' notice." },
+  { value: AUTO, hint: "Renews yearly unless either party cancels 30 days prior." },
+  { value: FIXED, hint: "Ends after one year; renewal requires both parties." },
+];
+/** The key the preview page reads the unsaved form from. */
+export const PREVIEW_KEY = "bfo.contract.preview";
 
 /**
  * Table columns from lg up: counterparty, fee, frequency, effective, term,
@@ -216,8 +225,20 @@ function ContractEditor({
 }) {
   const t = useTone();
   const [saving, setSaving] = useState(false);
-  const isAuto = f.term.toLowerCase().includes("auto-renew");
+  const { page } = useEntity();
   const robert = f.letterhead === "robert";
+  const term = TERMS.some((x) => x.value === f.term) ? f.term : f.term || FIXED;
+  const termHint = TERMS.find((x) => x.value === term)?.hint;
+
+  // The PDF as it would be, from the form as it stands: the preview page reads it from sessionStorage.
+  function preview() {
+    try {
+      sessionStorage.setItem(PREVIEW_KEY, JSON.stringify({ ...f, term, role: "manager" }));
+    } catch {
+      return;
+    }
+    window.open(`/assets/${page.id}/contract/preview`, "_blank", "noopener");
+  }
 
   async function save() {
     setSaving(true);
@@ -263,17 +284,16 @@ function ContractEditor({
             ))}
           </Select>
         </Field>
-        <div className="sm:col-span-2">
-          <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Term</span>
-          <Toggle
-            on={isAuto}
-            onToggle={() => setF({ ...f, term: isAuto ? FIXED : AUTO })}
-            label="Auto-renewing term"
-            info={isAuto ? "Renews yearly unless either party cancels 30 days prior." : "Ends after one year; renewal requires both parties."}
-          >
-            {isAuto ? AUTO : FIXED}
-          </Toggle>
-        </div>
+        <Field label="Term" hint={termHint}>
+          <Select value={term} onChange={(e) => setF({ ...f, term: e.target.value })}>
+            {!TERMS.some((x) => x.value === term) && <option value={term}>{term}</option>}
+            {TERMS.map((x) => (
+              <option key={x.value} value={x.value}>
+                {x.value}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </div>
 
       <div className="mt-4">
@@ -300,6 +320,10 @@ function ContractEditor({
       </div>
 
       <div className="mt-4 flex items-center gap-2 sm:justify-end">
+        <Button kind="ghost" disabled={!f.counterparty.trim()} onClick={preview} title="Open the contract PDF as it reads now, in a new tab">
+          Preview
+        </Button>
+        <span className="flex-1 sm:hidden" />
         <Button kind="ghost" onClick={onCancel}>
           Cancel
         </Button>
