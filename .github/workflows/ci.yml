@@ -1,3 +1,5 @@
+# Checks every pull request and every push to main: types, lint, tests, build.
+# Same Node and cache setup as ios-testflight.yml.
 name: CI
 
 on:
@@ -6,17 +8,33 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - run: npx react-router typegen
-      - run: npx tsc --noEmit
+
+      # `react-router typegen && tsc` — typegen writes .react-router/types first.
+      - run: npm run typecheck
+
+      # eslint.config.js. Skipped until eslint is in devDependencies
+      # (npm i -D eslint @eslint/js typescript-eslint eslint-plugin-react-hooks eslint-plugin-react-refresh globals).
+      - name: Lint
+        if: ${{ hashFiles('node_modules/.bin/eslint') != '' }}
+        run: npm run lint
+
       - run: npm test
+
       - run: npm run build
