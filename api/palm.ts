@@ -507,7 +507,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         const state = summarizeFiling(filing);
         // The business Palm created is this entity's: stamp it so documents, mail and the agent find their way back.
-        if (filing.business_id) await palm(`/v1/business/${filing.business_id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } }).catch(() => {});
+        if (filing.business_id) await palm(`/v1/business/${filing.business_id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } }).catch((err) => console.error("palm: couldn't tag the business with its entity", err));
         const a = draft.principal;
         const owners = Array.isArray(draft.owners) ? draft.owners : [];
         const record: Record<string, unknown> = {
@@ -542,7 +542,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let patch = formationPatch(state, mode, filing.business_id ?? undefined);
         // The EIN is its own filing; once formation is done, its number is what's left to collect.
         if (state.ein && !state.ein.number && state.ein.status !== "canceled") {
-          const einFiling = await palm<PalmFiling>(`/v1/filing/${state.ein.filingId}`).catch(() => null);
+          const einFiling = await palm<PalmFiling>(`/v1/filing/${state.ein.filingId}`).catch((err) => (console.error("palm: couldn't read the EIN filing", err), null));
           if (einFiling) patch = { ...patch, ...einPatch(einFiling, mode, state) };
         }
         await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }], PALM);
@@ -560,7 +560,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
         if (link?.businessId) parents.push(["business", link.businessId]);
         const lists = await Promise.all(
-          parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch(() => null))
+          parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm: couldn't list cases for ${type} ${id}`, err), null)))
         );
         const seen = new Set<string>();
         const cases = lists
@@ -647,8 +647,8 @@ async function usageReport() {
 async function webhookHealth(): Promise<{ lastAt: string | null; lastType: string | null; lastMode: string | null; weekCount: number; url: string }> {
   const since = new Date(Date.now() - 7 * 86400_000).toISOString();
   const [last, week] = await Promise.all([
-    sb<{ type: string; occurred_at: string; mode: string }[]>("palm_events?select=type,occurred_at,mode&order=occurred_at.desc&limit=1").catch(() => []),
-    sb<{ id: string }[]>(`palm_events?select=id&occurred_at=gte.${encodeURIComponent(since)}&limit=500`).catch(() => []),
+    sb<{ type: string; occurred_at: string; mode: string }[]>("palm_events?select=type,occurred_at,mode&order=occurred_at.desc&limit=1").catch((err) => (console.error("palm: couldn't read the latest event", err), [])),
+    sb<{ id: string }[]>(`palm_events?select=id&occurred_at=gte.${encodeURIComponent(since)}&limit=500`).catch((err) => (console.error("palm: couldn't count recent events", err), [])),
   ]);
   const site = (process.env.SITE_URL?.replace(/\/$/, "") || "https://www.burtonfamilyoffice.com");
   return { lastAt: last[0]?.occurred_at ?? null, lastType: last[0]?.type ?? null, lastMode: last[0]?.mode ?? null, weekCount: week.length, url: `${site}/api/palm-webhook` };

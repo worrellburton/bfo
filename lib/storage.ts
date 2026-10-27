@@ -107,7 +107,8 @@ export async function storageRead(
       at += c.byteLength;
     }
     return { bytes, contentType: (r.headers.get("content-type") || "").toLowerCase().split(";")[0].trim() };
-  } catch {
+  } catch (err) {
+    console.error(`storage: couldn't read ${bucket}/${path}`, err);
     return null;
   }
 }
@@ -120,7 +121,8 @@ export async function storageRemove(path: string, bucket = BUCKET): Promise<void
       method: "DELETE",
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     });
-  } catch {
-    /* best-effort */
+  } catch (err) {
+    // Best-effort: an object left behind costs storage, not correctness.
+    console.error(`storage: couldn't remove ${bucket}/${path}`, err);
   }
 }

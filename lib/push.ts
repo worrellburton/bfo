@@ -216,7 +216,7 @@ export async function notifyTest(userId: string): Promise<{ devices: number; sen
     const r = results.get(d.token);
     if (r?.status === 200) {
       sent++;
-      if (r.env !== d.environment) await sb(`push_devices?token=eq.${d.token}`, { method: "PATCH", body: { environment: r.env } }).catch(() => undefined);
+      if (r.env !== d.environment) await sb(`push_devices?token=eq.${encodeURIComponent(d.token)}`, { method: "PATCH", body: { environment: r.env } }).catch((err) => console.error("push: couldn't record the device's environment", err));
     } else if (r) error = `${r.status}${r.reason ? ` ${r.reason}` : ""}`;
   }
   return { devices: devices.length, sent, ...(error ? { error } : {}) };

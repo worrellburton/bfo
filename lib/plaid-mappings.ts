@@ -98,6 +98,6 @@ export async function stampIdentity(live: LiveAccount[]): Promise<void> {
         subtype: account.subtype,
         account_name: account.name,
       },
-    }).catch(() => {});
+    }).catch((err) => console.error(`plaid-mappings: couldn't stamp identity on ${account.account_id}`, err));
   }
 }
