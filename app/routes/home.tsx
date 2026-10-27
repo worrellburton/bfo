@@ -607,7 +607,7 @@ function FlowCard({
                   ))}
                 </div>
                 {view === "transactions" && count > SHOWN && (
-                  <Link to="/books/transactions" className={`text-[10.5px] tabular-nums ${textMuted} hover:underline`}>
+                  <Link to="/books/transactions" className={`shrink-0 whitespace-nowrap text-[10.5px] tabular-nums ${textMuted} hover:underline`}>
                     All {count} →
                   </Link>
                 )}

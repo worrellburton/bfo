@@ -34,8 +34,8 @@ export default function Settings() {
             </svg>
           </div>
           <div>
-            <h2 className={`text-sm font-semibold ${isDark ? "" : "text-gray-900"}`}>Appearance</h2>
-            <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>Theme and background for the BF Access portal</p>
+            <h2 className={`text-sm font-semibold ${isDark ? "" : "text-gray-900"}`}>Background</h2>
+            <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>The moving background behind the public BF Access pages</p>
           </div>
         </div>
 

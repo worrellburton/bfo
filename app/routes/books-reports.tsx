@@ -750,7 +750,7 @@ export default function BooksReports() {
         {/* The year in five quiet figures. */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap mb-7 rise-in">
           {(() => {
-            const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
+            const sum = (a: number[] | undefined) => (a ?? []).reduce((s, v) => s + v, 0);
             const rev = sum(pnl.revenue_monthly);
             const opInc = sum(pnl.operating_income_monthly);
             const opMargin = rev !== 0 ? (opInc / rev) * 100 : 0;

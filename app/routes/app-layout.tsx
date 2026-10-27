@@ -810,7 +810,8 @@ export default function AppLayout() {
                   <circle cx="16" cy="7" r="2.5" />
                   <circle cx="10" cy="17" r="2.5" />
                 </svg>
-                Appearance
+                <span className="flex-1">Appearance</span>
+                <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>{isDark ? "Dark" : "Light"}</span>
               </button>
 
               {!emailOnly && !partner && (
@@ -903,7 +904,7 @@ export default function AppLayout() {
       <main
         id="main"
         tabIndex={-1}
-        className={`sidebar-content outline-none relative z-10 p-4 sm:p-6 md:p-8 md:ml-[var(--inset)] ${
+        className={`sidebar-content outline-none relative z-10 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:p-8 md:pb-8 md:ml-[var(--inset)] ${
           mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))]" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
         } md:pt-[calc(2rem+env(safe-area-inset-top))]`}
       >

@@ -78,7 +78,8 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     : isRouteErrorResponse(error)
       ? error.statusText || "The page failed to load."
       : "The page hit an unexpected error. Reloading usually fixes it — if it keeps happening, tell us what you were doing.";
-  const stack = import.meta.env.DEV && error instanceof Error ? error.stack : undefined;
+  // What went wrong, for whoever is told about it: the message always, the stack in development.
+  const detail = error instanceof Error ? (import.meta.env.DEV ? error.stack || error.message : error.message) : undefined;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
@@ -99,10 +100,13 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
             Go home
           </a>
         </div>
-        {stack && (
-          <pre className="mt-8 max-h-64 overflow-auto rounded-xl bg-white/5 p-4 text-left text-xs text-gray-400">
-            <code>{stack}</code>
-          </pre>
+        {detail && (
+          <details className="mt-8 text-left">
+            <summary className="cursor-pointer text-center text-xs text-gray-500 hover:text-gray-300">Technical details</summary>
+            <pre className="mt-3 max-h-64 overflow-auto rounded-xl bg-white/5 p-4 text-xs text-gray-400">
+              <code>{detail}</code>
+            </pre>
+          </details>
         )}
       </div>
     </main>
