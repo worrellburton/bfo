@@ -200,6 +200,22 @@ export async function notifyNewPaperMail(rows: NewPaperMail[], now = Date.now())
   }
 }
 
+/**
+ * A notice to every approved owner and admin, whatever their preferences:
+ * the office's own operational alerts (lib/alert.ts). Never throws.
+ */
+export async function notifyAdmins(payload: Record<string, unknown>, collapseId?: string): Promise<number> {
+  if (!apnsConfig()) return 0;
+  try {
+    const to = (await peopleIn(["owner", "admin"])).map((p) => p.id);
+    if (!to.length) return 0;
+    return await deliver([{ to, payload, ...(collapseId ? { collapseId } : {}) }], "admin");
+  } catch (err) {
+    console.error("push: admin notices failed", err);
+    return 0;
+  }
+}
+
 /** A test notice to one person's devices (the app's "Send a test notification"). */
 export async function notifyTest(userId: string): Promise<{ devices: number; sent: number; error?: string }> {
   const cfg = apnsConfig();

@@ -216,6 +216,36 @@ export default function Notifications() {
     }
   }
 
+  // System: open alerts and each cron's last run (admins), from /api/ops.
+  const [ops, setOps] = useState<{ alerts: OpsAlert[]; crons: CronLast[] } | null>(null);
+  const [opsError, setOpsError] = useState("");
+  const [acking, setAcking] = useState<string | null>(null);
+  const loadOps = () =>
+    authFetch("/api/ops")
+      .then(async (r) => {
+        if (!r.ok) throw new Error("Couldn't load the system status.");
+        const d = await r.json();
+        setOps({ alerts: d.alerts ?? [], crons: d.crons ?? [] });
+        setOpsError("");
+      })
+      .catch((err) => setOpsError(err instanceof Error ? err.message : "Couldn't load the system status."));
+  useEffect(() => {
+    if (admin) void loadOps();
+  }, [admin]);
+  async function acknowledge(id: string) {
+    setAcking(id);
+    try {
+      const r = await authFetch("/api/ops", { method: "POST", body: JSON.stringify({ action: "ack", id }) });
+      if (!r.ok) throw new Error("Couldn't acknowledge it.");
+      setOps((o) => o && { ...o, alerts: o.alerts.map((a) => (a.id === id ? { ...a, acknowledged_at: new Date().toISOString() } : a)) });
+    } catch (err) {
+      setOpsError(err instanceof Error ? err.message : "Couldn't acknowledge it.");
+    } finally {
+      setAcking(null);
+    }
+  }
+  const openAlerts = ops?.alerts.filter((a) => !a.acknowledged_at) ?? [];
+
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const card = isDark ? "glass-card" : "glass-card";
   const divider = isDark ? "border-white/5" : "border-gray-100";
@@ -472,8 +502,101 @@ export default function Notifications() {
             </div>
           </section>
 
+          {/* System: what broke, and when each scheduled job last ran (admins) */}
+          {admin && (
+            <section className={`rounded-xl border p-6 mb-6 ${card}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>System</h2>
+                  <p className={`text-sm mt-1 ${subtle}`}>What broke, and when each scheduled job last ran.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadOps()}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium max-sm:min-h-[44px] ${isDark ? "border-white/15 text-gray-200 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+                >
+                  Refresh
+                </button>
+              </div>
+              {opsError && <p className={`mt-3 text-xs ${isDark ? "text-red-400" : "text-red-700"}`}>{opsError}</p>}
+
+              <span className={`text-xs font-medium uppercase tracking-wider block mt-5 mb-2 ${subtle}`}>Alerts</span>
+              {ops === null ? (
+                <p className={`text-sm ${subtle}`}>Checking…</p>
+              ) : openAlerts.length === 0 ? (
+                <p className={`flex items-center gap-2 text-sm ${subtle}`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
+                  Nothing open.
+                </p>
+              ) : (
+                <ul className={`divide-y ${divider}`}>
+                  {openAlerts.map((a) => (
+                    <li key={a.id} className="flex items-start gap-3 py-3">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>{a.title}</div>
+                        {a.detail && <div className={`mt-0.5 whitespace-pre-line break-words text-xs ${subtle}`}>{a.detail}</div>}
+                        <div className={`mt-1 text-xs ${subtle}`}>
+                          {a.kind} · {when(a.created_at)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void acknowledge(a.id)}
+                        disabled={acking === a.id}
+                        className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium max-sm:min-h-[40px] disabled:opacity-50 ${isDark ? "border-white/15 text-gray-200 hover:bg-white/10" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        {acking === a.id ? "…" : "Acknowledge"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <span className={`text-xs font-medium uppercase tracking-wider block mt-5 mb-2 ${subtle}`}>Scheduled jobs</span>
+              {ops === null ? (
+                <p className={`text-sm ${subtle}`}>Checking…</p>
+              ) : (
+                <ul className={`divide-y ${divider}`}>
+                  {ops.crons.map((c) => (
+                    <li key={c.name} className="flex items-center gap-3 py-2.5">
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${!c.started_at ? (isDark ? "bg-white/20" : "bg-gray-300") : c.ok === false ? "bg-red-400" : c.finished_at ? "bg-emerald-400" : "bg-amber-400"}`}
+                        aria-hidden
+                      />
+                      <span className={`min-w-0 flex-1 text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>
+                        {c.name}
+                        {c.note && <span className={`ml-2 text-xs ${subtle}`}>{c.note.split("\n")[0]}</span>}
+                      </span>
+                      <span className={`shrink-0 text-xs ${c.ok === false ? (isDark ? "text-red-400" : "text-red-700") : subtle}`}>
+                        {!c.started_at ? "never ran" : c.ok === false ? `failed ${when(c.started_at)}` : c.finished_at ? `ok ${when(c.started_at)}` : `running since ${when(c.started_at)}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
         </>
       )}
     </div>
   );
+}
+
+type OpsAlert = { id: string; kind: string; title: string; detail: string | null; created_at: string; acknowledged_at: string | null };
+type CronLast = { name: string; started_at: string | null; finished_at: string | null; ok: boolean | null; note: string | null };
+
+/** "just now", "12 min ago", "3 h ago", "2 days ago", or the date. */
+function when(iso: string): string {
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  const min = Math.round(ms / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  if (d < 14) return `${d} day${d === 1 ? "" : "s"} ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

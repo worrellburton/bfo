@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
+import { alertAdmins, alertOnThrow } from "../lib/alert.js";
 import { sb, sendEmail } from "../lib/auth.js";
 import { palm, palmMode } from "../lib/palm.js";
 import { raPatch, type RaServiceLike } from "../lib/palm-agent.js";
@@ -48,7 +49,10 @@ function within<T>(ms: number, p: Promise<T>): Promise<T | null> {
   return Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]).catch(() => null);
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+// An error nothing below caught alerts the admins (lib/alert.ts) and still answers 500, so Palm retries.
+export default alertOnThrow("webhook:palm", "Palm webhook crashed", handle);
+
+async function handle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   const secret = process.env.PALM_WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ error: "not_configured" });
@@ -113,8 +117,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Writing an event onto its entity failed: it isn't stored, and Palm is asked to send it again.
   let retry = false;
+  const failures: string[] = [];
   const fail = (what: string) => (err: unknown) => {
     console.error(`palm-webhook: couldn't record the ${what}`, err);
+    failures.push(`${what}: ${err instanceof Error ? err.message : String(err)}`);
     retry = true;
   };
 
@@ -130,7 +136,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (assetId && event.type.startsWith("case.") && !seen) {
     await onCase(event.id, event.type, assetId, entityName, row.mode, object).catch(fail("case"));
   }
-  if (retry) return res.status(500).json({ error: "record_failed" }); // Palm retries
+  if (retry) {
+    await alertAdmins("webhook:palm", "A Palm event couldn't be written onto its entity", `${event.type} ${event.id}: ${failures.join("; ")}`);
+    return res.status(500).json({ error: "record_failed" }); // Palm retries
+  }
 
   try {
     const inserted = await sb<unknown[]>("palm_events?on_conflict=id", {
@@ -160,6 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err) {
     console.error("palm webhook store failed", err);
+    await alertAdmins("webhook:palm", "A Palm event couldn't be stored", `${event.type} ${event.id}: ${err instanceof Error ? err.message : String(err)}`);
     return res.status(500).json({ error: "store_failed" }); // Palm retries
   }
   return res.status(200).json({ ok: true });

@@ -51,6 +51,12 @@ const applyMock = vi.fn(async () => {});
 const activityMock = vi.fn(async () => {});
 vi.mock("../lib/tree.js", () => ({ readRows: vi.fn(async () => treeRows), applyOps: (...a: unknown[]) => (applyMock as (...x: unknown[]) => Promise<void>)(...a) }));
 vi.mock("../lib/activity.js", () => ({ logActivity: (...a: unknown[]) => (activityMock as (...x: unknown[]) => Promise<void>)(...a) }));
+// The admins' alert (lib/alert.ts) is its own thing, tested in tests/ops.test.ts.
+const alertMock = vi.fn(async () => "sent");
+vi.mock("../lib/alert.js", () => ({
+  alertAdmins: (...a: unknown[]) => (alertMock as (...x: unknown[]) => Promise<string>)(...a),
+  alertOnThrow: (_kind: string, _title: string, fn: unknown) => fn,
+}));
 import handler from "../api/palm-webhook";
 
 function call(body: string, signature?: string) {
@@ -196,6 +202,8 @@ describe("monitor events", () => {
     const body = JSON.stringify(filingEvent("business.filing.due", now));
     expect((await call(body, sign(body))).status).toBe(500);
     expect(sbMock).toHaveBeenCalledTimes(2); // not stored, so the retry is handled
+    expect(alertMock).toHaveBeenCalledTimes(1); // and the admins hear about it
+    expect((alertMock.mock.calls[0] as unknown as [string, string])[0]).toBe("webhook:palm");
   });
 });
 
