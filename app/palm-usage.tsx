@@ -60,7 +60,7 @@ export function PalmCostCard({ isDark, names, refreshKey = 0 }: { isDark: boolea
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full cursor-pointer items-center gap-4 px-5 py-3.5 text-left sm:px-6">
         <div className="min-w-0 flex-1">
           <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>Palm costs · {month}</p>
-          {!usage ? (
+          {!usage?.month || !usage.lastMonth ? (
             <div className={`mt-1.5 h-5 w-48 animate-pulse rounded ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`} />
           ) : (
             <p className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">

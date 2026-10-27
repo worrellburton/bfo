@@ -39,7 +39,6 @@ import {
   Rows,
   Section,
   TextButton,
-  formatBytes,
   toneText,
   useTone,
   type IconName,

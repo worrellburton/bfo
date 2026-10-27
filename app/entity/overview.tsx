@@ -9,17 +9,17 @@ import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { agentTerm, stateCode, stateName } from "../entity-paperwork";
 import { entityAddresses, foreignStates, formingNow, type Check } from "../entity-addresses";
-import { DOC_LABEL, docKindOf, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
+import { DOC_LABEL, docKindOf, fromBundle, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
 import { STABLE_ADDRESS } from "../paper-mail";
 import { f8822bData, stateAddressStep } from "../paperwork-generate";
-import { isAdmin, isPartner } from "../auth";
+import { isPartner } from "../auth";
 import { StoredFileLink } from "../stored-file";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
 import { PalmQuestions } from "./palm-questions";
 import { ClosingCard } from "./closing";
 import { addressChangeRemaining, Standing } from "./standing";
 import { WITH_FORMATION } from "./derive";
-import { useEntity } from "./context";
+import { useEntity, usePalmSeed } from "./context";
 import { BY_HAND, einLooksRight, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
 
@@ -266,7 +266,7 @@ function Formation() {
 // ── Details ──────────────────────────────────────────────────────────────
 
 function Details() {
-  const { page, view, asset } = useEntity();
+  const { view, asset } = useEntity();
   const t = useTone();
   const corp = view.etype === "C-Corp";
   const formed = fmtDate(asset.formationDate);
@@ -537,12 +537,15 @@ function Mail() {
   const count = docs?.length ?? 0;
   const [unread, setUnread] = useState<InboxEvent[]>([]);
   const [error, setError] = useState("");
+  const seed = usePalmSeed<{ events: InboxEvent[] }>("inboxUnread");
 
   // Unread mail only; nothing is marked read just by looking at Overview.
   useEffect(() => {
     if (!shown || !mode || !assetId) return;
     let live = true;
-    palmCall<{ events: InboxEvent[] }>("inbox", { assetId, mode, unread: true })
+    // The page's opening read when it just came in (its mail count and unread mail are one reading); Palm itself otherwise.
+    const part = seed(`${assetId}:${mode}`);
+    (part ? fromBundle(part) : palmCall<{ events: InboxEvent[] }>("inbox", { assetId, mode, unread: true }))
       .then((r) => live && setUnread(r.events.filter((e) => e.document_id)))
       .catch(() => {});
     return () => {
@@ -1056,7 +1059,7 @@ function List({ items }: { items: string[] }) {
 
 
 function ToDo() {
-  const { page, view, asset, goToTab } = useEntity();
+  const { view, asset, goToTab } = useEntity();
   const t = useTone();
   const { checklist } = view;
   const forming = !!formingNow(asset);

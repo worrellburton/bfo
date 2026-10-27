@@ -22,6 +22,24 @@ type CodeRow = {
   consumed: boolean;
 };
 
+const UUID = /^[0-9a-f-]{36}$/i;
+
+/**
+ * Spend one attempt on a code, atomically. The row is written only when it
+ * still holds the attempts count this request read, is unconsumed and has
+ * attempts left — so two guesses racing on the same row can't both pass a
+ * check taken before either wrote. Returns false when the write matched
+ * nothing: another guess got there first, or the code is used up.
+ */
+async function spendAttempt(row: CodeRow, extra: Record<string, unknown> = {}): Promise<boolean> {
+  const updated = await sb<Array<{ id: string }>>(
+    `login_codes?id=eq.${encodeURIComponent(row.id)}&consumed=is.false` +
+      `&attempts=eq.${row.attempts}&attempts=lt.${MAX_CODE_ATTEMPTS}&select=id`,
+    { method: "PATCH", prefer: "return=representation", body: { attempts: row.attempts + 1, ...extra } }
+  );
+  return Array.isArray(updated) && updated.length > 0;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["POST"])) return;
 
@@ -41,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `&order=created_at.desc&limit=1`
     );
     const row = rows?.[0];
-    if (!row) {
+    if (!row || !UUID.test(row.id)) {
       return fail(res, 400, "no_code", "Request a new code.");
     }
     if (new Date(row.expires_at).getTime() < Date.now()) {
@@ -55,26 +73,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Bird Verify holds the code; it identifies the verification by recipient.
       const outcome = await verifyCheck(identifier, code);
       if (outcome !== "verified") {
-        await sb(`login_codes?id=eq.${row.id}`, {
-          method: "PATCH",
-          body: {
-            attempts: row.attempts + 1,
-            ...(outcome === "expired" || outcome === "spent" ? { consumed: true } : {}),
-          },
-        });
+        const counted = await spendAttempt(row, outcome === "expired" || outcome === "spent" ? { consumed: true } : {});
         if (outcome === "expired") {
           return fail(res, 400, "code_expired", "That code expired. Request a new one.");
         }
-        if (outcome === "spent") {
+        if (outcome === "spent" || !counted) {
           return fail(res, 429, "too_many_attempts", "Too many attempts. Request a new code.");
         }
         return fail(res, 401, "wrong_code", "That code isn't right.");
       }
     } else if (!safeEqual(row.code_hash, hashCode(identifier.value, code))) {
-      await sb(`login_codes?id=eq.${row.id}`, {
-        method: "PATCH",
-        body: { attempts: row.attempts + 1 },
-      });
+      // The attempt counts only if this request is the one that moved the
+      // counter; a guess that lost the race is refused outright.
+      if (!(await spendAttempt(row))) {
+        return fail(res, 429, "too_many_attempts", "Too many attempts. Request a new code.");
+      }
       const left = MAX_CODE_ATTEMPTS - (row.attempts + 1);
       return fail(
         res,
@@ -84,10 +97,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     }
 
-    await sb(`login_codes?id=eq.${row.id}`, {
-      method: "PATCH",
-      body: { consumed: true, attempts: row.attempts + 1 },
-    });
+    // One-time use: the same write that spends the attempt consumes the code,
+    // so a second request carrying the right code finds nothing to consume.
+    if (!(await spendAttempt(row, { consumed: true }))) {
+      return fail(res, 429, "too_many_attempts", "Too many attempts. Request a new code.");
+    }
 
     const column = identifier.kind === "phone" ? "phone" : "email";
     const users = await sb<AppUser[]>(

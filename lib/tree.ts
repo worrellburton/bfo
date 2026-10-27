@@ -185,6 +185,7 @@ async function recordActivity(ids: string[], before: Map<string, Json>, after: M
   const pairs = ids.map((id) => ({ id, b: asRec(before.get(id)), a: asRec(after.get(`assets/${id}`)?.data) }));
   // An owner shows by name: look up the ones that changed.
   const ownerIds = [...new Set(pairs.filter((p) => p.b?.ownerId !== p.a?.ownerId).flatMap((p) => [p.b?.ownerId, p.a?.ownerId]))].filter((v): v is string => typeof v === "string" && !!v);
-  const names = new Map((ownerIds.length ? await readRows("assets", ownerIds).catch(() => []) : []).map((r) => [r.id, (r.data as { name?: string } | null)?.name ?? null]));
+  // Activity still logs without owner names; the read failing is worth knowing, not worth failing the write.
+  const names = new Map((ownerIds.length ? await readRows("assets", ownerIds).catch((err) => (console.error("tree: couldn't read owner names for activity", err), [] as TreeRow[])) : []).map((r) => [r.id, (r.data as { name?: string } | null)?.name ?? null]));
   for (const p of pairs) await logActivity(p.id, actor, describeChange(p.b, p.a, (id) => names.get(id) ?? null));
 }

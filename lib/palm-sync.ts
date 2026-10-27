@@ -180,7 +180,7 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
       const parents: [string, string][] = [["business", businessId]];
       if (link?.formation?.filingId) parents.push(["filing", link.formation.filingId]);
       if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
-      const lists = await Promise.all(parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: { id: string; status: string }[] } | { id: string; status: string }[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch(() => null)));
+      const lists = await Promise.all(parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: { id: string; status: string }[] } | { id: string; status: string }[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm-sync: couldn't list cases for ${type} ${id}`, err), null))));
       const waiting = new Set(lists.flatMap((l) => (Array.isArray(l) ? l : l?.data ?? [])).filter((c) => c?.status === "needs_response").map((c) => c.id)).size;
       say({ label: "Palm's questions", tone: waiting ? "warn" : "good", text: waiting ? `${waiting} waiting on an answer (Compliance).` : "None open." });
     } catch (err) {

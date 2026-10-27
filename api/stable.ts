@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
 import { canWrite, cronAuth, currentUser, fail, guard, handleError, isPartner, refuseCron, sb } from "../lib/auth.js";
+import { recordCronRun } from "../lib/cron.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
 import { StableNotConfigured, syncStable, type MailRow } from "../lib/stable.js";
 import { storageSignedUrl } from "../lib/storage.js";
@@ -53,7 +54,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cron = cronAuth(req);
       if (cron !== "ok") return refuseCron(req, res, "stable", cron);
       if (!process.env.STABLE_API_KEY) return res.status(200).json({ synced: 0, configured: false });
-      return res.status(200).json({ synced: await syncStable(7) });
+      // Recorded in cron_runs; a sync that fails leaves the mailbox stale, so the admins hear about it.
+      return res.status(200).json({ synced: await recordCronRun("stable", () => syncStable(7)) });
     }
 
     const me = await currentUser(req, { allowPartner: true });

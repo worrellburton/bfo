@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { cronAuth, currentUser, handleError, isAdmin, refuseCron } from "../../lib/auth.js";
+import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { checkStateRecords } from "../../lib/state-records.js";
 
 /**
@@ -28,11 +29,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { ids?: unknown; force?: unknown };
       opts = { ids: Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : undefined, force: body.force === true, by: { id: user.id, name: user.name } };
     }
-    const results = await checkStateRecords(opts);
-    const counts = results.reduce<Record<string, number>>((n, r) => ((n[r.outcome] = (n[r.outcome] ?? 0) + 1), n), {});
-    // The outcome of each, for the logs: who wasn't found or matched more than one entry.
-    console.log("state-records", JSON.stringify({ counts, results: results.filter((r) => r.outcome !== "fresh") }));
-    return res.status(200).json({ counts, results });
+    const check = async (run?: CronRun) => {
+      const results = await checkStateRecords(opts);
+      const counts = results.reduce<Record<string, number>>((n, r) => ((n[r.outcome] = (n[r.outcome] ?? 0) + 1), n), {});
+      // The outcome of each, for the logs: who wasn't found or matched more than one entry.
+      console.log("state-records", JSON.stringify({ counts, results: results.filter((r) => r.outcome !== "fresh") }));
+      if (run) {
+        run.note(JSON.stringify(counts));
+        // A read that errored leaves that entity's record stale: say so, once per run.
+        const errored = results.filter((r) => r.outcome === "error");
+        if (errored.length) run.failed(`${errored.length} state record${errored.length === 1 ? "" : "s"} couldn't be read: ${errored.map((r) => `${r.name} (${r.state})${r.detail ? `: ${r.detail}` : ""}`).join("; ")}`);
+      }
+      return { counts, results };
+    };
+    // The scheduled run is recorded (cron_runs) and alerts the admins when it fails.
+    const out = fromCron ? await recordCronRun("state-records", check) : await check();
+    return res.status(200).json(out);
   } catch (err) {
     return handleError(res, err);
   }

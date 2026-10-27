@@ -1,8 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { canWrite, cronAuth, currentUser, refuseCron, sbFetch as db } from "../../lib/auth.js";
+import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
 import { fetchAll } from "../../lib/db-pages.js";
+import { inList } from "../../lib/pg-filter.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 
@@ -162,7 +164,7 @@ async function markIntercompany(sinceDate: string): Promise<number> {
     await db(`book_transactions?transaction_id=eq.${encodeURIComponent(u.id)}`, {
       method: "PATCH",
       body: JSON.stringify({ intercompany: true, counterparty_account_id: u.counterparty }),
-    }).catch(() => {});
+    }).catch((err) => console.error(`books-sync: couldn't mark ${u.id} intercompany`, err));
   }
   // Fresh intercompany rows default to "transfer"; a user's reclassification
   // (distribution/loan) is never overwritten because we only fill nulls.
@@ -170,7 +172,7 @@ async function markIntercompany(sinceDate: string): Promise<number> {
     await db(`book_transactions?intercompany=eq.true&intercompany_class=is.null`, {
       method: "PATCH",
       body: JSON.stringify({ intercompany_class: "transfer" }),
-    }).catch(() => {});
+    }).catch((err) => console.error("books-sync: couldn't default intercompany_class", err));
   }
   return updates.length;
 }
@@ -193,6 +195,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
   }
 
+  // The scheduled run is recorded (cron_runs) and alerts the admins when a
+  // bank's sync fails or the run doesn't finish; a person's "Sync now" isn't.
+  if (fromCron) return recordCronRun("books-sync", (run) => sync(req, res, true, run));
+  return sync(req, res, false, null);
+}
+
+async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, run: CronRun | null) {
   // Sunrise gate — only for the automatic cron run. The cron fires a few times
   // across the morning window; on each fire we sync once, at the first fire on
   // or after today's local sunrise, and only if the toggle is on. A person
@@ -202,15 +211,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sRes = await db("books_settings?id=eq.1&select=*&limit=1");
       const s = sRes.ok ? ((await sRes.json()) as any[])[0] : null;
       if (!s?.sync_at_sunrise) {
+        run?.note("skipped: sunrise sync is off");
         return res.status(200).json({ skipped: "sunrise_sync_disabled" });
       }
       const now = new Date();
       const today = now.toISOString().slice(0, 10);
       if (s.last_auto_sync_date === today) {
+        run?.note("skipped: already synced today");
         return res.status(200).json({ skipped: "already_synced_today" });
       }
       const sunrise = sunriseUtcDate(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate(), s.sync_lat, s.sync_lng);
       if (sunrise && now < sunrise) {
+        run?.note(`skipped: before sunrise (${sunrise.toISOString()})`);
         return res.status(200).json({ skipped: "before_sunrise", sunrise_utc: sunrise.toISOString() });
       }
       // Fall through and sync; today's date is claimed only after it succeeds
@@ -219,6 +231,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // two morning fires is harmless.
     } catch (err: any) {
       console.error("sunrise gate error:", err.message);
+      run?.note(`sunrise gate couldn't be read (${err.message}); synced anyway`);
       // On a gate failure, fall through and sync — missing a sync is worse.
     }
   }
@@ -256,7 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           patch.intercompany = false;
         }
         for (let i = 0; i < ids.length; i += 200) {
-          const list = ids.slice(i, i + 200).map((id: string) => `"${id}"`).join(",");
+          const list = inList(ids.slice(i, i + 200));
           const r = await db(`book_transactions?transaction_id=in.(${list})`, {
             method: "PATCH",
             body: JSON.stringify(patch),
@@ -387,11 +400,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           modified += data.modified.length;
 
           if (data.removed.length) {
-            const ids = data.removed
-              .map((t) => t.transaction_id)
-              .filter(Boolean)
-              .map((id) => `"${id}"`)
-              .join(",");
+            const ids = inList(data.removed.map((t) => t.transaction_id).filter(Boolean));
             // fetch resolves on HTTP errors, so check ok: a failed delete must
             // throw before the cursor below moves past these removals for good.
             const del = await db(`book_transactions?transaction_id=in.(${ids})`, { method: "DELETE" });
@@ -424,6 +433,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (err: any) {
         // Plaid's error code is safe to show; anything else stays in the log.
         console.error(`books-sync: ${item.institution_name} failed:`, err.response?.data || err.message);
+        // That bank's transactions are now stale: the admins hear about it (once per run).
+        run?.failed(`Plaid sync failed for ${item.institution_name}: ${err.response?.data?.error_code || err.message || "sync_failed"}`);
         summary.push({
           institution: item.institution_name,
           error: err.response?.data?.error_code || "sync_failed",
@@ -450,8 +461,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await patchMatching(db, rule.match, "loan_id=is.null", { loan_id: rule.loan_id });
         }
       }
-    } catch {
+    } catch (err) {
       // loan attachment is retried next sync
+      console.error("books-sync: loan rules didn't apply", err);
     }
 
     // Keep entity stamps in step with the mappings page — remapping an account
@@ -464,7 +476,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           entity_name: pref.entity_name ?? null,
           hidden: pref.hidden ?? false,
         }),
-      }).catch(() => {});
+      }).catch((err) => console.error(`books-sync: couldn't restamp entity on ${accountId}`, err));
     }
 
     // Mark today's automatic run complete, so later morning fires skip it.
@@ -472,13 +484,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db("books_settings?id=eq.1", {
         method: "PATCH",
         body: JSON.stringify({ last_auto_sync_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }),
-      }).catch(() => {});
+      }).catch((err) => console.error("books-sync: couldn't record today's automatic run", err));
     }
 
     return res.status(200).json({ synced: true, items: summary, intercompany_marked: intercompanyMarked });
   } catch (err: any) {
     // The detail (raw Plaid or database text) stays in the log.
     console.error("books-sync error:", err.response?.data || err.message);
+    run?.failed(`The sync didn't finish: ${err.response?.data?.error_code || err.message || "sync_failed"}`);
     return res.status(500).json({ error: "sync_failed", message: "The sync didn't finish. Try again." });
   }
 }

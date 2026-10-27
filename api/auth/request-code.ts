@@ -14,6 +14,9 @@ import {
 import { countRows } from "../../lib/db-pages.js";
 
 const MAX_CODES_PER_HOUR = 5;
+/** Codes one address may ask for in ten minutes, whatever numbers it tries. */
+const MAX_CODES_PER_IP = 5;
+const IP_WINDOW_MS = 10 * 60 * 1000;
 
 /** Codes sent to everyone together per hour (SIGNIN_HOURLY_CAP), default 60. */
 function hourlyCap(): number {
@@ -23,6 +26,17 @@ function hourlyCap(): number {
 
 function hourAgo(): string {
   return new Date(Date.now() - 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * The caller's address, from the proxy headers Vercel sets (the first
+ * x-forwarded-for entry is the client's). Null when nothing there looks like
+ * an address, in which case only the per-number and global caps apply.
+ */
+export function clientIp(headers: Record<string, string | string[] | undefined>): string | null {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+  const raw = (one(headers["x-real-ip"]) || one(headers["x-forwarded-for"]).split(",")[0]).trim();
+  return /^[0-9a-f.:]{3,45}$/i.test(raw) ? raw.toLowerCase() : null;
 }
 
 function mask(kind: "phone" | "email", value: string): string {
@@ -57,11 +71,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // limit counts the rows written before it, so a burst of parallel
     // requests can't all pass a count taken before any of them was written.
     // A request that sends nothing takes its row out again (finally, below).
+    const ip = clientIp(req.headers ?? {});
     held = (
       await sb<Array<{ id: string; created_at: string }>>("login_codes?select=id,created_at", {
         method: "POST",
         prefer: "return=representation",
-        body: [{ identifier: identifier.value, code_hash: "pending", consumed: true, expires_at: new Date().toISOString() }],
+        body: [{ identifier: identifier.value, code_hash: "pending", consumed: true, expires_at: new Date().toISOString(), ip }],
       })
     )?.[0];
     if (!held) throw new Error("request-code: the code's row wasn't written");
@@ -76,6 +91,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error(`request-code: global cap reached (${sentLastHour} codes in the last hour)`);
       res.setHeader("Retry-After", "600");
       return fail(res, 429, "busy", "Sign-in is busy right now. Try again in a few minutes.");
+    }
+
+    // One address asking for codes to many numbers is the other shape of SMS
+    // pumping. Counted before the account lookup, so it says nothing about
+    // who has an account.
+    if (ip) {
+      const windowStart = encodeURIComponent(new Date(Date.now() - IP_WINDOW_MS).toISOString());
+      const fromIp = await countRows("login_codes", `ip=eq.${encodeURIComponent(ip)}&created_at=gte.${windowStart}&created_at=lt.${upTo}`);
+      if (fromIp >= MAX_CODES_PER_IP) {
+        console.error(`request-code: per-address cap reached (${fromIp} codes in ten minutes)`);
+        res.setHeader("Retry-After", "600");
+        return fail(res, 429, "rate_limited", "Too many codes requested from this connection. Try again in ten minutes.");
+      }
     }
 
     const column = identifier.kind === "phone" ? "phone" : "email";

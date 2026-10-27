@@ -11,6 +11,7 @@ import {
 } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { cronAuth, currentUser, formatPhone, handleError, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { fetchAll } from "../../lib/db-pages.js";
 
 /**
@@ -109,7 +110,8 @@ async function lastDeliveryDate(): Promise<string | null> {
       day: "numeric",
       timeZone: "America/New_York",
     });
-  } catch {
+  } catch (err) {
+    console.error("treasury-report: couldn't read the last delivery date", err);
     return null;
   }
 }
@@ -120,7 +122,8 @@ async function loadHistory(): Promise<DailyTotal[]> {
       "treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=365"
     );
     return (rows ?? []).reverse();
-  } catch {
+  } catch (err) {
+    console.error("treasury-report: couldn't read the daily history", err);
     return [];
   }
 }
@@ -367,39 +370,6 @@ function shape(accounts: Account[]): Shaped {
   };
 }
 
-/** Delta of today's total vs the recorded total closest to N days back. */
-function deltaOver(history: DailyTotal[], days: number): { delta: number; pct: number } | null {
-  if (history.length < 2) return null;
-  const latest = history[history.length - 1];
-  const latestTotal = Number(latest.cash) + Number(latest.invested);
-  const target = new Date(`${latest.day}T00:00:00Z`).getTime() - days * 86_400_000;
-  let best: DailyTotal | null = null;
-  let bestGap = Infinity;
-  for (const d of history.slice(0, -1)) {
-    const gap = Math.abs(new Date(`${d.day}T00:00:00Z`).getTime() - target);
-    if (gap < bestGap) {
-      bestGap = gap;
-      best = d;
-    }
-  }
-  if (!best || best.day === latest.day) return null;
-  const base = Number(best.cash) + Number(best.invested);
-  const delta = latestTotal - base;
-  return { delta, pct: base > 0 ? (delta / base) * 100 : 0 };
-}
-
-/** Rule-based one-liner: what actually happened since last time. */
-function narrative(s: Shaped): string {
-  const c = s.cashMove;
-  const i = s.investMove;
-  const word = (n: number) => `${n > 0 ? "rose" : "fell"} ${money(Math.abs(n))}`;
-  if (c === 0 && i === 0) return "Everything held steady since the last report.";
-  if (c !== 0 && i === 0) return `Cash ${word(c)} while investments held steady.`;
-  if (c === 0 && i !== 0) return `Investments ${word(i)} while cash held steady.`;
-  if (Math.sign(c) === Math.sign(i)) return `Cash ${word(c)} and investments ${word(i)}.`;
-  return `Cash ${word(c)}, but investments ${word(i)}.`;
-}
-
 /** Last recorded total of each month, most recent six. */
 function monthlyCloses(history: DailyTotal[]): Array<{ label: string; total: number }> {
   const byMonth = new Map<string, DailyTotal>();
@@ -410,30 +380,6 @@ function monthlyCloses(history: DailyTotal[]): Array<{ label: string; total: num
     label: new Date(`${key}-01T12:00:00Z`).toLocaleDateString("en-US", { month: "short" }),
     total: Number(d.cash) + Number(d.invested),
   }));
-}
-
-/** Percentage-point shift of the cash/invest split vs ~30 days ago. */
-function allocationDrift(history: DailyTotal[]): number | null {
-  if (history.length < 2) return null;
-  const pct = (d: DailyTotal) => {
-    const total = Number(d.cash) + Number(d.invested);
-    return total > 0 ? (Number(d.invested) / total) * 100 : null;
-  };
-  const nowPct = pct(history[history.length - 1]);
-  const target = new Date(`${history[history.length - 1].day}T00:00:00Z`).getTime() - 30 * 86_400_000;
-  let best: DailyTotal | null = null;
-  let bestGap = Infinity;
-  for (const d of history.slice(0, -1)) {
-    const gap = Math.abs(new Date(`${d.day}T00:00:00Z`).getTime() - target);
-    if (gap < bestGap) {
-      bestGap = gap;
-      best = d;
-    }
-  }
-  const thenPct = best ? pct(best) : null;
-  if (nowPct == null || thenPct == null) return null;
-  const drift = nowPct - thenPct;
-  return Math.abs(drift) >= 1 ? drift : null;
 }
 
 /** Saturday or Sunday in New York — investment prices are Friday's close. */
@@ -459,25 +405,6 @@ function nextReportLabel(prefs: Prefs, now: Date): string | null {
   if (eastern.getDate() >= target) next.setMonth(next.getMonth() + 1);
   next.setDate(target);
   return next.toLocaleDateString("en-US", { month: "long", day: "numeric" });
-}
-
-/**
- * If cash has been draining over the recorded month, how long the current
- * balance lasts at that pace. Only speaks up when the answer is sobering.
- */
-function cashRunway(history: DailyTotal[], cash: number): string | null {
-  const window = history.slice(-30);
-  if (window.length < 7 || cash <= 0) return null;
-  const days =
-    (new Date(`${window[window.length - 1].day}T00:00:00Z`).getTime() -
-      new Date(`${window[0].day}T00:00:00Z`).getTime()) /
-    86_400_000;
-  if (days < 6) return null;
-  const drain = (Number(window[0].cash) - Number(window[window.length - 1].cash)) / days;
-  if (drain <= 0) return null; // cash is flat or growing — say nothing
-  const months = cash / (drain * 30.4);
-  if (months > 24) return null;
-  return `At this month's pace, cash covers about ${months < 1.5 ? `${Math.round(months * 30)} days` : `${Math.round(months)} months`}.`;
 }
 
 /** Tiny in-card sparkline from the last 14 recorded days of one series. */
@@ -593,8 +520,6 @@ function renderText(
 
 function renderActivity(activity: { account: Account; txns: Txn[] }): string {
   const { account, txns } = activity;
-  const inflow = txns.filter((t) => -t.amount > 0).reduce((s, t) => s + -t.amount, 0);
-  const outflow = txns.filter((t) => -t.amount < 0).reduce((s, t) => s + t.amount, 0);
   const rows = txns
     .map((t, i) => {
       const date = new Date(`${t.date}T12:00:00Z`).toLocaleDateString("en-US", {
@@ -747,22 +672,10 @@ function renderHtml(
     const stale = offlineBanks.has(a.institution_name)
       ? ` <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:#fbbf24;vertical-align:middle;" title="Connection needs attention"></span>`
       : "";
-    const bal = Math.abs(a.balance_current ?? 0);
     const swing = "";
-    const util =
-      liability && a.balance_limit && a.balance_limit > 0
-        ? `<div style="font-size:11px;margin-top:1px;color:rgba(255,255,255,0.35);">${Math.round(((a.balance_current ?? 0) / a.balance_limit) * 100)}% of ${money(a.balance_limit)} limit</div>`
-        : "";
     const delta = a.change
       ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>`
       : "";
-    const avail =
-      a.type === "depository" &&
-      a.balance_available != null &&
-      a.balance_current != null &&
-      Math.abs(a.balance_available - a.balance_current) >= 1
-        ? `<div style="font-size:11px;margin-top:1px;color:rgba(255,255,255,0.35);">${money(a.balance_available, a.currency ?? "USD")} available</div>`
-        : "";
     return `<tr>
       <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
         <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountName(a)}</a>${stale}${swing}
@@ -789,7 +702,6 @@ function renderHtml(
           <span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.10);" title="${n} zero-balance account${n === 1 ? "" : "s"}">+${n}</span>
         </td></tr>`;
 
-  const s_totalForShare = s.cash + s.invested;
   const section = (
     title: string,
     list: Account[],
@@ -799,10 +711,6 @@ function renderHtml(
   ) => {
     if (list.length === 0 && !opts.zeros) return "";
     const sectionMax = Math.max(...list.map((a) => Math.abs(a.balance_current ?? 0)), 0);
-    const count = list.length + (opts.zeros ?? 0);
-    const sectionSum = list.reduce((t, a) => t + Math.abs(a.balance_current ?? 0), 0);
-    const share =
-      opts.liability || s_totalForShare <= 0 ? null : Math.round((sectionSum / s_totalForShare) * 100);
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
       style="margin-top:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
       <tr><td style="padding:14px 16px 6px;">
@@ -1028,7 +936,8 @@ async function fetchRecentTxns(
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, ACTIVITY_COUNT);
     return txns.length ? { account, txns } : null;
-  } catch {
+  } catch (err) {
+    console.error(`treasury-report: couldn't read activity for ${account.account_id}`, err);
     return null;
   }
 }
@@ -1074,7 +983,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       // Each loan carries its own "show on Treasury report" toggle.
       return (await computeLoans()).loans.filter((l) => l.show_on_report);
-    } catch {
+    } catch (err) {
+      console.error("treasury-report: loans left off the report", err);
       return []; // the report still sends if the loan ledger hiccups
     }
   };
@@ -1148,13 +1058,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cron = cronAuth(req);
   if (cron !== "ok") return refuseCron(req, res, "treasury-report", cron);
 
+  // Recorded in cron_runs; a report that couldn't be sent alerts the admins.
+  return recordCronRun("treasury-report", (run) => scheduled(res, run, { secret, origin, now, loadLoans }));
+}
+
+async function scheduled(
+  res: VercelResponse,
+  run: CronRun,
+  ctx: { secret: string | undefined; origin: string; now: Date; loadLoans: () => Promise<Loan[]> }
+) {
+  const { secret, origin, now, loadLoans } = ctx;
   try {
     // "Email only" members can't see Treasury, so they never get the report.
     const users = await sb<Array<AppUser & { notification_prefs: Prefs }>>(
       "app_users?status=eq.approved&role=neq.email&select=id,name,email,phone,role,status,notification_prefs"
     );
     let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
-    if (due.length === 0) return res.status(200).json({ sent: 0, considered: users.length });
+    if (due.length === 0) {
+      run.note("nobody due today");
+      return res.status(200).json({ sent: 0, considered: users.length });
+    }
 
     // A retried cron must not email anyone twice: skip users whose delivery
     // is already recorded today.
@@ -1166,8 +1089,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const done = new Set((delivered ?? []).map((d) => d.user_id));
       due = due.filter((u) => !done.has(u.id));
       if (due.length === 0) return res.status(200).json({ sent: 0, alreadyDelivered: done.size });
-    } catch {
+    } catch (err) {
       // If the guard can't be read, sending is the safer failure.
+      console.error("treasury-report: couldn't read today's deliveries", err);
     }
 
     // One Plaid pull serves everyone — the report is the office's, not per-user.
@@ -1179,6 +1103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Silence is the worst failure mode for a scheduled report — tell the
       // subscribers their numbers couldn't be refreshed today.
       const reason = err instanceof Error ? err.message : String(err);
+      run.failed(`Balances couldn't be refreshed, so no report went out: ${reason}`);
       let notices = 0;
       for (const user of due) {
         if (!user.email) continue;
@@ -1246,6 +1171,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         results.push({ user: user.email ?? user.id, ok: true });
       } catch (err) {
         console.error(`treasury report failed for ${user.id}:`, err);
+        run.failed(`Report to ${user.email ?? user.id} didn't send: ${err instanceof Error ? err.message : String(err)}`);
         results.push({
           user: user.email ?? formatPhone(user.phone),
           ok: false,
@@ -1256,6 +1182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ sent: results.filter((r) => r.ok).length, results });
   } catch (err) {
     console.error("treasury report cron failed:", err);
+    run.failed(`The report run didn't finish: ${err instanceof Error ? err.message : String(err)}`);
     return res.status(500).json({ error: "report_failed" });
   }
 }

@@ -5,6 +5,7 @@ import { isAdmin, isPartner, sb, type AppUser } from "./auth.js";
 import { fetchAll } from "./db-pages.js";
 import { accessibleAssetIds } from "./entity-access.js";
 import { folderFilter, scopeFilter, searchCondition, SUMMARY_COLUMNS, withoutQuotes, htmlToText, type MailFolder, type MailRow, type SummaryRow } from "./mail.js";
+import { likeTerm } from "./pg-filter.js";
 import { readCollection } from "./tree.js";
 
 /**
@@ -359,7 +360,8 @@ export function entityDetail(id: string, a: Rec, ownerName: string | null, all: 
   let due: ReturnType<typeof obligations> = [];
   try {
     due = obligations(paper, today);
-  } catch {
+  } catch (err) {
+    console.error("ask: couldn't work out an entity's obligations", err);
     due = [];
   }
   return {
@@ -415,7 +417,7 @@ async function getEntity(input: Rec, scope: Scope) {
   }
   const names = new Map(list.map((x) => [x.id, x.a.name as string]));
   const detail = entityDetail(hit.id, hit.a, hit.a.ownerId ? names.get(hit.a.ownerId) ?? null : null, names);
-  const recent = await readActivity(hit.id, undefined, 12).catch(() => []);
+  const recent = await readActivity(hit.id, undefined, 12).catch((err) => (console.error("ask: couldn't read recent activity", err), [] as Awaited<ReturnType<typeof readActivity>>));
   detail.recentActivity = recent.map((r) => ({ at: r.at, by: r.actor_name ?? r.source, what: r.summary }));
   detail.ownedEntities = list.filter((x) => x.a.ownerId === hit.id).map((x) => ({ id: x.id, name: x.a.name }));
   return detail;
@@ -435,7 +437,8 @@ async function deadlines(scope: Scope, days: number) {
     let due: ReturnType<typeof obligations> = [];
     try {
       due = obligations(paper, today);
-    } catch {
+    } catch (err) {
+      console.error(`ask: couldn't work out obligations for ${id}`, err);
       continue;
     }
     for (const d of due) {
@@ -537,9 +540,9 @@ type Pref = { account_id: string; entity_id: string | null; entity_name: string 
 
 async function treasury() {
   const [daily, prefs, states] = await Promise.all([
-    sb<Rec[]>("treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=31").catch(() => []),
-    sb<Pref[]>("plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name&archived_at=is.null").catch(() => []),
-    sb<Rec[]>("plaid_account_state?select=account_id,balance,seen_at,prev_balance,prev_seen_at").catch(() => []),
+    sb<Rec[]>("treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=31").catch(emptyAfter<Rec>("treasury history")),
+    sb<Pref[]>("plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name&archived_at=is.null").catch(emptyAfter<Pref>("account mappings")),
+    sb<Rec[]>("plaid_account_state?select=account_id,balance,seen_at,prev_balance,prev_seen_at").catch(emptyAfter<Rec>("account balances")),
   ]);
   const latest = daily?.[0];
   const ago = daily?.[Math.min(30, (daily?.length ?? 1) - 1)];
@@ -569,7 +572,16 @@ type Txn = { transaction_id: string; date: string; amount: number | string; merc
 const TXN_COLS = "transaction_id,date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,account_id,pending";
 
 const day = (s: unknown): string | null => (typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
-const quoted = (s: string) => encodeURIComponent(`"*${s.replace(/[*%\\"]/g, " ").trim()}*"`);
+/** A read the assistant can answer without — logged, since a silently empty answer misleads. */
+const emptyAfter =
+  <T>(what: string) =>
+  (err: unknown): T[] => {
+    console.error(`ask: couldn't read ${what}`, err);
+    return [];
+  };
+
+/** An ilike pattern for a typed term: wildcards around it, its own metacharacters escaped (lib/pg-filter). */
+const quoted = (s: string) => `*${likeTerm(s)}*`;
 
 /** A transaction's effective kind: what the person set, else what the rules decided. */
 export function txnKind(t: Pick<Txn, "type_override" | "txn_type" | "intercompany">): "normal" | "transfer" | "intercompany" {
@@ -579,7 +591,7 @@ export function txnKind(t: Pick<Txn, "type_override" | "txn_type" | "intercompan
 }
 
 async function hiddenAccounts(): Promise<string[]> {
-  const prefs = await sb<Pick<Pref, "account_id" | "hidden">[]>("plaid_account_prefs?select=account_id,hidden&hidden=eq.true&archived_at=is.null").catch(() => []);
+  const prefs = await sb<Pick<Pref, "account_id" | "hidden">[]>("plaid_account_prefs?select=account_id,hidden&hidden=eq.true&archived_at=is.null").catch(emptyAfter<Pick<Pref, "account_id" | "hidden">>("hidden accounts"));
   return (prefs ?? []).map((p) => p.account_id);
 }
 

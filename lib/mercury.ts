@@ -84,7 +84,8 @@ export async function mercuryDownload(url: string): Promise<{ bytes: Uint8Array;
     if (!r.ok) return null;
     const buf = new Uint8Array(await r.arrayBuffer());
     return { bytes: buf, contentType: r.headers.get("content-type") || "application/octet-stream" };
-  } catch {
+  } catch (err) {
+    console.error("mercury: attachment download failed", err);
     return null;
   }
 }

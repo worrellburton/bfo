@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type Call = { method: string; path: string; body?: any };
 const calls: Call[] = [];
 let total: string = "1";
+let fromIp: string = "0";
 let recent: Array<{ created_at: string }> = [];
 const verifyStart = vi.fn(async () => "ver_1");
 
@@ -21,14 +22,15 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
     },
     sbFetch: async (path: string) => {
       calls.push({ method: "COUNT", path: decodeURIComponent(path) });
-      return new Response("[]", { headers: { "content-range": `0-0/${total}` } });
+      const n = path.includes("ip=eq.") ? fromIp : total;
+      return new Response("[]", { headers: { "content-range": `0-0/${n}` } });
     },
   };
 });
 
 import handler from "../api/auth/request-code";
 
-function call(body: unknown) {
+function call(body: unknown, headers: Record<string, string> = {}) {
   const out: { status: number; json?: any } = { status: 0 };
   const res: any = {
     status: (c: number) => ((out.status = c), res),
@@ -36,12 +38,13 @@ function call(body: unknown) {
     end: () => res,
     setHeader() {},
   };
-  return Promise.resolve(handler({ method: "POST", body, headers: {} } as any, res)).then(() => out);
+  return Promise.resolve(handler({ method: "POST", body, headers } as any, res)).then(() => out);
 }
 
 beforeEach(() => {
   calls.length = 0;
   total = "1";
+  fromIp = "0";
   recent = [];
   verifyStart.mockClear();
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -77,6 +80,34 @@ describe("/api/auth/request-code", () => {
     expect(r.status).toBe(500);
     expect(verifyStart).not.toHaveBeenCalled();
     expect(calls.at(-1)).toMatchObject({ method: "DELETE", path: "login_codes?id=eq.held-1" });
+  });
+
+  it("stores the caller's address and caps codes per address per ten minutes", async () => {
+    const headers = { "x-forwarded-for": "203.0.113.9, 10.0.0.1" };
+    fromIp = "4";
+    const ok = await call({ phone: "+19175550100" }, headers);
+    expect(ok.status).toBe(200);
+    expect(calls[0]).toMatchObject({ method: "POST", body: [expect.objectContaining({ ip: "203.0.113.9" })] });
+    const ipCount = calls.find((c) => c.method === "COUNT" && c.path.includes("ip=eq."))!;
+    expect(ipCount.path).toContain("ip=eq.203.0.113.9");
+    expect(ipCount.path).toContain("&created_at=lt.2026-10-23T12:00:00.123456+00:00");
+    // The count runs before the account lookup, so a refusal says nothing about who has an account.
+    expect(calls.indexOf(ipCount)).toBeLessThan(calls.findIndex((c) => c.method === "GET" && c.path.startsWith("app_users")));
+
+    calls.length = 0;
+    verifyStart.mockClear();
+    fromIp = "5";
+    const r = await call({ phone: "+19175550199" }, headers);
+    expect(r).toMatchObject({ status: 429, json: { error: "rate_limited" } });
+    expect(verifyStart).not.toHaveBeenCalled();
+    expect(calls.at(-1)).toMatchObject({ method: "DELETE", path: "login_codes?id=eq.held-1" });
+  });
+
+  it("skips the per-address cap when no address came through", async () => {
+    const r = await call({ phone: "+19175550100" }, { "x-forwarded-for": "not an address" });
+    expect(r.status).toBe(200);
+    expect(calls[0]).toMatchObject({ body: [expect.objectContaining({ ip: null })] });
+    expect(calls.some((c) => c.method === "COUNT" && c.path.includes("ip=eq."))).toBe(false);
   });
 
   it("takes its row out when the per-number throttle refuses", async () => {

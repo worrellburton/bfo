@@ -32,12 +32,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Revoke the item with Plaid (best-effort — a dead token shouldn't block cleanup).
     const itemRes = await rest(`plaid_items?item_id=eq.${enc}&select=access_token`);
-    const items = (await itemRes.json().catch(() => [])) as Array<{ access_token: string }>;
+    const items = (await itemRes.json().catch((err) => (console.error("plaid/disconnect: couldn't read the item", err), []))) as Array<{ access_token: string }>;
     if (items[0]?.access_token) {
       try {
         await getPlaidClient().itemRemove({ access_token: items[0].access_token });
-      } catch {
-        /* already revoked or unreachable — proceed with local cleanup */
+      } catch (err) {
+        // Already revoked or unreachable: local cleanup goes ahead regardless.
+        console.error("plaid/disconnect: itemRemove failed", err);
       }
     }
 
@@ -48,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `plaid_account_state?item_id=eq.${enc}&select=account_id`,
       `book_transactions?item_id=eq.${enc}&select=account_id`,
     ]) {
-      const rows = (await rest(p).then((r) => r.json()).catch(() => [])) as Array<{ account_id: string }>;
+      const rows = (await rest(p).then((r) => r.json()).catch((err) => (console.error("plaid/disconnect: couldn't list the item's accounts", err), []))) as Array<{ account_id: string }>;
       for (const r of rows) if (r.account_id) accountIds.add(r.account_id);
     }
 

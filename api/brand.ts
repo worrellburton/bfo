@@ -104,9 +104,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (task.status === "SUCCEEDED" && task.model_urls?.glb) {
           const stamp = Date.now();
           const glbUrl = await copyIn(task.model_urls.glb, `logo/${style.id}/${stamp}.glb`, "model/gltf-binary");
-          const usdzUrl = task.model_urls.usdz ? await copyIn(task.model_urls.usdz, `logo/${style.id}/${stamp}.usdz`, "model/vnd.usdz+zip").catch(() => null) : null;
+          const usdzUrl = task.model_urls.usdz ? await copyIn(task.model_urls.usdz, `logo/${style.id}/${stamp}.usdz`, "model/vnd.usdz+zip").catch((err) => (console.error("brand: couldn't copy the usdz model", err), null)) : null;
           const poster = task.alpha_thumbnail_url ?? task.thumbnail_url;
-          const posterUrl = poster ? await copyIn(poster, `logo/${style.id}/${stamp}-poster.png`, "image/png").catch(() => null) : null;
+          const posterUrl = poster ? await copyIn(poster, `logo/${style.id}/${stamp}-poster.png`, "image/png").catch((err) => (console.error("brand: couldn't copy the poster", err), null)) : null;
           state = { ...state, glbUrl, usdzUrl, posterUrl };
         }
         await writeSetting(`model:${style.id}`, state);

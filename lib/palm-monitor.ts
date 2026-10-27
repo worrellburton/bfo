@@ -165,7 +165,7 @@ export async function refreshMonitors(rows: MonitorRow[]): Promise<MonitorRow[]>
       } catch (err) {
         if (err instanceof PalmError && err.status === 404) {
           const patch = { status: "canceled", ended_at: new Date().toISOString() };
-          await sb(`palm_monitors?business_id=eq.${row.business_id}&mode=eq.${row.mode}`, { method: "PATCH", body: patch, prefer: "return=minimal" }).catch(() => {});
+          await sb(`palm_monitors?business_id=eq.${row.business_id}&mode=eq.${row.mode}`, { method: "PATCH", body: patch, prefer: "return=minimal" }).catch((err) => console.error(`palm-monitor: couldn't save monitor ${row.business_id}`, err));
           return { ...row, ...patch };
         }
         return row; // Palm unreachable: show what we last knew

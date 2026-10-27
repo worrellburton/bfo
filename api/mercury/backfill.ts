@@ -3,6 +3,7 @@ import { canWrite, currentUser, sbFetch as db } from "../../lib/auth.js";
 import { classify } from "../../lib/books-rules.js";
 import { mercuryConfigured, mercuryAccounts, mercuryTransactions, mercuryDownload, mask4 } from "../../lib/mercury.js";
 import { storageUpload } from "../../lib/storage.js";
+import { inList } from "../../lib/pg-filter.js";
 
 /**
  * Backfill Mercury history from Mercury's own API — it returns the full
@@ -136,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return t.status === "sent" && date && date >= sinceDay && (!earliest || date < earliest) && (t.attachments?.length ?? 0) > 0;
       });
       if (eligible.length) {
-        const ids = eligible.map((t) => `"mercury_${t.id}"`).join(",");
+        const ids = inList(eligible.map((t) => `mercury_${t.id}`));
         const existingRes = await db(`book_txn_receipt?transaction_id=in.(${ids})&select=transaction_id,label`);
         const existing = new Set(
           existingRes.ok ? ((await existingRes.json()) as any[]).map((r) => `${r.transaction_id}|${r.label}`) : []
@@ -158,8 +159,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 body: JSON.stringify({ transaction_id: txnId, path, label, content_type: dl.contentType, source: "mercury" }),
               });
               if (ins.ok) receiptsAdded += 1;
-            } catch {
-              /* best-effort per attachment */
+            } catch (err) {
+              // Best-effort per attachment: the rest of the backfill goes on.
+              console.error(`mercury backfill: couldn't store receipt ${label} for ${txnId}`, err);
             }
           }
         }

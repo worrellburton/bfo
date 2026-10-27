@@ -27,7 +27,7 @@ type AccountPrefs = {
 
 /** A read whose failure just means "nothing known" — the report degrades rather than fails. */
 async function readOrEmpty<T>(path: string): Promise<T[]> {
-  return (await sb<T[] | null>(path).catch(() => null)) ?? [];
+  return (await sb<T[] | null>(path).catch((err) => (console.error(`plaid/data: couldn't read ${path.split("?")[0]}`, err), null))) ?? [];
 }
 
 async function getAccountPrefs(): Promise<Map<string, AccountPrefs>> {

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
+import { alertAdmins, alertOnThrow } from "../lib/alert.js";
 import { sb, sendEmail } from "../lib/auth.js";
 import { palm, palmMode } from "../lib/palm.js";
 import { raPatch, type RaServiceLike } from "../lib/palm-agent.js";
@@ -45,10 +46,13 @@ async function rawBody(req: VercelRequest): Promise<string> {
 }
 
 function within<T>(ms: number, p: Promise<T>): Promise<T | null> {
-  return Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]).catch(() => null);
+  return Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]).catch((err) => (console.error("palm-webhook: handling failed", err), null));
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+// An error nothing below caught alerts the admins (lib/alert.ts) and still answers 500, so Palm retries.
+export default alertOnThrow("webhook:palm", "Palm webhook crashed", handle);
+
+async function handle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   const secret = process.env.PALM_WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ error: "not_configured" });
@@ -74,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let monitorState: string | null = null;
   let monitorAsset: string | null = null;
   if (event.type.startsWith("business.") && row.business_id) {
-    const m = await monitorByBusiness(row.business_id, row.mode).catch(() => null);
+    const m = await monitorByBusiness(row.business_id, row.mode).catch((err) => (console.error("palm-webhook: couldn't look up the monitor", err), null));
     if (m) {
       monitorAsset = m.asset_id;
       monitorState = m.state;
@@ -85,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let assetId: string | null = monitorAsset ?? (object.metadata as Record<string, string> | undefined)?.bfo_asset_id ?? null;
   let entityName: string | null = null;
   if (!assetId && row.business_id) {
-    const linked = await businessEntity(row.business_id, row.mode).catch(() => null);
+    const linked = await businessEntity(row.business_id, row.mode).catch((err) => (console.error("palm-webhook: couldn't look up the business's entity", err), null));
     if (linked) {
       assetId = linked.assetId;
       entityName = linked.name;
@@ -99,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // A question from Palm (case.opened / updated / resolved): find the entity by the filing it's on.
   if (event.type.startsWith("case.")) {
-    const found = await caseEntity(object, row.mode).catch(() => null);
+    const found = await caseEntity(object, row.mode).catch((err) => (console.error("palm-webhook: couldn't look up the case's entity", err), null));
     if (found) {
       assetId = assetId ?? found.assetId;
       entityName = entityName ?? found.name;
@@ -113,8 +117,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Writing an event onto its entity failed: it isn't stored, and Palm is asked to send it again.
   let retry = false;
+  const failures: string[] = [];
   const fail = (what: string) => (err: unknown) => {
     console.error(`palm-webhook: couldn't record the ${what}`, err);
+    failures.push(`${what}: ${err instanceof Error ? err.message : String(err)}`);
     retry = true;
   };
 
@@ -130,7 +136,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (assetId && event.type.startsWith("case.") && !seen) {
     await onCase(event.id, event.type, assetId, entityName, row.mode, object).catch(fail("case"));
   }
-  if (retry) return res.status(500).json({ error: "record_failed" }); // Palm retries
+  if (retry) {
+    await alertAdmins("webhook:palm", "A Palm event couldn't be written onto its entity", `${event.type} ${event.id}: ${failures.join("; ")}`);
+    return res.status(500).json({ error: "record_failed" }); // Palm retries
+  }
 
   try {
     const inserted = await sb<unknown[]>("palm_events?on_conflict=id", {
@@ -142,8 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Legal papers have a response deadline: tell the people who can act, once.
     if (isNew && row.mode === "live" && row.document_type === "service_of_process") {
-      const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
-      const to = [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
+      const to = await ownerEmails();
       if (to.length) {
         const who = entityName || "one of your entities";
         const link = assetId ? `${SITE}/assets/${assetId}/compliance` : `${SITE}/assets`;
@@ -160,6 +168,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err) {
     console.error("palm webhook store failed", err);
+    await alertAdmins("webhook:palm", "A Palm event couldn't be stored", `${event.type} ${event.id}: ${err instanceof Error ? err.message : String(err)}`);
     return res.status(500).json({ error: "store_failed" }); // Palm retries
   }
   return res.status(200).json({ ok: true });
@@ -200,7 +209,8 @@ async function trackAgent(assetId: string, mode: "test" | "live", service: RaSer
 
 /** True when this event was handled before (Palm redelivers): it changes nothing a second time. */
 async function alreadyStored(eventId: string): Promise<boolean> {
-  const rows = await sb<{ id: string }[]>(`palm_events?id=eq.${encodeURIComponent(eventId)}&select=id&limit=1`).catch(() => []);
+  // Unreadable counts as new: the event is handled again rather than dropped.
+  const rows = await sb<{ id: string }[]>(`palm_events?id=eq.${encodeURIComponent(eventId)}&select=id&limit=1`).catch((err) => (console.error("palm-webhook: couldn't check for an earlier delivery", err), []));
   return !!rows?.length;
 }
 
@@ -237,8 +247,7 @@ async function onCase(eventId: string, type: string, assetId: string, entityName
   if (type === "case.opened") {
     await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm asked: ${summary}${tag}` }]);
     if (mode === "live") {
-      const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
-      const to = [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
+      const to = await ownerEmails();
       const who = entityName || "one of your entities";
       const link = `${SITE}/assets/${assetId}`;
       if (to.length) {
@@ -260,7 +269,7 @@ async function onCase(eventId: string, type: string, assetId: string, entityName
 
 /** The owners' and admins' email addresses. */
 async function ownerEmails(): Promise<string[]> {
-  const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(() => []);
+  const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch((err) => (console.error("palm-webhook: couldn't read who to email", err), []));
   return [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
 }
 

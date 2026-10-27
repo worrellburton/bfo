@@ -275,41 +275,6 @@ export async function birdChannels(): Promise<BirdChannel[]> {
   return listChannels();
 }
 
-/** Pick the channel to send on: an explicit id wins, else the workspace's own. */
-async function resolveChannel(kind: "sms" | "email"): Promise<string> {
-  const override =
-    kind === "sms" ? process.env.BIRD_SMS_CHANNEL_ID?.trim() : process.env.BIRD_EMAIL_CHANNEL_ID?.trim();
-  if (override) return override;
-
-  const matches = kind === "sms" ? /sms/i : /e?mail/i;
-  const channels = await listChannels();
-  const candidates = channels.filter(
-    (c) => matches.test(c.platformId ?? "") || matches.test(c.name ?? "")
-  );
-  const chosen = candidates.find((c) => c.status === "active") ?? candidates[0];
-
-  if (!chosen) {
-    const seen = channels.map((c) => `${c.platformId}(${c.status})`).join(", ") || "none";
-    throw new ConfigError(
-      `No ${kind} channel in this Bird workspace. Channels seen: ${seen}. ` +
-        `Install one in Bird, or set BIRD_${kind.toUpperCase()}_CHANNEL_ID.`
-    );
-  }
-  return chosen.id;
-}
-
-async function birdSend(channelId: string, payload: unknown): Promise<void> {
-  const workspaceId = await birdWorkspace();
-  const res = await birdFetch(`/workspaces/${workspaceId}/channels/${channelId}/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    throw new Error(`bird ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  }
-}
-
 export async function sendSms(to: string, text: string): Promise<void> {
   // Platform SMS product endpoint (matches the key's sms scope). A free-text
   // send needs a sender the workspace owns; set BIRD_SMS_FROM to that number.

@@ -10,18 +10,20 @@ import { formingNow } from "../entity-addresses";
 import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
 import { authFetch, getUser, isPartner } from "../auth";
-import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
+import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { copyStoredFileLink, openStoredFile } from "../stored-file";
 import {
   DOC_LABEL,
   docKindOf,
+  BUNDLE_FRESH_MS,
   fetchPalmDocument,
   effectiveRecord,
   formatAddress as formatPalmAddress,
+  fromBundle,
+  heldSeed,
   lookupStateRecord,
   normalizeName,
-  openPalmDocument,
   palmCall,
   PalmCallError,
   palmJurisdiction,
@@ -31,41 +33,28 @@ import {
   sameAddressText,
   sortDocuments,
   stateFindings,
+  type PalmBundle,
+  type PalmBundlePart,
+  type PalmBundlePartName,
   type PalmDocument,
   type PalmLink,
   type PalmMode,
   type RaService,
   type RegistryRecord,
-  type StateRecord,
+  type SeedHold,
 } from "../palm";
 import {
-  BOI_NOTE,
-  DOC_KEYS,
   documentRules,
-  obligations,
-  paperworkChecks,
   stateCode,
   stateName,
-  taxHome,
-  type DocKey,
-  type DocRule,
   type PaperworkInput,
 } from "../entity-paperwork";
 import {
-  VERIFY_LABEL,
   MSA_SERVICES,
   LEDGER_LOUISE_SUBS,
-  SERVICE_ALIASES,
   normalizeServices,
   fmtDate,
-  fmtStamp,
-  docKind,
-  normValue,
-  normEntityName,
-  timeAgo,
   FILING_KINDS,
-  FALLBACK_TITLE,
-  ruleFor,
   filingTitle,
   guessFiling,
   CLASSIFIER_KIND,
@@ -73,7 +62,6 @@ import {
   BY_HAND,
   fromDatabase,
   type Asset,
-  type Member,
   type EntityProfile,
   type VerifyField,
   type Verification,
@@ -942,10 +930,29 @@ export function useEntityPage() {
   const palmMode = palmStatus?.mode ?? null;
   /** What Palm pushed for this entity (webhook): mail, and agent changes with their reasons. */
   const [palmInbox, setPalmInbox] = useState<{ id: string; type: string; document_id: string | null; rejection_reason: string | null; read_at: string | null }[]>([]);
+  /**
+   * Parts of the opening bundle the page itself doesn't show, held a few
+   * seconds for the cards that do (Mail, Palm's questions, Monitoring). Each
+   * is handed out once; a card mounting later reads Palm itself, as before.
+   */
+  const palmParts = useRef<{ key: string; at: number; parts: Partial<Record<PalmBundlePartName, PalmBundlePart<unknown>>> } | null>(null);
+  /** The bundle's reading of the agent and mail when Palm answered before the record arrived; applied once it has. */
+  const pendingRead = useRef<{ raR: PromiseSettledResult<{ service: RaService | null }>; docsR: PromiseSettledResult<{ documents: PalmDocument[]; truncated?: boolean }>; mode: PalmMode } | null>(null);
+  function takePalmPart<T>(name: PalmBundlePartName, key: string): PalmBundlePart<T> | null {
+    const held = palmParts.current;
+    if (!held || held.key !== key || Date.now() - held.at > BUNDLE_FRESH_MS) return null;
+    const part = held.parts[name];
+    delete held.parts[name];
+    return (part as PalmBundlePart<T> | undefined) ?? null;
+  }
+  const inboxSeed = useRef<SeedHold<{ events: typeof palmInbox }> | null>(null);
   useEffect(() => {
     if (!palmMode || !id || tabParam !== "compliance") return;
     let live = true;
-    palmCall<{ events: typeof palmInbox }>("inbox", { assetId: id, mode: palmMode })
+    // The bundle's copy when the page just opened on this tab; its own read otherwise.
+    const key = `${id}:${palmMode}`;
+    const seed = heldSeed(inboxSeed, key, () => takePalmPart("inbox", key));
+    (seed ? fromBundle(seed) : palmCall<{ events: typeof palmInbox }>("inbox", { assetId: id, mode: palmMode }))
       .then((r) => {
         if (!live) return;
         setPalmInbox(r.events);
@@ -988,10 +995,55 @@ export function useEntityPage() {
     if (err instanceof PalmUnavailable) setPalmStatus({ configured: false, mode: null });
   }
 
-  useEffect(() => {
-    // An invited owner's page has no Palm card.
-    if (!isPartner()) void loadPalmStatus();
-  }, []);
+  /**
+   * What the bundle read of the business: "pending" while it's out, then
+   * "<mode>:<businessId>" so the agent-and-mail effect below doesn't read the
+   * same thing again, or null when the entity isn't in Palm (or the read failed).
+   */
+  const bundled = useRef<string | null>(null);
+
+  /**
+   * Everything the page reads from Palm when it opens, in one round trip
+   * (api/palm.ts "entity-bundle"): the status, then the agent and mail for
+   * the business linked in that mode (applied exactly as refreshPalm would),
+   * and the parts the cards show, held for them in palmParts.
+   */
+  async function loadPalmBundle(id: string): Promise<void> {
+    // Stale once the page moved to another entity, or another read of Palm started after this one (palmSeq moved past the effect's snapshot).
+    const stale = () => bundledFor.current !== id || palmSeq.current !== bundleSeq.current;
+    bundled.current = "pending";
+    // Only what the cards on this tab would read for themselves.
+    const tab = tabParam ?? "overview";
+    const parts = ["ra", "documents", ...(tab === "compliance" ? ["inbox", "cases", "monitors"] : tab === "overview" ? ["inboxUnread", "cases"] : [])];
+    let b: PalmBundle;
+    try {
+      b = await palmCall<PalmBundle>("entity-bundle", { assetId: id, parts });
+    } catch (err) {
+      if (bundledFor.current !== id) return;
+      bundled.current = null;
+      setPalmStatus({ configured: false, mode: null, error: err instanceof Error ? err.message : "Couldn't reach Palm." });
+      return;
+    }
+    if (bundledFor.current !== id) return;
+    const status = b.status?.ok ? b.status.value : { configured: false, mode: null, error: b.status?.error?.message ?? "Palm didn't answer." };
+    const mode = status.mode;
+    const businessId = mode ? b.businessId ?? null : null;
+    bundled.current = mode && businessId ? `${mode}:${businessId}` : null;
+    palmParts.current = mode ? { key: `${id}:${mode}`, at: Date.now(), parts: { inbox: b.inbox, inboxUnread: b.inboxUnread, cases: b.cases, monitors: b.monitors } } : null;
+    setPalmStatus(status);
+    if (!mode || !businessId || stale()) return;
+    if (palmMoving.current) return; // the move refreshes once it's done
+    const settled = <T,>(part: PalmBundlePart<T> | undefined): PromiseSettledResult<T> =>
+      part?.ok ? { status: "fulfilled", value: part.value } : { status: "rejected", reason: new PalmCallError(part?.error.message ?? "Palm didn't answer.", part?.error.code, part?.error.status) };
+    const read = { raR: settled(b.ra), docsR: settled(b.documents), mode };
+    if (!assetRef.current) {
+      // Palm answered before the record did (rare): the agent-and-mail effect below applies this once the record is here.
+      pendingRead.current = read;
+      return;
+    }
+    setPalmError("");
+    await applyPalmRead(read.raR, read.docsR, mode, {});
+  }
 
   // Another entity: start the card clean.
   useEffect(() => {
@@ -1008,6 +1060,21 @@ export function useEntityPage() {
     setRegistryChoices(null);
     setPalmError("");
     setPalmBusy(null);
+    palmParts.current = null;
+    pendingRead.current = null;
+  }, [id]);
+
+  // The opening read, once per entity (React's development re-run of a mount effect included).
+  const bundledFor = useRef<string | null>(null);
+  /** palmSeq as the reset above left it; a read started later moves palmSeq past it, and the bundle's answer is then dropped. */
+  const bundleSeq = useRef(0);
+  useEffect(() => {
+    bundleSeq.current = palmSeq.current;
+    // An invited owner's page has no Palm card.
+    if (!id || isPartner() || bundledFor.current === id) return;
+    bundledFor.current = id;
+    void loadPalmBundle(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // A formation under way: ask Palm every half minute (webhooks land faster; this covers the gaps).
@@ -1032,13 +1099,29 @@ export function useEntityPage() {
   const palmBusinessId = palmMode ? asset?.palm?.[palmMode]?.businessId : undefined;
   useEffect(() => {
     if (!palmMode) return;
+    // The opening bundle reads (or read) the agent and mail along with the status; nothing to do until the business changes.
+    if (bundled.current === "pending") return;
+    if (palmBusinessId && bundled.current === `${palmMode}:${palmBusinessId}`) {
+      // The record has arrived: apply what the bundle read, exactly as a read made now would be.
+      const held = pendingRead.current;
+      if (held && held.mode === palmMode && assetRef.current) {
+        pendingRead.current = null;
+        setPalmError("");
+        void applyPalmRead(held.raR, held.docsR, held.mode, {});
+      }
+      return;
+    }
     if (!palmBusinessId) {
+      // The record is still on its way, but the bundle found the business in this mode: keep what it read.
+      if (bundled.current?.startsWith(`${palmMode}:`)) return;
       // Never added to Palm in this mode, so Palm isn't its agent.
+      bundled.current = null;
       setPalmRa(null);
       setPalmDocs(null);
       return;
     }
     if (palmMoving.current) return; // the move refreshes once it's done
+    bundled.current = null;
     void refreshPalm(palmBusinessId, { busy: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [palmBusinessId, palmMode]);
@@ -1064,30 +1147,40 @@ export function useEntityPage() {
         palmCall<{ documents: PalmDocument[]; truncated?: boolean }>("documents", { businessId, mode }),
       ]);
       if (seq !== palmSeq.current) return null;
-      const found: { service?: RaService | null; documents?: number; saved?: number; failed?: number; truncated?: boolean; error?: string } = {};
-      if (docsR.status === "fulfilled") {
-        setPalmDocs(sortDocuments(Array.isArray(docsR.value.documents) ? docsR.value.documents : []));
-        found.documents = docsR.value.documents.length;
-        found.truncated = !!docsR.value.truncated;
-        const saving = importPalmDocuments(docsR.value.documents, mode);
-        if (opts.waitForImport) Object.assign(found, await saving);
-      } else found.error = (docsR.reason as Error)?.message;
-      if (raR.status === "rejected") {
-        if (!opts.keepError) showPalmError(raR.reason);
-        return { ...found, error: (raR.reason as Error)?.message };
-      }
-      const service = raR.value.service;
-      found.service = service;
-      setPalmRa(service);
-      const current = assetRef.current;
-      if (!current) return found;
-      // The whole service (provider, dates, why a change was refused), and the agent on record when it changes.
-      await patchAsset(raPatch(current, service, mode));
-      if (docsR.status === "rejected" && !opts.keepError) showPalmError(docsR.reason);
-      return found;
+      return await applyPalmRead(raR, docsR, mode, opts);
     } finally {
       if (busy) setPalmBusy(null);
     }
+  }
+
+  /** What a read of the agent service and documents (refreshPalm's, or the opening bundle's) does to the page and the record. */
+  async function applyPalmRead(
+    raR: PromiseSettledResult<{ service: RaService | null }>,
+    docsR: PromiseSettledResult<{ documents: PalmDocument[]; truncated?: boolean }>,
+    mode: PalmMode,
+    opts: { keepError?: boolean; waitForImport?: boolean },
+  ): Promise<{ service?: RaService | null; documents?: number; saved?: number; failed?: number; truncated?: boolean; error?: string }> {
+    const found: { service?: RaService | null; documents?: number; saved?: number; failed?: number; truncated?: boolean; error?: string } = {};
+    if (docsR.status === "fulfilled") {
+      setPalmDocs(sortDocuments(Array.isArray(docsR.value.documents) ? docsR.value.documents : []));
+      found.documents = docsR.value.documents.length;
+      found.truncated = !!docsR.value.truncated;
+      const saving = importPalmDocuments(docsR.value.documents, mode);
+      if (opts.waitForImport) Object.assign(found, await saving);
+    } else found.error = (docsR.reason as Error)?.message;
+    if (raR.status === "rejected") {
+      if (!opts.keepError) showPalmError(raR.reason);
+      return { ...found, error: (raR.reason as Error)?.message };
+    }
+    const service = raR.value.service;
+    found.service = service;
+    setPalmRa(service);
+    const current = assetRef.current;
+    if (!current) return found;
+    // The whole service (provider, dates, why a change was refused), and the agent on record when it changes.
+    await patchAsset(raPatch(current, service, mode));
+    if (docsR.status === "rejected" && !opts.keepError) showPalmError(docsR.reason);
+    return found;
   }
 
   /** Read the state's record: by file number when we have it, otherwise find the entity by name. Returns why it couldn't, or null. */
@@ -2513,6 +2606,7 @@ export function useEntityPage() {
     palmMoving,
     patchAsset,
     loadPalmStatus,
+    takePalmPart,
     showPalmError,
     palmBusinessId,
     refreshPalm,
