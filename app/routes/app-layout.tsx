@@ -1,4 +1,4 @@
-import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommandPalette, ShortcutSheet, useGlobalShortcuts, useTrackRecent, type PageLink } from "../command-palette";
 import { OfflineBanner, RouteProgress } from "../shell-status";
@@ -38,6 +38,15 @@ const iconCls = "w-4 h-4 shrink-0";
 
 /** Mail's folders all live on /inbox, told apart by ?f= (Active when absent). */
 const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) => pathname === "/inbox" && (search.get("f") || "active") === f;
+
+/** Paper mail at the office's addresses (staff only), under Mail. */
+const physicalMailChild: NavChild = {
+  to: "/mailbox",
+  label: "Physical",
+  icon: <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V9a4.5 4.5 0 014.5-4.5h10.5a4.5 4.5 0 014.5 4.5v6.75a1.5 1.5 0 01-1.5 1.5H12M2.25 12.75h7.5v6a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-6zM6.75 4.5a4.5 4.5 0 014.5 4.5v3.75M15 9h3" />
+      </svg>,
+};
 
 /** Shown to admins (and anyone given access): mail to addresses nobody has yet. */
 const otherMailChild: NavChild = {
@@ -119,15 +128,6 @@ const navItems: NavItem[] = [
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-      </svg>
-    ),
-  },
-  {
-    to: "/mailbox",
-    label: "Mailbox",
-    icon: (
-      <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V9a4.5 4.5 0 014.5-4.5h10.5a4.5 4.5 0 014.5 4.5v6.75a1.5 1.5 0 01-1.5 1.5H12M2.25 12.75h7.5v6a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-6zM6.75 4.5a4.5 4.5 0 014.5 4.5v3.75M15 9h3" />
       </svg>
     ),
   },
@@ -521,17 +521,18 @@ export default function AppLayout() {
   const canSeeOther = mail ? mail.canSeeOther : isAdmin(user);
   const entitiesItem = navItems.find((i) => i.to === "/assets")!;
   const partnerItems: NavItem[] = myEntities.map((e) => ({ to: `/assets/${e.id}`, label: e.name, icon: entitiesItem.icon }));
-  const withMailbox = (i: NavItem): NavItem => (i.to === "/mailbox" ? { ...i, badge: paperUnread } : i.to === "/phone" ? { ...i, badge: textsUnread } : i);
+  const withMailbox = (i: NavItem): NavItem => (i.to === "/phone" ? { ...i, badge: textsUnread } : i);
   // Phone holds the office's verification codes: owners and admins only.
   const staffItems = isAdmin(user) ? navItems : navItems.filter((i) => i.to !== "/phone");
   const items: NavItem[] = (partner ? partnerItems : emailOnly ? navItems.filter((i) => i.to === "/inbox") : staffItems).map((i) =>
     i.to === "/inbox" && i.children
       ? {
           ...i,
-          badge: unread,
+          badge: unread + (emailOnly ? 0 : paperUnread),
           children: [
             ...i.children.map((c) => (c.to === "/inbox" || c.to === "/inbox?f=inbox" ? { ...c, badge: unread } : c)),
             ...(canSeeOther ? [{ ...otherMailChild, badge: mail?.otherUnread ?? 0 }] : []),
+            ...(emailOnly ? [] : [{ ...physicalMailChild, badge: paperUnread }]),
           ],
         }
       : withMailbox(i)
@@ -642,11 +643,30 @@ export default function AppLayout() {
               mark
             );
           })()}
+          {/* The phone drawer: Appearance beside the close button. */}
+          <button
+            type="button"
+            onClick={() => {
+              setDrawerOpen(false);
+              setAppearanceOpen(true);
+            }}
+            aria-label="Appearance"
+            aria-haspopup="dialog"
+            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
+              railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+              <circle cx="16" cy="7" r="2.5" />
+              <circle cx="10" cy="17" r="2.5" />
+            </svg>
+          </button>
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
             aria-label="Close menu"
-            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
+            className={`flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
               railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
@@ -683,7 +703,7 @@ export default function AppLayout() {
         )}
 
         {/* How it looks: light or dark, glass or solid cards, row density. */}
-        <div className="sidebar-appearance px-2 pb-1.5">
+        <div className="sidebar-appearance px-2 pb-1.5 max-md:hidden">
           <button
             type="button"
             onClick={() => {
@@ -964,6 +984,21 @@ export default function AppLayout() {
           <Outlet />
         )}
       </main>
+
+      {/* Ask BFO, a tap away from every page (Mail on a phone has its own corner button). */}
+      {!emailOnly && !partner && !location.pathname.startsWith("/ask") && (
+        <Link
+          to="/ask"
+          aria-label="Ask BFO"
+          title="Ask BFO"
+          className={`ask-fab fixed right-5 z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full transition-transform active:scale-90 ${mailOnly ? "max-md:hidden" : ""}`}
+          style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
+        >
+          <svg className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+          </svg>
+        </Link>
+      )}
 
       {!emailOnly && !partner && (
         <>
