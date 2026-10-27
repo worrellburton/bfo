@@ -672,7 +672,7 @@ export default function Investments() {
     data && data.errors.length > 0 ? (
       <div
         role="status"
-        className={`flex flex-col gap-2 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${enter} ${
+        className={`flex flex-col gap-2 rounded-2xl border px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between ${enter} ${
           isDark ? "border-amber-500/20 bg-amber-500/[0.06]" : "border-amber-200 bg-amber-50/70"
         }`}
       >
@@ -713,6 +713,9 @@ export default function Investments() {
           >
             Reconnect in Treasury →
           </Link>
+        )}
+        {failed && data.errors.some((e) => e.consent) && (
+          <p className={`basis-full text-[12px] ${isDark ? "text-amber-200/80" : "text-amber-800/80"}`}>{failed}</p>
         )}
       </div>
     ) : null;
