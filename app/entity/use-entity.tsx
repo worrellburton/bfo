@@ -10,7 +10,7 @@ import { formingNow } from "../entity-addresses";
 import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
 import { authFetch, getUser, isPartner } from "../auth";
-import { entityCompleteness, entityType, TAX_CLASSES, type EntityType } from "../entity-completeness";
+import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
 import { copyStoredFileLink, openStoredFile } from "../stored-file";
 import {
@@ -21,7 +21,6 @@ import {
   formatAddress as formatPalmAddress,
   lookupStateRecord,
   normalizeName,
-  openPalmDocument,
   palmCall,
   PalmCallError,
   palmJurisdiction,
@@ -36,36 +35,19 @@ import {
   type PalmMode,
   type RaService,
   type RegistryRecord,
-  type StateRecord,
 } from "../palm";
 import {
-  BOI_NOTE,
-  DOC_KEYS,
   documentRules,
-  obligations,
-  paperworkChecks,
   stateCode,
   stateName,
-  taxHome,
-  type DocKey,
-  type DocRule,
   type PaperworkInput,
 } from "../entity-paperwork";
 import {
-  VERIFY_LABEL,
   MSA_SERVICES,
   LEDGER_LOUISE_SUBS,
-  SERVICE_ALIASES,
   normalizeServices,
   fmtDate,
-  fmtStamp,
-  docKind,
-  normValue,
-  normEntityName,
-  timeAgo,
   FILING_KINDS,
-  FALLBACK_TITLE,
-  ruleFor,
   filingTitle,
   guessFiling,
   CLASSIFIER_KIND,
@@ -73,7 +55,6 @@ import {
   BY_HAND,
   fromDatabase,
   type Asset,
-  type Member,
   type EntityProfile,
   type VerifyField,
   type Verification,

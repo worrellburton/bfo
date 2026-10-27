@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { confirmDialog } from "../confirm-dialog";
 import { authFetch, getUser, isAdmin, type User } from "../auth";
 import { isNativeApp } from "../native";
 import { enablePush, usePushState } from "../push";

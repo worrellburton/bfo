@@ -8,7 +8,7 @@ import { authFetch } from "./auth";
 import { stateCode } from "./entity-paperwork";
 import type { FormationState } from "./formation";
 import type { RaSnapshot } from "../lib/palm-agent";
-import { activeConfirmation, effectiveRecord, formatAddress, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateConfirmation, type StateRecord } from "../lib/registry";
+import { activeConfirmation, effectiveRecord, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateConfirmation, type StateRecord } from "../lib/registry";
 
 export type { PalmAddress, PalmMode, RegistryRecord, StateConfirmation, StateRecord } from "../lib/registry";
 export { DOC_LABEL, docKindOf } from "../lib/palm-docs";

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { confirmDialog } from "../confirm-dialog";
 import { useTheme } from "../theme";
 
 export function meta() {

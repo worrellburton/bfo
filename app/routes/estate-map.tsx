@@ -936,9 +936,6 @@ export function EstateMapView({
   const hudBtn = isDark
     ? "border-white/[0.08] bg-[#0b0d14]/80 text-gray-300 hover:text-white hover:border-white/20 hover:bg-white/[0.06]"
     : "border-gray-200 bg-white/90 text-gray-600 hover:text-gray-900 hover:border-gray-300 hover:bg-white";
-  const btnClass = isDark
-    ? "border border-white/10 hover:border-white/20 text-gray-400 hover:text-white"
-    : "border border-gray-200 hover:border-gray-400 text-gray-500 hover:text-gray-900";
   const coarse = "[@media(pointer:coarse)]:h-[40px] [@media(pointer:coarse)]:min-w-[40px]";
   const toolBtn = `${coarse} h-7 min-w-7 px-1.5 inline-flex items-center justify-center gap-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
     isDark ? "text-gray-400 hover:text-white hover:bg-white/10" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"

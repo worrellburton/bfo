@@ -80,7 +80,6 @@ export type Anticipated = {
 };
 
 const DAY = 86400000;
-const MONTH_DAYS = 365.25 / 12;
 
 const CADENCE_DAYS: Record<Cadence, number> = {
   weekly: 7,

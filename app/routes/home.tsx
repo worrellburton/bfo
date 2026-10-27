@@ -86,8 +86,6 @@ function fmtCompact(n: number): string {
   if (a >= 1e3) return `${sign}$${(a / 1e3).toFixed(1)}K`;
   return `${sign}$${Math.round(a)}`;
 }
-const pctChange = (cur: number, prev: number): number | null =>
-  prev > 0 ? ((cur - prev) / prev) * 100 : null;
 const fmtPct = (p: number) => `${p >= 0 ? "+" : "−"}${Math.abs(p) < 10 ? Math.abs(p).toFixed(1) : Math.round(Math.abs(p))}%`;
 
 /** ISO day → Date at local noon, so no timezone nudges it a day either way. */
@@ -911,7 +909,6 @@ export default function Home() {
   }, [scored, byId]);
   const structure = useMemo(() => buildStructure(scored, byId, childrenOf), [scored, byId, childrenOf]);
   const avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length) : 0;
-  const completeCount = scored.filter((a) => a.score === 100).length;
   // A revocable (grantor) trust uses the grantor's SSN — it has no EIN to miss.
   const missingEin = scored.filter(
     (a) => !a.ein?.trim() && !(entityType(a) === "Trust" && !/non-grantor/i.test(a.llcType ?? ""))
@@ -1073,7 +1070,6 @@ export default function Home() {
   const posChip = isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700";
   const negChip = isDark ? "border-rose-500/20 bg-rose-500/10 text-rose-300" : "border-rose-200 bg-rose-50 text-rose-700";
   const warnChip = isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-700";
-  const neutralChip = isDark ? "border-white/[0.08] bg-white/[0.03] text-gray-400" : "border-gray-200 bg-gray-50 text-gray-600";
   const chipBase = "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums whitespace-nowrap";
   const toneTile = {
     amber: isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-600",

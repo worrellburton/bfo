@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { alertDialog, confirmDialog } from "../confirm-dialog";
+import { confirmDialog } from "../confirm-dialog";
 import { useNavigate } from "react-router";
 import { authFetch, getUser, homePath, isAdmin, type Role, type Status, type User } from "../auth";
 import { useTheme } from "../theme";

@@ -23,7 +23,7 @@ import { storageSignedUrl, storageRemove } from "../../lib/storage.js";
 import { sunriseUtcDate } from "../../lib/sunrise.js";
 import { anticipateInflows, type InflowRow, type PlannedInflow } from "../../lib/books-inflows.js";
 import { fetchAll } from "../../lib/db-pages.js";
-import { effType, eliminated as eliminatedIn, flowMonths, flowSummary, label, prettyCategory } from "../../lib/books-report.js";
+import { effType, eliminated as eliminatedIn, flowMonths, flowSummary, label } from "../../lib/books-report.js";
 
 /**
  * Books reads and edits. Everything is served from book_transactions — the
@@ -1238,7 +1238,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     //    loans receivable from the ledger, credit cards as liabilities. ──────
     if (report === "balance-sheet") {
       const selection = parseEntities(String(req.query.entity ?? "all"));
-      const prefs = await getPrefs();
 
       const identities = await fetchAll<{
         account_id: string;
