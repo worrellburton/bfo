@@ -9,9 +9,9 @@ import { dollars, PALM_PRICES, priceSuffix, stateRecordCents } from "../../lib/p
 import { getUser, isAdmin } from "../auth";
 import { formingNow } from "../entity-addresses";
 import { BOI_NOTE, stateCode, stateName, type Obligation, type PaperworkIssue } from "../entity-paperwork";
-import { activeConfirmation, DOC_LABEL, docKindOf, effectiveRecord, formatAddress, openPalmDocument, palmCall, RA_STATUS, recordLapsed, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
+import { activeConfirmation, DOC_LABEL, docKindOf, effectiveRecord, formatAddress, fromBundle, openPalmDocument, palmCall, RA_STATUS, recordLapsed, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
 import { PalmQuestions } from "./palm-questions";
-import { useEntity } from "./context";
+import { useEntity, usePalmSeed } from "./context";
 import { fmtDate, fmtStamp } from "./model";
 import { Button, buttonClass, Dot, Empty, ErrorLine, Icon, IconButton, InfoText, InfoToggle, Row, Rows, Section, TextButton, toneText, useTone, type Tone } from "./ui";
 
@@ -544,14 +544,20 @@ function Monitoring() {
   const [error, setError] = useState("");
   const [fresh, setFresh] = useState<typeof asset.einCheck>(undefined);
   const id = page.id;
+  const seed = usePalmSeed<{ registrations: MonitorReg[] }>("monitors");
 
-  const load = useCallback(() => {
-    if (!mode || !id) return;
-    palmCall<{ registrations: MonitorReg[] }>("monitor-list", { assetId: id })
-      .then((r) => setRegs(r.registrations))
-      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't read monitoring."));
-  }, [mode, id]);
-  useEffect(load, [load]);
+  /** Palm's monitors for each registration: the page's opening read when it just came in (`seeded`), else Palm itself. */
+  const load = useCallback(
+    (seeded = false) => {
+      if (!mode || !id) return;
+      const part = seeded ? seed(`${id}:${mode}`) : null;
+      (part ? fromBundle(part) : palmCall<{ registrations: MonitorReg[] }>("monitor-list", { assetId: id }))
+        .then((r) => setRegs(r.registrations))
+        .catch((e) => setError(e instanceof Error ? e.message : "Couldn't read monitoring."));
+    },
+    [mode, id, seed],
+  );
+  useEffect(() => load(true), [load]);
 
   if (!page.palmStatus?.configured || !mode) return null;
   const live = mode === "live";

@@ -18,6 +18,7 @@ import {
   palmEntityType,
   palmMode,
   vaultAddress,
+  type PalmMode,
   type PalmUsage,
   type RegisteredAgentService,
 } from "../lib/palm.js";
@@ -42,6 +43,9 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  *   document          { documentId }                   → one document's file
  *   inbox             { assetId?, unread? }            → mail and agent events Palm has sent (webhook)
  *   inbox-read        { ids } | { assetId }            → mark them read
+ *   entity-bundle     { assetId, parts? }              → what the entity page reads when it opens, in one round trip: status,
+ *                                                        and (for the business linked in the key's mode) ra, documents, inbox,
+ *                                                        inboxUnread, cases and monitors, each { ok, value } or { ok: false, error }
  *
  * Forming a new entity (lib/palm-formation.ts):
  *   form-requirements { jurisdiction, entityType }     → what the state asks for: extra fields, expedite tiers
@@ -118,6 +122,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
     const [report, webhook] = await Promise.all([usageReport(), webhookHealth()]);
     return res.status(200).json({ mode, ...report, webhook });
+  }
+  if (action === "entity-bundle") {
+    const assetId = String(body.assetId || "");
+    if (!/^[\w-]{1,80}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
+    const parts = Array.isArray(body.parts) ? (body.parts as unknown[]).filter((p): p is BundlePartName => typeof p === "string" && (BUNDLE_PARTS as readonly string[]).includes(p)) : [...BUNDLE_PARTS];
+    return res.status(200).json(await entityBundle(mode, assetId, parts));
   }
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
   const mustMatchMode = ["link", "ra-change", "ra-end", "form-submit", "form-status", "monitor-on", "monitor-off", "ein-check"].includes(action);
@@ -242,10 +252,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!/^[\w-]{1,80}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
         const asset = (await readRows("assets", [assetId]))[0];
         if (!asset) return res.status(404).json({ error: "not_found" });
-        const monitors = await refreshMonitors(await monitorsFor([assetId], mode));
-        const on = (m: { status: string; ended_at: string | null }) => !m.ended_at && m.status !== "canceled" && m.status !== "expired";
-        const registrations = registrationsOf((asset.data ?? {}) as never).map((r) => ({ ...r, monitor: monitors.find((m) => m.state === r.state && on(m)) ?? null }));
-        return res.status(200).json({ mode, cents: mode === "live" ? PALM_PRICES.monitor.cents : 0, registrations });
+        return res.status(200).json({ mode, ...(await readMonitors(mode, assetId, asset)) });
       }
 
       case "monitor-on":
@@ -301,14 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "ra": {
         const id = String(body.businessId || "");
         if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
-        try {
-          const ra = await palm<RegisteredAgentService>(`/v1/business/${id}/registered-agent`);
-          return res.status(200).json({ mode, service: ra });
-        } catch (err) {
-          // 404 = Palm has never been this business's agent.
-          if (err instanceof PalmError && err.status === 404) return res.status(200).json({ mode, service: null });
-          throw err;
-        }
+        return res.status(200).json({ mode, ...(await readRa(id)) });
       }
 
       case "ra-change": {
@@ -350,8 +350,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "documents": {
         const id = String(body.businessId || "");
         if (!UUID.test(id)) return res.status(400).json({ error: "bad_business_id" });
-        const { documents, truncated } = await listPalmDocuments(id);
-        return res.status(200).json({ mode, documents, ...(truncated ? { truncated } : {}) });
+        return res.status(200).json({ mode, ...(await readDocuments(id)) });
       }
 
       case "document": {
@@ -379,16 +378,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "inbox": {
         const assetId = String(body.assetId || "");
         if (assetId && !/^[\w-]{1,128}$/.test(assetId)) return res.status(400).json({ error: "bad_asset_id" });
-        const q = [
-          `mode=eq.${mode}`,
-          assetId ? `asset_id=eq.${encodeURIComponent(assetId)}` : "",
-          body.unread ? "read_at=is.null" : "",
-          "select=id,type,asset_id,business_id,document_id,document_type,filename,status,rejection_reason,occurred_at,read_at",
-          "order=occurred_at.desc",
-          "limit=100",
-        ].filter(Boolean).join("&");
-        const events = await sb<unknown[]>(`palm_events?${q}`);
-        return res.status(200).json({ mode, events });
+        return res.status(200).json({ mode, ...(await readInbox(mode, assetId, !!body.unread)) });
       }
 
       case "inbox-read": {
@@ -553,21 +543,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const assetId = String(body.assetId ?? "");
         if (!/^[\w-]{8,64}$/.test(assetId)) return res.status(400).json({ error: "bad_params" });
         const row = (await readRows("assets", [assetId]))[0];
-        const link = ((row?.data ?? {}) as { palm?: Record<string, { businessId?: string | null; formation?: { filingId?: string; ein?: { filingId?: string } | null } }> }).palm?.[mode];
-        // The formation, its EIN, and the business itself can each have questions.
-        const parents: [string, string][] = [];
-        if (link?.formation?.filingId) parents.push(["filing", link.formation.filingId]);
-        if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
-        if (link?.businessId) parents.push(["business", link.businessId]);
-        const lists = await Promise.all(
-          parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm: couldn't list cases for ${type} ${id}`, err), null)))
-        );
-        const seen = new Set<string>();
-        const cases = lists
-          .flatMap((l) => (Array.isArray(l) ? l : l?.data ?? []))
-          .filter((c) => c?.id && !seen.has(c.id) && seen.add(c.id))
-          .sort((a, b) => Number(b.status === "needs_response") - Number(a.status === "needs_response") || String(b.opened_at).localeCompare(String(a.opened_at)));
-        return res.status(200).json({ mode, cases });
+        return res.status(200).json({ mode, ...(await readCases(mode, row)) });
       }
 
       case "case-respond": {
@@ -610,6 +586,120 @@ function palmErrors(err: PalmError): { field: string | null; message: string }[]
   const d = (err.detail ?? {}) as { errors?: { field?: string; path?: string; pointer?: string; message?: string; detail?: string }[]; detail?: string };
   const list = (d.errors ?? []).map((e) => ({ field: e.field ?? e.path ?? e.pointer ?? null, message: e.message ?? e.detail ?? "Problem" }));
   return list.length ? list : [{ field: null, message: err.message }];
+}
+
+// ── The reads behind ra, documents, inbox, cases and monitor-list ────────
+// Each is one action's body, and one part of entity-bundle; the same calls (and the same usage logging) either way.
+
+type AssetRow = Awaited<ReturnType<typeof readRows>>[number];
+
+/** Palm's registered agent service for a business; null when Palm has never been its agent (Palm's 404). */
+async function readRa(businessId: string): Promise<{ service: RegisteredAgentService | null }> {
+  try {
+    return { service: await palm<RegisteredAgentService>(`/v1/business/${businessId}/registered-agent`) };
+  } catch (err) {
+    if (err instanceof PalmError && err.status === 404) return { service: null };
+    throw err;
+  }
+}
+
+/** Every document Palm holds for a business. */
+async function readDocuments(businessId: string): Promise<{ documents: unknown[]; truncated?: true }> {
+  const { documents, truncated } = await listPalmDocuments(businessId);
+  return { documents, ...(truncated ? { truncated } : {}) };
+}
+
+/** What Palm's webhooks have sent (mail, agent changes), newest first; one entity's or everyone's. */
+async function readInbox(mode: PalmMode, assetId: string, unread: boolean): Promise<{ events: unknown[] }> {
+  const q = [
+    `mode=eq.${mode}`,
+    assetId ? `asset_id=eq.${encodeURIComponent(assetId)}` : "",
+    unread ? "read_at=is.null" : "",
+    "select=id,type,asset_id,business_id,document_id,document_type,filename,status,rejection_reason,occurred_at,read_at",
+    "order=occurred_at.desc",
+    "limit=100",
+  ].filter(Boolean).join("&");
+  return { events: await sb<unknown[]>(`palm_events?${q}`) };
+}
+
+/** Palm's questions on the entity's formation, its EIN filing and the business itself, open ones first. */
+async function readCases(mode: PalmMode, row: AssetRow | undefined): Promise<{ cases: PalmCase[] }> {
+  const link = ((row?.data ?? {}) as { palm?: Record<string, { businessId?: string | null; formation?: { filingId?: string; ein?: { filingId?: string } | null } }> }).palm?.[mode];
+  // The formation, its EIN, and the business itself can each have questions.
+  const parents: [string, string][] = [];
+  if (link?.formation?.filingId) parents.push(["filing", link.formation.filingId]);
+  if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
+  if (link?.businessId) parents.push(["business", link.businessId]);
+  const lists = await Promise.all(
+    parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm: couldn't list cases for ${type} ${id}`, err), null)))
+  );
+  const seen = new Set<string>();
+  const cases = lists
+    .flatMap((l) => (Array.isArray(l) ? l : l?.data ?? []))
+    .filter((c) => c?.id && !seen.has(c.id) && seen.add(c.id))
+    .sort((a, b) => Number(b.status === "needs_response") - Number(a.status === "needs_response") || String(b.opened_at).localeCompare(String(a.opened_at)));
+  return { cases };
+}
+
+/** Each of the entity's registrations, with the Palm monitor watching it (brought up to date with Palm) or null. */
+async function readMonitors(mode: PalmMode, assetId: string, asset: AssetRow) {
+  const monitors = await refreshMonitors(await monitorsFor([assetId], mode));
+  const on = (m: { status: string; ended_at: string | null }) => !m.ended_at && m.status !== "canceled" && m.status !== "expired";
+  const registrations = registrationsOf((asset.data ?? {}) as never).map((r) => ({ ...r, monitor: monitors.find((m) => m.state === r.state && on(m)) ?? null }));
+  return { cents: mode === "live" ? PALM_PRICES.monitor.cents : 0, registrations };
+}
+
+// ── entity-bundle ───────────────────────────────────────────────────────
+
+const BUNDLE_PARTS = ["ra", "documents", "inbox", "inboxUnread", "cases", "monitors"] as const;
+type BundlePartName = (typeof BUNDLE_PARTS)[number];
+/** One part's answer: what its action would have sent, or the error its action would have failed with. */
+type BundlePart<T = unknown> = { ok: true; value: T } | { ok: false; error: { code: string; message: string; status: number } };
+
+/**
+ * Everything the entity page reads from Palm when it opens, read here in
+ * parallel. The business is the one linked in the key's mode (the page can't
+ * know the mode before asking). A part that fails fails alone, with the same
+ * error its own action would have answered; the rest still come back.
+ */
+async function entityBundle(mode: PalmMode | null, assetId: string, parts: BundlePartName[]) {
+  const status: BundlePart<{ configured: boolean; mode: PalmMode | null }> = { ok: true, value: { configured: !!mode, mode } };
+  if (!mode) return { mode, status };
+  const row = (await readRows("assets", [assetId]).catch(() => [] as AssetRow[]))[0];
+  const data = (row?.data ?? {}) as { palm?: Record<string, { businessId?: string | null } | undefined> };
+  const linked = data.palm?.[mode]?.businessId ?? null;
+  const businessId = linked && UUID.test(linked) ? linked : null;
+  const want = (p: BundlePartName) => parts.includes(p);
+
+  const reads: Partial<Record<BundlePartName, Promise<unknown>>> = {};
+  if (businessId && want("ra")) reads.ra = readRa(businessId);
+  if (businessId && want("documents")) reads.documents = readDocuments(businessId);
+  if (want("inbox")) reads.inbox = readInbox(mode, assetId, false);
+  if (want("inboxUnread")) reads.inboxUnread = readInbox(mode, assetId, true);
+  if (want("cases")) reads.cases = readCases(mode, row);
+  if (want("monitors")) reads.monitors = row ? readMonitors(mode, assetId, row) : Promise.reject(new NotFound());
+
+  const names = Object.keys(reads) as BundlePartName[];
+  const settled = await Promise.allSettled(names.map((n) => reads[n] as Promise<unknown>));
+  const out: Record<string, unknown> = { mode, businessId, status };
+  names.forEach((name, i) => {
+    const r = settled[i];
+    out[name] = r.status === "fulfilled" ? { ok: true, value: r.value } : { ok: false, error: partError(name, r.reason) };
+  });
+  return out;
+}
+
+class NotFound extends Error {}
+
+/** The error the part's own action would have answered with (the handler's catch, in one object). */
+function partError(name: string, err: unknown): { code: string; message: string; status: number } {
+  if (err instanceof NotFound) return { code: "not_found", message: "That entity isn't on record.", status: 404 };
+  if (err instanceof PalmError) {
+    const status = err.status === 401 || err.status === 403 ? 502 : err.status >= 500 ? 502 : err.status;
+    return { code: "palm_error", message: err.message, status };
+  }
+  console.error("palm failed", `entity-bundle/${name}`, err);
+  return { code: "palm_failed", message: "Couldn't reach Palm. Try again.", status: 502 };
 }
 
 type UsageRow = { at: string; mode: "test" | "live"; product: PalmProduct; cents: number; actor_name: string | null; asset_id: string | null; reason: string | null };

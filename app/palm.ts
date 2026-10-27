@@ -173,6 +173,46 @@ export class PalmCallError extends Error {
   }
 }
 
+/**
+ * One part of the entity page's opening read (action "entity-bundle"): what
+ * the part's own action would have answered, or the error it would have
+ * failed with. A failed part fails alone.
+ */
+export type PalmBundlePart<T> = { ok: true; value: T } | { ok: false; error: { code?: string; message: string; status?: number } };
+
+/** The parts a card reads for itself when the bundle hasn't got them. */
+export type PalmBundlePartName = "inbox" | "inboxUnread" | "cases" | "monitors";
+
+export type PalmBundle = {
+  mode: PalmMode | null;
+  /** The business linked in the key's mode, as the server read it; null when the entity isn't in Palm. */
+  businessId?: string | null;
+  status: PalmBundlePart<{ configured: boolean; mode: PalmMode | null }>;
+  ra?: PalmBundlePart<{ service: RaService | null }>;
+  documents?: PalmBundlePart<{ documents: PalmDocument[]; truncated?: boolean }>;
+  inbox?: PalmBundlePart<{ events: unknown[] }>;
+  inboxUnread?: PalmBundlePart<{ events: unknown[] }>;
+  cases?: PalmBundlePart<{ cases: unknown[] }>;
+  monitors?: PalmBundlePart<{ cents: number; registrations: unknown[] }>;
+};
+
+/** How long after the page opens a bundle part still stands in for a card's own read. */
+export const BUNDLE_FRESH_MS = 5_000;
+
+/** A card's copy of the part it took, so the same effect run again (React's development re-run) gets the same answer. */
+export type SeedHold<T> = { at: string; takenAt: number; part: PalmBundlePart<T> | null };
+
+/** The part for `at` (the card's key and what it asks for), taken once and held while fresh; null means read Palm. */
+export function heldSeed<T>(hold: { current: SeedHold<T> | null }, at: string, take: () => PalmBundlePart<T> | null): PalmBundlePart<T> | null {
+  if (hold.current?.at !== at || Date.now() - hold.current.takenAt > BUNDLE_FRESH_MS) hold.current = { at, takenAt: Date.now(), part: take() };
+  return hold.current.part;
+}
+
+/** A bundle part as the matching palmCall would have settled: its value, or the same PalmCallError. */
+export function fromBundle<T>(part: PalmBundlePart<T>): Promise<T> {
+  return part.ok ? Promise.resolve(part.value) : Promise.reject(new PalmCallError(part.error.message, part.error.code, part.error.status));
+}
+
 /** One action against /api/palm. Throws with Palm's explanation on failure. */
 export async function palmCall<T = Record<string, unknown>>(action: string, body: Record<string, unknown> = {}): Promise<T> {
   const r = await authFetch("/api/palm", {

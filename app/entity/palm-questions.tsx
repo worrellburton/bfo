@@ -9,9 +9,9 @@
 import { useEffect, useState } from "react";
 import { isAdmin } from "../auth";
 import { type FormationAddress } from "../formation";
-import { palmCall } from "../palm";
+import { fromBundle, palmCall } from "../palm";
 import { caseAnswer, caseDefaults, type PalmCase } from "../palm-cases";
-import { useEntity } from "./context";
+import { useEntity, usePalmSeed } from "./context";
 import { fmtDate, type Asset } from "./model";
 import { Button, Dot, ErrorLine, Field, Input, Section, Textarea, useTone } from "./ui";
 
@@ -39,11 +39,14 @@ export function PalmQuestions({ openCases = 0, title }: { openCases?: number; ti
   const [cases, setCases] = useState<PalmCase[] | null>(null);
   const [error, setError] = useState("");
   const mode = page.palmMode;
+  const seed = usePalmSeed<{ cases: PalmCase[] }>("cases");
 
   useEffect(() => {
     if (!mode) return;
     let alive = true;
-    palmCall<{ cases: PalmCase[] }>("cases", { assetId: page.id, mode })
+    // The page's opening read when it just came in; Palm itself otherwise.
+    const part = seed(`${page.id}:${mode}`, `${openCases}:${page.palmCasesTick}`);
+    (part ? fromBundle(part) : palmCall<{ cases: PalmCase[] }>("cases", { assetId: page.id, mode }))
       .then((r) => alive && (setCases(r.cases ?? []), setError("")))
       .catch((err) => alive && setError((err as Error).message));
     return () => {
