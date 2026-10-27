@@ -2226,7 +2226,7 @@ export default function Inbox() {
             {!open ? (
               <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
                 <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
-                Nothing selected
+                Pick a message to read it here
               </div>
             ) : (
               reader

@@ -32,7 +32,7 @@ export function EntityHeader() {
             Entities
           </Link>
         </nav>
-        <div className="mt-3 flex items-start gap-3.5">
+        <div className="mt-3 flex flex-wrap items-start gap-3.5">
           <div
             aria-hidden="true"
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-mono text-[10px] font-semibold tracking-[0.06em] ${
@@ -76,7 +76,7 @@ export function EntityHeader() {
               })()}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1 max-sm:w-full max-sm:justify-end">
             {canSyncPalm && <PalmSyncButton />}
             {/* A quiet confirmation once the edit form saves; it clears itself after a few seconds. */}
             {page.savedAt && !page.editing && (

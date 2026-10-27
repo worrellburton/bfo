@@ -77,7 +77,9 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
     const i = base.findIndex((c) => c.group === "Search");
     return i < 0 ? [...base, ...rows] : [...base.slice(0, i), ...rows, ...base.slice(i)];
   }, [base, txns, go]);
-  const open = focused && q.trim().length > 0;
+  // Focused and empty: the places opened recently, so the box is useful before a letter is typed.
+  const open = focused && (q.trim().length > 0 || results.some((c) => c.group === "Recent"));
+  const shownResults = q.trim() ? results : results.filter((c) => c.group === "Recent");
 
   useEffect(() => setActive(0), [q]);
   useEffect(() => {
@@ -91,13 +93,13 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((i) => Math.min(results.length - 1, i + 1));
+      setActive((i) => Math.min(shownResults.length - 1, i + 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const hit = results[active];
+      const hit = shownResults[active];
       if (hit) {
         if (hit.group === "Pages") rememberRecent({ to: hit.id.replace(/^page:/, ""), label: hit.label, hint: hit.hint });
         hit.run();
@@ -136,7 +138,7 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
           aria-expanded={open}
           aria-controls="home-search-list"
           aria-autocomplete="list"
-          aria-activedescendant={open && results[active] ? `home-search-${active}` : undefined}
+          aria-activedescendant={open && shownResults[active] ? `home-search-${active}` : undefined}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -172,8 +174,8 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
           onMouseDown={(e) => e.preventDefault()}
           className={`glass-panel absolute inset-x-0 top-[calc(100%+8px)] max-h-[min(50vh,420px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl ${isDark ? "text-white" : "text-gray-900"}`}
         >
-          {results.length === 0 && <p className={`px-3 py-6 text-center text-sm ${muted}`}>Nothing matches “{q}”.</p>}
-          {results.map((c, i) => {
+          {shownResults.length === 0 && <p className={`px-3 py-6 text-center text-sm ${muted}`}>Nothing matches “{q}”.</p>}
+          {shownResults.map((c, i) => {
             const groupLabel = c.id.startsWith("txn:") ? "Transactions" : c.group;
             const header = groupLabel !== lastGroup ? groupLabel : null;
             lastGroup = groupLabel;
