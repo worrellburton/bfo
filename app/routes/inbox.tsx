@@ -14,7 +14,6 @@ import { FileIcon, FileKindIcons } from "../file-icon";
 import { fileKind } from "../../lib/file-kind";
 import { filterFlags, filterOf } from "../../lib/mail-filter";
 import { useTheme } from "../theme";
-import { haptic } from "../native";
 import { enablePush, usePushState } from "../push";
 import { phoneScreen, supportsViewTransitions, transition } from "../view-transition";
 import {
@@ -46,54 +45,10 @@ import {
   type OutgoingAttachment,
 } from "../mail-client";
 import { GLYPHS, Glyph, GlyphButton, Star } from "../mail/glyphs";
+import { brandDomain, cleanSnippet, dayGroup, fullAddress, fullDate, hueOf, listDate, nameOf, same, senderLabel, tap } from "../mail/helpers";
 
 export function meta() {
   return [{ title: "BFO - Mail" }];
-}
-
-// ── Small helpers ────────────────────────────────────────────────────────
-
-const nameOf = (a: MailAddress) => a.name?.trim() || a.email;
-
-/** Mailboxes where the part before @ is the person, not the company. */
-const PERSONAL_MAIL = /^(gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn|icloud|me|mac|aol|proton|protonmail|pm|fastmail|hey|comcast|att|verizon|sbcglobal)\.(com|net|me|ch|org)$/i;
-
-/**
- * Who a message is from, as a person would say it: the display name, else the
- * person's handle for personal mailboxes, else the company from the domain
- * ("no-reply-3ksj…@mail.anthropic.com" → "Anthropic"). The full address is
- * always one tap away in the reader.
- */
-function senderLabel(a: MailAddress): string {
-  const name = a.name?.trim();
-  if (name) return name;
-  const [local = "", domain = ""] = a.email.toLowerCase().split("@");
-  if (!domain) return a.email;
-  if (PERSONAL_MAIL.test(domain)) return local.split("+")[0] || a.email;
-  const parts = domain.split(".").filter(Boolean);
-  // Drop the TLD (and a country second level like .co.uk), then any mail/email/mg subdomain.
-  let labels = parts.slice(0, parts.length > 2 && parts[parts.length - 2].length <= 3 ? -2 : -1);
-  labels = labels.filter((l) => !/^(mail|email|e|mg|smtp|mailer|send|notify|notifications?|news|info|m|em|bounce|bounces)\d*$/.test(l));
-  const brand = labels[labels.length - 1] || parts[0];
-  return brand.charAt(0).toUpperCase() + brand.slice(1);
-}
-
-/** A steady hue per sender, so the same person always gets the same colour. */
-function hueOf(key: string): number {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % 360;
-}
-
-/** The company's domain for a logo ("mail.anthropic.com" → "anthropic.com"), or null for a person. */
-function brandDomain(a: MailAddress): string | null {
-  const domain = a.email.toLowerCase().split("@")[1] ?? "";
-  if (!domain || PERSONAL_MAIL.test(domain)) return null;
-  const parts = domain.split(".").filter(Boolean);
-  if (parts.length < 2) return null;
-  // Keep a country second level (co.uk); otherwise the last two labels.
-  const keep = parts.length > 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
-  return parts.slice(-keep).join(".");
 }
 
 /** Logos that loaded, and domains that have none — so a list doesn't flicker as it re-renders. */
@@ -185,58 +140,6 @@ function InitialsAvatar({ a, size }: { a: MailAddress; size: string }) {
       {showLogo && logo === "loading" && <span className="absolute inset-0 animate-pulse bg-gray-200/40" />}
     </span>
   );
-}
-
-const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a.email}>` : a.email);
-const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-
-/** Time today, "Oct 3" this year, else "3/4/25". */
-/** A snippet stored before the server learned to leave out a help desk's wrapping: the same tidy, on the way in. */
-function cleanSnippet(snippet: string): string {
-  let out = snippet;
-  for (let i = 0; i < 4; i++) {
-    const next = out.replace(/^\s*(#+-?\s*please type your reply above this line\s*-?#+|[-_=*]{4,}|\[[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})+\])\s*/i, "");
-    if (next === out) break;
-    out = next;
-  }
-  return out.replace(/\s*(this (?:email|message) is a service from\b.*|delivered by zendesk.*|sent from my (?:iphone|ipad|android|galaxy|phone).*)$/i, "").trim();
-}
-
-/** "Today", "Yesterday", a weekday within the week, else the date: the phone list's separators. */
-function dayGroup(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((start(now) - start(d)) / 86400000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return d.toLocaleDateString("en-US", { weekday: "long" });
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-
-function listDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return d.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
-}
-
-function fullDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const thisYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    ...(thisYear ? {} : { year: "numeric" }),
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 const FOLDERS: { key: MailFolder; label: string }[] = [
@@ -2446,12 +2349,6 @@ function ReadingProgress() {
   }, []);
   if (pct <= 0) return null;
   return <div aria-hidden="true" className="read-progress md:hidden" style={{ width: `${pct}%`, top: "env(safe-area-inset-top)" }} />;
-}
-
-/** A tick of haptics on phones that have it (Android; iOS Safari ignores it). */
-/** A light tap: native haptics in the iPhone app (app/native.ts). */
-function tap() {
-  haptic();
 }
 
 // ── List ─────────────────────────────────────────────────────────────────
