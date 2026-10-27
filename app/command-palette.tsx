@@ -75,10 +75,10 @@ function score(c: Command, q: string): number {
   return words.length > 1 && words.every((w) => hay.includes(w)) ? 1 : 0;
 }
 
-type Entity = { id: string; name: string; type?: string; state?: string };
+export type Entity = { id: string; name: string; type?: string; state?: string };
 
 /** Entities from the shared tree, loaded the first time the palette opens. */
-function useEntities(enabled: boolean): Entity[] {
+export function useEntities(enabled: boolean): Entity[] {
   const [entities, setEntities] = useState<Entity[]>([]);
   const loaded = useRef(false);
   useEffect(() => {
@@ -102,6 +102,83 @@ function useEntities(enabled: boolean): Entity[] {
     })();
   }, [enabled]);
   return entities;
+}
+
+/**
+ * The palette's results for a query: recent places (when the query is
+ * empty), pages, entities, actions, and searches of mail and the books.
+ * The home page's search box shares it.
+ */
+export function usePaletteResults({
+  q,
+  pages,
+  entities,
+  actions,
+  go,
+}: {
+  q: string;
+  pages: PageLink[];
+  entities: Entity[];
+  actions: Array<{ id: string; label: string; hint?: string; run: () => void }>;
+  go: (to: string) => void;
+}): Command[] {
+  return useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const all: Command[] = [];
+    if (!query) {
+      for (const r of readRecent()) all.push({ id: `recent:${r.to}`, label: r.label, hint: r.hint, group: "Recent", run: () => go(r.to) });
+    }
+    for (const p of pages) {
+      all.push({ id: `page:${p.to}`, label: p.label, hint: p.section, keywords: p.keywords, group: "Pages", run: () => go(p.to) });
+    }
+    for (const e of entities) {
+      all.push({
+        id: `entity:${e.id}`,
+        label: e.name,
+        hint: [e.type, e.state].filter(Boolean).join(" · ") || "Entity",
+        group: "Entities",
+        run: () => {
+          rememberRecent({ to: `/assets/${e.id}`, label: e.name, hint: "Entity" });
+          go(`/assets/${e.id}`);
+        },
+      });
+    }
+    for (const a of actions) all.push({ ...a, group: "Actions" });
+
+    const scored = all
+      .map((c) => ({ c, s: score(c, query) }))
+      .filter((x) => x.s > 0)
+      // Without a query keep the natural order; with one, best matches first
+      // while groups stay together.
+      .sort((a, b) => (query ? b.s - a.s : 0));
+    const order: Command["group"][] = ["Recent", "Pages", "Entities", "Actions", "Search"];
+    const byGroup = new Map<Command["group"], Command[]>();
+    for (const { c } of scored) {
+      const list = byGroup.get(c.group) ?? [];
+      if (list.length < (query ? 8 : c.group === "Entities" ? 6 : 12)) list.push(c);
+      byGroup.set(c.group, list);
+    }
+    if (query) {
+      byGroup.set("Search", [
+        {
+          id: "search:mail",
+          label: `Search mail for “${q.trim()}”`,
+          hint: "Mail",
+          group: "Search",
+          run: () => go(`/inbox?q=${encodeURIComponent(q.trim())}`),
+        },
+        {
+          id: "search:txns",
+          label: `Search transactions for “${q.trim()}”`,
+          hint: "Books",
+          group: "Search",
+          run: () => go(`/books/transactions?q=${encodeURIComponent(q.trim())}`),
+        },
+      ]);
+    }
+    return order.flatMap((g) => byGroup.get(g) ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, pages, entities, actions]);
 }
 
 export function CommandPalette({
@@ -142,56 +219,7 @@ export function CommandPalette({
     navigate(to);
   };
 
-  const results = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    const all: Command[] = [];
-    if (!query) {
-      for (const r of readRecent()) all.push({ id: `recent:${r.to}`, label: r.label, hint: r.hint, group: "Recent", run: () => go(r.to) });
-    }
-    for (const p of pages) {
-      all.push({ id: `page:${p.to}`, label: p.label, hint: p.section, keywords: p.keywords, group: "Pages", run: () => go(p.to) });
-    }
-    for (const e of entities) {
-      all.push({
-        id: `entity:${e.id}`,
-        label: e.name,
-        hint: [e.type, e.state].filter(Boolean).join(" · ") || "Entity",
-        group: "Entities",
-        run: () => {
-          rememberRecent({ to: `/assets/${e.id}`, label: e.name, hint: "Entity" });
-          go(`/assets/${e.id}`);
-        },
-      });
-    }
-    for (const a of actions) all.push({ ...a, group: "Actions" });
-
-    const scored = all
-      .map((c) => ({ c, s: score(c, query) }))
-      .filter((x) => x.s > 0)
-      // Without a query keep the natural order; with one, best matches first
-      // while groups stay together.
-      .sort((a, b) => (query ? b.s - a.s : 0));
-    const order: Command["group"][] = ["Recent", "Pages", "Entities", "Actions", "Search"];
-    const byGroup = new Map<Command["group"], Command[]>();
-    for (const { c } of scored) {
-      const list = byGroup.get(c.group) ?? [];
-      if (list.length < (query ? 8 : c.group === "Entities" ? 6 : 12)) list.push(c);
-      byGroup.set(c.group, list);
-    }
-    if (query) {
-      byGroup.set("Search", [
-        {
-          id: "search:txns",
-          label: `Search transactions for “${q.trim()}”`,
-          hint: "Books",
-          group: "Search",
-          run: () => go(`/books/transactions?q=${encodeURIComponent(q.trim())}`),
-        },
-      ]);
-    }
-    return order.flatMap((g) => byGroup.get(g) ?? []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, pages, entities, actions]);
+  const results = usePaletteResults({ q, pages, entities, actions, go });
 
   useEffect(() => setActive(0), [q]);
   useEffect(() => {

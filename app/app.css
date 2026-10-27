@@ -875,21 +875,6 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
   .sidebar-rail .sidebar-head > button + button { margin-left: -4px; }
   .sidebar-rail .sidebar-head > button:hover { background: rgba(244, 237, 224, 0.08); color: var(--ivory); }
 
-  /* Search: a hairline field, the palette's front door. */
-  .sidebar-rail .sidebar-search { padding: 0 16px 14px; }
-  .sidebar-rail .sidebar-search > button {
-    height: 42px;
-    padding: 0 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(244, 237, 224, 0.16);
-    color: rgba(244, 237, 224, 0.55);
-    font-size: 13.5px;
-    background: transparent;
-  }
-  .sidebar-rail .sidebar-search > button:hover { color: var(--ivory); border-color: rgba(244, 237, 224, 0.35); background: transparent; }
-  .sidebar-rail .sidebar-search > button svg { opacity: 0.8; }
-
-
   /* The rows. */
   .sidebar-rail nav[aria-label="Main"] {
     padding: 0 12px 16px;
