@@ -8,6 +8,8 @@ export default [
   route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
   route("legal/terms", "./routes/legal-terms.tsx"),
   route("legal/privacy", "./routes/legal-privacy.tsx"),
+  // A signer's page: no account, the token in their emailed link is who they are.
+  route("sign/:token", "./routes/sign.tsx"),
   layout("routes/app-layout.tsx", [
     route("home", "routes/home.tsx"),
     route("ask", "routes/ask.tsx"),
@@ -38,6 +40,8 @@ export default [
     route("mailbox", "./routes/paper-mail.tsx"),
     route("phone", "./routes/phone.tsx"),
     route("tools/compliance", "./routes/tools-compliance.tsx"),
+    route("tools/signatures", "./routes/tools-signatures.tsx"),
+    route("tools/signatures/:id", "./routes/signature-detail.tsx"),
     route("*", "./routes/not-found.tsx"),
   ]),
 ] satisfies RouteConfig;

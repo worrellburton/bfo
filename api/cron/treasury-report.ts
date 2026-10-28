@@ -1075,7 +1075,16 @@ async function scheduled(
     );
     let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
     if (due.length === 0) {
-      run.note("nobody due today");
+      // Nothing to send, but the day's balances still get recorded: the
+      // Investments and Treasury trend lines read treasury_daily, which the
+      // balance pull writes, and a day nobody opens the app would otherwise
+      // be a gap.
+      try {
+        await fetchTreasury(origin, { Authorization: `Bearer ${secret}` });
+        run.note("nobody due today; balances recorded");
+      } catch (err) {
+        run.failed(`nobody due today, and the day's balances couldn't be recorded: ${err instanceof Error ? err.message : String(err)}`);
+      }
       return res.status(200).json({ sent: 0, considered: users.length });
     }
 
