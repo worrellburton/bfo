@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { confirmDialog } from "../confirm-dialog";
-import { PARTY_LABEL, STATUS_LABEL, signApi, when, type RequestStatus, type SignatureRequest } from "../sign/api";
+import { isOpen, PARTY_LABEL, STATUS_LABEL, signApi, when, type RequestStatus, type SignatureRequest } from "../sign/api";
+import { usePoll } from "../sign/use-poll";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -36,6 +37,8 @@ export default function ToolsSignatures() {
   useEffect(() => {
     void load();
   }, [load]);
+  // Statuses change as people sign; refresh while anything is still out.
+  usePoll(load, 15000, (rows ?? []).some((r) => isOpen(r.status)));
 
   const t2 = isDark ? "text-gray-400" : "text-gray-600";
   const t3 = isDark ? "text-gray-500" : "text-gray-400";

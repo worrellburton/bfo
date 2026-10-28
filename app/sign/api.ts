@@ -31,6 +31,8 @@ export type SignatureRequest = {
   sent_at: string | null;
   completed_at: string | null;
   copy_sent_at: string | null;
+  /** Sent under this name instead of BFO's (an MSA with "Entity name only"). */
+  brand: string | null;
 };
 
 export class SignError extends Error {
@@ -50,7 +52,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const signApi = {
   list: () => call<{ requests: SignatureRequest[] }>("/api/sign").then((r) => r.requests),
-  get: (id: string) => call<{ request: SignatureRequest; pdfUrl: string | null }>(`/api/sign?id=${encodeURIComponent(id)}`),
+  /** With `have`, the key of the PDF already on screen: pdfUrl comes back null unless there's a newer one. */
+  get: (id: string, have?: string | null) =>
+    call<{ request: SignatureRequest; pdfKey: string | null; pdfUrl: string | null }>(`/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`),
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),
   download: (id: string) => call<{ url: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "download", id }) }).then((r) => r.url),
   remove: (id: string) => call<{ ok: true }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "delete", id }) }),
@@ -62,6 +66,9 @@ export const signApi = {
     return signApi.act("attach", { id });
   },
 };
+
+/** Still waiting on someone: worth checking for progress. */
+export const isOpen = (status?: RequestStatus | null) => status === "sent" || status === "partial";
 
 export const STATUS_LABEL: Record<RequestStatus, string> = {
   draft: "Draft",

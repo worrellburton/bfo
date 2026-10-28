@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { PARTY_LABEL, signApi, when, type SignField, type SignatureRequest } from "./api";
+import { isOpen, PARTY_LABEL, signApi, when, type SignField, type SignatureRequest } from "./api";
+import { usePoll } from "./use-poll";
 import { PartyDot, Small, StatusChip } from "../routes/tools-signatures";
 
 /**
@@ -57,6 +58,7 @@ export function ContractSignature({
   client,
   pdf,
   geometry,
+  brand,
 }: {
   isDark: boolean;
   request: SignatureRequest | null;
@@ -70,6 +72,8 @@ export function ContractSignature({
   client: { name: string };
   pdf: () => Blob | null;
   geometry: () => SigGeometry | null;
+  /** Send under this name and never BFO's (the contract's "Entity name only"). */
+  brand?: string | null;
 }) {
   const [a, setA] = useState({ name: manager.name, email: manager.email });
   const [b, setB] = useState({ name: client.name, email: "" });
@@ -81,6 +85,15 @@ export function ContractSignature({
   const label = `text-xs block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`;
   const input = `w-full px-3 py-2 text-sm max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`;
   const t2 = isDark ? "text-gray-400" : "text-gray-500";
+
+  // Progress arrives as the other side signs.
+  usePoll(
+    async () => {
+      if (request) onChange((await signApi.get(request.id, "unchanged")).request);
+    },
+    10000,
+    isOpen(request?.status)
+  );
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -97,6 +110,7 @@ export function ContractSignature({
         title,
         assetId,
         contractId,
+        brand: brand || undefined,
         parties: [
           { role: "Manager", name: a.name.trim(), email: a.email.trim() },
           { role: "Client", name: b.name.trim(), email: b.email.trim() },

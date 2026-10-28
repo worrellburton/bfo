@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import {
   appendCertificate,
+  certificateFooter,
   certificateLines,
   cleanField,
   cleanParty,
@@ -10,7 +11,9 @@ import {
   fitInside,
   hashToken,
   newToken,
+  pdfKey,
   sendBlocker,
+  signedCopyEmail,
   signRequestEmail,
   stampPdf,
   TOKEN_RE,
@@ -44,6 +47,7 @@ const row = (over: Partial<SignatureRequestRow> = {}): SignatureRequestRow => ({
   sent_at: "2026-10-28T10:00:00Z",
   completed_at: null,
   copy_sent_at: null,
+  brand: null,
   ...over,
 });
 
@@ -144,10 +148,29 @@ describe("stamping", () => {
 
 describe("emails", () => {
   it("names the sender, the document and the signer", () => {
-    const m = signRequestEmail({ title: "MSA", created_by_name: "Robert" }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");
+    const m = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: null }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");
     expect(m.subject).toBe("Robert sent you MSA to sign");
     expect(m.text).toContain("https://www.burtonfamilyoffice.com/sign/abc");
     expect(m.html).toContain("Ada Client");
-    expect(signRequestEmail({ title: "MSA", created_by_name: null }, party("b"), "x", true).subject).toMatch(/^Reminder/);
+    expect(signRequestEmail({ title: "MSA", created_by_name: null, brand: null }, party("b"), "x", true).subject).toMatch(/^Reminder/);
+  });
+  it("never mentions BFO when sent under an entity's own name", () => {
+    const m = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: "Ledger Louise, LLC" }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");
+    expect(m.subject).toBe("Ledger Louise, LLC sent you MSA to sign");
+    expect(m.html).not.toMatch(/Burton Family Office|>BFO</);
+    const copy = signedCopyEmail({ title: "MSA", brand: "Ledger Louise, LLC" }, party("b"), "x");
+    expect(copy.html).not.toMatch(/Burton Family Office|>BFO</);
+    expect(certificateFooter("Ledger Louise, LLC").join(" ")).not.toMatch(/BFO|Burton/);
+    expect(certificateFooter(null).join(" ")).toMatch(/Burton Family Office/);
+  });
+});
+
+describe("pdfKey", () => {
+  it("changes when a signature is stamped, though the path stays the same", () => {
+    const before = pdfKey(row());
+    const after = pdfKey(row({ parties: [party("a", "signed"), party("b", "sent")] }));
+    expect(before).toBe("signatures/x/current.pdf#0");
+    expect(after).toBe("signatures/x/current.pdf#1");
+    expect(pdfKey(row({ signed_path: "signatures/x/signed.pdf", parties: [party("a", "signed"), party("b", "signed")] }))).toBe("signatures/x/signed.pdf#2");
   });
 });
