@@ -347,12 +347,62 @@ export function CategoryMenu() {
       ro.disconnect();
     };
   }, [view.tabs.length]);
+  // On a phone the strip can't show it scrolls, so it's a button naming the current section that opens the whole list.
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [view.tab]);
+  useEffect(() => {
+    if (!open) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [open]);
+  const current = view.tabs.find((tab) => tab.key === view.tab) ?? view.tabs[0];
+  const panel = t.dark ? "border-white/[0.07] bg-[#0b0b0f]/95 backdrop-blur-xl" : "border-gray-200 bg-white/95 backdrop-blur-xl";
   return (
     <nav aria-label="Entity sections" className="sticky top-[calc(3.5rem+env(safe-area-inset-top)+8px)] z-20 lg:top-3">
+      <div className="relative sm:hidden">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          className={`flex h-[48px] w-full items-center gap-2 rounded-xl border px-4 text-left ${panel}`}
+        >
+          <span className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t.muted}`}>Section</span>
+          <span className={`flex items-center gap-1.5 text-[14px] font-semibold ${t.text}`}>
+            {current.label}
+            <Count n={current.count} alert={current.alert} />
+          </span>
+          <Icon name="chevronDown" className={`ml-auto h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.25} />
+        </button>
+        {open && (
+          <>
+            <button type="button" aria-label="Close sections" onClick={() => setOpen(false)} className="fixed inset-0 z-10 cursor-default bg-black/40" />
+            <div role="menu" aria-label="Sections" className={`absolute inset-x-0 top-[calc(100%+6px)] z-20 grid grid-cols-2 gap-1 rounded-xl border p-1.5 shadow-2xl ${panel}`}>
+              {view.tabs.map((tab) => {
+                const on = tab.key === view.tab;
+                return (
+                  <Link
+                    key={tab.key}
+                    role="menuitem"
+                    to={tabPath(tab.key)}
+                    aria-current={on ? "page" : undefined}
+                    onClick={() => setOpen(false)}
+                    className={`flex min-h-[48px] items-center justify-between gap-2 rounded-lg px-3 text-[13.5px] font-medium ${
+                      on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : `${t.text} ${t.hover}`
+                    }`}
+                  >
+                    {tab.label}
+                    <Count n={tab.count} alert={tab.alert} />
+                  </Link>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
       <div
-        className={`rounded-xl border p-1 ${
-          t.dark ? "border-white/[0.07] bg-[#0b0b0f]/95 backdrop-blur-xl" : "border-gray-200 bg-white/95 backdrop-blur-xl"
-        }`}
+        className={`rounded-xl border p-1 max-sm:hidden ${panel}`}
       >
         <div
           ref={strip}

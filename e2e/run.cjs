@@ -150,6 +150,12 @@ async function flows(browser) {
     await open(page, `${BASE}/inbox`); await page.waitForTimeout(1500);
     await page.locator("text=Address change 0 >> visible=true").first().click(); await page.waitForTimeout(1200);
     if (!page.url().includes("m=")) fail("flow/phone", "mail row didn't open the message");
+    // The entity's sections: a button naming the current one opens the whole list.
+    await open(page, `${BASE}/assets/${ENTITY}`); await page.waitForTimeout(1500);
+    await page.getByRole("button", { name: /Section.*Overview/ }).click(); await page.waitForTimeout(300);
+    await page.getByRole("menuitem", { name: /^Compliance/ }).click(); await page.waitForTimeout(800);
+    if (!page.url().includes("/compliance")) fail("flow/phone", "section menu didn't open Compliance");
+    if (await page.getByRole("menu", { name: "Sections" }).isVisible().catch(() => false)) fail("flow/phone", "section menu stayed open after choosing");
     await ctx.close();
   }
   // iPad: the rail opens by default, collapses on a tap, and is remembered.
