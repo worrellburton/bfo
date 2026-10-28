@@ -14,6 +14,7 @@ import {
   newToken,
   officeDate,
   pathFor,
+  pdfKey,
   sendBlocker,
   SIGN_BUCKET,
   signedCopyEmail,
@@ -35,9 +36,10 @@ import {
  * in the link is their proof).
  *
  * Office — GET → { requests }  every request, newest first (no token hashes)
- *          GET ?id=<uuid> → { request, pdfUrl }  one, with a short-lived link to its latest PDF
+ *          GET ?id=<uuid>[&have=<pdfKey>] → { request, pdfKey, pdfUrl }  one, with a short-lived link to its
+ *                     latest PDF (null when `have` already names that version: a page polling for progress)
  *          POST { action, … }:
- *            create     { title, assetId?, contractId?, parties? } → { request }
+ *            create     { title, assetId?, contractId?, parties?, brand? } → { request }  (brand: send under that name, never BFO's)
  *            upload-url { id, contentType? } → { signedUrl, token, path }  a one-time PUT for the PDF
  *            attach     { id }  reads the uploaded PDF (page sizes) → { request }
  *            update     { id, title?, fields?, parties? } → { request }  (fields and parties while nobody has signed)
@@ -48,7 +50,7 @@ import {
  *            delete     { id } → { ok }
  *            download   { id } → { url }  the signed copy (or the latest PDF)
  *
- * Signer — GET ?token=<token> → { title, you, parties, fields, pdfUrl, status, completed }  (marks viewed)
+ * Signer — GET ?token=<token>[&have=<pdfKey>] → { title, brand, you, parties, fields, pdfKey, pdfUrl, status, completed }  (marks viewed)
  *          POST { action: "sign", token, name, signature (PNG data URL), consent: true } → { ok, completed }
  *          POST { action: "decline", token, reason? } → { ok }
  */
@@ -110,7 +112,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (id) {
         const row = await rowById(id);
         if (!row) return fail(res, 404, "not_found");
-        return res.status(200).json({ request: toView(row), pdfUrl: await latestPdfUrl(row) });
+        // A page polling for progress passes the key it already shows; an unchanged PDF isn't re-linked.
+        const key = pdfKey(row);
+        const same = typeof req.query.have === "string" && req.query.have === key;
+        return res.status(200).json({ request: toView(row), pdfKey: key, pdfUrl: same ? null : await latestPdfUrl(row) });
       }
       const rows = await sb<SignatureRequestRow[]>("signature_requests?select=*&order=created_at.desc&limit=200");
       return res.status(200).json({ requests: (rows ?? []).map(toView) });
@@ -121,6 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const title = String(body.title ?? "").trim().slice(0, 160) || "Untitled document";
       const assetId = typeof body.assetId === "string" && /^[\w-]{1,80}$/.test(body.assetId) ? body.assetId : null;
       const contractId = typeof body.contractId === "string" && /^[\w-]{1,80}$/.test(body.contractId) ? body.contractId : null;
+      const brand = typeof body.brand === "string" && body.brand.trim() ? body.brand.trim().slice(0, 120) : null;
       const parties = partiesFrom(body.parties, []);
       const [row] = await sb<SignatureRequestRow[]>("signature_requests", {
         method: "POST",
@@ -130,6 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           source: contractId ? "contract" : "upload",
           asset_id: assetId,
           contract_id: contractId,
+          brand,
           created_by: me.id,
           created_by_name: me.name,
           parties,
@@ -212,7 +219,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const events = [...row.events, event("sent", { by: me.id })];
         for (const [p, link] of links) {
           const mail = signRequestEmail(row, p, link);
-          await sendEmail(p.email, mail.subject, mail.text, mail.html, undefined, undefined, { replyTo: me.email ?? undefined });
+          await sendEmail(p.email, mail.subject, mail.text, mail.html, undefined, undefined, { replyTo: me.email ?? undefined, fromName: row.brand ?? undefined });
           events.push(event("emailed", { party: p.key }));
         }
         const next = await patch(row.id, { parties, status: deriveStatus(parties, "sent"), sent_at: row.sent_at ?? now, events });
@@ -233,7 +240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const sent: Party = { ...p, tokenHash: hashToken(t), status: p.status === "viewed" ? "viewed" : "sent", sentAt: new Date().toISOString() };
           parties.push(sent);
           const mail = signRequestEmail(row, sent, signLink(t), true);
-          await sendEmail(p.email, mail.subject, mail.text, mail.html, undefined, undefined, { replyTo: me.email ?? undefined });
+          await sendEmail(p.email, mail.subject, mail.text, mail.html, undefined, undefined, { replyTo: me.email ?? undefined, fromName: row.brand ?? undefined });
           events.push(event("reminded", { party: p.key, by: me.id }));
         }
         const next = await patch(row.id, { parties, events });
@@ -248,7 +255,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const next: Party = { ...p, tokenHash: hashToken(t) };
           parties.push(next);
           const mail = signedCopyEmail(row, next, signLink(t));
-          await sendEmail(p.email, mail.subject, mail.text, mail.html, undefined, undefined, { replyTo: me.email ?? undefined });
+          await sendEmail(p.email, mail.subject, mail.text, mail.html, undefined, undefined, { replyTo: me.email ?? undefined, fromName: row.brand ?? undefined });
           events.push(event("copy_sent", { party: p.key, by: me.id }));
         }
         const next = await patch(row.id, { parties, events, copy_sent_at: new Date().toISOString() });
@@ -305,7 +312,11 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
       await patch(row.id, { parties, events });
     }
     const completed = row.status === "completed";
+    const key = pdfKey(row);
+    const same = typeof req.query.have === "string" && req.query.have === key;
     return res.status(200).json({
+      brand: row.brand,
+      pdfKey: key,
       title: row.title,
       status: row.status,
       completed,
@@ -313,7 +324,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
       parties: parties.map((p) => ({ key: p.key, role: p.role, name: p.name, status: p.status })),
       fields: row.fields,
       pages: row.pages,
-      pdfUrl: await latestPdfUrl(row, completed ? fileName(row) : undefined),
+      pdfUrl: same ? null : await latestPdfUrl(row, completed ? fileName(row) : undefined),
       sentBy: row.created_by_name,
     });
   }

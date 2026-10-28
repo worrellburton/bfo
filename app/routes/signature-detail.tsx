@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { confirmDialog } from "../confirm-dialog";
-import { FIELD_LABEL, newField, PARTY_LABEL, signApi, when, type FieldType, type Party, type PartyKey, type SignField, type SignatureRequest } from "../sign/api";
+import { FIELD_LABEL, isOpen, newField, PARTY_LABEL, signApi, when, type FieldType, type Party, type PartyKey, type SignField, type SignatureRequest } from "../sign/api";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
+import { usePoll } from "../sign/use-poll";
 import { useTheme } from "../theme";
 import { PartyDot, Small, StatusChip } from "./tools-signatures";
 
@@ -35,11 +36,16 @@ export default function SignatureDetail() {
   const card = `rounded-2xl border ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`;
   const input = `h-9 w-full rounded-lg border px-2.5 text-[13px] focus:outline-none max-sm:h-[44px] max-sm:text-[16px] ${isDark ? "border-white/10 bg-white/[0.03] text-white focus:border-white/30" : "border-gray-200 bg-white text-gray-900 focus:border-gray-400"}`;
 
+  const shownKey = useRef<string | null>(null);
   const load = useCallback(async () => {
     try {
-      const r = await signApi.get(id);
+      const r = await signApi.get(id, shownKey.current);
       setReq(r.request);
-      setPdfUrl(r.pdfUrl);
+      // Only a new version replaces the pages on screen (each signature stamps a new one).
+      if (r.pdfUrl) {
+        setPdfUrl(r.pdfUrl);
+        shownKey.current = r.pdfKey;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load it.");
     }
@@ -47,6 +53,8 @@ export default function SignatureDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+  // While it's out for signature, signatures show up here as they land.
+  usePoll(load, 8000, isOpen(req?.status));
 
   const editable = req?.status === "draft";
   const parties = useMemo<Party[]>(() => {

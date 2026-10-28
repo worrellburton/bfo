@@ -69,6 +69,8 @@ export type SignatureRequestRow = {
   sent_at: string | null;
   completed_at: string | null;
   copy_sent_at: string | null;
+  /** Who it comes from when it must not mention BFO (an MSA with "Entity name only"); null is BFO. */
+  brand: string | null;
 };
 
 /** What the office sees: the row without the token hashes. */
@@ -76,6 +78,16 @@ export type SignatureRequestView = Omit<SignatureRequestRow, "parties"> & { part
 
 export function toView(row: SignatureRequestRow): SignatureRequestView {
   return { ...row, parties: row.parties.map(({ tokenHash: _t, ...p }) => p) };
+}
+
+/**
+ * Names the PDF a viewer should see now. The stamped copy is rewritten in place
+ * at the same path on each signature, so the key carries the signature count:
+ * a page can tell a new version from a fresh link to the same one.
+ */
+export function pdfKey(row: Pick<SignatureRequestRow, "signed_path" | "current_path" | "original_path" | "parties">): string | null {
+  const path = row.signed_path || row.current_path || row.original_path;
+  return path ? `${path}#${row.parties.filter((p) => p.status === "signed").length}` : null;
 }
 
 export const pathFor = (id: string, which: "original" | "current" | "signed") => `signatures/${id}/${which}.pdf`;
@@ -221,9 +233,10 @@ export async function appendCertificate(pdf: Uint8Array, row: SignatureRequestRo
     page.drawText(text, { x, y, size, font, color });
     y -= size * 1.55;
   };
-  line("BFO", serifBold, 14);
+  const mark = row.brand || "BFO";
+  line(mark, serifBold, 14);
   y += 2;
-  page.drawText("SIGNATURE CERTIFICATE", { x: ml + 36, y: y + 14 * 1.55 - 2, size: 7, font: sans, color: muted });
+  page.drawText("SIGNATURE CERTIFICATE", { x: ml + serifBold.widthOfTextAtSize(mark, 14) + 10, y: y + 14 * 1.55 - 2, size: 7, font: sans, color: muted });
   page.drawLine({ start: { x: ml, y: y + 6 }, end: { x: mr, y: y + 6 }, thickness: 0.8, color: ink });
   y -= 22;
   line(row.title, serifBold, 18);
@@ -240,9 +253,18 @@ export async function appendCertificate(pdf: Uint8Array, row: SignatureRequestRo
   y -= 10;
   page.drawLine({ start: { x: ml, y }, end: { x: mr, y }, thickness: 0.4, color: muted });
   y -= 16;
-  line("Signed through BFO, Burton Family Office (burtonfamilyoffice.com). Each party opened a private link sent to the", sans, 8, muted);
-  line("email address above, read the document, and signed it; the time and network address of each signature are recorded.", sans, 8, muted);
+  for (const text of certificateFooter(row.brand)) line(text, sans, 8, muted);
   return doc.save();
+}
+
+/** The small print under the certificate; without BFO's name when the request is sent under another. */
+export function certificateFooter(brand: string | null): string[] {
+  return brand
+    ? ["Signed electronically. Each party opened a private link sent to the email address above, read the document,", "and signed it; the time and network address of each signature are recorded."]
+    : [
+        "Signed through BFO, Burton Family Office (burtonfamilyoffice.com). Each party opened a private link sent to the",
+        "email address above, read the document, and signed it; the time and network address of each signature are recorded.",
+      ];
 }
 
 /** The certificate's lines (a "## " prefix is a heading; "" is a gap). */
@@ -265,13 +287,17 @@ export function certificateLines(row: SignatureRequestRow): string[] {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function shell(inner: string): string {
+function shell(inner: string, brand: string | null = null): string {
   return `<!doctype html><html><body style="margin:0;background:#000;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
     <table role="presentation" width="100%" style="max-width:460px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0">
       <tr><td style="padding:40px 34px;text-align:center;">
-        <div style="font-family:'Playfair Display',Georgia,serif;font-size:13px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.5);">Burton Family Office</div>
-        <div style="margin-top:6px;font-family:'Playfair Display',Georgia,serif;font-size:40px;color:#ffffff;">BFO</div>
+        ${
+          brand
+            ? `<div style="font-family:'Playfair Display',Georgia,serif;font-size:26px;line-height:1.2;color:#ffffff;">${esc(brand)}</div>`
+            : `<div style="font-family:'Playfair Display',Georgia,serif;font-size:13px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.5);">Burton Family Office</div>
+        <div style="margin-top:6px;font-family:'Playfair Display',Georgia,serif;font-size:40px;color:#ffffff;">BFO</div>`
+        }
         ${inner}
       </td></tr>
     </table>
@@ -282,25 +308,25 @@ function shell(inner: string): string {
 const button = (href: string, label: string) =>
   `<a href="${href}" style="display:inline-block;margin-top:26px;padding:12px 26px;border-radius:12px;background:#ffffff;color:#000;font-size:14px;font-weight:600;text-decoration:none;">${esc(label)}</a>`;
 
-export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name">, party: Party, link: string, remind = false) {
-  const from = row.created_by_name || "Burton Family Office";
+export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name" | "brand">, party: Party, link: string, remind = false) {
+  const from = row.brand || row.created_by_name || "Burton Family Office";
   const subject = remind ? `Reminder: ${row.title} is waiting for your signature` : `${from} sent you ${row.title} to sign`;
   const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\nReview and sign it here:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
   const html = shell(`
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(from)} ${remind ? "is still waiting for your signature on" : "sent you"}<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
         <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">You're signing as ${esc(party.name)}, ${esc(party.role)}.</div>
         ${button(link, "Review and sign")}
-        <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`);
+        <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`, row.brand);
   return { subject, text, html };
 }
 
-export function signedCopyEmail(row: Pick<SignatureRequestRow, "title">, party: Party, link: string) {
+export function signedCopyEmail(row: Pick<SignatureRequestRow, "title" | "brand">, party: Party, link: string) {
   const subject = `${row.title}: signed by everyone`;
   const text = `${row.title} has been signed by every party. Your copy, with the signature certificate, is here:\n${link}\n`;
   const html = shell(`
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">Signed by everyone<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
         <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">Your copy for ${esc(party.name)}, with the signature certificate.</div>
-        ${button(link, "Download the signed copy")}`);
+        ${button(link, "Download the signed copy")}`, row.brand);
   return { subject, text, html };
 }
 

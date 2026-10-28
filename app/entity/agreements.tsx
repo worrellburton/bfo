@@ -315,13 +315,13 @@ function ContractEditor({
           label="Letterhead: Robert Burton"
           info="Switches the contract masthead between BFO and Robert Burton."
         >
-          Letterhead: {robert ? "Robert Burton" : "BFO"}
+          Letterhead: {robert ? "Robert Burton" : f.entityNameOnly ? "the entity's own name" : "BFO"}
         </Toggle>
         <Toggle
           on={!!f.entityNameOnly}
           onToggle={() => setF({ ...f, entityNameOnly: !f.entityNameOnly })}
           label="Entity name only"
-          info='Names the Manager by its entity name alone in the contract, without "doing business as Burton Family Office".'
+          info="Names the Manager by its entity name alone, and leaves BFO and Burton Family Office out of the whole contract: the masthead, the footer, and the signature emails and page."
         >
           Entity name only (no DBA)
         </Toggle>

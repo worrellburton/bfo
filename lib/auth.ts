@@ -299,11 +299,14 @@ export async function sendEmail(
   html: string,
   headers?: Record<string, string>,
   attachments?: EmailAttachment[],
-  opts?: { idempotencyKey?: string; replyTo?: string }
+  opts?: { idempotencyKey?: string; replyTo?: string; fromName?: string }
 ): Promise<void> {
   // Platform email product endpoint (matches the key's emails scope). The
   // sender must be on a domain verified in the Bird workspace.
-  const from = process.env.BIRD_EMAIL_FROM?.trim() || "BFO <reports@burtonfamilyoffice.com>";
+  const configured = process.env.BIRD_EMAIL_FROM?.trim() || "BFO <reports@burtonfamilyoffice.com>";
+  // A caller may present the mail under another name (the address stays the verified one).
+  const address = /<([^>]+)>/.exec(configured)?.[1] ?? configured;
+  const from = opts?.fromName ? `"${opts.fromName.replace(/["\\<>\r\n]/g, "")}" <${address}>` : configured;
   const replyTo = opts?.replyTo ?? process.env.BIRD_EMAIL_REPLY_TO?.trim();
   const res = await birdVerifyFetch(
     "/v1/email/messages",

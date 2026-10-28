@@ -121,7 +121,7 @@ export default function ContractPDF() {
       doc.setProperties({
         title: `Management Services Agreement - ${contract.counterparty}`,
         subject: "Management Services Agreement",
-        author: "Burton Family Office",
+        author: contract.entityNameOnly ? String(asset.name) : "Burton Family Office",
       });
       const pw = doc.internal.pageSize.getWidth();
       const ph = doc.internal.pageSize.getHeight();
@@ -154,10 +154,13 @@ export default function ContractPDF() {
         ? "the state or federal courts located in Washoe County, Nevada"
         : `the state or federal courts located in ${managerState}`;
 
-      // Letterhead identity — toggled in the UI: present as BFO or Robert Burton
+      // Letterhead identity — toggled in the UI: present as BFO or Robert Burton.
+      // With "Entity name only" the entity speaks for itself: no BFO, no Burton
+      // Family Office, anywhere in the document.
       const isRobert = brand === "robert";
-      const wordmark = isRobert ? "Robert Burton" : "BFO";
-      const brandLine = isRobert ? "ROBERT BURTON" : "BURTON FAMILY OFFICE";
+      const unbranded = !!contractNN.entityNameOnly;
+      const wordmark = isRobert ? "Robert Burton" : unbranded ? String(assetNN.name) : "BFO";
+      const brandLine = isRobert ? "ROBERT BURTON" : unbranded ? "" : "BURTON FAMILY OFFICE";
 
       function paintPage() {
         doc.setFillColor(...paper);
@@ -193,7 +196,7 @@ export default function ContractPDF() {
         doc.setCharSpace(1.4);
         doc.setTextColor(...muted);
         doc.text(`${String(assetNN.name).toUpperCase()}  ·  ${String(contractNN.counterparty).toUpperCase()}`, ml, fy + 14);
-        doc.text(brandLine, mr, fy + 14, { align: "right" });
+        if (brandLine) doc.text(brandLine, mr, fy + 14, { align: "right" });
         doc.setCharSpace(0);
         doc.setTextColor(...ink);
       }
@@ -551,11 +554,11 @@ export default function ContractPDF() {
           <div className={`flex rounded-lg overflow-hidden border mr-1 ${isDark ? "border-white/10" : "border-gray-200"}`}>
             <button
               onClick={() => setBrand("bfo")}
-              title="Present the document as Burton Family Office"
+              title={contract.entityNameOnly ? `Present the document as ${asset.name}` : "Present the document as Burton Family Office"}
               aria-pressed={brand === "bfo"}
               className={`px-3 py-2 max-sm:min-h-[40px] max-sm:min-w-[48px] text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
             >
-              BFO
+              {contract.entityNameOnly ? "Entity" : "BFO"}
             </button>
             <button
               onClick={() => setBrand("robert")}
@@ -609,6 +612,7 @@ export default function ContractPDF() {
           client={{ name: contract.counterparty }}
           pdf={() => pdfBlob.current}
           geometry={() => geom.current}
+          brand={contract.entityNameOnly ? String(asset.name) : null}
         />
       )}
 
