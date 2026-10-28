@@ -40,6 +40,13 @@ function mock(url, method, body) {
   }
   if (u.startsWith("/api/ask")) return method === "POST" ? null : [200, { chats: [], chat: {}, messages: [] }];
   if (u.startsWith("/api/brand")) return [200, { logo: null }];
+  if (u.startsWith("/api/sign")) {
+    const action = body && body.action;
+    const request = { id: "00000000-0000-4000-8000-00000000s001", title: "Management Services Agreement - VisionQuest", status: "sent", source: "contract", asset_id: "-E2", contract_id: "c1", created_by: user.id, created_by_name: user.name, original_path: null, current_path: null, signed_path: null, pages: [{ w: 612, h: 792 }], fields: [{ id: "f1", party: "a", type: "signature", page: 1, x: 0.1, y: 0.8, w: 0.3, h: 0.05 }], parties: [{ key: "a", role: "Manager", name: "Robert Burton", email: "r@x.com", status: "signed", signedAt: new Date(now).toISOString() }, { key: "b", role: "Client", name: "Vision Quest", email: "vq@x.com", status: "viewed" }], events: [{ at: new Date(now).toISOString(), kind: "sent" }], created_at: new Date(now).toISOString(), sent_at: new Date(now).toISOString(), completed_at: null, copy_sent_at: null };
+    if (u.includes("id=")) return [200, { request, pdfUrl: null }];
+    if (action) return [200, { request, url: "about:blank", ok: true }];
+    return [200, { requests: [request, { ...request, id: "00000000-0000-4000-8000-00000000s002", title: "Lease amendment", status: "draft", source: "upload", asset_id: null, contract_id: null, parties: [], fields: [], sent_at: null }] }];
+  }
   if (u.startsWith("/api/push")) return [200, { configured: true, devices: 1, prefs: {} }];
   if (u.startsWith("/api/texts")) return [200, { texts: [] }];
   if (u.startsWith("/api/documents")) return [200, { docs: [], documents: [] }];

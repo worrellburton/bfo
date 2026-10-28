@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
-import { confirmDialog } from "../confirm-dialog";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
+import { getUser } from "../auth";
+import { signApi, type SignatureRequest } from "../sign/api";
+import { ContractSignature, type SigGeometry } from "../sign/contract-signature";
 import { useTheme } from "../theme";
 
 export function meta() {
@@ -27,14 +29,7 @@ interface OperatingContract {
   entityNameOnly?: boolean;
 }
 
-interface SignatureRequest {
-  id: string;
-  email: string;
-  signerName: string;
-  status: "pending" | "signed" | "declined";
-  sentAt: number;
-  signedAt?: number;
-}
+const isLedgerLouiseName = (name: string) => String(name).toLowerCase().includes("ledger louise");
 
 export default function ContractPDF() {
   const { id, contractId } = useParams();
@@ -45,16 +40,16 @@ export default function ContractPDF() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [brand, setBrand] = useState<"bfo" | "robert">("bfo");
-  const [sigRequests, setSigRequests] = useState<SignatureRequest[]>([]);
+  // The signature request for this contract (Tools › Signatures), if one exists.
+  const [sigReq, setSigReq] = useState<SignatureRequest | null | undefined>(undefined);
   const [showSigForm, setShowSigForm] = useState(false);
-  const [sigEmail, setSigEmail] = useState("");
-  const [sigName, setSigName] = useState("");
-  const [sigSending, setSigSending] = useState(false);
+  // Where the signature block landed in the generated PDF, for placing the fields.
+  const geom = useRef<SigGeometry | null>(null);
+  const pdfBlob = useRef<Blob | null>(null);
 
   useEffect(() => {
     let unsub1: (() => void) | undefined;
     let unsub2: (() => void) | undefined;
-    let unsub3: (() => void) | undefined;
 
     async function setup() {
       const { db, authReady } = await import("../store");
@@ -84,26 +79,25 @@ export default function ContractPDF() {
         setLoading(false);
       });
 
-      unsub3 = onValue(ref(db, `assets/${id}/contracts/${contractId}/signatures`), (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const arr = Object.entries(data).map(([sigId, value]) => ({
-            id: sigId,
-            ...(value as Omit<SignatureRequest, "id">),
-          }));
-          arr.sort((a, b) => b.sentAt - a.sentAt);
-          setSigRequests(arr);
-        } else {
-          setSigRequests([]);
-        }
-      });
     }
 
     setup();
     return () => {
       unsub1?.();
       unsub2?.();
-      unsub3?.();
+    };
+  }, [id, contractId]);
+
+  // The contract's signature request, newest first.
+  useEffect(() => {
+    if (!id || !contractId || contractId === "preview") return;
+    let alive = true;
+    signApi
+      .list()
+      .then((all) => alive && setSigReq(all.find((r) => r.asset_id === id && r.contract_id === contractId) ?? null))
+      .catch(() => alive && setSigReq(null));
+    return () => {
+      alive = false;
     };
   }, [id, contractId]);
 
@@ -481,8 +475,19 @@ export default function ContractPDF() {
       doc.setDrawColor(...ink);
       doc.setLineWidth(0.5);
 
+      // Where the signatures go, for the signature request's fields (fractions of the page, y from the top).
+      geom.current = {
+        page: pageNum,
+        pw,
+        ph,
+        left: { x: leftX, line: sigLineY, date: sigLineY + 30 + 2 * 16 },
+        right: { x: rightX, line: sigLineY, date: sigLineY + 30 + 2 * 16 },
+        colW,
+      };
+
       // Convert to blob URL for embedding
       const blob = doc.output("blob");
+      pdfBlob.current = blob;
       const url = URL.createObjectURL(blob);
       setPdfUrl(url);
     })();
@@ -504,43 +509,6 @@ export default function ContractPDF() {
       .replace(/\s+/g, " ")
       .trim();
     a.click();
-  }
-
-  async function handleSendSignatureRequest(e: React.FormEvent) {
-    e.preventDefault();
-    if (!sigEmail.trim() || !sigName.trim()) return;
-    setSigSending(true);
-    try {
-      const { db } = await import("../store");
-      const { push, ref } = await import("../store");
-      await push(ref(db, `assets/${id}/contracts/${contractId}/signatures`), {
-        email: sigEmail.trim(),
-        signerName: sigName.trim(),
-        status: "pending",
-        sentAt: Date.now(),
-      });
-      setSigEmail("");
-      setSigName("");
-      setShowSigForm(false);
-    } catch (err) {
-      console.error("Signature request error:", err);
-    } finally {
-      setSigSending(false);
-    }
-  }
-
-  async function updateSigStatus(sigId: string, status: "pending" | "signed" | "declined") {
-    const { db } = await import("../store");
-    const { ref, update } = await import("../store");
-    const updates: Record<string, unknown> = { status };
-    if (status === "signed") updates.signedAt = Date.now();
-    await update(ref(db, `assets/${id}/contracts/${contractId}/signatures/${sigId}`), updates);
-  }
-
-  async function removeSigRequest(sigId: string) {
-    const { db } = await import("../store");
-    const { ref, remove } = await import("../store");
-    await remove(ref(db, `assets/${id}/contracts/${contractId}/signatures/${sigId}`));
   }
 
   if (loading) {
@@ -598,7 +566,7 @@ export default function ContractPDF() {
               Robert Burton
             </button>
           </div>
-          {contractId !== "preview" && (
+          {contractId !== "preview" && !sigReq && (
           <button
             onClick={() => setShowSigForm(!showSigForm)}
             aria-expanded={showSigForm}
@@ -627,111 +595,21 @@ export default function ContractPDF() {
         </div>
       </div>
 
-      {/* Signature request form */}
-      {showSigForm && (
-        <form
-          onSubmit={handleSendSignatureRequest}
-          className={`mb-4 p-4 rounded-lg border ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}
-        >
-          <h3 className="text-sm font-semibold mb-3">Send for Signature</h3>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className={`text-xs block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Signer Name</label>
-              <input
-                type="text"
-                value={sigName}
-                onChange={(e) => setSigName(e.target.value)}
-                placeholder="Full name"
-                required
-                className={`w-full px-3 py-2 text-sm max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`}
-              />
-            </div>
-            <div className="flex-1">
-              <label className={`text-xs block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>Email Address</label>
-              <input
-                type="email"
-                value={sigEmail}
-                onChange={(e) => setSigEmail(e.target.value)}
-                placeholder="signer@email.com"
-                required
-                className={`w-full px-3 py-2 text-sm max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                disabled={sigSending}
-                className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm disabled:opacity-50 whitespace-nowrap ${
-                  isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
-                }`}
-              >
-                {sigSending ? "Sending..." : "Send Request"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSigForm(false)}
-                className={`px-3 py-2 max-sm:min-h-[40px] text-sm ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} cursor-pointer`}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </form>
-      )}
-
-      {/* Signature requests list */}
-      {sigRequests.length > 0 && (
-        <div className={`mb-4 rounded-lg border overflow-hidden ${isDark ? "border-white/10" : "border-gray-200"}`}>
-          <div className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider ${isDark ? "bg-white/[0.03] text-gray-400" : "bg-gray-50 text-gray-500"} border-b ${isDark ? "border-white/10" : "border-gray-200"}`}>
-            Signature Requests
-          </div>
-          {sigRequests.map((sig) => (
-            <div
-              key={sig.id}
-              className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b last:border-b-0 ${isDark ? "border-white/5" : "border-gray-100"} group`}
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span className={`w-2 h-2 shrink-0 rounded-full ${
-                  sig.status === "signed" ? "bg-green-400" : sig.status === "declined" ? "bg-red-400" : "bg-yellow-400"
-                }`} />
-                <div>
-                  <p className="text-sm font-medium">{sig.signerName}</p>
-                  <p className={`text-xs break-all ${isDark ? "text-gray-500" : "text-gray-500"}`}>{sig.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-1 rounded font-medium ${
-                  sig.status === "signed"
-                    ? isDark ? "bg-green-500/20 text-green-400" : "bg-green-50 text-green-700"
-                    : sig.status === "declined"
-                    ? isDark ? "bg-red-500/20 text-red-400" : "bg-red-50 text-red-700"
-                    : isDark ? "bg-yellow-500/20 text-yellow-400" : "bg-yellow-50 text-yellow-700"
-                }`}>
-                  {sig.status}
-                </span>
-                <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-                  {new Date(sig.sentAt).toLocaleDateString()}
-                </span>
-                {sig.status === "pending" && (
-                  <button
-                    onClick={() => updateSigStatus(sig.id, "signed")}
-                    className={`text-xs cursor-pointer transition-opacity max-sm:min-h-[40px] max-sm:px-2 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-green-400 hover:text-green-300" : "text-green-700 hover:text-green-800"}`}
-                  >
-                    Mark Signed
-                  </button>
-                )}
-                <button
-                  onClick={async () => {
-                    if (await confirmDialog({ title: `Remove the signature request for ${sig.signerName}?`, tone: "danger", confirmLabel: "Remove" })) void removeSigRequest(sig.id);
-                  }}
-                  className={`text-xs cursor-pointer transition-opacity max-sm:min-h-[40px] max-sm:px-2 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? "text-red-400 hover:text-red-300" : "text-red-600 hover:text-red-700"}`}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+      {contractId !== "preview" && (showSigForm || sigReq) && (
+        <ContractSignature
+          isDark={isDark}
+          request={sigReq ?? null}
+          open={showSigForm}
+          onClose={() => setShowSigForm(false)}
+          onChange={setSigReq}
+          title={`Management Services Agreement - ${contract.counterparty}`}
+          assetId={id ?? ""}
+          contractId={contractId ?? ""}
+          manager={{ name: isLedgerLouiseName(asset.name) ? "Robert W. Burton" : getUser()?.name ?? "", email: getUser()?.email ?? "", entity: asset.name }}
+          client={{ name: contract.counterparty }}
+          pdf={() => pdfBlob.current}
+          geometry={() => geom.current}
+        />
       )}
 
       {/* PDF Viewer */}

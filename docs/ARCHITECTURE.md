@@ -234,6 +234,28 @@ foreign registrations, documents, people, Palm links per mode, closing).
   first and the other on `BadDeviceToken`, and forgets tokens Apple says are
   dead.
 
+## Signatures
+
+- `signature_requests` (`20261028_signature_requests.sql`): one row per
+  document sent for signature. `parties` (two at most) carry a sha-256 of the
+  token in each signer's emailed link; `fields` say where each signer's
+  signature, initials, name or date goes as fractions of a page; `events` is
+  the audit trail.
+- The PDFs live in the private `documents` bucket under `signatures/<id>/`:
+  `original.pdf`, `current.pdf` (signatures stamped so far), `signed.pdf`
+  (everyone has signed; a certificate page is appended).
+- `api/sign.ts`: the office (canWrite) creates a request, uploads the PDF
+  through a one-time signed upload URL, places fields, sends (Bird email with
+  the link), reminds, voids, downloads, and emails the signed copy to both
+  parties. A signer calls the same endpoint with `token=`: reads the document,
+  signs (`lib/sign.ts` stamps the PNG and text with pdf-lib) or declines.
+  Admins get a push on each signature.
+- `app/routes/tools-signatures.tsx` (the sheet, drag-and-drop upload),
+  `app/routes/signature-detail.tsx` (pages drawn with pdf.js, fields dragged
+  into place), `app/routes/sign.tsx` (the public signing page: draw or type a
+  signature), `app/sign/contract-signature.tsx` (an MSA's "Request Signature"
+  builds a request from the generated PDF with fields on its signature block).
+
 ## Ask BFO
 
 - `lib/ask.ts`: the assistant answers from the office's own records through

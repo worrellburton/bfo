@@ -17,7 +17,7 @@ const { session, mock } = require("./fixtures.cjs");
 
 const BASE = process.env.BASE || "http://localhost:5173";
 const ENTITY = "-E2";
-const ROUTES = ["home", "ask?mode=text", "inbox", "mailbox", "phone", "assets", `assets/${ENTITY}`, `assets/${ENTITY}/compliance`, "msas", "notes", "settings", "users", "treasury", "investments", "books/transactions", "books/review", "books/calendar", "books/vendors", "books/rules", "books/loans", "treasury/mappings", "notifications", "estate-map", "tools/compliance"];
+const ROUTES = ["home", "ask?mode=text", "inbox", "mailbox", "phone", "assets", `assets/${ENTITY}`, `assets/${ENTITY}/compliance`, "msas", "notes", "settings", "users", "treasury", "investments", "books/transactions", "books/review", "books/calendar", "books/vendors", "books/rules", "books/loans", "treasury/mappings", "notifications", "estate-map", "tools/compliance", "tools/signatures", "tools/signatures/00000000-0000-4000-8000-00000000s001"];
 const SIZES = {
   phone: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true },
   ipad: { ...devices["iPad Pro 11"], viewport: { width: 820, height: 1180 } },

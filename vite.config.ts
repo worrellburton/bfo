@@ -16,6 +16,8 @@ const VENDOR_CHUNKS: Array<[name: string, packages: string[]]> = [
   ["canvg", ["canvg", "rgbcolor", "stackblur-canvas", "svg-pathdata"]],
   // Mail HTML sanitizer (routes/inbox).
   ["dompurify", ["dompurify"]],
+  // Draws PDF pages for the signature field editor and the signer's page (app/sign/pdf-pages.tsx).
+  ["pdfjs", ["pdfjs-dist"]],
 ];
 
 function vendorChunk(id: string): string | undefined {
