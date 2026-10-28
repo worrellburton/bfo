@@ -639,7 +639,7 @@ export default function Investments() {
       <Icon
         d={active && sort.dir === "asc" ? PATHS.up : PATHS.down}
         strokeWidth={2}
-        className={`h-3 w-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover/th:opacity-60"}`}
+        className={`h-3 w-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-30 group-hover/th:opacity-70"}`}
       />
     );
     return (
@@ -651,6 +651,7 @@ export default function Investments() {
         <button
           type="button"
           onClick={() => onSort(key)}
+          title={active ? `Sorted by ${label.toLowerCase()}, ${sort.dir === "asc" ? "low to high" : "high to low"}. Click to flip.` : `Sort by ${label.toLowerCase()}`}
           className={`-mx-1.5 -my-0.5 inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors ${
             active ? t1 : isDark ? "hover:bg-white/[0.04] hover:text-gray-100" : "hover:bg-gray-100 hover:text-gray-900"
           }`}
@@ -842,20 +843,26 @@ export default function Investments() {
                   </div>
                   {series.length >= 2 && (
                     <div className={segWrap} role="group" aria-label="Range">
-                      {RANGES.map((r) => (
-                        <button
-                          key={r.key}
-                          type="button"
-                          onClick={() => {
-                            setRange(r.key);
-                            setHover(null);
-                          }}
-                          aria-pressed={range === r.key}
-                          className={segBtn(range === r.key)}
-                        >
-                          {r.label}
-                        </button>
-                      ))}
+                      {RANGES.map((r) => {
+                        // A range reaching back before the history began shows the same line as "All".
+                        const beyond = Number.isFinite(r.days) && fullSeries.length > 0 && dayDate(fullSeries[0].day).getTime() > dayDate(fullSeries[fullSeries.length - 1].day).getTime() - r.days * 86400000;
+                        return (
+                          <button
+                            key={r.key}
+                            type="button"
+                            onClick={() => {
+                              setRange(r.key);
+                              setHover(null);
+                            }}
+                            aria-pressed={range === r.key}
+                            disabled={beyond && range !== r.key}
+                            title={beyond ? `Tracking began ${shortDay(fullSeries[0].day)}; this shows the same as All` : undefined}
+                            className={`${segBtn(range === r.key)} disabled:cursor-default disabled:opacity-40`}
+                          >
+                            {r.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

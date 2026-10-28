@@ -9,7 +9,7 @@ import { useState, type ReactNode } from "react";
 import { confirmDialog } from "../confirm-dialog";
 import { useEntity } from "./context";
 import { LEDGER_LOUISE_SUBS, MSA_SERVICES, fmtDate, type OperatingContract } from "./model";
-import { Button, Dot, Empty, Field, Icon, IconButton, Info, Input, Rows, Section, Select, Switch, toneText, useTone, type Tone } from "./ui";
+import { Button, Dot, Empty, Field, Icon, IconButton, Info, Input, Rows, Section, Select, Switch, TextButton, toneText, useTone, type Tone } from "./ui";
 import type { EntityPage } from "./use-entity";
 
 type Status = OperatingContract["status"];
@@ -366,81 +366,42 @@ function Toggle({ on, onToggle, label, info, children }: { on: boolean; onToggle
 function ServicesPicker({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
   const t = useTone();
   const [open, setOpen] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
-  const unselected = MSA_SERVICES.filter((s) => !selected.includes(s));
-
-  const endDrag = () => {
-    setDragIndex(null);
-    setOverIndex(null);
-  };
-  const drop = (to: number) => {
-    if (dragIndex === null || dragIndex === to) return endDrag();
-    const next = [...selected];
-    const [moved] = next.splice(dragIndex, 1);
-    next.splice(to, 0, moved);
-    onChange(next);
-    endDrag();
-  };
-
-  const row = "flex items-center gap-2 rounded-md px-2 py-1.5 max-sm:min-h-[44px]";
+  const all = selected.length === MSA_SERVICES.length;
+  const toggle = (svc: string) => onChange(selected.includes(svc) ? selected.filter((s) => s !== svc) : [...selected, svc]);
   return (
     <div>
       <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Services included</span>
-      <Button aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="tabular-nums">
-          {selected.length} service{selected.length === 1 ? "" : "s"} selected
-        </span>
-        <Icon name="chevronDown" className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.25} />
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <span className="tabular-nums">
+            {all ? "All services" : `${selected.length} of ${MSA_SERVICES.length} service${MSA_SERVICES.length === 1 ? "" : "s"}`}
+          </span>
+          <Icon name="chevronDown" className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.25} />
+        </Button>
+        {open && (
+          <>
+            <TextButton onClick={() => onChange([...MSA_SERVICES])} disabled={all}>
+              Select all
+            </TextButton>
+            <TextButton onClick={() => onChange([])} disabled={selected.length === 0}>
+              Unselect all
+            </TextButton>
+          </>
+        )}
+      </div>
       {open && (
-        <div className={`mt-2 w-full max-w-md rounded-lg border p-1 ${t.surface}`}>
-          {selected.map((svc, i) => (
-            <div
-              key={svc}
-              draggable
-              onDragStart={() => setDragIndex(i)}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (dragIndex !== null && overIndex !== i) setOverIndex(i);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                drop(i);
-              }}
-              onDragEnd={endDrag}
-              className={`${row} cursor-grab active:cursor-grabbing ${dragIndex === i ? "opacity-40" : ""} ${
-                overIndex === i && dragIndex !== null && dragIndex !== i ? (t.dark ? "bg-white/10" : "bg-indigo-50") : t.hover
-              }`}
-            >
-              <span className={`shrink-0 ${t.faint}`} title="Drag to reorder">
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <circle cx="9" cy="6" r="1.4" />
-                  <circle cx="15" cy="6" r="1.4" />
-                  <circle cx="9" cy="12" r="1.4" />
-                  <circle cx="15" cy="12" r="1.4" />
-                  <circle cx="9" cy="18" r="1.4" />
-                  <circle cx="15" cy="18" r="1.4" />
-                </svg>
-              </span>
-              <span className={`flex-1 text-[12.5px] ${t.text}`}>{svc}</span>
-              <span className={HIT} title="Remove from contract">
-                <Switch on onToggle={() => onChange(selected.filter((s) => s !== svc))} label={`Remove from contract: ${svc}`} />
-              </span>
-            </div>
-          ))}
-          {unselected.length > 0 && (
-            <div className={selected.length ? `mt-1 border-t pt-1 ${t.line}` : ""}>
-              {unselected.map((svc) => (
-                <div key={svc} className={`${row} ${t.hover}`}>
-                  <span className={`flex-1 text-[12.5px] ${t.muted}`}>{svc}</span>
-                  <span className={HIT} title="Add to contract">
-                    <Switch on={false} onToggle={() => onChange([...selected, svc])} label={`Add to contract: ${svc}`} />
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div role="group" aria-label="Services included" className={`mt-2 grid gap-x-2 gap-y-0.5 rounded-xl border p-2 sm:grid-cols-2 lg:grid-cols-3 ${t.surface}`}>
+          {MSA_SERVICES.map((svc) => {
+            const on = selected.includes(svc);
+            return (
+              <label key={svc} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 max-sm:min-h-[44px] ${t.hover}`}>
+                <span className={HIT}>
+                  <Switch on={on} onToggle={() => toggle(svc)} label={`${on ? "Remove from contract" : "Add to contract"}: ${svc}`} />
+                </span>
+                <span className={`text-[12.5px] ${on ? t.text : t.muted}`}>{svc}</span>
+              </label>
+            );
+          })}
         </div>
       )}
     </div>
