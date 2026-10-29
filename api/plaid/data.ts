@@ -251,8 +251,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const [items, prefs, history] = await Promise.all([
         getItems() as Promise<any[]>,
         getAccountPrefs(),
-        readOrEmpty<{ day: string; invested: number | null }>("treasury_daily?select=day,invested&order=day.desc&limit=365"),
+        readOrEmpty<{ day: string; invested: number | null }>("treasury_daily?select=day,invested&order=day.desc&limit=1000"),
       ]);
+      // Before BFO recorded a day, the rebuilt value (api/plaid/history.ts); recorded days always win.
+      const rebuilt = await readOrEmpty<{ day: string; value: number }>("investment_history?select=day,value&order=day.asc&limit=1000");
 
       // A bank connection is only asked for holdings when it actually carries
       // an investment account — calling the investments product on a plain
@@ -476,15 +478,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const recent = txns.filter((t) => t.date >= ninetyAgo);
       const sumType = (type: string) => recent.filter((t) => t.type === type).reduce((s, t) => s + Math.abs(t.amount), 0);
 
+      const recordedHistory = history
+        .filter((h) => h.invested != null)
+        .map((h) => ({ day: h.day, invested: Number(h.invested) }))
+        .reverse();
+      // Rebuilt days lead in up to the first recorded one; from then on only what was recorded shows.
+      const firstRecorded = recordedHistory.find((h) => h.invested > 0)?.day ?? "9999-12-31";
+      const rebuiltBefore = rebuilt.filter((r) => r.day < firstRecorded).map((r) => ({ day: r.day, invested: Number(r.value) }));
+
       return res.json({
         asOf: now.toISOString(),
         accounts,
         holdings,
         errors,
-        history: history
-          .filter((h) => h.invested != null)
-          .map((h) => ({ day: h.day, invested: Number(h.invested) }))
-          .reverse(),
+        history: [...rebuiltBefore, ...recordedHistory],
+        historyRebuilt: rebuiltBefore.length ? { from: rebuiltBefore[0].day, until: firstRecorded } : null,
         income: incomeAvailable
           ? {
               last90,
