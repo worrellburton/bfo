@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { authFetch } from "./auth";
 import { Icon, Select, useTone } from "./entity/ui";
 
@@ -26,6 +27,41 @@ export type PaperMail = {
   returnedToSender: boolean;
   archivedAt: string | null;
   readAt: string | null;
+};
+
+/** What BFO read off a piece (lib/paper-read.ts). */
+export type PaperReading = {
+  headline: string;
+  kind: string;
+  urgency: "action" | "fyi" | "junk";
+  sender: { name: string | null; address: string | null };
+  recipient: { name: string | null; address: string | null };
+  postage: string | null;
+  mailClass: string | null;
+  action: string | null;
+  dueDate: string | null;
+  amounts: { label: string; amount: string }[];
+  dates: { label: string; date: string }[];
+  references: { label: string; value: string }[];
+  contents: string | null;
+  envelopeText: string[];
+  fromScan: boolean;
+};
+
+/** One piece in full (GET /api/stable?id=). */
+export type PaperMailFull = PaperMail & {
+  scanIsPdf: boolean;
+  barcode: string | null;
+  receivedAddress: string | null;
+  clearAt: string | null;
+  stableReadAt: string | null;
+  forwardTracking: string | null;
+  depositStatus: string | null;
+  tags: string[];
+  stableBusiness: string | null;
+  reading: PaperReading | null;
+  readingAt: string | null;
+  readingStale: boolean;
 };
 
 export const STABLE_ADDRESS = "5227 N 7th St STE 48575, Phoenix, AZ 85014";
@@ -105,13 +141,11 @@ export function PaperMailList({
         const unread = !m.readAt;
         return (
           <div key={m.id} className="flex items-start gap-4 px-5 py-4">
-            <a
-              href={m.envelopeUrl ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/mailbox/${m.id}`}
               onClick={() => onOpen?.(m)}
               className={`relative block h-[64px] w-[96px] shrink-0 overflow-hidden rounded-lg border ${t.line} ${t.dark ? "bg-white/[0.03]" : "bg-gray-50"}`}
-              aria-label="Envelope"
+              aria-label={`Open the mail from ${m.from || "an unknown sender"}`}
             >
               {m.envelopeUrl ? (
                 <img src={m.envelopeUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -121,10 +155,10 @@ export function PaperMailList({
                 </span>
               )}
               {unread && <span className="absolute left-1.5 top-1.5 h-2 w-2 rounded-full bg-[#818cf8] ring-2 ring-black/40" aria-label="Unread" />}
-            </a>
-            <div className="min-w-0 flex-1">
+            </Link>
+            <Link to={`/mailbox/${m.id}`} onClick={() => onOpen?.(m)} className="group min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-3">
-                <p className={`truncate text-[13.5px] ${unread ? "font-semibold" : "font-medium"} ${t.text}`}>{m.from || "Unknown sender"}</p>
+                <p className={`truncate text-[13.5px] group-hover:underline ${unread ? "font-semibold" : "font-medium"} ${t.text}`}>{m.from || "Unknown sender"}</p>
                 <span className={`shrink-0 text-[12px] tabular-nums ${t.muted}`}>{when(m.receivedAt)}</span>
               </div>
               <p className={`mt-0.5 truncate text-[12px] ${t.muted}`}>
@@ -138,18 +172,11 @@ export function PaperMailList({
                     {s.text}
                   </span>
                 ))}
-                {m.scanUrl && (
-                  <a href={m.scanUrl} target="_blank" rel="noopener noreferrer" onClick={() => onOpen?.(m)} className={`inline-flex items-center gap-1 font-medium hover:underline ${t.accent}`}>
-                    Open scan <Icon name="external" className="h-3 w-3" />
-                  </a>
-                )}
-                {!m.scanUrl && m.scanStatus !== "processing" && (
-                  <a href={STABLE_DASHBOARD} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${t.muted}`}>
-                    Scan, forward or shred in Stable <Icon name="external" className="h-3 w-3" />
-                  </a>
-                )}
+                <span className={`inline-flex items-center gap-0.5 font-medium ${t.accent}`}>
+                  Open <Icon name="chevronRight" className="h-3 w-3" strokeWidth={2.2} />
+                </span>
               </div>
-            </div>
+            </Link>
             {entities && onAssign && (
               <div className="w-[200px] shrink-0 max-md:hidden">
                 <Select

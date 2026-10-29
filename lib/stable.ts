@@ -46,6 +46,13 @@ export type StableMailItem = {
   shredDetails?: { status?: string | null } | null;
   checks?: unknown[] | null;
   isReturnedToSender?: boolean | null;
+  /** Stable's own label for the piece, as on the envelope's sticker ("STABLE-1B1034888"). */
+  barcodeId?: string | null;
+  /** When Stable clears the piece from the dashboard. */
+  clearAt?: string | null;
+  location?: { address?: { line1?: string | null; line2?: string | null; city?: string | null; state?: string | null; postalCode?: string | null } | null } | null;
+  tags?: unknown[] | null;
+  depositDetails?: { status?: string | null } | null;
 };
 
 type Page = { edges?: { node: StableMailItem; cursor?: string }[]; pageInfo?: { hasNextPage?: boolean; endCursor?: string | null } };
@@ -118,6 +125,12 @@ export type MailRow = {
   archived_at: string | null;
   read_at: string | null;
   updated_at: string;
+  /** Stable's item as last fetched. */
+  data?: StableMailItem | null;
+  /** What BFO read off the envelope and scan (lib/paper-read.ts), and from which copies. */
+  reading?: unknown;
+  reading_from?: string | null;
+  reading_at?: string | null;
 };
 
 const EXT: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };

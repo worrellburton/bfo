@@ -3,17 +3,20 @@ import { logActivity } from "../lib/activity.js";
 import { canWrite, cronAuth, currentUser, fail, guard, handleError, isPartner, refuseCron, sb } from "../lib/auth.js";
 import { recordCronRun } from "../lib/cron.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
-import { StableNotConfigured, syncStable, type MailRow } from "../lib/stable.js";
+import { needsReading, readPiece, ReadingUnavailable, toReading } from "../lib/paper-read.js";
+import { StableNotConfigured, syncStable, type MailRow, type StableMailItem } from "../lib/stable.js";
 import { storageSignedUrl } from "../lib/storage.js";
 
 /**
  * Paper mail from Stable, as BFO keeps it (lib/stable.ts).
  *
+ * GET  ?id=x             → { mail }  one piece in full: Stable's details and what BFO read off it
  * GET  ?assetId=x        → { mail }  one entity's pieces (partners: only their entities)
  * GET  ?view=all         → { mail, configured }  every piece, newest first (staff)
  * GET  (Vercel cron)     → catches up on the last week (Bearer CRON_SECRET)
  * POST { action: "assign", id, assetId|null }   which entity a piece is for (staff)
  * POST { action: "read", id }                    mark read
+ * POST { action: "read-piece", id }              read the envelope and scan (lib/paper-read.ts)
  * POST { action: "sync", days? }                 catch up now (staff)
  */
 
@@ -46,6 +49,27 @@ async function present(r: MailRow) {
   };
 }
 
+/** One piece in full: the list's fields, what else Stable says, and BFO's reading. */
+async function presentFull(r: MailRow) {
+  const d: StableMailItem = r.data ?? { id: r.id };
+  const a = d.location?.address;
+  return {
+    ...(await present(r)),
+    scanIsPdf: !!r.scan_path?.toLowerCase().endsWith(".pdf"),
+    barcode: d.barcodeId ?? null,
+    receivedAddress: a ? [[a.line1, a.line2].filter(Boolean).join(" "), [a.city, a.state].filter(Boolean).join(", "), a.postalCode].filter(Boolean).join(", ") : null,
+    clearAt: d.clearAt ?? null,
+    stableReadAt: d.readAt ?? null,
+    forwardTracking: d.forwardDetails?.trackingNumber ?? null,
+    depositStatus: d.depositDetails?.status ?? null,
+    tags: (d.tags ?? []).map((x) => (typeof x === "string" ? x : (x as { name?: string })?.name)).filter((x): x is string => !!x),
+    stableBusiness: d.recipients?.business?.name ?? null,
+    reading: r.reading ? toReading(r.reading, !!(r.reading as { fromScan?: boolean }).fromScan) : null,
+    readingAt: r.reading_at ?? null,
+    readingStale: needsReading(r),
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "POST"])) return;
   try {
@@ -64,6 +88,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mine = partner ? new Set(await accessibleAssetIds(me.id)) : null;
 
     if (req.method === "GET") {
+      const one = String(req.query.id ?? "");
+      if (one) {
+        if (!PIECE.test(one)) return fail(res, 400, "bad_id");
+        const row = (await sb<MailRow[]>(`stable_mail?id=eq.${encodeURIComponent(one)}&select=*&limit=1`))[0];
+        if (!row) return fail(res, 404, "not_found");
+        if (mine && !(row.asset_id && mine.has(row.asset_id))) return fail(res, 403, "forbidden");
+        return res.status(200).json({ mail: await presentFull(row) });
+      }
       const assetId = String(req.query.assetId ?? "");
       if (assetId) {
         if (!ASSET.test(assetId)) return fail(res, 400, "bad_asset");
@@ -91,6 +123,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.action === "read") {
       if (!row.read_at) await sb(`stable_mail?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
       return res.status(200).json({ ok: true });
+    }
+    if (body.action === "read-piece") {
+      try {
+        await readPiece(row);
+      } catch (err) {
+        if (err instanceof ReadingUnavailable) return fail(res, 422, "unreadable", err.message);
+        throw err;
+      }
+      const fresh = (await sb<MailRow[]>(`stable_mail?id=eq.${encodeURIComponent(id)}&select=*&limit=1`))[0] ?? row;
+      return res.status(200).json({ mail: await presentFull(fresh) });
     }
     if (body.action === "assign") {
       if (!canWrite(me)) return fail(res, 403, "forbidden");
