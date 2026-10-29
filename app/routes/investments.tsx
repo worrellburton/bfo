@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link } from "react-router";
-import { authFetch } from "../auth";
+import { authFetch, getUser } from "../auth";
 import { loadPlaid } from "../plaid-link";
 import { useTheme } from "../theme";
 import { Icon, Menu, PATHS, tiers, textInput, ruleBorder, hairline as hairlineOf } from "../books-shared";
@@ -76,6 +76,8 @@ type InvData = {
   holdings: Holding[];
   errors: InvError[];
   history: { day: string; invested: number }[];
+  /** When the days before BFO's own record were rebuilt (api/plaid/history.ts), how far back they go. */
+  historyRebuilt?: { from: string; until: string } | null;
   income: Income;
   activity?: { buys90: number; sells90: number };
 };
@@ -381,6 +383,7 @@ export default function Investments() {
         holdings: body.holdings ?? [],
         errors: body.errors ?? [],
         history: body.history ?? [],
+        historyRebuilt: body.historyRebuilt ?? null,
         income: body.income ?? null,
         activity: body.activity,
       });
@@ -394,6 +397,32 @@ export default function Investments() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The past before BFO began recording: rebuilt from Plaid's transactions and closing prices.
+  const canEdit = ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildNote, setRebuildNote] = useState("");
+  async function rebuildHistory() {
+    setRebuilding(true);
+    setRebuildNote("");
+    try {
+      const r = await authFetch("/api/plaid/history", { method: "POST" });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.message || body?.error || "Couldn't rebuild the history.");
+      const skipped: string[] = body.skipped ?? [];
+      const unpriced: string[] = body.unpriced ?? [];
+      setRebuildNote(
+        body.days
+          ? `Filled in from ${shortDay(body.from)}${body.error != null ? `, within ${(body.error * 100).toFixed(1)}% of the days BFO recorded` : ""}.${unpriced.length ? ` No price history for ${unpriced.join(", ")}; today's price is used for those.` : ""}${skipped.length ? ` Skipped: ${skipped.join("; ")}.` : ""}`
+          : `Nothing to rebuild.${skipped.length ? ` ${skipped.join("; ")}.` : ""}`
+      );
+      await load();
+    } catch (err) {
+      setRebuildNote(err instanceof Error ? err.message : "Couldn't rebuild the history.");
+    } finally {
+      setRebuilding(false);
+    }
+  }
 
   // A brokerage that came in through Treasury: collect consent for its holdings, then read them.
   const [consenting, setConsenting] = useState<string | null>(null);
@@ -877,6 +906,19 @@ export default function Investments() {
                       <span>{shortDay(series[series.length - 1].day)}</span>
                     </div>
                   </>
+                )}
+                {(data?.historyRebuilt || canEdit) && (
+                  <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-1 pt-1 text-[11px] ${textMuted}`}>
+                    {data?.historyRebuilt && (
+                      <span>Before {shortDay(data!.historyRebuilt!.until)}, rebuilt from the accounts' transactions and each day's closing prices.</span>
+                    )}
+                    {canEdit && (
+                      <button type="button" disabled={rebuilding} onClick={() => void rebuildHistory()} className="cursor-pointer underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60">
+                        {rebuilding ? "Rebuilding the past two years…" : data?.historyRebuilt ? "Rebuild" : "Fill in the past two years"}
+                      </button>
+                    )}
+                    {rebuildNote && <span className="basis-full">{rebuildNote}</span>}
+                  </div>
                 )}
 
                 <div className={`mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t px-5 pb-4 pt-3 sm:grid-cols-4 ${hairline}`}>

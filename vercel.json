@@ -27,6 +27,10 @@
       "memory": 512,
       "maxDuration": 300
     },
+    "api/plaid/history.ts": {
+      "memory": 512,
+      "maxDuration": 300
+    },
     "api/**/*.ts": {
       "memory": 256,
       "maxDuration": 60
@@ -48,6 +52,10 @@
     {
       "path": "/api/cron/state-records",
       "schedule": "40 21 * * *"
+    },
+    {
+      "path": "/api/plaid/history",
+      "schedule": "17 13 * * 1"
     }
   ],
   "redirects": [

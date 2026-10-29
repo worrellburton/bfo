@@ -147,7 +147,7 @@ describe("ops", () => {
       { id: "3", name: "custom", started_at: "2026-10-27T13:00:00Z", finished_at: null, ok: null, note: null },
     ];
     const out = latestRuns(rows);
-    expect(out.map((r) => r.name)).toEqual(["treasury-report", "books-sync", "stable", "state-records", "custom"]);
+    expect(out.map((r) => r.name)).toEqual(["treasury-report", "books-sync", "stable", "state-records", "investment-history", "custom"]);
     expect(out[1]).toMatchObject({ id: "2", ok: true });
     expect(out[0]).toMatchObject({ started_at: null, ok: null });
   });
