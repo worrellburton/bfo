@@ -413,7 +413,7 @@ export default function Investments() {
       const unpriced: string[] = body.unpriced ?? [];
       setRebuildNote(
         body.days
-          ? `Filled in from ${shortDay(body.from)}${body.error != null ? `, within ${(body.error * 100).toFixed(1)}% of the days BFO recorded` : ""}.${unpriced.length ? ` No price history for ${unpriced.join(", ")}; today's price is used for those.` : ""}${skipped.length ? ` Skipped: ${skipped.join("; ")}.` : ""}`
+          ? `Plaid has these accounts' transactions back to ${shortDay(body.from)}, so the chart now starts there${body.error != null ? `. It matches the days BFO recorded within ${(body.error * 100).toFixed(1)}%` : ""}.${unpriced.length ? ` ${unpriced.join(", ")} has no price history, so today's price is used for it.` : ""}${skipped.length ? ` Left out: ${skipped.join("; ")}.` : ""}`
           : `Nothing to rebuild.${skipped.length ? ` ${skipped.join("; ")}.` : ""}`
       );
       await load();
@@ -910,7 +910,10 @@ export default function Investments() {
                 {(data?.historyRebuilt || canEdit) && (
                   <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-1 pt-1 text-[11px] ${textMuted}`}>
                     {data?.historyRebuilt && (
-                      <span>Before {shortDay(data!.historyRebuilt!.until)}, rebuilt from the accounts' transactions and each day's closing prices.</span>
+                      <span>
+                        Before {shortDay(data!.historyRebuilt!.until)}, rebuilt from the accounts' transactions and each day's closing prices. It starts {shortDay(data!.historyRebuilt!.from)}, as far back as
+                        Plaid has the transactions.
+                      </span>
                     )}
                     {canEdit && (
                       <button type="button" disabled={rebuilding} onClick={() => void rebuildHistory()} className="cursor-pointer underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60">

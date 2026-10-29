@@ -82,13 +82,24 @@ async function build() {
 
   for (const item of items) {
     const label = item.institution_name || item.item_id;
+    // A bank linked for Treasury is only asked about investments when it has an investment account:
+    // asking a plain bank errors, and can enrol it in a billed product.
+    if ((item.kind ?? "investments") === "bank") {
+      try {
+        const acc = (await client.accountsGet({ access_token: item.access_token })).data;
+        if (!acc.accounts.some((a) => a.type === "investment")) continue;
+      } catch {
+        continue;
+      }
+    }
     let holdings;
     try {
       holdings = (await client.investmentsHoldingsGet({ access_token: item.access_token })).data;
     } catch (err: unknown) {
       const code = (err as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
       // A plain bank has no investments: not worth naming.
-      if (!code || !/NO_INVESTMENT|PRODUCTS_NOT_SUPPORTED|NO_ACCOUNTS|INVALID_PRODUCT|PRODUCT_NOT_ENABLED/.test(code)) skipped.push(`${label}: ${code ?? "holdings unavailable"}`);
+      if (!code || !/NO_INVESTMENT|PRODUCTS_NOT_SUPPORTED|NO_ACCOUNTS|INVALID_PRODUCT|PRODUCT_NOT_ENABLED/.test(code))
+        skipped.push(`${label} (${code === "ADDITIONAL_CONSENT_REQUIRED" ? "holdings not shared with BFO yet" : code ?? "holdings unavailable"})`);
       continue;
     }
     const accounts = new Set(
@@ -140,7 +151,7 @@ async function build() {
       }
     } catch (err: unknown) {
       const code = (err as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
-      skipped.push(`${label}: transactions ${code ?? "unavailable"}`);
+      skipped.push(`${label} (transactions ${code ?? "unavailable"})`);
     }
   }
 
