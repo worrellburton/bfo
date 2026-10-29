@@ -485,6 +485,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Rebuilt days lead in up to the first recorded one; from then on only what was recorded shows.
       const firstRecorded = recordedHistory.find((h) => h.invested > 0)?.day ?? "9999-12-31";
       const rebuiltBefore = rebuilt.filter((r) => r.day < firstRecorded).map((r) => ({ day: r.day, invested: Number(r.value) }));
+      // Recorded zeros before the first real day would repeat days the rebuilt series already covers.
+      if (rebuiltBefore.length) recordedHistory.splice(0, recordedHistory.findIndex((h) => h.day >= firstRecorded));
 
       return res.json({
         asOf: now.toISOString(),

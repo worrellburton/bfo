@@ -94,7 +94,8 @@ export default function ContractPDF() {
     let alive = true;
     signApi
       .list()
-      .then((all) => alive && setSigReq(all.find((r) => r.asset_id === id && r.contract_id === contractId) ?? null))
+      // The newest live request; a voided or declined one doesn't stop the contract going out again.
+      .then((all) => alive && setSigReq(all.find((r) => r.asset_id === id && r.contract_id === contractId && r.status !== "voided" && r.status !== "declined") ?? null))
       .catch(() => alive && setSigReq(null));
     return () => {
       alive = false;

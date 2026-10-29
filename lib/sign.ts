@@ -16,7 +16,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { degrees, PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 export const SITE = "https://www.burtonfamilyoffice.com";
 export const SIGN_BUCKET = "documents";
@@ -71,6 +71,8 @@ export type SignatureRequestRow = {
   copy_sent_at: string | null;
   /** Who it comes from when it must not mention BFO (an MSA with "Entity name only"); null is BFO. */
   brand: string | null;
+  /** Bumped on every write; writes name the version they read so none overwrites another. */
+  version: number;
 };
 
 /** What the office sees: the row without the token hashes. */
@@ -91,6 +93,17 @@ export function pdfKey(row: Pick<SignatureRequestRow, "signed_path" | "current_p
 }
 
 export const pathFor = (id: string, which: "original" | "current" | "signed") => `signatures/${id}/${which}.pdf`;
+
+/**
+ * A fresh path for a new version of a request's PDF. Every upload and every
+ * stamped copy gets its own, so nothing already written is ever replaced: an
+ * old upload link can't swap the document, and a signature that loses a race
+ * leaves the winner's file alone.
+ */
+export const versionPath = (id: string, which: "upload" | "current" | "signed") => `signatures/${id}/${which}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}.pdf`;
+
+/** True for a path versionPath made for this request's uploads. */
+export const isUploadPath = (id: string, path: string) => new RegExp(`^signatures/${id.replace(/[^0-9a-f-]/gi, "")}/upload-[a-z0-9]+-[0-9a-f]{8}\\.pdf$`).test(path);
 
 // ── Tokens ────────────────────────────────────────────────────────────────
 
@@ -188,6 +201,87 @@ export function fieldRect(f: SignField, pw: number, ph: number): { x: number; y:
   return { x: f.x * pw, y: ph - (f.y + f.h) * ph, w: f.w * pw, h: f.h * ph };
 }
 
+/** A page as a viewer shows it: its visible box (CropBox) and how far it's turned clockwise. */
+export type PageFrame = { x: number; y: number; w: number; h: number; rotate: number };
+
+export function pageFrame(page: PDFPage): PageFrame {
+  const box = page.getCropBox();
+  const r = (((page.getRotation().angle % 360) + 360) % 360) as number;
+  return { x: box.x, y: box.y, w: box.width, h: box.height, rotate: r === 90 || r === 180 || r === 270 ? r : 0 };
+}
+
+/** The size a viewer draws the page at (turned pages swap width and height). */
+export const shownSize = (f: PageFrame) => (f.rotate === 90 || f.rotate === 270 ? { w: f.h, h: f.w } : { w: f.w, h: f.h });
+
+/**
+ * Where a field goes in the page's own coordinates. Fields are placed on the
+ * page as it's shown (pdf.js applies /Rotate and the CropBox), so the shown
+ * box's bottom-left corner is mapped back, and the content is turned to read
+ * upright. Returns that corner, the box's shown size in points, and the turn.
+ */
+export function placeField(f: SignField, frame: PageFrame): { x: number; y: number; w: number; h: number; rotate: number } {
+  const shown = shownSize(frame);
+  const w = f.w * shown.w;
+  const h = f.h * shown.h;
+  // The shown bottom-left corner, as fractions of the shown page from its top-left.
+  const u = f.x;
+  const v = f.y + f.h;
+  let px: number;
+  let py: number;
+  switch (frame.rotate) {
+    case 90:
+      px = frame.x + v * frame.w;
+      py = frame.y + u * frame.h;
+      break;
+    case 180:
+      px = frame.x + (1 - u) * frame.w;
+      py = frame.y + v * frame.h;
+      break;
+    case 270:
+      px = frame.x + (1 - v) * frame.w;
+      py = frame.y + (1 - u) * frame.h;
+      break;
+    default:
+      px = frame.x + u * frame.w;
+      py = frame.y + (1 - v) * frame.h;
+  }
+  return { x: px, y: py, w, h, rotate: frame.rotate };
+}
+
+/** A point `dx` along and `dy` up from (x, y), in a box turned `rotate` degrees counterclockwise. */
+function along(x: number, y: number, dx: number, dy: number, rotate: number) {
+  const t = (rotate * Math.PI) / 180;
+  return { x: x + dx * Math.cos(t) - dy * Math.sin(t), y: y + dx * Math.sin(t) + dy * Math.cos(t) };
+}
+
+/**
+ * Text the standard PDF fonts can draw. They only cover Windows-1252, and
+ * pdf-lib throws on anything else, so accents are folded ("Łukasz" → "Lukasz")
+ * and what's left that the font lacks becomes "?".
+ */
+export function fontSafe(text: string, font: Pick<PDFFont, "getCharacterSet">): string {
+  const have = new Set(font.getCharacterSet());
+  const folded = text
+    .replace(/[Łł]/g, (c) => (c === "Ł" ? "L" : "l"))
+    .replace(/[Đđ]/g, (c) => (c === "Đ" ? "D" : "d"))
+    .replace(/[Øø]/g, (c) => (c === "Ø" ? "O" : "o"))
+    .replace(/[Ħħ]/g, (c) => (c === "Ħ" ? "H" : "h"))
+    .replace(/ı/g, "i")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"');
+  let out = "";
+  for (const ch of folded) {
+    const cp = ch.codePointAt(0)!;
+    if (have.has(cp)) {
+      out += ch;
+      continue;
+    }
+    const base = ch.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+    out += [...base].every((c) => have.has(c.codePointAt(0)!)) && base ? base : "?";
+  }
+  return out;
+}
+
 /** Draws each stamp into the PDF and returns the new bytes. */
 export async function stampPdf(pdf: Uint8Array, stamps: Stamp[]): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
@@ -197,23 +291,24 @@ export async function stampPdf(pdf: Uint8Array, stamps: Stamp[]): Promise<Uint8A
   for (const s of stamps) {
     const page = pages[s.field.page - 1];
     if (!page) continue;
-    const { width: pw, height: ph } = page.getSize();
-    const r = fieldRect(s.field, pw, ph);
+    const r = placeField(s.field, pageFrame(page));
     if (s.png) {
       const img = await doc.embedPng(s.png);
       const fit = fitInside(img.width, img.height, r.w, r.h);
-      page.drawImage(img, { x: r.x, y: r.y, width: fit.w, height: fit.h });
+      page.drawImage(img, { x: r.x, y: r.y, width: fit.w, height: fit.h, rotate: degrees(r.rotate) });
     } else if (s.text) {
-      drawFitted(page, s.field.type === "name" || s.field.type === "initials" ? italic : plain, s.text, r);
+      const font = s.field.type === "name" || s.field.type === "initials" ? italic : plain;
+      drawFitted(page, font, fontSafe(s.text, font), r);
     }
   }
   return doc.save();
 }
 
-function drawFitted(page: PDFPage, font: PDFFont, text: string, r: { x: number; y: number; w: number; h: number }) {
+function drawFitted(page: PDFPage, font: PDFFont, text: string, r: { x: number; y: number; w: number; h: number; rotate: number }) {
   let size = Math.min(14, r.h * 0.7);
   while (size > 5 && font.widthOfTextAtSize(text, size) > r.w) size -= 0.5;
-  page.drawText(text, { x: r.x, y: r.y + (r.h - size) / 2 + size * 0.1, size, font, color: rgb(0.08, 0.08, 0.1) });
+  const at = along(r.x, r.y, 0, (r.h - size) / 2 + size * 0.1, r.rotate);
+  page.drawText(text, { x: at.x, y: at.y, size, font, color: rgb(0.08, 0.08, 0.1), rotate: degrees(r.rotate) });
 }
 
 /** Appends the certificate page: who signed what, when, from where. */
@@ -230,10 +325,10 @@ export async function appendCertificate(pdf: Uint8Array, row: SignatureRequestRo
   const mr = first.width - 56;
   let y = first.height - 80;
   const line = (text: string, font: PDFFont, size: number, color = ink, x = ml) => {
-    page.drawText(text, { x, y, size, font, color });
+    page.drawText(fontSafe(text, font), { x, y, size, font, color });
     y -= size * 1.55;
   };
-  const mark = row.brand || "BFO";
+  const mark = fontSafe(row.brand || "BFO", serifBold);
   line(mark, serifBold, 14);
   y += 2;
   page.drawText("SIGNATURE CERTIFICATE", { x: ml + serifBold.widthOfTextAtSize(mark, 14) + 10, y: y + 14 * 1.55 - 2, size: 7, font: sans, color: muted });

@@ -60,10 +60,11 @@ export const signApi = {
   remove: (id: string) => call<{ ok: true }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "delete", id }) }),
   /** Puts the PDF where the request expects it and reads its pages. */
   async attach(id: string, file: Blob): Promise<SignatureRequest> {
-    const { signedUrl } = await call<{ signedUrl: string; token: string; path: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "upload-url", id }) });
-    const put = await fetch(signedUrl, { method: "PUT", headers: { "Content-Type": "application/pdf", "x-upsert": "true" }, body: file });
+    // A fresh path each time; the server only accepts paths it handed out for this request.
+    const { signedUrl, path } = await call<{ signedUrl: string; token: string; path: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "upload-url", id }) });
+    const put = await fetch(signedUrl, { method: "PUT", headers: { "Content-Type": "application/pdf" }, body: file });
     if (!put.ok) throw new SignError("upload_failed", `The upload failed (${put.status}).`);
-    return signApi.act("attach", { id });
+    return signApi.act("attach", { id, path });
   },
 };
 
