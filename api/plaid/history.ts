@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, cronAuth, currentUser, fail, guard, handleError, sb } from "../../lib/auth.js";
 import { recordCronRun } from "../../lib/cron.js";
+import { fetchAll } from "../../lib/db-pages.js";
 import { getPlaidClient } from "../../lib/plaid.js";
 import {
   dayList,
@@ -31,6 +32,12 @@ import {
  * Env: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV, SUPABASE_URL, SUPABASE_SERVICE_KEY, CRON_SECRET.
  */
 
+class IncompleteBuild extends Error {
+  constructor(readonly skipped: string[]) {
+    super(`Not rebuilt: ${skipped.join("; ")} couldn't be read, and leaving it out would understate every past day. The last good history is kept.`);
+  }
+}
+
 class PricesUnavailable extends Error {
   constructor() {
     super("Closing prices couldn't be fetched just now, so the past wasn't rebuilt. Try again later.");
@@ -57,6 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json(await build());
   } catch (err) {
     if (err instanceof PricesUnavailable) return fail(res, 502, "prices_unavailable", err.message);
+    if (err instanceof IncompleteBuild) return fail(res, 502, "incomplete", err.message);
     return handleError(res, err);
   }
 }
@@ -70,7 +78,7 @@ async function build() {
   const [items, prefs, recordedRows] = await Promise.all([
     sb<Item[] | null>("plaid_items?select=item_id,access_token,institution_name,kind").then((r) => r ?? []),
     sb<Array<{ account_id: string; hidden: boolean | null }> | null>("plaid_account_prefs?select=account_id,hidden").then((r) => r ?? []),
-    sb<Array<{ day: string; invested: number | null }> | null>("treasury_daily?select=day,invested&order=day.asc").then((r) => r ?? []),
+    fetchAll<{ day: string; invested: number | null }>("treasury_daily?select=day,invested&order=day.asc"),
   ]);
   const hidden = new Set(prefs.filter((p) => p.hidden).map((p) => p.account_id));
 
@@ -189,9 +197,12 @@ async function build() {
   const { mode, error } = pickMode({ units: results.units.points, "cash-flows": results["cash-flows"].points }, recorded);
   const chosen = results[mode];
 
-  // Replace the stored series with this build.
+  // A brokerage that couldn't be read would be missing from (or frozen in) every past day: keep the last good build.
+  if (skipped.length) throw new IncompleteBuild(skipped);
+
+  // Write the new series, then drop what the previous build had that this one doesn't:
+  // a failure partway leaves the old series, not a hole.
   const builtAt = new Date().toISOString();
-  await sb(`investment_history?day=gte.1900-01-01`, { method: "DELETE" });
   for (let i = 0; i < chosen.points.length; i += 500) {
     await sb("investment_history", {
       method: "POST",
@@ -199,6 +210,7 @@ async function build() {
       body: chosen.points.slice(i, i + 500).map((p) => ({ day: p.day, value: p.value, method: mode, built_at: builtAt })),
     });
   }
+  await sb(`investment_history?built_at=neq.${encodeURIComponent(builtAt)}`, { method: "DELETE" });
 
   return { days: chosen.points.length, from, to: today, method: mode, error, unpriced: chosen.unpriced, skipped, earliestTx, priced: [...closes.keys()].length, tickers: tickers.size };
 }
