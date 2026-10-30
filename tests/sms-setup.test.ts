@@ -68,7 +68,7 @@ describe("diagnose", () => {
   });
 
   it("is happy when the webhook carries texts, the number takes SMS and the test was accepted", () => {
-    const d = diagnose([{ ...MAIL_ONLY, events: ["email.received", "sms.received"] }], [{ ...TOLL_FREE, number: "18445192725" }], NUMBER, { status: "delivered", response_status_code: 200 });
+    const d = diagnose([{ ...MAIL_ONLY, events: ["email.received", "sms.received"] }], [{ ...TOLL_FREE, number: "18445192725" }], NUMBER, { wh_1: { status: "delivered", response_status_code: 200 } });
     expect(d).toMatchObject({ ok: true, problems: [], test: { delivered: true, code: 200 } });
   });
 
@@ -77,7 +77,7 @@ describe("diagnose", () => {
       [{ ...MAIL_ONLY, url: "https://burtonfamilyoffice.com/api/mail-webhook", events: ["email.received", "sms.received"], status: "paused" }],
       [{ ...TOLL_FREE, capabilities: ["voice"] }],
       NUMBER,
-      { status: "failed", response_status_code: 401 }
+      { wh_1: { status: "failed", response_status_code: 401 } }
     );
     expect(d.problems.map((p) => p.code)).toEqual(["wrong_host", "paused", "test_failed", "no_sms"]);
     expect(d.problems.find((p) => p.code === "test_failed")?.message).toMatch(/BIRD_WEBHOOK_SECRET/);
@@ -91,6 +91,16 @@ describe("diagnose", () => {
     const d = diagnose([impact], [TOLL_FREE], NUMBER);
     expect(d.problems.map((p) => [p.code, p.fixable])).toEqual([["no_webhook", false]]);
     expect(d.problems[0].message).toMatch(/Create webhook.*BIRD_WEBHOOK_SECRET.*Leave other sites' webhooks/);
+  });
+
+  it("with two webhooks pointing at BFO, takes the one BFO's secret verifies, and flags the other", () => {
+    const mine = { id: "wh_new", url: "https://www.burtonfamilyoffice.com/api/mail-webhook", events: ["email.received", "sms.received"], status: "active" };
+    const repointed = { id: "wh_old", url: "https://www.burtonfamilyoffice.com/api/mail-webhook", events: ["email.received", "sms.received"], status: "active" };
+    const d = diagnose([repointed, mine], [TOLL_FREE], NUMBER, { wh_old: { status: "failed", response_status_code: 401 }, wh_new: { status: "delivered", response_status_code: 200 } });
+    expect(d.webhook?.id).toBe("wh_new");
+    expect(d.problems.map((p) => p.code)).toEqual(["other_hook"]);
+    const neither = diagnose([repointed, mine], [TOLL_FREE], NUMBER, { wh_old: { status: "failed", response_status_code: 401 }, wh_new: { status: "failed", response_status_code: 401 } });
+    expect(neither.problems[0].message).toMatch(/2 webhooks in Bird point at BFO.*matches none/);
   });
 
   it("fixes by adding to the webhook, never by taking away", () => {
@@ -111,7 +121,7 @@ describe("when Bird's key lacks a permission", () => {
     expect(scopeIn("nope")).toBeNull();
   });
   it("still checks the webhook when the number can't be looked up, and says so", () => {
-    const d = diagnose([{ ...MAIL_ONLY, events: ["email.received", "sms.received"] }], { unreadable: true, status: 403, scope: "numbers:read" }, NUMBER, { status: "delivered", response_status_code: 200 });
+    const d = diagnose([{ ...MAIL_ONLY, events: ["email.received", "sms.received"] }], { unreadable: true, status: 403, scope: "numbers:read" }, NUMBER, { wh_1: { status: "delivered", response_status_code: 200 } });
     expect(d.ok).toBe(true);
     expect(d.notes[0]).toMatch(/numbers:read/);
   });

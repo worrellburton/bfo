@@ -38,7 +38,8 @@ export default alertOnThrow("webhook:mail", "Mail webhook crashed", handle);
 
 async function handle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
-  const secret = process.env.BIRD_WEBHOOK_SECRET?.trim();
+  // As pasted into Vercel: stray quotes and spaces aren't part of it.
+  const secret = process.env.BIRD_WEBHOOK_SECRET?.trim().replace(/^["']|["']$/g, "").trim();
   if (!secret) return res.status(503).json({ error: "not_configured" });
 
   const raw = await rawBody(req);
@@ -53,6 +54,9 @@ async function handle(req: VercelRequest, res: VercelResponse) {
       hasId: !!header(req, "webhook-id"),
       hasTimestamp: !!header(req, "webhook-timestamp"),
       hasSignature: !!header(req, "webhook-signature"),
+      bodyBytes: raw.length,
+      secretHasPrefix: secret.startsWith("whsec_"),
+      secretKeyBytes: Buffer.from(secret.replace(/^whsec_/, ""), "base64").length,
     });
     return res.status(401).json({ error: "bad_signature" });
   }

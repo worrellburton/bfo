@@ -89,6 +89,10 @@ describe("/api/mail-webhook texts", () => {
     expect((await call(JSON.stringify({ type: "sms.received" }))).json).toEqual({ ok: true, test: true });
     expect(sbMock).not.toHaveBeenCalled();
   });
+  it("reads the secret as pasted into Vercel, quotes and spaces included", async () => {
+    process.env.BIRD_WEBHOOK_SECRET = ` "${SECRET}" `;
+    expect((await call(JSON.stringify({ type: "sms.received" }))).json).toEqual({ ok: true, test: true });
+  });
   it("ignores a text to another site's number in the same Bird workspace", async () => {
     const body = JSON.stringify({ type: "sms.received", data: { sms_id: "sms_01other", from: "+14805551234", to: "+18885550199", text: "not ours" } });
     expect((await call(body)).json).toEqual({ ok: true, ignored: true });

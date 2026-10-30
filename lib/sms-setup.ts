@@ -63,17 +63,24 @@ const digits = (n: string | null | undefined) => (n ?? "").replace(/\D/g, "");
  * BFO's own webhook: at /api/mail-webhook on burtonfamilyoffice.com (www, or the bare domain that should be www).
  * The Bird workspace is shared with other sites that use the same path; their webhooks are never BFO's to read or change.
  */
-export function mailHook(hooks: BirdWebhook[]): BirdWebhook | null {
-  const ours = hooks.filter((h) => pathOf(h.url) === WEBHOOK_PATH && OUR_HOSTS.has(hostOf(h.url)));
-  return ours.find((h) => (h.events ?? []).includes("email.received")) ?? ours[0] ?? null;
+export function bfoHooks(hooks: BirdWebhook[]): BirdWebhook[] {
+  return hooks.filter((h) => pathOf(h.url) === WEBHOOK_PATH && OUR_HOSTS.has(hostOf(h.url)));
+}
+
+/** BFO's webhook: the one whose signed test BFO accepted, else the one carrying mail, else any. */
+export function mailHook(hooks: BirdWebhook[], tests: Record<string, WebhookTest> = {}): BirdWebhook | null {
+  const ours = bfoHooks(hooks);
+  return ours.find((h) => tests[h.id]?.status === "delivered") ?? ours.find((h) => (h.events ?? []).includes("email.received")) ?? ours[0] ?? null;
 }
 
 /** What stands between a text and the Phone page, from Bird's own answers. Pure. */
-export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: BirdNumber[] | Unreadable, ourNumber: string, test: WebhookTest | null = null): SmsSetup {
+export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: BirdNumber[] | Unreadable, ourNumber: string, tests: Record<string, WebhookTest> = {}): SmsSetup {
   const problems: SetupProblem[] = [];
   const notes: string[] = [];
   const hooks = isUnreadable(hooksOrNot) ? null : hooksOrNot;
-  const hook = hooks ? mailHook(hooks) : null;
+  const ours = hooks ? bfoHooks(hooks) : [];
+  const hook = hooks ? mailHook(hooks, tests) : null;
+  const test = hook ? tests[hook.id] ?? null : null;
   if (isUnreadable(hooksOrNot)) {
     const { scope, status } = hooksOrNot;
     problems.push({
@@ -100,13 +107,24 @@ export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: B
       problems.push({
         code: "test_failed",
         message:
-          code === 401
-            ? "BFO turned down Bird's signed test: BIRD_WEBHOOK_SECRET in Vercel doesn't match this webhook's signing secret."
+          code === 401 && ours.length > 1
+            ? `${ours.length} webhooks in Bird point at BFO, and BFO turned down the signed test from each: BIRD_WEBHOOK_SECRET in Vercel matches none of them. In Bird, open the webhook you made for BFO, copy its signing secret (it starts with whsec_), paste it into Vercel exactly, and redeploy. Point the other one back to its own site.`
+            : code === 401
+            ? "BFO turned down Bird's signed test: BIRD_WEBHOOK_SECRET in Vercel doesn't match this webhook's signing secret. In Bird, open the webhook, copy its signing secret (it starts with whsec_), paste it into Vercel exactly, and redeploy."
             : code === 503
               ? "BFO isn't set up to take Bird's webhook: BIRD_WEBHOOK_SECRET isn't set in Vercel."
               : code
                 ? `BFO answered Bird's test text with HTTP ${code}.`
                 : `Bird couldn't reach BFO's webhook${test.error ? ` (${test.error})` : ""}.`,
+        fixable: false,
+      });
+    }
+    // BFO's webhook works; another one also points here, signed with some other secret: another site's, re-pointed.
+    const strays = test?.status === "delivered" ? ours.filter((h) => h.id !== hook.id && tests[h.id] && tests[h.id].status !== "delivered") : [];
+    if (strays.length) {
+      problems.push({
+        code: "other_hook",
+        message: `${strays.length === 1 ? "Another webhook" : `${strays.length} other webhooks`} in Bird also ${strays.length === 1 ? "points" : "point"} at BFO but ${strays.length === 1 ? "isn't" : "aren't"} signed with BFO's secret, so BFO turns ${strays.length === 1 ? "its" : "their"} deliveries away. If one belongs to another site (Impact Advisory's was re-pointed here), point it back to that site in Platform tools → Webhooks; otherwise delete it.`,
         fixable: false,
       });
     }
@@ -196,15 +214,20 @@ export async function smsSetup(ourNumber: string): Promise<SmsSetup> {
     birdListOrWhy<BirdWebhook>("/v1/webhooks"),
     birdListOrWhy<BirdNumber>(`/v1/numbers?number=${encodeURIComponent(ourNumber)}`),
   ]);
-  const hook = isUnreadable(hooks) ? null : mailHook(hooks);
-  const test = hook ? await testHook(hook.id).catch((err): WebhookTest => ({ status: "failed", response_status_code: null, error: err instanceof Error ? err.message : String(err) })) : null;
-  return diagnose(hooks, numbers, ourNumber, test);
+  // Every webhook pointing at BFO gets a signed test: the one BFO accepts is BFO's.
+  const ours = isUnreadable(hooks) ? [] : bfoHooks(hooks).slice(0, 5);
+  const results = await Promise.all(
+    ours.map((h) => testHook(h.id).catch((err): WebhookTest => ({ status: "failed", response_status_code: null, error: err instanceof Error ? err.message : String(err) })))
+  );
+  return diagnose(hooks, numbers, ourNumber, Object.fromEntries(ours.map((h, i) => [h.id, results[i]])));
 }
 
 /** Adds sms.received to the mail webhook (and points it at www, and un-pauses it) when that's what's missing. */
 export async function fixSmsSetup(ourNumber: string): Promise<SmsSetup> {
   const hooks = await birdListOrWhy<BirdWebhook>("/v1/webhooks");
-  const hook = isUnreadable(hooks) ? null : mailHook(hooks);
+  // Only the webhook BFO's own secret verifies is changed (smsSetup tested each one just now).
+  const before = await smsSetup(ourNumber);
+  const hook = isUnreadable(hooks) || !before.test?.delivered ? null : bfoHooks(hooks).find((h) => h.id === before.webhook?.id) ?? null;
   const body = hook ? fixBody(hook) : null;
   if (hook && body) {
     const r = await birdPlatformFetch(`/v1/webhooks/${encodeURIComponent(hook.id)}`, { method: "PATCH", body });
