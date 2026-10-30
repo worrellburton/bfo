@@ -4,7 +4,6 @@ export default [
   layout("routes/public-layout.tsx", [index("routes/landing.tsx"), route("mission", "routes/mission.tsx")]),
   route("login", "routes/login.tsx"),
   route("complete-profile", "routes/complete-profile.tsx"),
-  route("public/vq-balance-sheet", "./routes/vq-balance-sheet-public.tsx"),
   route("legal/terms", "./routes/legal-terms.tsx"),
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   // A signer's page: no account, the token in their emailed link is who they are.
