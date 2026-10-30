@@ -56,6 +56,8 @@ async function handle(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "bad_json" });
   }
   if (event?.type === "sms.received") {
+    // Bird's webhook test (the Phone page's setup check) is a signed event with no message: accepted, nothing kept.
+    if (!(event as { data?: unknown }).data) return res.status(200).json({ ok: true, test: true });
     const row = smsRow(event, header(req, "webhook-id"));
     if (!row) return res.status(400).json({ error: "bad_event" });
     try {

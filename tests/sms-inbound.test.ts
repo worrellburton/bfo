@@ -74,6 +74,21 @@ describe("/api/mail-webhook texts", () => {
     expect(path).toBe("sms_messages?on_conflict=id");
     expect(init).toMatchObject({ method: "POST", prefer: "resolution=ignore-duplicates,return=minimal", body: { id: "msg_9", code: "239104" } });
   });
+  it("keeps a text in exactly the shape Bird's spec gives sms.received", async () => {
+    sbMock.mockResolvedValueOnce(null);
+    // Every required field of EventSMSReceived(Data) in https://bird.com/openapi.json, plus the optional ones.
+    const body = JSON.stringify({
+      type: "sms.received",
+      timestamp: "2026-10-30T16:02:11Z",
+      data: { sms_id: "sms_01krdgeqcxet5s7t44vh8rt9mg", workspace_id: "ws_01krdgeqcxet5s7t44vh8rt9mg", to: "+18445192725", from: "+14805551234", text: "Chase: 71920453 is your one-time code.", segments: { count: 1, encoding: "gsm7" }, carrier: "Verizon", mcc_mnc: "311480", country_code: "US" },
+    });
+    expect((await call(body)).status).toBe(200);
+    expect(sbMock.mock.calls[0][1].body).toMatchObject({ id: "sms_01krdgeqcxet5s7t44vh8rt9mg", from_number: "+14805551234", to_number: "+18445192725", code: "71920453", received_at: "2026-10-30T16:02:11.000Z" });
+  });
+  it("accepts Bird's signed webhook test, which has no message, without keeping anything", async () => {
+    expect((await call(JSON.stringify({ type: "sms.received" }))).json).toEqual({ ok: true, test: true });
+    expect(sbMock).not.toHaveBeenCalled();
+  });
   it("asks Bird to retry when it can't be kept", async () => {
     sbMock.mockRejectedValueOnce(new Error("db down"));
     const body = JSON.stringify({ type: "sms.received", data: { from: "+14805551234", text: "hi" } });

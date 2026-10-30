@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatPhone } from "../../lib/sms-inbound";
+import type { SmsSetup } from "../../lib/sms-setup";
 import { authFetch, isAdmin } from "../auth";
 import { Button, Icon, useTone } from "../entity/ui";
 
@@ -36,6 +37,24 @@ export default function PhonePage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const seen = useRef(new Set<string>());
+  // Can texts reach BFO at all? Asked of Bird once when the page opens (lib/sms-setup.ts).
+  const [setup, setSetup] = useState<{ state: "checking" | "fixing" | "done"; result?: SmsSetup | null; error?: string }>({ state: "checking" });
+
+  const checkSetup = useCallback(async (fix = false) => {
+    setSetup((s) => ({ ...s, state: fix ? "fixing" : "checking" }));
+    try {
+      const r = fix ? await authFetch("/api/texts", { method: "POST", body: JSON.stringify({ action: "fix-setup" }) }) : await authFetch("/api/texts?view=setup");
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Couldn't check with Bird.");
+      setSetup({ state: "done", result: j.setup ?? null, error: j.error });
+    } catch (err) {
+      setSetup({ state: "done", result: null, error: (err as Error).message });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin()) void checkSetup();
+  }, [checkSetup]);
 
   const load = useCallback(async () => {
     try {
@@ -106,6 +125,7 @@ export default function PhonePage() {
             <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${t.muted}`}>Our number</p>
             <p className={`mt-1.5 font-brand text-[24px] tabular-nums sm:text-[28px] ${t.text}`}>{shown || "—"}</p>
             <p className={`mt-1 text-[12.5px] ${t.muted}`}>Texts to this number show up here within seconds. Toll-free, through Bird.</p>
+            <SetupStatus setup={setup} onRetry={() => void checkSetup()} onFix={() => void checkSetup(true)} />
           </div>
           {number && (
             <Button icon={copied === "number" ? "check" : "copy"} onClick={() => void copy("number", number)}>
@@ -127,10 +147,7 @@ export default function PhonePage() {
             {error || (
               <>
                 <p className={`font-medium ${t.text}`}>No texts yet.</p>
-                <p className="mt-1">
-                  Each text to {shown || "the number"} shows up here. If one doesn't, check that the BFO webhook in Bird (Developers → Webhooks, pointing at
-                  <code className="mx-1">/api/mail-webhook</code>) has the <code>sms.received</code> event ticked.
-                </p>
+                <p className="mt-1">Each text to {shown || "the number"} shows up here within seconds. Send one from your phone to try it.</p>
               </>
             )}
           </div>
@@ -170,6 +187,59 @@ export default function PhonePage() {
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+/** One line under the number: texts reach BFO, or what's in the way and, when it's safe to change from here, a button that fixes it. */
+function SetupStatus({ setup, onRetry, onFix }: { setup: { state: "checking" | "fixing" | "done"; result?: SmsSetup | null; error?: string }; onRetry: () => void; onFix: () => void }) {
+  const t = useTone();
+  if (setup.state !== "done") {
+    return (
+      <p role="status" className={`mt-3 inline-flex items-center gap-2 text-[12.5px] ${t.muted}`}>
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+        {setup.state === "fixing" ? "Updating Bird's webhook…" : "Checking with Bird that texts reach BFO…"}
+      </p>
+    );
+  }
+  const r = setup.result;
+  if (!r) {
+    return (
+      <div role="status" className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12.5px] ${t.muted}`}>
+        <span>Couldn't check with Bird{setup.error ? `: ${setup.error}` : "."}</span>
+        <Button icon="refresh" onClick={onRetry}>
+          Check again
+        </Button>
+      </div>
+    );
+  }
+  if (r.ok) {
+    return (
+      <p role="status" className={`mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium ${t.dark ? "text-emerald-300" : "text-emerald-700"}`}>
+        <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />
+        Texts reach BFO: Bird sends them here, and a test text just now was accepted.
+      </p>
+    );
+  }
+  const fixable = r.problems.some((p) => p.fixable);
+  return (
+    <div role="status" className={`mt-3 rounded-xl border px-3.5 py-3 text-[12.5px] leading-relaxed ${t.dark ? "border-amber-400/25 bg-amber-400/[0.06] text-amber-100" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+      <p className="font-semibold">Texts can't reach BFO yet</p>
+      <ul className="mt-1 list-disc space-y-1 pl-4">
+        {r.problems.map((p) => (
+          <li key={p.code}>{p.message}</li>
+        ))}
+      </ul>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        {fixable && (
+          <Button kind="primary" icon="check" onClick={onFix}>
+            Fix it in Bird
+          </Button>
+        )}
+        <Button icon="refresh" onClick={onRetry}>
+          Check again
+        </Button>
+      </div>
     </div>
   );
 }
