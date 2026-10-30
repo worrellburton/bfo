@@ -872,11 +872,14 @@ export function Menu({
   label,
   chevron = "always",
   touch = false,
+  readOnly = false,
 }: {
   value: string;
   options: Option[];
   isDark: boolean;
   disabled?: boolean;
+  /** Shows the value as a plain, undimmed chip that doesn't open (view-only users). */
+  readOnly?: boolean;
   onChange: (v: string) => void;
   /** soft: a filled, low-contrast pill (the category chip in the ledger). */
   tone?: "neutral" | "amber" | "soft";
@@ -1104,7 +1107,7 @@ export function Menu({
           : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50 hover:border-gray-300 aria-expanded:bg-gray-100 aria-expanded:border-gray-300";
   // Quiet pills carry no border at all — a transparent 1px still shifted the
   // label a pixel right of the column head.
-  const pill = `group/menu inline-flex items-center gap-1.5 rounded-full ${quiet ? "border-0" : "border"} cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default ${height} ${type} ${padL} ${padR} ${width} ${shift} ${skin}${
+  const pill = `group/menu inline-flex items-center gap-1.5 rounded-full ${quiet ? "border-0" : "border"} ${readOnly ? "cursor-default pointer-events-none" : "cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default"} ${height} ${type} ${padL} ${padR} ${width} ${shift} ${skin}${
     touch ? ` ${TAP.pill}` : size === "md" ? ` ${TAP.md}` : ""
   }`;
   // Hover-reveal only applies where there is a hover (lg+); touch layouts
@@ -1130,7 +1133,7 @@ export function Menu({
       <button
         ref={btnRef}
         type="button"
-        disabled={disabled}
+        disabled={disabled || readOnly}
         onClick={() => {
           if (closing) return;
           if (open) requestClose(false);
@@ -1146,11 +1149,13 @@ export function Menu({
       >
         {leading}
         <span className="truncate">{text}</span>
-        <Icon
-          d={P.chevron}
-          strokeWidth={2}
-          className={`w-3 h-3 shrink-0 transition-[opacity,rotate] motion-reduce:transition-none ${open ? "rotate-180" : ""} ${glyph}`}
-        />
+        {!readOnly && (
+          <Icon
+            d={P.chevron}
+            strokeWidth={2}
+            className={`w-3 h-3 shrink-0 transition-[opacity,rotate] motion-reduce:transition-none ${open ? "rotate-180" : ""} ${glyph}`}
+          />
+        )}
       </button>
       {open && (sheet || box) &&
         createPortal(
@@ -1276,7 +1281,8 @@ export function BatchBar({
   count: number;
   isDark: boolean;
   busy?: boolean;
-  onApply: (patch: BatchPatch) => void;
+  /** Resolves true once saved; the fields keep what was typed until then. */
+  onApply: (patch: BatchPatch) => Promise<boolean>;
   onClear: () => void;
   /** Existing vendor names — the vendor field autocompletes against these. */
   vendorSuggestions?: string[];
@@ -1367,7 +1373,7 @@ export function BatchBar({
   const glass = isDark
     ? "bg-[#161616]/90 border-white/10 backdrop-blur-xl shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]"
     : "bg-white/95 border-gray-200 backdrop-blur-xl shadow-xl shadow-gray-900/10";
-  const clearBtn = `w-[40px] h-[40px] sm:w-9 sm:h-9 rounded-full inline-flex items-center justify-center cursor-pointer transition-colors ${TAP.md} ${t2} ${
+  const clearBtn = `w-[40px] h-[40px] sm:w-9 sm:h-9 sm:pointer-coarse:w-[40px] sm:pointer-coarse:h-[40px] rounded-full inline-flex items-center justify-center cursor-pointer transition-colors ${TAP.md} sm:pointer-coarse:after:inset-0 ${t2} ${
     isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"
   }`;
   const canApply = !!(vendor.trim() || description.trim() || account || batchType);
@@ -1382,13 +1388,14 @@ export function BatchBar({
       {shownCount} selected
     </span>
   );
-  function apply() {
+  async function apply() {
     const patch: BatchPatch = {};
     if (vendor.trim()) patch.merchant_name = vendor.trim();
     if (description.trim()) patch.name = description.trim();
     if (account) patch.book_category = account;
     if (batchType) patch.type_override = batchType;
-    onApply(patch);
+    // A refused batch keeps the fields, so the person can retry or adjust.
+    if (!(await onApply(patch))) return;
     setVendor("");
     setDescription("");
     setAccount("");
@@ -1477,14 +1484,15 @@ export function BatchBar({
       type="button"
       disabled={!canApply}
       aria-busy={busy || undefined}
-      onClick={apply}
+      onClick={() => void apply()}
       className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm aria-busy:pointer-events-none ${TAP.md} ${primaryBtn(isDark)} ${extra}`}
     >
       {busy ? "Applying…" : "Apply"}
     </button>
   );
   // The bar lives in the content column (it inherits --inset and centres on
-  // it); the sheet goes to body so it stacks above the page chrome.
+  // it, capped to main's padded width: 2rem a side, 40px on a touch tablet
+  // per app.css); the sheet goes to body so it stacks above the page chrome.
   const host = document.querySelector<HTMLElement>("main.sidebar-content") ?? document.body;
   return (
     <>
@@ -1492,7 +1500,7 @@ export function BatchBar({
       <div
         role="toolbar"
         aria-label="Batch edit"
-        className={`fixed z-[60] left-2 right-2 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max sm:max-w-[calc(100vw-2rem)] lg:left-[calc(50%+var(--inset)/2)] lg:bottom-6 rounded-xl border tabular-nums grid grid-cols-[auto_1fr_40px] items-center gap-2 p-3 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 ${
+        className={`fixed z-[60] left-2 right-2 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max sm:max-w-[calc(100vw-2rem)] md:left-[calc(50%+var(--inset)/2)] md:max-w-[calc(100vw-var(--inset)-4rem)] md:pointer-coarse:max-w-[calc(100vw-var(--inset)-80px)] lg:bottom-6 rounded-xl border tabular-nums grid grid-cols-[auto_1fr_40px] items-center gap-2 p-3 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 ${
           count > 0 ? "pop-in-up" : "pop-out-up pointer-events-none"
         } ${glass}`}
       >
@@ -2074,6 +2082,7 @@ export function TxnTable({
   sort,
   onSort,
   view,
+  readOnly = false,
 }: {
   rows: Txn[];
   categories: string[];
@@ -2092,6 +2101,8 @@ export function TxnTable({
   onSort?: (key: string) => void;
   /** "list" = table only, "cards" = grid only; unset = table on lg+, cards below. */
   view?: TxnView;
+  /** View-only users: the in-row pickers show their values but don't open. */
+  readOnly?: boolean;
 }) {
   const navigate = useNavigate();
   const uid = useId();
@@ -2398,6 +2409,7 @@ export function TxnTable({
   const categoryProps = (t: Txn) => {
     const catOptions = catOptionsFor(t);
     return {
+      readOnly,
       value: t.book_category ?? "",
       placeholder: t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined,
       onChange: (v: string) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v)),
@@ -2423,6 +2435,7 @@ export function TxnTable({
   // Fully editable — a loan link no longer locks the row; the loan
   // classification maps back to its underlying type.
   const typeProps = (t: Txn, eff: string, inflow: boolean) => ({
+    readOnly,
     value: eff === "loan" ? (t.type_override ?? "normal") : eff,
     onChange: (v: string) => void update(t, t.loan_id ? { type_override: v, loan_id: null } : { type_override: v }),
     options: [
@@ -2432,6 +2445,7 @@ export function TxnTable({
     ],
   });
   const loanProps = (t: Txn) => ({
+    readOnly,
     value: t.loan_id ?? "",
     placeholder: "Loan…",
     onChange: (v: string) => void update(t, { loan_id: v || null }),

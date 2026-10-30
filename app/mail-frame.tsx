@@ -5,7 +5,9 @@ import { TextButton, useTone } from "./entity/ui";
 /**
  * An HTML email, rendered safely: sanitized with DOMPurify, then shown in a
  * sandboxed iframe that cannot run scripts, under a CSP that blocks every
- * network load except https images (shown by default; "Hide images" holds them back). Links open in a new tab.
+ * network load except pictures through BFO's own image proxy (the server points every remote picture there,
+ * lib/mail-image.ts; any it couldn't never loads from the sender). Shown by default; "Hide images" holds them back.
+ * Links open in a new tab.
  * The frame grows to its content's height, so the reader scrolls as one page,
  * and mail laid out wider than the frame is scaled down to fit its width.
  */
@@ -21,7 +23,7 @@ function getPurifier(): DOMPurify {
 // A remote picture: a web address, or one BFO fetches on the reader's behalf (/api/mail-image).
 const REMOTE = /^\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
 const REMOTE_IN_SRCSET = /(^|,)\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
-const REMOTE_URL_IN_CSS = /url\(\s*['"]?\s*(https?:)?\/\//i;
+const REMOTE_URL_IN_CSS = /url\(\s*['"]?\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
 
 /** Sanitizes mail HTML. Remote images are dropped unless `images` is true. */
 export function sanitizeMail(html: string, images: boolean): { html: string; remoteImages: boolean } {
@@ -73,7 +75,8 @@ img,picture,video,svg,canvas,[style*="background-image"],[background]{filter:inv
 `;
 
 function frameDocument(body: string, images: boolean, dark: boolean): string {
-  const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? " 'self' https:" : ""}; font-src data:`;
+  // Pictures only from BFO (its image proxy), named outright too: a sandboxed srcdoc frame's own origin is opaque.
+  const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? ` 'self' ${window.location.origin}` : ""}; font-src data:`;
   // The viewport meta and text-size-adjust keep iOS Safari from inflating the text of a wide (fixed-width) layout on its own.
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
@@ -176,22 +179,24 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     };
   }, [srcDoc]);
 
+  // On touch (tablet and up; phones get TextButton's own hit area), the image and color switches are a finger's height.
+  const touch = "sm:pointer-coarse:min-h-[40px]";
   return (
     <div>
       {(remoteImages || t.dark) && (
         <div className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${t.muted}`}>
           {remoteImages &&
             (images ? (
-              <TextButton onClick={() => setImages(false)}>Hide images</TextButton>
+              <TextButton className={touch} onClick={() => setImages(false)}>Hide images</TextButton>
             ) : (
               <>
                 Images hidden
                 <span aria-hidden="true">·</span>
-                <TextButton onClick={() => setImages(true)}>Show images</TextButton>
+                <TextButton className={touch} onClick={() => setImages(true)}>Show images</TextButton>
               </>
             ))}
           {remoteImages && t.dark && <span aria-hidden="true">·</span>}
-          {t.dark && <TextButton onClick={() => setOriginal((o) => !o)}>{original ? "Dark colors" : "Original colors"}</TextButton>}
+          {t.dark && <TextButton className={touch} onClick={() => setOriginal((o) => !o)}>{original ? "Dark colors" : "Original colors"}</TextButton>}
         </div>
       )}
       <div className={`overflow-hidden rounded-xl border ${t.dark ? "border-white/[0.07]" : "border-gray-200"}`}>

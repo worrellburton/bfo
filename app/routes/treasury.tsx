@@ -62,6 +62,15 @@ function accountLabel(a: Account): string {
   return base.includes(a.mask) ? base : `${base} ····${a.mask}`;
 }
 
+/**
+ * Cards and loans are debts: Plaid reports both as a positive amount owed, so
+ * they count against a total, and a rise in their balance is bad news.
+ */
+function isDebt(a: Account): boolean {
+  return a.type === "credit" || a.type === "loan";
+}
+const sign = (a: Account) => (isDebt(a) ? -1 : 1);
+
 /** Parse Plaid's brand hex into an rgb triplet we can tint a glass card with. */
 function tint(hex: string | null): string {
   const fallback = "99, 102, 241"; // indigo, for banks with no brand colour
@@ -121,6 +130,31 @@ export default function Treasury() {
   useEffect(() => {
     void load();
   }, []);
+
+  // Entity ids from the assets tree, same source as the account and mappings
+  // pages, so an account mapped to an entity deleted since reads as unmapped.
+  const [entityIds, setEntityIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      const { db, authReady } = await import("../store");
+      await authReady;
+      const { ref, onValue } = await import("../store");
+      if (cancelled) return;
+      unsub = onValue(ref(db, "assets"), (snap) => {
+        setEntityIds(new Set(Object.keys(snap.val() || {})));
+      });
+    })().catch(() => {
+      /* without the tree, trust the stored mapping */
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, []);
+  // Until the entities load, trust the stored id so the page doesn't flash amber.
+  const isMapped = (a: Account) => !!a.entity_id && (entityIds.size === 0 || entityIds.has(a.entity_id));
 
   async function call(path: string, init?: RequestInit) {
     const res = await authFetch(path, init);
@@ -306,16 +340,16 @@ export default function Treasury() {
   const entityGroups = (() => {
     const map = new Map<string, { key: string; name: string; accounts: Account[]; total: number }>();
     for (const a of visible) {
-      const key = a.entity_id ?? "__unmapped__";
+      const key = isMapped(a) ? a.entity_id! : "__unmapped__";
       const group = map.get(key) ?? {
         key,
-        name: a.entity_name ?? "Unmapped",
+        name: key === "__unmapped__" ? "Unmapped" : a.entity_name ?? "Unnamed entity",
         accounts: [] as Account[],
         total: 0,
       };
       group.accounts.push(a);
-      // Cards are a liability, so they pull the entity's total down.
-      group.total += (a.type === "credit" ? -1 : 1) * (a.balance_current ?? 0);
+      // Cards and loans are liabilities, so they pull the entity's total down.
+      group.total += sign(a) * (a.balance_current ?? 0);
       map.set(key, group);
     }
     for (const group of map.values()) {
@@ -370,10 +404,14 @@ export default function Treasury() {
   const credit = visible
     .filter((a) => a.type === "credit")
     .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
+  const loans = visible
+    .filter((a) => a.type === "loan")
+    .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
   const invested = visible
     .filter((a) => a.type === "investment")
     .reduce((sum, a) => sum + (a.balance_current ?? 0), 0);
-  const movement = visible.reduce((sum, a) => sum + (a.change ?? 0), 0);
+  // Paying debt down is a gain; new card spending is a loss.
+  const movement = visible.reduce((sum, a) => sum + sign(a) * (a.change ?? 0), 0);
 
   const statusFor = (itemId: string) =>
     connections.find((c) => c.item_id === itemId)?.status ?? "offline";
@@ -487,18 +525,39 @@ export default function Treasury() {
         </div>
       )}
 
-      {connections.some((c) => c.status !== "online") && (
-        <div className={`mb-6 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-800"}`}>
-          {connections
-            .filter((c) => c.status !== "online")
-            .map((c) => c.institution_name)
-            .join(", ")}{" "}
-          need reconnecting — sign in again through Connect bank to refresh the link.
-        </div>
-      )}
+      {/* A broken link is repaired in Plaid's update mode on that same
+          connection — Connect bank would add a duplicate instead. */}
+      {connections.some((c) => c.status !== "online") && (() => {
+        const broken = connections.filter((c) => c.status !== "online");
+        const one = broken.length === 1;
+        return (
+          <div className={`mb-6 rounded-lg px-4 py-3 text-sm flex flex-wrap items-center gap-x-4 gap-y-2 ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-800"}`}>
+            <span className="min-w-0 flex-1 basis-64">
+              {broken.map((c) => c.institution_name).join(", ")} {one ? "needs" : "need"} reconnecting.{" "}
+              {one ? "Its" : "Their"} balances aren't in these totals until you sign in again.
+            </span>
+            <span className="flex flex-wrap gap-2">
+              {broken.map((c) => (
+                <button
+                  key={c.item_id}
+                  onClick={() => void refreshConnection(c)}
+                  disabled={linking}
+                  className={`min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                    isDark ? "border-amber-400/40 hover:bg-amber-400/10" : "border-amber-400 hover:bg-amber-100"
+                  }`}
+                >
+                  Reconnect{one ? "" : ` ${c.institution_name}`}
+                </button>
+              ))}
+            </span>
+          </div>
+        );
+      })()}
 
       {!loading && accounts.length > 0 && (() => {
         const total = cash + invested;
+        // Cards and loans together; the entity and bank totals net them out.
+        const owed = credit + loans;
         const cashPct = total > 0 ? Math.round((cash / total) * 100) : 0;
         const investPct = total > 0 ? 100 - cashPct : 0;
         const entityCount = entityGroups.filter((g) => g.key !== "__unmapped__").length;
@@ -508,8 +567,8 @@ export default function Treasury() {
               {dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />}
               {label}
             </p>
-            <p className="text-lg font-semibold mt-1 tabular-nums truncate">
-              {value}
+            <p className="text-lg font-semibold mt-1 tabular-nums">
+              <span className="whitespace-nowrap">{value}</span>
               {pct != null && total > 0 && (
                 <span className={`ml-1.5 text-xs font-normal ${subtle}`}>{pct}%</span>
               )}
@@ -518,7 +577,7 @@ export default function Treasury() {
         );
 
         return (
-          <div className={`rounded-2xl border mb-8 overflow-hidden ${card}`}>
+          <div className={`@container rounded-2xl border mb-8 overflow-hidden ${card}`}>
             <div className="p-6 sm:p-7">
               <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
                 <div className="min-w-0">
@@ -526,6 +585,9 @@ export default function Treasury() {
                   <p className="text-3xl sm:text-4xl font-semibold tracking-tight mt-1.5 tabular-nums">
                     {money(total)}
                   </p>
+                  {owed > 0 && (
+                    <p className={`text-xs mt-1 tabular-nums ${subtle}`}>{money(total - owed)} net of debts</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-1">
                   <span
@@ -561,10 +623,12 @@ export default function Treasury() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 mt-5">
+              {/* Four across only when the card (not the screen) has room —
+                  the iPad rail takes 240px. */}
+              <div className="grid grid-cols-2 @4xl:grid-cols-4 gap-x-6 gap-y-4 mt-5">
                 {stat("Cash", money(cash), "#38bdf8", cashPct)}
                 {stat("Invested", invested > 0 ? money(invested) : "—", "#34d399", investPct)}
-                {stat("Credit owed", credit > 0 ? money(credit) : "—")}
+                {stat(loans > 0 ? "Debt owed" : "Credit owed", owed > 0 ? money(owed) : "—")}
                 {stat(
                   "Accounts",
                   `${visible.length}`,
@@ -698,7 +762,7 @@ export default function Treasury() {
                     <>
                       <span
                         className={`text-xs font-medium ${
-                          account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"
+                          sign(account) * account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"
                         }`}
                       >
                         {signed(account.change, account.currency ?? "USD")}
@@ -755,9 +819,10 @@ export default function Treasury() {
       ))}
 
       {view === "list" && !loading && accounts.length > 0 && (
-        <div className={`rounded-xl border overflow-hidden ${card}`}>
-          {/* Phones: stacked rows — the six-column table would scroll sideways. */}
-          <div className="sm:hidden">
+        <div className={`@container rounded-xl border overflow-hidden ${card}`}>
+          {/* Narrow cards (phones, iPad beside the rail): stacked rows — the
+              six-column table would scroll sideways. */}
+          <div className="@5xl:hidden">
             {entityGroups.map((group, gi) => {
               const open = !collapsed.has(group.key);
               return (
@@ -810,7 +875,7 @@ export default function Treasury() {
                               <span className="shrink-0 text-right tabular-nums">
                                 <span className="block text-sm font-semibold">{money(account.balance_current, account.currency ?? "USD")}</span>
                                 {account.change != null && account.change !== 0 && (
-                                  <span className={`block text-xs ${account.change > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                  <span className={`block text-xs ${sign(account) * account.change > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                                     {signed(account.change, account.currency ?? "USD")}
                                   </span>
                                 )}
@@ -825,7 +890,7 @@ export default function Treasury() {
               );
             })}
           </div>
-          <div className="hidden sm:block overflow-x-auto">
+          <div className="hidden @5xl:block overflow-x-auto">
             <table className="w-full text-sm border-collapse min-w-[760px]">
               <thead>
                 <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>
@@ -946,7 +1011,7 @@ export default function Treasury() {
                       </td>
                       <td className={`px-4 py-3 border-t whitespace-nowrap text-right tabular-nums ${isDark ? "border-white/5" : "border-gray-100"}`}>
                         {account.change != null && account.change !== 0 ? (
-                          <span className={account.change > 0 ? "text-emerald-400" : "text-rose-400"}>
+                          <span className={sign(account) * account.change > 0 ? "text-emerald-400" : "text-rose-400"}>
                             {signed(account.change, account.currency ?? "USD")}
                           </span>
                         ) : (
@@ -1035,12 +1100,9 @@ export default function Treasury() {
           </div>
           <div className={`rounded-xl border overflow-hidden ${card}`}>
             {connections.map((conn, i) => {
-              const mine = accounts.filter((a) => a.item_id === conn.item_id);
-              const total = mine.reduce(
-                (sum, a) => sum + (a.type === "credit" ? -1 : 1) * (a.balance_current ?? 0),
-                0
-              );
-              const mapped = mine.filter((a) => a.entity_id).length;
+              const mine = visible.filter((a) => a.item_id === conn.item_id);
+              const total = mine.reduce((sum, a) => sum + sign(a) * (a.balance_current ?? 0), 0);
+              const mapped = mine.filter(isMapped).length;
               const empties = mine.filter((a) => Math.abs(a.balance_current ?? 0) < 0.005).length;
               // Same bank connected twice — the detail below is how you tell
               // them apart before removing one.
@@ -1089,10 +1151,17 @@ export default function Treasury() {
                         )}
                       </p>
                       <p className={`text-xs mt-0.5 ${subtle}`}>
-                        {mine.length} account{mine.length === 1 ? "" : "s"}
-                        {" · "}
-                        {mapped} mapped
-                        {empties > 0 && ` · ${empties} empty`}
+                        {/* A broken link returns no accounts, not zero balances. */}
+                        {conn.status !== "online" && mine.length === 0 ? (
+                          "Balances unavailable until reconnected"
+                        ) : (
+                          <>
+                            {mine.length} account{mine.length === 1 ? "" : "s"}
+                            {" · "}
+                            {mapped} mapped
+                            {empties > 0 && ` · ${empties} empty`}
+                          </>
+                        )}
                         {conn.created_at &&
                           ` · added ${new Date(conn.created_at).toLocaleDateString("en-US", {
                             month: "short",
@@ -1103,20 +1172,30 @@ export default function Treasury() {
                     </div>
                   </div>
 
-                  <span className="text-sm font-semibold tabular-nums shrink-0 mr-auto sm:mr-0 pl-11 sm:pl-0">{money(total)}</span>
+                  <span className="text-sm font-semibold tabular-nums shrink-0 mr-auto sm:mr-0 pl-11 sm:pl-0">
+                    {conn.status !== "online" && mine.length === 0 ? "—" : money(total)}
+                  </span>
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => void refreshConnection(conn)}
                       disabled={linking}
-                      title="Re-pick which accounts this connection shares — closed ones drop off"
+                      title={
+                        conn.status === "online"
+                          ? "Re-pick which accounts this connection shares — closed ones drop off"
+                          : "Sign in to this bank again to restore the link"
+                      }
                       className={`min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 ${
-                        isDark
-                          ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
-                          : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
+                        conn.status !== "online"
+                          ? isDark
+                            ? "border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
+                            : "border-amber-400 text-amber-800 bg-amber-50 hover:bg-amber-100"
+                          : isDark
+                            ? "border-white/10 text-gray-400 hover:text-white hover:border-white/25"
+                            : "border-gray-200 text-gray-600 hover:text-black hover:border-gray-400"
                       }`}
                     >
-                      Refresh
+                      {conn.status === "online" ? "Refresh" : "Reconnect"}
                     </button>
                     <button
                       onClick={() => void disconnect(conn)}

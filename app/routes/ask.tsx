@@ -456,7 +456,7 @@ export default function Ask() {
       <button
         type="button"
         onClick={newChat}
-        className={`mx-3 mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-full text-[12.5px] font-medium transition-colors ${
+        className={`mx-3 mt-3 inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] cursor-pointer items-center justify-center gap-2 rounded-full text-[12.5px] font-medium transition-colors ${
           t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
         }`}
       >
@@ -513,7 +513,7 @@ export default function Ask() {
   );
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-5.5rem-env(safe-area-inset-top))] max-w-[1200px] flex-col lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]">
+    <div className="mx-auto flex h-[calc(100dvh-5.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-w-[1200px] flex-col md:h-[calc(100dvh-5.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:pointer-coarse:h-[calc(100dvh-76px-env(safe-area-inset-top)-env(safe-area-inset-bottom))]">
       <header className="flex items-center justify-between gap-3 pb-3 pt-1">
         <div className="min-w-0">
           <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Ask BFO</h1>
@@ -524,7 +524,7 @@ export default function Ask() {
             <button
               type="button"
               onClick={() => setMode("voice")}
-              className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${t.line} ${t.soft} ${t.hover}`}
+              className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${t.line} ${t.soft} ${t.hover}`}
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
@@ -538,7 +538,7 @@ export default function Ask() {
             onClick={toggleSpeak}
             aria-pressed={speakOn}
             title={speakOn ? "Answers are read aloud" : "Read answers aloud"}
-            className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${
+            className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] max-sm:min-w-[44px] max-sm:justify-center cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${
               speakOn ? (t.dark ? "border-[#818cf8]/40 bg-[#818cf8]/15 text-[#c7d2fe]" : "border-[#4f46e5]/30 bg-[#4f46e5]/[0.08] text-[#4338ca]") : `${t.line} ${t.soft} ${t.hover}`
             }`}
           >
@@ -552,7 +552,7 @@ export default function Ask() {
           type="button"
           onClick={() => setHistoryOpen((o) => !o)}
           aria-expanded={historyOpen}
-          className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${voiceMode ? "" : "lg:hidden"} ${t.line} ${t.soft} ${t.hover}`}
+          className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${voiceMode ? "" : "lg:hidden"} ${t.line} ${t.soft} ${t.hover}`}
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -659,7 +659,7 @@ export default function Ask() {
                   aria-label={mic === "listening" ? "Stop and send" : "Ask by voice"}
                   aria-pressed={mic === "listening"}
                   title={mic === "listening" ? "Tap when you're done" : "Ask by voice"}
-                  className={`mb-1 grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default ${
+                  className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default ${
                     mic === "listening"
                       ? "ask-listening bg-red-500 text-white"
                       : mic === "transcribing"
@@ -687,7 +687,7 @@ export default function Ask() {
                   type="button"
                   onClick={stop}
                   aria-label="Stop"
-                  className={`mb-1 grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-full transition-colors ${t.dark ? "bg-white/10 text-white hover:bg-white/15" : "bg-gray-100 text-gray-900 hover:bg-gray-200"}`}
+                  className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-colors ${t.dark ? "bg-white/10 text-white hover:bg-white/15" : "bg-gray-100 text-gray-900 hover:bg-gray-200"}`}
                 >
                   <span className="h-3 w-3 rounded-[2px] bg-current" />
                 </button>
@@ -696,7 +696,7 @@ export default function Ask() {
                   type="submit"
                   disabled={!draft.trim()}
                   aria-label="Send"
-                  className={`mb-1 grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default disabled:opacity-30 ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+                  className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default disabled:opacity-30 ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6" />

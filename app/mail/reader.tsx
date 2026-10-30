@@ -17,6 +17,7 @@ export function Reader({
   message: m,
   error,
   me,
+  mine = [me],
   backAlways,
   onBack,
   onReply,
@@ -41,6 +42,8 @@ export function Reader({
   message: MailMessage | null;
   error: string | null;
   me: string;
+  /** Every address of mine (the main one and the extra ones): mail to any of them is "To me". */
+  mine?: string[];
   /** Show Back at every width (the table view gives the message the whole card). */
   backAlways: boolean;
   onBack: () => void;
@@ -68,7 +71,7 @@ export function Reader({
     };
   }, [m, reveal]);
   const envelope = reveal !== "done";
-  const toLine = (list: MailAddress[]) => list.map((a) => (same(a.email, me) ? "me" : senderLabel(a))).join(", ");
+  const toLine = (list: MailAddress[]) => list.map((a) => (mine.some((x) => same(a.email, x)) ? "me" : senderLabel(a))).join(", ");
   const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
   const canReplyAll = !!m && (m.to?.length ?? 0) + (m.cc?.length ?? 0) > 1;
   const others = m ? thread.filter((x) => x.id !== m.id) : [];
@@ -82,7 +85,7 @@ export function Reader({
       aria-pressed={m.starred}
       title={m.starred ? "Unstar" : "Star"}
       onClick={() => onStar(m, !m.starred)}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[44px] max-md:w-[44px] ${
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${
         m.starred ? "hover:bg-amber-400/10" : t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
       } ${className}`}
     >
@@ -90,14 +93,14 @@ export function Reader({
     </button>
   );
 
-  // Phones: the top bar's buttons are big and bright, with 24px icons; larger screens keep the small ones.
-  const bar = `max-md:h-[48px] max-md:w-[48px] max-md:rounded-xl ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
+  // Phones: the top bar's buttons are big and bright, with 24px icons; larger screens keep the small ones (a finger's size on a tablet).
+  const bar = `max-md:h-[48px] max-md:w-[48px] max-md:rounded-xl md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
   const barGlyph = "h-3.5 w-3.5 max-md:h-6 max-md:w-6";
   return (
     <article className="relative max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
       {/* Top bar. Phones: Back, then the message's housekeeping; Reply and Forward live in the bar at the bottom. */}
       <div
-        className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl max-md:gap-1.5 max-md:px-3 max-md:py-2 md:rounded-t-2xl lg:top-0 ${t.line} ${
+        className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl max-md:gap-1.5 max-md:px-3 max-md:py-2 md:top-0 md:rounded-t-2xl ${t.line} ${
           t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
         }`}
       >
@@ -106,7 +109,7 @@ export function Reader({
           aria-label="Back"
           title="Back"
           onClick={onBack}
-          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[48px] max-md:w-auto max-md:gap-0.5 max-md:rounded-xl max-md:pl-1.5 max-md:pr-3.5 max-md:text-[16px] max-md:font-medium ${backAlways ? "" : "lg:hidden"} ${
+          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] max-md:h-[48px] max-md:w-auto max-md:gap-0.5 max-md:rounded-xl max-md:pl-1.5 max-md:pr-3.5 max-md:text-[16px] max-md:font-medium ${backAlways ? "" : "lg:hidden"} ${
             t.dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white max-md:text-gray-100" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900 max-md:text-gray-900"
           }`}
         >
@@ -115,17 +118,17 @@ export function Reader({
         </button>
         {m && (
           <>
-            <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply" className="max-md:hidden">
+            <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply" className="max-md:hidden md:pointer-coarse:h-[40px]">
               <Glyph name="reply" />
               Reply
             </Button>
             {canReplyAll && (
-              <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all" className="max-md:hidden">
+              <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all" className="max-md:hidden md:pointer-coarse:h-[40px]">
                 <Glyph name="replyAll" />
                 Reply all
               </Button>
             )}
-            <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward" className="max-md:hidden">
+            <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward" className="max-md:hidden md:pointer-coarse:h-[40px]">
               <Glyph name="forward" />
               Forward
             </Button>
@@ -181,7 +184,7 @@ export function Reader({
             </div>
           )}
 
-          {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date. */}
+          {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date (not on touch, which has no hover: the top bar has them). */}
           <div className="group/main">
           <div className="mt-4 flex items-start gap-3 max-md:mt-6">
             <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
@@ -192,7 +195,7 @@ export function Reader({
                   <span className="md:hidden">{listDate(m.occurredAt)}</span>
                   <span className="max-md:hidden">{fullDate(m.occurredAt)}</span>
                 </time>
-                <span className="-my-1 hidden shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover/main:opacity-100 focus-within:opacity-100 md:flex">
+                <span className="-my-1 hidden shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover/main:opacity-100 focus-within:opacity-100 md:flex md:pointer-coarse:hidden">
                   <GlyphButton glyph="reply" label="Reply" onClick={() => onReply(m, "reply")} />
                   {canReplyAll && <GlyphButton glyph="replyAll" label="Reply all" onClick={() => onReply(m, "all")} />}
                   <GlyphButton glyph="forward" label="Forward" onClick={() => onForward(m)} />
@@ -203,7 +206,7 @@ export function Reader({
                 type="button"
                 aria-expanded={details}
                 onClick={() => setDetails((d) => !d)}
-                className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[40px] max-md:text-[13.5px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+                className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[40px] max-md:text-[13.5px] md:pointer-coarse:min-h-[40px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
               >
                 <span className="truncate">
                   {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}

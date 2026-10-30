@@ -63,7 +63,8 @@ export function MailHeader({ openId, me, address, noAddress, aliases, box, choos
       <header className="flex items-start justify-between gap-3 pt-1 max-md:hidden">
         <div className="flex min-w-0 items-center gap-3">
           {address && !noAddress && <MyPhoto address={address} name={me?.name ?? null} onFaces={setFaces} />}
-          <div className="min-w-0">
+          {/* On touch, the mailbox picker under the title is a finger's height. */}
+          <div className="min-w-0 md:pointer-coarse:[&>div>button]:min-h-[40px]">
             <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
             {noAddress ? (
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
@@ -74,7 +75,7 @@ export function MailHeader({ openId, me, address, noAddress, aliases, box, choos
         </div>
         <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
         <div className="flex shrink-0 items-center gap-2">
-          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`h-8 w-8 ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
+          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`h-8 w-8 md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
           <Segmented
             label="View"
             value={view}
@@ -86,7 +87,7 @@ export function MailHeader({ openId, me, address, noAddress, aliases, box, choos
               { key: "columns", label: "Columns", icon: <Glyph name="columns" className="h-3.5 w-3.5" /> },
             ]}
           />
-          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft(box || undefined))} className="max-sm:hidden">
+          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft(box || undefined))} className="max-sm:hidden md:pointer-coarse:h-[40px]">
             New
           </Button>
         </div>
