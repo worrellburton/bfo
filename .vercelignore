@@ -4,3 +4,9 @@ resources/
 appstore/
 native/
 docs/
+# Documents at the root are never part of the site (and .gitignore keeps them out of git).
+/*.pdf
+/*.doc
+/*.docx
+/*.xls
+/*.xlsx

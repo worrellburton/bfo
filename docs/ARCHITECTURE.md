@@ -302,4 +302,3 @@ foreign registrations, documents, people, Palm links per mode, closing).
 | `ios/`, `capacitor.config.ts`, `native/www`, `resources/`, `appstore/` | The iPhone/iPad shell, its offline fallback, icon and splash sources, App Store screenshots. Excluded from the Vercel upload (`.vercelignore`). |
 | `scripts/appstore-screenshots.mjs` | Playwright script that makes App Store screenshots from fictional data. |
 | `docs/` | This folder. |
-| `*.pdf`, `*.doc` at the root | Family documents checked into the repo root. Not read by the code. |

@@ -12,3 +12,11 @@
 
 # Claude Code worktrees
 /.claude/worktrees/
+
+# Family and legal documents belong in BFO (an entity's Documents), not in
+# the repository: nothing at the root that's a document is ever committed.
+/*.pdf
+/*.doc
+/*.docx
+/*.xls
+/*.xlsx
