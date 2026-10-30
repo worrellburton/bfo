@@ -4,6 +4,8 @@ import { sb } from "../lib/auth.js";
 import { getInbound, ingestInbound } from "../lib/mail.js";
 import { verifyWebhook } from "../lib/mail-webhook.js";
 import { forOurNumber, smsRow } from "../lib/sms-inbound.js";
+import { applySmsStatus } from "../lib/sms-send.js";
+import { SMS_STATUS_EVENTS } from "../lib/sms-setup.js";
 import { notifyNewTexts } from "../lib/push.js";
 
 /**
@@ -13,11 +15,16 @@ import { notifyNewTexts } from "../lib/push.js";
  * skipped. The inbox's own sync catches anything this misses.
  *
  * A text to BFO's Bird number (sms.received) is kept in public.sms_messages
- * for the Phone page (lib/sms-inbound.ts), once per text.
+ * for the Phone page (lib/sms-inbound.ts), once per text. A delivery receipt
+ * for a text BFO sent (sms.sent, sms.delivered, sms.undelivered, sms.failed,
+ * sms.rejected, sms.expired) moves that text's status: the message is re-read
+ * from Bird by id, and a final status never goes back (lib/sms-send.ts). A
+ * receipt for a text BFO didn't send is answered 200 and ignored; one for a
+ * text BFO sent but hasn't stored yet is answered 500, so Bird sends it again.
  *
  * Set up in Bird → Developers → Webhooks: URL https://<site>/api/mail-webhook,
- * events email.received and sms.received, and the signing secret in Vercel as
- * BIRD_WEBHOOK_SECRET.
+ * events email.received, sms.received and the six receipts above, and the
+ * signing secret in Vercel as BIRD_WEBHOOK_SECRET.
  */
 
 async function rawBody(req: VercelRequest): Promise<string> {
@@ -85,6 +92,15 @@ async function handle(req: VercelRequest, res: VercelResponse) {
       console.error("sms webhook store failed", err);
       await alertAdmins("webhook:mail", "A text to the office couldn't be stored", err);
       return res.status(500).json({ error: "store_failed" }); // Bird retries
+    }
+  }
+  if ((SMS_STATUS_EVENTS as readonly string[]).includes(event?.type ?? "")) {
+    try {
+      const outcome = await applySmsStatus(event as { type: string; data?: { sms_id?: unknown } });
+      return res.status(200).json(outcome === "ignored" ? { ok: true, ignored: true } : { ok: true, [outcome]: true });
+    } catch (err) {
+      console.error("sms status update failed", err);
+      return res.status(500).json({ error: "status_failed" }); // Bird retries
     }
   }
   if (event?.type !== "email.received") return res.status(200).json({ ok: true, ignored: true });

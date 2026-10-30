@@ -669,8 +669,13 @@ async function booksSummary(input: Rec) {
 // ── Admin: texts and people ────────────────────────────────────────────
 
 async function officeTexts(limit: number) {
-  const rows = (await sb<Rec[]>(`sms_messages?select=id,from_number,body,code,received_at&order=received_at.desc&limit=${limit}`)) ?? [];
-  return { count: rows.length, texts: rows.map((r) => ({ at: r.received_at, from: r.from_number, text: r.body, code: r.code ?? null })), link: "/phone" };
+  const rows = (await sb<Rec[]>(`sms_messages?select=id,from_number,to_number,body,code,received_at,direction,status&order=received_at.desc&limit=${limit}`)) ?? [];
+  return {
+    count: rows.length,
+    // Sent ones (direction "out") are replies from the office's number, with Bird's delivery status.
+    texts: rows.map((r) => (r.direction === "out" ? { at: r.received_at, sent: true, to: r.to_number, text: r.body, status: r.status ?? null } : { at: r.received_at, from: r.from_number, text: r.body, code: r.code ?? null })),
+    link: "/phone",
+  };
 }
 
 async function people() {

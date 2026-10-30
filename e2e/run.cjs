@@ -190,6 +190,73 @@ async function flows(browser) {
     if (!(await page.getByRole("menuitem", { name: /Appearance/ }).isVisible().catch(() => false))) fail("flow/desk", "account menu has no Appearance item");
     await ctx.close();
   }
+  // Desktop Phone: the composer in view, focus kept, Retry's Idempotency-Key, a stale poll during a send.
+  {
+    const ctx = await context(browser, "desk", "light");
+    const OURS = "+18445192725";
+    const ago = (m) => new Date(Date.now() - m * 60e3).toISOString();
+    const texts = [{ id: "in-1", from: "+14805551234", to: OURS, body: "Can you call me back?", code: null, receivedAt: ago(5), readAt: ago(4), direction: "in", status: null, error: null }];
+    const sends = [];
+    let answers = [];
+    let stale = false;
+    await ctx.route("**/api/texts**", async (route) => {
+      const req = route.request();
+      const reply = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+      if (req.url().includes("view=count")) return reply(200, { unread: 0 });
+      if (req.url().includes("view=setup")) return reply(200, { setup: { ok: true, webhook: { id: "wh_1", url: "", events: [], status: "paused" }, number: null, test: { delivered: true, code: 200 }, problems: [], notes: [], sending: null, missed: 2 } });
+      if (req.method() === "GET") {
+        const list = JSON.stringify({ number: OURS, texts: [...texts].reverse() });
+        if (stale) await new Promise((r) => setTimeout(r, 1200)); // read before the send was stored, answered after it
+        return route.fulfill({ status: 200, contentType: "application/json", body: list });
+      }
+      const body = req.postDataJSON();
+      if (body.action !== "send") return reply(200, { ok: true });
+      sends.push(body);
+      await new Promise((r) => setTimeout(r, 300));
+      const [status, error] = answers.shift() ?? [200];
+      if (status !== 200) return reply(status, { error, message: "Not this time." });
+      const t = { id: `sms_${sends.length}`, from: OURS, to: body.to, body: body.text, code: null, receivedAt: new Date().toISOString(), readAt: new Date().toISOString(), direction: "out", status: "accepted", error: null };
+      texts.push(t);
+      return reply(200, { text: t });
+    });
+    const page = await ctx.newPage();
+    // Not watch(): the refused sends below log their 4xx/5xx as console errors on purpose.
+    page.on("pageerror", (e) => fail("flow/desk-phone", `page error: ${e.message.slice(0, 160)}`));
+    await open(page, `${BASE}/phone`);
+    await page.getByRole("list", { name: "Conversations" }).waitFor({ timeout: 8000 });
+    await page.waitForTimeout(800);
+    const box = page.locator("textarea");
+    const sendBtn = await page.getByRole("button", { name: "Send", exact: true }).boundingBox();
+    if (!sendBtn || sendBtn.y + sendBtn.height > 900) fail("flow/desk-phone", `Send starts below the fold (bottom ${sendBtn && Math.round(sendBtn.y + sendBtn.height)} of 900)`);
+    if (await page.getByRole("button", { name: /Bring in missed texts/ }).count()) fail("flow/desk-phone", "replay offered on a paused webhook");
+    // The open conversation clicked again, then a poll: focus stays in the composer.
+    await page.getByRole("list", { name: "Conversations" }).getByRole("button").first().click();
+    await box.click();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.waitForTimeout(800);
+    if (!(await box.evaluate((el) => el === document.activeElement))) fail("flow/desk-phone", "focus left the composer after clicking the open conversation");
+    // A timeout (504) or Bird still on it (409): Retry keeps the key. A plain refusal (422): a new one.
+    answers = [[504, "timeout"], [409, "still_sending"], [422, "bird_refused"]];
+    await box.fill("Key test");
+    await page.keyboard.press("Enter");
+    for (let i = 0; i < 3; i++) {
+      await page.getByRole("button", { name: "Retry" }).waitFor({ timeout: 4000 });
+      await page.getByRole("button", { name: "Retry" }).click();
+    }
+    await page.waitForTimeout(800);
+    const keys = sends.map((s) => s.key);
+    if (!(keys.length === 4 && keys[0] === keys[1] && keys[1] === keys[2] && keys[3] !== keys[2])) fail("flow/desk-phone", `Retry keys ${JSON.stringify(keys)}`);
+    // A poll that read the list before the send was stored, answering after: the text doesn't vanish.
+    stale = true;
+    await box.fill("Race me");
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.keyboard.press("Enter");
+    for (let i = 0; i < 10; i++) {
+      await page.waitForTimeout(200);
+      if ((await page.getByText("Race me", { exact: true }).count()) !== 1) { fail("flow/desk-phone", "a stale poll hid or doubled the text just sent"); break; }
+    }
+    await ctx.close();
+  }
 }
 
 (async () => {

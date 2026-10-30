@@ -3,8 +3,8 @@
 BFO is the Burton family office's private web app: one place for the family's
 entities (LLCs, corporations, trusts), their documents and compliance, bank and
 brokerage balances (Treasury), bookkeeping (Books), everyone's mail on the
-family domain, paper mail from the Phoenix mailbox, texts to the office number,
-and an assistant ("Ask BFO") that answers from those records. It is also an
+family domain, paper mail from the Phoenix mailbox, texts to and from the office
+number, and an assistant ("Ask BFO") that answers from those records. It is also an
 iPhone and iPad app that wraps the live site.
 
 ## Stack
@@ -17,7 +17,7 @@ PostgREST with the service key through `sb()` in `lib/auth.ts` (no ORM). Files l
 Supabase Storage buckets (`documents`, `mail`, `receipts`; `brand` is public).
 Integrations: Plaid (banks, brokerages), Mercury (bank history), Palm (state
 registries, registered agent, formations), Bird (SMS codes, email in and out,
-inbound texts), Stable (paper mail), Apple APNs (push), OpenAI (voice and the
+texts in and out), Stable (paper mail), Apple APNs (push), OpenAI (voice and the
 logo studio), Anthropic (Ask BFO and document reading), Meshy (3D logo), and
 a one-way bridge out of the old Firebase project. The iOS shell is Capacitor
 (`ios/`, `capacitor.config.ts`).
@@ -48,9 +48,9 @@ Optional ones are marked. Never commit values.
 | `BIRD_ACCESS_KEY` | Bird API key (`bk_<region>_…`). Sends codes, email, reads inbound mail. |
 | `BIRD_WORKSPACE_ID` | optional. Bird workspace UUID; discovered from the key when unset. |
 | `BIRD_SMS_CHANNEL_ID`, `BIRD_EMAIL_CHANNEL_ID` | optional. Pin a channel instead of discovering it. |
-| `BIRD_SMS_FROM` | optional. The number texts are sent from (and texts arrive on). |
+| `BIRD_SMS_FROM` | optional. The number texts are sent from (and texts arrive on). Replies from the Phone page need its toll-free verification approved in Bird. |
 | `BIRD_EMAIL_FROM`, `BIRD_EMAIL_REPLY_TO` | optional. Sender for system email (default `BFO <reports@burtonfamilyoffice.com>`). |
-| `BIRD_WEBHOOK_SECRET` | optional. Signing secret of the Bird webhook at `/api/mail-webhook`. Without it, mail arrives by polling only. |
+| `BIRD_WEBHOOK_SECRET` | optional. Signing secret of the Bird webhook at `/api/mail-webhook` (events `email.received`, `sms.received`, and `sms.sent`, `sms.delivered`, `sms.undelivered`, `sms.failed`, `sms.rejected`, `sms.expired` for sent texts' status). Without it, mail arrives by polling only, and texts not at all. |
 | `MAIL_DOMAIN` | optional. The mail domain (default `burtonfamilyoffice.com`). |
 | `MAIL_IMAGE_SECRET` | optional. Signs proxied image URLs in mail (falls back to `AUTH_SECRET`, then the service key). |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Plaid credentials; `PLAID_ENV` names a key of the SDK's `PlaidEnvironments` (`sandbox` by default, `production` live). |

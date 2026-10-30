@@ -5,8 +5,15 @@ import { birdPlatformFetch } from "./auth.js";
  * Bird itself: the webhook that delivers mail (api/mail-webhook.ts) must
  * also carry sms.received and be active, the number must be one Bird says
  * can take SMS, and a signed test text sent through Bird's webhook test must
- * be accepted here (which proves the address and the signing secret). Used by api/texts.ts (?view=setup, fix-setup) for the
+ * be accepted here (which proves the address and the signing secret). Used by api/texts.ts (?view=setup, fix-setup, replay) for the
  * Phone page's setup card. Needs BIRD_ACCESS_KEY (the workspace bk_ key).
+ *
+ * Beyond what blocks texts: whether the webhook also carries delivery
+ * receipts (sms.sent, sms.delivered, …; without them a sent text stays
+ * "Sent"), whether Bird lets the number send to the US (its SMS sender's
+ * destinations: toll-free verification), and how many sms.received
+ * deliveries to BFO's verified webhook failed in the last day, which a
+ * replay (POST /v1/webhooks/{id}/replay) brings in.
  *
  * The one thing fixed from here is the webhook's event list or paused
  * state: a PATCH keeps the webhook's signing secret, so BIRD_WEBHOOK_SECRET
@@ -23,7 +30,14 @@ export type BirdWebhook = { id: string; url: string; events?: string[] | null; s
 export type WebhookTest = { status: "delivered" | "failed"; response_status_code: number | null; error?: string };
 export type BirdNumber = { id?: string; number?: string | null; capabilities?: string[] | null; status?: string | null; number_type?: string | null };
 
-export type SetupProblem = { code: string; message: string; fixable: boolean };
+/** The receipts that move a sent text's status (lib/sms-send.ts applySmsStatus). */
+export const SMS_STATUS_EVENTS = ["sms.sent", "sms.delivered", "sms.undelivered", "sms.failed", "sms.rejected", "sms.expired"] as const;
+export type BirdSender = { id: string; status?: string | null; destinations?: { active?: string[]; pending?: string[]; needs_attention?: string[] } | null; next?: { kind?: string; description?: string }[] | null };
+/** One delivery attempt from GET /v1/webhooks/{id}/attempts. */
+export type WebhookAttempt = { id: string; event_id?: string | null; event_type?: string; status: "delivered" | "pending" | "failed"; attempted_at?: string };
+
+/** `blocking`: it stops texts arriving. A problem that isn't (delivery receipts missing) leaves `ok` true. */
+export type SetupProblem = { code: string; message: string; fixable: boolean; blocking: boolean };
 /** A list BFO's Bird key wasn't allowed (or able) to read, and the permission Bird named when it said so. */
 export type Unreadable = { unreadable: true; status: number; scope: string | null };
 const isUnreadable = (v: unknown): v is Unreadable => !!v && typeof v === "object" && (v as Unreadable).unreadable === true;
@@ -33,6 +47,7 @@ export function scopeIn(text: string): string | null {
   return /requires the \\?"([\w.:-]{2,60})\\?" scope/.exec(text)?.[1] ?? null;
 }
 export type SmsSetup = {
+  /** No blocking problem: texts reach BFO. */
   ok: boolean;
   webhook: { id: string; url: string; events: string[]; status: string | null } | null;
   number: { number: string; capabilities: string[]; status: string | null; type: string | null } | null;
@@ -41,6 +56,12 @@ export type SmsSetup = {
   problems: SetupProblem[];
   /** Checks Bird's key wasn't allowed to make; they don't block texts, but weren't confirmed. */
   notes: string[];
+  /** Can BFO's number text US numbers (Bird's SMS sender for it)? Null when it couldn't be asked. */
+  sending: { ready: boolean; state: "ready" | "pending" | "needs_attention" | "ownership" | "unknown"; message: string } | null;
+  /** sms.received deliveries Bird couldn't make to BFO's verified webhook in the last day (null: not checked). The workspace is shared, so some may be another site's texts. */
+  missed: number | null;
+  /** Set when this answer follows a replay: Bird is sending the missed ones again. */
+  replayed?: boolean;
 };
 
 const pathOf = (url: string) => {
@@ -73,9 +94,40 @@ export function mailHook(hooks: BirdWebhook[], tests: Record<string, WebhookTest
   return ours.find((h) => tests[h.id]?.status === "delivered") ?? ours.find((h) => (h.events ?? []).includes("email.received")) ?? ours[0] ?? null;
 }
 
+/** Whether the number can text out: the US among its sender's active destinations, else why not, in plain words. Pure. */
+export function sendingReadiness(senders: BirdSender[], ourNumber: string): NonNullable<SmsSetup["sending"]> {
+  const sender = senders[0];
+  if (!sender) return { ready: false, state: "unknown", message: `Bird lists no SMS sender for ${ourNumber}, so it can't send texts from it yet.` };
+  const d = sender.destinations ?? {};
+  const next = (sender.next ?? []).map((n) => n.description?.trim()).filter(Boolean).join(" ");
+  const then = next ? ` Bird says: ${next}` : "";
+  if ((d.active ?? []).includes("US")) return { ready: true, state: "ready", message: "BFO can text US numbers from this number." };
+  if (sender.status === "pending_number_ownership")
+    return { ready: false, state: "ownership", message: `Bird is waiting for the paperwork proving BFO owns this number; no text can be sent from it until that's accepted.${then}` };
+  if ((d.needs_attention ?? []).includes("US"))
+    return { ready: false, state: "needs_attention", message: `Bird needs something before BFO can text US numbers: the toll-free verification was refused, or US texting is switched off in Bird (SMS → Destinations).${then}` };
+  if ((d.pending ?? []).includes("US"))
+    return { ready: false, state: "pending", message: "The toll-free verification is under review with the carriers. BFO can text out once it's approved; texts still arrive here meanwhile." };
+  return { ready: false, state: "needs_attention", message: `US texting isn't set up for this number yet: submit the toll-free verification in Bird (SMS → Senders).${then}` };
+}
+
+/** sms.received deliveries that failed and were never delivered since. Attempts name no number, so another site's texts (the workspace is shared) count too. Pure. */
+export function missedTexts(attempts: WebhookAttempt[]): number {
+  const texts = attempts.filter((a) => a.event_type === "sms.received");
+  const delivered = new Set(texts.filter((a) => a.status === "delivered").map((a) => a.event_id ?? a.id));
+  return new Set(texts.filter((a) => a.status === "failed" && !delivered.has(a.event_id ?? a.id)).map((a) => a.event_id ?? a.id)).size;
+}
+
 /** What stands between a text and the Phone page, from Bird's own answers. Pure. */
-export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: BirdNumber[] | Unreadable, ourNumber: string, tests: Record<string, WebhookTest> = {}): SmsSetup {
-  const problems: SetupProblem[] = [];
+export function diagnose(
+  hooksOrNot: BirdWebhook[] | Unreadable,
+  numbersOrNot: BirdNumber[] | Unreadable,
+  ourNumber: string,
+  tests: Record<string, WebhookTest> = {},
+  more: { senders?: BirdSender[] | Unreadable; attempts?: WebhookAttempt[] | Unreadable } = {}
+): SmsSetup {
+  // Everything below stops texts unless it says otherwise.
+  const problems: (Omit<SetupProblem, "blocking"> & { blocking?: boolean })[] = [];
   const notes: string[] = [];
   const hooks = isUnreadable(hooksOrNot) ? null : hooksOrNot;
   const ours = hooks ? bfoHooks(hooks) : [];
@@ -99,6 +151,13 @@ export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: B
   } else {
     const events = hook.events ?? [];
     if (!events.includes("sms.received")) problems.push({ code: "missing_event", message: "Bird's webhook to BFO doesn't include sms.received, so texts are never sent here.", fixable: true });
+    if (SMS_STATUS_EVENTS.some((e) => !events.includes(e)))
+      problems.push({
+        code: "missing_receipts",
+        message: "Bird's webhook to BFO doesn't carry delivery receipts (sms.delivered and the rest), so a text BFO sends shows as Sent but never Delivered or Not delivered.",
+        fixable: true,
+        blocking: false,
+      });
     if (hostOf(hook.url) !== SITE_HOST) problems.push({ code: "wrong_host", message: `Bird's webhook to BFO uses the bare domain, not ${SITE_HOST}. The bare domain redirects, and Bird doesn't follow redirects.`, fixable: true });
     if (hook.status === "paused") problems.push({ code: "paused", message: "Bird's webhook to BFO is paused.", fixable: true });
     if (hook.status === "degraded") problems.push({ code: "degraded", message: "Bird reports that deliveries to BFO's webhook have been failing. Check that BIRD_WEBHOOK_SECRET in Vercel matches the webhook's signing secret.", fixable: false });
@@ -143,23 +202,30 @@ export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: B
     if (!(mine.capabilities ?? []).includes("sms")) problems.push({ code: "no_sms", message: `Bird says ${ourNumber} can't take SMS. Texting needs a number with the SMS capability.`, fixable: false });
     if (mine.status === "released") problems.push({ code: "released", message: `${ourNumber} has been released in Bird.`, fixable: false });
   }
+  const { senders, attempts } = more;
+  if (isUnreadable(senders)) notes.push(senders.scope ? `Sending wasn't checked: BFO's Bird key needs the "${senders.scope}" permission to read SMS senders.` : `Sending wasn't checked: Bird didn't answer${senders.status ? ` (HTTP ${senders.status})` : ""}.`);
+  if (isUnreadable(attempts)) notes.push(attempts.scope ? `Missed texts weren't counted: BFO's Bird key needs the "${attempts.scope}" permission to read webhook deliveries.` : `Missed texts weren't counted: Bird didn't answer${attempts.status ? ` (HTTP ${attempts.status})` : ""}.`);
+  const all: SetupProblem[] = problems.map((p) => ({ ...p, blocking: p.blocking ?? true }));
   return {
-    ok: problems.length === 0,
+    ok: !all.some((p) => p.blocking),
     webhook: hook ? { id: hook.id, url: hook.url, events: hook.events ?? [], status: hook.status ?? null } : null,
     number: mine ? { number: mine.number ?? ourNumber, capabilities: mine.capabilities ?? [], status: mine.status ?? null, type: mine.number_type ?? null } : null,
     test: test ? { delivered: test.status === "delivered", code: test.response_status_code } : null,
-    problems,
+    problems: all,
     notes,
+    sending: senders && !isUnreadable(senders) ? sendingReadiness(senders, ourNumber) : null,
+    missed: attempts && !isUnreadable(attempts) ? missedTexts(attempts) : null,
   };
 }
 
-/** The PATCH body that makes the mail webhook carry texts too, or null when there's nothing to change. Pure. */
+/** The PATCH body that makes the mail webhook carry texts and their delivery receipts too, or null when there's nothing to change. Pure. */
 export function fixBody(hook: BirdWebhook): Record<string, unknown> | null {
   // Only ever BFO's own webhook (mailHook); anything else is left alone.
   if (!OUR_HOSTS.has(hostOf(hook.url)) || pathOf(hook.url) !== WEBHOOK_PATH) return null;
   const body: Record<string, unknown> = {};
   const events = hook.events ?? [];
-  if (!events.includes("sms.received")) body.events = [...events, "sms.received"];
+  const missing = ["sms.received", ...SMS_STATUS_EVENTS].filter((e) => !events.includes(e));
+  if (missing.length) body.events = [...events, ...missing];
   if (hostOf(hook.url) !== SITE_HOST) body.url = `https://${SITE_HOST}${WEBHOOK_PATH}`;
   if (hook.status === "paused") body.status = "active";
   return Object.keys(body).length ? body : null;
@@ -208,6 +274,12 @@ async function testHook(id: string): Promise<WebhookTest> {
   return JSON.parse(text) as WebhookTest;
 }
 
+/** For the checks beyond what blocks texts: any failure is a note, never a crash. */
+const softly = <T>(p: Promise<T[] | Unreadable>): Promise<T[] | Unreadable> =>
+  p.catch((err): Unreadable => ({ unreadable: true, status: Number(/ (\d{3}):/.exec(err instanceof Error ? err.message : "")?.[1] ?? 0), scope: null }));
+
+const DAY_MS = 24 * 60 * 60_000;
+
 /** Bird's answers, and a signed test text, diagnosed. */
 export async function smsSetup(ourNumber: string): Promise<SmsSetup> {
   const [hooks, numbers] = await Promise.all([
@@ -219,10 +291,62 @@ export async function smsSetup(ourNumber: string): Promise<SmsSetup> {
   const results = await Promise.all(
     ours.map((h) => testHook(h.id).catch((err): WebhookTest => ({ status: "failed", response_status_code: null, error: err instanceof Error ? err.message : String(err) })))
   );
-  return diagnose(hooks, numbers, ourNumber, Object.fromEntries(ours.map((h, i) => [h.id, results[i]])));
+  const tests = Object.fromEntries(ours.map((h, i) => [h.id, results[i]]));
+  // The number's SMS sender (exactly one per number), and missed texts on the webhook BFO's own secret verifies, only.
+  const mine = isUnreadable(numbers) ? null : numbers.find((n) => n.id && digits(n.number) === digits(ourNumber));
+  const verified = ours.find((h) => tests[h.id]?.status === "delivered");
+  const since = new Date(Date.now() - DAY_MS).toISOString();
+  const [senders, attempts] = await Promise.all([
+    mine?.id ? softly(birdListOrWhy<BirdSender>(`/v1/sms/senders?number_id=${encodeURIComponent(mine.id)}`)) : undefined,
+    verified ? softly(birdListOrWhy<WebhookAttempt>(`/v1/webhooks/${encodeURIComponent(verified.id)}/attempts?after=${encodeURIComponent(since)}`)) : undefined,
+  ]);
+  return diagnose(hooks, numbers, ourNumber, tests, { senders, attempts });
 }
 
-/** Adds sms.received to the mail webhook (and points it at www, and un-pauses it) when that's what's missing. */
+/**
+ * Has Bird send again what failed to reach BFO's webhook in the last day
+ * (texts, and mail with them; a replay never delivers twice). Only the
+ * webhook BFO's own secret verifies: another site's is never replayed.
+ */
+export async function replayMissedTexts(ourNumber: string): Promise<SmsSetup> {
+  const before = await smsSetup(ourNumber);
+  const id = before.test?.delivered ? before.webhook?.id : null;
+  if (!id) return before;
+  // A paused webhook redelivers nothing, and the replay would still count against the day's.
+  if (before.webhook?.status === "paused") {
+    before.notes.unshift("Bird's webhook to BFO is paused, so a replay would bring nothing in. Fix it in Bird first, then bring the missed texts in.");
+    return before;
+  }
+  const now = Date.now();
+  const r = await birdPlatformFetch(`/v1/webhooks/${encodeURIComponent(id)}/replay`, {
+    method: "POST",
+    body: { since: new Date(now - DAY_MS).toISOString(), until: new Date(now).toISOString() },
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    if (r.status !== 401 && r.status !== 403 && r.status !== 429) throw new Error(`Bird webhook replay ${r.status}: ${text.slice(0, 200)}`);
+    const scope = scopeIn(text);
+    let quota = false;
+    try {
+      const e = (JSON.parse(text) as { error?: { name?: string; quota?: unknown } }).error;
+      quota = e?.name === "WebhookReplayQuotaExceeded" || !!e?.quota;
+    } catch {
+      // Not JSON: an ordinary rate limit.
+    }
+    before.notes.unshift(
+      r.status !== 429
+        ? `BFO's Bird key isn't allowed to replay webhook deliveries${scope ? ` (it needs the "${scope}" permission)` : ""}.`
+        : quota
+          ? "Bird allows 20 replays a day across the organization (shared with Impact Advisory), and today's are used up. Try again tomorrow."
+          : "Bird is busy with replays just now. Try again in a minute."
+    );
+    return before;
+  }
+  // Queued: the texts arrive over the next moments, and the count drops as they do.
+  return { ...(await smsSetup(ourNumber)), replayed: true };
+}
+
+/** Adds sms.received and the delivery receipts to the mail webhook (and points it at www, and un-pauses it) when that's what's missing. */
 export async function fixSmsSetup(ourNumber: string): Promise<SmsSetup> {
   const hooks = await birdListOrWhy<BirdWebhook>("/v1/webhooks");
   // Only the webhook BFO's own secret verifies is changed (smsSetup tested each one just now).
@@ -239,11 +363,12 @@ export async function fixSmsSetup(ourNumber: string): Promise<SmsSetup> {
       const scope = scopeIn(text);
       after.problems.unshift({
         code: "cant_update_webhook",
-        message: `BFO's Bird key isn't allowed to change webhooks${scope ? ` (it needs the "${scope}" permission)` : ""}. Give it that permission in Bird (Settings → API keys), or tick sms.received yourself in Platform tools → Webhooks.`,
+        message: `BFO's Bird key isn't allowed to change webhooks${scope ? ` (it needs the "${scope}" permission)` : ""}. Give it that permission in Bird (Settings → API keys), or tick the missing events (sms.received, ${SMS_STATUS_EVENTS.join(", ")}) yourself in Platform tools → Webhooks.`,
         fixable: false,
+        blocking: false,
       });
       after.problems = after.problems.map((p) => ({ ...p, fixable: false }));
-      after.ok = false;
+      after.ok = !after.problems.some((p) => p.blocking);
       return after;
     }
   }

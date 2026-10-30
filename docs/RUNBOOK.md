@@ -166,8 +166,8 @@ before touching them, and dump the schema from the dashboard if you need it.
 ## Bird
 
 - Used for: sign-in codes (Bird Verify, SMS), system email (invites, reports,
-  Palm alerts), receiving every email on the family domain, inbound texts to
-  the office number.
+  Palm alerts), receiving every email on the family domain, texts to the
+  office number and replies from it (the Phone page).
 - Env: `BIRD_ACCESS_KEY` (must be `bk_<region>_…`; the region prefix picks the
   platform host), `BIRD_WORKSPACE_ID` optional, `BIRD_SMS_CHANNEL_ID` /
   `BIRD_EMAIL_CHANNEL_ID` optional, `BIRD_SMS_FROM` optional,
@@ -177,8 +177,24 @@ before touching them, and dump the schema from the dashboard if you need it.
   the "Application Developer" role; scopes alone 401). Email → Domains →
   burtonfamilyoffice.com with Receiving on. Developers → Webhooks: URL
   `https://www.burtonfamilyoffice.com/api/mail-webhook`, events
-  `email.received` and `sms.received`, signing secret into
-  `BIRD_WEBHOOK_SECRET`.
+  `email.received`, `sms.received`, and the receipts for texts BFO sends
+  (`sms.sent`, `sms.delivered`, `sms.undelivered`, `sms.failed`,
+  `sms.rejected`, `sms.expired`), signing secret into `BIRD_WEBHOOK_SECRET`.
+  The Phone page's setup card adds missing events in one tap ("Fix it in
+  Bird"); missing receipts don't stop texts arriving, they only leave sent
+  texts at "Sent". The workspace is shared with Impact Advisory: only BFO's
+  own webhook (the one whose signed test BFO accepts) is ever changed or
+  replayed.
+- Texting out: the office number is toll-free, so carriers only accept texts
+  from it once its toll-free verification is approved (Bird → SMS → Senders;
+  the setup card reads the sender's destinations and says "Replies can't go
+  out yet" while the US is pending or needs attention). Until then a send is
+  refused with that sentence and nothing is kept.
+- Missed texts: when deliveries to the webhook failed (a bad secret, a
+  deploy), the setup card counts the texts Bird couldn't deliver in the last
+  day and "Bring in N missed texts" replays them (`POST
+  /v1/webhooks/{id}/replay`, never twice; Bird keeps attempts three days and
+  allows 20 replays a day).
 - In BFO: `/api/auth/bird-check` (admin) reports the key's shape and what the
   API says, never the key; Mail → status (owner/admin) shows the sync state.
 - Rotate: make a new access key with the same role; set `BIRD_ACCESS_KEY`;
@@ -198,6 +214,10 @@ before touching them, and dump the schema from the dashboard if you need it.
     `syncInbound` (every 30 s on use) catches what the webhook missed.
   - `bird email <status>` / `bird sms <status>` thrown by `sendEmail` /
     `sendSms`; the sender must be on a domain verified in the workspace.
+  - `sms-send: Bird refused a text` (status and Bird's words; the person
+    sees one plain sentence: verification not approved, balance, opted out,
+    invalid number, too long, rate limit). `sms status update failed` — a
+    receipt couldn't be read back from Bird; Bird retries it.
   - `members: invite text failed` / `invite email failed` — the invite was
     recorded; resend from the People tab.
 - Recover: nothing is lost on the BFO side; Bird keeps inbound mail 30 days,

@@ -144,6 +144,10 @@ Bird receives mail for the domain
 - The same webhook also takes `sms.received`: texts to the office's Bird
   number go to `sms_messages` (`lib/sms-inbound.ts`) for the Phone page
   (`api/texts.ts`, owners and admins only), with any one-time code extracted.
+  Replies go out from the same number (`lib/sms-send.ts`, category
+  `service`) and are kept in the same table as `direction = 'out'` rows (id =
+  Bird's sms_id); the `sms.sent` … `sms.expired` receipts on this webhook
+  re-read the message from Bird by id and move its status forward only.
 
 ## Books pipeline
 
