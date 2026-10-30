@@ -784,6 +784,25 @@ async function sentByUs(fromEmail: string, subject: string | null, receivedAt: s
   return !!rows?.length;
 }
 
+/** Domains another app receives through the same Bird workspace (MAIL_IGNORE_DOMAINS, comma-separated). */
+const OTHER_APP_DOMAINS = (process.env.MAIL_IGNORE_DOMAINS ?? "impactadvisory.llc")
+  .split(",")
+  .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+  .filter(Boolean);
+
+/** True when the message is addressed (To, Cc or envelope) to one of those domains. Exported for tests. */
+export function forOtherApp(msg: { to?: { email?: string }[] | null; cc?: { email?: string }[] | null }, headers: string | null): boolean {
+  const named = [...(msg.to ?? []), ...(msg.cc ?? [])].map((a) => (typeof a?.email === "string" ? a.email.toLowerCase() : ""));
+  const envelope: string[] = [];
+  for (const line of headers ? headerBlock(headers).split(/\r?\n/) : []) {
+    const name = line.slice(0, Math.max(0, line.indexOf(":"))).trim().toLowerCase();
+    const value = line.slice(line.indexOf(":") + 1);
+    if (name === "delivered-to" || name === "x-original-to") for (const m of value.matchAll(/([^\s<>,;"]+@[^\s<>,;"]+)/g)) envelope.push(m[1].toLowerCase());
+    else if (name === "received") for (const m of value.matchAll(/\bfor\s+<?([^\s<>,;"]+@[^\s<>,;"]+)/gi)) envelope.push(m[1].toLowerCase());
+  }
+  return [...named, ...envelope].some((a) => OTHER_APP_DOMAINS.some((d) => a.endsWith(`@${d}`)));
+}
+
 /**
  * Store one received message: a copy for each user it's addressed to (To/Cc,
  * else the envelope headers), or one catch-all copy. Safe to repeat — copies
@@ -799,6 +818,8 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
     const envelope = headers ? rawHeaderRecipients(headers) : [];
     users = await usersAt(envelope);
     recipients = [...envelope, ...recipients.filter((r) => !envelope.includes(r))];
+    // The Bird workspace also receives for another app's domain (Impact Advisory): its mail isn't ours, not even for "Other".
+    if (!recipients.length && forOtherApp(msg, headers)) return 0;
   }
   const targets = users.length
     ? users.map((u) => ({ userId: u.id as string | null, deliveredTo: u.mail_address as string | null }))
