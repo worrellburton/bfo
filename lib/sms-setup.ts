@@ -16,6 +16,7 @@ import { birdPlatformFetch } from "./auth.js";
 
 export const WEBHOOK_PATH = "/api/mail-webhook";
 export const SITE_HOST = "www.burtonfamilyoffice.com";
+const OUR_HOSTS = new Set([SITE_HOST, "burtonfamilyoffice.com"]);
 
 export type BirdWebhook = { id: string; url: string; events?: string[] | null; status?: string | null };
 /** Bird's answer to POST /v1/webhooks/{id}/test. */
@@ -23,6 +24,14 @@ export type WebhookTest = { status: "delivered" | "failed"; response_status_code
 export type BirdNumber = { id?: string; number?: string | null; capabilities?: string[] | null; status?: string | null; number_type?: string | null };
 
 export type SetupProblem = { code: string; message: string; fixable: boolean };
+/** A list BFO's Bird key wasn't allowed (or able) to read, and the permission Bird named when it said so. */
+export type Unreadable = { unreadable: true; status: number; scope: string | null };
+const isUnreadable = (v: unknown): v is Unreadable => !!v && typeof v === "object" && (v as Unreadable).unreadable === true;
+
+/** The permission Bird names when a key lacks it ("This request requires the \"numbers:read\" scope…"). Pure. */
+export function scopeIn(text: string): string | null {
+  return /requires the \\?"([\w.:-]{2,60})\\?" scope/.exec(text)?.[1] ?? null;
+}
 export type SmsSetup = {
   ok: boolean;
   webhook: { id: string; url: string; events: string[]; status: string | null } | null;
@@ -30,6 +39,8 @@ export type SmsSetup = {
   /** The signed test text: did BFO accept it? */
   test: { delivered: boolean; code: number | null } | null;
   problems: SetupProblem[];
+  /** Checks Bird's key wasn't allowed to make; they don't block texts, but weren't confirmed. */
+  notes: string[];
 };
 
 const pathOf = (url: string) => {
@@ -48,26 +59,40 @@ const hostOf = (url: string) => {
 };
 const digits = (n: string | null | undefined) => (n ?? "").replace(/\D/g, "");
 
-/** The webhook BFO's mail arrives through: the one at /api/mail-webhook carrying email.received, else any at that path. */
+/**
+ * BFO's own webhook: at /api/mail-webhook on burtonfamilyoffice.com (www, or the bare domain that should be www).
+ * The Bird workspace is shared with other sites that use the same path; their webhooks are never BFO's to read or change.
+ */
 export function mailHook(hooks: BirdWebhook[]): BirdWebhook | null {
-  const ours = hooks.filter((h) => pathOf(h.url) === WEBHOOK_PATH);
+  const ours = hooks.filter((h) => pathOf(h.url) === WEBHOOK_PATH && OUR_HOSTS.has(hostOf(h.url)));
   return ours.find((h) => (h.events ?? []).includes("email.received")) ?? ours[0] ?? null;
 }
 
 /** What stands between a text and the Phone page, from Bird's own answers. Pure. */
-export function diagnose(hooks: BirdWebhook[], numbers: BirdNumber[], ourNumber: string, test: WebhookTest | null = null): SmsSetup {
+export function diagnose(hooksOrNot: BirdWebhook[] | Unreadable, numbersOrNot: BirdNumber[] | Unreadable, ourNumber: string, test: WebhookTest | null = null): SmsSetup {
   const problems: SetupProblem[] = [];
-  const hook = mailHook(hooks);
-  if (!hook) {
+  const notes: string[] = [];
+  const hooks = isUnreadable(hooksOrNot) ? null : hooksOrNot;
+  const hook = hooks ? mailHook(hooks) : null;
+  if (isUnreadable(hooksOrNot)) {
+    const { scope, status } = hooksOrNot;
+    problems.push({
+      code: "cant_read_webhooks",
+      message: scope
+        ? `BFO's Bird key isn't allowed to read webhooks (it needs the "${scope}" permission), so BFO can't see whether Bird sends texts here. Either give the key that permission in Bird (Settings → API keys), or open Platform tools → Webhooks in Bird and tick sms.received on the webhook to https://${SITE_HOST}${WEBHOOK_PATH}.`
+        : `Bird didn't answer BFO's question about its webhooks (HTTP ${status}).`,
+      fixable: false,
+    });
+  } else if (!hook) {
     problems.push({
       code: "no_webhook",
-      message: `Bird has no webhook pointing at BFO. In Bird, Platform tools → Webhooks, add https://${SITE_HOST}${WEBHOOK_PATH} with the events email.received and sms.received, and put its signing secret in Vercel as BIRD_WEBHOOK_SECRET.`,
+      message: `Bird has no webhook for BFO. In Bird, Platform tools → Webhooks → Create webhook: endpoint https://${SITE_HOST}${WEBHOOK_PATH}, events email.received and sms.received. Copy its signing secret (whsec_…) into Vercel as BIRD_WEBHOOK_SECRET and redeploy. Leave other sites' webhooks as they are.`,
       fixable: false,
     });
   } else {
     const events = hook.events ?? [];
     if (!events.includes("sms.received")) problems.push({ code: "missing_event", message: "Bird's webhook to BFO doesn't include sms.received, so texts are never sent here.", fixable: true });
-    if (hostOf(hook.url) !== SITE_HOST) problems.push({ code: "wrong_host", message: `Bird's webhook points at ${hostOf(hook.url) || hook.url}, not ${SITE_HOST}. The bare domain redirects, and Bird doesn't follow redirects.`, fixable: true });
+    if (hostOf(hook.url) !== SITE_HOST) problems.push({ code: "wrong_host", message: `Bird's webhook to BFO uses the bare domain, not ${SITE_HOST}. The bare domain redirects, and Bird doesn't follow redirects.`, fixable: true });
     if (hook.status === "paused") problems.push({ code: "paused", message: "Bird's webhook to BFO is paused.", fixable: true });
     if (hook.status === "degraded") problems.push({ code: "degraded", message: "Bird reports that deliveries to BFO's webhook have been failing. Check that BIRD_WEBHOOK_SECRET in Vercel matches the webhook's signing secret.", fixable: false });
     if (test && test.status !== "delivered") {
@@ -86,8 +111,15 @@ export function diagnose(hooks: BirdWebhook[], numbers: BirdNumber[], ourNumber:
       });
     }
   }
-  const mine = numbers.find((n) => digits(n.number) && digits(n.number) === digits(ourNumber)) ?? null;
-  if (!mine) {
+  const numbers = isUnreadable(numbersOrNot) ? null : numbersOrNot;
+  const mine = numbers?.find((n) => digits(n.number) && digits(n.number) === digits(ourNumber)) ?? null;
+  if (isUnreadable(numbersOrNot)) {
+    notes.push(
+      numbersOrNot.scope
+        ? `The number itself wasn't checked: BFO's Bird key needs the "${numbersOrNot.scope}" permission to look it up.`
+        : `The number itself wasn't checked: Bird didn't answer (HTTP ${numbersOrNot.status}).`
+    );
+  } else if (!mine) {
     problems.push({ code: "no_number", message: `Bird doesn't list ${ourNumber} among this workspace's numbers, so it can't deliver texts to it here.`, fixable: false });
   } else {
     if (!(mine.capabilities ?? []).includes("sms")) problems.push({ code: "no_sms", message: `Bird says ${ourNumber} can't take SMS. Texting needs a number with the SMS capability.`, fixable: false });
@@ -99,17 +131,36 @@ export function diagnose(hooks: BirdWebhook[], numbers: BirdNumber[], ourNumber:
     number: mine ? { number: mine.number ?? ourNumber, capabilities: mine.capabilities ?? [], status: mine.status ?? null, type: mine.number_type ?? null } : null,
     test: test ? { delivered: test.status === "delivered", code: test.response_status_code } : null,
     problems,
+    notes,
   };
 }
 
 /** The PATCH body that makes the mail webhook carry texts too, or null when there's nothing to change. Pure. */
 export function fixBody(hook: BirdWebhook): Record<string, unknown> | null {
+  // Only ever BFO's own webhook (mailHook); anything else is left alone.
+  if (!OUR_HOSTS.has(hostOf(hook.url)) || pathOf(hook.url) !== WEBHOOK_PATH) return null;
   const body: Record<string, unknown> = {};
   const events = hook.events ?? [];
   if (!events.includes("sms.received")) body.events = [...events, "sms.received"];
-  if (hostOf(hook.url) !== SITE_HOST && pathOf(hook.url) === WEBHOOK_PATH) body.url = `https://${SITE_HOST}${WEBHOOK_PATH}`;
+  if (hostOf(hook.url) !== SITE_HOST) body.url = `https://${SITE_HOST}${WEBHOOK_PATH}`;
   if (hook.status === "paused") body.status = "active";
   return Object.keys(body).length ? body : null;
+}
+
+/** A list, or why Bird wouldn't give it (a refused permission is an answer, not a crash). */
+async function birdListOrWhy<T>(path: string): Promise<T[] | Unreadable> {
+  try {
+    return await birdList<T>(path);
+  } catch (err) {
+    if (err instanceof BirdRefused) return { unreadable: true, status: err.status, scope: err.scope };
+    throw err;
+  }
+}
+
+class BirdRefused extends Error {
+  constructor(readonly status: number, readonly scope: string | null, message: string) {
+    super(message);
+  }
 }
 
 async function birdList<T>(path: string): Promise<T[]> {
@@ -119,7 +170,10 @@ async function birdList<T>(path: string): Promise<T[]> {
     const sep = path.includes("?") ? "&" : "?";
     const r = await birdPlatformFetch(`${path}${sep}limit=100${next ? `&starting_after=${encodeURIComponent(next)}` : ""}`);
     const text = await r.text();
-    if (!r.ok) throw new Error(`Bird ${path.split("?")[0]} ${r.status}: ${text.slice(0, 200)}`);
+    if (!r.ok) {
+      const message = `Bird ${path.split("?")[0]} ${r.status}: ${text.slice(0, 200)}`;
+      throw r.status === 401 || r.status === 403 ? new BirdRefused(r.status, scopeIn(text), message) : new Error(message);
+    }
     const j = JSON.parse(text || "{}") as { data?: T[]; results?: T[]; next_cursor?: string | null };
     out.push(...(j.data ?? j.results ?? []));
     next = j.next_cursor ?? null;
@@ -139,21 +193,36 @@ async function testHook(id: string): Promise<WebhookTest> {
 /** Bird's answers, and a signed test text, diagnosed. */
 export async function smsSetup(ourNumber: string): Promise<SmsSetup> {
   const [hooks, numbers] = await Promise.all([
-    birdList<BirdWebhook>("/v1/webhooks"),
-    birdList<BirdNumber>(`/v1/numbers?number=${encodeURIComponent(ourNumber)}`),
+    birdListOrWhy<BirdWebhook>("/v1/webhooks"),
+    birdListOrWhy<BirdNumber>(`/v1/numbers?number=${encodeURIComponent(ourNumber)}`),
   ]);
-  const hook = mailHook(hooks);
+  const hook = isUnreadable(hooks) ? null : mailHook(hooks);
   const test = hook ? await testHook(hook.id).catch((err): WebhookTest => ({ status: "failed", response_status_code: null, error: err instanceof Error ? err.message : String(err) })) : null;
   return diagnose(hooks, numbers, ourNumber, test);
 }
 
 /** Adds sms.received to the mail webhook (and points it at www, and un-pauses it) when that's what's missing. */
 export async function fixSmsSetup(ourNumber: string): Promise<SmsSetup> {
-  const hook = mailHook(await birdList<BirdWebhook>("/v1/webhooks"));
+  const hooks = await birdListOrWhy<BirdWebhook>("/v1/webhooks");
+  const hook = isUnreadable(hooks) ? null : mailHook(hooks);
   const body = hook ? fixBody(hook) : null;
   if (hook && body) {
     const r = await birdPlatformFetch(`/v1/webhooks/${encodeURIComponent(hook.id)}`, { method: "PATCH", body });
-    if (!r.ok) throw new Error(`Bird webhook update ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    if (!r.ok) {
+      const text = await r.text();
+      if (r.status !== 401 && r.status !== 403) throw new Error(`Bird webhook update ${r.status}: ${text.slice(0, 200)}`);
+      // Allowed to look, not to change: say which permission, and the way to do it by hand.
+      const after = await smsSetup(ourNumber);
+      const scope = scopeIn(text);
+      after.problems.unshift({
+        code: "cant_update_webhook",
+        message: `BFO's Bird key isn't allowed to change webhooks${scope ? ` (it needs the "${scope}" permission)` : ""}. Give it that permission in Bird (Settings → API keys), or tick sms.received yourself in Platform tools → Webhooks.`,
+        fixable: false,
+      });
+      after.problems = after.problems.map((p) => ({ ...p, fixable: false }));
+      after.ok = false;
+      return after;
+    }
   }
   return smsSetup(ourNumber);
 }

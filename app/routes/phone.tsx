@@ -213,12 +213,20 @@ function SetupStatus({ setup, onRetry, onFix }: { setup: { state: "checking" | "
       </div>
     );
   }
+  const notes = (r.notes ?? []).map((n) => (
+    <p key={n} className={`mt-1 text-[12px] ${t.muted}`}>
+      {n}
+    </p>
+  ));
   if (r.ok) {
     return (
-      <p role="status" className={`mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium ${t.dark ? "text-emerald-300" : "text-emerald-700"}`}>
-        <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />
-        Texts reach BFO: Bird sends them here, and a test text just now was accepted.
-      </p>
+      <div role="status" className="mt-3">
+        <p className={`inline-flex items-center gap-1.5 text-[12.5px] font-medium ${t.dark ? "text-emerald-300" : "text-emerald-700"}`}>
+          <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />
+          Texts reach BFO: Bird sends them here, and a test text just now was accepted.
+        </p>
+        {notes}
+      </div>
     );
   }
   const fixable = r.problems.some((p) => p.fixable);
@@ -230,6 +238,7 @@ function SetupStatus({ setup, onRetry, onFix }: { setup: { state: "checking" | "
           <li key={p.code}>{p.message}</li>
         ))}
       </ul>
+      {notes}
       <div className="mt-2.5 flex flex-wrap gap-2">
         {fixable && (
           <Button kind="primary" icon="check" onClick={onFix}>

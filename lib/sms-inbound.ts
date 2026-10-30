@@ -51,6 +51,19 @@ export function smsRow(event: unknown, deliveryId: string | undefined): SmsRow |
   };
 }
 
+/** The number texts come in on: BIRD_SMS_FROM when it's set, else the toll-free line BFO holds at Bird. */
+export const textNumber = () => process.env.BIRD_SMS_FROM?.trim() || "+18445192725";
+
+/**
+ * Whether a text was sent to BFO's number. The Bird workspace is shared with
+ * other sites, and a webhook gets every number's texts, so the rest are not
+ * BFO's to keep. A text with no recipient is kept (nothing says it isn't ours).
+ */
+export function forOurNumber(to: string | null | undefined, ours: string = textNumber()): boolean {
+  const d = (n: string) => n.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+  return !to || d(to) === d(ours);
+}
+
 /**
  * The one-time code in a text, when there is one: before "is your … code",
  * after "code", "PIN" or "passcode"; Apple's "#123456" line; or a lone

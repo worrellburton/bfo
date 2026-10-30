@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { webhookSignature } from "../lib/mail-webhook";
-import { extractCode, formatPhone, smsRow } from "../lib/sms-inbound";
+import { extractCode, forOurNumber, formatPhone, smsRow } from "../lib/sms-inbound";
 
 describe("extractCode", () => {
   it("finds the code in the usual wordings", () => {
@@ -88,6 +88,15 @@ describe("/api/mail-webhook texts", () => {
   it("accepts Bird's signed webhook test, which has no message, without keeping anything", async () => {
     expect((await call(JSON.stringify({ type: "sms.received" }))).json).toEqual({ ok: true, test: true });
     expect(sbMock).not.toHaveBeenCalled();
+  });
+  it("ignores a text to another site's number in the same Bird workspace", async () => {
+    const body = JSON.stringify({ type: "sms.received", data: { sms_id: "sms_01other", from: "+14805551234", to: "+18885550199", text: "not ours" } });
+    expect((await call(body)).json).toEqual({ ok: true, ignored: true });
+    expect(sbMock).not.toHaveBeenCalled();
+    expect(forOurNumber("+1 (844) 519-2725")).toBe(true);
+    expect(forOurNumber("8445192725")).toBe(true);
+    expect(forOurNumber(null)).toBe(true);
+    expect(forOurNumber("+18885550199")).toBe(false);
   });
   it("asks Bird to retry when it can't be kept", async () => {
     sbMock.mockRejectedValueOnce(new Error("db down"));

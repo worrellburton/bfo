@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { ConfigError, currentUser, fail, guard, handleError, isAdmin, sb } from "../lib/auth.js";
+import { textNumber } from "../lib/sms-inbound.js";
 import type { SmsSetup } from "../lib/sms-setup.js";
 import { fixSmsSetup, smsSetup } from "../lib/sms-setup.js";
 
@@ -18,8 +19,7 @@ import { fixSmsSetup, smsSetup } from "../lib/sms-setup.js";
 
 type Row = { id: string; from_number: string; to_number: string | null; body: string; code: string | null; received_at: string; read_at: string | null };
 
-/** The number texts come in on: BIRD_SMS_FROM when it's set, else the toll-free line BFO holds at Bird. */
-export const TEXT_NUMBER = () => process.env.BIRD_SMS_FROM?.trim() || "+18445192725";
+const TEXT_NUMBER = textNumber;
 
 /** Bird's answer for the setup card; when Bird can't be asked, why (owners and admins only, never a secret). */
 async function checked(res: VercelResponse, run: () => Promise<SmsSetup>) {

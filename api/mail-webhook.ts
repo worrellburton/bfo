@@ -3,7 +3,7 @@ import { alertAdmins, alertOnThrow } from "../lib/alert.js";
 import { sb } from "../lib/auth.js";
 import { getInbound, ingestInbound } from "../lib/mail.js";
 import { verifyWebhook } from "../lib/mail-webhook.js";
-import { smsRow } from "../lib/sms-inbound.js";
+import { forOurNumber, smsRow } from "../lib/sms-inbound.js";
 import { notifyNewTexts } from "../lib/push.js";
 
 /**
@@ -47,7 +47,15 @@ async function handle(req: VercelRequest, res: VercelResponse) {
     { id: header(req, "webhook-id"), timestamp: header(req, "webhook-timestamp"), signature: header(req, "webhook-signature") },
     secret
   );
-  if (!signed) return res.status(401).json({ error: "bad_signature" });
+  if (!signed) {
+    // Logged as facts only (never the body or a header's value), so a secret mismatch shows up in the logs.
+    console.warn("mail-webhook: refused an unsigned or badly signed delivery", {
+      hasId: !!header(req, "webhook-id"),
+      hasTimestamp: !!header(req, "webhook-timestamp"),
+      hasSignature: !!header(req, "webhook-signature"),
+    });
+    return res.status(401).json({ error: "bad_signature" });
+  }
 
   let event: BirdEvent;
   try {
@@ -57,9 +65,14 @@ async function handle(req: VercelRequest, res: VercelResponse) {
   }
   if (event?.type === "sms.received") {
     // Bird's webhook test (the Phone page's setup check) is a signed event with no message: accepted, nothing kept.
-    if (!(event as { data?: unknown }).data) return res.status(200).json({ ok: true, test: true });
+    if (!(event as { data?: unknown }).data) {
+      console.info("mail-webhook: Bird's signed test text accepted");
+      return res.status(200).json({ ok: true, test: true });
+    }
     const row = smsRow(event, header(req, "webhook-id"));
     if (!row) return res.status(400).json({ error: "bad_event" });
+    // Another site's number in the same Bird workspace: not BFO's text.
+    if (!forOurNumber(row.to_number)) return res.status(200).json({ ok: true, ignored: true });
     try {
       await sb("sms_messages?on_conflict=id", { method: "POST", body: row, prefer: "resolution=ignore-duplicates,return=minimal" });
       await notifyNewTexts([row]);

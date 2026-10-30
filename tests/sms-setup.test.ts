@@ -10,6 +10,7 @@ let numbers: any[] = [];
 let test: any = { status: "delivered", response_status_code: 200, response_duration_ms: 90 };
 let me: any = null;
 let birdDown = false;
+let refused = false;
 
 vi.mock("../lib/auth.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/auth")>();
@@ -20,7 +21,8 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
       const method = init.method ?? "GET";
       calls.push({ path, method, body: init.body });
       const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status });
-      if (birdDown) return json({ error: "unauthorized" }, 401);
+      if (birdDown) return json({ error: "unavailable" }, 503);
+      if (refused) return json({ error: { name: "InsufficientScope", message: `This request requires the "${path.startsWith("/v1/numbers") ? "numbers:read" : "webhooks:read"}" scope.` } }, 403);
       if (path.startsWith("/v1/webhooks?")) return json({ data: hooks, next_cursor: null });
       if (path.startsWith("/v1/numbers?")) return json({ data: numbers, next_cursor: null });
       if (/^\/v1\/webhooks\/[^/]+\/test$/.test(path)) return json(test);
@@ -53,6 +55,7 @@ beforeEach(() => {
   test = { status: "delivered", response_status_code: 200, response_duration_ms: 90 };
   me = { id: "u1", name: "Robert", role: "owner", status: "approved" };
   birdDown = false;
+  refused = false;
 });
 
 describe("diagnose", () => {
@@ -81,6 +84,15 @@ describe("diagnose", () => {
     expect(diagnose([], [], NUMBER).problems.map((p) => [p.code, p.fixable])).toEqual([["no_webhook", false], ["no_number", false]]);
   });
 
+  it("never takes another site's webhook in the same Bird workspace for BFO's, nor changes it", () => {
+    const impact = { id: "wh_9", url: "https://www.impactadvisory.llc/api/mail-webhook", events: ["email.received", "sms.received"], status: "active" };
+    expect(mailHook([impact])).toBeNull();
+    expect(fixBody(impact)).toBeNull();
+    const d = diagnose([impact], [TOLL_FREE], NUMBER);
+    expect(d.problems.map((p) => [p.code, p.fixable])).toEqual([["no_webhook", false]]);
+    expect(d.problems[0].message).toMatch(/Create webhook.*BIRD_WEBHOOK_SECRET.*Leave other sites' webhooks/);
+  });
+
   it("fixes by adding to the webhook, never by taking away", () => {
     expect(fixBody(MAIL_ONLY)).toEqual({ events: ["email.received", "sms.received"] });
     expect(fixBody({ ...MAIL_ONLY, url: "https://burtonfamilyoffice.com/api/mail-webhook", status: "paused" })).toEqual({
@@ -92,6 +104,25 @@ describe("diagnose", () => {
   });
 });
 
+describe("when Bird's key lacks a permission", () => {
+  it("reads the permission Bird names", async () => {
+    const { scopeIn } = await import("../lib/sms-setup");
+    expect(scopeIn('{"error":{"name":"InsufficientScope","message":"This request requires the \\"numbers:read\\" scope, which your credential has not been granted."}}')).toBe("numbers:read");
+    expect(scopeIn("nope")).toBeNull();
+  });
+  it("still checks the webhook when the number can't be looked up, and says so", () => {
+    const d = diagnose([{ ...MAIL_ONLY, events: ["email.received", "sms.received"] }], { unreadable: true, status: 403, scope: "numbers:read" }, NUMBER, { status: "delivered", response_status_code: 200 });
+    expect(d.ok).toBe(true);
+    expect(d.notes[0]).toMatch(/numbers:read/);
+  });
+  it("can't call it fine without seeing the webhook, and says how to fix it by hand", () => {
+    const d = diagnose({ unreadable: true, status: 403, scope: "webhooks:read" }, [TOLL_FREE], NUMBER);
+    expect(d.ok).toBe(false);
+    expect(d.problems[0]).toMatchObject({ code: "cant_read_webhooks", fixable: false });
+    expect(d.problems[0].message).toMatch(/webhooks:read.*tick sms\.received/);
+  });
+});
+
 describe("/api/texts setup", () => {
   it("asks Bird and sends a signed test text", async () => {
     const out = await call("GET", { view: "setup" });
@@ -99,6 +130,13 @@ describe("/api/texts setup", () => {
     expect(out.json.setup.problems.map((p: any) => p.code)).toEqual(["missing_event"]);
     expect(calls.find((c) => c.path === "/v1/webhooks/wh_1/test")?.body).toEqual({ event_type: "sms.received" });
     expect(calls.find((c) => c.path.startsWith("/v1/numbers?"))?.path).toContain("number=%2B18445192725");
+  });
+
+  it("leaves another site's webhook untouched when asked to fix", async () => {
+    hooks = [{ id: "wh_9", url: "https://www.impactadvisory.llc/api/mail-webhook", events: ["email.received"], status: "active" }];
+    const out = await call("POST", {}, { action: "fix-setup" });
+    expect(calls.filter((c) => c.method !== "GET")).toEqual([]);
+    expect(out.json.setup.problems[0].code).toBe("no_webhook");
   });
 
   it("fixes the webhook, keeping its mail event, then checks again", async () => {
@@ -113,7 +151,14 @@ describe("/api/texts setup", () => {
     const out = await call("GET", { view: "setup" });
     expect(out.status).toBe(200);
     expect(out.json.setup).toBeNull();
-    expect(out.json.error).toMatch(/^Bird \/v1\/webhooks 401/);
+    expect(out.json.error).toMatch(/^Bird \/v1\/webhooks 503/);
+  });
+
+  it("names the permission Bird's key is missing instead of failing", async () => {
+    refused = true;
+    const out = await call("GET", { view: "setup" });
+    expect(out.json.setup.problems.map((p: any) => p.code)).toEqual(["cant_read_webhooks"]);
+    expect(out.json.setup.notes[0]).toMatch(/numbers:read/);
   });
 
   it("is for owners and admins only", async () => {
