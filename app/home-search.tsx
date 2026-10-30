@@ -142,7 +142,7 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-[15px] placeholder:text-gray-500"
+          className="min-w-0 flex-1 bg-transparent text-[15px] max-md:text-[16px] md:pointer-coarse:text-[16px] placeholder:text-gray-500"
           style={{ outline: "none" }}
         />
         {q ? (

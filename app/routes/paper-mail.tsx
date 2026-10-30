@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { canWrite } from "../auth";
 import { Button, Icon, useTone } from "../entity/ui";
 import { paperAction, PaperMailList, STABLE_ADDRESS, STABLE_DASHBOARD, usePaperMail, type PaperMail } from "../paper-mail";
 
@@ -18,6 +19,8 @@ type Filter = "all" | "unread" | "unassigned";
 export default function PaperMailPage() {
   const t = useTone();
   const { mail, setMail, configured, error, reload } = usePaperMail();
+  // Filing a piece and checking Stable are for those who can change records (api/stable.ts).
+  const writer = canWrite();
   const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [syncing, setSyncing] = useState(false);
@@ -35,13 +38,14 @@ export default function PaperMailPage() {
   }
 
   useEffect(() => {
+    if (!writer) return;
     void (async () => {
       const { db, ref, get, authReady } = await import("../store");
       await authReady;
       const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
       setEntities(Object.entries(all).map(([id, a]) => ({ id, name: a?.name ?? id })).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => {});
-  }, []);
+  }, [writer]);
 
   const shown = useMemo(() => {
     const list = mail ?? [];
@@ -107,7 +111,7 @@ export default function PaperMailPage() {
               href={STABLE_DASHBOARD}
               target="_blank"
               rel="noopener noreferrer"
-              className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold transition-colors ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold max-sm:h-[40px] transition-colors ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
             >
               Stable dashboard
               <Icon name="external" className="h-3.5 w-3.5" />
@@ -139,7 +143,7 @@ export default function PaperMailPage() {
             type="button"
             onClick={() => setFilter(key)}
             aria-pressed={filter === key}
-            className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors ${
+            className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors max-sm:h-[44px] ${
               filter === key ? (t.dark ? "border-white/20 bg-white/[0.08] text-white" : "border-gray-900 bg-gray-900 text-white") : `${t.line} ${t.soft}`
             }`}
           >
@@ -149,9 +153,11 @@ export default function PaperMailPage() {
         ))}
         {note && <span className={`ml-2 text-[12px] ${t.muted}`}>{note}</span>}
         <span className="flex-1" />
-        <Button icon="refresh" onClick={() => void sync()} disabled={syncing || !configured}>
-          {syncing ? "Checking…" : "Check now"}
-        </Button>
+        {writer && (
+          <Button icon="refresh" onClick={() => void sync()} disabled={syncing || !configured}>
+            {syncing ? "Checking…" : "Check now"}
+          </Button>
+        )}
       </div>
 
       <section className={`overflow-hidden rounded-2xl border ${t.surface}`}>
@@ -160,8 +166,8 @@ export default function PaperMailPage() {
         ) : (
           <PaperMailList
             mail={shown}
-            entities={entities}
-            onAssign={(m, id) => void assign(m, id)}
+            entities={writer ? entities : undefined}
+            onAssign={writer ? (m, id) => void assign(m, id) : undefined}
             onOpen={opened}
             empty={error || (filter === "all" ? "No paper mail yet. Each piece shows up here as Stable receives it." : filter === "unread" ? "Nothing unread." : "Every piece is filed under an entity.")}
           />

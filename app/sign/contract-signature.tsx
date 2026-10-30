@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { isOpen, PARTY_LABEL, signApi, when, type SignField, type SignatureRequest } from "./api";
+import { blankTab, isOpen, PARTY_LABEL, signApi, when, type SignField, type SignatureRequest } from "./api";
 import { usePoll } from "./use-poll";
 import { PartyDot, Small, StatusChip } from "../routes/tools-signatures";
 
@@ -130,18 +130,21 @@ export function ContractSignature({
 
   async function act(action: "remind" | "send-copy" | "download" | "void") {
     if (!request) return;
+    // The tab opens inside the click, before the link is awaited.
+    const tab = action === "download" ? blankTab() : null;
     setBusy(action);
     setError("");
     setNote("");
     try {
-      if (action === "download") {
-        window.open(await signApi.download(request.id), "_blank", "noopener");
+      if (tab) {
+        tab.go(await signApi.download(request.id));
         return;
       }
       const next = await signApi.act(action, { id: request.id });
       onChange(next);
       setNote(action === "remind" ? "Reminder sent." : action === "send-copy" ? `Signed copy sent to ${next.parties.map((p) => p.email).join(" and ")}.` : "Voided.");
     } catch (err) {
+      tab?.close();
       setError(err instanceof Error ? err.message : "That didn't work.");
     } finally {
       setBusy("");

@@ -68,6 +68,24 @@ export const signApi = {
   },
 };
 
+/**
+ * A new tab opened now, inside the click, for a link fetched afterwards
+ * (signApi.download): opened only after the await, Safari blocks it as a popup.
+ * `go` points it at the link; `close` drops it when the fetch fails. The same
+ * as openStoredFile in app/stored-file.tsx.
+ */
+export function blankTab(): { go: (url: string) => void; close: () => void } {
+  const win = window.open("", "_blank");
+  if (win) win.opener = null;
+  return {
+    go: (url) => {
+      if (win) win.location.href = url;
+      else window.open(url, "_blank", "noopener");
+    },
+    close: () => win?.close(),
+  };
+}
+
 /** Still waiting on someone: worth checking for progress. */
 export const isOpen = (status?: RequestStatus | null) => status === "sent" || status === "partial";
 

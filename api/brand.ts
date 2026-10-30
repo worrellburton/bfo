@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, isAdmin } from "../lib/auth.js";
+import { currentUser, handleError, isAdmin, type AppUser } from "../lib/auth.js";
 import {
   BRAND_BUCKET,
   copyIn,
@@ -42,7 +42,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=600");
       return res.status(200).json({ logo });
     }
-    const user = await currentUser(req);
+    // currentUser throws PartnerRefused for a partner; handleError answers 403.
+    let user: AppUser | null;
+    try {
+      user = await currentUser(req);
+    } catch (err) {
+      return handleError(res, err);
+    }
     if (!user) return res.status(401).json({ error: "unauthorized" });
     if (!isAdmin(user)) return res.status(403).json({ error: "forbidden" });
     const keys = ["logo", "sheet", ...LOGO_STYLES.map((s) => `model:${s.id}`)];
@@ -57,7 +63,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin can change the logo." });
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { confirmDialog } from "../confirm-dialog";
-import { isOpen, PARTY_LABEL, STATUS_LABEL, signApi, when, type RequestStatus, type SignatureRequest } from "../sign/api";
+import { blankTab, isOpen, PARTY_LABEL, STATUS_LABEL, signApi, when, type RequestStatus, type SignatureRequest } from "../sign/api";
 import { usePoll } from "../sign/use-poll";
 import { useTheme } from "../theme";
 
@@ -82,27 +82,95 @@ export default function ToolsSignatures() {
   }
 
   async function act(r: SignatureRequest, action: "remind" | "send-copy" | "download" | "delete" | "void") {
+    // The tab opens inside the click, before anything is awaited.
+    const tab = action === "download" ? blankTab() : null;
     setBusy(r.id);
     setNote("");
+    setError("");
     try {
-      if (action === "download") {
-        const url = await signApi.download(r.id);
-        window.open(url, "_blank", "noopener");
+      if (tab) {
+        tab.go(await signApi.download(r.id));
       } else if (action === "delete") {
         if (!(await confirmDialog({ title: `Delete "${r.title}"?`, message: "The document and its signatures are removed for good.", tone: "danger", confirmLabel: "Delete" }))) return;
         await signApi.remove(r.id);
         setRows((cur) => (cur ?? []).filter((x) => x.id !== r.id));
       } else {
+        // As on the request's own page: a void can't be undone.
+        if (action === "void" && !(await confirmDialog({ title: `Void "${r.title}"?`, message: "The signing links stop working. Nobody is told.", tone: "danger", confirmLabel: "Void" }))) return;
         const next = await signApi.act(action, { id: r.id });
         setRows((cur) => (cur ?? []).map((x) => (x.id === next.id ? next : x)));
         setNote(action === "remind" ? `Reminded ${next.parties.filter((p) => p.status !== "signed").map((p) => p.name).join(" and ")}.` : action === "send-copy" ? `Sent the signed copy to ${next.parties.map((p) => p.name).join(" and ")}.` : "Voided.");
       }
     } catch (err) {
+      tab?.close();
       setError(err instanceof Error ? err.message : "That didn't work.");
     } finally {
       setBusy(null);
     }
   }
+
+  const actions = (r: SignatureRequest) => (
+    <>
+      <Small isDark={isDark} onClick={() => navigate(`/tools/signatures/${r.id}`)}>
+        {r.status === "draft" ? "Set up" : "Open"}
+      </Small>
+      {(r.status === "sent" || r.status === "partial") && (
+        <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "remind")}>
+          Remind
+        </Small>
+      )}
+      {r.status === "completed" && (
+        <>
+          <Small isDark={isDark} primary disabled={busy === r.id} onClick={() => act(r, "send-copy")}>
+            Send to both parties
+          </Small>
+          <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "download")}>
+            Download
+          </Small>
+        </>
+      )}
+      {r.status !== "completed" && r.status !== "draft" && r.status !== "voided" && (
+        <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "void")}>
+          Void
+        </Small>
+      )}
+      <Small isDark={isDark} danger disabled={busy === r.id} onClick={() => act(r, "delete")}>
+        Delete
+      </Small>
+    </>
+  );
+
+  const source = (r: SignatureRequest) => (
+    <span className={`block text-[11.5px] ${t3}`}>
+      {r.source === "contract" ? "MSA" : "Uploaded"}
+      {r.asset_id ? (
+        <>
+          {" · "}
+          <Link to={`/assets/${r.asset_id}/agreements`} className="hover:underline">
+            entity
+          </Link>
+        </>
+      ) : null}
+      {r.created_by_name ? ` · by ${r.created_by_name}` : ""}
+    </span>
+  );
+
+  const partyList = (r: SignatureRequest) =>
+    r.parties.length === 0 ? (
+      <span className={t3}>No parties yet</span>
+    ) : (
+      <ul className="space-y-1">
+        {r.parties.map((p) => (
+          <li key={p.key} className="flex min-w-0 items-center gap-2">
+            <PartyDot status={p.status} />
+            <span className="truncate">{p.name || <span className={t3}>{p.role}</span>}</span>
+            <span className={`shrink-0 text-[11px] ${t3}`}>{PARTY_LABEL[p.status]}</span>
+          </li>
+        ))}
+      </ul>
+    );
+
+  const empty = rows === null ? "Loading…" : shown.length === 0 ? (rows.length === 0 ? "Nothing sent for signature yet. Drop a PDF above, or open an MSA and request a signature." : "Nothing here.") : "";
 
   return (
     <div className="mx-auto max-w-[1400px] pb-16">
@@ -129,7 +197,7 @@ export default function ToolsSignatures() {
             type="button"
             onClick={() => setFilter(f)}
             aria-pressed={filter === f}
-            className={`h-8 rounded-full px-3.5 text-[12px] font-medium transition-colors ${
+            className={`h-8 max-md:h-[44px] md:pointer-coarse:h-[44px] rounded-full px-3.5 text-[12px] font-medium transition-colors ${
               filter === f ? (isDark ? "bg-white text-black" : "bg-gray-900 text-white") : isDark ? "bg-white/[0.05] text-gray-300 hover:bg-white/10" : "bg-black/[0.04] text-gray-600 hover:bg-black/[0.08]"
             }`}
           >
@@ -138,8 +206,37 @@ export default function ToolsSignatures() {
         ))}
       </div>
 
-      <section className={`mt-3 overflow-hidden ${card}`}>
-        <div className="overflow-x-auto">
+      {/* A table where there's room for it; below that (a phone, an iPad beside the rail) each request is a card. */}
+      <section className={`@container mt-3 overflow-hidden ${card}`}>
+        <ul className="@min-[840px]:hidden">
+          {empty ? (
+            <li className={`px-4 py-8 text-center text-[12.5px] ${t3}`}>{empty}</li>
+          ) : (
+            shown.map((r) => (
+              <li key={r.id} className={`border-t px-4 py-3.5 text-[12.5px] first:border-t-0 ${line}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link to={`/tools/signatures/${r.id}`} className="block truncate font-medium hover:underline">
+                      {r.title}
+                    </Link>
+                    {source(r)}
+                  </div>
+                  <StatusChip status={r.status} isDark={isDark} />
+                </div>
+                <div className="mt-2.5">{partyList(r)}</div>
+                {(r.sent_at || r.completed_at) && (
+                  <p className={`mt-1.5 text-[11.5px] tabular-nums ${t3}`}>
+                    {r.sent_at ? `Sent ${when(r.sent_at)}` : ""}
+                    {r.sent_at && r.completed_at ? " · " : ""}
+                    {r.completed_at ? `Signed ${when(r.completed_at)}` : ""}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">{actions(r)}</div>
+              </li>
+            ))
+          )}
+        </ul>
+        <div className="hidden overflow-x-auto @min-[840px]:block">
           <table className="w-full min-w-[840px] border-collapse text-[12.5px]">
             <thead>
               <tr className={`text-left text-[11px] font-medium uppercase tracking-[0.12em] ${t3}`}>
@@ -171,68 +268,16 @@ export default function ToolsSignatures() {
                       <Link to={`/tools/signatures/${r.id}`} className="block max-w-[320px] truncate font-medium hover:underline">
                         {r.title}
                       </Link>
-                      <span className={`block text-[11.5px] ${t3}`}>
-                        {r.source === "contract" ? "MSA" : "Uploaded"}
-                        {r.asset_id ? (
-                          <>
-                            {" · "}
-                            <Link to={`/assets/${r.asset_id}/agreements`} className="hover:underline">
-                              entity
-                            </Link>
-                          </>
-                        ) : null}
-                        {r.created_by_name ? ` · by ${r.created_by_name}` : ""}
-                      </span>
+                      {source(r)}
                     </td>
-                    <td className="px-3 py-3 align-top">
-                      {r.parties.length === 0 ? (
-                        <span className={t3}>No parties yet</span>
-                      ) : (
-                        <ul className="space-y-1">
-                          {r.parties.map((p) => (
-                            <li key={p.key} className="flex items-center gap-2">
-                              <PartyDot status={p.status} />
-                              <span className="truncate">{p.name || <span className={t3}>{p.role}</span>}</span>
-                              <span className={`text-[11px] ${t3}`}>{PARTY_LABEL[p.status]}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
+                    <td className="px-3 py-3 align-top">{partyList(r)}</td>
                     <td className="px-3 py-3 align-top">
                       <StatusChip status={r.status} isDark={isDark} />
                     </td>
                     <td className={`px-3 py-3 align-top tabular-nums ${t2}`}>{when(r.sent_at) || "—"}</td>
                     <td className={`px-3 py-3 align-top tabular-nums ${t2}`}>{when(r.completed_at) || "—"}</td>
                     <td className="px-3 py-3 align-top">
-                      <div className="flex flex-wrap justify-end gap-1.5">
-                        <Small isDark={isDark} onClick={() => navigate(`/tools/signatures/${r.id}`)}>
-                          {r.status === "draft" ? "Set up" : "Open"}
-                        </Small>
-                        {(r.status === "sent" || r.status === "partial") && (
-                          <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "remind")}>
-                            Remind
-                          </Small>
-                        )}
-                        {r.status === "completed" && (
-                          <>
-                            <Small isDark={isDark} primary disabled={busy === r.id} onClick={() => act(r, "send-copy")}>
-                              Send to both parties
-                            </Small>
-                            <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "download")}>
-                              Download
-                            </Small>
-                          </>
-                        )}
-                        {r.status !== "completed" && r.status !== "draft" && r.status !== "voided" && (
-                          <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "void")}>
-                            Void
-                          </Small>
-                        )}
-                        <Small isDark={isDark} danger disabled={busy === r.id} onClick={() => act(r, "delete")}>
-                          Delete
-                        </Small>
-                      </div>
+                      <div className="flex flex-wrap justify-end gap-1.5">{actions(r)}</div>
                     </td>
                   </tr>
                 ))
@@ -262,7 +307,7 @@ export function StatusChip({ status, isDark }: { status: RequestStatus; isDark: 
           : isDark
             ? "bg-amber-500/15 text-amber-300"
             : "bg-amber-50 text-amber-700";
-  return <span className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11.5px] font-medium ${tone}`}>{STATUS_LABEL[status]}</span>;
+  return <span className={`inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-medium ${tone}`}>{STATUS_LABEL[status]}</span>;
 }
 
 export function PartyDot({ status }: { status: SignatureRequest["parties"][number]["status"] }) {
@@ -270,7 +315,7 @@ export function PartyDot({ status }: { status: SignatureRequest["parties"][numbe
   return <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${c}`} />;
 }
 
-export function Small({ children, isDark, primary, danger, ...rest }: { children: React.ReactNode; isDark: boolean; primary?: boolean; danger?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function Small({ children, isDark, primary, danger, className = "", ...rest }: { children: React.ReactNode; isDark: boolean; primary?: boolean; danger?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const tone = primary
     ? isDark
       ? "bg-white text-black hover:bg-gray-200"
@@ -283,7 +328,8 @@ export function Small({ children, isDark, primary, danger, ...rest }: { children
         ? "bg-white/[0.06] text-gray-200 hover:bg-white/10"
         : "bg-black/[0.04] text-gray-700 hover:bg-black/[0.08]";
   return (
-    <button type="button" {...rest} className={`h-7 cursor-pointer whitespace-nowrap rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${tone}`}>
+    // A finger-sized target on a phone or a touch screen (an iPad).
+    <button type="button" {...rest} className={`h-7 max-md:h-[44px] max-md:px-3.5 max-md:text-[14px] md:pointer-coarse:h-[44px] cursor-pointer whitespace-nowrap rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${tone} ${className}`}>
       {children}
     </button>
   );
@@ -319,7 +365,7 @@ export function DropZone({ isDark, busy, onFile, compact = false }: { isDark: bo
         type="button"
         disabled={busy}
         onClick={() => input.current?.click()}
-        className={`mt-1 h-9 cursor-pointer rounded-lg px-4 text-[12.5px] font-medium transition-colors disabled:opacity-50 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
+        className={`mt-1 h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] cursor-pointer rounded-lg px-4 text-[12.5px] font-medium transition-colors disabled:opacity-50 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
       >
         Choose a PDF
       </button>

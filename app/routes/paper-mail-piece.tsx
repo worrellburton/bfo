@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router";
-import { authFetch, isPartner } from "../auth";
+import { authFetch, canWrite, isPartner } from "../auth";
+import { useFocusTrap } from "../books-shared";
 import { Button, Icon, Row, Rows, Section, Select, useTone } from "../entity/ui";
 import { Orbit } from "../mail-loaders";
 import { paperAction, STABLE_DASHBOARD, type PaperMailFull, type PaperReading } from "../paper-mail";
@@ -42,20 +43,25 @@ const stage = (s: string | null, doing: string, done: string) => (!s ? null : s 
 export default function PaperMailPiece() {
   const { id = "" } = useParams();
   const t = useTone();
-  const staff = !isPartner();
+  // Filing a piece and reading it again are for those who can change records (api/stable.ts).
+  const writer = canWrite();
   const [piece, setPiece] = useState<PaperMailFull | null>(null);
   const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState("");
   const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
+  const zoomRef = useRef<HTMLDivElement>(null);
   const asked = useRef(false);
+  useFocusTrap(zoomRef, !!zoom);
 
-  const read = useCallback(async () => {
+  /** `force` reads it again even when the reading is current, or the last try failed. */
+  const read = useCallback(async (force = false) => {
     setReading(true);
     setReadError("");
     try {
-      const r = await paperAction({ action: "read-piece", id });
+      const r = await paperAction({ action: "read-piece", id, ...(force ? { force: true } : {}) });
       setPiece(r.mail);
     } catch (err) {
       setReadError((err as Error).message);
@@ -68,6 +74,7 @@ export default function PaperMailPiece() {
     asked.current = false;
     setPiece(null);
     setError("");
+    setSaveError("");
     void (async () => {
       try {
         const r = await authFetch(`/api/stable?id=${encodeURIComponent(id)}`);
@@ -90,30 +97,41 @@ export default function PaperMailPiece() {
   }, [piece, read]);
 
   useEffect(() => {
-    if (!staff) return;
+    if (!writer) return;
     void (async () => {
       const { db, ref, get, authReady } = await import("../store");
       await authReady;
       const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
       setEntities(Object.entries(all).map(([key, a]) => ({ id: key, name: a?.name ?? key })).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => {});
-  }, [staff]);
+  }, [writer]);
 
   useEffect(() => {
     if (!zoom) return;
     const key = (e: KeyboardEvent) => e.key === "Escape" && setZoom(null);
     window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    // The focus trap locks <body>, but <html> clips sideways (app.css), so it's the page that scrolls: lock that too.
+    const root = document.documentElement;
+    const prev = root.style.overflow;
+    root.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", key);
+      root.style.overflow = prev;
+    };
   }, [zoom]);
 
   async function assign(assetId: string | null) {
     if (!piece) return;
+    const prev = piece;
     setPiece({ ...piece, assetId, assigned: "hand" });
+    setSaveError("");
     try {
       await paperAction({ action: "assign", id: piece.id, assetId });
       changed();
     } catch (err) {
-      setError((err as Error).message);
+      // Back to what's saved, and say why.
+      setPiece((p) => (p ? { ...p, assetId: prev.assetId, assigned: prev.assigned } : p));
+      setSaveError(`Couldn't file it: ${(err as Error).message}`);
     }
   }
 
@@ -153,8 +171,8 @@ export default function PaperMailPiece() {
       title="What it says"
       info="Read from the envelope photo and, once Stable scans it, the contents. Account numbers show only their last four digits."
       actions={
-        r && !reading ? (
-          <Button icon="refresh" onClick={() => void read()}>
+        r && !reading && writer ? (
+          <Button icon="refresh" onClick={() => void read(true)}>
             Read again
           </Button>
         ) : undefined
@@ -164,15 +182,24 @@ export default function PaperMailPiece() {
         <p className={`flex items-center gap-2 px-5 py-5 text-[12.5px] ${t.muted}`}>
           <Orbit /> {piece.scanUrl ? "Reading the envelope and the contents…" : "Reading the envelope…"}
         </p>
-      ) : readError && !r ? (
+      ) : (readError || piece.readingFailed) && !r ? (
         <div className={`flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-[12.5px] ${t.muted}`}>
-          <span>{readError}</span>
-          <Button icon="refresh" onClick={() => void read()}>
-            Try again
-          </Button>
+          <span>{readError || "BFO couldn't read this piece."}</span>
+          {writer && (
+            <Button icon="refresh" onClick={() => void read(true)}>
+              Try again
+            </Button>
+          )}
         </div>
       ) : r ? (
-        <Reading r={r} />
+        <>
+          {(readError || piece.readingFailed) && (
+            <p role="status" className={`px-5 pt-4 text-[12.5px] ${t.muted}`}>
+              Couldn't read it again. {readError} The reading below is from before.
+            </p>
+          )}
+          <Reading r={r} scanned={!!piece.scanUrl} />
+        </>
       ) : (
         <p className={`px-5 py-5 text-[12.5px] ${t.muted}`}>Nothing to read yet.</p>
       )}
@@ -181,7 +208,7 @@ export default function PaperMailPiece() {
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">
-      <Back />
+      <Back assetId={piece.assetId} />
 
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -239,7 +266,7 @@ export default function PaperMailPiece() {
                     "Not scanned. Ask Stable to open and scan it to read what's inside."
                   )}
                 </span>
-                {piece.scanStatus !== "processing" && (
+                {piece.scanStatus !== "processing" && writer && (
                   <a href={STABLE_DASHBOARD} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 font-medium hover:underline ${t.accent}`}>
                     Scan in Stable <Icon name="external" className="h-3 w-3" />
                   </a>
@@ -275,7 +302,7 @@ export default function PaperMailPiece() {
 
           <Section title="From Stable">
             <Rows>
-              {staff && (
+              {writer && (
                 <Row label="Filed under">
                   <Select value={piece.assetId ?? ""} onChange={(e) => void assign(e.target.value || null)} aria-label="Entity" className={!piece.assetId ? (t.dark ? "!border-amber-400/40" : "!border-amber-300") : ""}>
                     <option value="">Which entity?</option>
@@ -286,6 +313,11 @@ export default function PaperMailPiece() {
                     ))}
                   </Select>
                   {piece.assetId && piece.assigned === "auto" && <p className={`mt-1 text-[11px] ${t.faint}`}>Matched from the envelope</p>}
+                  {saveError && (
+                    <p role="alert" className={`mt-1 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>
+                      {saveError}
+                    </p>
+                  )}
                 </Row>
               )}
               <Row label="Arrived">{dateTime(piece.receivedAt)}</Row>
@@ -308,11 +340,14 @@ export default function PaperMailPiece() {
                   {day(piece.clearAt)}
                 </Row>
               )}
-              <Row label="">
-                <a href={STABLE_DASHBOARD} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline ${t.accent}`}>
-                  Scan, forward, shred or deposit in Stable <Icon name="external" className="h-3 w-3" />
-                </a>
-              </Row>
+              {/* The office's own Stable account: staff only. */}
+              {writer && (
+                <Row label="">
+                  <a href={STABLE_DASHBOARD} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline ${t.accent}`}>
+                    Scan, forward, shred or deposit in Stable <Icon name="external" className="h-3 w-3" />
+                  </a>
+                </Row>
+              )}
             </Rows>
           </Section>
         </div>
@@ -321,9 +356,9 @@ export default function PaperMailPiece() {
       {/* Portalled: <main> is its own stacking context, under the mobile header. */}
       {zoom &&
         createPortal(
-        <div role="dialog" aria-modal="true" aria-label="Enlarged" className="fixed inset-0 z-[90] flex cursor-zoom-out items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setZoom(null)}>
+        <div ref={zoomRef} role="dialog" aria-modal="true" aria-label={zoom === piece.scanUrl ? "Scan, enlarged" : "Envelope, enlarged"} className="fixed inset-0 z-[90] flex cursor-zoom-out items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setZoom(null)}>
           <img src={zoom} alt="" className="max-h-full max-w-full rounded-lg bg-white object-contain shadow-2xl" />
-          <button type="button" aria-label="Close" onClick={() => setZoom(null)} className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-white/10 text-white">
+          <button type="button" data-autofocus aria-label="Close" onClick={() => setZoom(null)} className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-white/10 text-white">
             <Icon name="x" className="h-5 w-5" />
           </button>
         </div>,
@@ -333,12 +368,14 @@ export default function PaperMailPiece() {
   );
 }
 
-function Back() {
+/** Back to the Mailbox; a partner, who has none, back to the entity's Documents tab. */
+function Back({ assetId }: { assetId?: string | null }) {
   const t = useTone();
+  const partner = isPartner();
   return (
-    <Link to="/mailbox" className={`inline-flex h-[36px] items-center gap-1 text-[13px] font-medium ${t.muted} hover:underline`}>
+    <Link to={!partner ? "/mailbox" : assetId ? `/assets/${encodeURIComponent(assetId)}/documents` : "/assets"} className={`inline-flex h-[36px] items-center gap-1 text-[13px] font-medium ${t.muted} hover:underline`}>
       <Icon name="chevronLeft" className="h-4 w-4" strokeWidth={2.2} />
-      Mailbox
+      {!partner ? "Mailbox" : assetId ? "Documents" : "Entities"}
     </Link>
   );
 }
@@ -353,7 +390,8 @@ function Party({ name, address }: { name: string | null; address: string | null 
   );
 }
 
-function Reading({ r }: { r: PaperReading }) {
+/** `scanned`: Stable has a scan, so an envelope-only reading means the scan couldn't be read. */
+function Reading({ r, scanned }: { r: PaperReading; scanned: boolean }) {
   const t = useTone();
   const list = (items: { a: string; b: string }[]): ReactNode =>
     items.map((x) => (
@@ -380,7 +418,9 @@ function Reading({ r }: { r: PaperReading }) {
       {r.references.length > 0 && <Row label="Numbers">{list(r.references.map((x) => ({ a: x.label, b: x.value })))}</Row>}
       {!r.fromScan && (
         <Row>
-          <span className={`text-[12px] ${t.muted}`}>Read from the envelope only. Once Stable scans it, what's inside is read too.</span>
+          <span className={`text-[12px] ${t.muted}`}>
+            {scanned ? "Read from the envelope only: BFO couldn't read the scan. Open it to see what's inside." : "Read from the envelope only. Once Stable scans it, what's inside is read too."}
+          </span>
         </Row>
       )}
     </Rows>

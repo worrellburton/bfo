@@ -6,9 +6,10 @@ import { fetchAll } from "./db-pages.js";
  *
  * A loan's balance = starting_balance + advances − repayments, where the
  * moving parts come from transactions linked by loan_id or carrying the
- * "Name (loan)" category. Categorized transactions whose name matches no
- * registered loan still show up as implicit loans, so marking transactions
- * works before (or without) registering the loan.
+ * intercompany loan class. (The old "Name (loan)" category convention is
+ * retired; such rows now carry a loan_id.) A loan-class row tied to no
+ * registered loan still shows up as an implicit loan, named from its
+ * category or vendor.
  */
 
 export type LoanTxn = {

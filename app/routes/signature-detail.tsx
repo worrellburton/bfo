@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { confirmDialog } from "../confirm-dialog";
-import { FIELD_LABEL, isOpen, newField, PARTY_LABEL, signApi, when, type FieldType, type Party, type PartyKey, type SignField, type SignatureRequest } from "../sign/api";
+import { blankTab, FIELD_LABEL, isOpen, newField, PARTY_LABEL, signApi, when, type FieldType, type Party, type PartyKey, type SignField, type SignatureRequest } from "../sign/api";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
 import { usePoll } from "../sign/use-poll";
 import { useTheme } from "../theme";
@@ -34,7 +34,7 @@ export default function SignatureDetail() {
   const t2 = isDark ? "text-gray-400" : "text-gray-600";
   const t3 = isDark ? "text-gray-500" : "text-gray-400";
   const card = `rounded-2xl border ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`;
-  const input = `h-9 w-full rounded-lg border px-2.5 text-[13px] focus:outline-none max-sm:h-[44px] max-sm:text-[16px] ${isDark ? "border-white/10 bg-white/[0.03] text-white focus:border-white/30" : "border-gray-200 bg-white text-gray-900 focus:border-gray-400"}`;
+  const input = `h-9 w-full rounded-lg border px-2.5 text-[13px] focus:outline-none max-sm:h-[44px] max-sm:text-[16px] pointer-coarse:h-[44px] pointer-coarse:text-[16px] ${isDark ? "border-white/10 bg-white/[0.03] text-white focus:border-white/30" : "border-gray-200 bg-white text-gray-900 focus:border-gray-400"}`;
 
   const shownKey = useRef<string | null>(null);
   const load = useCallback(async () => {
@@ -89,6 +89,8 @@ export default function SignatureDetail() {
 
   async function run(action: "send" | "remind" | "send-copy" | "void" | "delete" | "download") {
     if (!req) return;
+    // The tab opens inside the click, before the save and the link are awaited.
+    const tab = action === "download" ? blankTab() : null;
     setBusy(action);
     setError("");
     setNote("");
@@ -98,8 +100,8 @@ export default function SignatureDetail() {
         saveTimer.current = null;
         await signApi.act("update", { id: req.id, title: req.title, fields: req.fields, parties: req.parties });
       }
-      if (action === "download") {
-        window.open(await signApi.download(req.id), "_blank", "noopener");
+      if (tab) {
+        tab.go(await signApi.download(req.id));
       } else if (action === "delete") {
         if (!(await confirmDialog({ title: `Delete "${req.title}"?`, message: "The document and its signatures are removed for good.", tone: "danger", confirmLabel: "Delete" }))) return;
         await signApi.remove(req.id);
@@ -120,6 +122,7 @@ export default function SignatureDetail() {
         );
       }
     } catch (err) {
+      tab?.close();
       setError(err instanceof Error ? err.message : "That didn't work.");
     } finally {
       setBusy("");
@@ -147,7 +150,10 @@ export default function SignatureDetail() {
             Tools · Signatures
           </Link>
           {req && editable ? (
-            <input value={req.title} onChange={(e) => queueSave({ ...req, title: e.target.value })} aria-label="Document title" className={`mt-1 h-auto w-full max-w-[640px] border-0 bg-transparent p-0 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] focus:outline-none sm:text-[22px] ${isDark ? "text-white" : "text-gray-900"}`} />
+            // Still the page's heading while the title is editable.
+            <h1 className="mt-1">
+              <input value={req.title} onChange={(e) => queueSave({ ...req, title: e.target.value })} aria-label="Document title" className={`h-auto w-full max-w-[640px] border-0 bg-transparent p-0 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] focus:outline-none sm:text-[22px] ${isDark ? "text-white" : "text-gray-900"}`} />
+            </h1>
           ) : (
             <h1 className="mt-1 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">{req?.title ?? "…"}</h1>
           )}
@@ -427,6 +433,7 @@ function FieldBox({
       </span>
       {editable && selected && (
         <>
+          {/* On a touch screen the remove button and the resize corner take a finger-sized hit area around what's drawn. */}
           <button
             type="button"
             aria-label={`Remove ${label}`}
@@ -435,11 +442,15 @@ function FieldBox({
               e.stopPropagation();
               onRemove();
             }}
-            className="absolute -right-[9px] -top-[9px] flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-full bg-black text-[11px] text-white shadow"
+            className="absolute -right-[9px] -top-[9px] flex h-[18px] w-[18px] cursor-pointer items-center justify-center pointer-coarse:-right-[22px] pointer-coarse:-top-[22px] pointer-coarse:h-[44px] pointer-coarse:w-[44px]"
           >
-            ×
+            <span aria-hidden className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[11px] text-white shadow">
+              ×
+            </span>
           </button>
-          <span aria-hidden onPointerDown={start("resize")} className="absolute -bottom-[6px] -right-[6px] h-3 w-3 cursor-nwse-resize rounded-sm bg-white" style={{ border: `2px solid ${tone.border}` }} />
+          <span aria-hidden onPointerDown={start("resize")} className="absolute -bottom-[10px] -right-[10px] grid h-[20px] w-[20px] cursor-nwse-resize place-items-center pointer-coarse:-bottom-[22px] pointer-coarse:-right-[22px] pointer-coarse:h-[44px] pointer-coarse:w-[44px]">
+            <span className="h-3 w-3 rounded-sm bg-white" style={{ border: `2px solid ${tone.border}` }} />
+          </span>
         </>
       )}
     </div>

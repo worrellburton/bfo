@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
+import { csvText } from "../books-csv";
 
 export function meta() {
   return [{ title: "BFO - Books · Reports" }];
@@ -123,12 +124,11 @@ export default function BooksReports() {
         rows.push(...(data.transactions ?? []));
         if ((data.transactions ?? []).length < 500) break;
       }
-      const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      // Text cells are formula-proofed (bank descriptions come from outside);
+      // the amount stays a plain quoted number.
       const header = ["Date", "Entity", "Description", "Vendor", "Account", "Amount"];
       const body = rows.map((t) =>
-        [t.date, t.entity_name ?? "", t.name ?? "", t.merchant_name ?? "", t.book_category ?? "", (-t.amount).toFixed(2)]
-          .map(esc)
-          .join(",")
+        [...[t.date, t.entity_name, t.name, t.merchant_name, t.book_category].map(csvText), `"${(-t.amount).toFixed(2)}"`].join(",")
       );
       const csv = [header.join(","), ...body].join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
@@ -165,6 +165,9 @@ export default function BooksReports() {
   }, [pickerOpen]);
 
   useEffect(() => {
+    // A newer entity, year or view supersedes this one: a slow earlier
+    // response must not overwrite the report now selected.
+    let cancelled = false;
     setLoading(true);
     setError("");
     void (async () => {
@@ -174,6 +177,7 @@ export default function BooksReports() {
             `/api/books/data?report=pnl&entity=${encodeURIComponent(entityParam)}&year=${year}`
           );
           const data = await res.json().catch(() => ({}));
+          if (cancelled) return;
           if (!res.ok) throw new Error(data?.message || "Couldn't build the P&L.");
           setPnl(data);
         } else if (view === "balance") {
@@ -181,24 +185,31 @@ export default function BooksReports() {
             `/api/books/data?report=balance-sheet&entity=${encodeURIComponent(entityParam)}`
           );
           const data = await res.json().catch(() => ({}));
+          if (cancelled) return;
           if (!res.ok) throw new Error(data?.message || "Couldn't build the balance sheet.");
           setSheet(data);
         } else {
           const [sRes, tRes] = await Promise.all([
             authFetch(`/api/books/data?report=statements&entity=${encodeURIComponent(entityParam)}&year=${year}`),
-            authFetch(`/api/books/data?report=tax1099&year=${year}`),
+            authFetch(`/api/books/data?report=tax1099&entity=${encodeURIComponent(entityParam)}&year=${year}`),
           ]);
           const sData = await sRes.json().catch(() => ({}));
+          const tData = tRes.ok ? await tRes.json().catch(() => null) : null;
+          if (cancelled) return;
           if (!sRes.ok) throw new Error(sData?.message || "Couldn't build the statements.");
           setStatements(sData);
-          setTax1099(tRes.ok ? await tRes.json() : null);
+          setTax1099(tData);
         }
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "Couldn't build that report.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [entityParam, year, view]);
 
   const subtle = "text-gray-500";
@@ -230,7 +241,9 @@ export default function BooksReports() {
     navigate(`/books/reports/cell?${params}`);
   }
 
-  const cellBtn = `w-full text-right cursor-pointer rounded px-1 -mx-1 transition-colors hover:underline decoration-dotted decoration-1 underline-offset-[3px] ${
+  // The button fills its cell (padding given back with negative margin), so
+  // a tap anywhere in the cell opens it.
+  const cellBtn = `block w-full text-right cursor-pointer rounded px-1 -mx-1 py-2 -my-2 transition-colors hover:underline decoration-dotted decoration-1 underline-offset-[3px] ${
     isDark ? "hover:bg-white/10" : "hover:bg-black/5"
   }`;
 
@@ -266,7 +279,7 @@ export default function BooksReports() {
             if (!plain || !drillLabel) return inner;
             return (
               <button
-                className="cursor-pointer hover:underline decoration-dotted underline-offset-2 text-left"
+                className="block w-full py-2 -my-2 cursor-pointer hover:underline decoration-dotted underline-offset-2 text-left"
                 title={`Open ${rowLabel}`}
                 onClick={() => drill(section, drillLabel, null)}
               >
@@ -372,7 +385,9 @@ export default function BooksReports() {
     );
   }
 
-  const years = [0, 1].map((d) => String(new Date().getFullYear() - d));
+  // The last two years, plus whatever year the URL opened on, so the picker
+  // always names the year on screen.
+  const years = [...new Set([year, ...[0, 1].map((d) => String(new Date().getFullYear() - d))])].sort().reverse();
   const pickerLabel =
     selected.size === 0
       ? "All entities"
@@ -382,6 +397,7 @@ export default function BooksReports() {
 
   return (
     <div className="w-full">
+      <h1 className="sr-only">Reports</h1>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
         <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white"}`}>
           {([["pnl", "Profit & loss"], ["balance", "Balance sheet"], ["statements", "Statements"]] as const).map(([value, label]) => (
@@ -611,9 +627,11 @@ export default function BooksReports() {
                 <table className="w-full text-sm">
                   <tbody>
                     {tax1099.vendors.map((v: any) => (
-                      <tr key={v.vendor} className={`border-t ${rowBorder}`}>
+                      <tr key={`${v.entity ?? ""}|${v.vendor}`} className={`border-t ${rowBorder}`}>
                         <td className="pl-4 pr-2 py-2 w-full max-w-0" title={v.vendor}>
                           <span className="block truncate">{v.vendor}</span>
+                          {/* A 1099 is per payer: name it when more than one entity is in view. */}
+                          {selected.size !== 1 && v.entity && <span className={`block truncate text-xs ${subtle}`}>Paid by {v.entity}</span>}
                           <span className={`block truncate text-xs sm:hidden ${subtle}`}>{v.account.replace(/^\d{4}\s+/, "")}</span>
                         </td>
                         <td className={`hidden sm:table-cell px-4 py-2 text-xs whitespace-nowrap ${subtle}`}>{v.account.replace(/^\d{4}\s+/, "")}</td>

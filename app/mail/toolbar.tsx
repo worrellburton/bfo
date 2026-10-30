@@ -1,5 +1,5 @@
 import { Fragment, type Dispatch, type SetStateAction } from "react";
-import { Button, IconButton, TextButton, useTone } from "../entity/ui";
+import { Button, Icon, IconButton, TextButton, useTone } from "../entity/ui";
 import type { MailCount, MailFilter, MailFolder, MailSummary } from "../mail-client";
 import { Glyph, Star } from "./glyphs";
 import { FILTERS } from "./constants";
@@ -66,7 +66,7 @@ export function Toolbar({ q, rows, list, folders, folder, filter, count, search,
                 aria-current={on ? "page" : undefined}
                 onClick={() => chooseFolder(x.key)}
                 title={live ? "In (inbox) and Out (sent) together, a row per conversation, latest activity first" : undefined}
-                className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-md:h-[38px] max-md:rounded-[10px] max-md:px-3.5 max-md:text-[13.5px] ${live ? "font-semibold" : ""} ${tone}`}
+                className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium transition-colors max-md:h-[38px] md:pointer-coarse:h-[38px] max-md:rounded-[10px] max-md:px-3.5 max-md:text-[13.5px] ${live ? "font-semibold" : ""} ${tone}`}
               >
                 {live && <Glyph name="chats" className="h-3.5 w-3.5" />}
                 {x.label}
@@ -86,12 +86,29 @@ export function Toolbar({ q, rows, list, folders, folder, filter, count, search,
         className="max-md:hidden @max-[440px]:hidden"
         options={FILTERS.map((x) => ({ key: x.key, label: x.label, icon: x.key === "starred" ? <Star on className="h-3 w-3" /> : undefined }))}
       />
+      {/* Where the filter has no room (the split view's narrow list), one that's on still shows, and its × clears it. */}
+      {filter !== "all" && (
+        <button
+          type="button"
+          onClick={() => chooseFilter("all")}
+          aria-label={`Showing ${FILTERS.find((x) => x.key === filter)?.label ?? filter} only. Show all`}
+          title="Show all"
+          className={`hidden h-7 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-lg pl-2.5 pr-1.5 text-[12px] font-medium md:pointer-coarse:h-[38px] md:@max-[440px]:inline-flex ${t.dark ? "bg-white/[0.09] text-white hover:bg-white/[0.14]" : "bg-gray-900 text-white hover:bg-gray-700"}`}
+        >
+          {FILTERS.find((x) => x.key === filter)?.label ?? filter}
+          <Icon name="x" className="h-3 w-3" strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }
 
-/** While messages are picked, in the table header's place: how many, select all, and what can be done to them at once. */
-export function BulkBar({ rows, pickedRows, bulkBusy, folder, pickAll, bulk, setPicked }: {
+/**
+ * While messages are picked, in the table header's place: how many, select all, and what can be done to them at once.
+ * Phones (`floating`, portalled): a bar at the bottom where the compose button was, so picking moves no row from under the finger.
+ */
+export function BulkBar({ rows, pickedRows, bulkBusy, folder, pickAll, bulk, setPicked, floating = false }: {
+  floating?: boolean;
   rows: MailSummary[];
   pickedRows: MailSummary[];
   bulkBusy: boolean;
@@ -101,11 +118,16 @@ export function BulkBar({ rows, pickedRows, bulkBusy, folder, pickAll, bulk, set
   setPicked: Dispatch<SetStateAction<Set<string>>>;
 }) {
   const t = useTone();
+  const clear = <IconButton icon="x" label="Clear selection (Esc)" onClick={() => setPicked(new Set())} />;
   return (
     <div
       role="toolbar"
       aria-label="Selected messages"
-      className={`pick-bar-in sticky top-0 z-[2] flex flex-wrap items-center gap-1 border-b px-3 py-1.5 backdrop-blur-xl ${t.line} ${t.dark ? "bg-[#14152a]/95" : "bg-(--mail-accent-deep)/10/95"}`}
+      className={`pick-bar-in flex flex-wrap items-center gap-1 backdrop-blur-xl ${
+        floating
+          ? `fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 rounded-2xl border px-2 py-1.5 shadow-2xl md:hidden ${t.dark ? "border-white/10 bg-[#14152a]/95" : "border-gray-200 bg-white/95"}`
+          : `sticky top-0 z-[2] border-b px-3 py-1.5 max-md:hidden ${t.line} ${t.dark ? "bg-[#14152a]/95" : "bg-(--mail-accent-deep)/10/95"}`
+      }`}
     >
       <SelectBox
         on={pickedRows.length === rows.length}
@@ -114,12 +136,16 @@ export function BulkBar({ rows, pickedRows, bulkBusy, folder, pickAll, bulk, set
         label={pickedRows.length === rows.length ? "Unselect all" : "Select all"}
       />
       <span className={`mr-2 text-[12.5px] font-medium tabular-nums ${t.text}`}>{pickedRows.length} selected</span>
-      {pickedRows.length < rows.length && (
+      {/* Phones: the round box selects all; no room for the words too. */}
+      {pickedRows.length < rows.length && !floating && (
         <button type="button" onClick={() => pickAll()} className={`mr-1 cursor-pointer text-[12px] hover:underline ${t.accent}`}>
           Select all {rows.length}
         </button>
       )}
       <span className="flex-1" />
+      {/* Phones: how many and × on one line, the actions spread across the next. */}
+      {floating && clear}
+      <div className={floating ? "flex w-full justify-around" : "contents"}>
       {pickedRows.some((m) => !m.read) && (
         <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("read")}>
           Mark read
@@ -143,7 +169,8 @@ export function BulkBar({ rows, pickedRows, bulkBusy, folder, pickAll, bulk, set
       <Button kind="ghost" disabled={bulkBusy} onClick={() => void bulk("delete")}>
         Delete
       </Button>
-      <IconButton icon="x" label="Clear selection (Esc)" onClick={() => setPicked(new Set())} />
+      </div>
+      {!floating && clear}
     </div>
   );
 }

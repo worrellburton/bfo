@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { canWrite, currentUser } from "../../lib/auth.js";
+import { canWrite, currentUser, handleError, type AppUser } from "../../lib/auth.js";
 import { balanceSheetReport } from "../../lib/books/balance-sheet.js";
 import { homeReport } from "../../lib/books/home.js";
 import { addReceipt, deleteReceipt, historyReport } from "../../lib/books/receipts.js";
@@ -88,7 +88,13 @@ const REPORTS: Record<string, (query: Query) => Promise<Reply>> = {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (req.method !== "GET" && !canWrite(user)) return res.status(403).json({ error: "forbidden" });
 

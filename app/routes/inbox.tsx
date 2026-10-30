@@ -231,6 +231,7 @@ export default function Inbox() {
       message={open?.message ?? null}
       error={open?.error ?? null}
       me={address}
+      mine={mine}
       backAlways={view === "table"}
       onBack={closeMessage}
       onReply={(m, mode) => setDraft(replyDraft(m, mode, mine))}
@@ -249,6 +250,8 @@ export default function Inbox() {
   const pickedRows = (rows ?? []).filter((m) => picked.has(m.id));
   useMailShortcuts({ draft, open, openId, folder, picked, pickedRows, noAddress, mine, box, toast, listRef, select, closeMessage, move, bulk, remove, setDraft, star, pick, markUnread });
   const bulkBar = pickedRows.length > 0 && rows && <BulkBar rows={rows} pickedRows={pickedRows} bulkBusy={bulkBusy} folder={folder} pickAll={pickAll} bulk={bulk} setPicked={setPicked} />;
+  // Phones: the same bar, floating at the bottom (portalled: the list is a containing block for fixed things).
+  const bulkFloat = pickedRows.length > 0 && rows && createPortal(<BulkBar floating rows={rows} pickedRows={pickedRows} bulkBusy={bulkBusy} folder={folder} pickAll={pickAll} bulk={bulk} setPicked={setPicked} />, document.body);
 
   // The iPhone app: invite notifications for new mail once, until answered (app/push.ts).
   const [pushAsk, setPushAsk] = usePushState();
@@ -263,14 +266,19 @@ export default function Inbox() {
   const pushInvite =
     pushAsk === "prompt" && !pushDismissed && rows && !q ? <PushInvite setPushDismissed={setPushDismissed} setPushAsk={setPushAsk} /> : null;
 
-  const listBody = <ListBody rows={rows} listError={listError} loaderLeaving={loaderLeaving} q={q} view={view} folder={folder} filter={filter} noAddress={noAddress} address={address} emptyText={emptyText} sent={sent} mixed={mixed} list={list} rowsFresh={rowsFresh} returnedId={returnedId} openId={openId} picked={picked} select={select} prefetch={prefetch} star={star} pick={pick} pickAll={pickAll} archiveRow={archiveRow} loadingMore={loadingMore} loadMore={loadMore} />;
+  const listBody = <ListBody rows={rows} listError={listError} loaderLeaving={loaderLeaving} q={q} view={view} folder={folder} filter={filter} noAddress={noAddress} address={address} emptyText={emptyText} sent={sent} mixed={mixed} list={list} rowsFresh={rowsFresh} returnedId={returnedId} openId={openId} picked={picked} select={select} prefetch={prefetch} star={star} pick={pick} pickAll={pickAll} archiveRow={archiveRow} loadingMore={loadingMore} loadMore={loadMore} retry={() => void loadList(folder, filter, q, box, "replace")} />;
 
   const toolbar = <Toolbar q={q} rows={rows} list={list} folders={folders} folder={folder} filter={filter} count={count} search={search} choosePlace={choosePlace} chooseFolder={chooseFolder} chooseFilter={chooseFilter} />;
 
   // Phones: the title shrinks into a glass bar as the list scrolls under it.
   const [scrolled, setScrolled] = useState(false);
+  /** Anything has gone up under the status bar. */
+  const [moved, setMoved] = useState(false);
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 28);
+    const onScroll = () => {
+      setScrolled(window.scrollY > 28);
+      setMoved(window.scrollY > 0);
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -290,18 +298,18 @@ export default function Inbox() {
   async function refreshFromPull(): Promise<{ fresh: number }> {
     const r = await syncMail().catch(() => ({ ingested: 0 }));
     const cur = listRef.current;
+    // No list (its read failed): read the one the URL asks for.
     if (cur) await loadList(cur.folder, cur.filter, cur.q, cur.to, "reset");
+    else await loadList(folder, filter, q, box, "replace");
     // What this pull brought in is already on screen: no "New mail" pill for it.
     seenUnread.current = Number.POSITIVE_INFINITY;
     notifyMailChanged();
     return { fresh: r.ingested ?? 0 };
   }
 
-  return (
-    <FacesContext.Provider value={faces}>
-    <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
-    {openId && <ReadingProgress />}
-    {freshMail && !openId && (
+  /** New mail: a pill over the top of the list, under the table's header (on a phone it scrolls with the list until it reaches the title bar, then stays just below it). */
+  const freshPill = freshMail && !openId && (
+    <div className={`sticky top-[calc(env(safe-area-inset-top)+5.25rem)] z-[3] h-0 ${view === "table" ? "md:top-[42px]" : "md:top-2"}`}>
       <button
         type="button"
         onClick={() => {
@@ -309,15 +317,26 @@ export default function Inbox() {
           resetList();
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}
-        className={`pill-in fixed left-1/2 z-40 inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border px-4 text-[13px] font-semibold shadow-xl mail-glass-top ${
+        className={`pill-in absolute left-1/2 top-2 inline-flex h-9 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold shadow-xl mail-glass-top md:top-0 ${
           t.dark ? "border-white/15 bg-(--mail-accent-deep)/40 text-white" : "border-(--mail-accent-deep)/30 bg-white/90 text-(--mail-accent-ink)"
         }`}
-        style={{ top: "calc(env(safe-area-inset-top) + 5.25rem)" }}
       >
         <span className="unread-glow h-1.5 w-1.5 rounded-full bg-(--mail-accent-pale)" />
         New mail
       </button>
-    )}
+    </div>
+  );
+
+  return (
+    <FacesContext.Provider value={faces}>
+    <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
+    {openId && <ReadingProgress />}
+    {/* Phones: the status bar overlays the page (no app header here), so once the page scrolls, glass behind it keeps rows and text from running under the clock. */}
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none fixed inset-x-0 top-0 z-[25] transition-opacity duration-300 mail-glass-top md:hidden ${moved ? "opacity-100" : "opacity-0"} ${t.dark ? "bg-[#0b0b10]/[0.92]" : "bg-white/[0.92]"}`}
+      style={{ height: "env(safe-area-inset-top)" }}
+    />
     <div className="@container relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
       <MailHeader openId={openId} me={me} address={address} noAddress={noAddress} aliases={aliases} box={box} chooseBox={chooseBox} scrolled={scrolled} count={count} toggleMailTheme={toggleMailTheme} setFaces={setFaces} q={q} search={search} view={view} chooseView={chooseView} setDraft={setDraft} />
 
@@ -338,6 +357,7 @@ export default function Inbox() {
             <>
               {toolbar}
               <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+                {freshPill}
                 {pushInvite}
                 {bulkBar}
                 {listBody}
@@ -354,6 +374,7 @@ export default function Inbox() {
           >
             {toolbar}
             <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+              {freshPill}
               {pushInvite}
               {bulkBar}
               {listBody}
@@ -375,7 +396,7 @@ export default function Inbox() {
       )}
 
       {/* Phones and small tablets: compose floats above the list, clear of the browser's bottom bar. */}
-      {!openId && !draft && !noAddress &&
+      {!openId && !draft && !noAddress && !pickedRows.length &&
         createPortal(
           <button
             type="button"
@@ -390,12 +411,20 @@ export default function Inbox() {
           document.body
         )}
 
+      {bulkFloat}
+
       {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
       {draft && createPortal(<Compose draft={draft} addresses={mine} onClose={() => setDraft(null)} onSent={(m) => onSent(m, draft.replyToId ?? draft.forwardId)} />, document.body)}
 
       {toast &&
         createPortal(
-          <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
+          // Phones: above the reader's Reply/Forward bar, or the picked messages' bar, when one is up.
+          <div
+            role="status"
+            className={`pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4 md:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] ${
+              openId ? "bottom-[calc(76px+env(safe-area-inset-bottom))]" : pickedRows.length ? "bottom-[calc(112px+env(safe-area-inset-bottom))]" : "bottom-[calc(1.25rem+env(safe-area-inset-bottom))]"
+            }`}
+          >
             <span className={`${toastLeaving ? "toast-out" : "toast-in"} pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
               {toast.text}
               {toast.undo && (

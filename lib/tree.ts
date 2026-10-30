@@ -13,8 +13,12 @@ export type Json = null | boolean | number | string | Json[] | { [k: string]: Js
 export type TreeRow = { collection: string; id: string; data: Json; updated_at: string };
 export type TreeOp = { op: "set" | "update"; path: string[]; value: Json };
 
-/** Collections the app keeps in the tree. Anything else is refused. */
-export const COLLECTIONS = ["assets", "estate-map", "frameworks", "notes", "agents"] as const;
+/**
+ * Collections the app keeps in the tree. Anything else is refused. "agents" (the
+ * old Office page's model agents, each holding a provider API key) is left out
+ * on purpose: those rows must never be served to a browser.
+ */
+export const COLLECTIONS = ["assets", "estate-map", "frameworks", "notes"] as const;
 export type Collection = (typeof COLLECTIONS)[number];
 
 const SEGMENT_RE = /^[^.$#[\]/\u0000-\u001f\u007f]{1,768}$/;

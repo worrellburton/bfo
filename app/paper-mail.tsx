@@ -62,6 +62,8 @@ export type PaperMailFull = PaperMail & {
   reading: PaperReading | null;
   readingAt: string | null;
   readingStale: boolean;
+  /** The last reading of these copies failed; it's tried again only when asked. */
+  readingFailed: boolean;
 };
 
 export const STABLE_ADDRESS = "5227 N 7th St STE 48575, Phoenix, AZ 85014";

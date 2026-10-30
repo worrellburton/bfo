@@ -110,9 +110,12 @@ async function handle(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // A formation (or its EIN) moving along: the entity's record follows it.
-  if (assetId && event.type.startsWith("filing.") && (object.type === "formation" || object.type === "ein")) {
-    await trackFiling(assetId, row.mode, object as unknown as PalmFiling).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
+  // A formation (or its EIN) moving along: the entity's record follows the
+  // filing as Palm has it now, read by id. The body may be a late or
+  // redelivered event, so its status is never written as it stands.
+  if (assetId && !seen && event.type.startsWith("filing.") && (object.type === "formation" || object.type === "ein") && typeof object.id === "string" && row.mode === palmMode()) {
+    const filing = await within(5000, palm<PalmFiling>(`/v1/filing/${encodeURIComponent(object.id)}`));
+    if (filing) await trackFiling(assetId, row.mode, filing).catch((err) => console.error("palm-webhook: couldn't record the filing", err));
   }
 
   // Writing an event onto its entity failed: it isn't stored, and Palm is asked to send it again.

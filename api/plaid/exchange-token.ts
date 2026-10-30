@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, currentUser } from "../../lib/auth.js";
+import { canWrite, currentUser, fail, handleError, type AppUser } from "../../lib/auth.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
 import { CountryCode } from "plaid";
 
@@ -38,7 +38,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
@@ -101,6 +107,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.json({ success: true, item_id, adopted_mappings: adopted });
   } catch (err: any) {
     console.error("Plaid exchange error:", err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data?.error_message || err.message });
+    // Plaid's display_message is written for people; anything else stays in
+    // the log line above (never the raw error: it carries Plaid's credentials).
+    const shown = err.response?.data?.display_message;
+    return fail(res, 500, "plaid_error", shown || "Something went wrong. Try again.");
   }
 }

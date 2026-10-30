@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
-import { canWrite, currentUser, isAdmin, sb } from "../lib/auth.js";
+import { canWrite, currentUser, handleError, isAdmin, sb, type AppUser } from "../lib/auth.js";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, stateRules, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
+import { fetchAll } from "../lib/db-pages.js";
 import { PALM_PRICES, type PalmProduct } from "../lib/palm-pricing.js";
 import { ownerName, ownerPercent, parentOwnerId } from "../lib/formation-owners.js";
 import { checkEin, einCheckText, einName, MonitorError, monitorsFor, refreshMonitors, registrationsOf, startMonitor, stopMonitor } from "../lib/palm-monitor.js";
@@ -110,7 +111,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
 
   const body = (req.body || {}) as Record<string, unknown>;
@@ -120,14 +127,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "status") return res.status(200).json({ configured: !!mode, mode });
   if (action === "usage") {
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
-    const [report, webhook] = await Promise.all([usageReport(), webhookHealth()]);
-    return res.status(200).json({ mode, ...report, webhook });
+    try {
+      const [report, webhook] = await Promise.all([usageReport(), webhookHealth()]);
+      return res.status(200).json({ mode, ...report, webhook });
+    } catch (err) {
+      return handleError(res, err);
+    }
   }
   if (action === "entity-bundle") {
     const assetId = String(body.assetId || "");
     if (!/^[\w-]{1,80}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
     const parts = Array.isArray(body.parts) ? (body.parts as unknown[]).filter((p): p is BundlePartName => typeof p === "string" && (BUNDLE_PARTS as readonly string[]).includes(p)) : [...BUNDLE_PARTS];
-    return res.status(200).json(await entityBundle(mode, assetId, parts));
+    try {
+      return res.status(200).json(await entityBundle(mode, assetId, parts));
+    } catch (err) {
+      return handleError(res, err);
+    }
   }
   if (!mode) return res.status(503).json({ error: "not_connected", message: "Palm isn't connected yet." });
   const mustMatchMode = ["link", "ra-change", "ra-end", "form-submit", "form-status", "monitor-on", "monitor-off", "ein-check"].includes(action);
@@ -709,8 +724,8 @@ async function usageReport() {
   const now = new Date();
   const thisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
   const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString();
-  const rows =
-    (await sb<UsageRow[]>(`palm_usage?at=gte.${encodeURIComponent(lastMonth)}&select=at,mode,product,cents,actor_name,asset_id,reason&order=at.desc&limit=10000`)) ?? [];
+  // Every row since last month: PostgREST stops at 1,000 without saying, which would understate the totals.
+  const rows = await fetchAll<UsageRow>(`palm_usage?at=gte.${encodeURIComponent(lastMonth)}&select=at,mode,product,cents,actor_name,asset_id,reason&order=at.desc,id.desc`);
   const month = { cents: 0, calls: 0, testCalls: 0, byProduct: {} as Partial<Record<PalmProduct, { calls: number; cents: number }>> };
   let lastCents = 0;
   for (const r of rows) {

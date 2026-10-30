@@ -857,6 +857,8 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
+  /* Closed, the drawer sits just off-screen and its shadow would fall across the page's left edge. */
+  .sidebar-rail[inert] { box-shadow: none; }
   .sidebar-rail .sidebar-head {
     height: auto;
     align-items: flex-start;
@@ -976,6 +978,8 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
     border-color: rgba(244, 237, 224, 0.12);
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   }
+  /* The menu is dark in either theme; the light theme's border-white remap would draw its rules white. */
+  .sidebar-rail .sidebar-user [role="menu"] .border-t { border-color: rgba(244, 237, 224, 0.08); }
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -1434,6 +1438,12 @@ html.light .ask-fab {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 html.light .ask-fab:hover { background: #262320; }
+/* Below lg the Books batch bar reaches this corner (full width on phones,
+   the whole content column on a portrait iPad); the button steps aside
+   while rows are selected. */
+@media (max-width: 1023px) {
+  body:has([role="toolbar"][aria-label="Batch edit"].pop-in-up) .ask-fab { display: none; }
+}
 @keyframes fab-glow {
   0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 30px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.42), 0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.18), 0 0 36px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.35); }
   50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 12px 34px hsl(var(--mail-hue) var(--mail-sat) 64% / 0.55), 0 0 0 1px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.28), 0 0 56px hsl(var(--mail-hue) var(--mail-sat) 72% / 0.55); }
@@ -1519,8 +1529,10 @@ body { overscroll-behavior-y: none; }
 }
 html.light .glass-card {
   border-color: rgba(255, 255, 255, 0.75);
+  /* The tint is a gradient, not a plain colour: a colour may only be the last
+     layer, and with var() in it the whole background would compute to transparent. */
   background:
-    rgba(255, 255, 255, calc(0.42 * var(--glass))),
+    linear-gradient(rgba(255, 255, 255, calc(0.42 * var(--glass))), rgba(255, 255, 255, calc(0.42 * var(--glass)))),
     linear-gradient(160deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.6) 100%);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.95) inset,
@@ -1542,8 +1554,9 @@ html.light .glass-card { border-color: rgba(203, 213, 225, calc(0.3 + 0.7 * var(
 }
 html.light .glass-panel {
   border-color: rgba(255, 255, 255, 0.8);
+  /* The tint is a gradient for the same reason as the light .glass-card's. */
   background:
-    rgba(255, 255, 255, calc(0.2 * var(--glass))),
+    linear-gradient(rgba(255, 255, 255, calc(0.2 * var(--glass))), rgba(255, 255, 255, calc(0.2 * var(--glass)))),
     linear-gradient(160deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.8) 100%);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 1) inset,

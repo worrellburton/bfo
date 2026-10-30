@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, addingAccount, adoptToken, cancelAddAccount, displayName, homePath, isAuthenticated, profileComplete, requestCode, verifyCode, type User } from "../auth";
+import { ApiError, addingAccount, cancelAddAccount, displayName, homePath, isAuthenticated, profileComplete, requestCode, safeNext, verifyCode, type User } from "../auth";
 import { ParticleCanvas } from "../particles";
 import { lockupOf, useBrandLogo } from "../brand";
 import { BrandLockup } from "../brand-lockup";
@@ -67,24 +67,14 @@ export default function Login() {
   const submittedCode = useRef("");
 
   const [params] = useSearchParams();
+  // The page that sent them here (app-layout's guard), to come back to once signed in.
+  const next = safeNext(params.get("next"));
   // Signing in one more account (from the account menu): say so, and offer the way back.
   const [returnTo, setReturnTo] = useState<User | null>(null);
   useEffect(() => setReturnTo(addingAccount()), []);
 
   useEffect(() => {
-    if (isAuthenticated()) {
-      navigate(homePath());
-      return;
-    }
-    const handoff = params.get("t");
-    if (handoff) {
-      setBusy(true);
-      adoptToken(handoff).then((ok) => {
-        setBusy(false);
-        if (ok) navigate(homePath());
-        else shakeOut("That sign-in link is no longer valid.");
-      });
-    }
+    if (isAuthenticated()) navigate(next ?? homePath(), { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
@@ -142,8 +132,8 @@ export default function Login() {
       const res = await verifyCode(sentTo, value);
       if (res.token) {
         setSuccess(true);
-        const next = profileComplete(res.user) ? homePath(res.user) : "/complete-profile";
-        setTimeout(() => navigate(next), 700);
+        const to = profileComplete(res.user) ? (next ?? homePath(res.user)) : `/complete-profile${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+        setTimeout(() => navigate(to, { replace: true }), 700);
       } else setStep("pending");
     } catch (err) {
       setCode("");

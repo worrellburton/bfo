@@ -86,8 +86,8 @@ export default function BooksReview() {
       {/* Headline counts */}
       <div className="grid grid-cols-3 gap-3">
         {([
-          ["Uncategorized", c.uncategorized, "/books/transactions"],
-          ["Low confidence", c.low_confidence, null],
+          ["Uncategorized", c.uncategorized, "/books/transactions?type=uncategorized"],
+          ["Low confidence", c.low_confidence, c.low_confidence ? "#low-confidence" : null],
           ["Duplicate groups", c.duplicate_groups, null],
         ] as const).map(([label, n, href]) => {
           const inner = (
@@ -96,7 +96,10 @@ export default function BooksReview() {
               <p className={`text-2xl font-semibold tabular-nums mt-1 ${n ? (isDark ? "text-white" : "text-gray-900") : subtle}`}>{n}</p>
             </>
           );
-          return href ? (
+          // A hash jumps to the list further down this page.
+          return href?.startsWith("#") ? (
+            <a key={label} href={href} className={`rounded-2xl border p-4 rise-in ${card} hover:border-current transition-colors`}>{inner}</a>
+          ) : href ? (
             <Link key={label} to={href} className={`rounded-2xl border p-4 rise-in ${card} hover:border-current transition-colors`}>{inner}</Link>
           ) : (
             <div key={label} className={`rounded-2xl border p-4 rise-in ${card}`}>{inner}</div>
@@ -104,7 +107,7 @@ export default function BooksReview() {
         })}
       </div>
 
-      {!recon?.accounts?.length && !review?.duplicates?.length && !review?.outliers?.length && (
+      {!recon?.accounts?.length && !review?.duplicates?.length && !review?.outliers?.length && !review?.low_confidence?.length && (
         <p className={`text-sm ${subtle}`}>Nothing needs a second look right now.</p>
       )}
 
@@ -166,6 +169,41 @@ export default function BooksReview() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Low confidence: rows still parked in a catch-all account. Each
+          vendor opens its page, where the rows can be re-filed. */}
+      {review?.low_confidence?.length > 0 && (
+        <section id="low-confidence" className="scroll-mt-[calc(5rem+env(safe-area-inset-top))] lg:scroll-mt-6">
+          <h2 className="text-sm font-semibold mb-2">Low confidence — still in a catch-all account</h2>
+          <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
+            <table className="w-full text-sm">
+              <tbody>
+                {review.low_confidence.map((t: any) => (
+                  <tr key={t.transaction_id} className={`border-t first:border-t-0 ${rowBorder}`}>
+                    <td className={`pl-4 pr-2 sm:px-4 py-2 whitespace-nowrap ${subtle}`}>{shortDate(t.date)}</td>
+                    <td className="px-2 sm:px-4 py-2 w-full max-w-0" title={who(t)}>
+                      <Link
+                        to={`/books/vendors/detail?name=${encodeURIComponent(who(t))}`}
+                        className="block truncate py-2.5 -my-2.5 hover:underline"
+                      >
+                        {who(t)}
+                      </Link>
+                      <span className={`block truncate text-xs sm:hidden ${subtle}`}>{(t.book_category ?? "").replace(/^\d{4}\s+/, "")}</span>
+                    </td>
+                    <td className={`hidden sm:table-cell px-4 py-2 text-xs whitespace-nowrap ${subtle}`}>{(t.book_category ?? "").replace(/^\d{4}\s+/, "")}</td>
+                    <td className="pl-2 pr-4 sm:px-4 py-2 text-right tabular-nums font-medium whitespace-nowrap">{money(-t.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {c.low_confidence > review.low_confidence.length && (
+            <p className={`text-xs mt-2 ${subtle}`}>
+              Showing {review.low_confidence.length} of {c.low_confidence}.
+            </p>
+          )}
         </section>
       )}
 

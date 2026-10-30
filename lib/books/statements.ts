@@ -238,23 +238,27 @@ export async function statementsReport(query: Query): Promise<Reply> {
 
 export async function tax1099Report(query: Query): Promise<Reply> {
   const year = yearOf(query.year);
+  const selection = parseEntities(String(query.entity ?? "all"));
   const prefs = await getPrefs();
-  const rows = await yearRows(year, prefs, null, "transaction_id.asc");
+  const rows = await yearRows(year, prefs, selection, "transaction_id.asc");
   // 1099-NEC candidates: payments to vendors booked to service accounts.
+  // A 1099 is filed by each payer, so a vendor is totalled per paying entity
+  // and the threshold applies to each payer on its own.
   const NEC = /^(6100|6150|6000)/;
-  const byVendor = new Map<string, { paid: number; count: number; account: string }>();
+  const byVendor = new Map<string, { vendor: string; entity: string | null; paid: number; count: number; account: string }>();
   for (const t of rows) {
     if (effType(t) !== "normal" || t.amount <= 0) continue;
     const acct = label(t);
     if (!NEC.test(acct)) continue;
     const vendor = (t.merchant_name || t.name || "Unknown").trim();
-    const v = byVendor.get(vendor) ?? { paid: 0, count: 0, account: acct };
+    const key = `${t.entity_id ?? ""}\u0000${vendor.toLowerCase()}`;
+    const v = byVendor.get(key) ?? { vendor, entity: t.entity_name ?? null, paid: 0, count: 0, account: acct };
     v.paid += t.amount;
     v.count += 1;
-    byVendor.set(vendor, v);
+    byVendor.set(key, v);
   }
-  const vendors = [...byVendor.entries()]
-    .map(([vendor, v]) => ({ vendor, paid: Math.round(v.paid), count: v.count, account: v.account }))
+  const vendors = [...byVendor.values()]
+    .map((v) => ({ vendor: v.vendor, entity: v.entity, paid: Math.round(v.paid), count: v.count, account: v.account }))
     .filter((v) => v.paid >= 600) // the IRS 1099 threshold
     .sort((a, b) => b.paid - a.paid);
   return ok({ year: Number(year), threshold: 600, vendors });

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
-import { currentUser, fail, handleError, sb } from "../lib/auth.js";
+import { currentUser, fail, handleError, sb, type AppUser } from "../lib/auth.js";
 import { speak, transcribe, VoiceError } from "../lib/voice.js";
 import { mintRealtimeSecret, RealtimeError, spokenInstructions } from "../lib/realtime.js";
 import { readCollection } from "../lib/tree.js";
@@ -38,7 +38,13 @@ const AUDIO_MAX = 3 * 1024 * 1024;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
-  const me = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let me: AppUser | null;
+  try {
+    me = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!me) return fail(res, 401, "unauthorized");
   try {
     if (req.method === "GET") {

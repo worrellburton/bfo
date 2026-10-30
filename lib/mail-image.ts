@@ -41,6 +41,35 @@ export function fetchableImageUrl(raw: string): URL | null {
   return u;
 }
 
+/**
+ * True for an address on the public internet. A hostname that resolves to a
+ * loopback, private, link-local, shared (CGNAT), multicast or reserved address
+ * is refused, as is any IPv6 address outside global unicast (2000::/3); an
+ * IPv4-mapped IPv6 address is judged by its IPv4 part.
+ */
+export function publicAddress(addr: string): boolean {
+  const a = addr.toLowerCase();
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(a);
+  if (mapped) return publicAddress(mapped[1]);
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+  if (v4) {
+    const [p, q, r] = v4.slice(1, 4).map(Number);
+    if (v4.slice(1).some((n) => Number(n) > 255)) return false;
+    return !(
+      p === 0 || p === 10 || p === 127 || p >= 224 ||
+      (p === 100 && q >= 64 && q < 128) ||
+      (p === 169 && q === 254) ||
+      (p === 172 && q >= 16 && q < 32) ||
+      (p === 192 && q === 168) ||
+      (p === 192 && q === 0 && r === 0) ||
+      (p === 198 && (q === 18 || q === 19))
+    );
+  }
+  if (!a.includes(":")) return false;
+  const first = a.startsWith("::") ? 0 : parseInt(a.split(":")[0], 16);
+  return first >= 0x2000 && first <= 0x3fff;
+}
+
 /** The proxied address for a remote picture. */
 export function proxiedImageUrl(url: string): string {
   return `${IMAGE_PATH}?u=${encodeURIComponent(url)}&s=${signImageUrl(url)}`;
@@ -48,7 +77,9 @@ export function proxiedImageUrl(url: string): string {
 
 const REMOTE = /^\s*(https?:)?\/\//i;
 
-/** Every remote image in the HTML, pointed at the proxy: src, srcset and the old background attribute. */
+/** Every remote image in the HTML, pointed at the proxy: src, srcset, poster, the old background attribute, and
+ * url() in style attributes and <style> blocks. An address the proxy won't fetch (a bare IP, an odd port) is left
+ * as written: the mail frame's CSP allows pictures only from BFO (app/mail-frame.tsx), so it never loads. */
 export function proxyRemoteImages(html: string): string {
   const fix = (raw: string): string => {
     const v = raw.trim();
@@ -56,26 +87,32 @@ export function proxyRemoteImages(html: string): string {
     const abs = v.startsWith("//") ? `https:${v}` : v;
     return fetchableImageUrl(abs) ? proxiedImageUrl(abs) : raw;
   };
-  return html
-    .replace(/(<img\b[^>]*?\s(?:src|data-src)\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, _q: string, dq?: string, sq?: string) => {
-      const v = dq ?? sq ?? "";
-      const out = fix(v);
-      return out === v ? m : `${pre}"${out.replace(/"/g, "&quot;")}"`;
-    })
-    .replace(/(<img\b[^>]*?\ssrcset\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, _q: string, dq?: string, sq?: string) => {
-      const v = dq ?? sq ?? "";
-      const out = v
-        .split(",")
-        .map((part) => {
-          const [url, ...rest] = part.trim().split(/\s+/);
-          return [fix(url), ...rest].join(" ");
-        })
-        .join(", ");
-      return out === v ? m : `${pre}"${out.replace(/"/g, "&quot;")}"`;
-    })
-    .replace(/(<(?:td|table|body|div)\b[^>]*?\sbackground\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, _q: string, dq?: string, sq?: string) => {
-      const v = dq ?? sq ?? "";
-      const out = fix(v);
-      return out === v ? m : `${pre}"${out.replace(/"/g, "&quot;")}"`;
+  const attr = (m: string, pre: string, _q: string, dq?: string, sq?: string, map: (v: string) => string = fix) => {
+    const v = dq ?? sq ?? "";
+    const out = map(v);
+    return out === v ? m : `${pre}"${out.replace(/"/g, "&quot;")}"`;
+  };
+  const srcset = (v: string) =>
+    v
+      .split(",")
+      .map((part) => {
+        const [url, ...rest] = part.trim().split(/\s+/);
+        return [fix(url), ...rest].join(" ");
+      })
+      .join(", ");
+  // CSS url(), quoted as written or HTML-escaped inside an attribute. The new address goes in unquoted, with the
+  // characters that would end it escaped (they're in the u= value, so the server reads the same address).
+  const css = (text: string) =>
+    text.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|&quot;(.*?)&quot;|&#39;(.*?)&#39;|([^"'()\s]+))\s*\)/gi, (m, ...found: (string | undefined)[]) => {
+      const url = found.slice(0, 5).find((x) => x !== undefined) ?? "";
+      const out = fix(url);
+      return out === url ? m : `url(${out.replace(/['()"]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)})`;
     });
+  return html
+    .replace(/(<img\b[^>]*?\s(?:src|data-src)\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, q: string, dq?: string, sq?: string) => attr(m, pre, q, dq, sq))
+    .replace(/(<(?:img|source)\b[^>]*?\ssrcset\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, q: string, dq?: string, sq?: string) => attr(m, pre, q, dq, sq, srcset))
+    .replace(/(<video\b[^>]*?\sposter\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, q: string, dq?: string, sq?: string) => attr(m, pre, q, dq, sq))
+    .replace(/(<[a-z][a-z0-9]*\b[^>]*?\sbackground\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, q: string, dq?: string, sq?: string) => attr(m, pre, q, dq, sq))
+    .replace(/(<[a-z][a-z0-9]*\b[^>]*?\sstyle\s*=\s*)("([^"]*)"|'([^']*)')/gi, (m, pre: string, q: string, dq?: string, sq?: string) => attr(m, pre, q, dq, sq, css))
+    .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi, (_m, open: string, body: string, close: string) => open + css(body) + close);
 }

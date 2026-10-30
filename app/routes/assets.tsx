@@ -1827,9 +1827,9 @@ function StaffAssets() {
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="w-full tabular-nums">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div className="min-w-0">
+      {/* Header: the actions wrap onto their own row when the title would be squeezed. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 mb-5">
+        <div className="min-w-0 flex-1 basis-[14rem]">
           <h1 className={`text-2xl font-semibold tracking-tight leading-tight ${t1}`}>Entities</h1>
           <p className={`mt-1 text-xs ${t2}`}>
             {loading ? (
@@ -1847,7 +1847,7 @@ function StaffAssets() {
             )}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
         {isAdmin() && palmMode && (
           <button
             type="button"

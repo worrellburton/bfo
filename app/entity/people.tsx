@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { authFetch, isAdmin, isPartner } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
 import { useEntity } from "./context";
-import { splitNames, type Member } from "./model";
+import { holdsOwnership, splitNames, type Member } from "./model";
 import { Button, Empty, Icon, IconButton, Input, Section, Select, TextButton, useTone } from "./ui";
 
 /**
@@ -54,8 +54,8 @@ export function PeopleTab() {
       ? [{ name: page.assetNames[asset.ownerId], percent: 100, role: "Member" }]
       : [];
   const fromOwner = !asset.members?.length && listed.length > 0;
-  const owners = listed.filter((m) => !/manager|director|officer/i.test(m.role ?? "") || m.percent != null);
-  const managers = listed.filter((m) => /manager|director|officer/i.test(m.role ?? "") && m.percent == null);
+  const owners = listed.filter(holdsOwnership);
+  const managers = listed.filter((m) => !holdsOwnership(m));
   const total = Math.round(owners.reduce((n, m) => n + (m.percent ?? 0), 0) * 100) / 100;
 
   const load = useCallback(async () => {
@@ -360,7 +360,8 @@ function PersonRow({
       >
         {company ? <Icon name="doc" className="h-4 w-4" /> : initials(name)}
       </span>
-      <div className="min-w-0 flex-1">
+      {/* A real basis, so on a phone the buttons wrap below rather than squeezing the name. */}
+      <div className="min-w-0 flex-1 basis-[14rem]">
         <p className={`truncate text-[13.5px] font-medium ${t.text}`}>{name}</p>
         <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] ${t.muted}`}>
           <span>{detail}</span>
@@ -381,7 +382,7 @@ function PersonRow({
       </div>
       {share != null && <span className={`font-brand text-[20px] tabular-nums ${t.text}`}>{Math.round(share * 100) / 100}%</span>}
       {admin && (
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {onInvite && (!access ? (
             <Button icon="mail" onClick={onInvite}>
               Invite to BFO

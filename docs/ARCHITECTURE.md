@@ -78,13 +78,15 @@ never a 401, so they are not signed out of the portal they do have.
 
 ## The tree: `tree_nodes` and `lib/tree.ts`
 
-Entities, the estate map, frameworks, notes and office agents are one JSON
+Entities, the estate map, frameworks and notes are one JSON
 tree, the shape the app had in Firebase Realtime Database.
 
 - Table `public.tree_nodes(collection, id, data jsonb, updated_at)`
   (`supabase/migrations/20261017_tree_nodes.sql`). Collections are fixed:
-  `assets`, `estate-map`, `frameworks`, `notes`, `agents` (`COLLECTIONS` in
-  `lib/tree.ts`); anything else is refused.
+  `assets`, `estate-map`, `frameworks`, `notes` (`COLLECTIONS` in
+  `lib/tree.ts`); anything else is refused. Old `agents` rows (the retired
+  Office page, which kept provider API keys in them) stay in the table but are
+  never served.
 - A path is `collection/id/…`: `assets` is every entity, `assets/x` one,
   `assets/x/documents/d` one of its documents.
 - Writes are `{ op: "set" | "update", path, value }` operations, validated by

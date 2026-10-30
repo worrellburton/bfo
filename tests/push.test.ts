@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { apnsConfig, apnsJwt, deadToken, pemOf } from "../lib/apns";
-import { TOKEN_RE, mailPayload, notifyNewMail } from "../lib/push";
+import { TOKEN_RE, mailPayload, notifyNewMail, paperMailPayload } from "../lib/push";
 
 const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const P8 = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -53,6 +53,12 @@ describe("new-mail notices", () => {
     const bare = mailPayload({ id: "m2", user_id: "u", from_email: "a@b.example", from_name: null, subject: null, snippet: null });
     expect(bare.aps.alert.title).toBe("a@b.example");
     expect(bare.aps.alert.subtitle).toBe("(no subject)");
+  });
+
+  it("for paper mail open that piece", () => {
+    const p = paperMailPayload({ id: "mi_8f3a2c", from_name: " Wells Fargo ", recipient: "Ledger Louise LLC" });
+    expect(p.url).toBe("/mailbox/mi_8f3a2c");
+    expect(p.aps.alert).toEqual({ title: "Physical mail", subtitle: "Wells Fargo", body: "For Ledger Louise LLC" });
   });
 
   it("send nothing when the server has no APNs key", async () => {

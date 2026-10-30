@@ -2,7 +2,8 @@ import { useTheme } from "../theme";
 import { VQBalanceSheetContent } from "./vq-balance-sheet";
 
 export function meta() {
-  return [{ title: "VQ Balance Sheet" }];
+  // Reachable by anyone with the link, so kept out of search results.
+  return [{ title: "VQ Balance Sheet" }, { name: "robots", content: "noindex, nofollow" }];
 }
 
 export default function VQBalanceSheetPublic() {

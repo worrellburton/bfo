@@ -8,7 +8,7 @@ import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { canDraftAgreement } from "../paperwork-generate";
 import { isPartner } from "../auth";
 import { SIGNED_LINK_MINUTES, StoredFileLink, storagePathOf, type StoredFileRef } from "../stored-file";
-import { paperAction, PaperMailList, usePaperMail } from "../paper-mail";
+import { PaperMailList, usePaperMail } from "../paper-mail";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
 import {
@@ -88,7 +88,7 @@ function Filings() {
   const groups = GROUPS.map((cat) => ({ cat, keys: main.filter((k) => (ruleOf.get(k)?.category ?? "Formation") === cat) })).filter((g) => g.keys.length);
   const total = view.scoredKinds.length;
   const reading = page.sorting > 0 || (!!page.scan && !page.scan.finished);
-  const canScan = page.docs.length > 0 && view.filedCount < total;
+  const canScan = !isPartner() && page.docs.length > 0 && view.filedCount < total;
 
   return (
     <Section
@@ -296,22 +296,13 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
 /** Paper mail Stable received for this entity: shown once there is some. */
 function PaperMailSection() {
   const { page } = useEntity();
-  const { mail, setMail } = usePaperMail(page.id ?? undefined);
+  const { mail } = usePaperMail(page.id ?? undefined);
   if (!mail?.length) return null;
   const unread = mail.filter((m) => !m.readAt).length;
   return (
     <Section title="Paper mail" count={unread || undefined} alert={unread > 0} info="Mail that arrived for this entity at the Stable address, with its envelope and scan.">
-      <PaperMailList
-        mail={mail.slice(0, 10)}
-        empty=""
-        onOpen={(m) => {
-          if (m.readAt) return;
-          setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)) ?? list);
-          void paperAction({ action: "read", id: m.id })
-            .then(() => window.dispatchEvent(new Event("bfo-paper-mail-changed")))
-            .catch(() => {});
-        }}
-      />
+      {/* The piece's page marks it read once it has loaded. */}
+      <PaperMailList mail={mail.slice(0, 10)} empty="" />
     </Section>
   );
 }

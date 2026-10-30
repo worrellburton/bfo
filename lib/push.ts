@@ -170,7 +170,19 @@ export async function notifyNewTexts(rows: NewText[]): Promise<number> {
 
 export type NewPaperMail = { id: string; from_name?: string | null; recipient?: string | null; received_at?: string | null };
 
-/** Physical mail at the office's address: staff who want to know (the Mailbox page). */
+/** What a notice for one piece of paper mail says; tapping it opens the piece. */
+export function paperMailPayload(r: NewPaperMail) {
+  return {
+    aps: {
+      alert: { title: "Physical mail", subtitle: clip(r.from_name?.trim() || "Unknown sender", 80), body: r.recipient ? clip(`For ${r.recipient}`, 180) : "Arrived at the office's address." },
+      sound: "default",
+      "thread-id": "paper-mail",
+    },
+    url: `/mailbox/${encodeURIComponent(r.id)}`,
+  };
+}
+
+/** Physical mail at the office's address: staff who want to know (the piece's page). */
 export async function notifyNewPaperMail(rows: NewPaperMail[], now = Date.now()): Promise<number> {
   if (!apnsConfig()) return 0;
   // A catch-up sync can bring older pieces: only today's arrivals ring.
@@ -180,18 +192,7 @@ export async function notifyNewPaperMail(rows: NewPaperMail[], now = Date.now())
     const to = (await peopleIn(["owner", "admin", "member"])).filter((p) => p.prefs.paper).map((p) => p.id);
     if (!to.length) return 0;
     return await deliver(
-      fresh.map((r) => ({
-        to,
-        payload: {
-          aps: {
-            alert: { title: "Physical mail", subtitle: clip(r.from_name?.trim() || "Unknown sender", 80), body: r.recipient ? clip(`For ${r.recipient}`, 180) : "Arrived at the office's address." },
-            sound: "default",
-            "thread-id": "paper-mail",
-          },
-          url: "/mailbox",
-        },
-        collapseId: r.id,
-      })),
+      fresh.map((r) => ({ to, payload: paperMailPayload(r), collapseId: r.id })),
       "paper-mail"
     );
   } catch (err) {

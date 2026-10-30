@@ -213,9 +213,12 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
   useEffect(() => {
     // New / Reply / Forward: focus goes back there on close.
     const opener = document.activeElement as HTMLElement | null;
-    if (draft.focus === "body" && bodyRef.current) {
-      bodyRef.current.focus(true);
-    } else toRef.current?.focus();
+    // Asking which mailbox first: the first one keeps the focus its autoFocus gave it.
+    if (!needsFrom) {
+      if (draft.focus === "body" && bodyRef.current) {
+        bodyRef.current.focus(true);
+      } else toRef.current?.focus();
+    }
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -225,13 +228,25 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // While the mailbox is asked for, the fields under the question can't be reached (Tab, a screen reader).
+  const chooserRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!needsFrom || !panel) return;
+    const under = [...panel.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== chooserRef.current && el.tagName !== "HEADER");
+    for (const el of under) el.inert = true;
+    return () => {
+      for (const el of under) el.inert = false;
+    };
+  }, [needsFrom]);
+
   /** Keeps Tab inside the dialog. */
   function trapTab(e: React.KeyboardEvent) {
     const panel = panelRef.current;
     if (!panel) return;
     const list = [
       ...panel.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'),
-    ].filter((el) => el.offsetParent !== null);
+    ].filter((el) => el.offsetParent !== null && !el.closest("[inert]"));
     if (!list.length) return;
     const first = list[0];
     const last = list[list.length - 1];
@@ -359,7 +374,7 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
         </header>
 
         {needsFrom && (
-          <div className={`absolute inset-x-0 bottom-0 top-12 z-10 flex flex-col max-sm:top-[calc(env(safe-area-inset-top)+3.5rem)] ${t.dark ? "bg-[#111113]" : "bg-white"}`}>
+          <div ref={chooserRef} className={`absolute inset-x-0 bottom-0 top-12 z-10 flex flex-col max-sm:top-[calc(env(safe-area-inset-top)+3.5rem)] ${t.dark ? "bg-[#111113]" : "bg-white"}`}>
             <div className="px-5 pb-3 pt-6 sm:px-6">
               <p className={`text-[15px] font-semibold ${t.text}`}>Send from which mailbox?</p>
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>You're looking at all your mail, so pick the address this goes out from. It can be changed in the From line after.</p>

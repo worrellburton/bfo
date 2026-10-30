@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { authFetch } from "../auth";
+import { authFetch, canWrite } from "../auth";
 import { useTheme } from "../theme";
+import { fetchAllTxns, postBatchEdit, visibleSelection } from "../books-batch";
 import { type Txn, TxnTable, Menu, BatchBar, ConfirmDialog, shortDate, accountIcon, accountGroup, typeIcon } from "../books-shared";
 
 export function meta() {
@@ -26,6 +27,8 @@ export default function BooksVendorDetail() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const name = params.get("name") ?? "";
+  // Viewers read the vendor; the rename, defaults, merge and edits are left out.
+  const writable = canWrite();
 
   const [txns, setTxns] = useState<Txn[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -57,14 +60,16 @@ export default function BooksVendorDetail() {
     setLoading(true);
     setError("");
     try {
-      const qs = new URLSearchParams({ report: "transactions", q: name, limit: "500" });
-      const res = await authFetch(`/api/books/data?${qs}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Couldn't load this vendor.");
+      // Every page of the search, not just the first 500 — Paid, Since and
+      // the yearly shape need the vendor's whole history.
+      const all = await fetchAllTxns<Txn>(authFetch, new URLSearchParams({ report: "transactions", q: name }), "Couldn't load this vendor.");
       // Exact vendor identity, but tolerant of case/whitespace so it mirrors
       // how the Vendors list keys a vendor (trim + lowercase).
       const key = name.trim().toLowerCase();
-      setTxns(((data.transactions ?? []) as Txn[]).filter((t) => (t.merchant_name || t.name || "").trim().toLowerCase() === key));
+      const list = all.filter((t) => (t.merchant_name || t.name || "").trim().toLowerCase() === key);
+      setTxns(list);
+      // A reload keeps only the selected rows still listed.
+      setSelected((prev) => new Set(visibleSelection(prev, list)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load this vendor.");
     } finally {
@@ -223,15 +228,15 @@ export default function BooksVendorDetail() {
                 nameDone.current = false;
                 setEditingName(true);
               }}
-              disabled={!name}
-              title="Rename this vendor"
+              disabled={!name || !writable}
+              title={writable ? "Rename this vendor" : undefined}
               className="group flex items-center gap-2.5 min-h-[40px] text-left cursor-pointer max-w-full disabled:cursor-default"
             >
               <h1 className={`text-2xl font-bold tracking-tight truncate ${isDark ? "" : "text-gray-900"}`}>
                 {name || "Vendor"}
               </h1>
               <svg
-                className={`w-4 h-4 shrink-0 transition-colors ${isDark ? "text-gray-600 group-hover:text-gray-300" : "text-gray-300 group-hover:text-gray-600"}`}
+                className={`w-4 h-4 shrink-0 transition-colors ${writable ? "" : "hidden"} ${isDark ? "text-gray-600 group-hover:text-gray-300" : "text-gray-300 group-hover:text-gray-600"}`}
                 fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
@@ -248,6 +253,7 @@ export default function BooksVendorDetail() {
                 touch
                 label="Default account"
                 placeholder="Choose account…"
+                readOnly={!writable}
                 disabled={saving || loading}
                 onChange={(v) => void saveSettings({ book_category: v })}
                 options={categories.map((c) => ({
@@ -266,6 +272,7 @@ export default function BooksVendorDetail() {
                 isDark={isDark}
                 touch
                 label="Default type"
+                readOnly={!writable}
                 disabled={saving || loading}
                 onChange={(v) => void saveSettings({ type_override: v })}
                 options={[
@@ -276,7 +283,7 @@ export default function BooksVendorDetail() {
               />
             </span>
             {/* Fold this vendor's whole history into another vendor. */}
-            <span className="inline-flex items-center gap-2">
+            {writable && <span className="inline-flex items-center gap-2">
               <span className={`text-xs ${subtle}`}>Merge into</span>
               <Menu
                 value=""
@@ -293,7 +300,7 @@ export default function BooksVendorDetail() {
                   .filter((v) => v !== name)
                   .map((v) => ({ value: v, label: v }))}
               />
-            </span>
+            </span>}
           </div>
         </div>
 
@@ -370,7 +377,8 @@ export default function BooksVendorDetail() {
               loans={loans}
               isDark={isDark}
               balances={balances}
-              selection={{
+              readOnly={!writable}
+              selection={writable ? {
                 selected,
                 toggle: (id) =>
                   setSelected((prev) => {
@@ -385,7 +393,7 @@ export default function BooksVendorDetail() {
                     for (const id of ids) on ? next.add(id) : next.delete(id);
                     return next;
                   }),
-              }}
+              } : undefined}
               onRowChange={(t) =>
                 setTxns((prev) => prev.map((x) => (x.transaction_id === t.transaction_id ? { ...t, entity_id: x.entity_id, entity_name: x.entity_name } : x)))
               }
@@ -396,24 +404,22 @@ export default function BooksVendorDetail() {
         </>
       )}
       <BatchBar
-        count={selected.size}
+        count={visibleSelection(selected, txns).length}
         isDark={isDark}
         busy={saving}
         vendorSuggestions={vendors}
         categories={categories}
-        onApply={(patch) => {
+        onApply={async (patch) => {
           setSaving(true);
-          void authFetch("/api/books/data", {
-            method: "POST",
-            body: JSON.stringify({ action: "batch_update", transaction_ids: [...selected], ...patch }),
-          })
-            .then(async (res) => {
-              if (!res.ok) throw new Error("Couldn't apply that batch edit.");
-              setSelected(new Set());
-              await load();
-            })
-            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't apply that batch edit."))
-            .finally(() => setSaving(false));
+          try {
+            const r = await postBatchEdit(authFetch, visibleSelection(selected, txns), patch);
+            if (r.ok) setSelected(new Set());
+            else setError(r.message);
+            if (r.ok || r.done) await load();
+            return r.ok;
+          } finally {
+            setSaving(false);
+          }
         }}
         onClear={() => setSelected(new Set())}
       />

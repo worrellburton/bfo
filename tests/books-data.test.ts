@@ -311,7 +311,28 @@ describe("report=transactions", () => {
     const filter = decodeURIComponent(transactionsFilter(prefs, { entity: ENT_A, type: "expenses", q: "ac_me" }));
     expect(pageCall.path).toBe(`book_transactions?select=*${filter}&order=amount.asc.nullslast,transaction_id.asc`);
     expect(pageCall.headers).toEqual({ Range: "0-1", Prefer: "count=exact" });
-    expect(sumCall.path).toBe(`book_transactions?select=date,amount${filter}&order=date.asc,transaction_id.asc`);
+    expect(sumCall.path).toBe(
+      `book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,txn_type${filter}&order=date.asc,transaction_id.asc`
+    );
+  });
+
+  it("leaves transfers, card payments, roll-ups and loans out of income and expenses", async () => {
+    routes.unshift(
+      [/^GET book_transactions\?select=\*/, () => json(page, 200, { "content-range": "0-1/2" })],
+      [/^GET book_transactions\?select=date,amount/, () => [
+        txn({ date: "2026-01-02", amount: 100, book_category: "6100 Professional Fees" }),
+        txn({ date: "2026-01-03", amount: -1000, book_category: "4000 Rental Income" }),
+        // Card autopay, both legs, and a transfer to savings, both legs.
+        txn({ date: "2026-01-04", amount: 100, book_category: "9150 Credit Card Payments" }),
+        txn({ date: "2026-01-04", amount: -100, book_category: "9150 Credit Card Payments" }),
+        txn({ date: "2026-01-05", amount: 5000, txn_type: "transfer", book_category: null }),
+        txn({ date: "2026-01-05", amount: -5000, txn_type: "transfer", book_category: null }),
+        txn({ date: "2026-01-06", amount: 250, intercompany: true }),
+        txn({ date: "2026-01-07", amount: 900, loan_id: "loan-1" }),
+      ]]
+    );
+    const r = await get({ report: "transactions" });
+    expect(r.json.summary).toEqual({ count: 8, expenses: 100, income: 1000, first: "2026-01-02", last: "2026-01-07" });
   });
 
   it("summary=0 skips the totals query", async () => {

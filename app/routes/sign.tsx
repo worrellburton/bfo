@@ -160,11 +160,15 @@ export default function SignPage() {
                   ? `You signed this as ${name || view.you.name}.`
                   : view.status === "voided"
                     ? "This request was withdrawn."
-                    : `You're signing as ${view.you.name}, ${view.you.role}. ${mine.length ? `Your ${mine.map((f) => FIELD_LABEL[f.type].toLowerCase()).join(", ")} ${mine.length === 1 ? "goes" : "go"} where the page is marked.` : ""}`}
+                    : view.status === "declined" || done === "declined"
+                      ? view.you.status === "declined" || done === "declined"
+                        ? "You declined to sign this. The sender has been told."
+                        : `${others.find((p) => p.status === "declined")?.name || "The other party"} declined to sign, so this request is closed. Nothing more is needed from you.`
+                      : `You're signing as ${view.you.name}, ${view.you.role}. ${mine.length ? `Your ${mine.map((f) => FIELD_LABEL[f.type].toLowerCase()).join(", ")} ${mine.length === 1 ? "goes" : "go"} where the page is marked.` : ""}`}
             </p>
 
             {view.completed && pdfUrl && (
-              <a href={pdfUrl} className="mt-4 inline-flex h-10 items-center rounded-xl bg-white px-4 text-[13.5px] font-semibold text-black">
+              <a href={pdfUrl} className="mt-4 inline-flex h-[44px] items-center rounded-xl bg-white px-4 text-[13.5px] font-semibold text-black">
                 Download the signed copy
               </a>
             )}
@@ -174,7 +178,6 @@ export default function SignPage() {
                 Waiting on {others.filter((p) => p.status !== "signed").map((p) => p.name || p.role).join(" and ") || "the other party"}. This page updates when they sign, and we'll email you the signed copy.
               </p>
             )}
-            {done === "declined" && <p className="mt-3 text-[13px] text-white/50">You declined to sign. The sender has been told.</p>}
 
             <div
               ref={(el) => {
@@ -213,7 +216,7 @@ export default function SignPage() {
               <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
                 <label className="block">
                   <span className="mb-1.5 block text-[12px] text-white/60">Your full name</span>
-                  <input value={name} onChange={(e) => setName(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[16px] text-white focus:border-white/30 focus:outline-none" autoComplete="name" />
+                  <input value={name} onChange={(e) => setName(e.target.value)} className="h-[44px] w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[16px] text-white focus:border-white/30 focus:outline-none" autoComplete="name" />
                 </label>
                 <div className="mt-4">
                   <span className="mb-1.5 block text-[12px] text-white/60">Your signature</span>
@@ -221,17 +224,17 @@ export default function SignPage() {
                 </div>
                 {error && !confirming && <p className="mt-3 text-[13px] text-red-400">{error}</p>}
                 <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <button type="button" disabled={busy || !png || !name.trim()} onClick={() => setConfirming(true)} className="h-11 rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-40">
+                  <button type="button" disabled={busy || !png || !name.trim()} onClick={() => setConfirming(true)} className="h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-40">
                     Sign
                   </button>
                   {!declining ? (
-                    <button type="button" onClick={() => setDeclining(true)} className="text-[13px] text-white/50 hover:text-white">
+                    <button type="button" onClick={() => setDeclining(true)} className="inline-flex min-h-[44px] items-center px-2 text-[13px] text-white/50 hover:text-white">
                       I'd rather not sign
                     </button>
                   ) : (
                     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
-                      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why not? (optional)" aria-label="Why you're declining (optional)" className="h-10 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[14px] text-white focus:outline-none" />
-                      <button type="button" disabled={busy} onClick={() => post("decline")} className="h-10 rounded-xl border border-white/15 px-4 text-[13px] text-white/80 hover:bg-white/10">
+                      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why not? (optional)" aria-label="Why you're declining (optional)" className="h-[44px] flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[14px] text-white focus:outline-none" />
+                      <button type="button" disabled={busy} onClick={() => post("decline")} className="h-[44px] rounded-xl border border-white/15 px-4 text-[13px] text-white/80 hover:bg-white/10">
                         Decline to sign
                       </button>
                     </div>
@@ -258,10 +261,10 @@ export default function SignPage() {
             )}
             {error && <p className="mt-3 text-[13px] text-red-400">{error}</p>}
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button type="button" disabled={busy} onClick={() => setConfirming(false)} className="h-11 rounded-xl px-4 text-[14px] text-white/70 hover:bg-white/10">
+              <button type="button" disabled={busy} onClick={() => setConfirming(false)} className="h-[44px] rounded-xl px-4 text-[14px] text-white/70 hover:bg-white/10">
                 Go back
               </button>
-              <button type="button" autoFocus disabled={busy} onClick={() => post("sign")} className="h-11 rounded-xl bg-white px-6 text-[14px] font-semibold text-black disabled:opacity-50">
+              <button type="button" autoFocus disabled={busy} onClick={() => post("sign")} className="h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black disabled:opacity-50">
                 {busy ? "Signing…" : "I agree, sign"}
               </button>
             </div>

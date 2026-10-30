@@ -8,7 +8,9 @@ import { storageRead } from "./storage.js";
  * envelope's sender, return address, recipient and postage, and, once Stable
  * has scanned it, what the piece is, what it asks for and by when. Kept on the
  * row (stable_mail.reading) with the copies it came from, so it's read once
- * per envelope and again when a scan arrives.
+ * per envelope and again when a scan arrives. A reading that fails after the
+ * model has run is remembered too (reading_from "failed:…"), so opening the
+ * piece doesn't pay for it again; only an explicit "Try again" does.
  */
 
 const MODEL = "claude-opus-5-5";
@@ -91,10 +93,19 @@ export function readingKey(row: Pick<MailRow, "envelope_path" | "scan_path">): s
   return [row.envelope_path ?? "", row.scan_path ?? ""].join("|");
 }
 
-/** Whether the row's reading is missing or older than its copies. */
-export function needsReading(row: Pick<MailRow, "envelope_path" | "scan_path"> & { reading_from?: string | null }): boolean {
+const FAILED = "failed:";
+type Keyed = Pick<MailRow, "envelope_path" | "scan_path"> & { reading_from?: string | null };
+
+/** Whether the row's reading is missing or older than its copies (a failed try at these copies counts as done). */
+export function needsReading(row: Keyed): boolean {
   if (!row.envelope_path && !row.scan_path) return false;
-  return row.reading_from !== readingKey(row);
+  const key = readingKey(row);
+  return row.reading_from !== key && row.reading_from !== FAILED + key;
+}
+
+/** Whether the last try at reading these copies failed. */
+export function readingFailed(row: Keyed): boolean {
+  return (!!row.envelope_path || !!row.scan_path) && row.reading_from === FAILED + readingKey(row);
 }
 
 type Block = Anthropic.Messages.ContentBlockParam;
@@ -153,6 +164,17 @@ export async function readPiece(row: MailRow): Promise<PaperReading> {
   if (!apiKey) throw new ReadingUnavailable("Add ANTHROPIC_API_KEY in Vercel to read mail.");
   const [envelope, scan] = await Promise.all([row.envelope_path ? blockFor(row.envelope_path) : null, row.scan_path ? blockFor(row.scan_path) : null]);
   if (!envelope && !scan) throw new ReadingUnavailable("There's no envelope or scan to read yet.");
+  // A scan that's too large, in a format BFO can't read, or that storage didn't
+  // return isn't claimed as read: the reading keeps the envelope's key, so the
+  // next open tries the scan again without paying to re-read the envelope.
+  const envelopeOnly = readingKey({ envelope_path: row.envelope_path, scan_path: null });
+  if (row.scan_path && !scan && (!envelope || row.reading_from === envelopeOnly)) {
+    // Remembered, so opening the piece doesn't fetch the scan again and fail the same way; "Try again" still can.
+    await sb(`stable_mail?id=eq.${encodeURIComponent(row.id)}`, { method: "PATCH", body: { reading_from: FAILED + readingKey(row) } }).catch((e) =>
+      console.error("paper-read: couldn't record an unreadable scan", e)
+    );
+    throw new ReadingUnavailable("BFO couldn't read the scan: it's too large, in a format BFO can't read, or storage didn't answer. Open it, or try again.");
+  }
 
   const content: Block[] = [];
   if (envelope) content.push({ type: "text", text: "The envelope:" }, envelope);
@@ -179,16 +201,25 @@ export async function readPiece(row: MailRow): Promise<PaperReading> {
     if (!(err instanceof Anthropic.BadRequestError) || /credit balance/i.test(err.message)) throw err;
     message = await client.messages.create(params);
   }
-  if (message.stop_reason === "refusal") throw new ReadingUnavailable("This piece couldn't be read.");
-  if (message.stop_reason === "max_tokens") throw new ReadingUnavailable("The reading ran long; try again.");
-  const text = message.content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-  const reading = toReading(JSON.parse(text), !!scan);
+  let reading: PaperReading;
+  try {
+    if (message.stop_reason === "refusal") throw new ReadingUnavailable("This piece couldn't be read.");
+    if (message.stop_reason === "max_tokens") throw new ReadingUnavailable("The reading ran long; try again.");
+    const text = message.content
+      .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    reading = toReading(JSON.parse(text), !!scan);
+  } catch (err) {
+    // The model ran and was billed: remember the failure so the next open doesn't pay again.
+    await sb(`stable_mail?id=eq.${encodeURIComponent(row.id)}`, { method: "PATCH", body: { reading_from: FAILED + readingKey(row) } }).catch((e) =>
+      console.error("paper-read: couldn't record a failed reading", e)
+    );
+    throw err instanceof ReadingUnavailable ? err : new ReadingUnavailable("BFO couldn't make sense of this piece; try again.");
+  }
   await sb(`stable_mail?id=eq.${encodeURIComponent(row.id)}`, {
     method: "PATCH",
-    body: { reading, reading_from: readingKey(row), reading_at: new Date().toISOString() },
+    body: { reading, reading_from: readingKey(scan ? row : { envelope_path: row.envelope_path, scan_path: null }), reading_at: new Date().toISOString() },
   });
   return reading;
 }

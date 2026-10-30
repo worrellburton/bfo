@@ -216,9 +216,12 @@ function TrendChart({
   const last = xy[xy.length - 1];
   const active = hover != null ? xy[hover] : null;
   const gid = isDark ? "inv-trend-d" : "inv-trend-l";
+  // The chart's width in px, so the popup can be kept inside it.
+  const [width, setWidth] = useState(0);
 
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    setWidth(rect.width);
     const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     setHover(Math.round(f * (points.length - 1)));
   };
@@ -272,7 +275,7 @@ function TrendChart({
             className={`pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${isDark ? "border-gray-950" : "border-white"}`}
             style={{ left: `${(active[0] / W) * 100}%`, top: `${(active[1] / H) * 100}%`, background: accent }}
           />
-          <PointCard points={points} index={hover!} x={active[0] / W} isDark={isDark} />
+          <PointCard points={points} index={hover!} x={active[0] / W} width={width} isDark={isDark} />
         </>
       )}
     </div>
@@ -280,7 +283,7 @@ function TrendChart({
 }
 
 /** The scrub popup: the day's value, its move on the prior day and since the range began. */
-function PointCard({ points, index, x, isDark }: { points: Point[]; index: number; x: number; isDark: boolean }) {
+function PointCard({ points, index, x, width, isDark }: { points: Point[]; index: number; x: number; width: number; isDark: boolean }) {
   const p = points[index];
   if (!p) return null;
   const prev = index > 0 ? points[index - 1] : null;
@@ -291,13 +294,21 @@ function PointCard({ points, index, x, isDark }: { points: Point[]; index: numbe
   const date = dayDate(p.day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   const dayMove = prev ? p.value - prev.value : null;
   const rangeMove = p.value - start.value;
-  const alignRight = x > 0.55;
+  // Beside the scrub line on whichever side has room, clamped to the chart so
+  // the hero card's overflow-hidden never cuts it off on a narrow screen.
+  const POP = 228;
+  const GAP = 14;
+  const px = x * width;
+  const alignRight = width ? px + GAP + POP > width && (px - GAP - POP >= 0 || x > 0.5) : x > 0.55;
+  const position: CSSProperties = width
+    ? { left: Math.max(0, Math.min(width - POP, alignRight ? px - GAP - POP : px + GAP)), top: "50%", transform: "translateY(-50%)" }
+    : { left: `${x * 100}%`, top: "50%", transform: `translate(${alignRight ? "calc(-100% - 14px)" : "14px"}, -50%)` };
   return (
     <div
       className={`pointer-events-none absolute z-20 w-[228px] rounded-xl border p-3 text-[11.5px] shadow-xl backdrop-blur-md ${
         isDark ? "border-white/10 bg-[#0d0f17]/95 text-gray-200 shadow-black/50" : "border-gray-200 bg-white/95 text-gray-800 shadow-gray-900/10"
       }`}
-      style={{ left: `${x * 100}%`, top: "50%", transform: `translate(${alignRight ? "calc(-100% - 14px)" : "14px"}, -50%)` }}
+      style={position}
     >
       <p className="text-[11px] font-medium text-gray-500">{date}</p>
       <p className="mt-1 text-[16px] font-semibold tabular-nums tracking-[-0.01em]">{fmtUSD(p.value)}</p>
@@ -927,10 +938,10 @@ export default function Investments() {
                 <div className={`mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t px-5 pb-4 pt-3 sm:grid-cols-4 ${hairline}`}>
                   <div className="min-w-0">
                     <p className={kicker}>Unrealized gain</p>
-                    <p className={`mt-1 truncate text-[13px] font-medium ${gainTone(gainTotals.n ? gainTotals.gain : null)}`}>
+                    <p className={`mt-1 text-[13px] font-medium ${gainTone(gainTotals.n ? gainTotals.gain : null)}`}>
                       {gainTotals.n ? (
                         <>
-                          {fmtSigned(gainTotals.gain)}
+                          <span className="whitespace-nowrap">{fmtSigned(gainTotals.gain)}</span>
                           {gainTotals.pct != null && <span className="ml-1.5 text-[11.5px] opacity-80">{fmtPct(gainTotals.pct)}</span>}
                         </>
                       ) : (
@@ -1171,18 +1182,20 @@ export default function Investments() {
                 )}
               </div>
             ) : (
-              <>
-                {/* Table: sm and up */}
-                <div className="hidden overflow-x-auto sm:block">
-                  <table className="w-full min-w-[640px] text-sm tabular-nums">
+              // Sized by the card, not the screen: beside the iPad rail a
+              // "wide" screen still leaves a narrow column.
+              <div className="@container">
+                {/* Table: wide cards */}
+                <div className="hidden overflow-x-auto @3xl:block">
+                  <table className="w-full text-sm tabular-nums">
                     <thead>
                       <tr className={`border-b text-left text-xs font-medium ${t2} ${ruleBorder(isDark)}`}>
                         {sortTh("Holding", "name")}
-                        {sortTh("Account", "account", "left", "hidden lg:table-cell")}
-                        {sortTh("Quantity", "quantity", "right", "hidden xl:table-cell")}
-                        {sortTh("Price", "price", "right", "hidden md:table-cell")}
+                        {sortTh("Account", "account", "left", "hidden @6xl:table-cell")}
+                        {sortTh("Quantity", "quantity", "right", "hidden @7xl:table-cell")}
+                        {sortTh("Price", "price", "right", "hidden @4xl:table-cell")}
                         {sortTh("Value", "value", "right")}
-                        {sortTh("Cost basis", "cost", "right", "hidden lg:table-cell")}
+                        {sortTh("Cost basis", "cost", "right", "hidden @6xl:table-cell")}
                         {sortTh("Gain / loss", "gain", "right")}
                         {sortTh("Weight", "weight", "right", "w-[120px]")}
                       </tr>
@@ -1190,7 +1203,7 @@ export default function Investments() {
                     <tbody>
                       {filtered.map((r, i) => (
                         <tr key={`${r.account_id}-${r.security_id}`} className={`transition-colors ${i ? `border-t ${hairlineOf(isDark)}` : ""} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}>
-                          <td className="py-2.5 pl-5 pr-2">
+                          <td className="w-full max-w-0 py-2.5 pl-5 pr-2">
                             <div className="flex min-w-0 items-center gap-3">
                               <span className={tickerBadge} title={r.ticker ?? undefined}>{r.ticker || "—"}</span>
                               <span className="min-w-0">
@@ -1200,18 +1213,18 @@ export default function Investments() {
                                 <span className={`flex items-center gap-1.5 text-[11px] ${t2}`}>
                                   {classDot(r.klass)}
                                   {CLASS_BY_KEY.get(r.klass)!.label}
-                                  <span className="lg:hidden">· {r.accountName}</span>
+                                  <span className="truncate @6xl:hidden">· {r.accountName}</span>
                                 </span>
                               </span>
                             </div>
                           </td>
-                          <td className={`hidden max-w-[200px] truncate px-2 py-2.5 text-[12.5px] lg:table-cell ${t2}`} title={`${r.institution} · ${r.accountName}`}>
+                          <td className={`hidden max-w-[200px] truncate px-2 py-2.5 text-[12.5px] @6xl:table-cell ${t2}`} title={`${r.institution} · ${r.accountName}`}>
                             {r.accountName}
                           </td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] xl:table-cell ${t2}`}>{qtyFmt.format(r.quantity)}</td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] md:table-cell ${t2}`}>{usd2.format(r.price)}</td>
+                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @7xl:table-cell ${t2}`}>{qtyFmt.format(r.quantity)}</td>
+                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @4xl:table-cell ${t2}`}>{usd2.format(r.price)}</td>
                           <td className={`px-2 py-2.5 text-right text-[13px] font-medium ${t1}`}>{fmtUSD(r.value)}</td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] lg:table-cell ${t2}`}>
+                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @6xl:table-cell ${t2}`}>
                             {r.klass === "cash" || r.cost_basis == null ? "—" : fmtUSD(r.cost_basis)}
                           </td>
                           <td className="px-2 py-2.5 text-right">
@@ -1226,7 +1239,7 @@ export default function Investments() {
                           </td>
                           <td className="py-2.5 pl-2 pr-5 text-right">
                             <span className="inline-flex items-center justify-end gap-2">
-                              <span className={`hidden h-1 w-12 overflow-hidden rounded-full md:block ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`} aria-hidden>
+                              <span className={`hidden h-1 w-12 overflow-hidden rounded-full @4xl:block ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`} aria-hidden>
                                 <span className="block h-full rounded-full" style={{ width: `${maxWeight > 0 ? (r.weight / maxWeight) * 100 : 0}%`, background: accent }} />
                               </span>
                               <span className={`w-11 text-[12px] ${t2}`}>{fmtPct(r.weight, false)}</span>
@@ -1238,8 +1251,8 @@ export default function Investments() {
                   </table>
                 </div>
 
-                {/* Cards: phones */}
-                <div className="flex flex-col gap-2 p-3 sm:hidden">
+                {/* Cards: phones and narrow cards */}
+                <div className="flex flex-col gap-2 p-3 @3xl:hidden">
                   <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar">
                     {(
                       [
@@ -1295,7 +1308,7 @@ export default function Investments() {
                     </div>
                   ))}
                 </div>
-              </>
+              </div>
             )}
           </section>
 

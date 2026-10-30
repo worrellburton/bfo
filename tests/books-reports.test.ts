@@ -212,8 +212,25 @@ describe("report=tax1099", () => {
     expect(r.json).toEqual({
       year: 2026,
       threshold: 600,
-      vendors: [{ vendor: "Lawyer", paid: 1000, count: 2, account: "6100 Professional Fees" }],
+      vendors: [{ vendor: "Lawyer", entity: "Alpha LLC", paid: 1000, count: 2, account: "6100 Professional Fees" }],
     });
+  });
+
+  it("scopes to the selected entity", async () => {
+    routes.unshift(rows(ledger));
+    await get({ report: "tax1099", year: "2026", entity: ENT_B });
+    const path = calls.find((c) => c.path.startsWith("book_transactions"))!.path;
+    expect(path).toContain(`account_id=in.("acc-b1","acc-hid")`);
+  });
+
+  it("applies the threshold per paying entity", async () => {
+    routes.unshift(rows([
+      txn({ transaction_id: "p1", amount: 400, book_category: "6150 Contract Services", merchant_name: "Painter" }),
+      txn({ transaction_id: "p2", amount: 400, book_category: "6150 Contract Services", merchant_name: "painter ", account_id: "acc-b1" }),
+      txn({ transaction_id: "p3", amount: 300, book_category: "6150 Contract Services", merchant_name: "Painter", account_id: "acc-b1" }),
+    ]));
+    const r = await get({ report: "tax1099", year: "2026" });
+    expect(r.json.vendors).toEqual([{ vendor: "painter", entity: "Beta Trust", paid: 700, count: 2, account: "6150 Contract Services" }]);
   });
 });
 

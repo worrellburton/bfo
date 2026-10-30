@@ -119,7 +119,7 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
       {/* The stage */}
       <section className="relative flex min-h-0 flex-col items-center">
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-          <button type="button" onClick={onType} className="auth-link inline-flex h-9 items-center gap-1.5 rounded-full border border-[#f4ede0]/15 px-3.5 hover:border-[#f4ede0]/35">
+          <button type="button" onClick={onType} className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-1.5 rounded-full border border-[#f4ede0]/15 px-3.5 hover:border-[#f4ede0]/35">
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h10" />
             </svg>
@@ -166,12 +166,12 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
         {/* Hold to talk */}
         <div className="relative flex w-full flex-col items-center gap-3 pb-6 pt-2">
           {status === "speaking" ? (
-            <button type="button" onClick={onHush} className="auth-link inline-flex h-9 items-center gap-2 rounded-full border border-[#f4ede0]/15 px-4 hover:border-[#f4ede0]/35">
+            <button type="button" onClick={onHush} className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-2 rounded-full border border-[#f4ede0]/15 px-4 hover:border-[#f4ede0]/35">
               <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
               Stop
             </button>
           ) : (
-            <span className="auth-link h-9" aria-hidden />
+            <span className="auth-link h-9 max-md:h-[44px] md:pointer-coarse:h-[44px]" aria-hidden />
           )}
           <button
             type="button"

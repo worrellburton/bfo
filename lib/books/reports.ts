@@ -1,5 +1,6 @@
 import { sbFetch as db } from "../auth.js";
 import { computeLoans } from "../books-loans.js";
+import { incomeExpense, type ReportTxn } from "../books-report.js";
 import { ACCOUNTS } from "../books-rules.js";
 import { fetchAll } from "../db-pages.js";
 import { sunriseUtcDate } from "../sunrise.js";
@@ -95,6 +96,8 @@ export async function metaReport(): Promise<Reply> {
 
 // ── Transactions: filterable, paginated rows (full detail) ───────────────
 
+type SummaryRow = Pick<ReportTxn, "date" | "amount" | "book_category" | "plaid_category" | "loan_id" | "type_override" | "intercompany" | "txn_type">;
+
 export async function transactionsReport(query: Query): Promise<Reply> {
   const { entity, type, q, year } = query as Record<string, string | undefined>;
   const limit = Math.min(Number(query.limit ?? 100) || 100, 500);
@@ -113,25 +116,19 @@ export async function transactionsReport(query: Query): Promise<Reply> {
   const total = Number(r.headers.get("content-range")?.split("/")[1] ?? rows.length);
 
   // The first page also carries totals for the whole filtered set — the
-  // strip above the ledger (count, outflows, inflows, date span). Later
-  // pages skip it; the numbers don't change as you scroll.
+  // strip above the ledger (count, income, expenses, date span). Income and
+  // expenses leave out transfers, roll-ups, loans and flow accounts, as the
+  // P&L does; the count and span cover every row. Later pages skip it; the
+  // numbers don't change as you scroll.
   let summary: { count: number; expenses: number; income: number; first: string | null; last: string | null } | null = null;
   // summary=0 skips it: a quick lookup (the home page's search) wants a few rows, not the totals.
   if (offset === 0 && query.summary !== "0") {
-    const all = await fetchAll<{ date: string; amount: number | string }>(
-      `book_transactions?select=date,amount${filter}&order=date.asc,transaction_id.asc`
+    const all = await fetchAll<SummaryRow>(
+      `book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,txn_type${filter}&order=date.asc,transaction_id.asc`
     );
-    let expenses = 0;
-    let income = 0;
-    for (const t of all) {
-      const a = Number(t.amount);
-      if (a > 0) expenses += a;
-      else income -= a;
-    }
     summary = {
       count: all.length,
-      expenses: Math.round(expenses * 100) / 100,
-      income: Math.round(income * 100) / 100,
+      ...incomeExpense(all),
       first: all[0]?.date ?? null,
       last: all[all.length - 1]?.date ?? null,
     };

@@ -274,7 +274,7 @@ export function CommandPalette({
             aria-expanded="true"
             aria-controls="palette-list"
             aria-activedescendant={results[active] ? `palette-${active}` : undefined}
-            className="palette-input h-14 min-w-0 flex-1 bg-transparent text-[15px] placeholder:text-gray-500"
+            className="palette-input h-14 min-w-0 flex-1 bg-transparent text-[15px] max-md:text-[16px] md:pointer-coarse:text-[16px] placeholder:text-gray-500"
           />
           <kbd className={`hidden rounded-md border px-1.5 py-0.5 text-[11px] sm:inline ${isDark ? "border-white/15 text-gray-400" : "border-gray-200 text-gray-500"}`}>Esc</kbd>
         </div>

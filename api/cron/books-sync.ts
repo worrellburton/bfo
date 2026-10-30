@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, cronAuth, currentUser, refuseCron, sbFetch as db } from "../../lib/auth.js";
+import { canWrite, cronAuth, currentUser, handleError, refuseCron, sbFetch as db, type AppUser } from "../../lib/auth.js";
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
 import { fetchAll } from "../../lib/db-pages.js";
@@ -190,7 +190,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cron = cronAuth(req);
     if (cron !== "ok") return refuseCron(req, res, "books-sync", cron);
   } else {
-    const user = await currentUser(req);
+    // currentUser throws PartnerRefused for a partner; handleError answers 403.
+    let user: AppUser | null;
+    try {
+      user = await currentUser(req);
+    } catch (err) {
+      return handleError(res, err);
+    }
     if (!user) return res.status(401).json({ error: "unauthorized" });
     if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
   }

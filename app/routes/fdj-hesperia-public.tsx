@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
 
+// Not routed (app/routes.ts): its "token" check ran only in the visitor's own
+// browser, so no real recipient could open it while anyone could unlock it, and
+// the figures below shipped in the public bundle. Before it comes back, the
+// figures belong behind an API that checks a revocable share token
+// server-side (as api/sign.ts does for signers), not in this file.
+
 export function meta() {
   return [{ title: "Burton Family Investment Summary - FDJ Hesperia" }];
 }

@@ -93,6 +93,10 @@ export interface Asset {
 /** An owner or manager. `address` is theirs (Exhibit A of the operating agreement lists it). */
 export type Member = { name: string; percent: number | null; role: string | null; address?: string | null };
 
+/** An owner, not only a manager: a Manager/Director/Officer counts once they hold a share. */
+export const holdsOwnership = (m: { role?: string | null; percent?: number | null }) =>
+  !/manager|director|officer/i.test(m.role ?? "") || m.percent != null;
+
 export type EntityProfile = {
   whatItIs: string;
   purpose: string | null;

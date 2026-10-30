@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { authFetch, getUser, homePath, isAuthenticated, isEmailOnly, profileComplete, revalidate } from "../auth";
+import { authFetch, getUser, homePath, isAuthenticated, isEmailOnly, profileComplete, revalidate, safeNext } from "../auth";
 import { ParticleCanvas } from "../particles";
 import { lockupOf, useBrandLogo } from "../brand";
 import { BrandLockup } from "../brand-lockup";
@@ -26,6 +26,8 @@ function formatPhoneInput(raw: string): string {
 
 export default function CompleteProfile() {
   const navigate = useNavigate();
+  // Where sign-in was headed (login's `next`), once the profile is done.
+  const next = safeNext(useSearchParams()[0].get("next"));
   const [missing, setMissing] = useState<"email" | "phone" | null>(null);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
@@ -41,7 +43,7 @@ export default function CompleteProfile() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      navigate("/login");
+      navigate("/login", { replace: true });
       return;
     }
     const user = getUser();
@@ -51,7 +53,7 @@ export default function CompleteProfile() {
     if (!user.email && !isEmailOnly(user)) setMissing("email");
     else if (!user.phone) setMissing("phone");
     if (!user.name) setStep("name");
-    else if (profileComplete(user)) navigate(homePath(user)); // nothing to collect
+    else if (profileComplete(user)) navigate(next ?? homePath(user), { replace: true }); // nothing to collect
   }, [navigate]);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function CompleteProfile() {
       if (missing) setStep("collect");
       else {
         setSuccess(true);
-        setTimeout(() => navigate(homePath()), 700);
+        setTimeout(() => navigate(next ?? homePath(), { replace: true }), 700);
       }
     } catch (err) {
       shakeOut(err instanceof Error ? err.message : "Couldn't save your name.");
@@ -120,7 +122,7 @@ export default function CompleteProfile() {
       await call({ identifier: sentTo, code: submitted });
       setSuccess(true);
       await revalidate(); // pull the updated user into the stored session
-      setTimeout(() => navigate(homePath()), 700);
+      setTimeout(() => navigate(next ?? homePath(), { replace: true }), 700);
     } catch (err) {
       setCode("");
       shakeOut(err instanceof Error ? err.message : "Couldn't verify that code.");

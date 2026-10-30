@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { cronAuth, currentUser, sb } from "../../lib/auth.js";
+import { cronAuth, currentUser, fail, handleError, sb } from "../../lib/auth.js";
 
 // A visit older than this counts as a new "login" for change-since purposes.
 const ROTATE_AFTER_MS = 30 * 60 * 1000;
@@ -76,8 +76,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // The scheduled report runs without a session; it proves itself with
   // Authorization: Bearer $CRON_SECRET, the same credential every cron uses.
   if (cronAuth(req) !== "ok") {
-    const user = await currentUser(req);
-    if (!user) return res.status(401).json({ error: "unauthorized" });
+    // currentUser throws PartnerRefused for a partner; handleError answers 403.
+    try {
+      const user = await currentUser(req);
+      if (!user) return res.status(401).json({ error: "unauthorized" });
+    } catch (err) {
+      return handleError(res, err);
+    }
   }
 
   const { report, item_id } = req.query;
@@ -621,6 +626,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (err.response?.data?.error_code === "ITEM_LOGIN_REQUIRED") {
       return res.status(409).json({ error: "auth_expired", message: "Please reconnect your investment account" });
     }
-    res.status(500).json({ error: err.response?.data?.error_message || err.message });
+    // Plaid's display_message is written for people; anything else stays in
+    // the log line above (never the raw error: it carries Plaid's credentials).
+    const shown = err.response?.data?.display_message;
+    return fail(res, 500, "plaid_error", shown || "Something went wrong. Try again.");
   }
 }

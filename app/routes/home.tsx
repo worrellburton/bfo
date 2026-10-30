@@ -596,7 +596,7 @@ function FlowCard({
                       role="tab"
                       aria-selected={view === v}
                       onClick={() => choose(v)}
-                      className={`cursor-pointer rounded-full px-2 py-0.5 text-[10.5px] font-medium capitalize transition-colors ${
+                      className={`${TAP_Y} cursor-pointer rounded-full px-2 py-0.5 text-[10.5px] font-medium capitalize transition-colors ${
                         view === v ? (isDark ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900") : `${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`
                       }`}
                     >
@@ -772,8 +772,8 @@ function Masonry<T>({
 
 const groupWeight = (g: TreeGroup) => 2.2 + g.rows.length;
 
-/** Invisible vertical hit-area extension so short controls reach ~40px on touch screens. */
-const TAP_Y = "relative after:absolute after:inset-x-0 after:-inset-y-[12px] after:content-[''] lg:after:inset-0";
+/** Invisible vertical hit-area extension so short controls reach ~40px on touch screens (a touch iPad too, however wide). */
+const TAP_Y = "relative after:absolute after:inset-x-0 after:-inset-y-[12px] after:content-[''] lg:pointer-fine:after:inset-0";
 
 // ── Page ─────────────────────────────────────────────────────────────────
 

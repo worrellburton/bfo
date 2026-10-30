@@ -10,7 +10,12 @@ import { checkStateRecords } from "../../lib/state-records.js";
  *
  * GET  → the Vercel cron (Bearer CRON_SECRET, required)
  * POST { ids?, force? } → "Check all" from the app (owner or admin)
+ *
+ * Both stop starting reads 240 s in (the function may run 300 s, and each Palm
+ * call up to 20 s); what's left answers "later", for the next run.
  */
+
+const BUDGET_MS = 240_000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -18,6 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // GET is the cron only, and must present Bearer $CRON_SECRET.
     const fromCron = req.method === "GET";
+    const started = Date.now();
     let opts: { ids?: string[]; force?: boolean; by?: { id: string; name: string | null } } = {};
     if (fromCron) {
       const cron = cronAuth(req);
@@ -30,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       opts = { ids: Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : undefined, force: body.force === true, by: { id: user.id, name: user.name } };
     }
     const check = async (run?: CronRun) => {
-      const results = await checkStateRecords(opts);
+      const results = await checkStateRecords({ ...opts, deadline: started + BUDGET_MS });
       const counts = results.reduce<Record<string, number>>((n, r) => ((n[r.outcome] = (n[r.outcome] ?? 0) + 1), n), {});
       // The outcome of each, for the logs: who wasn't found or matched more than one entry.
       console.log("state-records", JSON.stringify({ counts, results: results.filter((r) => r.outcome !== "fresh") }));
@@ -39,6 +45,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // A read that errored leaves that entity's record stale: say so, once per run.
         const errored = results.filter((r) => r.outcome === "error");
         if (errored.length) run.failed(`${errored.length} state record${errored.length === 1 ? "" : "s"} couldn't be read: ${errored.map((r) => `${r.name} (${r.state})${r.detail ? `: ${r.detail}` : ""}`).join("; ")}`);
+        // A run cut short by its time limit leaves the rest for tomorrow: say so.
+        const later = counts.later ?? 0;
+        if (later) run.note(`${later} state record${later === 1 ? "" : "s"} left for the next run (out of time)`);
       }
       return { counts, results };
     };

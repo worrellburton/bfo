@@ -10,7 +10,7 @@ import {
   type PlannedInflow,
 } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { cronAuth, currentUser, formatPhone, handleError, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { cronAuth, currentUser, formatPhone, handleError, isEmailOnly, isPartner, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { fetchAll } from "../../lib/db-pages.js";
 
@@ -610,7 +610,8 @@ function bankStrip(accounts: Account[]): string {
   const byBank = new Map<string, { color: string | null; total: number }>();
   for (const a of accounts) {
     const cur = byBank.get(a.institution_name) ?? { color: a.institution_color, total: 0 };
-    const sign = a.type === "credit" ? -1 : 1;
+    // Cards and loans are both owed (Plaid reports them as positive balances).
+    const sign = a.type === "credit" || a.type === "loan" ? -1 : 1;
     cur.total += sign * (a.balance_current ?? 0);
     byBank.set(a.institution_name, cur);
   }
@@ -1069,10 +1070,14 @@ async function scheduled(
 ) {
   const { secret, origin, now, loadLoans } = ctx;
   try {
-    // "Email only" members can't see Treasury, so they never get the report.
-    const users = await sb<Array<AppUser & { notification_prefs: Prefs }>>(
-      "app_users?status=eq.approved&role=neq.email&select=id,name,email,phone,role,status,notification_prefs"
-    );
+    // Only staff see Treasury: "email only" members and partners (who see just
+    // their own entities) never get the office-wide report, whatever their
+    // stored prefs say (a role changed to partner keeps its old schedule).
+    const users = (
+      await sb<Array<AppUser & { notification_prefs: Prefs }>>(
+        "app_users?status=eq.approved&role=in.(owner,admin,member,viewer)&select=id,name,email,phone,role,status,notification_prefs"
+      )
+    ).filter((u) => !isPartner(u) && !isEmailOnly(u));
     let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
     if (due.length === 0) {
       // Nothing to send, but the day's balances still get recorded: the

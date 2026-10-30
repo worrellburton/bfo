@@ -116,7 +116,11 @@ export default function TreasuryMappings() {
     }
   }
 
-  const unmapped = accounts.filter((a) => !a.entity_id).length;
+  // An account mapped to an entity deleted since counts as unmapped. Until the
+  // entities load, trust the stored id so the page doesn't flash amber.
+  const known = new Set(entities.map((e) => e.id));
+  const isMapped = (a: Account) => !!a.entity_id && (entities.length === 0 || known.has(a.entity_id));
+  const unmapped = accounts.filter((a) => !isMapped(a)).length;
 
   const grouped = useMemo(() => {
     const map = new Map<string, Account[]>();
@@ -199,8 +203,11 @@ export default function TreasuryMappings() {
                     <p className={`text-xs capitalize ${subtle}`}>{account.subtype || account.type}</p>
                   </div>
 
-                  {!account.entity_id && (
-                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="Not mapped yet" />
+                  {!isMapped(account) && (
+                    <span
+                      className="w-2 h-2 rounded-full bg-amber-400 shrink-0"
+                      title={account.entity_id ? "Its entity was deleted" : "Not mapped yet"}
+                    />
                   )}
                   <select
                     aria-label={`Entity for ${label(account)}`}
@@ -209,7 +216,7 @@ export default function TreasuryMappings() {
                     disabled={busyId === account.account_id || entities.length === 0}
                     onChange={(e) => void assign(account, e.target.value)}
                     className={`px-3 py-2 rounded-lg text-sm border transition-colors cursor-pointer disabled:opacity-50 w-full min-h-[40px] lg:min-h-0 sm:w-auto sm:min-w-[220px] sm:max-w-[320px] ${
-                      account.entity_id
+                      isMapped(account)
                         ? isDark
                           ? "bg-white/[0.04] border-white/10 text-white"
                           : "bg-white border-gray-200 text-gray-900"
@@ -221,6 +228,11 @@ export default function TreasuryMappings() {
                     <option value="">
                       {entities.length === 0 ? "No entities found" : "Assign to entity…"}
                     </option>
+                    {!isMapped(account) && account.entity_id && (
+                      <option value={account.entity_id} disabled>
+                        {account.entity_name ?? "Unknown entity"} (deleted)
+                      </option>
+                    )}
                     {entities.map((e) => (
                       <option key={e.id} value={e.id}>{e.name}</option>
                     ))}

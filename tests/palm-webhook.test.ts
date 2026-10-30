@@ -207,6 +207,53 @@ describe("monitor events", () => {
   });
 });
 
+describe("filing events", () => {
+  const FILING = "5a6b7c8d-1111-4222-8333-944455556666";
+  const filingEvent = (status: string) => ({
+    id: `evt_f_${status}`, object: "event", type: "filing.updated", mode: "live", created_at: new Date(now).toISOString(),
+    data: { object: { id: FILING, type: "formation", status, jurisdiction: "DE", metadata: { bfo_asset_id: "asset-abcdef12" } } },
+  });
+  const formed = { filingId: FILING, status: "completed", jurisdiction: "DE", submittedAt: 1, updatedAt: 2, entityType: "llc" };
+  beforeEach(async () => {
+    process.env.PALM_WEBHOOK_SECRET = SECRET;
+    sbMock.mockReset();
+    applyMock.mockClear();
+    treeRows.length = 0;
+    treeRows.push({ id: "asset-abcdef12", data: { status: "Active", palm: { live: { formation: formed } } } });
+    const { palm } = await import("../lib/palm.js");
+    vi.mocked(palm).mockClear();
+  });
+
+  it("writes the filing as Palm has it now, not the event's copy", async () => {
+    const { palm } = await import("../lib/palm.js");
+    vi.mocked(palm).mockResolvedValueOnce({ id: FILING, type: "formation", status: "completed", jurisdiction: "DE" });
+    // "Not handled before", then the event row.
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "x" }]);
+    const body = JSON.stringify(filingEvent("processing"));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(vi.mocked(palm).mock.calls[0][0]).toBe(`/v1/filing/${FILING}`);
+    const [ops] = applyMock.mock.calls[0] as unknown as [{ value: Record<string, unknown> }[]];
+    expect(ops[0].value).toMatchObject({ status: "Active", "palm/live/formation": { status: "completed" } });
+  });
+
+  it("changes nothing for a redelivered event", async () => {
+    sbMock.mockResolvedValueOnce([{ id: "seen" }]).mockResolvedValueOnce([]);
+    const body = JSON.stringify(filingEvent("processing"));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(applyMock).not.toHaveBeenCalled();
+  });
+
+  it("changes nothing when Palm can't be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { palm } = await import("../lib/palm.js");
+    vi.mocked(palm).mockRejectedValueOnce(new Error("palm 502"));
+    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "x" }]);
+    const body = JSON.stringify(filingEvent("processing"));
+    expect((await call(body, sign(body))).status).toBe(200);
+    expect(applyMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("monitorPatch", () => {
   const ev = (type: string, extra: Record<string, unknown> = {}) => ({ id: "e1", type, mode: "live" as const, ...extra });
   it("keeps the latest change to a record", () => {

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
 import { useTheme } from "../theme";
+import { fetchAllTxns } from "../books-batch";
 import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag, Menu, entityTag, entityTagClass } from "../books-shared";
 
 export function meta() {
@@ -88,14 +89,14 @@ export default function BooksVendors() {
     if (vendorTxns[name]) return; // already loaded
     setTxnLoading(name);
     try {
-      const params = new URLSearchParams({ report: "transactions", q: name, year, limit: "500" });
+      const params = new URLSearchParams({ report: "transactions", q: name, year });
       if (entity !== "all") params.set("entity", entity);
-      const res = await authFetch(`/api/books/data?${params}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Couldn't load transactions.");
-      // The vendor key is merchant_name || name; keep only exact matches so a
-      // substring search doesn't fold in a different vendor.
-      const list = (data.transactions ?? []).filter((t: Txn) => (t.merchant_name || t.name) === name);
+      const all = await fetchAllTxns<Txn>(authFetch, params);
+      // The vendor key is merchant_name || name, trimmed and lower-cased as
+      // the report groups it; keep only that vendor so a substring search
+      // doesn't fold in a different one.
+      const key = name.trim().toLowerCase();
+      const list = all.filter((t) => (t.merchant_name || t.name || "").trim().toLowerCase() === key);
       setVendorTxns((prev) => ({ ...prev, [name]: list }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load transactions.");

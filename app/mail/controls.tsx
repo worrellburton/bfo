@@ -89,8 +89,8 @@ export function Segmented<K extends string>({
             aria-label={iconsOnly ? o.label : undefined}
             title={iconsOnly ? o.label : undefined}
             onClick={() => onChange(o.key)}
-            className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[9px] text-[12px] font-medium transition-colors max-sm:h-[38px] max-sm:text-[13.5px] ${
-              stretch ? "flex-1 justify-center px-2" : iconsOnly ? "w-7 justify-center max-sm:w-[40px]" : "px-2.5 max-sm:px-3"
+            className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[9px] text-[12px] font-medium transition-colors max-sm:h-[38px] max-sm:text-[13.5px] md:pointer-coarse:h-[36px] ${
+              stretch ? "flex-1 justify-center px-2" : iconsOnly ? "w-7 justify-center max-sm:w-[40px] md:pointer-coarse:w-[40px]" : "px-2.5 max-sm:px-3 md:pointer-coarse:px-3"
             } ${
               on ? (t.dark ? "bg-white/[0.1] text-white shadow-sm" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
             }`}
@@ -199,7 +199,7 @@ export function SelectBox({ on, mixed = false, onToggle, label, className = "" }
         onToggle(e.shiftKey);
       }}
       onKeyDown={(e) => e.stopPropagation()}
-      className={`group/pick inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:h-[40px] max-md:w-[40px] ${className}`}
+      className={`group/pick inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:h-[40px] max-md:w-[40px] md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${className}`}
     >
       <span
         key={filled ? "on" : "off"}
@@ -241,7 +241,9 @@ export function StarButton({ on, onToggle, className = "", alwaysOnPhones = fals
         }
         onToggle(!on);
       }}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[40px] max-md:w-[40px] ${
+      // Enter/Space press the star, not the row it sits in.
+      onKeyDown={(e) => e.stopPropagation()}
+      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[40px] max-md:w-[40px] md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${
         on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${alwaysOnPhones ? "" : "max-md:hidden"} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
       } ${className}`}
     >

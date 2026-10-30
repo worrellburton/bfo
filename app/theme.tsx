@@ -2,21 +2,23 @@ import { createContext, useContext, useState, useEffect, useLayoutEffect } from 
 
 /** Before paint in the browser (no flash of the other theme); a plain effect on the server. */
 const useBeforePaint = typeof window !== "undefined" ? useLayoutEffect : useEffect;
-import type { BackgroundId } from "./webgl-backgrounds";
 import { statusBarFor } from "./native";
 
 type Theme = "dark" | "light";
 
 const ThemeContext = createContext<{
+  /** What's on screen: a page's own setting (Mail's) while it's open, else the app's. For colours. */
   theme: Theme;
+  /** The app's own setting, which toggle and setTheme change (the Appearance panel and menu show this). */
+  appTheme: Theme;
+  /** A page (Mail) is showing its own light or dark instead of the app's. */
+  overridden: boolean;
   toggle: () => void;
   /** Light or dark, chosen outright (the Appearance panel). */
   setTheme: (theme: Theme) => void;
-  backgroundId: BackgroundId;
-  setBackgroundId: (id: BackgroundId) => void;
   /** A page with its own light/dark setting (Mail) applies it while it's on screen; null gives the app's back. */
   setOverride: (theme: Theme | null) => void;
-}>({ theme: "dark", toggle: () => {}, setTheme: () => {}, backgroundId: "none", setBackgroundId: () => {}, setOverride: () => {} });
+}>({ theme: "dark", appTheme: "dark", overridden: false, toggle: () => {}, setTheme: () => {}, setOverride: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
@@ -24,13 +26,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       return (localStorage.getItem("bfo-theme") as Theme) || "dark";
     }
     return "dark";
-  });
-
-  const [backgroundId, setBackgroundIdState] = useState<BackgroundId>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("bfo-bg") as BackgroundId) || "none";
-    }
-    return "none";
   });
 
   const [override, setOverride] = useState<Theme | null>(null);
@@ -50,13 +45,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
   const setTheme = (t: Theme) => setThemeState(t);
 
-  function setBackgroundId(id: BackgroundId) {
-    setBackgroundIdState(id);
-    localStorage.setItem("bfo-bg", id);
-  }
-
   return (
-    <ThemeContext.Provider value={{ theme: effective, toggle, setTheme, backgroundId, setBackgroundId, setOverride }}>
+    <ThemeContext.Provider value={{ theme: effective, appTheme: theme, overridden: override !== null, toggle, setTheme, setOverride }}>
       {children}
     </ThemeContext.Provider>
   );

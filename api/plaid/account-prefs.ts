@@ -1,12 +1,18 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { canWrite, currentUser, sbFetch } from "../../lib/auth.js";
+import { canWrite, currentUser, handleError, sbFetch, type AppUser } from "../../lib/auth.js";
 
 /** Set a bank account's nickname and/or hidden flag. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 

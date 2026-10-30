@@ -17,24 +17,48 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
   const [hasInk, setHasInk] = useState(false);
 
   // The canvas draws at device resolution; the stroke follows the pointer in CSS pixels.
+  // Its bitmap is sized again whenever its width changes (a phone or iPad
+  // turned), keeping what's drawn where it was, so new ink still lands under
+  // the finger.
   useEffect(() => {
     const c = canvasRef.current;
     if (!c || mode !== "draw") return;
-    const ratio = Math.min(2, window.devicePixelRatio || 1);
-    const rect = c.getBoundingClientRect();
-    c.width = rect.width * ratio;
-    c.height = rect.height * ratio;
-    const ctx = c.getContext("2d");
-    if (ctx) {
-      ctx.scale(ratio, ratio);
-      ctx.lineWidth = 2.2;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = "#0a0a0c";
-    }
+    let shown: { w: number; h: number; ratio: number } | null = null;
+    const size = () => {
+      const rect = c.getBoundingClientRect();
+      if (!rect.width || (shown && shown.w === rect.width && shown.h === rect.height)) return;
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      let ink: HTMLCanvasElement | null = null;
+      if (shown && inked.current) {
+        ink = document.createElement("canvas");
+        ink.width = c.width;
+        ink.height = c.height;
+        ink.getContext("2d")?.drawImage(c, 0, 0);
+      }
+      c.width = rect.width * ratio;
+      c.height = rect.height * ratio;
+      const ctx = c.getContext("2d");
+      if (ctx) {
+        ctx.scale(ratio, ratio);
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#0a0a0c";
+        if (ink && shown) {
+          ctx.drawImage(ink, 0, 0, ink.width / shown.ratio, ink.height / shown.ratio);
+          // A narrower pad can cut ink off; the PNG is what's left.
+          onChange(trimmed(c));
+        }
+      }
+      shown = { w: rect.width, h: rect.height, ratio };
+    };
+    size();
     inked.current = false;
     setHasInk(false);
     onChange(null);
+    const ro = new ResizeObserver(size);
+    ro.observe(c);
+    return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -112,7 +136,7 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
       type="button"
       onClick={() => setMode(m)}
       aria-pressed={mode === m}
-      className={`h-8 rounded-full px-3.5 text-[12px] font-medium transition-colors ${mode === m ? (dark ? "bg-white text-black" : "bg-gray-900 text-white") : dark ? "bg-white/[0.06] text-gray-300 hover:bg-white/10" : "bg-black/[0.05] text-gray-600 hover:bg-black/[0.08]"}`}
+      className={`h-8 max-md:h-[44px] md:pointer-coarse:h-[44px] rounded-full px-3.5 text-[12px] font-medium transition-colors ${mode === m ? (dark ? "bg-white text-black" : "bg-gray-900 text-white") : dark ? "bg-white/[0.06] text-gray-300 hover:bg-white/10" : "bg-black/[0.05] text-gray-600 hover:bg-black/[0.08]"}`}
     >
       {label}
     </button>
@@ -124,7 +148,7 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
         {tab("draw", "Draw")}
         {tab("type", "Type")}
         {mode === "draw" && hasInk && (
-          <button type="button" onClick={clear} className={`ml-auto text-[12px] ${dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}>
+          <button type="button" onClick={clear} className={`ml-auto inline-flex items-center px-2 text-[12px] max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}>
             Clear
           </button>
         )}

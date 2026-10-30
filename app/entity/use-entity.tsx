@@ -208,7 +208,8 @@ export function useEntityPage() {
   const scanHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assetRef = useRef<Asset | null>(null);
   assetRef.current = asset;
-  const claimedRef = useRef<Set<FileKind>>(new Set());
+  // Slots being filed right now, with the document going into each.
+  const claimedRef = useRef<Map<FileKind, string>>(new Map());
   const setSlot = (k: FileKind, patch: Partial<{ uploading: boolean; progress: number; error: string | null; dragOver: boolean }>) =>
     setUploadState((s) => ({ ...s, [k]: { ...s[k], ...patch } }));
 
@@ -556,7 +557,7 @@ export function useEntityPage() {
   async function fileDocument(kind: FileKind, doc: AssetDoc, facts?: Classified | null): Promise<string[]> {
     const current = assetRef.current;
     if (!current || current[kind] || claimedRef.current.has(kind)) return [];
-    claimedRef.current.add(kind);
+    claimedRef.current.set(kind, doc.id);
     const patch: Record<string, unknown> = {
       [kind]: {
         url: doc.url,
@@ -773,6 +774,8 @@ export function useEntityPage() {
     if (!kindsFor(assetRef.current).includes(kind)) {
       return `“${doc.name}” looks like ${title === "Operating Agreement" || title === "Articles of Organization" ? "an LLC filing" : `a ${title}`}, which doesn't apply here — kept in Documents`;
     }
+    // Already filed into it, by name, while it was being read.
+    if (assetRef.current?.[kind]?.docId === doc.id || claimedRef.current.get(kind) === doc.id) return `Filed “${doc.name}” as ${title}`;
     if (assetRef.current?.[kind] || claimedRef.current.has(kind)) {
       return `${title} already on file — kept “${doc.name}” in Documents`;
     }
@@ -784,7 +787,7 @@ export function useEntityPage() {
   // into empty slots on load (name match only — no reading, no cost).
   const autoFiledOnLoad = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!asset) return;
+    if (!asset || !canChangeRecord()) return;
     const linked = new Set(FILING_KINDS.map((k) => asset[k]?.docId).filter(Boolean));
     for (const kind of kindsFor(asset)) {
       if (asset[kind] || autoFiledOnLoad.current.has(kind)) continue;
@@ -1590,7 +1593,7 @@ export function useEntityPage() {
 
   // Build the profile once, the first time an entity with documents is opened.
   useEffect(() => {
-    if (!asset || asset.profile || profileTried.current || aiDown) return;
+    if (!asset || asset.profile || profileTried.current || aiDown || !canChangeRecord()) return;
     if (!documentsForReading(asset).length) return;
     profileTried.current = true;
     void buildProfile();
@@ -1699,7 +1702,7 @@ export function useEntityPage() {
   /** Ask Claude to read every unfiled PDF/image in the library and file what fits. */
   async function scanLibrary() {
     const current = assetRef.current;
-    if (!current) return;
+    if (!current || !canChangeRecord()) return;
     const linked = new Set(FILING_KINDS.map((k) => current[k]?.docId).filter(Boolean));
     const candidates = docs.filter((d) => !linked.has(d.id) && !d.autoFileSkip && d.storagePath);
     if (scanHideTimer.current) clearTimeout(scanHideTimer.current);
@@ -2135,15 +2138,10 @@ export function useEntityPage() {
     try {
       const { db, ref: dbRef, update } = await import("../store");
 
-      // The slot's own earlier file (not one filed from Documents) goes.
+      // The slot's own earlier file (not one filed from Documents) goes, but
+      // only once the new one is stored and recorded: a failed upload changes nothing.
       const prior = asset?.[kind];
-      if (prior?.storagePath && !prior.docId) {
-        try {
-          await deleteStoredFile(prior.storagePath);
-        } catch {
-          // ignore
-        }
-      }
+      const priorPath = prior?.storagePath && !prior.docId ? prior.storagePath : null;
 
       const stored = await uploadToStorage(file, (pct) => {
         if (pct > 0) setSlot(kind, { error: null });
@@ -2159,6 +2157,7 @@ export function useEntityPage() {
         storagePath: stored.path,
       };
       await update(dbRef(db, `assets/${id}`), { [kind]: meta });
+      if (priorPath && priorPath !== stored.path) deleteStoredFile(priorPath).catch(() => {});
     } catch (err) {
       console.error(`${kind} upload failed:`, err);
       setSlot(kind, { error: err instanceof Error ? err.message : "Upload failed" });
@@ -2213,7 +2212,14 @@ export function useEntityPage() {
     const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string; ownerId?: string }>;
     const children = Object.entries(all).filter(([cid, a]) => cid !== id && a?.ownerId === id);
     const parentName = current.ownerId ? all[current.ownerId]?.name : undefined;
-    const files = docs.filter((d) => d.storagePath);
+    // Library files, plus files uploaded straight into a filing row (those
+    // filed from Documents are the library's own).
+    const files = [
+      ...new Set([
+        ...docs.map((d) => d.storagePath),
+        ...FILING_KINDS.map((k) => current[k]).filter((f) => f && !f.docId).map((f) => f!.storagePath),
+      ].filter((p): p is string => !!p)),
+    ];
 
     const details = [
       `Its key facts, filings${contracts.length ? `, ${contracts.length} contract${contracts.length === 1 ? "" : "s"}` : ""} and notes are removed.`,
@@ -2256,11 +2262,11 @@ export function useEntityPage() {
       }
 
       // Uploaded files — best effort; the record goes either way.
-      for (const d of files) {
+      for (const path of files) {
         try {
-          await deleteStoredFile(d.storagePath!);
+          await deleteStoredFile(path);
         } catch (err) {
-          console.warn("couldn't delete stored file", d.storagePath, err);
+          console.warn("couldn't delete stored file", path, err);
         }
       }
 

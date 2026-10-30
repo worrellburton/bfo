@@ -27,6 +27,7 @@ describe("states and types", () => {
   it("knows a limited partnership and a trust from a legacy LLC record", () => {
     expect(entityType({ name: "HSL Placita West Ltd Partnership", type: "LLC" })).toBe("LP");
     expect(entityType({ name: "Burton Family Revocable Trust", type: "LLC" })).toBe("Trust");
+    expect(entityType({ name: "Burton Trust Holdings, LLC", type: "LLC" })).toBe("LLC");
     expect(entityType({ name: "Persons Lodge LLC (100%)", type: "LLC" })).toBe("LLC");
   });
 

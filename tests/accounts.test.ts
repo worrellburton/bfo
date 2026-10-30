@@ -106,3 +106,34 @@ describe("several accounts on one browser", () => {
     expect(auth.getUser()).toBeNull();
   });
 });
+
+describe("revalidate", () => {
+  let auth: Awaited<ReturnType<typeof load>>;
+  beforeEach(async () => {
+    auth = await load();
+    signInAs("a", "Robert");
+    await auth.verifyCode("+15555550100", "123456");
+  });
+  const answer = (status: number, body: unknown) =>
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })));
+
+  it("keeps the session through a server error, as it does offline", async () => {
+    for (const status of [500, 502, 503]) {
+      answer(status, { error: "server_error" });
+      expect(await auth.revalidate()).toBe(true);
+      expect(auth.getUser()?.id).toBe("a");
+    }
+  });
+
+  it("signs out only when the server says the session is dead", async () => {
+    answer(401, { error: "unauthorized" });
+    expect(await auth.revalidate()).toBe(false);
+    expect(auth.getUser()).toBeNull();
+  });
+
+  it("takes the fresh user from a good answer", async () => {
+    answer(200, { user: { ...user("a", "Robert B"), role: "admin" } });
+    expect(await auth.revalidate()).toBe(true);
+    expect(auth.getUser()?.name).toBe("Robert B");
+  });
+});

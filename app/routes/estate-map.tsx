@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router";
 import { useTheme } from "../theme";
-import { entityCompleteness, type CompletenessInput } from "../entity-completeness";
+import { entityCompleteness, entityType, type CompletenessInput } from "../entity-completeness";
+import type { EntityType } from "../entity-paperwork";
 
 export function meta() {
   return [{ title: "BFO - Estate Map" }];
@@ -22,6 +23,8 @@ type Entity = {
   share?: number | null;
   /** A person (or outside company) who owns part of its parent: shown with People on. */
   person?: { percent: number | null };
+  /** Its legal form as the record has it (entityType), so the card never guesses from the name. */
+  type?: EntityType;
 };
 
 
@@ -126,6 +129,7 @@ export function mapEntities(assets: Record<string, MapAsset>, order: Record<stri
         parentId: owner,
         x: order[norm(a.name!)] ?? 100_000,
         y: 0,
+        type: entityType(a),
         ...(partners.length ? { partners } : {}),
         ...(mine && mine.percent != null && mine.percent < 100 ? { share: mine.percent } : {}),
       };
@@ -424,8 +428,19 @@ function layoutEstate(entities: Entity[], compact = false): Layout {
   };
 }
 
-/** Pulls the legal form and ownership share out of a display name. */
-function describe(name: string) {
+/** The card's label for each recorded legal form. */
+const TYPE_LABEL: Record<EntityType, { label: string; abbr: string }> = {
+  LLC: { label: "LLC", abbr: "LLC" },
+  "C-Corp": { label: "Corporation", abbr: "INC" },
+  LP: { label: "Partnership", abbr: "LP" },
+  Trust: { label: "Trust", abbr: "TR" },
+};
+
+/**
+ * Pulls the legal form and ownership share out of a display name. The
+ * record's type, when known, decides the form; the name then only loses its suffix.
+ */
+function describe(name: string, type?: EntityType) {
   const pct = name.match(/\((\d{1,3}(?:\.\d+)?%)\)\s*$/)?.[1] ?? null;
   let display = name.replace(/\s*\(\d{1,3}(?:\.\d+)?%\)\s*$/, "").trim();
   let label = "Entity";
@@ -445,6 +460,10 @@ function describe(name: string) {
     label = "LLC";
     abbr = "LLC";
     display = display.replace(/,?\s*l\.?l\.?c\.?$/i, "");
+  }
+  if (type) {
+    display = display.replace(/,?\s*(ltd\.?\s+partnership|l\.?p\.?|inc\.?|corp\.?|corporation|l\.?l\.?c\.?)$/i, "");
+    ({ label, abbr } = TYPE_LABEL[type]);
   }
   return { display: display || name, label, abbr, pct };
 }
@@ -972,7 +991,7 @@ export function EstateMapView({
   function renderCardBody(box: Box, opts: { ghost?: boolean } = {}) {
     const ent = entityById.get(box.id);
     if (!ent) return null;
-    const info = ent.person ? personInfo(ent.name) : describe(ent.name);
+    const info = ent.person ? personInfo(ent.name) : describe(ent.name, ent.type);
     const c = ent.person ? (isDark ? "#e2e8f0" : "#475569") : toneColor(box.tone, isDark);
     const leaf = box.kind === "leaf";
     const root = box.kind === "root";
@@ -1157,10 +1176,11 @@ export function EstateMapView({
               }`}
               style={{ left: layout.tray.x, top: layout.tray.y, width: layout.tray.w, height: layout.tray.h }}
             >
-              <div className={`absolute left-4 top-3 flex items-center gap-2 text-[11px] font-medium ${muted}`}>
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                Unlinked · {layout.tray.count}
-                <span className="normal-case tracking-normal opacity-70">— drag onto an entity to place it in the structure</span>
+              {/* One line: in a one-card tray the hint is cut short rather than wrapping under the card. */}
+              <div className={`absolute left-4 right-4 top-3 flex min-w-0 items-center gap-2 text-[11px] font-medium ${muted}`}>
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                <span className="shrink-0 whitespace-nowrap">Unlinked · {layout.tray.count}</span>
+                <span className="min-w-0 truncate normal-case tracking-normal opacity-70" title="Drag onto an entity to place it in the structure">— drag onto an entity to place it in the structure</span>
               </div>
             </div>
           )}

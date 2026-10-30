@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { authFetch } from "../auth";
+import { authFetch, canWrite } from "../auth";
 import { useTheme } from "../theme";
-import { TxnTable, money, type Txn } from "../books-shared";
+import { TxnTable, midDate, money, type Txn } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Loans" }];
@@ -52,21 +52,27 @@ function TxnFinder({
       setResults([]);
       return;
     }
+    // A search already in flight when the text changes is dropped, so an
+    // older, slower answer never replaces the current one.
+    let cancelled = false;
     const t = setTimeout(() => {
       void (async () => {
         setSearching(true);
         try {
           const res = await authFetch(
-            `/api/books/data?report=transactions&limit=25&q=${encodeURIComponent(q.trim())}`
+            `/api/books/data?report=transactions&limit=25&summary=0&q=${encodeURIComponent(q.trim())}`
           );
           const data = await res.json().catch(() => ({}));
-          if (res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attachedRef.current.has(r.transaction_id)));
+          if (!cancelled && res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attachedRef.current.has(r.transaction_id)));
         } finally {
-          setSearching(false);
+          if (!cancelled) setSearching(false);
         }
       })();
     }, 300);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [q, attachedKey]);
 
   async function attach(t: Txn) {
@@ -150,6 +156,8 @@ function TxnFinder({
 export default function BooksLoans() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  // Viewers see the loans; adding, attaching and editing are for editors.
+  const writable = canWrite();
 
   const [loans, setLoans] = useState<Loan[]>([]);
   const [rules, setRules] = useState<Array<{ id: string; match: string; loan_id: string | null }>>([]);
@@ -257,7 +265,7 @@ export default function BooksLoans() {
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Loans</h1>
         </div>
-        <button
+        {writable && <button
           onClick={() => setAdding((v) => !v)}
           aria-expanded={adding}
           className={`px-4 h-[40px] sm:h-9 rounded-full text-sm font-medium transition-colors cursor-pointer ${
@@ -265,7 +273,7 @@ export default function BooksLoans() {
           }`}
         >
           {adding ? "Cancel" : "Add loan"}
-        </button>
+        </button>}
       </div>
 
       {adding && (
@@ -326,8 +334,8 @@ export default function BooksLoans() {
             <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
           </div>
           <div className={`text-sm ${subtle}`}>
-            Advanced {money(loans.reduce((s, l) => s + l.advanced, 0))} · Starting{" "}
-            {money(loans.reduce((s, l) => s + l.starting_balance, 0))}
+            Starting {money(loans.reduce((s, l) => s + l.starting_balance, 0))} · Advanced{" "}
+            {money(loans.reduce((s, l) => s + l.advanced, 0))} · Repaid {money(loans.reduce((s, l) => s + l.repaid, 0))}
           </div>
         </div>
       )}
@@ -338,7 +346,9 @@ export default function BooksLoans() {
         error ? null : <div className={`rounded-2xl border p-10 text-center ${card}`}>
           <p className="text-sm font-medium">No loans yet</p>
           <p className={`text-xs mt-1 ${subtle}`}>
-            Add one above, or set a transaction's category to “Name (loan)” and it shows up here.
+            {writable
+              ? "Add one above, then attach transactions to it from its Find transactions box or any transaction's Loan picker."
+              : "Loans the office tracks will show up here."}
           </p>
         </div>
       ) : (
@@ -377,19 +387,20 @@ export default function BooksLoans() {
                   </p>
                   <p className={`text-xs mt-0.5 ${subtle}`}>
                     {loan.transactions.length} transaction{loan.transactions.length === 1 ? "" : "s"}
-                    {loan.last_date && ` · last activity ${loan.last_date}`}
+                    {loan.last_date && ` · last activity ${midDate(loan.last_date)}`}
                   </p>
                 </div>
                 <div className={`order-last sm:order-none basis-full sm:basis-auto pl-[30px] sm:pl-0 flex gap-x-6 gap-y-1 flex-wrap text-sm tabular-nums ${subtle}`}>
                   <span>Start {money(loan.starting_balance)}</span>
                   <span>Advanced {money(loan.advanced)}</span>
+                  <span>Repaid {money(loan.repaid)}</span>
                 </div>
                 <span className="text-lg font-semibold tabular-nums shrink-0">{money(loan.outstanding)}</span>
               </button>
 
               {isOpen && (
                 <div className={`border-t ${rowBorder}`}>
-                  {loan.id && (
+                  {writable && loan.id && (
                     <div className="px-5 pt-3">
                       <TxnFinder
                         loanId={loan.id}
@@ -400,7 +411,7 @@ export default function BooksLoans() {
                       />
                     </div>
                   )}
-                  {loan.id && (
+                  {writable && loan.id && (
                     <div className="px-5 pt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
                       <label className={`flex items-center gap-2 text-xs cursor-pointer ${subtle}`}>
                         <input
@@ -489,7 +500,7 @@ export default function BooksLoans() {
                         ))}
                     </div>
                   )}
-                  <div className="px-5 py-3 flex flex-wrap items-center gap-3">
+                  {writable && <div className="px-5 py-3 flex flex-wrap items-center gap-3">
                     {editingBalance === key ? (
                       <>
                         <input
@@ -531,13 +542,14 @@ export default function BooksLoans() {
                         {loan.id ? "Edit starting balance" : "Set starting balance"}
                       </button>
                     )}
-                  </div>
+                  </div>}
                   <div className="overflow-x-auto">
                     <TxnTable
                       rows={loan.transactions}
                       categories={categories}
                       loans={registry}
                       isDark={isDark}
+                      readOnly={!writable}
                       onRowChange={() => void load()}
                       onError={setError}
                       onReload={() => void load()}

@@ -710,8 +710,10 @@ function TaxClassRows() {
 
 const ENTITY_TYPES = ["LLC", "C-Corp", "LP", "Trust"] as const;
 
+const ENTITY_STATUSES = ["Active", "Inactive", "Dissolved", "Pending"];
+
 function EditForm() {
-  const { page } = useEntity();
+  const { page, asset } = useEntity();
   const t = useTone();
   const { form } = page;
   const [saving, setSaving] = useState(false);
@@ -808,6 +810,14 @@ function EditForm() {
               <option value="Inactive">Inactive</option>
               <option value="Dissolved">Dissolved</option>
               <option value="Pending">Pending</option>
+              {/* A status a Palm formation writes (Forming, Formation canceled): kept on offer so it shows and can be picked back. */}
+              {[...new Set([asset.status, form.status])]
+                .filter((s): s is string => !!s && !ENTITY_STATUSES.includes(s))
+                .map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
             </Select>
           </Field>
           <Field label={trust ? "Governing law (state)" : "State of formation"}>

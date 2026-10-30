@@ -8,7 +8,7 @@ import { formingNow } from "../entity-addresses";
 import { entityCompleteness, entityType } from "../entity-completeness";
 import { documentRules, obligations, paperworkChecks, taxHome, type Obligation, type PaperworkInput } from "../entity-paperwork";
 import { stateFindings, type PalmMode } from "../palm";
-import { FILING_KINDS, splitNames, type Asset, type AssetDoc, type EntityTab, type FileKind, type OperatingContract } from "./model";
+import { FILING_KINDS, holdsOwnership, splitNames, type Asset, type AssetDoc, type EntityTab, type FileKind, type OperatingContract } from "./model";
 
 export type Tab = { key: EntityTab; label: string; count?: number; alert?: boolean };
 
@@ -32,7 +32,7 @@ export function deriveEntity(input: {
   // What the rule book reads: the record, plus its owner and the owners its documents list.
   const ownerRec = asset.ownerId ? allAssets[asset.ownerId] : undefined;
   const docOwners = (asset.members?.length ? asset.members : (asset.profile?.members ?? []).map((m) => ({ ...m, role: "member" }))).filter(
-    (m) => !/manager|director|officer/i.test(m.role ?? "") && (m.percent == null || m.percent > 0),
+    (m) => holdsOwnership(m) && (m.percent == null || m.percent > 0),
   );
   const paper: PaperworkInput = {
     ...asset,

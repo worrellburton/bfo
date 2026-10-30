@@ -9,7 +9,8 @@ import { useTheme } from "./theme";
  * you change it, and is kept on this browser (app/appearance.ts, app/theme.tsx).
  */
 export function AppearancePanel({ onClose }: { onClose: () => void }) {
-  const { theme, setTheme } = useTheme();
+  // `theme` is what's on screen (for colours); the radios show and set the app's own setting, which Mail can override.
+  const { theme, appTheme, overridden, setTheme } = useTheme();
   const { glass, density, setGlass, setDensity, reset } = useAppearance();
   const dark = theme === "dark";
   const panel = useRef<HTMLDivElement>(null);
@@ -89,7 +90,7 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
             <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${faint}`}>Theme</p>
             <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Theme">
               {(["light", "dark"] as const).map((t) => (
-                <button key={t} type="button" role="radio" aria-checked={theme === t} onClick={() => setTheme(t)} className={`${chip(theme === t)} flex items-center gap-3`}>
+                <button key={t} type="button" role="radio" aria-checked={appTheme === t} onClick={() => setTheme(t)} className={`${chip(appTheme === t)} flex items-center gap-3`}>
                   <span
                     aria-hidden="true"
                     className={`flex h-9 w-12 shrink-0 items-end gap-1 rounded-lg border p-1.5 ${t === "dark" ? "border-white/15 bg-[#0b0b10]" : "border-gray-200 bg-[#f9fafb]"}`}
@@ -104,7 +105,9 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
-            <p className={`mt-1.5 text-[11.5px] ${faint}`}>Mail keeps its own light or dark switch.</p>
+            <p className={`mt-1.5 text-[11.5px] ${faint}`}>
+              {overridden ? "Mail is showing its own light or dark (its switch is in Mail). This sets the rest of the app." : "Mail keeps its own light or dark switch."}
+            </p>
           </section>
 
           {/* How solid the cards are */}

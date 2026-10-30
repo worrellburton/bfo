@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, currentUser, sb, sbFetch } from "../../lib/auth.js";
+import { canWrite, currentUser, handleError, sb, sbFetch, type AppUser } from "../../lib/auth.js";
+import { fetchAll } from "../../lib/db-pages.js";
 import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
 import { inList as quotedList } from "../../lib/pg-filter.js";
 
@@ -14,13 +15,24 @@ import { inList as quotedList } from "../../lib/pg-filter.js";
  *
  * POST → { removed: [{ account_id, mask, ... }], counts }
  * POST { dry_run: true } → report what would be removed, delete nothing.
+ *
+ * While any connection can't be reached (a bank waiting for re-login), the run
+ * only reports: that bank's accounts are missing from what Plaid returns, and
+ * deleting their history would lose rows no sync brings back (Mercury
+ * backfill, CSV imports).
  */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
@@ -57,6 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (unreachable.length === (items?.length ?? 0)) {
       return res.status(503).json({ error: "no_connections_reachable", banks: unreachable });
     }
+    const reportOnly = dryRun || unreachable.length > 0;
 
     // Only mappings worth keeping count as stale — bare identity rows carry
     // nothing to preserve.
@@ -70,9 +83,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const p of prefs ?? []) if (!live.has(p.account_id)) stale.add(p.account_id);
     for (const s of states ?? []) if (!live.has(s.account_id)) stale.add(s.account_id);
 
-    // Books rows for accounts the banks no longer report.
-    const bookAccounts = await sb<Array<{ account_id: string }>>(
-      "book_transactions?select=account_id"
+    // Books rows for accounts the banks no longer report. Only those rows are
+    // read, every page of them (PostgREST stops at 1,000 rows without saying).
+    const notLive = live.size ? `&account_id=not.in.(${quotedList(live)})` : "";
+    const bookAccounts = await fetchAll<{ account_id: string }>(
+      `book_transactions?select=account_id${notLive}&order=transaction_id.asc`
     );
     const staleBooks = new Set<string>();
     for (const b of bookAccounts ?? []) if (!live.has(b.account_id)) staleBooks.add(b.account_id);
@@ -82,9 +97,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return { account_id: id, nickname: pref?.nickname ?? null, entity_name: pref?.entity_name ?? null };
     });
 
-    if (dryRun) {
+    if (reportOnly) {
+      // A bank awaiting re-login doesn't stop accounts that arrived under a
+      // new connection from getting their mappings handed over.
+      let adopted = 0;
+      if (!dryRun) {
+        await stampIdentity(liveAccounts);
+        adopted = await adoptMappings(liveAccounts);
+      }
       return res.json({
-        dry_run: true,
+        // Nothing was pruned, but outside a dry run identities were stamped and mappings handed over.
+        dry_run: dryRun,
+        pruned: false,
+        adopted_mappings: adopted,
         live_accounts: live.size,
         would_remove_prefs: removed.length,
         would_remove_book_accounts: staleBooks.size,

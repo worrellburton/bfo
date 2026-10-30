@@ -150,6 +150,10 @@ async function flows(browser) {
     await open(page, `${BASE}/inbox`); await page.waitForTimeout(1500);
     await page.locator("text=Address change 0 >> visible=true").first().click(); await page.waitForTimeout(1200);
     if (!page.url().includes("m=")) fail("flow/phone", "mail row didn't open the message");
+    // One mailbox chosen: opening a message keeps it (the list beside or behind stays that mailbox's).
+    await open(page, `${BASE}/inbox?a=${encodeURIComponent(session.user.mail_address)}`); await page.waitForTimeout(1500);
+    await page.locator("text=Address change 0 >> visible=true").first().click(); await page.waitForTimeout(1200);
+    if (!(page.url().includes("m=") && page.url().includes("a="))) fail("flow/phone", "opening a message dropped the chosen mailbox");
     // The entity's sections: a button naming the current one opens the whole list.
     await open(page, `${BASE}/assets/${ENTITY}`); await page.waitForTimeout(1500);
     await page.getByRole("button", { name: /Section.*Overview/ }).click(); await page.waitForTimeout(300);

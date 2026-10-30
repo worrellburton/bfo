@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { authFetch } from "../auth";
+import { authFetch, canWrite } from "../auth";
 import { useTheme } from "../theme";
+import { postBatchEdit, visibleSelection } from "../books-batch";
 import { TxnTable, BatchBar, money, type Txn } from "../books-shared";
 
 export function meta() {
@@ -30,6 +31,8 @@ export default function BooksCell() {
   const section = params.get("section") ?? "operating";
   const label = params.get("label");
   const month = params.get("month");
+  // Viewers read the cell; selection and the in-row pickers are for editors.
+  const writable = canWrite();
 
   const [rows, setRows] = useState<Txn[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -49,7 +52,10 @@ export default function BooksCell() {
       const res = await authFetch(`/api/books/data?${qs}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Couldn't load these transactions.");
-      setRows(data.transactions ?? []);
+      const list: Txn[] = data.transactions ?? [];
+      setRows(list);
+      // A reload keeps only the selected rows still behind this cell.
+      setSelected((prev) => new Set(visibleSelection(prev, list)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load these transactions.");
     } finally {
@@ -133,7 +139,8 @@ export default function BooksCell() {
             rows={rows}
             categories={categories}
             isDark={isDark}
-            selection={{
+            readOnly={!writable}
+            selection={writable ? {
               selected,
               toggle: (id) =>
                 setSelected((prev) => {
@@ -148,7 +155,7 @@ export default function BooksCell() {
                   for (const id of ids) on ? next.add(id) : next.delete(id);
                   return next;
                 }),
-            }}
+            } : undefined}
             onRowChange={() => void load()}
             onError={setError}
             onReload={() => void load()}
@@ -156,24 +163,22 @@ export default function BooksCell() {
         )}
       </div>
       <BatchBar
-        count={selected.size}
+        count={visibleSelection(selected, rows).length}
         isDark={isDark}
         busy={batchBusy}
         vendorSuggestions={vendorNames}
         categories={categories}
-        onApply={(patch) => {
+        onApply={async (patch) => {
           setBatchBusy(true);
-          void authFetch("/api/books/data", {
-            method: "POST",
-            body: JSON.stringify({ action: "batch_update", transaction_ids: [...selected], ...patch }),
-          })
-            .then(async (res) => {
-              if (!res.ok) throw new Error("Couldn't apply that batch edit.");
-              setSelected(new Set());
-              await load();
-            })
-            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't apply that batch edit."))
-            .finally(() => setBatchBusy(false));
+          try {
+            const r = await postBatchEdit(authFetch, visibleSelection(selected, rows), patch);
+            if (r.ok) setSelected(new Set());
+            else setError(r.message);
+            if (r.ok || r.done) await load();
+            return r.ok;
+          } finally {
+            setBatchBusy(false);
+          }
         }}
         onClear={() => setSelected(new Set())}
       />

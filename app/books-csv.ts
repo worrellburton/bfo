@@ -68,3 +68,15 @@ export function normalizeCsv(rows: string[][]): CsvRow[] {
     return [{ date, description, amount }];
   });
 }
+
+/**
+ * One quoted CSV text cell, safe to open in Excel or Sheets: a value that
+ * starts with = + - @ tab or CR would run as a formula (quotes don't stop
+ * it), so it gets a leading apostrophe. Bank descriptions come from outside
+ * the office. Not for amounts — a negative number must stay a number.
+ */
+export function csvText(v: unknown): string {
+  let s = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}

@@ -41,7 +41,8 @@ export function EntityHeader() {
           >
             {glyph}
           </div>
-          <div className="min-w-0 flex-1">
+          {/* A real basis, so with little room the actions wrap under the name rather than squeezing it. */}
+          <div className="min-w-0 flex-1 basis-[16rem]">
             <h1 className={`break-words text-[20px] font-semibold leading-tight tracking-[-0.02em] sm:text-[24px] ${t.text}`}>{asset.name}</h1>
             {/* Each item keeps its separator, so a wrapped line never starts with "·". */}
             <p className={`mt-1 text-[12.5px] leading-relaxed ${t.muted}`}>
@@ -76,7 +77,7 @@ export function EntityHeader() {
               })()}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1 max-sm:w-full max-sm:justify-end">
+          <div className="ml-auto flex shrink-0 items-center gap-1 max-sm:w-full max-sm:justify-end">
             {canSyncPalm && <PalmSyncButton />}
             {/* A quiet confirmation once the edit form saves; it clears itself after a few seconds. */}
             {page.savedAt && !page.editing && (

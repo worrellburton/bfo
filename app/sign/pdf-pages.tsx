@@ -121,7 +121,12 @@ export function useFitWidth(max = 820, pad = 0): [(el: HTMLDivElement | null) =>
   const [width, setWidth] = useState(0);
   useEffect(() => {
     if (!node) return;
-    const measure = () => setWidth(Math.max(280, Math.min(max, Math.floor(node.clientWidth - pad))));
+    const measure = () => {
+      // clientWidth counts the element's padding; the pages go inside it.
+      const cs = getComputedStyle(node);
+      const inner = node.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      setWidth(Math.max(280, Math.min(max, Math.floor(inner - pad))));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(node);

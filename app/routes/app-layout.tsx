@@ -13,6 +13,7 @@ import {
   isAuthenticated,
   isEmailOnly,
   isPartner,
+  loginPath,
   logout,
   otherAccounts,
   profileComplete,
@@ -298,7 +299,8 @@ export default function AppLayout() {
   const location = useLocation();
   /** Mail on a phone has its own top (a way back, the mailbox); the app's bar and particles stay out of it. */
   const mailOnly = location.pathname.startsWith("/inbox");
-  const { theme, toggle } = useTheme();
+  // `theme` is what's on screen (Mail may show its own); `appTheme` is the setting the menu and palette change.
+  const { theme, appTheme, toggle } = useTheme();
   const hoverCapable = useHoverCapable();
 
   const [user, setUser] = useState(() => getUser());
@@ -308,6 +310,9 @@ export default function AppLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
+  // The phone drawer's opener, and whether closing should hand focus back to it (a dismissal, not a navigation).
+  const drawerOpener = useRef<HTMLButtonElement>(null);
+  const refocusOpener = useRef(false);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [hovering, setHovering] = useState(false);
   // On a touch screen (iPad) there's no hover: the rail stays open with its labels, pushing the page over, and a tap
@@ -402,21 +407,23 @@ export default function AppLayout() {
   }, []);
 
   useEffect(() => {
+    // Signed out: to sign-in, replacing this entry (so Back doesn't bounce
+    // straight back to /login) and carrying this page to come back to.
     if (!isAuthenticated()) {
-      navigate("/login");
+      navigate(loginPath(), { replace: true });
       return;
     }
     // Confirm the session is still good server-side — an owner may have
     // revoked access, or the role may have changed, since the last sign-in.
     revalidate().then((ok) => {
       if (!ok) {
-        navigate("/login");
+        navigate(loginPath(), { replace: true });
         return;
       }
       const fresh = getUser();
       setUser(fresh);
       // Collect whatever the profile is missing (see profileComplete).
-      if (fresh && !profileComplete(fresh)) navigate("/complete-profile");
+      if (fresh && !profileComplete(fresh)) navigate("/complete-profile", { replace: true });
     });
   }, [navigate]);
 
@@ -459,6 +466,8 @@ export default function AppLayout() {
   const pages = useMemo<PageLink[]>(() => {
     const list: PageLink[] = [];
     for (const item of navItems) {
+      // Phone is owners' and admins' only, as in the nav (staffItems below).
+      if (item.to === "/phone" && !isAdmin(user)) continue;
       if (item.children) {
         for (const c of item.children) list.push({ to: c.to, label: c.label, section: item.label, ...(item.label === "Mail" ? { keywords: "email messages" } : {}) });
       } else {
@@ -484,20 +493,28 @@ export default function AppLayout() {
   const openSheet = useCallback(() => setSheetOpen(true), []);
 
   // The drawer behaves like a sheet: Escape closes it, focus moves into it,
-  // and the page behind stops scrolling.
+  // the page behind stops scrolling (and is inert, below), and dismissing it
+  // puts focus back on "Open menu".
+  const dismissDrawer = useCallback(() => {
+    refocusOpener.current = true;
+    setDrawerOpen(false);
+  }, []);
   useEffect(() => {
     if (!drawerOpen) return;
+    refocusOpener.current = false;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const first = drawerRef.current?.querySelector<HTMLElement>("a[href], button");
     first?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && dismissDrawer();
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
+      if (refocusOpener.current) drawerOpener.current?.focus();
+      refocusOpener.current = false;
     };
-  }, [drawerOpen]);
+  }, [drawerOpen, dismissDrawer]);
 
   // From md up (tablets and desktops) the rail is always on screen; below it
   // the rail is an off-canvas drawer, and while that's closed its links
@@ -526,6 +543,8 @@ export default function AppLayout() {
   const labelsVisible = expanded || drawerOpen;
   // The phone drawer is the brand's black and ivory whatever the theme (app.css .sidebar-rail on phones), so it takes the dark classes.
   const railDark = isDark || !isDesktop;
+  // The open phone drawer is modal: the page behind can't be reached by Tab or VoiceOver.
+  const drawerModal = drawerOpen && !isDesktop;
   // Mail carries its unread count; "Email only" members see Mail and nothing else.
   // Its folders carry their own counts; Other only for those who can see it.
   const unread = mail?.unread ?? 0;
@@ -580,8 +599,8 @@ export default function AppLayout() {
     navigate(to);
   }
 
-  const menuItemCls = `w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
-    isDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
+  const menuItemCls = `w-full flex items-center gap-3 px-4 py-2.5 max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
+    railDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-700"
   }`;
 
   return (
@@ -589,7 +608,7 @@ export default function AppLayout() {
       className={`min-h-screen relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
       style={{ ["--rail" as any]: `${railWidth}px`, ["--inset" as any]: `${contentInset}px` }}
     >
-      <a href="#main" className="skip-link">Skip to content</a>
+      <a href="#main" inert={drawerModal} className="skip-link">Skip to content</a>
       <RouteProgress />
 
       {/* Drifting aurora — the app shell shares the landing atmosphere and the
@@ -603,12 +622,14 @@ export default function AppLayout() {
       {!mailOnly && <ParticleCanvas className="particle-field" />}
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setDrawerOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={dismissDrawer} />
       )}
 
       <aside
         ref={drawerRef}
         inert={!isDesktop && !drawerOpen}
+        role={drawerModal ? "dialog" : undefined}
+        aria-modal={drawerModal || undefined}
         aria-label="Navigation"
         onTouchStart={(e) => {
           const t = e.touches[0];
@@ -620,7 +641,7 @@ export default function AppLayout() {
           if (!start) return;
           const t = e.changedTouches[0];
           // A leftward flick closes the drawer, like the native sheet.
-          if (start.x - t.clientX > 60 && Math.abs(t.clientY - start.y) < 50) setDrawerOpen(false);
+          if (start.x - t.clientX > 60 && Math.abs(t.clientY - start.y) < 50) dismissDrawer();
         }}
         onMouseEnter={() => hoverCapable && setHovering(true)}
         onMouseLeave={() => setHovering(false)}
@@ -654,7 +675,7 @@ export default function AppLayout() {
           })()}
           <button
             type="button"
-            onClick={() => setDrawerOpen(false)}
+            onClick={dismissDrawer}
             aria-label="Close menu"
             className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
               railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
@@ -820,7 +841,7 @@ export default function AppLayout() {
                   <circle cx="10" cy="17" r="2.5" />
                 </svg>
                 <span className="flex-1">Appearance</span>
-                <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>{isDark ? "Dark" : "Light"}</span>
+                <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>{appTheme === "dark" ? "Dark" : "Light"}</span>
               </button>
 
               {!emailOnly && !partner && (
@@ -847,7 +868,7 @@ export default function AppLayout() {
               <button
                 onClick={signOut}
                 role="menuitem"
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-4 py-2.5 max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] text-sm text-left whitespace-nowrap transition-colors cursor-pointer ${
                   railDark ? "hover:bg-white/5 text-red-400" : "hover:bg-gray-50 text-red-500"
                 }`}
               >
@@ -864,6 +885,7 @@ export default function AppLayout() {
       {/* Mobile top bar — menu upper-left, the wordmark centred. The drawer
           holds every destination, so there is no bottom dock. */}
       <header
+        inert={drawerModal}
         className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl md:hidden ${mailOnly ? "hidden" : ""} ${
           isDark ? "border-white/10 bg-black/60" : "border-gray-200 bg-white/70"
         }`}
@@ -871,6 +893,7 @@ export default function AppLayout() {
       >
         <div className="relative flex h-14 items-center justify-center px-2">
           <button
+            ref={drawerOpener}
             type="button"
             onClick={() => setDrawerOpen(true)}
             aria-label="Open menu"
@@ -912,15 +935,16 @@ export default function AppLayout() {
 
       <main
         id="main"
+        inert={drawerModal}
         tabIndex={-1}
         className={`sidebar-content outline-none relative z-10 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:p-8 md:pb-8 md:ml-[var(--inset)] ${
           mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))]" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
         } md:pt-[calc(2rem+env(safe-area-inset-top))]`}
       >
-        {/* Email-only members see the inbox and nothing else; redirect before any other page mounts. */}
+        {/* Email-only members see the inbox and nothing else; partners their entities and a piece of their paper mail (api/stable.ts scopes it). Redirect before any other page mounts. */}
         {emailOnly && location.pathname !== "/inbox" ? (
           <Navigate to="/inbox" replace />
-        ) : partner && !location.pathname.startsWith("/assets") ? (
+        ) : partner && !location.pathname.startsWith("/assets") && !/^\/mailbox\/[^/]+$/.test(location.pathname) ? (
           <Navigate to="/assets" replace />
         ) : (
           <Outlet context={{ pages }} />
@@ -931,6 +955,7 @@ export default function AppLayout() {
       {!emailOnly && !partner && !location.pathname.startsWith("/ask") && (
         <Link
           to="/ask"
+          inert={drawerModal}
           aria-label="Ask BFO"
           title="Ask BFO"
           className={`ask-fab fixed right-5 z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full transition-transform active:scale-90 ${mailOnly ? "max-md:hidden" : ""}`}
@@ -945,8 +970,6 @@ export default function AppLayout() {
       {!emailOnly && !partner && (
         <>
           <ShellShortcuts pages={pages} openPalette={openPalette} openSheet={openSheet} />
-          {appearanceOpen && <AppearancePanel onClose={() => setAppearanceOpen(false)} />}
-          <AppLock />
           <CommandPalette
             open={paletteOpen}
             onClose={() => setPaletteOpen(false)}
@@ -954,7 +977,7 @@ export default function AppLayout() {
             isDark={isDark}
             actions={[
               { id: "ask", label: "Ask BFO…", hint: "A question about the office", run: () => { setPaletteOpen(false); navigate("/ask"); } },
-              { id: "theme", label: isDark ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
+              { id: "theme", label: appTheme === "dark" ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
               { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", run: () => { setPaletteOpen(false); setSheetOpen(true); } },
               { id: "logout", label: "Log out", run: signOut },
             ]}
@@ -962,6 +985,9 @@ export default function AppLayout() {
           <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} isDark={isDark} />
         </>
       )}
+      {/* Every signed-in user: the account menu offers both to everyone. */}
+      {appearanceOpen && <AppearancePanel onClose={() => setAppearanceOpen(false)} />}
+      <AppLock />
       <OfflineBanner isDark={isDark} />
 
 

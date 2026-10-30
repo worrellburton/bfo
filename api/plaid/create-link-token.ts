@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, currentUser, sb } from "../../lib/auth.js";
+import { canWrite, currentUser, fail, handleError, sb, type AppUser } from "../../lib/auth.js";
 import { Products, CountryCode } from "plaid";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -10,7 +10,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
@@ -67,10 +73,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     console.error("Plaid link token error:", err.response?.data || err.message);
     const code = err.response?.data?.error_code;
-    const message =
-      code === "INVALID_PRODUCT" && addInvestments
-        ? "Plaid hasn't enabled Investments for BFO's account yet. In the Plaid dashboard, Overview → Request products → Investments; then try again."
-        : err.response?.data?.error_message || err.message;
-    res.status(500).json({ error: message, code: code ?? null });
+    if (code === "INVALID_PRODUCT" && addInvestments) {
+      return fail(res, 500, "INVALID_PRODUCT", "Plaid hasn't enabled Investments for BFO's account yet. In the Plaid dashboard, Overview → Request products → Investments; then try again.");
+    }
+    // Plaid's display_message is written for people; anything else stays in
+    // the log line above (never the raw error: it carries Plaid's credentials).
+    const shown = err.response?.data?.display_message;
+    return fail(res, 500, code ?? "plaid_error", shown || "Something went wrong. Try again.");
   }
 }

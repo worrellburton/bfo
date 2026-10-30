@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Anthropic from "@anthropic-ai/sdk";
-import { canWrite, currentUser } from "../lib/auth.js";
+import { canWrite, currentUser, handleError, type AppUser } from "../lib/auth.js";
 import { fetchDocument } from "../lib/fetch-document.js";
 
 const MODEL = "claude-sonnet-5-5";
@@ -25,7 +25,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  const user = await currentUser(req);
+  // currentUser throws PartnerRefused for a partner; handleError answers 403.
+  let user: AppUser | null;
+  try {
+    user = await currentUser(req);
+  } catch (err) {
+    return handleError(res, err);
+  }
   if (!user) return res.status(401).json({ error: "unauthorized" });
   if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 

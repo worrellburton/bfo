@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { authFetch } from "../auth";
+import { authFetch, canWrite } from "../auth";
 import { useTheme } from "../theme";
+import { ConfirmDialog } from "../books-shared";
 
 export function meta() {
   return [{ title: "BFO - Books · Rules" }];
@@ -17,6 +18,9 @@ type Rule = {
   created_at: string;
 };
 
+/** A rule's type override in the words the rest of Books uses. */
+const TYPE_LABELS: Record<string, string> = { normal: "Income / Expense", transfer: "Transfer", intercompany: "Roll-up" };
+
 /**
  * Every rule the books have learned — from "apply to all", vendor renames,
  * type overrides, and loan links. This is the memory that makes the system
@@ -29,6 +33,10 @@ export default function BooksRules() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
+  // The rule waiting on the delete confirmation.
+  const [confirming, setConfirming] = useState<Rule | null>(null);
+  // Viewers see what the books learned; pruning is for editors.
+  const writable = canWrite();
 
   async function load() {
     try {
@@ -52,11 +60,11 @@ export default function BooksRules() {
         method: "POST",
         body: JSON.stringify({ action: "delete_rule", rule_id: id }),
       });
-      if (!res.ok) throw new Error();
-    } catch {
+      if (!res.ok) throw new Error(res.status === 403 ? "You have view-only access to Books." : "Couldn't delete that rule.");
+    } catch (err) {
       // Put it back — the rule is still live on the server.
       setRules(before);
-      setError("Couldn't delete that rule.");
+      setError(err instanceof Error && err.message ? err.message : "Couldn't delete that rule.");
     }
   }
 
@@ -74,7 +82,7 @@ export default function BooksRules() {
     const bits: string[] = [];
     if (r.book_category) bits.push(r.book_category);
     if (r.vendor_name) bits.push(`vendor → ${r.vendor_name}`);
-    if (r.type_override) bits.push(`type → ${r.type_override}`);
+    if (r.type_override) bits.push(`type → ${TYPE_LABELS[r.type_override] ?? r.type_override}`);
     if (r.loan_id) bits.push("linked to a loan");
     return bits;
   };
@@ -114,7 +122,35 @@ export default function BooksRules() {
         error && rules.length === 0 ? null :
         <p className={`text-sm ${subtle}`}>{rules.length === 0 ? "No rules yet. Categorize a vendor with “apply to all” to teach your first one." : "No rules match that search."}</p>
       ) : (
-        <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
+        <>
+        {/* Below lg each rule is a card — the match, what it does (chips
+            wrap), then its match count and Delete — so nothing hides off to
+            the side of a narrow column. */}
+        <ul className={`lg:hidden rounded-2xl border rise-in ${card}`}>
+          {shown.map((r) => (
+            <li key={r.id} className={`px-4 pt-3 pb-1 border-t first:border-t-0 ${rowBorder}`}>
+              <p className="text-sm font-medium break-all">“{r.match}”</p>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {effect(r).map((b) => (
+                  <span key={b} className={`px-2 py-0.5 rounded-full text-xs break-all ${chip}`}>{b}</span>
+                ))}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className={`text-xs tabular-nums ${subtle}`}>{r.matches} match{r.matches === 1 ? "" : "es"}</span>
+                {writable && (
+                  <button
+                    onClick={() => setConfirming(r)}
+                    aria-label={`Delete rule “${r.match}”`}
+                    className={`h-[44px] px-3 -mr-3 text-sm cursor-pointer ${subtle} hover:text-red-500`}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className={`hidden lg:block rounded-2xl border overflow-x-auto rise-in ${card}`}>
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className={`${head} border-b ${border}`}>
@@ -137,20 +173,41 @@ export default function BooksRules() {
                   </td>
                   <td className={`px-4 py-2.5 text-right tabular-nums ${r.matches ? "" : subtle}`}>{r.matches}</td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={() => void remove(r.id)}
-                      title="Delete this rule"
-                      aria-label={`Delete rule “${r.match}”`}
-                      className={`text-xs cursor-pointer px-3 py-[14px] -my-[14px] -mr-3 sm:p-0 sm:m-0 ${subtle} hover:text-red-500`}
-                    >
-                      Delete
-                    </button>
+                    {/* The padding is the tap box (a touch iPad shows this
+                        table too); the negative margins keep the row slim. */}
+                    {writable && (
+                      <button
+                        onClick={() => setConfirming(r)}
+                        title="Delete this rule"
+                        aria-label={`Delete rule “${r.match}”`}
+                        className={`text-xs cursor-pointer px-3 py-[14px] -my-[14px] -mr-3 ${subtle} hover:text-red-500`}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        </>
+      )}
+      {confirming && (
+        <ConfirmDialog
+          isDark={isDark}
+          tone="danger"
+          title={`Delete rule “${confirming.match}”?`}
+          message="Future syncs will stop applying it. Transactions it already filed keep their account."
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            const id = confirming.id;
+            setConfirming(null);
+            void remove(id);
+          }}
+          onClose={() => setConfirming(null)}
+        />
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { logActivity } from "../lib/activity.js";
 import { canWrite, cronAuth, currentUser, fail, guard, handleError, isPartner, refuseCron, sb } from "../lib/auth.js";
 import { recordCronRun } from "../lib/cron.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
-import { needsReading, readPiece, ReadingUnavailable, toReading } from "../lib/paper-read.js";
+import { needsReading, readingFailed, readPiece, ReadingUnavailable, toReading } from "../lib/paper-read.js";
 import { StableNotConfigured, syncStable, type MailRow, type StableMailItem } from "../lib/stable.js";
 import { storageSignedUrl } from "../lib/storage.js";
 
@@ -16,12 +16,14 @@ import { storageSignedUrl } from "../lib/storage.js";
  * GET  (Vercel cron)     → catches up on the last week (Bearer CRON_SECRET)
  * POST { action: "assign", id, assetId|null }   which entity a piece is for (staff)
  * POST { action: "read", id }                    mark read
- * POST { action: "read-piece", id }              read the envelope and scan (lib/paper-read.ts)
+ * POST { action: "read-piece", id, force? }      read the envelope and scan (lib/paper-read.ts) when
+ *                                                the reading is out of date; force (staff) reads again
  * POST { action: "sync", days? }                 catch up now (staff)
  */
 
 const ASSET = /^[\w-]{1,128}$/;
 const PIECE = /^[\w-]{6,64}$/;
+const WRITERS = "Only owners, admins and members can file paper mail or check Stable.";
 
 /** A row as the page shows it, with short-lived links to the copies. */
 async function present(r: MailRow) {
@@ -67,6 +69,7 @@ async function presentFull(r: MailRow) {
     reading: r.reading ? toReading(r.reading, !!(r.reading as { fromScan?: boolean }).fromScan) : null,
     readingAt: r.reading_at ?? null,
     readingStale: needsReading(r),
+    readingFailed: readingFailed(r),
   };
 }
 
@@ -111,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const id = String(body.id ?? "");
     if (body.action === "sync") {
-      if (!canWrite(me)) return fail(res, 403, "forbidden");
+      if (!canWrite(me)) return fail(res, 403, "forbidden", WRITERS);
       const days = Math.min(365, Math.max(1, Number(body.days) || 30));
       return res.status(200).json({ synced: await syncStable(days) });
     }
@@ -121,10 +124,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mine && !(row.asset_id && mine.has(row.asset_id))) return fail(res, 403, "forbidden");
 
     if (body.action === "read") {
-      if (!row.read_at) await sb(`stable_mail?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
+      // Read means the office has seen it: a partner opening a piece leaves it unread for staff.
+      if (!row.read_at && !partner) await sb(`stable_mail?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { read_at: new Date().toISOString() } });
       return res.status(200).json({ ok: true });
     }
     if (body.action === "read-piece") {
+      // Each reading is a paid model call: only when the copies changed, or staff ask again.
+      if (!needsReading(row) && !(body.force === true && canWrite(me))) return res.status(200).json({ mail: await presentFull(row) });
       try {
         await readPiece(row);
       } catch (err) {
@@ -135,7 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ mail: await presentFull(fresh) });
     }
     if (body.action === "assign") {
-      if (!canWrite(me)) return fail(res, 403, "forbidden");
+      if (!canWrite(me)) return fail(res, 403, "forbidden", WRITERS);
       const assetId = body.assetId == null || body.assetId === "" ? null : String(body.assetId);
       if (assetId && !ASSET.test(assetId)) return fail(res, 400, "bad_asset");
       const [updated] = await sb<MailRow[]>(`stable_mail?id=eq.${encodeURIComponent(id)}`, {

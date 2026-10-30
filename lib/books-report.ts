@@ -66,6 +66,26 @@ export function eliminated(
   return !!counterEntity && selection.includes(counterEntity);
 }
 
+/**
+ * Income and expenses over a set of ledger rows, the way the P&L counts
+ * them: transfers, roll-ups, loan movements and "flow" accounts (card
+ * payments, internal transfers) are moving the family's own money, not
+ * earning or spending it. Negative amounts are money in.
+ */
+export function incomeExpense(
+  rows: Array<Pick<ReportTxn, "amount" | "book_category" | "plaid_category" | "loan_id" | "type_override" | "intercompany" | "txn_type">>
+): { income: number; expenses: number } {
+  let income = 0;
+  let expenses = 0;
+  for (const t of rows) {
+    if (effType(t) !== "normal" || sectionOf(label(t)) === "flow") continue;
+    const a = Number(t.amount);
+    if (a > 0) expenses += a;
+    else income -= a;
+  }
+  return { income: Math.round(income * 100) / 100, expenses: Math.round(expenses * 100) / 100 };
+}
+
 const DAY = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 

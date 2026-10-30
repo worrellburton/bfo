@@ -157,6 +157,11 @@ export function isAdmin(user: User | null = getUser()): boolean {
   return user?.role === "owner" || user?.role === "admin";
 }
 
+/** Who may change records (lib/auth.ts canWrite): owners, admins and members. */
+export function canWrite(user: User | null = getUser()): boolean {
+  return user?.role === "owner" || user?.role === "admin" || user?.role === "member";
+}
+
 export function isEmailOnly(user: User | null = getUser()): boolean {
   return user?.role === "email";
 }
@@ -168,6 +173,26 @@ export function isPartner(user: User | null = getUser()): boolean {
 /** Where a signed-in user lands: the inbox for "Email only", their entities for a partner, Home for everyone else. */
 export function homePath(user: User | null = getUser()): string {
   return isEmailOnly(user) ? "/inbox" : isPartner(user) ? "/assets" : "/home";
+}
+
+/**
+ * Where to go after signing in, from /login's `next`: a path in this app only
+ * (starts with one "/"; never "//", and no backslash or control character,
+ * which a browser can read as another site), and never back to the sign-in
+ * pages. Anything else is null.
+ */
+export function safeNext(raw: string | null | undefined): string | null {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  if (/[\u0000-\u001f\\]/.test(raw)) return null;
+  if (/^\/(login|complete-profile)(?:[/?#]|$)/.test(raw)) return null;
+  return raw;
+}
+
+/** The sign-in page, carrying the page being opened so sign-in comes back to it. */
+export function loginPath(): string {
+  if (typeof window === "undefined") return "/login";
+  const here = safeNext(window.location.pathname + window.location.search);
+  return here && here !== "/" ? `/login?next=${encodeURIComponent(here)}` : "/login";
 }
 
 /**
@@ -275,38 +300,19 @@ export async function verifyCode(identifier: string, code: string) {
   return data;
 }
 
-/**
- * Take a session token handed over out-of-band (a one-time sign-in link) and
- * adopt it as this browser's session, if the server still honours it.
- */
-export async function adoptToken(token: string): Promise<boolean> {
-  try {
-    const res = await fetch("/api/auth/session", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { user: User; expiresAt: string | null };
-    signIn({
-      token,
-      expiresAt: data.expiresAt ?? new Date(Date.now() + 30 * 86_400_000).toISOString(),
-      user: data.user,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Re-check the session against the server; returns false once it's dead. */
 export async function revalidate(): Promise<boolean> {
   const session = read();
   if (!session) return false;
   try {
     const res = await authFetch("/api/auth/session");
-    if (!res.ok) {
+    // Only a 401 means the session is dead (authFetch has already cleared it).
+    if (res.status === 401) {
       write(null);
       return false;
     }
+    // A 5xx is a server blip, like being offline: keep the session.
+    if (!res.ok) return true;
     const data = (await res.json()) as { user: User };
     write({ ...session, user: data.user });
     return true;

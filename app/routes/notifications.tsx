@@ -48,8 +48,8 @@ function Switch({ on, onToggle, label, hint, isDark }: { on: boolean; onToggle: 
         <span className={`block text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>{label}</span>
         <span className={`block text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>{hint}</span>
       </span>
-      <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${on ? "bg-[#6366f1]" : isDark ? "bg-white/15" : "bg-gray-300"}`} aria-hidden>
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+      <span className={`relative h-[24px] w-[40px] shrink-0 rounded-full transition-colors ${on ? "bg-[#6366f1]" : isDark ? "bg-white/15" : "bg-gray-300"}`} aria-hidden>
+        <span className={`absolute top-[2px] h-[20px] w-[20px] rounded-full bg-white shadow transition-transform ${on ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
       </span>
     </button>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsReading, readingKey, toReading } from "../lib/paper-read";
+import { needsReading, readingFailed, readingKey, toReading } from "../lib/paper-read";
 
 describe("paper mail reading", () => {
   it("is read once per envelope, and again when a scan arrives", () => {
@@ -9,6 +9,17 @@ describe("paper mail reading", () => {
     const scanned = { ...envelopeOnly, scan_path: "stable/a/scan.pdf" };
     expect(needsReading({ ...scanned, reading_from: readingKey(envelopeOnly) })).toBe(true);
     expect(needsReading({ envelope_path: null, scan_path: null, reading_from: null })).toBe(false);
+  });
+
+  it("doesn't read again copies whose reading failed, until a scan arrives", () => {
+    const envelopeOnly = { envelope_path: "stable/a/envelope.jpg", scan_path: null };
+    const failed = { ...envelopeOnly, reading_from: `failed:${readingKey(envelopeOnly)}` };
+    expect(needsReading(failed)).toBe(false);
+    expect(readingFailed(failed)).toBe(true);
+    expect(readingFailed({ ...envelopeOnly, reading_from: readingKey(envelopeOnly) })).toBe(false);
+    const scanned = { ...failed, scan_path: "stable/a/scan.pdf" };
+    expect(needsReading(scanned)).toBe(true);
+    expect(readingFailed(scanned)).toBe(false);
   });
 
   it("keeps what's well formed and drops the rest", () => {

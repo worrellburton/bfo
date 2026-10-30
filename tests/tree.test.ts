@@ -69,6 +69,7 @@ describe("paths", () => {
     expect(parsePath("/assets//x/")).toEqual(["assets", "x"]);
     expect(parsePath("")).toEqual([]);
     expect(parsePath("users/x")).toBeNull(); // not a tree collection
+    expect(parsePath("agents")).toBeNull(); // the old Office agents hold provider API keys
     expect(parsePath("assets/a.b")).toBeNull();
     expect(parsePath("assets/a$b")).toBeNull();
     expect(parsePath(42)).toBeNull();
@@ -202,6 +203,7 @@ describe("/api/tree", () => {
     expect(await call("GET", { query: { path: "assets" } })).toEqual({ status: 401, json: { error: "unauthorized" } });
     me = member;
     expect(await call("GET", { query: { path: "users" } })).toEqual({ status: 400, json: { error: "bad_path" } });
+    expect(await call("GET", { query: { path: "agents" } })).toEqual({ status: 400, json: { error: "bad_path" } });
     expect(await call("GET", { query: { path: "" } })).toEqual({ status: 400, json: { error: "bad_path" } });
   });
 
@@ -235,28 +237,30 @@ describe("/api/tree", () => {
   it("copies every collection out of Firebase on the first request", async () => {
     sbRoutes = [
       [/GET tree_imports/, () => []],
-      [/POST tree_imports/, () => [{ collection: "agents", status: "running" }]],
+      [/POST tree_imports/, () => [{ collection: "notes", status: "running" }]],
     ];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
         if (url.includes("identitytoolkit")) return new Response(JSON.stringify({ idToken: "tok" }));
-        if (url.includes("/agents.json")) return new Response(JSON.stringify({ n1: { text: "hi" }, n2: { text: "there" } }));
+        if (url.includes("/notes.json")) return new Response(JSON.stringify({ n1: { text: "hi" }, n2: { text: "there" } }));
         // Firebase answers "null" for a node that was never written.
         if (url.includes(".json?auth=")) return new Response("null");
         return new Response("{}", { status: 404 });
       })
     );
-    // Firebase holds only agents; the other collections come back empty and are marked done too.
+    // Firebase holds only notes; the other collections come back empty and are marked done too.
     forgetImports();
     expect((await call("GET", { query: { path: "notes" } })).status).toBe(200);
     const inserted = sbCalls.find((c) => c.method === "POST" && c.path.startsWith("tree_nodes"));
     expect(inserted?.body).toEqual([
-      { collection: "agents", id: "n1", data: { text: "hi" } },
-      { collection: "agents", id: "n2", data: { text: "there" } },
+      { collection: "notes", id: "n1", data: { text: "hi" } },
+      { collection: "notes", id: "n2", data: { text: "there" } },
     ]);
-    expect(sbCalls.find((c) => c.method === "PATCH" && c.path.startsWith("tree_imports?collection=eq.agents"))?.body).toMatchObject({ status: "done", count: 2 });
-    expect(sbCalls.filter((c) => c.method === "PATCH" && c.path.startsWith("tree_imports")).map((c) => c.body.status)).toEqual(["done", "done", "done", "done", "done"]);
+    expect(sbCalls.find((c) => c.method === "PATCH" && c.path.startsWith("tree_imports?collection=eq.notes"))?.body).toMatchObject({ status: "done", count: 2 });
+    expect(sbCalls.filter((c) => c.method === "PATCH" && c.path.startsWith("tree_imports")).map((c) => c.body.status)).toEqual(["done", "done", "done", "done"]);
+    // The old Office agents (each holding a provider API key) are never copied or served.
+    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes("/agents.json"))).toBe(false);
   });
 
   it("writes through tree_apply and hands back the rows touched", async () => {

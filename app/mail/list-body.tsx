@@ -49,9 +49,11 @@ export function PushInvite({ setPushDismissed, setPushAsk }: { setPushDismissed:
 }
 
 /** The list: its loader or error, its empty state, or the rows (the table, or day-grouped rows on phones; a plain list in columns), then Load more. */
-export function ListBody({ rows, listError, loaderLeaving, q, view, folder, filter, noAddress, address, emptyText, sent, mixed, list, rowsFresh, returnedId, openId, picked, select, prefetch, star, pick, pickAll, archiveRow, loadingMore, loadMore }: {
+export function ListBody({ rows, listError, loaderLeaving, q, view, folder, filter, noAddress, address, emptyText, sent, mixed, list, rowsFresh, returnedId, openId, picked, select, prefetch, star, pick, pickAll, archiveRow, loadingMore, loadMore, retry }: {
   rows: MailSummary[] | null;
   listError: string | null;
+  /** Read the list again after it failed. */
+  retry: () => void;
   loaderLeaving: boolean;
   q: string;
   view: View;
@@ -78,7 +80,14 @@ export function ListBody({ rows, listError, loaderLeaving, q, view, folder, filt
 }) {
   const t = useTone();
   return !rows ? (
-    listError ? <ErrorLine>{listError}</ErrorLine> : (
+    listError ? (
+      <div className="flex flex-wrap items-center gap-x-1 pr-3">
+        <ErrorLine>{listError}</ErrorLine>
+        <Button kind="ghost" onClick={retry}>
+          Try again
+        </Button>
+      </div>
+    ) : (
       <div className={loaderLeaving ? "loader-out" : ""}>{q ? <SearchLoader term={q} /> : <ListLoader table={view === "table"} label={folder === "sent" ? "Fetching sent mail" : folder === "archive" ? "Fetching the archive" : "Fetching mail"} />}</div>
     )
   ) : rows.length === 0 ? (

@@ -282,6 +282,7 @@ export default function EntityCompliance() {
           : x.outcome === "not_found" ? { tone: "warn" as const, text: `${x.state}: no registry entry matched the name. Add its file number under Edit.` }
           : x.outcome === "ambiguous" ? { tone: "warn" as const, text: `${x.state}: more than one registry entry matched. Pick the right one on its Compliance tab.` }
           : x.outcome === "error" ? { tone: "bad" as const, text: `${x.state}: ${x.detail ?? "couldn't reach Palm"}` }
+          : x.outcome === "later" ? { tone: "warn" as const, text: `${x.state}: not read this time (ran out of time). Check again to read the rest.` }
           : null;
         if (!line) continue;
         said[x.id] = prev ? { tone: prev.tone === "bad" || line.tone === "bad" ? "bad" : prev.tone === "warn" || line.tone === "warn" ? "warn" : "ok", text: `${prev.text} ${line.text}` } : line;
@@ -304,8 +305,8 @@ export default function EntityCompliance() {
   return (
     <div className="mx-auto max-w-[1400px] pb-16">
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
+      <header className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+        <div className="min-w-0 sm:flex-1 sm:basis-[22rem]">
           <p className={`text-[11px] font-medium uppercase tracking-[0.18em] ${t3}`}>Tools</p>
           <h1 className="mt-1 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">Entity compliance</h1>
           <p className={`mt-1 text-[12.5px] ${t2}`}>
@@ -313,14 +314,14 @@ export default function EntityCompliance() {
             <PalmBadge mode={palm.mode} loaded={palm.loaded} isDark={isDark} />
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Segmented value={view} onChange={setView} isDark={isDark} />
           {canEdit && palm.mode && staleOrUnread > 0 && (
             <button
               type="button"
               onClick={() => void checkAll()}
               disabled={!!bulk}
-              className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-[12.5px] font-medium transition-colors ${
+              className={`inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 text-[12.5px] font-medium transition-colors ${
                 isDark ? "bg-white text-black hover:bg-gray-200 disabled:bg-white/30" : "bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-300"
               }`}
             >
@@ -331,7 +332,7 @@ export default function EntityCompliance() {
                 </>
               ) : (
                 <>
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                   </svg>
                   Check {staleOrUnread} with the state

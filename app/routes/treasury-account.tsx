@@ -43,6 +43,12 @@ type Txn = {
 };
 
 
+/** Plaid's "FOOD_AND_DRINK" → "Food and drink" (the rule pretty() in books-shared uses). */
+function pretty(cat: string): string {
+  const s = cat.replace(/_/g, " ").toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function tint(hex: string | null): string {
   const fallback = "99, 102, 241";
   if (!hex) return fallback;
@@ -177,20 +183,28 @@ export default function TreasuryAccount() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const nameInput = useRef<HTMLInputElement>(null);
+  // Set once the editor is left, so the blur that follows Escape can't save.
+  const nameDone = useRef(false);
+  const [hiding, setHiding] = useState(false);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
+    // Previous/next can be pressed before a slow load lands; a reply for the
+    // account the user has already left must not overwrite this one.
+    let stale = false;
     setError("");
     setSaveError("");
+    nameDone.current = true;
     setEditingName(false);
     setSearch("");
     void (async () => {
       try {
         const res = await authFetch("/api/plaid/data?report=treasury");
         const data = await res.json().catch(() => ({}));
+        if (stale) return;
         if (!res.ok) throw new Error(data?.message || "Couldn't load the account.");
         const list: Account[] = (data.accounts ?? []).filter((a: Account) => !a.hidden);
         const found = (data.accounts ?? []).find((a: Account) => a.account_id === accountId);
@@ -201,31 +215,46 @@ export default function TreasuryAccount() {
           (data.connections ?? []).find((c: any) => c.item_id === found.item_id)?.status ?? "offline"
         );
       } catch (err) {
+        if (stale) return;
         setError(err instanceof Error ? err.message : "Couldn't load the account.");
       } finally {
-        setLoading(false);
+        if (!stale) setLoading(false);
       }
     })();
+    return () => {
+      stale = true;
+    };
   }, [accountId]);
 
+  // Keyed on the ids, not the object: a rename or entity change replaces
+  // `account` and shouldn't re-run the Plaid call.
+  const txnItemId = account?.item_id;
+  const txnAccountId = account?.account_id;
   useEffect(() => {
-    if (!account) return;
+    if (!txnItemId || !txnAccountId) return;
+    let stale = false;
+    setTxns([]);
+    setTxnState("loading");
     void (async () => {
-      setTxnState("loading");
       try {
         const res = await authFetch(
-          `/api/plaid/data?report=bank-transactions&item_id=${account.item_id}&account_id=${account.account_id}`
+          `/api/plaid/data?report=bank-transactions&item_id=${txnItemId}&account_id=${txnAccountId}`
         );
         const data = await res.json().catch(() => ({}));
+        if (stale) return;
         if (!res.ok || data.error) throw new Error(data?.message || "Couldn't load transactions.");
         setTxns(data.transactions ?? []);
         setTxnState("idle");
       } catch (err) {
+        if (stale) return;
         setTxnError(err instanceof Error ? err.message : "Couldn't load transactions.");
         setTxnState("error");
       }
     })();
-  }, [account]);
+    return () => {
+      stale = true;
+    };
+  }, [txnItemId, txnAccountId]);
 
   useEffect(() => {
     // Entities come from the assets tree, same source as the mappings page.
@@ -257,18 +286,38 @@ export default function TreasuryAccount() {
     if (editingName) nameInput.current?.focus();
   }, [editingName]);
 
-  async function savePrefs(patch: { nickname?: string; hidden?: boolean }) {
-    if (!account) return;
+  /** Saves and reports whether it worked, so callers can wait before leaving. */
+  async function savePrefs(patch: { nickname?: string; hidden?: boolean }): Promise<boolean> {
+    if (!account) return false;
     const res = await authFetch("/api/plaid/account-prefs", {
       method: "POST",
       body: JSON.stringify({ account_id: account.account_id, ...patch }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res?.ok) {
       setSaveError("Couldn't save that.");
-      return;
+      return false;
     }
     setSaveError("");
     setAccount({ ...account, ...("nickname" in patch ? { nickname: patch.nickname || null } : {}), ...("hidden" in patch ? { hidden: !!patch.hidden } : {}) });
+    return true;
+  }
+
+  /** Leave the name editor: save only a real change; Escape (save=false) drops the draft. */
+  function commitName(save: boolean) {
+    if (nameDone.current || !account) return;
+    nameDone.current = true;
+    setEditingName(false);
+    if (save && nameDraft.trim() !== (account.nickname ?? "")) void savePrefs({ nickname: nameDraft.trim() });
+  }
+
+  async function toggleHidden() {
+    if (!account || hiding) return;
+    const hide = !account.hidden;
+    setHiding(true);
+    const ok = await savePrefs({ hidden: hide });
+    setHiding(false);
+    // Treasury reloads on arrival, so only go once the save has landed.
+    if (ok && hide) navigate("/treasury");
   }
 
   async function assignEntity(entityId: string) {
@@ -331,7 +380,7 @@ export default function TreasuryAccount() {
       (t) =>
         t.name?.toLowerCase().includes(q) ||
         t.description?.toLowerCase().includes(q) ||
-        t.category?.toLowerCase().includes(q)
+        (t.category ? pretty(t.category).toLowerCase().includes(q) || t.category.toLowerCase().includes(q) : false)
     );
   }, [txns, search]);
 
@@ -352,6 +401,11 @@ export default function TreasuryAccount() {
   const rgb = tint(account.institution_color);
   const displayName = account.nickname || account.official_name || account.name;
   const online = status === "online";
+
+  // Mapped only to an entity that still exists; one deleted since reads as
+  // unmapped (amber) and is named in the picker so it can be reassigned.
+  const orphaned = !!account.entity_id && entities.length > 0 && !entities.some((e) => e.id === account.entity_id);
+  const mapped = !!account.entity_id && !orphaned;
 
   const idx = siblings.findIndex((a) => a.account_id === account.account_id);
   const count = siblings.length;
@@ -416,17 +470,19 @@ export default function TreasuryAccount() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void savePrefs({ nickname: nameDraft });
-                    setEditingName(false);
+                    commitName(true);
                   }}
                 >
                   <input
                     ref={nameInput}
                     value={nameDraft}
                     onChange={(e) => setNameDraft(e.target.value)}
-                    onBlur={() => {
-                      void savePrefs({ nickname: nameDraft });
-                      setEditingName(false);
+                    onBlur={() => commitName(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        commitName(false);
+                      }
                     }}
                     maxLength={60}
                     placeholder={account.official_name || account.name}
@@ -437,6 +493,7 @@ export default function TreasuryAccount() {
                 <button
                   onClick={() => {
                     setNameDraft(account.nickname ?? "");
+                    nameDone.current = false;
                     setEditingName(true);
                   }}
                   title="Rename this account"
@@ -467,13 +524,11 @@ export default function TreasuryAccount() {
               </span>
             </span>
             <button
-              onClick={() => {
-                void savePrefs({ hidden: !account.hidden });
-                if (!account.hidden) navigate("/treasury");
-              }}
-              className="min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs text-white/60 border border-white/15 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              onClick={() => void toggleHidden()}
+              disabled={hiding}
+              className="min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs text-white/60 border border-white/15 hover:bg-white/10 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
             >
-              {account.hidden ? "Unhide" : "Hide account"}
+              {hiding ? "Saving…" : account.hidden ? "Unhide" : "Hide account"}
             </button>
           </div>
         </div>
@@ -487,7 +542,8 @@ export default function TreasuryAccount() {
               <span className="text-white/45">{money(account.balance_available, account.currency ?? "USD")} available</span>
             )}
             {account.change != null && account.change !== 0 && (
-              <span className={account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"}>
+              // A card or loan balance going up is more owed, not a gain.
+              <span className={(account.type === "credit" || account.type === "loan" ? -1 : 1) * account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"}>
                 {signed(account.change, account.currency ?? "USD")} since last visit
               </span>
             )}
@@ -506,12 +562,19 @@ export default function TreasuryAccount() {
             disabled={entities.length === 0}
             onChange={(e) => void assignEntity(e.target.value)}
             className={`appearance-none max-w-full truncate min-h-[40px] lg:min-h-0 pl-3.5 pr-9 py-1.5 rounded-full text-sm border cursor-pointer disabled:opacity-50 ${
-              account.entity_id
+              mapped
                 ? isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
+                : orphaned
+                  ? isDark ? "bg-amber-500/[0.06] border-amber-500/30 text-amber-200" : "bg-amber-50 border-amber-300 text-amber-900"
+                  : isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
             }`}
           >
             <option value="">{entities.length === 0 ? "No entities found" : "Unassigned"}</option>
+            {orphaned && (
+              <option value={account.entity_id!} disabled>
+                {account.entity_name ?? "Unknown entity"} (deleted)
+              </option>
+            )}
             {entities.map((e) => (
               <option key={e.id} value={e.id}>{e.name}</option>
             ))}
@@ -603,7 +666,7 @@ export default function TreasuryAccount() {
                   </span>
                   <span className={`block text-xs tabular-nums ${subtle}`}>
                     {t.date}
-                    {t.category ? ` · ${t.category}` : ""}
+                    {t.category ? ` · ${pretty(t.category)}` : ""}
                   </span>
                 </span>
                 <span
@@ -642,7 +705,7 @@ export default function TreasuryAccount() {
                       {t.name}
                       {t.pending && <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>}
                     </td>
-                    <td className={`px-4 py-2.5 border-t ${rowBorder} ${subtle}`}>{t.category ?? "—"}</td>
+                    <td className={`px-4 py-2.5 border-t ${rowBorder} ${subtle}`}>{t.category ? pretty(t.category) : "—"}</td>
                     <td
                       className={`px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-medium border-t ${rowBorder} ${
                         t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"

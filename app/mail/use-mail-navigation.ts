@@ -18,12 +18,13 @@ export function useMailNavigation({ folder, filter, q, box, openId, cache, listR
   navigate: NavigateFunction;
   location: Location;
 }) {
-  /** The page's own query string: folder and filter, plus the open message. */
+  /** The page's own query string: folder, filter, search and mailbox, plus the open message. */
   function query(extra: Record<string, string> = {}): Record<string, string> {
     const next: Record<string, string> = {};
     if (folder !== "active") next.f = folder;
     if (filter !== "all") next.v = filter;
     if (q) next.q = q;
+    if (box) next.a = box;
     return { ...next, ...extra };
   }
 

@@ -164,7 +164,7 @@ export function ListRow({
       aria-current={selected ? "true" : undefined}
       aria-selected={onPick ? picked : undefined}
       style={dx !== 0 ? { transform: `translateX(${dx}px)` } : undefined}
-      className={`swipe-row group flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 ${swiping ? "swiping" : "max-md:active:scale-[0.99]"} ${
+      className={`swipe-row group flex w-full cursor-pointer items-start gap-3 py-3 pl-4 pr-2 text-left transition-colors max-md:select-none max-md:[-webkit-touch-callout:none] max-md:gap-3.5 max-md:rounded-2xl max-md:px-5 max-md:py-3.5 ${swiping ? "swiping" : "max-md:active:scale-[0.99]"} ${
         picked ? (t.dark ? "bg-(--mail-accent-deep)/[0.13]" : "bg-(--mail-accent-deep)/10") : selected ? (t.dark ? "bg-white/[0.06]" : "bg-gray-100/80") : dx !== 0 ? (t.dark ? "bg-[#0b0b0f]" : "bg-white") : unread ? (t.dark ? "bg-(--mail-accent-deep)/[0.09] hover:bg-(--mail-accent-deep)/[0.14]" : "bg-(--mail-accent-deep)/[0.055] hover:bg-(--mail-accent-deep)/[0.09]") : t.hover
       } ${t.dark ? "active:bg-white/[0.05] focus-visible:bg-white/[0.05]" : "active:bg-gray-100 focus-visible:bg-gray-50"} focus-visible:outline-none`}
     >

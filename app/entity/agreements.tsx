@@ -231,13 +231,16 @@ function ContractEditor({
   const termHint = TERMS.find((x) => x.value === term)?.hint;
 
   // The PDF as it would be, from the form as it stands: the preview page reads it from sessionStorage.
+  // A "noopener" tab starts with empty sessionStorage, so open it linked (the
+  // copy happens then) and cut the link after.
   function preview() {
     try {
       sessionStorage.setItem(PREVIEW_KEY, JSON.stringify({ ...f, term, role: "manager" }));
     } catch {
       return;
     }
-    window.open(`/assets/${page.id}/contract/preview`, "_blank", "noopener");
+    const win = window.open(`/assets/${page.id}/contract/preview`, "_blank");
+    if (win) win.opener = null;
   }
 
   async function save() {

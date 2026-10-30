@@ -11,9 +11,10 @@ import {
 import { createPortal } from "react-dom";
 import { alertDialog } from "../confirm-dialog";
 import { useSearchParams } from "react-router";
-import { authFetch } from "../auth";
+import { authFetch, canWrite } from "../auth";
 import { useTheme } from "../theme";
 import { normalizeCsv, parseCsv, type CsvRow } from "../books-csv";
+import { postBatchEdit, visibleSelection } from "../books-batch";
 import {
   TxnTable,
   TxnTableSkeleton,
@@ -131,6 +132,9 @@ function SearchBox({ value, onCommit, className }: { value: string; onCommit: (v
   );
 }
 
+const TXN_TYPES = ["all", "revenue", "expenses", "transfers", "intercompany", "uncategorized"] as const;
+type TxnType = (typeof TXN_TYPES)[number];
+
 export default function BooksTransactions() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -152,11 +156,17 @@ export default function BooksTransactions() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
 
-  // ?q= (e.g. from the command palette) seeds the search on open.
+  // Viewers read the books; every edit control is left out for them.
+  const writable = canWrite();
+  // ?q= (e.g. from the command palette) seeds the search on open, and
+  // ?type= the type filter (Review's Uncategorized card links here).
   const [searchParams] = useSearchParams();
   const [q, setQ] = useState(() => searchParams.get("q")?.trim() ?? "");
   const [entity, setEntity] = useState("all");
-  const [type, setType] = useState<"all" | "revenue" | "expenses" | "transfers" | "intercompany" | "uncategorized">("all");
+  const [type, setType] = useState<TxnType>(() => {
+    const t = searchParams.get("type");
+    return TXN_TYPES.includes(t as TxnType) ? (t as TxnType) : "all";
+  });
   const [year, setYear] = useState("all");
   const [uncat, setUncat] = useState<number | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "date", dir: "desc" });
@@ -309,8 +319,7 @@ export default function BooksTransactions() {
         body: JSON.stringify({ action: "set_sunrise_sync", enabled: next }),
       });
       if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d?.error || "Couldn't save the sunrise setting.");
+        throw new Error(res.status === 403 ? "You have view-only access to Books." : "Couldn't save the sunrise setting.");
       }
       // Re-read so the "next sunrise" / "last ran" line reflects the server.
       await loadSettings();
@@ -385,21 +394,28 @@ export default function BooksTransactions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.length, total, loading, loadingMore, loadMoreFailed]);
 
+  // Each load takes a ticket; a response that comes back after a newer load
+  // started is dropped, so a slow earlier filter never paints over the
+  // current one (and a stale page never joins the current list).
+  const reqRef = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++reqRef.current;
     setLoading(true);
     setError("");
     try {
       const res = await authFetch(query(0));
       const data = await res.json().catch(() => ({}));
+      if (seq !== reqRef.current) return;
       if (!res.ok) throw new Error(data?.message || "Couldn't load transactions.");
       setRows(data.transactions ?? []);
       setTotal(data.total ?? 0);
       setSummary(data.summary ?? null);
       setLoadMoreFailed(false);
     } catch (err) {
+      if (seq !== reqRef.current) return;
       setError(err instanceof Error ? err.message : "Couldn't load transactions.");
     } finally {
-      setLoading(false);
+      if (seq === reqRef.current) setLoading(false);
     }
   }, [query]);
 
@@ -407,6 +423,10 @@ export default function BooksTransactions() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A new filter, search, entity, period or sort starts a new selection: a
+  // batch edit only ever touches rows the person can see.
+  useEffect(() => setSelected(new Set()), [query]);
 
   const refreshUncat = useCallback(async () => {
     try {
@@ -445,10 +465,12 @@ export default function BooksTransactions() {
   }, []);
 
   async function loadMore() {
+    const seq = reqRef.current;
     setLoadingMore(true);
     try {
       const res = await authFetch(query(rows.length));
       const data = await res.json().catch(() => ({}));
+      if (seq !== reqRef.current) return; // the filter changed underneath
       if (!res.ok) throw new Error();
       setRows((prev) => [...prev, ...(data.transactions ?? [])]);
     } catch {
@@ -746,6 +768,7 @@ export default function BooksTransactions() {
             )
           )}
         </div>
+        {writable && (
         <div className="order-2 flex items-center gap-2 sm:-mt-0.5">
           {/* Sync at sunrise — a daily automatic sync at local dawn. A
               setting, so on phones it lives in the kebab sheet (the meta
@@ -863,6 +886,7 @@ export default function BooksTransactions() {
               document.body
             )}
         </div>
+        )}
       </div>
 
       <ImportCsvDialog
@@ -977,6 +1001,7 @@ export default function BooksTransactions() {
                   <Icon d={PATHS.inbox} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
                   <p className={`mt-3 text-sm font-medium ${t1}`}>Nothing synced yet</p>
                   <p className={`mt-1 text-xs ${t2}`}>Run a sync or import a bank CSV to get started.</p>
+                  {writable && (
                   <div className="mt-4 flex justify-center gap-2">
                     <button
                       type="button"
@@ -994,6 +1019,7 @@ export default function BooksTransactions() {
                       Import CSV…
                     </button>
                   </div>
+                  )}
                 </>
               )}
             </div>
@@ -1005,7 +1031,8 @@ export default function BooksTransactions() {
               view={view}
               sort={sort}
               onSort={onSort}
-              selection={{
+              readOnly={!writable}
+              selection={writable ? {
                 selected,
                 toggle: (id) =>
                   setSelected((prev) => {
@@ -1020,10 +1047,13 @@ export default function BooksTransactions() {
                     for (const id of ids) on ? next.add(id) : next.delete(id);
                     return next;
                   }),
+              } : undefined}
+              onRowChange={(t) => {
+                // Filing a row on or off the books moves the Uncategorized count.
+                const was = rows.find((r) => r.transaction_id === t.transaction_id);
+                if (was && !was.book_category !== !t.book_category) void refreshUncat();
+                setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)));
               }}
-              onRowChange={(t) =>
-                setRows((prev) => prev.map((r) => (r.transaction_id === t.transaction_id ? t : r)))
-              }
               onError={setToast}
               onReload={() => {
                 void load();
@@ -1058,24 +1088,26 @@ export default function BooksTransactions() {
       </div>
 
       <BatchBar
-        count={selected.size}
+        count={visibleSelection(selected, rows).length}
         isDark={isDark}
         busy={batchBusy}
         vendorSuggestions={vendorNames}
         categories={categories}
-        onApply={(patch) => {
+        onApply={async (patch) => {
           setBatchBusy(true);
-          void authFetch("/api/books/data", {
-            method: "POST",
-            body: JSON.stringify({ action: "batch_update", transaction_ids: [...selected], ...patch }),
-          })
-            .then(async (res) => {
-              if (!res.ok) throw new Error("Couldn't apply that batch edit.");
-              setSelected(new Set());
+          try {
+            const ids = visibleSelection(selected, rows);
+            const r = await postBatchEdit(authFetch, ids, patch);
+            if (r.ok) setSelected(new Set());
+            else setToast(r.message);
+            if (r.ok || r.done) {
               await load();
-            })
-            .catch((err) => setToast(err instanceof Error ? err.message : "Couldn't apply that batch edit."))
-            .finally(() => setBatchBusy(false));
+              void refreshUncat();
+            }
+            return r.ok;
+          } finally {
+            setBatchBusy(false);
+          }
         }}
         onClear={() => setSelected(new Set())}
       />

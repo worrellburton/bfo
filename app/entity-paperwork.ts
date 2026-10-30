@@ -172,14 +172,15 @@ const AZ_PUBLICATION_EXEMPT_CITIES =
 /**
  * The entity's real type. Older records stored every non-corporation as
  * "LLC" — the trust and the limited partnership among them — so a name that
- * says "Trust" or "Limited Partnership" wins over a stored "LLC".
+ * says "Trust" or "Limited Partnership" wins over a stored "LLC" (unless it
+ * also says "LLC": "Burton Trust Holdings, LLC" is an LLC).
  */
 export function entityType(a: { name?: string; type?: string }): EntityType {
   const name = a.name ?? "";
   if (a.type === "Trust") return "Trust";
   if (a.type === "C-Corp") return "C-Corp";
   if (a.type === "LP") return "LP";
-  if (/\btrust\b/i.test(name)) return "Trust";
+  if (/\btrust\b/i.test(name) && !/\bllc\b/i.test(name)) return "Trust";
   if (/\b(limited partnership|ltd\.? partnership|l\.p\.|lp|lllp)\b/i.test(name) && !/\bllc\b/i.test(name)) return "LP";
   return "LLC";
 }
