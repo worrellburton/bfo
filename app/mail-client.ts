@@ -63,16 +63,9 @@ export type MailCount = {
   sync?: { error?: string };
 };
 
-export type MailStatus = {
-  domain: { found: boolean; inbound: string; receiving: string } | { error: string };
-  read: { ok: boolean } | { error: string };
-  webhookSecret: boolean;
-  lastSync: { at: string | null; error: string | null };
-};
-
 export type OutgoingAttachment = { filename: string; contentType: string; data: string };
 
-export type SendInput = {
+type SendInput = {
   sendId: string;
   /** One of my addresses; the main one when left out. */
   from?: string;
@@ -90,7 +83,7 @@ export type SendInput = {
 
 // ── Calls ────────────────────────────────────────────────────────────────
 
-export class MailError extends Error {
+class MailError extends Error {
   status: number;
   code: string;
   constructor(status: number, code: string, message: string) {
@@ -120,7 +113,7 @@ function post<T>(body: Record<string, unknown>): Promise<T> {
   return call<T>("/api/mail", { method: "POST", body: JSON.stringify(body) });
 }
 
-export type ListQuery = {
+type ListQuery = {
   folder: MailFolder;
   filter?: MailFilter;
   /** Search text: every folder is searched and `folder` is ignored. */
@@ -158,18 +151,13 @@ export function getThread(id: string) {
   return call<{ messages: MailMessage[] }>(`/api/mail?view=thread&id=${encodeURIComponent(id)}`);
 }
 
-export function getMailCount() {
+function getMailCount() {
   return call<MailCount>("/api/mail?view=count");
 }
 
 /** A short-lived download link for one attachment. */
 export function attachmentUrl(id: string, att: string) {
   return call<{ url: string }>(`/api/mail?view=attachment&id=${encodeURIComponent(id)}&att=${encodeURIComponent(att)}`);
-}
-
-/** Owner/admin diagnostics: is Bird set up to receive? */
-export function getMailStatus() {
-  return call<MailStatus>("/api/mail?view=status");
 }
 
 /** Owner/admin: adds an extra address to my account ("accounting" or the full address). */
@@ -227,7 +215,7 @@ export function deleteMail(ids: string[], opts: { conversation?: boolean } = {})
 // ── Change signal ────────────────────────────────────────────────────────
 
 /** Fired after anything that changes the unread count (read, move, delete, send). */
-export const MAIL_CHANGED_EVENT = "bfo-mail-changed";
+const MAIL_CHANGED_EVENT = "bfo-mail-changed";
 
 export function notifyMailChanged() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(MAIL_CHANGED_EVENT));

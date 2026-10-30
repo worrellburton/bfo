@@ -52,7 +52,7 @@ export function orderClause(sort: unknown): string {
   return sortCol ? `&order=${sortCol}.${sortDir}.nullslast,transaction_id.asc` : "&order=date.desc,transaction_id.asc";
 }
 
-export type TxnQuery = { entity?: string; type?: string; q?: string; year?: string };
+type TxnQuery = { entity?: string; type?: string; q?: string; year?: string };
 
 /**
  * The row filter for ?report=transactions: entity scope, year, an

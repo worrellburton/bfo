@@ -21,16 +21,16 @@ export type PalmCase = {
 };
 
 /** What the form holds for one field: an address in parts, or text. */
-export type CaseValue = { kind: "address"; address: FormationAddress } | { kind: "text"; text: string } | { kind: "document" };
+type CaseValue = { kind: "address"; address: FormationAddress } | { kind: "text"; text: string } | { kind: "document" };
 
-export const isAddressField = (f: CaseField) => f.type === "object" && /address/i.test(f.name);
+const isAddressField = (f: CaseField) => f.type === "object" && /address/i.test(f.name);
 
 type EntityFacts = { name?: string; address?: string; mailingAddress?: string; registeredAgentAddress?: string; email?: string };
 
 const EMPTY: FormationAddress = { street1: "", street2: "", city: "", region: "", postal: "", county: "" };
 
 /** Which of the entity's addresses a field asks for. */
-export function addressFor(field: CaseField, a: EntityFacts): string | undefined {
+function addressFor(field: CaseField, a: EntityFacts): string | undefined {
   const n = field.name.toLowerCase();
   if (/mail/.test(n)) return a.mailingAddress || a.address;
   if (/agent/.test(n)) return a.registeredAgentAddress;
@@ -57,7 +57,7 @@ function splitSuite(x: FormationAddress): FormationAddress {
 }
 
 /** Palm's address object, as the formation request takes it. */
-export function palmAddress(x: FormationAddress): Record<string, string> {
+function palmAddress(x: FormationAddress): Record<string, string> {
   const o: Record<string, string> = {
     street_line_1: x.street1.trim(),
     street_line_2: x.street2.trim(),

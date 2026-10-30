@@ -21,7 +21,7 @@ export type Logo = {
 };
 
 /** The house logo: the Editorial lockup (Playfair Display, ivory), shown until the studio picks another. */
-export const DEFAULT_LOCKUP: { font: BrandFont; finish: Finish } = {
+const DEFAULT_LOCKUP: { font: BrandFont; finish: Finish } = {
   font: { family: "Playfair Display", weight: 600, css: "Playfair+Display:ital,wght@0,400..900;1,400..900" },
   finish: "ivory",
 };
@@ -58,7 +58,7 @@ let logoNow: Logo | null | undefined;
 const listeners = new Set<(l: Logo | null) => void>();
 
 /** The logo in use, fetched once and shared by every component on the page. */
-export function loadLogo(): Promise<Logo | null> {
+function loadLogo(): Promise<Logo | null> {
   if (!logoPromise) {
     logoPromise = fetch("/api/brand")
       .then((r) => (r.ok ? r.json() : { logo: null }))
@@ -96,7 +96,7 @@ export function useBrandLogo(): Logo | null | undefined {
   return logo;
 }
 
-export class BrandError extends Error {
+class BrandError extends Error {
   constructor(message: string, public code?: string, public status?: number) {
     super(message);
   }

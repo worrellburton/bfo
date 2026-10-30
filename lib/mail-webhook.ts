@@ -13,9 +13,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * it's tested on its own.
  */
 
-export const TOLERANCE_SECONDS = 5 * 60;
+const TOLERANCE_SECONDS = 5 * 60;
 
-export type WebhookHeaders = { id?: string; timestamp?: string; signature?: string };
+type WebhookHeaders = { id?: string; timestamp?: string; signature?: string };
 
 function key(secret: string): Buffer {
   return Buffer.from(secret.startsWith("whsec_") ? secret.slice(6) : secret, "base64");

@@ -61,7 +61,7 @@ export const PILLARS: { key: PillarKey; label: string; short: string }[] = [
 ];
 
 /** A state record older than this is read again before it's trusted. */
-export const STALE_DAYS = 45;
+const STALE_DAYS = 45;
 const DAY = 86_400_000;
 
 export type EntityInput = PaperworkInput & {

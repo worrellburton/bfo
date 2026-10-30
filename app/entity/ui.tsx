@@ -366,7 +366,7 @@ export function Field({ label, children, wide = false, hint, className = "" }: {
   );
 }
 
-export function inputClass(dark: boolean, extra = "") {
+function inputClass(dark: boolean, extra = "") {
   const t = dark
     ? "border-white/10 bg-white/[0.03] text-white focus:border-[#818cf8]/60"
     : "border-gray-200 bg-white text-gray-900 focus:border-[#4f46e5]/50";

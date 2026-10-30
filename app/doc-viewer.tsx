@@ -34,7 +34,7 @@ function loadPdfJs(): Promise<PdfJs> {
   return pdfjsPromise;
 }
 
-export type ViewerOptions = { name?: string | null; contentType?: string | null; subtitle?: string | null };
+type ViewerOptions = { name?: string | null; contentType?: string | null; subtitle?: string | null };
 
 type Kind = "pdf" | "image" | "other";
 

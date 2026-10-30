@@ -26,7 +26,6 @@ type Session = {
 };
 
 const STORAGE_KEY = "bfo-session";
-const LEGACY_KEY = "bfo-authenticated";
 /** The other accounts signed in on this browser, ready to switch to (current one excluded). */
 const ACCOUNTS_KEY = "bfo-accounts";
 /** Set while signing in an extra account, so the sign-in page can offer to go back. */
@@ -335,7 +334,6 @@ export function logout(): User | null {
     }).catch(() => {});
   }
   write(null);
-  if (typeof window !== "undefined") sessionStorage.removeItem(LEGACY_KEY);
   const [next, ...rest] = readAccounts();
   if (!next) return null;
   writeAccounts(rest);

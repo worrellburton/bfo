@@ -22,7 +22,7 @@ export type SigGeometry = {
 };
 
 /** The fields a contract's signature block needs, from where the generator drew it. */
-export function contractFields(g: SigGeometry): SignField[] {
+function contractFields(g: SigGeometry): SignField[] {
   const f = (party: "a" | "b", type: SignField["type"], x: number, yTop: number, w: number, h: number, id: string): SignField => ({
     id,
     party,

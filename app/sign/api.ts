@@ -35,7 +35,7 @@ export type SignatureRequest = {
   brand: string | null;
 };
 
-export class SignError extends Error {
+class SignError extends Error {
   code: string;
   constructor(code: string, message: string) {
     super(message);

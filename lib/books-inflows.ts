@@ -57,7 +57,7 @@ export type PlannedInflow = {
   note?: string | null;
 };
 
-export type InflowOptions = {
+type InflowOptions = {
   /** Detected sources to leave out (case-insensitive substring match). */
   exclude?: string[];
   planned?: PlannedInflow[];

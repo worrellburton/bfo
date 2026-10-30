@@ -27,7 +27,7 @@ function sniff(b: Uint8Array): PhotoKind | null {
 }
 
 /** The largest side a picture may have; the browser sends 256. */
-export const PHOTO_MAX_SIDE = 1024;
+const PHOTO_MAX_SIDE = 1024;
 
 /** Width and height read from the image's header (PNG IHDR, JPEG SOF, WebP VP8/VP8L/VP8X), or null. */
 export function dimensions(b: Uint8Array, type: string): { width: number; height: number } | null {

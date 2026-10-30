@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -51,10 +50,7 @@ html.light {
   .text-red-400 { color: rgb(220 38 38); }         /* red-600 */
   .text-red-300 { color: rgb(185 28 28); }         /* red-700 */
   .text-rose-400 { color: rgb(225 29 72); }        /* rose-600 */
-  .text-orange-400 { color: rgb(234 88 12); }      /* orange-600 */
   .text-amber-400 { color: rgb(180 83 9); }        /* amber-700 */
-  .text-yellow-400 { color: rgb(161 98 7); }       /* yellow-700 */
-  .text-yellow-300 { color: rgb(133 77 14); }      /* yellow-800 */
   .text-green-400 { color: rgb(5 150 105); }       /* emerald-600 */
   .text-green-300 { color: rgb(4 120 87); }        /* emerald-700 */
   .text-emerald-400 { color: rgb(5 150 105); }
@@ -63,8 +59,6 @@ html.light {
   .text-blue-300 { color: rgb(29 78 216); }        /* blue-700 */
   .text-indigo-400 { color: rgb(79 70 229); }      /* indigo-600 */
   .text-purple-400 { color: rgb(147 51 234); }     /* purple-600 */
-  .text-teal-400 { color: rgb(13 148 136); }       /* teal-600 */
-  .text-cyan-400 { color: rgb(8 145 178); }        /* cyan-600 */
 
   /* "Near-white" content text that bleeds on a white page */
   .text-gray-400 { color: rgb(75 85 99); }         /* gray-600 */
@@ -73,52 +67,22 @@ html.light {
 
   /* Translucent colored backgrounds used as chips / banners */
   .bg-red-500\/10,
-  .bg-red-500\/15,
-  .bg-red-500\/20,
-  .bg-red-500\/25,
-  .bg-red-400\/20 { background-color: rgb(254 226 226); }   /* red-100 */
-  .bg-rose-500\/10,
-  .bg-rose-500\/20 { background-color: rgb(255 228 230); }
+  .bg-red-500\/15 { background-color: rgb(254 226 226); }   /* red-100 */
+  .bg-rose-500\/10 { background-color: rgb(255 228 230); }
 
-  .bg-yellow-500\/10,
-  .bg-yellow-500\/15,
-  .bg-yellow-500\/20,
-  .bg-yellow-400\/20 { background-color: rgb(254 249 195); } /* yellow-100 */
   .bg-amber-500\/10,
   .bg-amber-500\/20 { background-color: rgb(254 243 199); }
-  .bg-orange-500\/10,
-  .bg-orange-500\/20 { background-color: rgb(255 237 213); }
+  .bg-orange-500\/10 { background-color: rgb(255 237 213); }
 
-  .bg-green-500\/10,
-  .bg-green-500\/15,
-  .bg-green-500\/20,
-  .bg-green-400\/20 { background-color: rgb(220 252 231); } /* green-100 */
   .bg-emerald-500\/10,
   .bg-emerald-500\/20 { background-color: rgb(209 250 229); }
 
-  .bg-blue-500\/10,
-  .bg-blue-500\/15,
-  .bg-blue-500\/20,
-  .bg-blue-400\/20 { background-color: rgb(219 234 254); } /* blue-100 */
-  .bg-indigo-500\/10,
-  .bg-indigo-500\/20 { background-color: rgb(224 231 255); }
-  .bg-purple-500\/10,
-  .bg-purple-500\/20 { background-color: rgb(243 232 255); }
-  .bg-teal-500\/10,
-  .bg-teal-500\/20 { background-color: rgb(204 251 241); }
-  .bg-cyan-500\/10,
-  .bg-cyan-500\/20 { background-color: rgb(207 250 254); }
+  .bg-indigo-500\/10 { background-color: rgb(224 231 255); }
+  .bg-purple-500\/10 { background-color: rgb(243 232 255); }
+  .bg-teal-500\/10 { background-color: rgb(204 251 241); }
 
   /* Colored borders that were sized for dark surfaces */
-  .border-red-500\/20,
-  .border-red-500\/30,
-  .border-red-500\/40 { border-color: rgb(252 165 165); }  /* red-300 */
-  .border-yellow-500\/20,
-  .border-yellow-500\/30 { border-color: rgb(253 224 71); }
-  .border-green-500\/20,
-  .border-green-500\/30 { border-color: rgb(134 239 172); }
-  .border-blue-500\/20,
-  .border-blue-500\/30 { border-color: rgb(147 197 253); }
+  .border-red-500\/20 { border-color: rgb(252 165 165); }  /* red-300 */
 
   /* "white-over-dark" tokens that vanish on a white surface */
   .bg-white\/5,
@@ -131,15 +95,12 @@ html.light {
   .border-white\/10,
   .border-white\/20 { border-color: rgb(229 231 235); }       /* gray-200 */
 
-  .divide-white\/5 > :not([hidden]) ~ :not([hidden]),
-  .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+  .divide-white\/5 > :not([hidden]) ~ :not([hidden]) {
     border-color: rgb(229 231 235);
   }
 
   .hover\:bg-white\/5:hover,
   .hover\:bg-white\/10:hover { background-color: rgb(243 244 246); }
-
-  .hover\:border-white\/30:hover { border-color: rgb(156 163 175); }
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -1137,25 +1098,6 @@ html.light .nav-row-on::before { background: #4f46e5; box-shadow: none; }
   .auth-btn { transition: none; }
 }
 
-/* The wordmark shrinks with the rail rather than vanishing. */
-.sidebar-brand {
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  font-size: 24px;
-  line-height: 1;
-  transition: font-size 180ms ease, letter-spacing 180ms ease;
-  white-space: nowrap;
-}
-@media (min-width: 768px) {
-  .sidebar-brand-sm {
-    font-size: 12px;
-    letter-spacing: 0.06em;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-brand { transition: none; }
-}
-
 /* Aurora backdrop for the app shell — quieter than the landing page. */
 .app-aurora { opacity: 0.7; }
 html.light .app-aurora { opacity: 0.4; }
@@ -1357,7 +1299,7 @@ html.light :is(button, a, select, input, textarea, [role="option"]):focus-visibl
 
 /* Print: the statement alone, ink-friendly. */
 @media print {
-  aside, nav, .print-hide, button { display: none !important; }
+  aside, nav, button { display: none !important; }
   /* Drillable amounts are buttons — keep the numbers on paper. */
   table button { display: inline !important; }
   html, body { background: #fff !important; font-size: 10px; }
@@ -1727,14 +1669,6 @@ html:not([data-vt])::view-transition-new(root) { animation: public-in 760ms cubi
   transition-delay: var(--w, 0s);
 }
 .reveal.is-in .word { opacity: 1; transform: none; filter: none; }
-.reveal-block {
-  opacity: 0;
-  transform: translateY(26px);
-  filter: blur(10px);
-  transition: opacity 1.3s cubic-bezier(0.16, 1, 0.3, 1), transform 1.3s cubic-bezier(0.16, 1, 0.3, 1), filter 1.3s cubic-bezier(0.16, 1, 0.3, 1);
-  transition-delay: var(--d, 0s);
-}
-.reveal-block.is-in { opacity: 1; transform: none; filter: none; }
 
 /* Ivory with a band of gold light passing through: a gold copy of the word
    (::after, from data-text) seen through a mask whose bright band slides
@@ -1769,7 +1703,7 @@ html:not([data-vt])::view-transition-new(root) { animation: public-in 760ms cubi
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
-  .word, .reveal-block { opacity: 1; transform: none; filter: none; transition: none; }
+  .word { opacity: 1; transform: none; filter: none; transition: none; }
   .gold-sheen::after { display: none; }
 }
 

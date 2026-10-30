@@ -33,7 +33,7 @@ export function isStorageUrl(raw: string, hosts: string[] = allowedHosts()): boo
   return url.protocol === "https:" && !url.username && !url.password && hosts.includes(url.host);
 }
 
-export type FetchedDocument = { buf: Buffer; contentType: string };
+type FetchedDocument = { buf: Buffer; contentType: string };
 
 /** The bucket path a browser-supplied document reference names, or null when it isn't one of ours. */
 export function documentPathFor(raw: unknown, hosts: string[] = allowedHosts()): string | null {

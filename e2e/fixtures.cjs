@@ -60,4 +60,4 @@ function mock(url, method, body) {
   return [200, {}];
 }
 
-module.exports = { user, assets, messages, session, mock };
+module.exports = { session, mock };

@@ -11,7 +11,7 @@ import { Button, Empty, ErrorLine, Icon, Section, useTone, type IconName } from 
  */
 
 type Field = { key: string; label: string; from: string | null; to: string | null };
-export type ActivityItem = {
+type ActivityItem = {
   id: number;
   at: string;
   actor_name: string | null;

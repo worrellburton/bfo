@@ -6,7 +6,7 @@ import { sb, type AppUser } from "./auth.js";
  * for a staff member only records that they were invited from that entity.
  */
 
-export type AccessRow = { user_id: string; asset_id: string; member_name: string | null; invited_by: string | null; invited_at: string };
+type AccessRow = { user_id: string; asset_id: string; member_name: string | null; invited_by: string | null; invited_at: string };
 
 /** The entity ids a user has been given. */
 export async function accessibleAssetIds(userId: string): Promise<string[]> {

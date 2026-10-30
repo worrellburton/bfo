@@ -41,7 +41,7 @@ type AgentFacts = {
   palm?: Record<string, { ra?: { status?: RaStatus | null } | null } | undefined>;
 };
 
-export function raSnapshot(service: RaServiceLike | null, now = Date.now()): RaSnapshot {
+function raSnapshot(service: RaServiceLike | null, now = Date.now()): RaSnapshot {
   return {
     status: service?.status ?? null,
     name: service?.name ?? null,

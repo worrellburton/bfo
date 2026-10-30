@@ -437,7 +437,7 @@ export function ReaderLoader({ seal, subject, from, snippet }: { seal?: ReactNod
 /* ───────────────────────── small pieces ───────────────────────── */
 
 /** Three dots that take turns. */
-export function Dots() {
+function Dots() {
   return (
     <span aria-hidden="true" className="loader-dots inline-flex gap-[3px]">
       <i />
@@ -457,7 +457,7 @@ export function Orbit({ className = "h-3.5 w-3.5" }: { className?: string }) {
 }
 
 /** A paper plane darting off, and a check left in its place: the message has gone. */
-export function SentPlane({ className = "h-4 w-4" }: { className?: string }) {
+function SentPlane({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <span aria-hidden="true" className={`relative inline-block shrink-0 ${className}`}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="plane-off absolute inset-0 h-full w-full">

@@ -25,10 +25,10 @@ function settingOn(): boolean {
   }
 }
 
-export type LockKind = "Face ID" | "Touch ID" | "Passcode";
+type LockKind = "Face ID" | "Touch ID" | "Passcode";
 
 /** What this phone can unlock with, or null when it can't (no passcode set, or not the app). */
-export async function lockAvailable(): Promise<LockKind | null> {
+async function lockAvailable(): Promise<LockKind | null> {
   if (!isNativeApp()) return null;
   try {
     const { NativeBiometric, BiometryType } = await loadBio();

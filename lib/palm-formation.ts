@@ -34,7 +34,7 @@ const COMMON_FIELDS = new Set([
   "registered_agent", "ein", "fein", "note", "metadata", "expedited_tier", "idempotency_key",
 ]);
 
-export type ExtraField = {
+type ExtraField = {
   key: string;
   label: string;
   description: string | null;

@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
  *   if (!(await confirmDialog({ title: "Delete this entity?", tone: "danger" }))) return;
  */
 
-export type ConfirmOptions = {
+type ConfirmOptions = {
   title: string;
   message?: React.ReactNode;
   /** Bullet points under the message — what will happen. */

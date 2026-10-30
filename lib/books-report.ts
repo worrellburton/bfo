@@ -24,7 +24,7 @@ export type ReportTxn = {
   loan_id: string | null;
 };
 
-export type EffType = "normal" | "transfer" | "intercompany" | "loan";
+type EffType = "normal" | "transfer" | "intercompany" | "loan";
 
 export function prettyCategory(primary: string | null): string {
   if (!primary) return "Uncategorized";
@@ -89,9 +89,9 @@ export function incomeExpense(
 const DAY = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
-export type FlowWindow = { in: number; out: number; net: number };
-export type FlowRecent = { id: string; date: string; who: string; amount: number; entity: string | null; account: string };
-export type FlowSummary = {
+type FlowWindow = { in: number; out: number; net: number };
+type FlowRecent = { id: string; date: string; who: string; amount: number; entity: string | null; account: string };
+type FlowSummary = {
   current: FlowWindow;
   prior: FlowWindow;
   months: { month: string; in: number; out: number }[];

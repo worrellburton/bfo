@@ -13,7 +13,7 @@
 
 export type EntityType = "LLC" | "C-Corp" | "LP" | "Trust";
 
-export type TaxClass =
+type TaxClass =
   | "Disregarded Entity"
   | "Partnership"
   | "S Corporation"
@@ -249,7 +249,7 @@ function governingTitle(type: EntityType): string {
 }
 
 /** The state's recurring filing for this type, or null when there is none. */
-export function annualFiling(type: EntityType, st: string | null): { title: string; fee: string; due: string } | null {
+function annualFiling(type: EntityType, st: string | null): { title: string; fee: string; due: string } | null {
   if (type === "Trust" || !st) return null;
   if (st === "AZ") {
     if (type === "C-Corp") return { title: "Arizona Annual Report (with Certificate of Disclosure)", fee: "$45", due: "on the incorporation anniversary date" };

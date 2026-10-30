@@ -18,7 +18,7 @@ export function loadBrandFont(font: BrandFont) {
   document.head.appendChild(link);
 }
 
-export function useBrandFont(font: BrandFont | undefined) {
+function useBrandFont(font: BrandFont | undefined) {
   useEffect(() => {
     if (!font) return;
     loadBrandFont(font);

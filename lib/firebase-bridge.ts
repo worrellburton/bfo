@@ -48,7 +48,7 @@ async function firebaseToken(): Promise<string> {
 }
 
 /** One node of the Realtime Database, as JSON (null when empty). */
-export async function readFirebase(path: string): Promise<Json> {
+async function readFirebase(path: string): Promise<Json> {
   const t = await firebaseToken();
   const res = await fetch(`${FIREBASE.databaseURL}/${path}.json?auth=${encodeURIComponent(t)}`, { signal: AbortSignal.timeout(40_000) });
   if (!res.ok) throw new Error(`Firebase read of ${path} failed (${res.status})`);
@@ -117,7 +117,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * does the copy; others arriving meanwhile wait for it. Done once, it's a
  * single small read per request thereafter.
  */
-export async function ensureImported(collection: Collection): Promise<void> {
+async function ensureImported(collection: Collection): Promise<void> {
   const done = importedCache.get(collection);
   if (done) return;
   const started = Date.now();

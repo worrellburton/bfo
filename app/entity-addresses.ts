@@ -28,7 +28,7 @@ export type ForeignRegistration = {
   confirmed?: boolean;
 };
 
-export type AddressInput = {
+type AddressInput = {
   name?: string;
   type?: string;
   state?: string;
@@ -46,7 +46,7 @@ export type AddressInput = {
 
 export type Check = { tone: "good" | "warn" | "bad" | "info"; text: string };
 
-export type AgentLine = {
+type AgentLine = {
   /** Two-letter state code. */
   state: string;
   stateLabel: string;
@@ -85,7 +85,7 @@ export function formingNow(a: AddressInput): { palmAgent: boolean } | null {
   return null;
 }
 
-export type Addresses = {
+type Addresses = {
   principal: { value: string | null; checks: Check[] };
   mailing: { value: string | null; same: boolean; checks: Check[] };
   agents: AgentLine[];

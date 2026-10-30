@@ -36,7 +36,7 @@ const KINDS = [
   "minutes",
   "other",
 ] as const;
-export type DocKind = (typeof KINDS)[number];
+type DocKind = (typeof KINDS)[number];
 
 const SCHEMA = {
   type: "object",

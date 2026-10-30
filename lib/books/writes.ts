@@ -20,7 +20,7 @@ const TYPES = ["normal", "transfer", "intercompany"];
  * intercompany flag a description-based rule had set, and showed as Roll-up.
  * A user's explicit type_override still wins at read time.
  */
-export function categoryPatch(category: string): Record<string, unknown> {
+function categoryPatch(category: string): Record<string, unknown> {
   const implied = typeForCategory(category);
   if (!implied) return { book_category: category };
   return {

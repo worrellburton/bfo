@@ -30,7 +30,7 @@ export function parseCsv(text: string): string[][] {
 }
 
 /** "8/7/2025" | "2025-08-07" → "2025-08-07" (null if unparseable). */
-export function toIsoDate(s: string): string | null {
+function toIsoDate(s: string): string | null {
   const t = s.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
   const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);

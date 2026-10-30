@@ -14,11 +14,11 @@ import { authFetch } from "./auth";
  * visible, and on focus: only rows that changed are fetched.
  */
 
-export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
+type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
-export type Ref = { readonly path: string[]; readonly key: string | null };
-export type Snapshot = { readonly key: string | null; val(): any; exists(): boolean };
-export type Unsubscribe = () => void;
+type Ref = { readonly path: string[]; readonly key: string | null };
+type Snapshot = { readonly key: string | null; val(): any; exists(): boolean };
+type Unsubscribe = () => void;
 
 /** There is one database; the handle is just for Firebase-shaped calls. */
 export const db = Symbol("tree");

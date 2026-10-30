@@ -81,9 +81,9 @@ import {
  * (Moved unchanged from the old single-file page.)
  */
 /** Foreign registrations as typed: blank fields dropped, a state with nothing left dropped (null when none). */
-export type PalmSyncLine = { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string };
+type PalmSyncLine = { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string };
 /** A sync with Palm under way (`step` is what it's reading) or just finished (`at`). */
-export type PalmSyncState = { running: boolean; step: string; lines: PalmSyncLine[]; cents: number; mode: PalmMode; at?: number };
+type PalmSyncState = { running: boolean; step: string; lines: PalmSyncLine[]; cents: number; mode: PalmMode; at?: number };
 
 /** A People list filled from the state's record (lib/registry.ts peoplePatch): documents, with shares, replace it. */
 const fromStateRecord = (source?: string | null) => /^State record\b/.test(source ?? "");

@@ -22,7 +22,7 @@ export type Closing = {
   closedAt?: string | null;
 };
 
-export type ClosingStep = {
+type ClosingStep = {
   key: string;
   title: string;
   /** What to do, plainly. */

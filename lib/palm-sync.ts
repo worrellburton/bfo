@@ -15,8 +15,8 @@ import { applyOps, readCollection, readRows, type Json } from "./tree.js";
  * depend on a page staying open. Reads and fills blanks; never files.
  */
 
-export type SyncLine = { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string };
-export type EntitySync = { id: string; name: string; lines: SyncLine[] };
+type SyncLine = { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string };
+type EntitySync = { id: string; name: string; lines: SyncLine[] };
 
 type Data = {
   name?: string;
@@ -30,7 +30,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATE_LINE: Record<CheckResult["outcome"], SyncLine["tone"]> = { read: "good", fresh: "good", not_found: "warn", ambiguous: "warn", error: "bad", later: "warn" };
 
 /** A state record read more recently than this is kept by "Sync all", not read (and billed) again. */
-export const SYNC_FRESH_MS = 24 * 60 * 60 * 1000;
+const SYNC_FRESH_MS = 24 * 60 * 60 * 1000;
 
 const safeSegment = (s: string) => s.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
 

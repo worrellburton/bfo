@@ -28,7 +28,7 @@ const FILING: Record<string, { llc: string; corp: string }> = {
 const pct = (n: number) => `${Math.round(n * 100) / 100}%`;
 const longDate = (d: Date) => d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-export type ConsentDoc = {
+type ConsentDoc = {
   title: string;
   subtitle: string;
   intro: string;
@@ -255,10 +255,10 @@ export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): 
   return pdf.output("blob");
 }
 
-export type EinLetter = { name: string; ein: string; address: string; reason: string; type: string; mailTo: string[] };
+type EinLetter = { name: string; ein: string; address: string; reason: string; type: string; mailTo: string[] };
 
 /** The IRS's address for closing a business account, as its "Closing a business" page gives it. */
-export const IRS_CLOSE_ACCOUNT = ["Internal Revenue Service", "MS 6055", "Kansas City, MO 64108"];
+const IRS_CLOSE_ACCOUNT = ["Internal Revenue Service", "MS 6055", "Kansas City, MO 64108"];
 
 export function einLetter(entity: Rec & { name: string }, dissolvedOn?: string | null): EinLetter {
   const type = entityType(entity);

@@ -19,7 +19,7 @@ async function loadPdfJs(): Promise<PdfJs> {
   return pdfjsPromise;
 }
 
-export type PageSize = { w: number; h: number };
+type PageSize = { w: number; h: number };
 
 export function PdfPages({
   src,

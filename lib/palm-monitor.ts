@@ -18,7 +18,7 @@ import { statesToRead, type StateReadable } from "./state-reads.js";
  * an event finds its entity and the page lists what's on.
  */
 
-export const MONITOR_EVENTS = ["business.registration.updated", "business.filing.due", "business.filing.overdue"] as const;
+const MONITOR_EVENTS = ["business.registration.updated", "business.filing.due", "business.filing.overdue"] as const;
 
 export type MonitorRow = {
   business_id: string;
@@ -36,7 +36,7 @@ type Subscription = { id: string; resource_id: string; status: string; mode?: Pa
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type Registration = { state: string; home: boolean; fileNumber: string | null; palmId: string | null };
+type Registration = { state: string; home: boolean; fileNumber: string | null; palmId: string | null };
 
 type Monitorable = StateReadable & {
   stateRecord?: { mode: string; checkedAt: number; palmId?: string; registrationNumber?: string };

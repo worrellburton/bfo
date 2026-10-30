@@ -9,9 +9,9 @@ import { sb } from "./auth.js";
  */
 
 export type Actor = { id: string | null; name: string | null; source: "user" | "palm" | "stable" | "system" };
-export type FieldChange = { key: string; label: string; from: string | null; to: string | null };
-export type ActivityEntry = { kind: string; summary: string; detail?: Record<string, unknown> | null };
-export type ActivityRow = {
+type FieldChange = { key: string; label: string; from: string | null; to: string | null };
+type ActivityEntry = { kind: string; summary: string; detail?: Record<string, unknown> | null };
+type ActivityRow = {
   id: number;
   asset_id: string;
   at: string;
@@ -268,7 +268,7 @@ function stepWords(key: string): string {
  * Edits by the same person within this window read as one entry: the record
  * is saved field by field, and nobody wants a line per keystroke-save.
  */
-export const MERGE_MS = 15 * 60 * 1000;
+const MERGE_MS = 15 * 60 * 1000;
 
 /** Two edits' fields as one: each field's first "from" and last "to"; any that went back where it started drop out. */
 export function mergeFields(older: FieldChange[], newer: FieldChange[]): FieldChange[] {

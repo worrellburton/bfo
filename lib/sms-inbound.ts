@@ -8,7 +8,7 @@
  * (from/originator, to/recipient, text/body), so each is read by any of them.
  */
 
-export type SmsRow = {
+type SmsRow = {
   id: string;
   from_number: string;
   to_number: string | null;

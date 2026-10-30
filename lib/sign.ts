@@ -18,11 +18,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { degrees, PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
-export const SITE = "https://www.burtonfamilyoffice.com";
+const SITE = "https://www.burtonfamilyoffice.com";
 export const SIGN_BUCKET = "documents";
 
 export type PartyKey = "a" | "b";
-export type FieldType = "signature" | "initials" | "name" | "date";
+type FieldType = "signature" | "initials" | "name" | "date";
 export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
 
@@ -76,7 +76,7 @@ export type SignatureRequestRow = {
 };
 
 /** What the office sees: the row without the token hashes. */
-export type SignatureRequestView = Omit<SignatureRequestRow, "parties"> & { parties: Array<Omit<Party, "tokenHash">> };
+type SignatureRequestView = Omit<SignatureRequestRow, "parties"> & { parties: Array<Omit<Party, "tokenHash">> };
 
 export function toView(row: SignatureRequestRow): SignatureRequestView {
   return { ...row, parties: row.parties.map(({ tokenHash: _t, ...p }) => p) };
@@ -91,8 +91,6 @@ export function pdfKey(row: Pick<SignatureRequestRow, "signed_path" | "current_p
   const path = row.signed_path || row.current_path || row.original_path;
   return path ? `${path}#${row.parties.filter((p) => p.status === "signed").length}` : null;
 }
-
-export const pathFor = (id: string, which: "original" | "current" | "signed") => `signatures/${id}/${which}.pdf`;
 
 /**
  * A fresh path for a new version of a request's PDF. Every upload and every
@@ -141,7 +139,7 @@ export function sendBlocker(row: Pick<SignatureRequestRow, "original_path" | "fi
   return null;
 }
 
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Bounds a field's geometry to the page and sane sizes. */
 export function cleanField(raw: unknown, pageCount: number): SignField | null {
@@ -182,7 +180,7 @@ export function officeDate(d: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "long", day: "numeric", year: "numeric" }).format(d);
 }
 
-export function officeDateTime(iso: string): string {
+function officeDateTime(iso: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso));
 }
 
@@ -202,7 +200,7 @@ export function fieldRect(f: SignField, pw: number, ph: number): { x: number; y:
 }
 
 /** A page as a viewer shows it: its visible box (CropBox) and how far it's turned clockwise. */
-export type PageFrame = { x: number; y: number; w: number; h: number; rotate: number };
+type PageFrame = { x: number; y: number; w: number; h: number; rotate: number };
 
 export function pageFrame(page: PDFPage): PageFrame {
   const box = page.getCropBox();

@@ -16,7 +16,7 @@ export function mercuryConfigured(): boolean {
   return !!process.env.MERCURY_API_TOKEN;
 }
 
-export type MercuryAccount = {
+type MercuryAccount = {
   id: string;
   name: string | null;
   accountNumber: string | null;
@@ -25,13 +25,13 @@ export type MercuryAccount = {
   status: string | null;
 };
 
-export type MercuryAttachment = {
+type MercuryAttachment = {
   fileName: string | null;
   url: string | null;
   attachmentType: string | null;
 };
 
-export type MercuryTxn = {
+type MercuryTxn = {
   id: string;
   amount: number;
   bankDescription: string | null;

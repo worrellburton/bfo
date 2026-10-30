@@ -15,7 +15,7 @@ import { fmtDate, type Asset } from "./model";
 import { Icon, Rows, Section, TextButton, toneText, useTone, type Tone } from "./ui";
 
 /** Calendar days from today to an ISO date, in local time. */
-export function daysUntil(iso: string): number {
+function daysUntil(iso: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!m) return Math.round((Date.parse(iso) - Date.now()) / 86400000);
   const due = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));

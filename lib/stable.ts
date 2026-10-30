@@ -18,7 +18,7 @@ const BASE = "https://api.usestable.com";
 
 export class StableNotConfigured extends Error {}
 
-export async function stable<T>(path: string): Promise<T> {
+async function stable<T>(path: string): Promise<T> {
   const key = process.env.STABLE_API_KEY;
   if (!key) throw new StableNotConfigured("Add STABLE_API_KEY in Vercel.");
   const r = await fetch(`${BASE}${path}`, { headers: { "x-api-key": key, Accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
@@ -58,7 +58,7 @@ export type StableMailItem = {
 type Page = { edges?: { node: StableMailItem; cursor?: string }[]; pageInfo?: { hasNextPage?: boolean; endCursor?: string | null } };
 
 /** Mail items received since `since` (ISO), newest pages followed to the end. */
-export async function listMailSince(since: string, max = 500): Promise<StableMailItem[]> {
+async function listMailSince(since: string, max = 500): Promise<StableMailItem[]> {
   const out: StableMailItem[] = [];
   let after: string | null = null;
   for (let page = 0; page < 10 && out.length < max; page++) {

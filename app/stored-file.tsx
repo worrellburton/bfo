@@ -25,7 +25,7 @@ const pending = new Map<string, Promise<string>>();
 export const SIGNED_LINK_MINUTES = Math.round(SIGNED_URL_TTL_S / 60);
 
 /** A signed link already in hand for this file (or its external URL), without asking the server. */
-export function cachedFileUrl(file: StoredFileRef | null | undefined): string | null {
+function cachedFileUrl(file: StoredFileRef | null | undefined): string | null {
   const path = storagePathOf(file);
   if (!path) return file?.url || null;
   const hit = cache.get(path);
@@ -72,11 +72,6 @@ export async function storedFileUrl(file: StoredFileRef): Promise<string> {
   }
 }
 
-/** Warm the cache (on hover or focus) so a click, middle-click or copy has a link at once. */
-export function prefetchStoredFile(file: StoredFileRef): void {
-  if (storagePathOf(file) && !cachedFileUrl(file)) void storedFileUrl(file).catch(() => {});
-}
-
 /** The name and type on a stored file, whichever shape it has (a slot's upload or a Documents entry). */
 function describe(file: StoredFileRef): { name: string | null; contentType: string | null } {
   const f = file as { fileName?: string; name?: string; contentType?: string };
@@ -84,7 +79,7 @@ function describe(file: StoredFileRef): { name: string | null; contentType: stri
 }
 
 /** True when the reader can show it: one of our stored PDFs or pictures. */
-export function opensInReader(file: StoredFileRef): boolean {
+function opensInReader(file: StoredFileRef): boolean {
   if (!storagePathOf(file)) return false;
   const { name, contentType } = describe(file);
   return viewerKind(name, contentType) !== "other";

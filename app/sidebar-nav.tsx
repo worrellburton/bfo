@@ -42,7 +42,7 @@ function readOpen(): string[] {
   }
 }
 
-export function childActive(c: NavChild, pathname: string, search: URLSearchParams): boolean {
+function childActive(c: NavChild, pathname: string, search: URLSearchParams): boolean {
   if (c.match) return c.match(pathname, search);
   return pathname === c.to || pathname.startsWith(`${c.to}/`);
 }

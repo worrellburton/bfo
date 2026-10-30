@@ -17,13 +17,11 @@ import {
   TAX_CLASSES,
   type DocKey,
   type DocRule,
-  type EntityType,
   type PaperworkInput,
 } from "./entity-paperwork";
 import { foreignStates } from "./entity-addresses";
 
 export { entityType, TAX_CLASSES };
-export type { EntityType };
 
 export type CompletenessInput = PaperworkInput;
 
@@ -37,7 +35,7 @@ export type CompletenessItem = {
   level?: DocRule["level"];
 };
 
-export type Completeness = {
+type Completeness = {
   score: number;
   items: CompletenessItem[];
   missing: CompletenessItem[];

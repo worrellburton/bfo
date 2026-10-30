@@ -14,7 +14,7 @@ import { realtimeSecret, runAskTool } from "./ask-client";
 
 export type LiveStatus = "connecting" | "ready" | "listening" | "thinking" | "speaking";
 
-export type LiveHandlers = {
+type LiveHandlers = {
   onStatus: (s: LiveStatus) => void;
   /** What the person said, once the model has it in words. */
   onUserText: (text: string) => void;

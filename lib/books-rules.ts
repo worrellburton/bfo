@@ -13,7 +13,7 @@
 
 import { sectionOf } from "./books-accounts.js";
 
-export type RuleType = "normal" | "transfer" | "intercompany";
+type RuleType = "normal" | "transfer" | "intercompany";
 
 type Rule = {
   match: RegExp;
@@ -115,7 +115,7 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
 
 // The numbered chart of accounts lives in books-accounts; re-export it so the
 // meta endpoint and the rule engine share one source of truth.
-export { ACCOUNTS, sectionOf, CHART } from "./books-accounts.js";
+export { ACCOUNTS, sectionOf } from "./books-accounts.js";
 
 import { fetchAll } from "./db-pages.js";
 

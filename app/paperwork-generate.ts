@@ -22,7 +22,7 @@ export type Rec = PaperworkInput & { ownerId?: string; members?: { name: string;
 /** The W-9's federal tax classification boxes (line 3a), as the form numbers them. */
 export const W9_BOX = { individual: 1, cCorp: 2, sCorp: 3, partnership: 4, trust: 5, llc: 6, other: 7 } as const;
 
-export type W9Data = {
+type W9Data = {
   /** Line 1: whose TIN this is. */
   name: string;
   /** Line 2: the business or disregarded entity's name, when different. */
@@ -150,9 +150,9 @@ const RECORDS_RULE: Record<string, string> = {
   DE: " Each Member may obtain the information described in 6 Del. C. § 18-305 on reasonable demand.",
 };
 
-export type OAMember = { name: string; percent: number; address: string };
+type OAMember = { name: string; percent: number; address: string };
 
-export type OAInput = {
+type OAInput = {
   name: string;
   /** Two-letter code. */
   state: string;
@@ -168,7 +168,7 @@ export type OAInput = {
   taxClass: string;
 };
 
-export type OADoc = {
+type OADoc = {
   title: string;
   subtitle: string;
   preamble: string;
@@ -601,7 +601,7 @@ export const canDraftAgreement = (r: { name?: string; type?: string }) => entity
 
 // ── Change of address ────────────────────────────────────────────────────
 
-export type AddressChangeStep = {
+type AddressChangeStep = {
   /** Whether the state keeps the address, so something must be filed. */
   needed: boolean;
   agency: string;
@@ -650,7 +650,7 @@ export function f8822bMailTo(oldAddress: string | null | undefined): string {
   return kansasCity.has(st) ? "Internal Revenue Service, Kansas City, MO 64999" : "Internal Revenue Service, Ogden, UT 84201-0023";
 }
 
-export type F8822BData = { name: string; ein: string | null; oldAddress: string; newAddress: string; mailTo: string; notes: string[] };
+type F8822BData = { name: string; ein: string | null; oldAddress: string; newAddress: string; mailTo: string; notes: string[] };
 
 /** What goes on the entity's 8822-B, or why it doesn't need one. */
 export function f8822bData(entity: { name?: string; ein?: string | null; address?: string | null; previousAddress?: string | null }): F8822BData {

@@ -36,7 +36,7 @@ export function startPwa() {
 }
 
 /** Running as the installed app (its own window), not in a browser tab. */
-export function installed(): boolean {
+function installed(): boolean {
   if (typeof window === "undefined") return false;
   if (isNativeApp()) return true;
   return window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;

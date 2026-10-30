@@ -448,7 +448,7 @@ function reportTime(now: Date): string {
   });
 }
 
-function subjectLine(s: Shaped, movement: number, sample: boolean, now: Date, withTime = false): string {
+function subjectLine(movement: number, sample: boolean, now: Date, withTime = false): string {
   // No dollar amounts in the subject — inbox lists and lock screens are
   // public in a way the opened email is not. Direction only.
   //
@@ -707,7 +707,6 @@ function renderHtml(
     title: string,
     list: Account[],
     subtotal: string,
-    move: number,
     opts: { zeros?: number; liability?: boolean } = {}
   ) => {
     if (list.length === 0 && !opts.zeros) return "";
@@ -818,12 +817,11 @@ function renderHtml(
 
         ${alertBanner}
         ${empty}
-        ${section("Cash", s.cashAccounts, money(s.cash), s.cashMove, { zeros: s.zeroCounts.cash })}
+        ${section("Cash", s.cashAccounts, money(s.cash), { zeros: s.zeroCounts.cash })}
         ${section(
           isMarketClosed(now) ? "Investments · Friday's close" : "Investments",
           s.investAccounts,
           money(s.invested),
-          s.investMove,
           { zeros: s.zeroCounts.invest }
         )}
         ${extras.inflows ? renderInflowsCard(extras.inflows, (n) => money(n), APP_URL) : ""}
@@ -1028,7 +1026,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       {
         await sendEmailWithRetry(
           recipients,
-          subjectLine(s, movement, !broadcast, now, true),
+          subjectLine(movement, !broadcast, now, true),
           renderText(s, movement, now, activity, loans, inflows),
           renderHtml(s, movement, history, now, connections, activity, {
             loans,
@@ -1161,7 +1159,7 @@ async function scheduled(
         // Everyone on one To line so the group can Reply All to each other.
         await sendEmailWithRetry(
           recipients,
-          subjectLine(s, movement, false, now),
+          subjectLine(movement, false, now),
           renderText(s, movement, now, activity, loans, inflows),
           renderHtml(s, movement, history, now, connections, activity, {
             loans,

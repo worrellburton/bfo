@@ -11,10 +11,10 @@ import { notifyAdmins } from "./push.js";
  * can't be raised is logged and nothing more.
  */
 
-export const ALERT_WINDOW_MS = 6 * 60 * 60_000;
+const ALERT_WINDOW_MS = 6 * 60 * 60_000;
 
-export type AlertOutcome = "sent" | "duplicate" | "failed";
-export type AlertOpts = {
+type AlertOutcome = "sent" | "duplicate" | "failed";
+type AlertOpts = {
   /** Re-alert window for this kind; the default is six hours. */
   windowMs?: number;
   /** Where tapping the notice opens; the System card by default. */

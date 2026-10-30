@@ -25,10 +25,10 @@ import { storageDownload, storageRemove, storageUpload } from "./storage.js";
 // ── Shapes the API returns (mirrored in app/mail-client.ts) ───────────
 
 export type MailAddress = { email: string; name?: string | null };
-export type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
+type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
 /** "active": inbox and sent together, one row per conversation, latest activity first. */
 export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other";
-export type MailSummary = {
+type MailSummary = {
   id: string;
   folder: "inbox" | "sent" | "archive";
   direction: "in" | "out";
@@ -56,7 +56,7 @@ export type MailSummary = {
 import type { MailFilter } from "./mail-filter.js";
 export type { MailFilter } from "./mail-filter.js";
 export { filterOf, filterFlags } from "./mail-filter.js";
-export type MailMessage = MailSummary & {
+type MailMessage = MailSummary & {
   bcc: MailAddress[];
   text: string | null;
   html: string | null;
@@ -117,7 +117,7 @@ export type SummaryRow = Pick<
 
 export const BUCKET = "mail";
 
-export const LIMITS = {
+const LIMITS = {
   recipients: 50,
   subject: 300,
   textBytes: 500 * 1024,
@@ -154,12 +154,12 @@ const EMAIL_RE =
   /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** One plain address, lowercase. */
-export function isValidEmail(address: string): boolean {
+function isValidEmail(address: string): boolean {
   return address.length <= 254 && EMAIL_RE.test(address) && !/^\.|\.\.|\.@/.test(address);
 }
 
 /** "Jane <jane@x.com>" or "jane@x.com" → "jane@x.com", or null. */
-export function parseAddress(input: unknown): string | null {
+function parseAddress(input: unknown): string | null {
   if (typeof input !== "string") return null;
   let value = input.trim();
   const angle = /<([^<>]*)>\s*$/.exec(value);
@@ -195,7 +195,7 @@ export function ourRecipients(msg: { to?: { email?: string }[] | null; cc?: { em
 }
 
 /** A raw message's header block, folded lines joined. */
-export function headerBlock(raw: string): string {
+function headerBlock(raw: string): string {
   const end = raw.search(/\r?\n\r?\n/);
   return (end < 0 ? raw : raw.slice(0, end)).replace(/\r?\n[ \t]+/g, " ");
 }
@@ -264,7 +264,7 @@ export function withoutQuotes(text: string): string {
 }
 
 /** HTML with its quoted replies (<blockquote>, Gmail's quote block) taken out. */
-export function htmlWithoutQuotes(html: string): string {
+function htmlWithoutQuotes(html: string): string {
   let out = html;
   // Innermost first, so nested quotes come out whole.
   for (let i = 0; i < 20; i++) {
@@ -287,7 +287,7 @@ const BOILERPLATE_LINE = [
 ];
 
 /** Text without the lines a support desk wraps around it. Exported for tests. */
-export function withoutBoilerplate(text: string): string {
+function withoutBoilerplate(text: string): string {
   return text
     .replace(/\r\n?/g, "\n")
     .split("\n")
@@ -497,7 +497,7 @@ export function filterClause(filter: MailFilter): string {
 }
 
 
-export const SEARCH_MAX = 100;
+const SEARCH_MAX = 100;
 
 /**
  * A PostgREST condition matching mail that mentions `q` in its subject,
@@ -517,9 +517,9 @@ export { countRows };
 
 // ── Sending: checking a request ───────────────────────────────────────
 
-export type OutgoingFile = { filename: string; contentType: string; bytes: Buffer };
+type OutgoingFile = { filename: string; contentType: string; bytes: Buffer };
 
-export type SendRequest = {
+type SendRequest = {
   sendId: string;
   to: string[];
   cc: string[];
@@ -532,7 +532,7 @@ export type SendRequest = {
   attachments: OutgoingFile[];
 };
 
-export type Refusal = { error: string; message: string };
+type Refusal = { error: string; message: string };
 
 function addressList(input: unknown): string[] | Refusal {
   const entries = typeof input === "string" ? input.split(/[,;]/) : Array.isArray(input) ? input : input == null ? [] : null;
@@ -628,7 +628,7 @@ const SCOPE_HINT: Record<BirdTask, string> = {
 };
 
 /** One line a person can act on, from a failed Bird response. */
-export function birdProblem(status: number, body: string, task: BirdTask): string {
+function birdProblem(status: number, body: string, task: BirdTask): string {
   let detail = body;
   try {
     const j = JSON.parse(body);
@@ -861,7 +861,7 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
   return inserted.length;
 }
 
-export type SyncResult = { ingested: number; error?: string; skipped?: boolean };
+type SyncResult = { ingested: number; error?: string; skipped?: boolean };
 
 type SyncState = { id: string; cursor: string | null; synced_at: string | null; error: string | null };
 
@@ -1017,7 +1017,7 @@ async function forwardedFiles(original: MailRow): Promise<OutgoingFile[]> {
   return out;
 }
 
-export type Sender = { id: string; name: string | null; address: string };
+type Sender = { id: string; name: string | null; address: string };
 
 /** A uuid made from a string, so the same Bird request is one row in the send ledger. */
 function uuidFrom(key: string): string {

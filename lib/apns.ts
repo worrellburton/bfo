@@ -17,8 +17,8 @@ import { connect, type ClientHttp2Session } from "node:http2";
  */
 
 export type ApnsEnv = "production" | "sandbox";
-export type ApnsConfig = { keyId: string; teamId: string; key: string; topic: string };
-export type ApnsResult = { status: number; reason?: string; env: ApnsEnv };
+type ApnsConfig = { keyId: string; teamId: string; key: string; topic: string };
+type ApnsResult = { status: number; reason?: string; env: ApnsEnv };
 
 const HOSTS: Record<ApnsEnv, string> = {
   production: "https://api.push.apple.com",

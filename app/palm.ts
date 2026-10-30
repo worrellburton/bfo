@@ -117,7 +117,7 @@ export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
  * matched more than one or none exactly, or why it couldn't be read.
  * `choice` is the registry entry the user picked from that list.
  */
-export type StateLookup =
+type StateLookup =
   | { kind: "record"; record: StateRecord; patch: Record<string, unknown> }
   | { kind: "choices"; results: RegistryRecord[]; message?: string }
   | { kind: "error"; message: string };

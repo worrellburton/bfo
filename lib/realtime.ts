@@ -11,16 +11,16 @@ import type Anthropic from "@anthropic-ai/sdk";
  * (sessions, /v1/realtime?model=) when an account only has that.
  */
 
-export const REALTIME_MODEL = "gpt-realtime";
-export const REALTIME_MODEL_BETA = "gpt-4o-realtime-preview";
+const REALTIME_MODEL = "gpt-realtime";
+const REALTIME_MODEL_BETA = "gpt-4o-realtime-preview";
 /** The most natural of the voices: Marin on the GA model, Coral on the beta one. */
-export const REALTIME_VOICE = "marin";
-export const REALTIME_VOICE_BETA = "coral";
+const REALTIME_VOICE = "marin";
+const REALTIME_VOICE_BETA = "coral";
 const TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
 /** How long the key stays good for starting the call. */
 const SECRET_SECONDS = 600;
 
-export type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" | "beta"; expiresAt: number };
+type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" | "beta"; expiresAt: number };
 
 export class RealtimeError extends Error {
   constructor(public status: number, message: string) {

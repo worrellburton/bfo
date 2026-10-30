@@ -86,7 +86,7 @@ export function parseBlocks(md: string): Block[] {
 
 const INLINE = /(\*\*[^*]+\*\*|\*[^*\n]+\*|_[^_\n]+_|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
 
-export function Inline({ text }: { text: string }) {
+function Inline({ text }: { text: string }) {
   const parts = text.split(INLINE);
   return (
     <>

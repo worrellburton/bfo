@@ -14,7 +14,7 @@ export { statesToRead } from "./state-reads.js";
  */
 
 /** A record read more recently than this isn't read again. */
-export const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const ACTOR = { id: null, name: "BFO", source: "system" } as const;
 
 type Rec = {

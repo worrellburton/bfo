@@ -31,7 +31,7 @@ const TERMS: Array<{ value: string; hint: string }> = [
   { value: FIXED, hint: "Ends after one year; renewal requires both parties." },
 ];
 /** The key the preview page reads the unsaved form from. */
-export const PREVIEW_KEY = "bfo.contract.preview";
+const PREVIEW_KEY = "bfo.contract.preview";
 
 /**
  * Table columns from lg up: counterparty, fee, frequency, effective, term,

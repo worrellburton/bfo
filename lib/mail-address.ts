@@ -32,7 +32,7 @@ const SYSTEM = new Set([
 const LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
 
 /** The address for a local part on our domain. */
-export function addressFor(local: string): string {
+function addressFor(local: string): string {
   return `${local}@${MAIL_DOMAIN}`;
 }
 
@@ -73,7 +73,7 @@ export function parseMailAddress(input: unknown, opts: { roleOk?: boolean } = {}
 // allowed here, since only an owner or admin adds them; system ones aren't.
 
 /** At most this many extra addresses per account. */
-export const MAX_ALIASES = 10;
+const MAX_ALIASES = 10;
 
 /** A user's extra addresses, oldest first. */
 export async function listAliases(userId: string): Promise<string[]> {
@@ -87,7 +87,7 @@ export async function aliasOwner(address: string): Promise<string | null> {
   return rows?.[0]?.user_id ?? null;
 }
 
-export type AliasRefusal = { error: "invalid_mail_address" | "address_taken" | "too_many"; message: string };
+type AliasRefusal = { error: "invalid_mail_address" | "address_taken" | "too_many"; message: string };
 
 /** Give a user one more address. Refuses one that's anyone's main or extra address. */
 export async function addAlias(user: Pick<AppUser, "id" | "mail_address">, input: unknown): Promise<{ address: string } | AliasRefusal> {

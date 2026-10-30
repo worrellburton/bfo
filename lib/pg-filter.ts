@@ -21,7 +21,7 @@ export function likeTerm(raw: string): string {
 }
 
 /** One value quoted for a PostgREST list or condition: `"` and `\` escaped, then URL-encoded. */
-export function pgQuoted(value: string): string {
+function pgQuoted(value: string): string {
   return encodeURIComponent(`"${String(value).replace(/[\\"]/g, (c) => `\\${c}`)}"`);
 }
 

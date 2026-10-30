@@ -38,7 +38,7 @@ export function money(n: number, currency = "USD"): string {
  * A Plaid-signed row amount: negative is money in ("+$3,015.70"), positive
  * is money out ("$125.00"). The only place the ledger's sign rule lives.
  */
-export function signedMoney(amount: number, currency?: string | null): string {
+function signedMoney(amount: number, currency?: string | null): string {
   const c = currency ?? "USD";
   return amount < 0 ? `+${money(-amount, c)}` : money(amount, c);
 }
@@ -54,7 +54,7 @@ type DateOpts = { omitCurrentYear?: boolean };
 const showYear = (y: number, opts?: DateOpts) => !(opts?.omitCurrentYear && y === new Date().getFullYear());
 
 /** "2026-09-07" → "September 7, 2026" ("September 7" with omitCurrentYear this year). No timezone. */
-export function longDate(iso: string, opts?: DateOpts): string {
+function longDate(iso: string, opts?: DateOpts): string {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y || !m || !d) return iso;
   return `${LONG_MONTHS[m - 1]} ${d}${showYear(y, opts) ? `, ${y}` : ""}`;
@@ -178,7 +178,7 @@ export function ruleBorder(isDark: boolean): string {
 }
 
 /** The highlighted item in a popover list (keyboard or hover). */
-export function itemHighlight(isDark: boolean): string {
+function itemHighlight(isDark: boolean): string {
   return isDark ? "bg-white/[0.08] text-gray-100" : "bg-gray-100 text-gray-900";
 }
 
@@ -245,7 +245,7 @@ const KEEP_CAPS = new Set(["LLC", "INC", "LTD", "LP", "LLP", "PLC", "ACH", "ATM"
 const SMALL_WORDS = new Set(["to", "from", "of", "on", "and", "the", "for", "at", "in", "by", "via", "a", "an", "or", "with"]);
 
 /** A memo or vendor string as it should read on screen (display only). */
-export function displayName(raw: string | null | undefined): string {
+function displayName(raw: string | null | undefined): string {
   if (!raw) return "";
   const s = raw
     .replace(/;?\s*Merchant name:\s*[^;]*$/i, "")
@@ -619,7 +619,7 @@ const AVATAR_TONES: Array<{ dark: string; light: string }> = [
  * meaning. With `icon` (a vendor-less row: transfer, roll-up, ATM) the disc
  * shows the glyph instead.
  */
-export function VendorAvatar({
+function VendorAvatar({
   name,
   isDark = false,
   size = "sm",
@@ -706,7 +706,7 @@ export function accountIcon(label: string): ReactNode {
  * The account pill's leading disc, tinted by chart section: revenue green,
  * operating orange, other violet, flow neutral. Unset stays neutral.
  */
-export function AccountDisc({ label, isDark, uncategorized = false }: { label: string; isDark: boolean; uncategorized?: boolean }) {
+function AccountDisc({ label, isDark, uncategorized = false }: { label: string; isDark: boolean; uncategorized?: boolean }) {
   const c = label.trim()[0];
   const tone = uncategorized
     ? isDark ? "bg-amber-500/15 text-amber-300" : "bg-amber-100 text-amber-700"
@@ -731,7 +731,7 @@ export function AccountDisc({ label, isDark, uncategorized = false }: { label: s
  * pending amber, roll-up violet, transfer/loan gray. Posted income and
  * expense return `bg-transparent`, which callers use to skip the dot.
  */
-export function typeDot(eff: string, inflow: boolean, pending = false, isDark = true): string {
+function typeDot(eff: string, pending = false, isDark = true): string {
   if (pending) return isDark ? "bg-amber-400" : "bg-amber-600";
   if (eff === "intercompany") return isDark ? "bg-violet-400" : "bg-violet-600";
   if (eff === "transfer" || eff === "loan") return isDark ? "bg-gray-500" : "bg-gray-400";
@@ -744,17 +744,13 @@ export function pretty(cat: string | null): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function effType(t: Txn): "normal" | "transfer" | "intercompany" | "loan" {
+function effType(t: Txn): "normal" | "transfer" | "intercompany" | "loan" {
   if (t.loan_id) return "loan";
   if (t.type_override === "normal" || t.type_override === "transfer" || t.type_override === "intercompany") {
     return t.type_override;
   }
   if (t.intercompany) return "intercompany";
   return t.txn_type === "transfer" ? "transfer" : "normal";
-}
-
-export function catLabel(t: Txn): string {
-  return t.book_category || pretty(t.plaid_category);
 }
 
 async function saveTxn(patch: {
@@ -1254,7 +1250,7 @@ export function Menu({
 }
 
 /** Selection wiring TxnTable renders a checkbox column from. */
-export type Selection = {
+type Selection = {
   selected: Set<string>;
   toggle: (id: string) => void;
   setAll: (ids: string[]) => void;
@@ -1577,7 +1573,7 @@ type HistoryEntry = { log: HistoryLog; receipts: HistoryReceipts };
  * categorization/vendor/type change shows as old → new; receipts are
  * URL-referenced documents you can attach or remove.
  */
-export function TxnHistoryPanel({
+function TxnHistoryPanel({
   transactionId,
   isDark,
   cache,
@@ -2616,7 +2612,7 @@ export function TxnTable({
           // the date (ungrouped), a real memo, or pending.
           const meta = [!cardBands ? midDate(t.date, { omitCurrentYear: true }) : null, descriptor].filter(Boolean).join(" · ");
           const hasMeta = !!meta || t.pending;
-          const dot = typeDot(eff, inflow, t.pending, isDark);
+          const dot = typeDot(eff, t.pending, isDark);
           const surface = checked
             ? isDark ? "border-emerald-500/50 bg-emerald-500/[0.07]" : "border-emerald-500 bg-emerald-50"
             : isDark ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]" : "border-gray-200 bg-white hover:bg-gray-50";
@@ -2801,7 +2797,7 @@ export function TxnTable({
           const panelId = `${uid}-r${ri}`;
           const newDay = grouped && (ri === 0 || rows[ri - 1].date !== t.date);
           const checked = selection?.selected.has(t.transaction_id) ?? false;
-          const dot = typeDot(eff, inflow, t.pending, isDark);
+          const dot = typeDot(eff, t.pending, isDark);
           const rowName = vendorText || memo || t.date;
           // Rows draw their TOP border (border-collapse lets the first of two
           // touching borders win, so a day-change rule on a row's top edge

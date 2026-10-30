@@ -39,7 +39,7 @@ const BLOCK = new Set<Tag>(["p", "ul", "ol", "li", "blockquote", "h3"]);
 const VOID = new Set(["br", "img", "hr", "meta", "link", "input", "wbr", "col", "area", "base", "source"]);
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-export function decodeEntities(s: string): string {
+function decodeEntities(s: string): string {
   return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
     if (e[0] === "#") {
       const n = e[1].toLowerCase() === "x" ? Number.parseInt(e.slice(2), 16) : Number.parseInt(e.slice(1), 10);
@@ -66,7 +66,7 @@ function styleTag(attrs: string): Tag | null {
 }
 
 /** Any HTML into the allowed tree. */
-export function parseCompose(html: string): Node[] {
+function parseCompose(html: string): Node[] {
   const root: { tag: "root"; kids: Node[] } = { tag: "root", kids: [] };
   // Each open element; `tag` null for one that's unwrapped (its text still lands in the parent).
   const stack: { tag: Tag | null; name: string; node: { kids: Node[] } }[] = [{ tag: null, name: "#root", node: root }];

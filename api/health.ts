@@ -11,8 +11,8 @@ import { log } from "../lib/log.js";
  * reported as such and nothing more.
  */
 
-export type HealthChecks = { db: boolean; plaid: boolean; palm: boolean; bird: boolean; apns: boolean; openai: boolean; anthropic: boolean };
-export type Health = { ok: boolean; checks: HealthChecks; version: string | null; at: string };
+type HealthChecks = { db: boolean; plaid: boolean; palm: boolean; bird: boolean; apns: boolean; openai: boolean; anthropic: boolean };
+type Health = { ok: boolean; checks: HealthChecks; version: string | null; at: string };
 
 const has = (...names: string[]) => names.every((n) => !!process.env[n]?.trim());
 

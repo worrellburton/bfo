@@ -5,7 +5,7 @@
  * two, which is plenty for "sync around sunrise". Returns null on the rare
  * polar day/night where the sun doesn't cross the horizon.
  */
-export function sunriseUtcHours(
+function sunriseUtcHours(
   year: number,
   month: number,
   day: number,

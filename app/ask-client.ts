@@ -8,7 +8,7 @@ import { authFetch } from "./auth";
 export type ChatSummary = { id: string; title: string; updatedAt: string };
 export type ChatMessage = { role: "user" | "assistant"; text: string; at?: string };
 
-export type AskEvent =
+type AskEvent =
   | { type: "chat"; id: string; title: string }
   | { type: "tool"; label: string }
   | { type: "text"; delta: string }
@@ -25,9 +25,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const listChats = () => call<{ chats: ChatSummary[] }>("/api/ask?view=chats");
 export const getChat = (id: string) => call<{ chat: ChatSummary; messages: ChatMessage[] }>(`/api/ask?view=chat&id=${encodeURIComponent(id)}`);
 export const deleteChat = (chatId: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "delete", chatId }) });
-export const renameChat = (chatId: string, title: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "rename", chatId, title }) });
 
-export type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" | "beta"; expiresAt: number };
+type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" | "beta"; expiresAt: number };
 /** A short-lived key for the live voice (OpenAI Realtime), with BFO's lookups in the session. */
 export const realtimeSecret = () => call<RealtimeSecret>("/api/ask", { method: "POST", body: JSON.stringify({ action: "realtime-secret" }) });
 /** One lookup the live voice asked for, run as this person. */

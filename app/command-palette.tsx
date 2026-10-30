@@ -20,7 +20,7 @@ export type Command = {
 export type PageLink = { to: string; label: string; section?: string; keywords?: string };
 
 /** Two-key shortcuts: "g" then the letter. */
-export const GO_SHORTCUTS: Array<{ key: string; to: string; label: string }> = [
+const GO_SHORTCUTS: Array<{ key: string; to: string; label: string }> = [
   { key: "h", to: "/home", label: "Home" },
   { key: "e", to: "/assets", label: "Entities" },
   { key: "m", to: "/inbox", label: "Mail" },
@@ -75,7 +75,7 @@ function score(c: Command, q: string): number {
   return words.length > 1 && words.every((w) => hay.includes(w)) ? 1 : 0;
 }
 
-export type Entity = { id: string; name: string; type?: string; state?: string };
+type Entity = { id: string; name: string; type?: string; state?: string };
 
 /** Entities from the shared tree, loaded the first time the palette opens. */
 export function useEntities(enabled: boolean): Entity[] {

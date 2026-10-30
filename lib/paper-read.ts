@@ -16,10 +16,10 @@ import { storageRead } from "./storage.js";
 const MODEL = "claude-opus-5-5";
 const MAX_BYTES = 20 * 1024 * 1024;
 
-export const KINDS = ["bill", "statement", "check", "tax", "government", "legal", "bank", "insurance", "notice", "personal", "marketing", "other"] as const;
-export type PaperKind = (typeof KINDS)[number];
+const KINDS = ["bill", "statement", "check", "tax", "government", "legal", "bank", "insurance", "notice", "personal", "marketing", "other"] as const;
+type PaperKind = (typeof KINDS)[number];
 
-export type PaperReading = {
+type PaperReading = {
   /** One plain sentence: what this piece is. */
   headline: string;
   kind: PaperKind;

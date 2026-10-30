@@ -10,8 +10,8 @@ import { useSyncExternalStore } from "react";
 
 export type Density = "compact" | "cozy" | "relaxed";
 
-export const GLASS_KEY = "bfo-glass";
-export const DENSITY_KEY = "bfo-density";
+const GLASS_KEY = "bfo-glass";
+const DENSITY_KEY = "bfo-density";
 export const DENSITIES: { key: Density; label: string; hint: string }[] = [
   { key: "compact", label: "Compact", hint: "More on screen" },
   { key: "cozy", label: "Cozy", hint: "As designed" },

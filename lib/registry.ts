@@ -203,7 +203,7 @@ export type StateConfirmation = {
 };
 
 /** A confirmation older than this no longer stands in for the state's record. */
-export const CONFIRMATION_DAYS = 365;
+const CONFIRMATION_DAYS = 365;
 
 /** Whether Palm's reading looks lapsed: not active, or not in good standing. */
 export function recordLapsed(rec: StateRecord | null | undefined): boolean {

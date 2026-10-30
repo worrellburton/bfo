@@ -352,7 +352,7 @@ function trimProfile(p: Rec | undefined) {
   };
 }
 
-export function entityDetail(id: string, a: Rec, ownerName: string | null, all: Map<string, string>, today = new Date()): Rec {
+function entityDetail(id: string, a: Rec, ownerName: string | null, all: Map<string, string>, today = new Date()): Rec {
   const rec = a.stateRecord ?? null;
   const confirmed = a.stateConfirmed && rec && (rec.status !== "active" || rec.standing?.registration === "not_compliant");
   const owner = a.ownerId ? all.get(a.ownerId) : null;

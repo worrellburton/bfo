@@ -29,7 +29,7 @@ export async function unregisterDevice(userId: string, token: string): Promise<v
  * What each person wants told about, from their notification_prefs.push
  * (the Notifications page). Everything is on until switched off.
  */
-export type PushPrefs = { mail: boolean; texts: boolean; paper: boolean };
+type PushPrefs = { mail: boolean; texts: boolean; paper: boolean };
 export function pushPrefsOf(prefs: unknown): PushPrefs {
   const p = ((prefs as { push?: Partial<PushPrefs> } | null)?.push ?? {}) as Partial<PushPrefs>;
   return { mail: p.mail !== false, texts: p.texts !== false, paper: p.paper !== false };
@@ -84,7 +84,7 @@ type Notice = { to: string[]; payload: Record<string, unknown>; collapseId?: str
  * stored is stored whatever happens here. Devices Apple says are gone are
  * forgotten; the environment that took each one is kept.
  */
-export async function deliver(notices: Notice[], what: string): Promise<number> {
+async function deliver(notices: Notice[], what: string): Promise<number> {
   const cfg = apnsConfig();
   if (!cfg || !notices.length) return 0;
   try {
@@ -136,7 +136,7 @@ export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<
   }
 }
 
-export type NewText = { id: string; from_number?: string | null; body?: string | null; code?: string | null };
+type NewText = { id: string; from_number?: string | null; body?: string | null; code?: string | null };
 
 /** A text to the office's number: owners and admins who want them (the Phone page). */
 export async function notifyNewTexts(rows: NewText[]): Promise<number> {
@@ -168,7 +168,7 @@ export async function notifyNewTexts(rows: NewText[]): Promise<number> {
   }
 }
 
-export type NewPaperMail = { id: string; from_name?: string | null; recipient?: string | null; received_at?: string | null };
+type NewPaperMail = { id: string; from_name?: string | null; recipient?: string | null; received_at?: string | null };
 
 /** What a notice for one piece of paper mail says; tapping it opens the piece. */
 export function paperMailPayload(r: NewPaperMail) {

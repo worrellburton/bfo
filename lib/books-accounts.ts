@@ -15,11 +15,11 @@
  * sheet is unaffected (it keys on the bank account's subtype, not this chart).
  */
 
-export type Section = "revenue" | "operating" | "other" | "flow";
+type Section = "revenue" | "operating" | "other" | "flow";
 
-export type Account = { code: string; name: string; section: Section };
+type Account = { code: string; name: string; section: Section };
 
-export const CHART: Account[] = [
+const CHART: Account[] = [
   // ── 4000 · Revenue ────────────────────────────────────────────────────
   { code: "4000", name: "Rental Income", section: "revenue" },
   { code: "4100", name: "Interest Income", section: "revenue" },
@@ -64,7 +64,7 @@ export const CHART: Account[] = [
   { code: "9400", name: "Capital Improvements", section: "flow" },
 ];
 
-export const acctLabel = (a: Account) => `${a.code} ${a.name}`;
+const acctLabel = (a: Account) => `${a.code} ${a.name}`;
 
 /** The chart as picker-ready labels, e.g. "4000 Rental Income". */
 export const ACCOUNTS: string[] = CHART.map(acctLabel);
@@ -89,43 +89,3 @@ export function sectionOf(label: string | null | undefined): Section | null {
   }
   return null;
 }
-
-/**
- * Old informal category → new GAAP account label. Used both to migrate the
- * existing data and to keep the rule engine emitting the numbered labels.
- */
-export const MIGRATE: Record<string, string> = {
-  "Property income": "4000 Rental Income",
-  "Interest & rewards": "4100 Interest Income",
-  "Social Security": "4300 Social Security Income",
-  "Other income": "4900 Other Income",
-  "Payroll & HR": "6000 Salaries & Wages",
-  "Legal & professional": "6100 Professional Fees",
-  "Outside services": "6150 Contract Services",
-  "Insurance": "6200 Insurance",
-  "Utilities": "6250 Utilities",
-  "Rent & utilities": "6250 Utilities",
-  "Bank & card fees": "6400 Bank & Card Fees",
-  "Software & technology": "6450 Dues & Subscriptions",
-  "Merchandise & household": "6500 Supplies",
-  "Auto & transport": "6550 Automobile & Transport",
-  "Food & dining": "6600 Meals & Entertainment",
-  "Entertainment": "6600 Meals & Entertainment",
-  "Travel": "6650 Travel",
-  "Taxes & government": "6700 Taxes & Licenses",
-  "Medical": "6750 Medical",
-  "Personal care": "6900 Other Operating Expenses",
-  "Contracts": "6150 Contract Services",
-  "Services (other)": "6900 Other Operating Expenses",
-  "Checks written": "6900 Other Operating Expenses",
-  "Cash withdrawals": "9200 Owner Draws",
-  "Mortgage & escrow": "7000 Mortgage Interest",
-  "Intercompany": "9000 Intercompany",
-  "Internal moves": "9100 Internal Transfers",
-  "Deposits": "9100 Internal Transfers",
-  "Other transfers": "9100 Internal Transfers",
-  "Credit card payments": "9150 Credit Card Payments",
-  "Seven Arrows Recovery (loan)": "9300 Loans",
-  "Loan proceeds": "9300 Loans",
-  "Loan payments": "9300 Loans",
-};

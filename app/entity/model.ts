@@ -237,7 +237,7 @@ export const LEDGER_LOUISE_SUBS = [
 ];
 
 // Older contracts stored two separate AI services that are now one line.
-export const SERVICE_ALIASES: Record<string, string> = {
+const SERVICE_ALIASES: Record<string, string> = {
   "AI & Technology Management": "AI, Automation & Technology Management",
   "AI Agent & Automation Development": "AI, Automation & Technology Management",
 };
@@ -308,7 +308,7 @@ export type FileKind = DocKey;
 /** Every slot an entity can have — for lookups that don't care about type. */
 export const FILING_KINDS: FileKind[] = DOC_KEYS;
 
-export const FALLBACK_TITLE: Record<FileKind, string> = {
+const FALLBACK_TITLE: Record<FileKind, string> = {
   articles: "Formation filing",
   einLetter: "EIN Letter",
   w9: "Form W-9",
@@ -327,7 +327,7 @@ export const FALLBACK_TITLE: Record<FileKind, string> = {
 };
 
 /** The rule book's entry for this slot on this entity, if it applies. */
-export function ruleFor(kind: FileKind, a?: PaperworkInput | null): DocRule | undefined {
+function ruleFor(kind: FileKind, a?: PaperworkInput | null): DocRule | undefined {
   return a ? documentRules(a).find((r) => r.key === kind) : undefined;
 }
 

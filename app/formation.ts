@@ -30,7 +30,7 @@ export const US_STATES: ReadonlyArray<readonly [string, string]> = [
 export const stateName = (jurisdiction: string) => US_STATES.find(([abbr]) => `US-${abbr}` === jurisdiction)?.[1] ?? "";
 
 /** Where the IRS asks whether two LLC members are a married couple (Rev. Proc. 2002-69). */
-export const COMMUNITY_PROPERTY = new Set(["AZ", "CA", "ID", "LA", "NM", "NV", "TX", "WA", "WI"]);
+const COMMUNITY_PROPERTY = new Set(["AZ", "CA", "ID", "LA", "NM", "NV", "TX", "WA", "WI"]);
 
 export type FormationEntityType = "llc" | "corporation";
 

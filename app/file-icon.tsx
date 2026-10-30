@@ -8,7 +8,7 @@ import { FILE_KIND_LABEL, type FileKind } from "../lib/file-kind";
  * reduced motion.
  */
 
-export const FILE_KIND_COLOR: Record<FileKind, string> = {
+const FILE_KIND_COLOR: Record<FileKind, string> = {
   pdf: "#ef4444",
   image: "#10b981",
   sheet: "#22c55e",

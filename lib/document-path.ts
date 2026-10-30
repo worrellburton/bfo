@@ -90,7 +90,7 @@ export function storagePathOf(file: StoredFileRef | null | undefined): string | 
 const SEES_ALL = new Set(["owner", "admin", "member", "viewer"]);
 
 /** Parts of an entity record a partner never sees (mirrors api/tree.ts). */
-export const PARTNER_HIDDEN = ["notes", "contracts", "verification"];
+const PARTNER_HIDDEN = ["notes", "contracts", "verification"];
 
 /**
  * The folder an entity's files go in: its id as upload-url, palm-sync and

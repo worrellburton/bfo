@@ -54,7 +54,7 @@ async function listen() {
   });
 }
 
-export async function pushState(): Promise<PushState> {
+async function pushState(): Promise<PushState> {
   if (!isNativeApp()) return "unsupported";
   try {
     const { PushNotifications } = await load();

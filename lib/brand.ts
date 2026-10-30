@@ -18,7 +18,7 @@ export type Finish = "gold" | "ivory" | "silver";
 /** The Google font a lockup is drawn in and the site sets it in. */
 export type BrandFont = { family: string; weight: number; css: string };
 
-export type LogoStyle = { id: string; name: string; blurb: string; font: BrandFont; finish: Finish; prompt: string };
+type LogoStyle = { id: string; name: string; blurb: string; font: BrandFont; finish: Finish; prompt: string };
 
 /** What every lockup shares: the two lines of type, flat, on a black presentation board. */
 const BASE_PROMPT =
@@ -220,7 +220,7 @@ export async function startModel(imageUrl: string): Promise<string> {
   return r.result;
 }
 
-export type MeshyTask = {
+type MeshyTask = {
   id: string;
   status: ModelState["status"];
   progress?: number;

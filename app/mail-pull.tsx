@@ -24,7 +24,7 @@ const C = 2 * Math.PI * 11; // the ring's circumference (r = 11)
 
 type Phase = "idle" | "pulling" | "refreshing" | "done";
 
-export const PULL_EVENT = "mail-pull";
+const PULL_EVENT = "mail-pull";
 
 export function PullToRefresh({ enabled, onRefresh, className = "", children }: { enabled: boolean; onRefresh: () => Promise<{ fresh: number } | void>; className?: string; children: ReactNode }) {
   const t = useTone();

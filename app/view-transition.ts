@@ -1,5 +1,3 @@
-import { flushSync } from "react-dom";
-
 /**
  * Mail's page transitions, on the View Transitions API.
  *
@@ -15,8 +13,8 @@ import { flushSync } from "react-dom";
  * Without the API, or under reduced motion, the update simply runs.
  */
 
-export type TransitionKind = "mail" | "mail-swap";
-export type TransitionDirection = "forward" | "back";
+type TransitionKind = "mail" | "mail-swap";
+type TransitionDirection = "forward" | "back";
 
 type Doc = Document & { startViewTransition?: (update: () => void | Promise<void>) => { finished: Promise<void>; ready: Promise<void>; updateCallbackDone: Promise<void> } };
 
@@ -61,13 +59,6 @@ export function transition(kind: TransitionKind, dir: TransitionDirection, updat
   const next = active.then(run, run);
   active = next;
   return next;
-}
-
-/** A sync state update as a transition: the update is flushed inside the snapshot window. */
-export function transitionSync(kind: TransitionKind, dir: TransitionDirection, update: () => void): Promise<void> {
-  return transition(kind, dir, () => {
-    flushSync(update);
-  });
 }
 
 /** True on a phone-sized screen, where Mail moves between the list and a message as whole pages. */

@@ -27,7 +27,7 @@ const MAX_OPS = 200;
 /** One request's operations, serialised (an entity with every document is well under this). */
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
-export const isCollection = (s: string): s is Collection => (COLLECTIONS as readonly string[]).includes(s);
+const isCollection = (s: string): s is Collection => (COLLECTIONS as readonly string[]).includes(s);
 
 /** "a/b//c/" → ["a","b","c"], or null when a segment isn't allowed. The root is []. */
 export function parsePath(raw: unknown): string[] | null {

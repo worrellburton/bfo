@@ -13,8 +13,7 @@ A React Router 7 single-page app (`app/`, SSR off, Vite, Tailwind v4,
 TypeScript) served as static files from Vercel, with Vercel serverless
 functions under `api/` for everything that needs a secret or a database.
 Shared server code lives in `lib/`. Data is Supabase Postgres, reached over
-PostgREST with the service key through `sb()` in `lib/auth.ts` (no ORM; the
-Files live in private
+PostgREST with the service key through `sb()` in `lib/auth.ts` (no ORM). Files live in private
 Supabase Storage buckets (`documents`, `mail`, `receipts`; `brand` is public).
 Integrations: Plaid (banks, brokerages), Mercury (bank history), Palm (state
 registries, registered agent, formations), Bird (SMS codes, email in and out,

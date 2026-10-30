@@ -26,7 +26,7 @@ const REMOTE_IN_SRCSET = /(^|,)\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
 const REMOTE_URL_IN_CSS = /url\(\s*['"]?\s*((https?:)?\/\/|\/api\/mail-image\b)/i;
 
 /** Sanitizes mail HTML. Remote images are dropped unless `images` is true. */
-export function sanitizeMail(html: string, images: boolean): { html: string; remoteImages: boolean } {
+function sanitizeMail(html: string, images: boolean): { html: string; remoteImages: boolean } {
   const purify = getPurifier();
   let remoteImages = false;
   purify.addHook("afterSanitizeAttributes", (node) => {

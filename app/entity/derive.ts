@@ -10,7 +10,7 @@ import { documentRules, obligations, paperworkChecks, taxHome, type Obligation, 
 import { stateFindings, type PalmMode } from "../palm";
 import { FILING_KINDS, holdsOwnership, splitNames, type Asset, type AssetDoc, type EntityTab, type FileKind, type OperatingContract } from "./model";
 
-export type Tab = { key: EntityTab; label: string; count?: number; alert?: boolean };
+type Tab = { key: EntityTab; label: string; count?: number; alert?: boolean };
 
 export function deriveEntity(input: {
   asset: Asset;

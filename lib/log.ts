@@ -7,8 +7,8 @@
  *   → {"level":"info","area":"cron:books-sync","msg":"synced","items":3,"at":"2026-…"}
  */
 
-export type LogLevel = "info" | "warn" | "error";
-export type LogFields = Record<string, unknown>;
+type LogLevel = "info" | "warn" | "error";
+type LogFields = Record<string, unknown>;
 
 /** An error as a log field: its message (and name when it isn't a plain Error). */
 export function errorText(err: unknown): string {

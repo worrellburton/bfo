@@ -12,7 +12,7 @@
  * "PARKING" for $25 on one day, with only "PARKING" stored, "TOLL" imports.
  */
 
-export type PlannedRow<T> = T & {
+type PlannedRow<T> = T & {
   /**
    * How many earlier rows in this file share the date, amount and
    * description: 0 for the first, 1 for its twin… Folded into the row's id

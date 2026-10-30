@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 /** "partner": an owner or member of an entity, invited to see only the entities they're on (entity_access). */
 export type Role = "owner" | "admin" | "member" | "viewer" | "email" | "partner";
@@ -130,7 +130,7 @@ export function formatPhone(e164: string | null): string {
 
 // ── Identifiers (a sign-in is by phone number or by email) ────────────
 
-export type Identifier = { kind: "phone" | "email"; value: string };
+type Identifier = { kind: "phone" | "email"; value: string };
 
 export function normalizeEmail(raw: string): string | null {
   const value = String(raw ?? "").trim().toLowerCase();
@@ -150,10 +150,6 @@ export function normalizeIdentifier(raw: string): Identifier | null {
 }
 
 // ── One-time codes ────────────────────────────────────────────────────
-
-export function generateCode(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
-}
 
 export function hashCode(phone: string, code: string): string {
   const pepper = process.env.AUTH_SECRET ?? "";
@@ -290,7 +286,7 @@ export async function sendSms(to: string, text: string): Promise<void> {
   }
 }
 
-export type EmailAttachment = { filename: string; content: string };
+type EmailAttachment = { filename: string; content: string };
 
 export async function sendEmail(
   to: string | string[],
@@ -412,7 +408,7 @@ export async function verifyStart(identifier: Identifier): Promise<string> {
   return data.id ?? "pending";
 }
 
-export type VerifyOutcome = "verified" | "failed" | "expired" | "spent";
+type VerifyOutcome = "verified" | "failed" | "expired" | "spent";
 
 export async function verifyCheck(identifier: Identifier, code: string): Promise<VerifyOutcome> {
   const res = await birdVerifyFetch("/v1/verify/verifications/check", {
@@ -433,36 +429,6 @@ export async function verifyCheck(identifier: Identifier, code: string): Promise
   if (data.reason === "expired") return "expired";
   if (data.reason && /attempt/i.test(data.reason)) return "spent";
   return "failed";
-}
-
-/** Deliver a sign-in code over whichever channel the identifier implies. */
-export async function sendLoginCode(identifier: Identifier, code: string): Promise<void> {
-  const minutes = Math.round(CODE_TTL_MS / 60000);
-  if (identifier.kind === "phone") {
-    await sendSms(
-      identifier.value,
-      `${code} is your BFO sign-in code. It expires in ${minutes} minutes.`
-    );
-    return;
-  }
-  await sendEmail(
-    identifier.value,
-    `${code} is your BFO sign-in code`,
-    `${code} is your BFO sign-in code. It expires in ${minutes} minutes. If you didn't request this, ignore this message.`,
-    `<!doctype html><html><body style="margin:0;background:#000;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
-    <table role="presentation" width="100%" style="max-width:420px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0">
-      <tr><td style="padding:36px 32px;text-align:center;">
-        <div style="font-size:34px;font-weight:700;letter-spacing:-0.02em;color:#ffffff;">BFO</div>
-        <div style="margin-top:6px;font-size:11px;letter-spacing:0.35em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Ledger Louise, LLC</div>
-        <div style="margin:28px 0 10px;font-size:14px;color:rgba(255,255,255,0.6);">Your sign-in code</div>
-        <div style="font-size:38px;font-weight:600;letter-spacing:0.3em;color:#ffffff;padding-left:0.3em;">${code}</div>
-        <div style="margin-top:22px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">Expires in ${minutes} minutes.<br/>If you didn't request this, you can ignore this email.</div>
-      </td></tr>
-    </table>
-  </td></tr></table>
-</body></html>`
-  );
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────
@@ -541,7 +507,7 @@ export function secretMatches(presented: unknown, secret: string | undefined): b
 
 // ── Cron ──────────────────────────────────────────────────────────────
 
-export type CronAuth = "ok" | "unauthorized" | "unconfigured";
+type CronAuth = "ok" | "unauthorized" | "unconfigured";
 
 /**
  * Whether a request is the Vercel cron. Vercel sends Authorization: Bearer

@@ -9,11 +9,11 @@ import { currentUser, fail, guard, handleError, isAdmin, sb } from "../lib/auth.
  * POST { action: "ack", id } → marks an alert acknowledged.
  */
 
-export type OpsAlert = { id: string; kind: string; title: string; detail: string | null; created_at: string; acknowledged_at: string | null };
-export type CronRunRow = { id: string; name: string; started_at: string; finished_at: string | null; ok: boolean | null; note: string | null };
+type OpsAlert = { id: string; kind: string; title: string; detail: string | null; created_at: string; acknowledged_at: string | null };
+type CronRunRow = { id: string; name: string; started_at: string; finished_at: string | null; ok: boolean | null; note: string | null };
 
 /** Every cron Vercel schedules (vercel.json), so one that never ran still shows. */
-export const CRON_NAMES = ["treasury-report", "books-sync", "stable", "state-records", "investment-history"];
+const CRON_NAMES = ["treasury-report", "books-sync", "stable", "state-records", "investment-history"];
 
 /** The newest run of each cron, in CRON_NAMES order, then any other name seen. */
 export function latestRuns(rows: CronRunRow[]): Array<CronRunRow | { name: string; started_at: null; finished_at: null; ok: null; note: null; id: null }> {

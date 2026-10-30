@@ -9,7 +9,7 @@ import { rememberRecent, useEntities, usePaletteResults, type Command, type Page
  * words typed. The same results as ⌘K, in place instead of a dialog.
  */
 
-export type ShellContext = { pages: PageLink[] };
+type ShellContext = { pages: PageLink[] };
 
 type Txn = { transaction_id: string; date: string; amount: number | string; merchant_name: string | null; name: string | null; entity_name: string | null; book_category: string | null };
 

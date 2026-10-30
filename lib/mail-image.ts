@@ -11,7 +11,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 const secret = () => process.env.MAIL_IMAGE_SECRET || process.env.AUTH_SECRET || process.env.SUPABASE_SERVICE_KEY || "";
 
-export const IMAGE_PATH = "/api/mail-image";
+const IMAGE_PATH = "/api/mail-image";
 
 export function signImageUrl(url: string): string {
   return createHmac("sha256", secret()).update(url).digest("base64url").slice(0, 32);

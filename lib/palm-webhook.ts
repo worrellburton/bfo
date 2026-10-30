@@ -10,7 +10,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * every one of them still needs the secret.
  */
 
-export const TOLERANCE_SECONDS = 5 * 60;
+const TOLERANCE_SECONDS = 5 * 60;
 
 function parseHeader(header: string): { t: string; v1: string[] } | null {
   const parts = header.split(",").map((p) => {
@@ -65,7 +65,7 @@ export type PalmEvent = {
 /** One change to a state's record, from a business.registration.updated event. */
 export type PalmChange = { attribute?: string; action?: "added" | "updated" | "removed"; summary?: string; previous_value?: unknown; current_value?: unknown };
 
-export type PalmEventRow = {
+type PalmEventRow = {
   id: string;
   type: string;
   mode: "test" | "live";
@@ -82,7 +82,7 @@ export type PalmEventRow = {
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
 /** The kinds of mail that need a person: legal papers first, then state notices. */
-export function documentKind(o: Record<string, unknown>): string | null {
+function documentKind(o: Record<string, unknown>): string | null {
   const types = Array.isArray(o.types) ? (o.types as unknown[]).filter((t): t is string => typeof t === "string") : [];
   return types.find((t) => t === "service_of_process") ?? types[0] ?? str(o.type);
 }
@@ -117,7 +117,7 @@ export function toEventRow(e: PalmEvent): PalmEventRow {
 export type PalmFilingDue = { state: string; typeId: string; name: string; dueDate: string | null; frequency: string | null; status: "due" | "overdue"; mode: "test" | "live"; at: number };
 
 /** The key a due filing is kept under: one per state and kind of filing ("AZ_annual_report"). */
-export function filingKey(state: string, typeId: string): string {
+function filingKey(state: string, typeId: string): string {
   return `${state}_${typeId.replace(/[^\w-]+/g, "_").slice(0, 60) || "filing"}`;
 }
 
