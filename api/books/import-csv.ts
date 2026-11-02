@@ -45,17 +45,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const clean = input
     .map((r) => ({
       date: String(r.date ?? "").slice(0, 10),
-      description: String(r.description ?? "").trim().slice(0, 500),
+      description: String(r.description ?? "")
+        .trim()
+        .slice(0, 500),
       amount: Number(r.amount),
     }))
     .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && Number.isFinite(r.amount) && r.amount !== 0);
   if (!clean.length) return res.status(400).json({ error: "no_valid_rows" });
 
   try {
-    const prefRes = await db(
-      `plaid_account_prefs?account_id=eq.${encodeURIComponent(accountId)}&select=*&limit=1`
-    );
-    const pref = prefRes.ok ? ((await prefRes.json()) as any[])[0] ?? null : null;
+    const prefRes = await db(`plaid_account_prefs?account_id=eq.${encodeURIComponent(accountId)}&select=*&limit=1`);
+    const pref = prefRes.ok ? (((await prefRes.json()) as any[])[0] ?? null) : null;
 
     // Existing rows for this account across the CSV's date range — anything
     // already present (from Plaid or a prior import) is skipped rather than
@@ -63,9 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // empty list here would import the whole file on top of what's there.
     const dates = clean.map((r) => r.date).sort();
     const existing = await fetchAll<{ date: string; amount: number | string; name: string | null }>(
-      `book_transactions?account_id=eq.${encodeURIComponent(accountId)}` +
-        `&date=gte.${dates[0]}&date=lte.${dates[dates.length - 1]}` +
-        `&select=date,amount,name&order=transaction_id.asc`
+      `book_transactions?account_id=eq.${encodeURIComponent(accountId)}` + `&date=gte.${dates[0]}&date=lte.${dates[dates.length - 1]}` + `&select=date,amount,name&order=transaction_id.asc`,
     );
 
     // Same rule set the nightly sync applies, so imported rows pick up the
@@ -92,7 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // CSV: deposits positive → Books: outflows positive.
     const plan = planCsvImport(
       clean.map((r) => ({ ...r, amount: -r.amount })),
-      existing
+      existing,
     );
     const skipped = plan.skipped;
     const rows = plan.rows.map((r) => {
@@ -106,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const taught = ruleFor(r.description);
       const rule = classify(r.description, null, null, taught.category ?? null);
       return {
-          transaction_id: `csv_${id}`,
+        transaction_id: `csv_${id}`,
         account_id: accountId,
         item_id: "csv_import",
         date: r.date,
@@ -120,9 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         plaid_category: null,
         plaid_category_detailed: null,
         payment_channel: "csv",
-        txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? "normal") as
-          | "normal"
-          | "transfer",
+        txn_type: (rule.type === "intercompany" ? "transfer" : (rule.type ?? "normal")) as "normal" | "transfer",
         intercompany: rule.type === "intercompany",
         book_category: rule.category,
         // Uniform across every row (null when no rule) so the bulk upsert

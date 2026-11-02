@@ -11,39 +11,8 @@ import { SIGNED_LINK_MINUTES, StoredFileLink, storagePathOf, type StoredFileRef 
 import { PaperMailList, usePaperMail } from "../paper-mail";
 import type { DocRule } from "../entity-paperwork";
 import { useEntity } from "./context";
-import {
-  VERIFY_LABEL,
-  docKind,
-  filingTitle,
-  fmtDate,
-  fmtStamp,
-  normEntityName,
-  normValue,
-  timeAgo,
-  type AssetDoc,
-  type FileKind,
-  type VerifyField,
-} from "./model";
-import {
-  Button,
-  Disclosure,
-  Dot,
-  Empty,
-  ErrorLine,
-  Icon,
-  IconButton,
-  InfoText,
-  InfoToggle,
-  Input,
-  Row,
-  Rows,
-  Section,
-  TextButton,
-  toneText,
-  useTone,
-  type IconName,
-  type Tone,
-} from "./ui";
+import { VERIFY_LABEL, docKind, filingTitle, fmtDate, fmtStamp, normEntityName, normValue, timeAgo, type AssetDoc, type FileKind, type VerifyField } from "./model";
+import { Button, Disclosure, Dot, Empty, ErrorLine, Icon, IconButton, InfoText, InfoToggle, Input, Row, Rows, Section, TextButton, toneText, useTone, type IconName, type Tone } from "./ui";
 
 // Slot uploads take a PDF or a scan, up to 25 MB (checked in handleUploadFile).
 const ACCEPT = "application/pdf,image/png,image/jpeg";
@@ -143,19 +112,17 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const title = filingTitle(kind, asset);
   const pick = () => picker.current?.click();
   // Paperwork BFO can write itself, from the record.
-  const generate =
-    isPartner()
-      ? null
-      : kind === "w9"
+  const generate = isPartner()
+    ? null
+    : kind === "w9"
       ? { label: "Fill in", title: "Fill in the IRS's W-9 from the record", run: page.generateW9 }
       : kind === "operatingAgreement" && canDraftAgreement(asset)
         ? { label: "Draft", title: "Draft the operating agreement from the members, state and tax class on record", run: page.generateOperatingAgreement }
         : null;
 
-  const need: { tone: Tone; word: string; hint?: string } =
-    isPartner()
-      ? { tone: "muted", word: "Not on file" }
-      : rule?.level === "recommended"
+  const need: { tone: Tone; word: string; hint?: string } = isPartner()
+    ? { tone: "muted", word: "Not on file" }
+    : rule?.level === "recommended"
       ? { tone: "muted", word: "Optional" }
       : rule?.level === "expected"
         ? { tone: "warn", word: "Expected", hint: "Not a legal requirement, but banks, lenders and courts expect it" }
@@ -168,27 +135,27 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   };
   // A filled slot takes no drop, but still clears the highlight if it was filed mid-drag.
   const dropHandlers = {
-        ...(file || isPartner() ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
-        onDragLeave: (e: DragEvent<HTMLDivElement>) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-          page.setSlot(kind, { dragOver: false });
-        },
-        onDrop: (e: DragEvent<HTMLDivElement>) => {
-          e.preventDefault();
-          e.stopPropagation();
-          page.setSlot(kind, { dragOver: false });
-          if (file || slot.uploading) return;
-          const f = e.dataTransfer.files?.[0];
-          if (!f) return;
-          if (!ACCEPTED.includes(f.type)) {
-            page.setSlot(kind, { error: `Only ${TYPES_LABEL} files accepted.` });
-            return;
-          }
-          void page.handleUploadFile(kind, f);
-        },
-      };
+    ...(file || isPartner() ? {} : { onDragOver: dragOn, onDragEnter: dragOn }),
+    onDragLeave: (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+      page.setSlot(kind, { dragOver: false });
+    },
+    onDrop: (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      page.setSlot(kind, { dragOver: false });
+      if (file || slot.uploading) return;
+      const f = e.dataTransfer.files?.[0];
+      if (!f) return;
+      if (!ACCEPTED.includes(f.type)) {
+        page.setSlot(kind, { error: `Only ${TYPES_LABEL} files accepted.` });
+        return;
+      }
+      void page.handleUploadFile(kind, f);
+    },
+  };
 
   const value = file ? (
     <span className="flex min-w-0 items-center gap-2">
@@ -219,7 +186,14 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
     <div className={`-my-1 flex shrink-0 items-center ${slot.uploading ? "" : REVEAL}`}>
       <IconLink file={file} icon="external" label="View" ariaLabel={`View ${title}`} />
       {generate && (
-        <IconButton icon="sparkle" label={`${generate.label} again`} aria-label={`${generate.label} ${title} again`} title={`${generate.title} (the file on record stays in Documents)`} disabled={slot.uploading} onClick={() => void generate.run(true)} />
+        <IconButton
+          icon="sparkle"
+          label={`${generate.label} again`}
+          aria-label={`${generate.label} ${title} again`}
+          title={`${generate.title} (the file on record stays in Documents)`}
+          disabled={slot.uploading}
+          onClick={() => void generate.run(true)}
+        />
       )}
       <IconButton icon="refresh" label="Replace" aria-label={`Replace ${title}`} disabled={slot.uploading} onClick={pick} />
       <IconButton
@@ -256,7 +230,9 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
         )}
         {!file && generate && (
           <span className={`mt-1 block ${t.muted}`}>
-            {kind === "w9" ? "BFO can fill in the IRS's form from the record, ready to sign." : "BFO can draft it from the members, shares, state and tax class on record. Have counsel read it before signing."}
+            {kind === "w9"
+              ? "BFO can fill in the IRS's form from the record, ready to sign."
+              : "BFO can draft it from the members, shares, state and tax class on record. Have counsel read it before signing."}
           </span>
         )}
         {!file && !isPartner() && <span className={`mt-1 block ${t.muted}`}>Drop a file on this row or upload one. {TYPES_LABEL} · up to 25 MB.</span>}
@@ -356,14 +332,16 @@ function Library() {
         count={docs.length}
         info="Drop files anywhere on this card, or use Upload — multiple allowed. PDF, images, Office docs · up to 25 MB each."
         actions={
-          isPartner() ? undefined : <>
-            <TextButton onClick={() => page.setShowLinkForm((v) => !v)} aria-expanded={page.showLinkForm} className="mr-2">
-              {page.showLinkForm ? "Hide link" : "Add link"}
-            </TextButton>
-            <Button icon="upload" onClick={() => picker.current?.click()}>
-              Upload
-            </Button>
-          </>
+          isPartner() ? undefined : (
+            <>
+              <TextButton onClick={() => page.setShowLinkForm((v) => !v)} aria-expanded={page.showLinkForm} className="mr-2">
+                {page.showLinkForm ? "Hide link" : "Add link"}
+              </TextButton>
+              <Button icon="upload" onClick={() => picker.current?.click()}>
+                Upload
+              </Button>
+            </>
+          )
         }
       >
         <Rows>
@@ -459,9 +437,7 @@ function DocRow({ doc }: { doc: AssetDoc }) {
   const filedAs = view.docFiledAs.get(doc.id);
   const renaming = page.renamingDocId === doc.id;
   const copied = page.copiedDocId === doc.id;
-  const meta = [kind === "LINK" || kind === "FILE" ? null : kind, doc.storagePath ? page.formatBytes(doc.size) : "External link", fmtStamp(doc.createdAt)]
-    .filter(Boolean)
-    .join(" · ");
+  const meta = [kind === "LINK" || kind === "FILE" ? null : kind, doc.storagePath ? page.formatBytes(doc.size) : "External link", fmtStamp(doc.createdAt)].filter(Boolean).join(" · ");
 
   return (
     <div className="group flex items-center gap-3 px-5 py-3">
@@ -480,24 +456,26 @@ function DocRow({ doc }: { doc: AssetDoc }) {
           )}
         </p>
       </div>
-      {!isPartner() && <div className={`flex shrink-0 items-center ${renaming || copied ? "" : REVEAL}`}>
-        <IconButton
-          icon="sparkle"
-          label={renaming ? "Renaming…" : "Rename"}
-          title="Suggest a better name using Claude"
-          disabled={renaming}
-          className={renaming ? "motion-safe:animate-pulse" : ""}
-          onClick={() => void page.handleRenameDoc(doc)}
-        />
-        <IconButton
-          icon={copied ? "check" : "copy"}
-          label={copied ? "Copied" : storagePathOf(doc) ? `Copy ${SIGNED_LINK_MINUTES}-minute link` : "Copy URL"}
-          title={storagePathOf(doc) ? `Copies a private link to this file that stops working after ${SIGNED_LINK_MINUTES} minutes` : "Copies the link"}
-          className={copied ? (t.dark ? "text-emerald-400!" : "text-emerald-700!") : ""}
-          onClick={() => void page.handleCopyDocUrl(doc)}
-        />
-        <IconButton icon="trash" tone="danger" label="Delete" aria-label={`Delete ${doc.name}`} onClick={() => void page.handleDeleteDoc(doc.id)} />
-      </div>}
+      {!isPartner() && (
+        <div className={`flex shrink-0 items-center ${renaming || copied ? "" : REVEAL}`}>
+          <IconButton
+            icon="sparkle"
+            label={renaming ? "Renaming…" : "Rename"}
+            title="Suggest a better name using Claude"
+            disabled={renaming}
+            className={renaming ? "motion-safe:animate-pulse" : ""}
+            onClick={() => void page.handleRenameDoc(doc)}
+          />
+          <IconButton
+            icon={copied ? "check" : "copy"}
+            label={copied ? "Copied" : storagePathOf(doc) ? `Copy ${SIGNED_LINK_MINUTES}-minute link` : "Copy URL"}
+            title={storagePathOf(doc) ? `Copies a private link to this file that stops working after ${SIGNED_LINK_MINUTES} minutes` : "Copies the link"}
+            className={copied ? (t.dark ? "text-emerald-400!" : "text-emerald-700!") : ""}
+            onClick={() => void page.handleCopyDocUrl(doc)}
+          />
+          <IconButton icon="trash" tone="danger" label="Delete" aria-label={`Delete ${doc.name}`} onClick={() => void page.handleDeleteDoc(doc.id)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -519,24 +497,18 @@ function DocumentCheck() {
   });
   const actionable = findings.filter((f) => !f.resolved && (f.status === "mismatch" || f.status === "missing_on_record") && f.found);
   const matched = findings.filter((f) => f.status === "match" || f.resolved);
-  const changedSince = v?.recordAtCheck
-    ? (Object.keys(v.recordAtCheck) as VerifyField[]).some((k) => normValue(v.recordAtCheck![k]) !== normValue(current[k]))
-    : false;
+  const changedSince = v?.recordAtCheck ? (Object.keys(v.recordAtCheck) as VerifyField[]).some((k) => normValue(v.recordAtCheck![k]) !== normValue(current[k])) : false;
 
   const recordedOwner = asset.ownerId ? (page.assetNames[asset.ownerId] ?? null) : null;
   const docOwners = v?.owners ?? [];
   const soleOwner = docOwners.length === 1 ? docOwners[0] : null;
-  const soleOwnerId = soleOwner
-    ? Object.entries(page.assetNames).find(([aid, n]) => aid !== page.id && normEntityName(n) === normEntityName(soleOwner.name))?.[0]
-    : undefined;
+  const soleOwnerId = soleOwner ? Object.entries(page.assetNames).find(([aid, n]) => aid !== page.id && normEntityName(n) === normEntityName(soleOwner.name))?.[0] : undefined;
   const ownerOk = !!recordedOwner && docOwners.some((o) => normEntityName(o.name) === normEntityName(recordedOwner));
   const ownerMismatch = docOwners.length > 0 && !ownerOk;
   const issues = v?.issues ?? [];
   const toReview = actionable.length + (ownerMismatch ? 1 : 0) + issues.filter((i) => i.severity !== "low").length;
 
-  const detail = verifying
-    ? "Claude is reading the filings and comparing them with this record — ownership, EIN, dates, addresses. This can take a minute."
-    : v?.summary || null;
+  const detail = verifying ? "Claude is reading the filings and comparing them with this record — ownership, EIN, dates, addresses. This can take a minute." : v?.summary || null;
   const read = v?.documentsRead?.length ?? 0;
 
   return (
@@ -586,11 +558,7 @@ function DocumentCheck() {
             actions={
               ownerMismatch && soleOwnerId ? (
                 <div className="pt-2">
-                  <Button
-                    title={`Set owner to ${page.assetNames[soleOwnerId]}`}
-                    aria-label={`Set owner to ${page.assetNames[soleOwnerId]}`}
-                    onClick={() => void page.applyOwner(soleOwnerId)}
-                  >
+                  <Button title={`Set owner to ${page.assetNames[soleOwnerId]}`} aria-label={`Set owner to ${page.assetNames[soleOwnerId]}`} onClick={() => void page.applyOwner(soleOwnerId)}>
                     Set owner
                   </Button>
                 </div>
@@ -598,10 +566,7 @@ function DocumentCheck() {
             }
           >
             {docOwners.length > 0 ? (
-              <Compare
-                record={recordedOwner ?? "No owner set"}
-                doc={docOwners.map((o) => `${o.name}${o.percent != null ? ` (${o.percent}%)` : ""}`).join(", ")}
-              />
+              <Compare record={recordedOwner ?? "No owner set"} doc={docOwners.map((o) => `${o.name}${o.percent != null ? ` (${o.percent}%)` : ""}`).join(", ")} />
             ) : (
               <span className="break-words">{recordedOwner ?? "No owner set"}</span>
             )}
@@ -743,7 +708,11 @@ function Line({ tone, detail, children }: { tone: Tone; detail?: ReactNode; chil
           )}
         </span>
       </div>
-      {detail && <InfoText open={open} className="pl-3.5">{detail}</InfoText>}
+      {detail && (
+        <InfoText open={open} className="pl-3.5">
+          {detail}
+        </InfoText>
+      )}
     </div>
   );
 }

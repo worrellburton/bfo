@@ -53,9 +53,7 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
         const last = head.messages[head.messages.length - 1];
         const threads = new Set([...head.messages, ...fresh.pinned].map((m) => m.threadKey).filter(Boolean));
         const older = prev.messages.filter((m) =>
-          which === "active" && !term
-            ? !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)) && threadSortsAfter(m, last)
-            : !ids.has(m.id) && sortsAfter(m, last)
+          which === "active" && !term ? !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)) && threadSortsAfter(m, last) : !ids.has(m.id) && sortsAfter(m, last),
         );
         return { ...fresh, messages: [...head.messages, ...older], hasMore: older.length ? prev.hasMore : head.hasMore };
       });
@@ -84,15 +82,18 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
     try {
       const last = cur.messages[cur.messages.length - 1];
       // Active pages by conversation; everything else by message.
-      const after =
-        cur.folder === "active" && !cur.q && last.threadAt && last.threadKey
-          ? { before: last.threadAt, beforeKey: last.threadKey }
-          : { before: last.occurredAt, beforeId: last.id };
+      const after = cur.folder === "active" && !cur.q && last.threadAt && last.threadKey ? { before: last.threadAt, beforeKey: last.threadKey } : { before: last.occurredAt, beforeId: last.id };
       const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, to: cur.to || undefined, ...after });
       setList((prev) => {
         if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q || prev.to !== cur.to) return prev;
         const ids = new Set(listRows(prev).map((m) => m.id));
-        const threads = new Set(prev.folder === "active" && !prev.q ? listRows(prev).map((m) => m.threadKey).filter(Boolean) : []);
+        const threads = new Set(
+          prev.folder === "active" && !prev.q
+            ? listRows(prev)
+                .map((m) => m.threadKey)
+                .filter(Boolean)
+            : [],
+        );
         const added = next.messages.filter((m) => !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)));
         return { ...prev, messages: [...prev.messages, ...added], hasMore: next.hasMore };
       });
@@ -114,8 +115,7 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
   }
 
   /** Change one row in the list (if it's there). */
-  const patchRow = (id: string, patch: Partial<MailSummary>) =>
-    setList((prev) => prev && eachRow(prev, (rows) => rows.map((m) => (m.id === id ? { ...m, ...patch } : m))));
+  const patchRow = (id: string, patch: Partial<MailSummary>) => setList((prev) => prev && eachRow(prev, (rows) => rows.map((m) => (m.id === id ? { ...m, ...patch } : m))));
 
   return { list, setList, listError, setListError, loadingMore, listRef, loaderLeaving, rowsFresh, loadList, loadMore, refreshActive, patchRow };
 }

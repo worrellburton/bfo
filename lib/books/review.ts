@@ -14,10 +14,7 @@ import { ok, type BookTxn, type Reply } from "./types.js";
 
 export async function reviewReport(): Promise<Reply> {
   const prefs = await getPrefs();
-  const rows = withLiveEntity(
-    await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=transaction_id.asc`),
-    prefs
-  );
+  const rows = withLiveEntity(await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=transaction_id.asc`), prefs);
   const slim = (t: BookTxn) => ({
     transaction_id: t.transaction_id,
     date: t.date,
@@ -77,12 +74,7 @@ export async function reviewReport(): Promise<Reply> {
 
 export async function recurringReport(): Promise<Reply> {
   const prefs = await getPrefs();
-  const rows = withLiveEntity(
-    await fetchAll<BookTxn>(
-      `book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=date.asc,transaction_id.asc`
-    ),
-    prefs
-  );
+  const rows = withLiveEntity(await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false${scopeFilter(prefs, null)}&order=date.asc,transaction_id.asc`), prefs);
   // Group by vendor identity (only real P&L / spend rows).
   const byVendor = new Map<string, BookTxn[]>();
   for (const t of rows) {

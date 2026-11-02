@@ -147,7 +147,11 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
   // belonged to looking overdue. So names are compared case- and
   // punctuation-blind, and a name that is a truncation of a longer one
   // (≥ 8 characters) joins it.
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
   const labelled: Array<{ t: InflowRow; label: string; key: string }> = [];
   for (const t of income) {
     const label = (t.merchant_name || t.name || "").trim();
@@ -159,7 +163,7 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
   const canonical = new Map<string, string>();
   for (const k of keys) {
     const longer = keys.find((o) => o.length > k.length && k.length >= 8 && o.startsWith(k));
-    canonical.set(k, longer ? canonical.get(longer) ?? longer : k);
+    canonical.set(k, longer ? (canonical.get(longer) ?? longer) : k);
   }
   const groups = new Map<string, { rows: InflowRow[]; labels: Map<string, number> }>();
   for (const { t, label, key } of labelled) {
@@ -171,10 +175,11 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
   // Display the most common spelling, preferring mixed case over SHOUTING.
   const bySource = new Map<string, InflowRow[]>();
   for (const g of groups.values()) {
-    const name = [...g.labels.entries()].sort(
-      (a, b) => Number(a[0] === a[0].toUpperCase()) - Number(b[0] === b[0].toUpperCase()) || b[1] - a[1] || b[0].length - a[0].length
-    )[0][0];
-    bySource.set(name, g.rows.sort((a, b) => a.date.localeCompare(b.date)));
+    const name = [...g.labels.entries()].sort((a, b) => Number(a[0] === a[0].toUpperCase()) - Number(b[0] === b[0].toUpperCase()) || b[1] - a[1] || b[0].length - a[0].length)[0][0];
+    bySource.set(
+      name,
+      g.rows.sort((a, b) => a.date.localeCompare(b.date)),
+    );
   }
 
   const streams: InflowStream[] = [];
@@ -228,12 +233,7 @@ export function anticipateInflows(rows: InflowRow[], today = new Date(), opts: I
     const staleAfter = CADENCE_DAYS[cadence] * 1.6 + 5;
     if ((todayMs - Date.parse(lastDate)) / DAY > staleAfter) continue;
 
-    const monthly =
-      cadence === "weekly" ? typical * (52 / 12)
-      : cadence === "biweekly" ? typical * (26 / 12)
-      : cadence === "monthly" ? typical
-      : cadence === "quarterly" ? typical / 3
-      : typical / 12;
+    const monthly = cadence === "weekly" ? typical * (52 / 12) : cadence === "biweekly" ? typical * (26 / 12) : cadence === "monthly" ? typical : cadence === "quarterly" ? typical / 3 : typical / 12;
 
     // Next expected: monthly streams keep their day of month; others step
     // forward one cadence from the last payment. A date that has slipped
@@ -341,8 +341,7 @@ const CADENCE_LABEL: Record<Cadence, string> = {
   yearly: "Yearly",
 };
 
-const shortDay = (iso: string | null) =>
-  iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
+const shortDay = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null);
 
 /** The email card. `money` is the report's own formatter so styles match. */
 export function renderInflowsCard(a: Anticipated, money: (n: number) => string, appUrl: string): string {
@@ -352,13 +351,8 @@ export function renderInflowsCard(a: Anticipated, money: (n: number) => string, 
   const hiddenCount = a.streams.length - shown.length;
   const rows = shown
     .map((s, i) => {
-      const when = !s.nextExpected
-        ? null
-        : s.overdue
-          ? `<span style="color:#fbbf24;">expected ${shortDay(s.nextExpected)} · overdue</span>`
-          : `next ${shortDay(s.nextExpected)}`;
-      const label =
-        s.basis === "planned" ? "Planned monthly" : s.basis === "estimated" ? "Estimated monthly" : CADENCE_LABEL[s.cadence];
+      const when = !s.nextExpected ? null : s.overdue ? `<span style="color:#fbbf24;">expected ${shortDay(s.nextExpected)} · overdue</span>` : `next ${shortDay(s.nextExpected)}`;
+      const label = s.basis === "planned" ? "Planned monthly" : s.basis === "estimated" ? "Estimated monthly" : CADENCE_LABEL[s.cadence];
       const meta = [label, s.basis === "planned" && !s.nextExpected ? null : when, s.note].filter(Boolean).join(" · ");
       const equiv = s.cadence === "monthly" ? "" : `<div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:1px;">${money(s.typical)} ${CADENCE_LABEL[s.cadence].toLowerCase()}</div>`;
       const entity = s.entity ? `<span style="margin-left:7px;font-size:10px;color:rgba(255,255,255,0.4);">${s.entity.replace(/\s*\(100%\)\s*$/, "")}</span>` : "";
@@ -380,10 +374,12 @@ export function renderInflowsCard(a: Anticipated, money: (n: number) => string, 
          .map(
            (o) => `<tr>
              <td style="padding:6px 0 0;font-size:13px;color:rgba(255,255,255,0.85);">${o.name}${o.entity ? `<span style="margin-left:7px;font-size:10px;color:rgba(255,255,255,0.4);">${o.entity}</span>` : ""}${
-               o.expectedDate || o.note ? `<div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.4);">${[o.expectedDate ? `expected ${shortDay(o.expectedDate)}` : null, o.note].filter(Boolean).join(" · ")}</div>` : ""
+               o.expectedDate || o.note
+                 ? `<div style="margin-top:2px;font-size:11px;color:rgba(255,255,255,0.4);">${[o.expectedDate ? `expected ${shortDay(o.expectedDate)}` : null, o.note].filter(Boolean).join(" · ")}</div>`
+                 : ""
              }</td>
              <td align="right" valign="top" style="padding:6px 0 0;font-size:13px;font-weight:600;color:#34d399;white-space:nowrap;">+${money(o.amount)}</td>
-           </tr>`
+           </tr>`,
          )
          .join("")}</table>`
     : "";

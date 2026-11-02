@@ -343,11 +343,5 @@ export function HomeBackground({ isDark }: { isDark: boolean }) {
     };
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      className="pointer-events-none fixed inset-0 -z-10 h-full w-full motion-safe:animate-[bfo-fade_1.2s_ease-out_both]"
-    />
-  );
+  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 h-full w-full motion-safe:animate-[bfo-fade_1.2s_ease-out_both]" />;
 }

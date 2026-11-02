@@ -9,7 +9,22 @@ import { dollars, PALM_PRICES, priceSuffix, stateRecordCents } from "../../lib/p
 import { getUser, isAdmin } from "../auth";
 import { formingNow } from "../entity-addresses";
 import { BOI_NOTE, stateCode, stateName, type Obligation, type PaperworkIssue } from "../entity-paperwork";
-import { activeConfirmation, DOC_LABEL, docKindOf, effectiveRecord, formatAddress, fromBundle, openPalmDocument, palmCall, RA_STATUS, recordLapsed, stateFindings, type Finding, type PalmDocument, type RegistryRecord } from "../palm";
+import {
+  activeConfirmation,
+  DOC_LABEL,
+  docKindOf,
+  effectiveRecord,
+  formatAddress,
+  fromBundle,
+  openPalmDocument,
+  palmCall,
+  RA_STATUS,
+  recordLapsed,
+  stateFindings,
+  type Finding,
+  type PalmDocument,
+  type RegistryRecord,
+} from "../palm";
 import { PalmQuestions } from "./palm-questions";
 import { useEntity, usePalmSeed } from "./context";
 import { fmtDate, fmtStamp } from "./model";
@@ -138,14 +153,14 @@ function RegisteredAgent() {
   // Until Palm answers, go by what was last seen, and don't offer the move.
   const known = svc !== undefined;
   const cached = mode ? asset.palm?.[mode]?.ra : undefined;
-  const raStatus = known ? svc?.status ?? null : cached?.status ?? null;
+  const raStatus = known ? (svc?.status ?? null) : (cached?.status ?? null);
   const palmIsAgent = raStatus === "active";
   const inFlight = raStatus === "pending" || raStatus === "termination_requested";
   // Formed through Palm with its agent service: Palm is appointed with the formation itself.
   const forming = formingNow(asset);
   const canMove = known && isAdmin() && !palmIsAgent && !inFlight && !forming;
   const st = raStatus ? RA_STATUS[raStatus] : null;
-  const agentShown = palmIsAgent ? svc?.name ?? cached?.name ?? asset.registeredAgent : asset.registeredAgent;
+  const agentShown = palmIsAgent ? (svc?.name ?? cached?.name ?? asset.registeredAgent) : asset.registeredAgent;
   const agentAddress = palmIsAgent ? formatAddress(svc?.address) : null;
   const configured = !!status?.configured;
   const busy = !!page.palmBusy;
@@ -205,8 +220,8 @@ function RegisteredAgent() {
     );
   else {
     // Until Palm answers, the service as last saved (provider, dates, why a change was refused).
-    const reason = raStatus === "failed" ? (known ? svc?.rejection_reason : cached?.rejectionReason) ?? page.palmInbox.find((e) => e.rejection_reason)?.rejection_reason : null;
-    const startedAt = known ? svc?.started_at ?? null : cached?.startedAt ?? null;
+    const reason = raStatus === "failed" ? ((known ? svc?.rejection_reason : cached?.rejectionReason) ?? page.palmInbox.find((e) => e.rejection_reason)?.rejection_reason) : null;
+    const startedAt = known ? (svc?.started_at ?? null) : (cached?.startedAt ?? null);
     const statusInfo =
       svc?.status === "pending"
         ? "Palm is filing the change with the state. It can take a few business days; this updates when the state accepts it."
@@ -248,9 +263,7 @@ function RegisteredAgent() {
                     {raStatus === "active" && startedAt ? ` · since ${fmtDate(startedAt.slice(0, 10))}` : ""}
                   </Dot>
                   {raStatus === "failed" && (
-                    <span className={`text-[12px] leading-snug ${toneText("bad", t.dark)}`}>
-                      {reason ? `The state didn't accept it: ${reason}.` : "Palm couldn't complete the change."}
-                    </span>
+                    <span className={`text-[12px] leading-snug ${toneText("bad", t.dark)}`}>{reason ? `The state didn't accept it: ${reason}.` : "Palm couldn't complete the change."}</span>
                   )}
                 </span>
               ) : (
@@ -318,7 +331,8 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
   const standing = rec?.standing ? (["registration", "tax", "agent"] as const).filter((k) => rec.standing?.[k]) : [];
   // Everyone the state lists (records read before titles and addresses were kept have names only).
   const people = rec?.people?.length ? rec.people : (rec?.managers ?? []).map((name) => ({ role: "", name, title: null, address: null }));
-  const hasRows = !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.address || people.length > 0 || !!rec.formationDate || !!rec.entityType || findings.length > 0);
+  const hasRows =
+    !!rec && (!!rec.status || standing.length > 0 || !!rec.registrationNumber || !!rec.agent || !!rec.address || people.length > 0 || !!rec.formationDate || !!rec.entityType || findings.length > 0);
 
   return (
     <div className={`border-t ${t.line}`}>
@@ -327,8 +341,7 @@ function StateRecord({ palmIsAgent, startedAt }: { palmIsAgent: boolean; started
         info={
           rec ? (
             <>
-              Read from the state through Palm, {fmtStamp(rec.checkedAt)}.
-              {stale ? " That was before Palm became the agent — re-check to see the change on the state's side." : ""}
+              Read from the state through Palm, {fmtStamp(rec.checkedAt)}.{stale ? " That was before Palm became the agent — re-check to see the change on the state's side." : ""}
             </>
           ) : undefined
         }
@@ -607,14 +620,22 @@ function Monitoring() {
       info={`Palm watches the state's record for a registration and says when it changes (status, standing, agent, people) and when a filing comes due or goes overdue; those show under Deadlines and in Activity, and live changes email the owners. ${live ? `${dollars(monthly)} a month per registration while on.` : "Free in test mode."}`}
     >
       {regs === null ? (
-        error ? null : <Empty>Checking…</Empty>
+        error ? null : (
+          <Empty>Checking…</Empty>
+        )
       ) : !regs?.length ? (
         <Empty>No state registrations to watch.</Empty>
       ) : (
         <Rows>
           {regs.map((r) => {
             const change = asset.palmMonitor?.[r.state]?.lastChange;
-            const lines = change && change.mode === mode ? change.changes.map((c) => c.summary || c.attribute).filter(Boolean).slice(0, 3) : [];
+            const lines =
+              change && change.mode === mode
+                ? change.changes
+                    .map((c) => c.summary || c.attribute)
+                    .filter(Boolean)
+                    .slice(0, 3)
+                : [];
             return (
               <MonitorLine
                 key={r.state}
@@ -704,10 +725,7 @@ function Deadlines() {
   const { view } = useEntity();
   if (!view.deadlines.length) return null;
   return (
-    <Section
-      title="Deadlines"
-      info={`${view.isTrust ? "Beneficial-ownership (BOI) reporting doesn't apply to trusts." : BOI_NOTE} Dates assume a calendar tax year.`}
-    >
+    <Section title="Deadlines" info={`${view.isTrust ? "Beneficial-ownership (BOI) reporting doesn't apply to trusts." : BOI_NOTE} Dates assume a calendar tax year.`}>
       <Rows>
         {view.deadlines.map((d) => (
           <DeadlineRow key={d.key} d={d} />
@@ -778,7 +796,7 @@ function Checks() {
             {docOwners.map((m, i) => (
               <div key={i} className="flex items-baseline justify-between gap-3 px-5 py-2.5 text-[13px]">
                 <span className={`min-w-0 truncate ${t.text}`}>{m.name}</span>
-                <span className={`shrink-0 tabular-nums ${t.muted}`}>{m.percent != null ? `${m.percent}%` : m.role ?? ""}</span>
+                <span className={`shrink-0 tabular-nums ${t.muted}`}>{m.percent != null ? `${m.percent}%` : (m.role ?? "")}</span>
               </div>
             ))}
           </Rows>

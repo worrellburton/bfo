@@ -130,12 +130,12 @@ export function closingSteps(a: Input): ClosingStep[] {
     how: disregarded
       ? "A disregarded entity files no return of its own: its income through the day it closes goes on its owner's return."
       : tax === "Partnership"
-        ? "File a final Form 1065 with \"Final return\" checked, and final K-1s to each partner, for the year it closes. If it had employees, final payroll returns (941, 940) and W-2s too."
+        ? 'File a final Form 1065 with "Final return" checked, and final K-1s to each partner, for the year it closes. If it had employees, final payroll returns (941, 940) and W-2s too.'
         : tax === "S Corporation"
-          ? "File a final Form 1120-S with \"Final return\" checked and final K-1s. File Form 966 within 30 days of the vote to dissolve. If it had employees, final payroll returns and W-2s too."
+          ? 'File a final Form 1120-S with "Final return" checked and final K-1s. File Form 966 within 30 days of the vote to dissolve. If it had employees, final payroll returns and W-2s too.'
           : corp
-            ? "File a final Form 1120 with \"Final return\" checked. File Form 966 within 30 days of the vote to dissolve. If it had employees, final payroll returns and W-2s too."
-            : "File its final federal return with \"Final return\" checked, and any final state return and payroll returns.",
+            ? 'File a final Form 1120 with "Final return" checked. File Form 966 within 30 days of the vote to dissolve. If it had employees, final payroll returns and W-2s too.'
+            : 'File its final federal return with "Final return" checked, and any final state return and payroll returns.',
     link: { label: "IRS: Closing a business", url: "https://www.irs.gov/businesses/small-businesses-self-employed/closing-a-business" },
     optional: disregarded,
   });

@@ -182,7 +182,13 @@ describe("/api/palm", () => {
       fetchMock.mockImplementation(async (url: string) => {
         if (url.endsWith("/registered-agent")) return reply(200, { object: "registered_agent", status: "active", provider: "palm" });
         if (url.includes("/document?")) return reply(500, { title: "Server Error" });
-        if (url.includes("/v1/case?")) return reply(200, { data: [{ id: "c1", status: "needs_response", opened_at: "2025-01-02" }, { id: "c2", status: "resolved", opened_at: "2025-01-03" }] });
+        if (url.includes("/v1/case?"))
+          return reply(200, {
+            data: [
+              { id: "c1", status: "needs_response", opened_at: "2025-01-02" },
+              { id: "c2", status: "resolved", opened_at: "2025-01-03" },
+            ],
+          });
         throw new Error(`unexpected ${url}`);
       });
       const r = await call({ action: "entity-bundle", assetId: ASSET, parts: ["ra", "documents", "cases", "inboxUnread"] });
@@ -231,9 +237,7 @@ describe("/api/palm", () => {
     expect((await call({ action: "ra-change", mode: "live", businessId: BID, assetId: "a1" })).json.error).toBe("mode_changed");
     expect((await call({ action: "ra-change", businessId: BID, assetId: "a1" })).status).toBe(409);
     expect(fetchMock).not.toHaveBeenCalled();
-    fetchMock
-      .mockResolvedValueOnce(reply(200, { id: BID, metadata: { bfo_asset_id: "a1" } }))
-      .mockResolvedValueOnce(reply(200, { object: "registered_agent", status: "pending", provider: "palm" }));
+    fetchMock.mockResolvedValueOnce(reply(200, { id: BID, metadata: { bfo_asset_id: "a1" } })).mockResolvedValueOnce(reply(200, { object: "registered_agent", status: "pending", provider: "palm" }));
     const r = await call({ action: "ra-change", mode: "test", businessId: BID, assetId: "a1" });
     expect(r.json.service.status).toBe("pending");
     const [url, init] = fetchMock.mock.calls[1];
@@ -281,9 +285,7 @@ describe("/api/palm", () => {
   });
 
   it("refuses an EIN already linked to another entity", async () => {
-    fetchMock
-      .mockResolvedValueOnce(reply(200, { data: [] }))
-      .mockResolvedValueOnce(reply(200, { data: [{ id: "x", metadata: { bfo_asset_id: "other" } }] }));
+    fetchMock.mockResolvedValueOnce(reply(200, { data: [] })).mockResolvedValueOnce(reply(200, { data: [{ id: "x", metadata: { bfo_asset_id: "other" } }] }));
     const r = await call({ action: "link", mode: "test", assetId: "a1", entity: { name: "Acme, LLC", ein: "12-3456789", jurisdiction: "US-NV" } });
     expect(r.status).toBe(409);
     expect(r.json.error).toBe("claimed");
@@ -299,7 +301,15 @@ describe("/api/palm", () => {
       action: "link",
       mode: "test",
       assetId: "a1",
-      entity: { name: "Ledger Louise, LLC", ein: "933776895", type: "LLC", jurisdiction: "US-NV", formationDate: "2023-08-11", fileNumber: "E34087392023-1", address: "11201 N Tatum Blvd Ste 300, Phoenix, AZ 85028" },
+      entity: {
+        name: "Ledger Louise, LLC",
+        ein: "933776895",
+        type: "LLC",
+        jurisdiction: "US-NV",
+        formationDate: "2023-08-11",
+        fileNumber: "E34087392023-1",
+        address: "11201 N Tatum Blvd Ste 300, Phoenix, AZ 85028",
+      },
     });
     expect(r.json).toMatchObject({ businessId: BID, created: true });
     const sent = JSON.parse(fetchMock.mock.calls[3][1].body);

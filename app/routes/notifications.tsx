@@ -156,8 +156,8 @@ export default function Notifications() {
       set(
         prefs,
         "treasuryReport.recipients",
-        recipients.filter((r) => r !== email)
-      )
+        recipients.filter((r) => r !== email),
+      ),
     );
   }
 
@@ -207,7 +207,13 @@ export default function Notifications() {
     try {
       const r = await authFetch("/api/push", { method: "POST", body: JSON.stringify({ action: "test" }) }).then((x) => x.json());
       setPushNote(
-        r.error === "not_configured" ? "Not set up on the server yet." : r.sent ? "Sent. Check your lock screen." : r.devices ? `Apple refused it (${r.error ?? "unknown"}).` : "No phone is set up yet. Turn notifications on in the BFO app."
+        r.error === "not_configured"
+          ? "Not set up on the server yet."
+          : r.sent
+            ? "Sent. Check your lock screen."
+            : r.devices
+              ? `Apple refused it (${r.error ?? "unknown"}).`
+              : "No phone is set up yet. Turn notifications on in the BFO app.",
       );
     } catch {
       setPushNote("Couldn't reach BFO.");
@@ -250,9 +256,7 @@ export default function Notifications() {
   const card = isDark ? "glass-card" : "glass-card";
   const divider = isDark ? "border-white/5" : "border-gray-100";
   const field = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border cursor-pointer focus:outline-none ${
-    isDark
-      ? "bg-white/[0.04] border-white/10 text-white"
-      : "bg-white border-gray-200 text-gray-900"
+    isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
   }`;
 
   return (
@@ -265,11 +269,7 @@ export default function Notifications() {
         {status && <span className={`text-xs mt-2 ${subtle}`}>{status}</span>}
       </div>
 
-      {error && (
-        <div className={`mb-6 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-6 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {loading ? (
         <p className={`text-sm ${subtle}`}>Loading…</p>
@@ -315,32 +315,45 @@ export default function Notifications() {
               {pushNote && <span className={isDark ? "text-gray-300" : "text-gray-700"}>{pushNote}</span>}
             </p>
             <div className="mt-4">
-              <Switch isDark={isDark} on={pushPrefs.mail} onToggle={() => void save(set(prefs, "push.mail", !pushPrefs.mail))} label="New email" hint="Mail to your BFO address, with the sender and subject." />
-              {admin && <Switch isDark={isDark} on={pushPrefs.texts} onToggle={() => void save(set(prefs, "push.texts", !pushPrefs.texts))} label="Texts to the office" hint="Texts to BFO's number, including verification codes." />}
-              <Switch isDark={isDark} on={pushPrefs.paper} onToggle={() => void save(set(prefs, "push.paper", !pushPrefs.paper))} label="Physical mail" hint="Paper mail arriving at the office's address." />
+              <Switch
+                isDark={isDark}
+                on={pushPrefs.mail}
+                onToggle={() => void save(set(prefs, "push.mail", !pushPrefs.mail))}
+                label="New email"
+                hint="Mail to your BFO address, with the sender and subject."
+              />
+              {admin && (
+                <Switch
+                  isDark={isDark}
+                  on={pushPrefs.texts}
+                  onToggle={() => void save(set(prefs, "push.texts", !pushPrefs.texts))}
+                  label="Texts to the office"
+                  hint="Texts to BFO's number, including verification codes."
+                />
+              )}
+              <Switch
+                isDark={isDark}
+                on={pushPrefs.paper}
+                onToggle={() => void save(set(prefs, "push.paper", !pushPrefs.paper))}
+                label="Physical mail"
+                hint="Paper mail arriving at the office's address."
+              />
             </div>
           </section>
 
           {/* Scheduled Treasury report */}
           <section className={`rounded-xl border p-6 mb-6 ${card}`}>
-            <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>
-              Treasury report
-            </h2>
-            <p className={`text-sm mt-1 ${subtle}`}>
-              A snapshot of every connected account — balances, movement since the last report, and
-              anything that needs reconnecting.
-            </p>
+            <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>Treasury report</h2>
+            <p className={`text-sm mt-1 ${subtle}`}>A snapshot of every connected account — balances, movement since the last report, and anything that needs reconnecting.</p>
 
             <div className="flex flex-wrap items-end gap-3 mt-5">
               <label className="flex flex-col gap-1.5">
                 <span className={`text-xs font-medium uppercase tracking-wider ${subtle}`}>Send</span>
-                <select
-                  className={field}
-                  value={frequency}
-                  onChange={(e) => void save(set(prefs, "treasuryReport.frequency", e.target.value))}
-                >
+                <select className={field} value={frequency} onChange={(e) => void save(set(prefs, "treasuryReport.frequency", e.target.value))}>
                   {FREQUENCIES.map((f) => (
-                    <option key={f.value} value={f.value}>{f.label}</option>
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -348,15 +361,11 @@ export default function Notifications() {
               {frequency === "weekly" && (
                 <label className="flex flex-col gap-1.5">
                   <span className={`text-xs font-medium uppercase tracking-wider ${subtle}`}>On</span>
-                  <select
-                    className={field}
-                    value={String(report.dayOfWeek ?? 1)}
-                    onChange={(e) =>
-                      void save(set(prefs, "treasuryReport.dayOfWeek", Number(e.target.value)))
-                    }
-                  >
+                  <select className={field} value={String(report.dayOfWeek ?? 1)} onChange={(e) => void save(set(prefs, "treasuryReport.dayOfWeek", Number(e.target.value)))}>
                     {DAYS.map((d, i) => (
-                      <option key={d} value={i}>{d}</option>
+                      <option key={d} value={i}>
+                        {d}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -365,27 +374,20 @@ export default function Notifications() {
               {frequency === "monthly" && (
                 <label className="flex flex-col gap-1.5">
                   <span className={`text-xs font-medium uppercase tracking-wider ${subtle}`}>On the</span>
-                  <select
-                    className={field}
-                    value={String(report.dayOfMonth ?? 1)}
-                    onChange={(e) =>
-                      void save(set(prefs, "treasuryReport.dayOfMonth", Number(e.target.value)))
-                    }
-                  >
+                  <select className={field} value={String(report.dayOfMonth ?? 1)} onChange={(e) => void save(set(prefs, "treasuryReport.dayOfMonth", Number(e.target.value)))}>
                     {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
                     ))}
                   </select>
                 </label>
               )}
-
             </div>
 
             {frequency !== "off" && (
               <div className="mt-5">
-                <span className={`text-xs font-medium uppercase tracking-wider block mb-2 ${subtle}`}>
-                  Send to
-                </span>
+                <span className={`text-xs font-medium uppercase tracking-wider block mb-2 ${subtle}`}>Send to</span>
                 <div className="flex flex-wrap items-center gap-2">
                   {/* You always get your own report */}
                   <span className={`px-3 py-1.5 rounded-full text-xs break-all ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"}`}>
@@ -463,9 +465,7 @@ export default function Notifications() {
                   </form>
                 </div>
 
-                <p className={`text-xs mt-3 ${subtle}`}>
-                  Reports go out each morning around 8am Eastern to everyone above.
-                </p>
+                <p className={`text-xs mt-3 ${subtle}`}>Reports go out each morning around 8am Eastern to everyone above.</p>
               </div>
             )}
 
@@ -474,9 +474,7 @@ export default function Notifications() {
                 onClick={() => void sendSample()}
                 disabled={sampleState === "sending"}
                 className={`px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-                  isDark
-                    ? "border border-white/15 text-gray-200 hover:bg-white/10"
-                    : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  isDark ? "border border-white/15 text-gray-200 hover:bg-white/10" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
                 }`}
               >
                 {sampleState === "sending" ? "Sending…" : "Send me a sample"}
@@ -488,11 +486,7 @@ export default function Notifications() {
                   isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
                 }`}
               >
-                {broadcastState === "sending"
-                  ? "Sending…"
-                  : broadcastState === "sent"
-                    ? "Sent to everyone"
-                    : `Send now${recipients.length ? ` (${recipients.length + 1})` : ""}`}
+                {broadcastState === "sending" ? "Sending…" : broadcastState === "sent" ? "Sent to everyone" : `Send now${recipients.length ? ` (${recipients.length + 1})` : ""}`}
               </button>
               {sampleState === "sent" && (
                 <span role="status" className={`text-xs ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
@@ -577,7 +571,6 @@ export default function Notifications() {
               )}
             </section>
           )}
-
         </>
       )}
     </div>

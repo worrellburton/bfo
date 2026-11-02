@@ -39,8 +39,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (url: string | URL | Request, init: RequestInit = {}) => {
     const u = decodeURIComponent(String(url)).replace("https://db.example/rest/v1/", "");
     calls.push({ method: init.method ?? "GET", url: u });
-    const json = (v: unknown, range = "0-0/1") =>
-      new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json", "content-range": range } });
+    const json = (v: unknown, range = "0-0/1") => new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json", "content-range": range } });
     if (u.startsWith("plaid_items?select")) {
       return json([
         { item_id: "it-merc", access_token: "tok-merc", institution_name: "Mercury" },

@@ -77,14 +77,14 @@ class Refuse extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    message?: string
+    message?: string,
   ) {
     super(message ?? code);
   }
 }
 
 function parseBody(req: VercelRequest): Body {
-  const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {};
+  const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {});
   return (b && typeof b === "object" ? b : {}) as Body;
 }
 
@@ -117,7 +117,7 @@ async function writeIfUnchanged(row: SignatureRequestRow, changes: Partial<Signa
  */
 async function update(
   load: () => Promise<SignatureRequestRow | null>,
-  plan: (row: SignatureRequestRow) => Partial<SignatureRequestRow> | Promise<Partial<SignatureRequestRow>>
+  plan: (row: SignatureRequestRow) => Partial<SignatureRequestRow> | Promise<Partial<SignatureRequestRow>>,
 ): Promise<SignatureRequestRow> {
   for (let i = 0; i < TRIES; i++) {
     const row = await load();
@@ -137,7 +137,12 @@ async function latestPdfUrl(row: SignatureRequestRow, download?: string): Promis
 }
 
 function fileName(row: SignatureRequestRow): string {
-  return `${row.title.replace(/[^\w .&-]+/g, " ").replace(/\s+/g, " ").trim() || "Document"}${row.signed_path ? " (signed)" : ""}.pdf`;
+  return `${
+    row.title
+      .replace(/[^\w .&-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || "Document"
+  }${row.signed_path ? " (signed)" : ""}.pdf`;
 }
 
 /** Sends each email; the links are already saved, so a failure is reported, not lost. */
@@ -154,7 +159,11 @@ async function sendAll(me: AppUser, row: SignatureRequestRow, mails: Array<{ par
     }
   }
   let next = row;
-  if (sent.length) next = await update(() => rowById(row.id), (r) => ({ events: [...r.events, ...sent] })).catch(() => row);
+  if (sent.length)
+    next = await update(
+      () => rowById(row.id),
+      (r) => ({ events: [...r.events, ...sent] }),
+    ).catch(() => row);
   if (failed.length) throw new Refuse(502, "email_failed", `Saved, but the email to ${failed.join(" and ")} didn't go out. Try Remind.`);
   return next;
 }
@@ -186,7 +195,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const action = String(body.action ?? "");
     if (action === "create") {
-      const title = String(body.title ?? "").trim().slice(0, 160) || "Untitled document";
+      const title =
+        String(body.title ?? "")
+          .trim()
+          .slice(0, 160) || "Untitled document";
       const assetId = typeof body.assetId === "string" && /^[\w-]{1,80}$/.test(body.assetId) ? body.assetId : null;
       const contractId = typeof body.contractId === "string" && /^[\w-]{1,80}$/.test(body.contractId) ? body.contractId : null;
       const brand = typeof body.brand === "string" && body.brand.trim() ? body.brand.trim().slice(0, 120) : null;
@@ -286,7 +298,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           return { parties, status: deriveStatus(parties, "sent"), sent_at: r.sent_at ?? new Date().toISOString(), events: [...r.events, event("sent", { by: me.id })] };
         });
-        const next = await sendAll(me, saved, links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link) })), "emailed");
+        const next = await sendAll(
+          me,
+          saved,
+          links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link) })),
+          "emailed",
+        );
         return res.status(200).json({ request: toView(next) });
       }
       case "remind": {
@@ -305,7 +322,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           return { parties };
         });
-        const next = await sendAll(me, saved, links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link, true) })), "reminded");
+        const next = await sendAll(
+          me,
+          saved,
+          links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link, true) })),
+          "reminded",
+        );
         return res.status(200).json({ request: toView(next) });
       }
       case "send-copy": {
@@ -321,7 +343,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           return { parties, copy_sent_at: new Date().toISOString() };
         });
-        const next = await sendAll(me, saved, links.map(([party, link]) => ({ party, ...signedCopyEmail(saved, party, link) })), "copy_sent");
+        const next = await sendAll(
+          me,
+          saved,
+          links.map(([party, link]) => ({ party, ...signedCopyEmail(saved, party, link) })),
+          "copy_sent",
+        );
         return res.status(200).json({ request: toView(next) });
       }
       case "void": {
@@ -353,7 +380,11 @@ function partiesFrom(raw: unknown, prior: Party[]): Party[] {
   const list = Array.isArray(raw) ? raw.slice(0, 2) : [];
   const out: Party[] = [];
   (["a", "b"] as PartyKey[]).forEach((key, i) => {
-    const p = cleanParty(list[i], key, prior.find((x) => x.key === key));
+    const p = cleanParty(
+      list[i],
+      key,
+      prior.find((x) => x.key === key),
+    );
     if (p && (p.name || p.email || list[i])) out.push(p);
   });
   return out;
@@ -411,17 +442,25 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
       const parties = r.parties.map((p) => (p.key === p0.key ? { ...p, status: "declined" as const, declinedAt: new Date().toISOString(), declinedReason: reason || undefined } : p));
       return { parties, status: deriveStatus(parties, r.status), events: [...r.events, event("declined", { party: p0.key, note: reason || undefined })] };
     });
-    void notifyAdmins({ aps: { alert: { title: "Signature declined", body: `${you.name} declined ${row.title}${reason ? `: ${reason}` : ""}` }, sound: "default" }, url: `/tools/signatures/${row.id}` }, `sign-${row.id}`);
+    void notifyAdmins(
+      { aps: { alert: { title: "Signature declined", body: `${you.name} declined ${row.title}${reason ? `: ${reason}` : ""}` }, sound: "default" }, url: `/tools/signatures/${row.id}` },
+      `sign-${row.id}`,
+    );
     return res.status(200).json({ ok: true });
   }
   if (action !== "sign") return fail(res, 400, "unknown_action");
   if (body.consent !== true) return fail(res, 400, "consent", "Please agree to sign electronically.");
-  const name = String(body.name ?? "").trim().slice(0, 120);
+  const name = String(body.name ?? "")
+    .trim()
+    .slice(0, 120);
   if (!name) return fail(res, 400, "name", "Type your full name.");
   const png = pngFromDataUrl(body.signature);
   if (!png) return fail(res, 400, "signature", "Draw or type your signature.");
   const ip = clientIp(req.headers) ?? undefined;
-  const initials = name.split(/\s+/).map((w) => w[0]?.toUpperCase() ?? "").join("");
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
 
   // Stamp the latest copy into a new file, then claim the row at the version that copy came from.
   // If another signature landed first, drop this attempt's files and stamp the newer copy instead.
@@ -471,7 +510,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
       aps: { alert: { title: completed ? "Signed by everyone" : "Signature received", body: `${name} signed ${done.title}` }, sound: "default" },
       url: `/tools/signatures/${done.id}`,
     },
-    `sign-${done.id}`
+    `sign-${done.id}`,
   );
   return res.status(200).json({ ok: true, completed });
 }

@@ -117,8 +117,11 @@ export default function SignatureDetail() {
           action === "send"
             ? `Sent to ${next.parties.map((p) => `${p.name} (${p.email})`).join(" and ")}.`
             : action === "remind"
-              ? `Reminded ${next.parties.filter((p) => p.status !== "signed").map((p) => p.name).join(" and ")}.`
-              : `Sent the signed copy to ${next.parties.map((p) => p.email).join(" and ")}.`
+              ? `Reminded ${next.parties
+                  .filter((p) => p.status !== "signed")
+                  .map((p) => p.name)
+                  .join(" and ")}.`
+              : `Sent the signed copy to ${next.parties.map((p) => p.email).join(" and ")}.`,
         );
       }
     } catch (err) {
@@ -140,7 +143,8 @@ export default function SignatureDetail() {
     );
   }
 
-  const partyTone = (k: PartyKey) => (k === "a" ? { bg: "rgba(99,102,241,0.18)", border: "#818cf8", text: isDark ? "#c7d2fe" : "#3730a3" } : { bg: "rgba(245,158,11,0.18)", border: "#f59e0b", text: isDark ? "#fde68a" : "#92400e" });
+  const partyTone = (k: PartyKey) =>
+    k === "a" ? { bg: "rgba(99,102,241,0.18)", border: "#818cf8", text: isDark ? "#c7d2fe" : "#3730a3" } : { bg: "rgba(245,158,11,0.18)", border: "#f59e0b", text: isDark ? "#fde68a" : "#92400e" };
 
   return (
     <div className="mx-auto max-w-[1400px] pb-16">
@@ -152,7 +156,12 @@ export default function SignatureDetail() {
           {req && editable ? (
             // Still the page's heading while the title is editable.
             <h1 className="mt-1">
-              <input value={req.title} onChange={(e) => queueSave({ ...req, title: e.target.value })} aria-label="Document title" className={`h-auto w-full max-w-[640px] border-0 bg-transparent p-0 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] focus:outline-none sm:text-[22px] ${isDark ? "text-white" : "text-gray-900"}`} />
+              <input
+                value={req.title}
+                onChange={(e) => queueSave({ ...req, title: e.target.value })}
+                aria-label="Document title"
+                className={`h-auto w-full max-w-[640px] border-0 bg-transparent p-0 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] focus:outline-none sm:text-[22px] ${isDark ? "text-white" : "text-gray-900"}`}
+              />
             </h1>
           ) : (
             <h1 className="mt-1 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">{req?.title ?? "…"}</h1>
@@ -163,7 +172,11 @@ export default function SignatureDetail() {
               {req.sent_at && <span>Sent {when(req.sent_at)}</span>}
               {req.completed_at && <span>Signed {when(req.completed_at)}</span>}
               {req.copy_sent_at && <span>Copy sent {when(req.copy_sent_at)}</span>}
-              {req.pages.length > 0 && <span>{req.pages.length} page{req.pages.length === 1 ? "" : "s"}</span>}
+              {req.pages.length > 0 && (
+                <span>
+                  {req.pages.length} page{req.pages.length === 1 ? "" : "s"}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -276,9 +289,28 @@ export default function SignatureDetail() {
                 </div>
                 {editable ? (
                   <div className="mt-3 space-y-2">
-                    <input value={p.role} onChange={(e) => setParty(p.key, { role: e.target.value })} placeholder="Role (Manager, Client…)" aria-label={`${p.key === "a" ? "First" : "Second"} party role`} className={input} />
-                    <input value={p.name} onChange={(e) => setParty(p.key, { name: e.target.value })} placeholder="Full name" aria-label={`${p.key === "a" ? "First" : "Second"} party name`} className={input} />
-                    <input type="email" value={p.email} onChange={(e) => setParty(p.key, { email: e.target.value })} placeholder="Email" aria-label={`${p.key === "a" ? "First" : "Second"} party email`} className={input} />
+                    <input
+                      value={p.role}
+                      onChange={(e) => setParty(p.key, { role: e.target.value })}
+                      placeholder="Role (Manager, Client…)"
+                      aria-label={`${p.key === "a" ? "First" : "Second"} party role`}
+                      className={input}
+                    />
+                    <input
+                      value={p.name}
+                      onChange={(e) => setParty(p.key, { name: e.target.value })}
+                      placeholder="Full name"
+                      aria-label={`${p.key === "a" ? "First" : "Second"} party name`}
+                      className={input}
+                    />
+                    <input
+                      type="email"
+                      value={p.email}
+                      onChange={(e) => setParty(p.key, { email: e.target.value })}
+                      placeholder="Email"
+                      aria-label={`${p.key === "a" ? "First" : "Second"} party email`}
+                      className={input}
+                    />
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {(["signature", "initials", "name", "date"] as FieldType[]).map((type) => (
                         <Small key={type} isDark={isDark} onClick={() => setPlacing({ party: p.key, type })} aria-pressed={placing?.party === p.key && placing.type === type}>
@@ -287,7 +319,9 @@ export default function SignatureDetail() {
                       ))}
                     </div>
                     <p className={`text-[11.5px] ${t3}`}>
-                      {mine.length === 0 ? "No fields yet. Add a signature and click the page where it goes." : `${mine.length} field${mine.length === 1 ? "" : "s"}: ${mine.map((f) => `${FIELD_LABEL[f.type].toLowerCase()} p.${f.page}`).join(", ")}`}
+                      {mine.length === 0
+                        ? "No fields yet. Add a signature and click the page where it goes."
+                        : `${mine.length} field${mine.length === 1 ? "" : "s"}: ${mine.map((f) => `${FIELD_LABEL[f.type].toLowerCase()} p.${f.page}`).join(", ")}`}
                     </p>
                   </div>
                 ) : (
@@ -300,7 +334,17 @@ export default function SignatureDetail() {
                     {p.signedAs && p.signedAs !== p.name && <p className={`text-[12px] ${t3}`}>Signed as {p.signedAs}</p>}
                     {p.declinedReason && <p className="mt-1 text-[12px] text-red-400">Declined: {p.declinedReason}</p>}
                     {(req?.status === "sent" || req?.status === "partial") && p.status !== "signed" && (
-                      <Small isDark={isDark} className="mt-2" disabled={!!busy} onClick={() => signApi.act("remind", { id: req.id, party: p.key }).then(setReq).catch((e) => setError(e.message))}>
+                      <Small
+                        isDark={isDark}
+                        className="mt-2"
+                        disabled={!!busy}
+                        onClick={() =>
+                          signApi
+                            .act("remind", { id: req.id, party: p.key })
+                            .then(setReq)
+                            .catch((e) => setError(e.message))
+                        }
+                      >
                         Remind {p.name.split(" ")[0] || p.role}
                       </Small>
                     )}
@@ -448,7 +492,11 @@ function FieldBox({
               ×
             </span>
           </button>
-          <span aria-hidden onPointerDown={start("resize")} className="absolute -bottom-[10px] -right-[10px] grid h-[20px] w-[20px] cursor-nwse-resize place-items-center pointer-coarse:-bottom-[22px] pointer-coarse:-right-[22px] pointer-coarse:h-[44px] pointer-coarse:w-[44px]">
+          <span
+            aria-hidden
+            onPointerDown={start("resize")}
+            className="absolute -bottom-[10px] -right-[10px] grid h-[20px] w-[20px] cursor-nwse-resize place-items-center pointer-coarse:-bottom-[22px] pointer-coarse:-right-[22px] pointer-coarse:h-[44px] pointer-coarse:w-[44px]"
+          >
             <span className="h-3 w-3 rounded-sm bg-white" style={{ border: `2px solid ${tone.border}` }} />
           </span>
         </>

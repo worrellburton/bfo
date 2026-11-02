@@ -32,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const user = await currentUser(req);
       if (!user) return res.status(401).json({ error: "unauthorized" });
       if (!isAdmin(user)) return res.status(403).json({ error: "forbidden" });
-      const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { ids?: unknown; force?: unknown };
+      const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as { ids?: unknown; force?: unknown };
       opts = { ids: Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : undefined, force: body.force === true, by: { id: user.id, name: user.name } };
     }
     const check = async (run?: CronRun) => {
@@ -44,7 +44,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         run.note(JSON.stringify(counts));
         // A read that errored leaves that entity's record stale: say so, once per run.
         const errored = results.filter((r) => r.outcome === "error");
-        if (errored.length) run.failed(`${errored.length} state record${errored.length === 1 ? "" : "s"} couldn't be read: ${errored.map((r) => `${r.name} (${r.state})${r.detail ? `: ${r.detail}` : ""}`).join("; ")}`);
+        if (errored.length)
+          run.failed(`${errored.length} state record${errored.length === 1 ? "" : "s"} couldn't be read: ${errored.map((r) => `${r.name} (${r.state})${r.detail ? `: ${r.detail}` : ""}`).join("; ")}`);
         // A run cut short by its time limit leaves the rest for tomorrow: say so.
         const later = counts.later ?? 0;
         if (later) run.note(`${later} state record${later === 1 ? "" : "s"} left for the next run (out of time)`);

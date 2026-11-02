@@ -56,7 +56,10 @@ export function publicAddress(addr: string): boolean {
     const [p, q, r] = v4.slice(1, 4).map(Number);
     if (v4.slice(1).some((n) => Number(n) > 255)) return false;
     return !(
-      p === 0 || p === 10 || p === 127 || p >= 224 ||
+      p === 0 ||
+      p === 10 ||
+      p === 127 ||
+      p >= 224 ||
       (p === 100 && q >= 64 && q < 128) ||
       (p === 169 && q === 254) ||
       (p === 172 && q >= 16 && q < 32) ||

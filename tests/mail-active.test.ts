@@ -59,8 +59,10 @@ describe("Active", () => {
 });
 
 describe("mail photo", () => {
-  const image = (format: "jpeg" | "png" | "webp", width = 4, height = 4) =>
-    sharp({ create: { width, height, channels: 3, background: { r: 120, g: 80, b: 200 } } })[format]().toBuffer();
+  const image = (format: "jpeg" | "png" | "webp", width = 4, height = 4) => {
+    const pipeline = sharp({ create: { width, height, channels: 3, background: { r: 120, g: 80, b: 200 } } });
+    return pipeline[format]().toBuffer();
+  };
 
   it("takes a small JPEG, PNG or WebP, reading its size from the header", async () => {
     const jpeg = await image("jpeg", 256, 200);

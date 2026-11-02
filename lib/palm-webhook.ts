@@ -18,7 +18,10 @@ function parseHeader(header: string): { t: string; v1: string[] } | null {
     return i < 0 ? [p.trim(), ""] : [p.slice(0, i).trim(), p.slice(i + 1).trim()];
   });
   const t = parts.find(([k]) => k === "t")?.[1];
-  const v1 = parts.filter(([k]) => k === "v1").map(([, v]) => v).filter(Boolean);
+  const v1 = parts
+    .filter(([k]) => k === "v1")
+    .map(([, v]) => v)
+    .filter(Boolean);
   return t && v1.length ? { t, v1 } : null;
 }
 
@@ -99,9 +102,13 @@ export function toEventRow(e: PalmEvent): PalmEventRow {
     business_id: isBusiness
       ? str(e.data?.business?.id)
       : isDoc
-        ? str(o.resource_type) === "business" ? str(o.resource_id) : null
+        ? str(o.resource_type) === "business"
+          ? str(o.resource_id)
+          : null
         : isCase
-          ? str(o.parent_type) === "business" ? str(o.parent_id) : null
+          ? str(o.parent_type) === "business"
+            ? str(o.parent_id)
+            : null
           : str(o.business_id),
     document_id: isDoc ? str(o.id) : null,
     document_type: isDoc ? documentKind(o) : null,

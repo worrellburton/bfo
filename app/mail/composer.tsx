@@ -64,7 +64,21 @@ function readBase64(file: File): Promise<string> {
  * A From line that opens a menu of the account's addresses (the mailbox
  * picker's look), in place of the browser's own select.
  */
-function AddressDropdown({ id, labelledBy, value, options, onChange, className = "" }: { id: string; labelledBy: string; value: string; options: string[]; onChange: (next: string) => void; className?: string }) {
+function AddressDropdown({
+  id,
+  labelledBy,
+  value,
+  options,
+  onChange,
+  className = "",
+}: {
+  id: string;
+  labelledBy: string;
+  value: string;
+  options: string[];
+  onChange: (next: string) => void;
+  className?: string;
+}) {
   const t = useTone();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -100,41 +114,61 @@ function AddressDropdown({ id, labelledBy, value, options, onChange, className =
   const hueOf = (a: string) => `hsl(${Math.round(mailboxHue(a) * 360)} 70% ${t.dark ? 62 : 48}%)`;
   return (
     <div ref={wrap} className="flex min-w-0 flex-1 items-center">
-      <button id={id} type="button" aria-haspopup="listbox" aria-expanded={open} aria-labelledby={`${labelledBy} ${id}`} onClick={() => setOpen((o) => !o)} className={`flex items-center gap-2 text-left ${className}`}>
+      <button
+        id={id}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-labelledby={`${labelledBy} ${id}`}
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-2 text-left ${className}`}
+      >
         <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: hueOf(value), boxShadow: `0 0 10px ${hueOf(value)}88` }} />
         <span className="min-w-0 flex-1 truncate">{value}</span>
         <Icon name="chevronDown" className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} />
       </button>
-      {open && place && createPortal(
-        <div ref={menuRef} role="listbox" aria-label="Send from" style={{ position: "fixed", top: place.top, left: place.left, width: place.width }} className={`sheet-up z-[70] overflow-hidden rounded-2xl border py-1 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/90" : "border-gray-200 bg-white/95"}`}>
-          {options.map((a) => {
-            const on = a === value;
-            return (
-              <button
-                key={a}
-                type="button"
-                role="option"
-                aria-selected={on}
-                onClick={() => {
-                  onChange(a);
-                  setOpen(false);
-                }}
-                className={`flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left transition-colors max-sm:min-h-[50px] ${on ? t.text : t.soft} ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
-              >
-                <span aria-hidden="true" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12.5px] font-semibold text-white" style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})` }}>
-                  {localPart(a).slice(0, 1).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-medium">{localPart(a)}</span>
-                  <span className={`block truncate text-[12px] ${t.muted}`}>{a}</span>
-                </span>
-                {on && <Icon name="check" className={`h-4 w-4 shrink-0 ${t.accent}`} strokeWidth={2.5} />}
-              </button>
-            );
-          })}
-        </div>,
-        document.body
-      )}
+      {open &&
+        place &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label="Send from"
+            style={{ position: "fixed", top: place.top, left: place.left, width: place.width }}
+            className={`sheet-up z-[70] overflow-hidden rounded-2xl border py-1 shadow-2xl mail-glass-top ${t.dark ? "border-white/10 bg-[#0f0f16]/90" : "border-gray-200 bg-white/95"}`}
+          >
+            {options.map((a) => {
+              const on = a === value;
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  onClick={() => {
+                    onChange(a);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left transition-colors max-sm:min-h-[50px] ${on ? t.text : t.soft} ${t.dark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12.5px] font-semibold text-white"
+                    style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})` }}
+                  >
+                    {localPart(a).slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13.5px] font-medium">{localPart(a)}</span>
+                    <span className={`block truncate text-[12px] ${t.muted}`}>{a}</span>
+                  </span>
+                  {on && <Icon name="check" className={`h-4 w-4 shrink-0 ${t.accent}`} strokeWidth={2.5} />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -143,7 +177,7 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
   const t = useTone();
   const [sendId] = useState(() => crypto.randomUUID());
   // Several addresses and none named by the draft (composed from "All mailboxes"): ask which, before anything else.
-  const [from, setFrom] = useState(() => addresses.find((a) => draft.from && same(a, draft.from)) ?? (addresses.length > 1 ? "" : addresses[0] ?? ""));
+  const [from, setFrom] = useState(() => addresses.find((a) => draft.from && same(a, draft.from)) ?? (addresses.length > 1 ? "" : (addresses[0] ?? "")));
   const needsFrom = addresses.length > 1 && !from;
   const [to, setTo] = useState(draft.to);
   const [cc, setCc] = useState(draft.cc);
@@ -244,9 +278,9 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
   function trapTab(e: React.KeyboardEvent) {
     const panel = panelRef.current;
     if (!panel) return;
-    const list = [
-      ...panel.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'),
-    ].filter((el) => el.offsetParent !== null && !el.closest("[inert]"));
+    const list = [...panel.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(
+      (el) => el.offsetParent !== null && !el.closest("[inert]"),
+    );
     if (!list.length) return;
     const first = list[0];
     const last = list[list.length - 1];
@@ -305,9 +339,7 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
     setSending(true);
     setError(null);
     try {
-      const attachments: OutgoingAttachment[] = await Promise.all(
-        files.map(async (f) => ({ filename: f.name, contentType: f.type || "application/octet-stream", data: await readBase64(f) }))
-      );
+      const attachments: OutgoingAttachment[] = await Promise.all(files.map(async (f) => ({ filename: f.name, contentType: f.type || "application/octet-stream", data: await readBase64(f) })));
       const { message } = await sendMail({
         sendId,
         ...(from && addresses.length > 1 ? { from } : {}),
@@ -411,12 +443,16 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
 
         {addresses.length > 1 && (
           <div className={row}>
-            <span id="compose-from-label" className={label}>From</span>
+            <span id="compose-from-label" className={label}>
+              From
+            </span>
             <AddressDropdown id="compose-from" labelledBy="compose-from-label" value={from} options={addresses} onChange={setFrom} className={`${field} cursor-pointer max-sm:min-h-[44px]`} />
           </div>
         )}
         <div className={row}>
-          <label htmlFor="compose-to" className={label}>To</label>
+          <label htmlFor="compose-to" className={label}>
+            To
+          </label>
           <input id="compose-to" ref={toRef} value={to} onChange={(e) => setTo(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
           {!showCc && (
             <TextButton onClick={() => setShowCc(true)} className={t.muted}>
@@ -427,17 +463,23 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
         {showCc && (
           <>
             <div className={row}>
-              <label htmlFor="compose-cc" className={label}>Cc</label>
+              <label htmlFor="compose-cc" className={label}>
+                Cc
+              </label>
               <input id="compose-cc" value={cc} onChange={(e) => setCc(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
             </div>
             <div className={row}>
-              <label htmlFor="compose-bcc" className={label}>Bcc</label>
+              <label htmlFor="compose-bcc" className={label}>
+                Bcc
+              </label>
               <input id="compose-bcc" value={bcc} onChange={(e) => setBcc(e.target.value)} className={field} style={noRing} autoComplete="email" inputMode="email" spellCheck={false} />
             </div>
           </>
         )}
         <div className={row}>
-          <label htmlFor="compose-subject" className={label}>Subject</label>
+          <label htmlFor="compose-subject" className={label}>
+            Subject
+          </label>
           <input id="compose-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={300} className={field} style={noRing} />
         </div>
 
@@ -455,14 +497,21 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
         {(draft.carried.length > 0 || files.length > 0) && (
           <div className={`flex shrink-0 flex-wrap gap-1.5 border-t px-4 py-2.5 max-sm:px-6 ${t.line}`}>
             {draft.carried.map((a) => (
-              <span key={a.id} title="From the original" className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
+              <span
+                key={a.id}
+                title="From the original"
+                className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}
+              >
                 <FileIcon kind={fileKind(a.filename, a.contentType)} className="h-4 w-4" />
                 <span className={`min-w-0 truncate ${t.text}`}>{a.filename}</span>
                 <span className={`shrink-0 ${t.muted}`}>{formatBytes(a.size)}</span>
               </span>
             ))}
             {files.map((file, i) => (
-              <span key={`${file.name}-${i}`} className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border py-0.5 pl-2 pr-0.5 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}>
+              <span
+                key={`${file.name}-${i}`}
+                className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border py-0.5 pl-2 pr-0.5 text-[12px] ${t.dark ? "border-white/[0.08]" : "border-gray-200"}`}
+              >
                 <FileIcon kind={fileKind(file.name, file.type)} className="h-4 w-4" />
                 <span className={`min-w-0 truncate ${t.text}`}>{file.name}</span>
                 <span className={`shrink-0 ${t.muted}`}>{formatBytes(file.size)}</span>
@@ -486,7 +535,16 @@ export function Compose({ draft, addresses, onClose, onSent }: { draft: Draft; a
         )}
 
         <footer className={`flex shrink-0 items-center gap-1.5 border-t px-3 py-2.5 max-sm:px-5 max-sm:py-3 ${t.line}`} style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
           <GlyphButton glyph="clip" label="Attach files" onClick={() => fileRef.current?.click()} />
           {totalBytes > 0 && <span className={`text-[11.5px] tabular-nums ${t.muted}`}>{formatBytes(totalBytes)}</span>}
           <span className={`mx-1 h-4 w-px max-sm:hidden ${t.dark ? "bg-white/10" : "bg-gray-200"}`} aria-hidden />

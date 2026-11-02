@@ -42,7 +42,6 @@ type Txn = {
   currency: string | null;
 };
 
-
 /** Plaid's "FOOD_AND_DRINK" → "Food and drink" (the rule pretty() in books-shared uses). */
 function pretty(cat: string): string {
   const s = cat.replace(/_/g, " ").toLowerCase();
@@ -71,16 +70,27 @@ function splitCsv(text: string): string[][] {
     const ch = text[i];
     if (inQ) {
       if (ch === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false;
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQ = false;
       } else field += ch;
     } else if (ch === '"') inQ = true;
-    else if (ch === ",") { row.push(field); field = ""; }
-    else if (ch === "\n" || ch === "\r") {
+    else if (ch === ",") {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(field); rows.push(row); row = []; field = "";
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
     } else field += ch;
   }
-  if (field.length || row.length) { row.push(field); rows.push(row); }
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
@@ -105,8 +115,14 @@ function parseAmount(raw: string): number {
   let s = raw.trim();
   if (!s) return NaN;
   let neg = false;
-  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
-  if (/-$/.test(s)) { neg = true; s = s.replace(/-$/, ""); }
+  if (/^\(.*\)$/.test(s)) {
+    neg = true;
+    s = s.slice(1, -1);
+  }
+  if (/-$/.test(s)) {
+    neg = true;
+    s = s.replace(/-$/, "");
+  }
   s = s.replace(/[$,\s]/g, "");
   const n = Number(s);
   if (!Number.isFinite(n)) return NaN;
@@ -125,7 +141,11 @@ function parseBankCsv(text: string): CsvRow[] {
   const header = records[0].map((c) => c.trim().toLowerCase());
   const hasHeader = header.some((c) => /date|amount|description|payee|debit|credit|withdraw|deposit|memo/.test(c));
 
-  let iDate = -1, iDesc = -1, iAmt = -1, iDebit = -1, iCredit = -1;
+  let iDate = -1,
+    iDesc = -1,
+    iAmt = -1,
+    iDebit = -1,
+    iCredit = -1;
   let body = records;
   if (hasHeader) {
     header.forEach((c, i) => {
@@ -137,7 +157,9 @@ function parseBankCsv(text: string): CsvRow[] {
     });
     body = records.slice(1);
   } else {
-    iDate = 0; iAmt = 1; iDesc = 4; // Wells Fargo default
+    iDate = 0;
+    iAmt = 1;
+    iDesc = 4; // Wells Fargo default
   }
   if (iDate < 0) iDate = 0;
 
@@ -145,7 +167,7 @@ function parseBankCsv(text: string): CsvRow[] {
   for (const cols of body) {
     const date = normalizeDate(cols[iDate] ?? "");
     if (!date) continue;
-    const description = (iDesc >= 0 ? cols[iDesc] ?? "" : "").trim() || (cols.find((c, i) => i !== iDate && i !== iAmt && c.trim()) ?? "").trim();
+    const description = (iDesc >= 0 ? (cols[iDesc] ?? "") : "").trim() || (cols.find((c, i) => i !== iDate && i !== iAmt && c.trim()) ?? "").trim();
     let amount = NaN;
     if (iAmt >= 0 && (cols[iAmt] ?? "").trim() !== "") {
       amount = parseAmount(cols[iAmt]);
@@ -211,9 +233,7 @@ export default function TreasuryAccount() {
         if (!found) throw new Error("That account isn't connected any more.");
         setSiblings(list.some((a) => a.account_id === found.account_id) ? list : [found, ...list]);
         setAccount(found);
-        setStatus(
-          (data.connections ?? []).find((c: any) => c.item_id === found.item_id)?.status ?? "offline"
-        );
+        setStatus((data.connections ?? []).find((c: any) => c.item_id === found.item_id)?.status ?? "offline");
       } catch (err) {
         if (stale) return;
         setError(err instanceof Error ? err.message : "Couldn't load the account.");
@@ -237,9 +257,7 @@ export default function TreasuryAccount() {
     setTxnState("loading");
     void (async () => {
       try {
-        const res = await authFetch(
-          `/api/plaid/data?report=bank-transactions&item_id=${txnItemId}&account_id=${txnAccountId}`
-        );
+        const res = await authFetch(`/api/plaid/data?report=bank-transactions&item_id=${txnItemId}&account_id=${txnAccountId}`);
         const data = await res.json().catch(() => ({}));
         if (stale) return;
         if (!res.ok || data.error) throw new Error(data?.message || "Couldn't load transactions.");
@@ -270,7 +288,7 @@ export default function TreasuryAccount() {
         setEntities(
           Object.entries<any>(data)
             .map(([id, asset]) => ({ id, name: asset?.name || "Unnamed entity" }))
-            .sort((a, b) => a.name.localeCompare(b.name))
+            .sort((a, b) => a.name.localeCompare(b.name)),
         );
       });
     })().catch(() => {
@@ -360,10 +378,7 @@ export default function TreasuryAccount() {
       const skipped = data.skipped_existing ?? 0;
       setImportMsg({
         ok: true,
-        text:
-          `Imported ${imported} transaction${imported === 1 ? "" : "s"} into Books` +
-          (skipped ? ` · ${skipped} already present` : "") +
-          ". They appear in the Books ledger.",
+        text: `Imported ${imported} transaction${imported === 1 ? "" : "s"} into Books` + (skipped ? ` · ${skipped} already present` : "") + ". They appear in the Books ledger.",
       });
     } catch (err) {
       setImportMsg({ ok: false, text: err instanceof Error ? err.message : "Import failed." });
@@ -378,9 +393,7 @@ export default function TreasuryAccount() {
     if (!q) return txns;
     return txns.filter(
       (t) =>
-        t.name?.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q) ||
-        (t.category ? pretty(t.category).toLowerCase().includes(q) || t.category.toLowerCase().includes(q) : false)
+        t.name?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q) || (t.category ? pretty(t.category).toLowerCase().includes(q) || t.category.toLowerCase().includes(q) : false),
     );
   }, [txns, search]);
 
@@ -392,7 +405,9 @@ export default function TreasuryAccount() {
   if (error || !account) {
     return (
       <div>
-        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>← Treasury</Link>
+        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>
+          ← Treasury
+        </Link>
         <p className={`mt-4 text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>
       </div>
     );
@@ -418,7 +433,9 @@ export default function TreasuryAccount() {
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>← Treasury</Link>
+        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>
+          ← Treasury
+        </Link>
         {count > 1 && (
           <div className="flex items-center gap-2">
             <button
@@ -431,7 +448,9 @@ export default function TreasuryAccount() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
               </svg>
             </button>
-            <span className={`text-xs tabular-nums ${subtle}`}>{idx + 1} / {count}</span>
+            <span className={`text-xs tabular-nums ${subtle}`}>
+              {idx + 1} / {count}
+            </span>
             <button
               onClick={() => nextAcct && navigate(`/treasury/${nextAcct.account_id}`)}
               title={nextAcct ? nextAcct.nickname || nextAcct.official_name || nextAcct.name : "Next"}
@@ -447,23 +466,14 @@ export default function TreasuryAccount() {
       </div>
 
       {/* Header card in the bank's colours */}
-      <div
-        className="treasury-card mt-4 mb-6 cursor-default"
-        style={{ ["--bank" as any]: rgb }}
-      >
+      <div className="treasury-card mt-4 mb-6 cursor-default" style={{ ["--bank" as any]: rgb }}>
         <div className="treasury-card-sheen" aria-hidden />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {account.institution_logo ? (
-              <img
-                src={`data:image/png;base64,${account.institution_logo}`}
-                alt=""
-                className="w-10 h-10 rounded-lg object-contain bg-white/90 p-1 shrink-0"
-              />
+              <img src={`data:image/png;base64,${account.institution_logo}`} alt="" className="w-10 h-10 rounded-lg object-contain bg-white/90 p-1 shrink-0" />
             ) : (
-              <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold text-white bg-[rgba(var(--bank),0.55)]">
-                {account.institution_name.slice(0, 1)}
-              </div>
+              <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold text-white bg-[rgba(var(--bank),0.55)]">{account.institution_name.slice(0, 1)}</div>
             )}
             <div className="min-w-0">
               {editingName ? (
@@ -500,11 +510,12 @@ export default function TreasuryAccount() {
                   className="group relative flex max-w-full items-center gap-2 text-left cursor-pointer after:absolute after:inset-x-0 after:-inset-y-[10px] after:content-[''] lg:after:inset-0"
                 >
                   <span className="text-white text-xl font-semibold truncate">{displayName}</span>
-                  <svg
-                    className="w-4 h-4 text-white/40 group-hover:text-white/80 transition-colors shrink-0"
-                    fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                  <svg className="w-4 h-4 text-white/40 group-hover:text-white/80 transition-colors shrink-0" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"
+                    />
                   </svg>
                 </button>
               )}
@@ -519,9 +530,7 @@ export default function TreasuryAccount() {
           <div className="flex items-center gap-3 shrink-0">
             <span className="flex items-center gap-1.5">
               <span className={online ? "treasury-dot treasury-dot-live" : "treasury-dot treasury-dot-down"} />
-              <span className="text-[10px] uppercase tracking-wider text-white/45">
-                {online ? "Online" : "Offline"}
-              </span>
+              <span className="text-[10px] uppercase tracking-wider text-white/45">{online ? "Online" : "Offline"}</span>
             </span>
             <button
               onClick={() => void toggleHidden()}
@@ -534,13 +543,9 @@ export default function TreasuryAccount() {
         </div>
 
         <div className="relative mt-6">
-          <p className="text-white text-[28px] sm:text-[34px] font-semibold tracking-tight break-words">
-            {money(account.balance_current, account.currency ?? "USD")}
-          </p>
+          <p className="text-white text-[28px] sm:text-[34px] font-semibold tracking-tight break-words">{money(account.balance_current, account.currency ?? "USD")}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
-            {account.balance_available != null && (
-              <span className="text-white/45">{money(account.balance_available, account.currency ?? "USD")} available</span>
-            )}
+            {account.balance_available != null && <span className="text-white/45">{money(account.balance_available, account.currency ?? "USD")} available</span>}
             {account.change != null && account.change !== 0 && (
               // A card or loan balance going up is more owed, not a gain.
               <span className={(account.type === "credit" || account.type === "loan" ? -1 : 1) * account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"}>
@@ -553,7 +558,9 @@ export default function TreasuryAccount() {
 
       {/* Entity mapping */}
       <div className="flex items-center gap-2 mb-6 -mt-1">
-        <span id="account-entity-label" className={`shrink-0 text-[11px] uppercase tracking-wider ${subtle}`}>Entity</span>
+        <span id="account-entity-label" className={`shrink-0 text-[11px] uppercase tracking-wider ${subtle}`}>
+          Entity
+        </span>
         <span className="relative inline-flex min-w-0 items-center">
           <select
             aria-labelledby="account-entity-label"
@@ -563,10 +570,16 @@ export default function TreasuryAccount() {
             onChange={(e) => void assignEntity(e.target.value)}
             className={`appearance-none max-w-full truncate min-h-[40px] lg:min-h-0 pl-3.5 pr-9 py-1.5 rounded-full text-sm border cursor-pointer disabled:opacity-50 ${
               mapped
-                ? isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                ? isDark
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
                 : orphaned
-                  ? isDark ? "bg-amber-500/[0.06] border-amber-500/30 text-amber-200" : "bg-amber-50 border-amber-300 text-amber-900"
-                  : isDark ? "bg-white/[0.04] border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"
+                  ? isDark
+                    ? "bg-amber-500/[0.06] border-amber-500/30 text-amber-200"
+                    : "bg-amber-50 border-amber-300 text-amber-900"
+                  : isDark
+                    ? "bg-white/[0.04] border-white/10 text-gray-300"
+                    : "bg-white border-gray-200 text-gray-700"
             }`}
           >
             <option value="">{entities.length === 0 ? "No entities found" : "Unassigned"}</option>
@@ -576,7 +589,9 @@ export default function TreasuryAccount() {
               </option>
             )}
             {entities.map((e) => (
-              <option key={e.id} value={e.id}>{e.name}</option>
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
             ))}
           </select>
           <svg className="w-3.5 h-3.5 absolute right-3.5 pointer-events-none opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -625,9 +640,7 @@ export default function TreasuryAccount() {
             aria-label="Filter transactions"
             type="search"
             className={`min-w-0 flex-1 sm:flex-none sm:w-48 min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-[16px] sm:text-xs border focus:outline-none ${
-              isDark
-                ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
-                : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
+              isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
             }`}
           />
         </div>
@@ -636,9 +649,7 @@ export default function TreasuryAccount() {
       {importMsg && (
         <div
           className={`mb-3 rounded-lg px-4 py-2.5 text-xs ${
-            importMsg.ok
-              ? isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"
-              : isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"
+            importMsg.ok ? (isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700") : isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"
           }`}
         >
           {importMsg.text}
@@ -647,14 +658,8 @@ export default function TreasuryAccount() {
 
       <div className={`rounded-xl border overflow-hidden ${card}`}>
         {txnState === "loading" && <p className={`text-sm p-5 ${subtle}`}>Loading transactions…</p>}
-        {txnState === "error" && (
-          <p className={`text-sm p-5 ${isDark ? "text-red-400" : "text-red-600"}`}>{txnError}</p>
-        )}
-        {txnState === "idle" && filtered.length === 0 && (
-          <p className={`text-sm p-5 ${subtle}`}>
-            {txns.length ? "No transactions match that filter." : "No transactions in the last 180 days."}
-          </p>
-        )}
+        {txnState === "error" && <p className={`text-sm p-5 ${isDark ? "text-red-400" : "text-red-600"}`}>{txnError}</p>}
+        {txnState === "idle" && filtered.length === 0 && <p className={`text-sm p-5 ${subtle}`}>{txns.length ? "No transactions match that filter." : "No transactions in the last 180 days."}</p>}
         {txnState === "idle" && filtered.length > 0 && (
           <ul className="sm:hidden">
             {filtered.map((t, i) => (
@@ -669,11 +674,7 @@ export default function TreasuryAccount() {
                     {t.category ? ` · ${pretty(t.category)}` : ""}
                   </span>
                 </span>
-                <span
-                  className={`shrink-0 text-sm text-right tabular-nums font-medium ${
-                    t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"
-                  }`}
-                >
+                <span className={`shrink-0 text-sm text-right tabular-nums font-medium ${t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"}`}>
                   {signed(-t.amount, t.currency ?? "USD")}
                 </span>
               </li>
@@ -686,12 +687,7 @@ export default function TreasuryAccount() {
               <thead>
                 <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>
                   {["Date", "Description", "Category", "Amount"].map((h, i) => (
-                    <th
-                      key={h}
-                      className={`text-[11px] uppercase tracking-wider font-medium px-4 py-2.5 ${
-                        i === 3 ? "text-right" : "text-left"
-                      } ${isDark ? "text-gray-400" : "text-gray-500"}`}
-                    >
+                    <th key={h} className={`text-[11px] uppercase tracking-wider font-medium px-4 py-2.5 ${i === 3 ? "text-right" : "text-left"} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                       {h}
                     </th>
                   ))}

@@ -5,8 +5,7 @@ import { monitorPatch, toEventRow, verifyPalmSignature } from "../lib/palm-webho
 
 const SECRET = "whsec_c2VjcmV0LWtleQ==";
 const now = 1_790_000_000_000;
-const sign = (body: string, key: string | Buffer = SECRET, t = Math.floor(now / 1000), enc: "hex" | "base64" = "hex") =>
-  `t=${t},v1=${createHmac("sha256", key).update(`${t}.${body}`).digest(enc)}`;
+const sign = (body: string, key: string | Buffer = SECRET, t = Math.floor(now / 1000), enc: "hex" | "base64" = "hex") => `t=${t},v1=${createHmac("sha256", key).update(`${t}.${body}`).digest(enc)}`;
 
 describe("palm signature", () => {
   const body = JSON.stringify({ id: "evt_1", type: "document.created" });
@@ -27,13 +26,21 @@ describe("palm signature", () => {
 describe("palm event rows", () => {
   it("reads forwarded mail", () => {
     const r = toEventRow({
-      id: "evt_2", type: "document.created", mode: "live", created_at: "2026-08-15T12:00:00Z",
+      id: "evt_2",
+      type: "document.created",
+      mode: "live",
+      created_at: "2026-08-15T12:00:00Z",
       data: { object: { id: "doc1", resource_type: "business", resource_id: "biz1", type: "notice", types: ["notice", "service_of_process"], filename: "summons.pdf" } },
     });
     expect(r).toMatchObject({ business_id: "biz1", document_id: "doc1", document_type: "service_of_process", filename: "summons.pdf", occurred_at: "2026-08-15T12:00:00Z" });
   });
   it("reads an agent change", () => {
-    const r = toEventRow({ id: "evt_3", type: "registered_agent.change_failed", mode: "live", data: { object: { business_id: "biz1", status: "active", rejection_reason: "Entity not in good standing" } } });
+    const r = toEventRow({
+      id: "evt_3",
+      type: "registered_agent.change_failed",
+      mode: "live",
+      data: { object: { business_id: "biz1", status: "active", rejection_reason: "Entity not in good standing" } },
+    });
     expect(r).toMatchObject({ business_id: "biz1", document_id: null, status: "active", rejection_reason: "Entity not in good standing" });
   });
 });
@@ -62,12 +69,28 @@ import handler from "../api/palm-webhook";
 function call(body: string, signature?: string) {
   const req = Object.assign(Readable.from([Buffer.from(body)]), { method: "POST", headers: signature ? { "palm-signature": signature } : {} });
   const out: { status: number; json?: any } = { status: 0 };
-  const res: any = { status(c: number) { out.status = c; return res; }, json(j: unknown) { out.json = j; return res; } };
+  const res: any = {
+    status(c: number) {
+      out.status = c;
+      return res;
+    },
+    json(j: unknown) {
+      out.json = j;
+      return res;
+    },
+  };
   return Promise.resolve(handler(req as any, res)).then(() => out);
 }
 
 describe("/api/palm-webhook", () => {
-  const event = { id: "evt_9", object: "event", type: "document.created", mode: "live", created_at: new Date(now).toISOString(), data: { object: { id: "d9", resource_type: "business", resource_id: "biz1", types: ["service_of_process"], filename: "summons.pdf" } } };
+  const event = {
+    id: "evt_9",
+    object: "event",
+    type: "document.created",
+    mode: "live",
+    created_at: new Date(now).toISOString(),
+    data: { object: { id: "d9", resource_type: "business", resource_id: "biz1", types: ["service_of_process"], filename: "summons.pdf" } },
+  };
   const body = JSON.stringify(event);
   beforeEach(() => {
     process.env.PALM_WEBHOOK_SECRET = SECRET;
@@ -83,7 +106,10 @@ describe("/api/palm-webhook", () => {
 
   it("stores legal papers against the entity and emails the owners once", async () => {
     // "Not handled before", the event row, then the owners.
-    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "evt_9" }]).mockResolvedValueOnce([{ email: "o@example.com" }, { email: "o@example.com" }, { email: null }]);
+    sbMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "evt_9" }])
+      .mockResolvedValueOnce([{ email: "o@example.com" }, { email: "o@example.com" }, { email: null }]);
     const r = await call(body, sign(body));
     expect(r.status).toBe(200);
     expect(sbMock.mock.calls[0][0]).toBe("palm_events?id=eq.evt_9&select=id&limit=1");
@@ -106,7 +132,12 @@ describe("/api/palm-webhook", () => {
 
 describe("case events", () => {
   it("keeps the business a case was opened on", () => {
-    const r = toEventRow({ id: "evt_c", type: "case.opened", mode: "live", data: { object: { id: "c1", parent_type: "business", parent_id: "biz9", status: "needs_response", summary: "Need addresses" } } });
+    const r = toEventRow({
+      id: "evt_c",
+      type: "case.opened",
+      mode: "live",
+      data: { object: { id: "c1", parent_type: "business", parent_id: "biz9", status: "needs_response", summary: "Need addresses" } },
+    });
     expect(r.business_id).toBe("biz9");
     expect(r.status).toBe("needs_response");
     const f = toEventRow({ id: "evt_d", type: "case.opened", mode: "live", data: { object: { id: "c2", parent_type: "filing", parent_id: "fil1", status: "needs_response" } } });
@@ -117,8 +148,21 @@ describe("case events", () => {
 describe("agent events", () => {
   const BIZ = "0b8d6a3e-1111-4222-8333-944455556666";
   const agentEvent = (status: string, created: number) => ({
-    id: `evt_ra_${status}_${created}`, object: "event", type: "registered_agent.updated", mode: "live", created_at: new Date(created).toISOString(),
-    data: { object: { business_id: BIZ, provider: "palm", status, started_at: "2026-10-01T00:00:00Z", name: "Palm RA", address: { street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" } } },
+    id: `evt_ra_${status}_${created}`,
+    object: "event",
+    type: "registered_agent.updated",
+    mode: "live",
+    created_at: new Date(created).toISOString(),
+    data: {
+      object: {
+        business_id: BIZ,
+        provider: "palm",
+        status,
+        started_at: "2026-10-01T00:00:00Z",
+        name: "Palm RA",
+        address: { street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" },
+      },
+    },
   });
   beforeEach(() => {
     process.env.PALM_WEBHOOK_SECRET = SECRET;
@@ -132,7 +176,10 @@ describe("agent events", () => {
   it("finds the entity by its linked business and puts Palm on the record", async () => {
     treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC", palm: { live: { businessId: BIZ, ra: { status: "pending", checkedAt: now - 60_000 } } } } });
     // "Not handled before", the entity linked to the business, then the event row.
-    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }]).mockResolvedValueOnce([{ id: "x" }]);
+    sbMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "asset-0001", name: "Ledger Louise, LLC" }])
+      .mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(agentEvent("active", now));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(sbMock.mock.calls[1][0]).toContain(`data->palm->live->>businessId=eq.${BIZ}`);
@@ -144,7 +191,10 @@ describe("agent events", () => {
   it("ignores an event older than what was last read", async () => {
     // Ordered by Palm's own event times: the last one applied was newer.
     treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "active", checkedAt: now, eventAt: now } } } } });
-    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([{ id: "x" }]);
+    sbMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "asset-0001", name: null }])
+      .mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(agentEvent("pending", now - 3_600_000));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(applyMock).not.toHaveBeenCalled();
@@ -153,7 +203,10 @@ describe("agent events", () => {
 
   it("does nothing for an event it has already handled", async () => {
     treeRows.push({ id: "asset-0001", data: { palm: { live: { businessId: BIZ, ra: { status: "pending" } } } } });
-    sbMock.mockResolvedValueOnce([{ id: "seen" }]).mockResolvedValueOnce([{ id: "asset-0001", name: null }]).mockResolvedValueOnce([]);
+    sbMock
+      .mockResolvedValueOnce([{ id: "seen" }])
+      .mockResolvedValueOnce([{ id: "asset-0001", name: null }])
+      .mockResolvedValueOnce([]);
     const body = JSON.stringify(agentEvent("active", now));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(applyMock).not.toHaveBeenCalled();
@@ -164,10 +217,27 @@ describe("agent events", () => {
 describe("monitor events", () => {
   const BIZ = "7c1d2e3f-1111-4222-8333-944455556666";
   const filingEvent = (type: string, created: number, due = "2026-11-01") => ({
-    id: `evt_${type}_${created}`, object: "event", type, mode: "live", created_at: new Date(created).toISOString(),
-    data: { business: { id: BIZ, palm_id: "1234-5678-9012", legal_name: "Ledger Louise, LLC", registration_jurisdiction_id: "US-AZ" }, object: { type: { id: "annual_report", name: "Annual Report" }, frequency: "annual", due_date: due } },
+    id: `evt_${type}_${created}`,
+    object: "event",
+    type,
+    mode: "live",
+    created_at: new Date(created).toISOString(),
+    data: {
+      business: { id: BIZ, palm_id: "1234-5678-9012", legal_name: "Ledger Louise, LLC", registration_jurisdiction_id: "US-AZ" },
+      object: { type: { id: "annual_report", name: "Annual Report" }, frequency: "annual", due_date: due },
+    },
   });
-  const monitorRow = { business_id: BIZ, mode: "live", asset_id: "asset-0001", state: "AZ", subscription_id: "s1", status: "active", started_at: "2026-10-01T00:00:00Z", started_by: null, ended_at: null };
+  const monitorRow = {
+    business_id: BIZ,
+    mode: "live",
+    asset_id: "asset-0001",
+    state: "AZ",
+    subscription_id: "s1",
+    status: "active",
+    started_at: "2026-10-01T00:00:00Z",
+    started_by: null,
+    ended_at: null,
+  };
   beforeEach(() => {
     process.env.PALM_WEBHOOK_SECRET = SECRET;
     sbMock.mockReset();
@@ -184,12 +254,18 @@ describe("monitor events", () => {
   it("keeps an overdue filing on the entity and emails the owners", async () => {
     treeRows.push({ id: "asset-0001", data: { name: "Ledger Louise, LLC" } });
     // "Not handled before", the monitor, the owners, then the event row.
-    sbMock.mockResolvedValueOnce([]).mockResolvedValueOnce([monitorRow]).mockResolvedValueOnce([{ email: "o@example.com" }]).mockResolvedValueOnce([{ id: "x" }]);
+    sbMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([monitorRow])
+      .mockResolvedValueOnce([{ email: "o@example.com" }])
+      .mockResolvedValueOnce([{ id: "x" }]);
     const body = JSON.stringify(filingEvent("business.filing.overdue", now));
     expect((await call(body, sign(body))).status).toBe(200);
     expect(sbMock.mock.calls[1][0]).toContain(`palm_monitors?business_id=eq.${BIZ}&mode=eq.live`);
     const [ops] = applyMock.mock.calls[0] as unknown as [{ value: Record<string, unknown> }[]];
-    expect(ops[0].value).toEqual({ "palmFilings/AZ_annual_report": { state: "AZ", typeId: "annual_report", name: "Annual Report", dueDate: "2026-11-01", frequency: "annual", status: "overdue", mode: "live", at: now } });
+    expect(ops[0].value).toEqual({
+      "palmFilings/AZ_annual_report": { state: "AZ", typeId: "annual_report", name: "Annual Report", dueDate: "2026-11-01", frequency: "annual", status: "overdue", mode: "live", at: now },
+    });
     expect(activityMock).toHaveBeenCalledTimes(1);
     expect(emailMock).toHaveBeenCalledTimes(1);
     expect((emailMock.mock.calls[0] as unknown as [string[], string])[1]).toBe("Ledger Louise, LLC: Annual Report is overdue in AZ");
@@ -210,7 +286,11 @@ describe("monitor events", () => {
 describe("filing events", () => {
   const FILING = "5a6b7c8d-1111-4222-8333-944455556666";
   const filingEvent = (status: string) => ({
-    id: `evt_f_${status}`, object: "event", type: "filing.updated", mode: "live", created_at: new Date(now).toISOString(),
+    id: `evt_f_${status}`,
+    object: "event",
+    type: "filing.updated",
+    mode: "live",
+    created_at: new Date(now).toISOString(),
     data: { object: { id: FILING, type: "formation", status, jurisdiction: "DE", metadata: { bfo_asset_id: "asset-abcdef12" } } },
   });
   const formed = { filingId: FILING, status: "completed", jurisdiction: "DE", submittedAt: 1, updatedAt: 2, entityType: "llc" };
@@ -257,13 +337,27 @@ describe("filing events", () => {
 describe("monitorPatch", () => {
   const ev = (type: string, extra: Record<string, unknown> = {}) => ({ id: "e1", type, mode: "live" as const, ...extra });
   it("keeps the latest change to a record", () => {
-    const p = monitorPatch(ev("business.registration.updated", { data: { changes: [{ attribute: "status", action: "updated", summary: "Status changed to Inactive", previous_value: "Active", current_value: { v: "Inactive" } }] } }), "AZ", "live", 5);
-    expect(p).toEqual({ "palmMonitor/AZ/lastChange": { at: 5, mode: "live", eventId: "e1", changes: [{ attribute: "status", action: "updated", summary: "Status changed to Inactive", from: "Active", to: '{"v":"Inactive"}' }] } });
+    const p = monitorPatch(
+      ev("business.registration.updated", {
+        data: { changes: [{ attribute: "status", action: "updated", summary: "Status changed to Inactive", previous_value: "Active", current_value: { v: "Inactive" } }] },
+      }),
+      "AZ",
+      "live",
+      5,
+    );
+    expect(p).toEqual({
+      "palmMonitor/AZ/lastChange": {
+        at: 5,
+        mode: "live",
+        eventId: "e1",
+        changes: [{ attribute: "status", action: "updated", summary: "Status changed to Inactive", from: "Active", to: '{"v":"Inactive"}' }],
+      },
+    });
     expect(monitorPatch(ev("business.registration.updated"), "AZ", "live", 5, { palmMonitor: { AZ: { lastChange: { at: 9 } } } })).toBeNull();
   });
   it("doesn't set an overdue filing back to due", () => {
     const due = ev("business.filing.due", { data: { object: { type: { id: "annual/report", name: "Annual" }, due_date: "2026-11-01T00:00:00Z" } } });
-    const prior = { palmFilings: { "AZ_annual_report": { state: "AZ", typeId: "x", name: "Annual", dueDate: "2026-11-01", frequency: null, status: "overdue" as const, mode: "live" as const, at: 1 } } };
+    const prior = { palmFilings: { AZ_annual_report: { state: "AZ", typeId: "x", name: "Annual", dueDate: "2026-11-01", frequency: null, status: "overdue" as const, mode: "live" as const, at: 1 } } };
     expect(monitorPatch(due, "AZ", "live", 2, prior)).toBeNull();
     expect(Object.keys(monitorPatch(due, "AZ", "live", 2)!)).toEqual(["palmFilings/AZ_annual_report"]);
     expect(monitorPatch(ev("document.created"), "AZ", "live", 2)).toBeNull();

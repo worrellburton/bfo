@@ -48,11 +48,7 @@ export function PeopleTab() {
   const [error, setError] = useState("");
 
   // The owners on record: the member list (from documents or the formation), else the owning entity at 100%.
-  const listed: Member[] = asset.members?.length
-    ? asset.members
-    : asset.ownerId && page.assetNames[asset.ownerId]
-      ? [{ name: page.assetNames[asset.ownerId], percent: 100, role: "Member" }]
-      : [];
+  const listed: Member[] = asset.members?.length ? asset.members : asset.ownerId && page.assetNames[asset.ownerId] ? [{ name: page.assetNames[asset.ownerId], percent: 100, role: "Member" }] : [];
   const fromOwner = !asset.members?.length && listed.length > 0;
   const owners = listed.filter(holdsOwnership);
   const managers = listed.filter((m) => !holdsOwnership(m));
@@ -100,105 +96,129 @@ export function PeopleTab() {
         {view.isTrust ? (
           <TrustRoles admin={admin} accessOf={accessOf} onInvite={(name) => setInviting({ memberName: name })} onRevoke={(p) => void revoke(p)} />
         ) : (
-        <>
-        <Section
-          title={asset.type === "C-Corp" ? "Shareholders" : "Owners"}
-          count={owners.length || undefined}
-          info={fromOwner ? "From the owner on record. Add the members to record their shares." : "Who owns it, and in what share. From the operating agreement, the formation, or entered here."}
-          actions={admin && owners.length > 0 ? <TextButton onClick={() => setAdding(true)}>+ Add</TextButton> : undefined}
-        >
-          {owners.length > 0 && (
-            <div className="px-5 pb-1 pt-4">
-              <div className={`flex h-2.5 overflow-hidden rounded-full ${t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
-                {owners.map((m, i) => (
-                  <span key={i} style={{ width: `${Math.max(0, m.percent ?? 0)}%`, background: COLORS[i % COLORS.length] }} className="h-full first:rounded-l-full last:rounded-r-full" />
-                ))}
-              </div>
-              {total !== 100 && owners.some((m) => m.percent != null) && (
-                <p className={`mt-2 text-[12px] ${t.dark ? "text-amber-300" : "text-amber-700"}`}>Shares add up to {total}%, not 100%.</p>
+          <>
+            <Section
+              title={asset.type === "C-Corp" ? "Shareholders" : "Owners"}
+              count={owners.length || undefined}
+              info={fromOwner ? "From the owner on record. Add the members to record their shares." : "Who owns it, and in what share. From the operating agreement, the formation, or entered here."}
+              actions={admin && owners.length > 0 ? <TextButton onClick={() => setAdding(true)}>+ Add</TextButton> : undefined}
+            >
+              {owners.length > 0 && (
+                <div className="px-5 pb-1 pt-4">
+                  <div className={`flex h-2.5 overflow-hidden rounded-full ${t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
+                    {owners.map((m, i) => (
+                      <span key={i} style={{ width: `${Math.max(0, m.percent ?? 0)}%`, background: COLORS[i % COLORS.length] }} className="h-full first:rounded-l-full last:rounded-r-full" />
+                    ))}
+                  </div>
+                  {total !== 100 && owners.some((m) => m.percent != null) && <p className={`mt-2 text-[12px] ${t.dark ? "text-amber-300" : "text-amber-700"}`}>Shares add up to {total}%, not 100%.</p>}
+                </div>
               )}
-            </div>
-          )}
-          {owners.length === 0 && !adding ? (
-            <Empty action={admin ? <Button icon="plus" onClick={() => setAdding(true)}>Add owner</Button> : undefined}>No owners on record yet.</Empty>
-          ) : (
-            <div className={`divide-y ${t.divide}`}>
-              {owners.map((m, i) =>
-                editing === i && admin ? (
-                  <MemberForm
-                    key={i}
-                    initial={m}
-                    onCancel={() => setEditing(null)}
-                    onSave={async (next) => {
-                      await saveMembers(listed.map((x) => (x === m ? next : x)));
-                      setEditing(null);
-                    }}
-                  />
-                ) : (
-                  <PersonRow
-                    key={i}
-                    color={COLORS[i % COLORS.length]}
-                    name={m.name}
-                    detail={m.role && !/^member$/i.test(m.role) ? m.role : asset.type === "C-Corp" ? "Shareholder" : "Member"}
-                    share={m.percent}
-                    address={m.address ?? page.assetAddressByName?.(m.name) ?? null}
-                    access={admin ? accessOf(m.name) : null}
-                    admin={admin}
-                    onInvite={isCompany(m.name) ? undefined : () => setInviting({ memberName: m.name })}
-                    onRevoke={(p) => void revoke(p)}
-                    onEdit={() => setEditing(i)}
-                    onRemove={async () => {
-                      if (await confirmDialog({ title: `Remove ${m.name}?`, message: "From this entity's owner list. Their BFO access, if any, stays until you remove it.", confirmLabel: "Remove", tone: "danger" }))
-                        await saveMembers(listed.filter((x) => x !== m));
-                    }}
-                  />
-                )
+              {owners.length === 0 && !adding ? (
+                <Empty
+                  action={
+                    admin ? (
+                      <Button icon="plus" onClick={() => setAdding(true)}>
+                        Add owner
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  No owners on record yet.
+                </Empty>
+              ) : (
+                <div className={`divide-y ${t.divide}`}>
+                  {owners.map((m, i) =>
+                    editing === i && admin ? (
+                      <MemberForm
+                        key={i}
+                        initial={m}
+                        onCancel={() => setEditing(null)}
+                        onSave={async (next) => {
+                          await saveMembers(listed.map((x) => (x === m ? next : x)));
+                          setEditing(null);
+                        }}
+                      />
+                    ) : (
+                      <PersonRow
+                        key={i}
+                        color={COLORS[i % COLORS.length]}
+                        name={m.name}
+                        detail={m.role && !/^member$/i.test(m.role) ? m.role : asset.type === "C-Corp" ? "Shareholder" : "Member"}
+                        share={m.percent}
+                        address={m.address ?? page.assetAddressByName?.(m.name) ?? null}
+                        access={admin ? accessOf(m.name) : null}
+                        admin={admin}
+                        onInvite={isCompany(m.name) ? undefined : () => setInviting({ memberName: m.name })}
+                        onRevoke={(p) => void revoke(p)}
+                        onEdit={() => setEditing(i)}
+                        onRemove={async () => {
+                          if (
+                            await confirmDialog({
+                              title: `Remove ${m.name}?`,
+                              message: "From this entity's owner list. Their BFO access, if any, stays until you remove it.",
+                              confirmLabel: "Remove",
+                              tone: "danger",
+                            })
+                          )
+                            await saveMembers(listed.filter((x) => x !== m));
+                        }}
+                      />
+                    ),
+                  )}
+                  {adding && (
+                    <MemberForm
+                      initial={{ name: "", percent: owners.length ? Math.max(0, 100 - total) : 100, role: "Member" }}
+                      onCancel={() => setAdding(false)}
+                      onSave={async (next) => {
+                        await saveMembers([...listed, next]);
+                        setAdding(false);
+                      }}
+                    />
+                  )}
+                </div>
               )}
-              {adding && (
-                <MemberForm
-                  initial={{ name: "", percent: owners.length ? Math.max(0, 100 - total) : 100, role: "Member" }}
-                  onCancel={() => setAdding(false)}
-                  onSave={async (next) => {
-                    await saveMembers([...listed, next]);
-                    setAdding(false);
-                  }}
-                />
-              )}
-            </div>
-          )}
-        </Section>
+            </Section>
 
-        {(managers.length > 0 || admin) && (
-          <Section title={asset.type === "C-Corp" ? "Directors and officers" : "Managers"} count={managers.length || undefined} info="People who run it without an ownership share.">
-            {managers.length === 0 ? (
-              <Empty>None listed. {asset.type === "C-Corp" ? "" : "It's run by its owners."}</Empty>
-            ) : (
-              <div className={`divide-y ${t.divide}`}>
-                {managers.map((m, i) => (
-                  <PersonRow
-                    key={i}
-                    color={t.dark ? "#4b5563" : "#9ca3af"}
-                    name={m.name}
-                    detail={m.role ?? "Manager"}
-                    share={null}
-                    access={admin ? accessOf(m.name) : null}
-                    admin={admin}
-                    onInvite={() => setInviting({ memberName: m.name })}
-                    onRevoke={(p) => void revoke(p)}
-                  />
-                ))}
-              </div>
+            {(managers.length > 0 || admin) && (
+              <Section title={asset.type === "C-Corp" ? "Directors and officers" : "Managers"} count={managers.length || undefined} info="People who run it without an ownership share.">
+                {managers.length === 0 ? (
+                  <Empty>None listed. {asset.type === "C-Corp" ? "" : "It's run by its owners."}</Empty>
+                ) : (
+                  <div className={`divide-y ${t.divide}`}>
+                    {managers.map((m, i) => (
+                      <PersonRow
+                        key={i}
+                        color={t.dark ? "#4b5563" : "#9ca3af"}
+                        name={m.name}
+                        detail={m.role ?? "Manager"}
+                        share={null}
+                        access={admin ? accessOf(m.name) : null}
+                        admin={admin}
+                        onInvite={() => setInviting({ memberName: m.name })}
+                        onRevoke={(p) => void revoke(p)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </Section>
             )}
-          </Section>
-        )}
-        </>
+          </>
         )}
 
         {admin && others.length > 0 && (
           <Section title="Also has access" count={others.length} info="People given this entity in BFO who aren't on its owner list.">
             <div className={`divide-y ${t.divide}`}>
               {others.map((p) => (
-                <PersonRow key={p.userId} color={t.dark ? "#4b5563" : "#9ca3af"} name={p.name ?? p.phone} detail={p.memberName && p.memberName !== p.name ? `For ${p.memberName}` : "Invited"} share={null} access={p} admin onRevoke={(x) => void revoke(x)} />
+                <PersonRow
+                  key={p.userId}
+                  color={t.dark ? "#4b5563" : "#9ca3af"}
+                  name={p.name ?? p.phone}
+                  detail={p.memberName && p.memberName !== p.name ? `For ${p.memberName}` : "Invited"}
+                  share={null}
+                  access={p}
+                  admin
+                  onRevoke={(x) => void revoke(x)}
+                />
               ))}
             </div>
           </Section>
@@ -233,7 +253,7 @@ export function PeopleTab() {
               setPeople(list);
             }}
           />,
-          document.body
+          document.body,
         )}
     </div>
   );
@@ -246,7 +266,6 @@ const TRUST_ROLES = [
   { key: "grantors", title: "Grantors", one: "Grantor", info: "Who created the trust and put property into it. While a grantor of a revocable trust is alive, it's taxed to them." },
   { key: "beneficiaries", title: "Beneficiaries", one: "Beneficiary", info: "Who the trust is for: who receives its income or property." },
 ] as const;
-
 
 /** Trustees, grantors and beneficiaries: the record's own lists, edited in place. */
 function TrustRoles({ admin, accessOf, onInvite, onRevoke }: { admin: boolean; accessOf: (name: string) => Person | null; onInvite: (name: string) => void; onRevoke: (p: Person) => void }) {
@@ -273,7 +292,15 @@ function TrustRoles({ admin, accessOf, onInvite, onRevoke }: { admin: boolean; a
             actions={admin && names.length > 0 && !open ? <TextButton onClick={() => (setAdding(role.key), setName(""))}>+ Add</TextButton> : undefined}
           >
             {names.length === 0 && !open ? (
-              <Empty action={admin ? <Button icon="plus" onClick={() => (setAdding(role.key), setName(""))}>Add {role.one.toLowerCase()}</Button> : undefined}>
+              <Empty
+                action={
+                  admin ? (
+                    <Button icon="plus" onClick={() => (setAdding(role.key), setName(""))}>
+                      Add {role.one.toLowerCase()}
+                    </Button>
+                  ) : undefined
+                }
+              >
                 None on record. {role.key === "trustees" ? "The trust agreement names them." : ""}
               </Empty>
             ) : (
@@ -291,7 +318,10 @@ function TrustRoles({ admin, accessOf, onInvite, onRevoke }: { admin: boolean; a
                     onRevoke={onRevoke}
                     onRemove={async () => {
                       if (await confirmDialog({ title: `Remove ${n}?`, message: `From the trust's ${role.title.toLowerCase()}.`, confirmLabel: "Remove", tone: "danger" }))
-                        await save(role.key, names.filter((_, j) => j !== i));
+                        await save(
+                          role.key,
+                          names.filter((_, j) => j !== i),
+                        );
                     }}
                   />
                 ))}
@@ -366,11 +396,7 @@ function PersonRow({
         <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] ${t.muted}`}>
           <span>{detail}</span>
           {address !== undefined &&
-            (address ? (
-              <span className="truncate">· {address}</span>
-            ) : (
-              <span className={t.dark ? "text-amber-300" : "text-amber-700"}>· No address: the operating agreement lists it</span>
-            ))}
+            (address ? <span className="truncate">· {address}</span> : <span className={t.dark ? "text-amber-300" : "text-amber-700"}>· No address: the operating agreement lists it</span>)}
           {access && (
             <span className={`inline-flex items-center gap-1 ${signedIn ? (t.dark ? "text-emerald-300" : "text-emerald-700") : t.dark ? "text-amber-300" : "text-amber-700"}`}>
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -383,15 +409,16 @@ function PersonRow({
       {share != null && <span className={`font-brand text-[20px] tabular-nums ${t.text}`}>{Math.round(share * 100) / 100}%</span>}
       {admin && (
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {onInvite && (!access ? (
-            <Button icon="mail" onClick={onInvite}>
-              Invite to BFO
-            </Button>
-          ) : (
-            <TextButton onClick={onInvite} className="mr-1">
-              Resend
-            </TextButton>
-          ))}
+          {onInvite &&
+            (!access ? (
+              <Button icon="mail" onClick={onInvite}>
+                Invite to BFO
+              </Button>
+            ) : (
+              <TextButton onClick={onInvite} className="mr-1">
+                Resend
+              </TextButton>
+            ))}
           {access && <IconButton icon="x" label="Remove access" onClick={() => onRevoke(access)} />}
           {onEdit && <IconButton icon="edit" label="Edit" onClick={onEdit} />}
           {onRemove && <IconButton icon="trash" tone="danger" label="Remove from owners" onClick={onRemove} />}
@@ -492,7 +519,12 @@ function InviteDialog({ entity, memberName, assetId, onClose, onDone }: { entity
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6">
       <div className="palette-backdrop absolute inset-0 bg-black/60 backdrop-blur-[3px]" onClick={() => !busy && onClose()} />
-      <div role="dialog" aria-modal="true" aria-labelledby="invite-title" className={`palette-panel glass-panel relative w-full max-w-[460px] overflow-hidden border shadow-2xl max-sm:rounded-t-[22px] sm:rounded-[22px] ${t.dark ? "text-white" : "text-gray-900"}`}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invite-title"
+        className={`palette-panel glass-panel relative w-full max-w-[460px] overflow-hidden border shadow-2xl max-sm:rounded-t-[22px] sm:rounded-[22px] ${t.dark ? "text-white" : "text-gray-900"}`}
+      >
         {sent ? (
           <div className="p-7 text-center">
             <span className={`mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full ${t.dark ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}>
@@ -521,7 +553,8 @@ function InviteDialog({ entity, memberName, assetId, onClose, onDone }: { entity
                 {company ? `Someone from ${memberName}` : memberName}
               </h2>
               <p className={`mt-2 text-[12.5px] leading-relaxed ${t.muted}`}>
-                {company ? `${memberName} is a company: invite the person who represents it. ` : ""}They'll get a text, sign in with their phone and see only {entity}: its documents, operating agreement and owners.
+                {company ? `${memberName} is a company: invite the person who represents it. ` : ""}They'll get a text, sign in with their phone and see only {entity}: its documents, operating
+                agreement and owners.
               </p>
             </div>
             <div className="space-y-3 px-6 py-4">

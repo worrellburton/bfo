@@ -268,7 +268,10 @@ export async function authFetch(path: string, init: RequestInit = {}): Promise<R
   // Only a dead session signs the user out. Other 401s (a bank that needs
   // reconnecting, an upstream API refusing us) are the page's to explain.
   if (res.status === 401) {
-    const body = await res.clone().json().catch(() => null);
+    const body = await res
+      .clone()
+      .json()
+      .catch(() => null);
     if (!body || body.error === "unauthorized") write(null);
   }
   return res;

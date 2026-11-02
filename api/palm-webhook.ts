@@ -205,7 +205,14 @@ async function trackAgent(assetId: string, mode: "test" | "live", service: RaSer
   patch[`palm/${mode}/ra`] = { ...(patch[`palm/${mode}/ra`] as object), eventAt: at };
   await applyOps([{ op: "update", path: ["assets", assetId], value: patch as never }], PALM);
   if (prior?.status === service.status) return; // Palm resending, or nothing new to say
-  const label = { pending: "is filing the agent change", active: "is now the registered agent", termination_requested: "is resigning as agent", terminated: "stopped serving as agent", failed: "couldn't make the agent change", canceled: "canceled the agent change" }[service.status];
+  const label = {
+    pending: "is filing the agent change",
+    active: "is now the registered agent",
+    termination_requested: "is resigning as agent",
+    terminated: "stopped serving as agent",
+    failed: "couldn't make the agent change",
+    canceled: "canceled the agent change",
+  }[service.status];
   const why = service.status === "failed" && service.rejection_reason ? `: ${service.rejection_reason}` : "";
   await logActivity(assetId, PALM, [{ kind: "palm", summary: `Palm ${label}${why}${mode === "test" ? " (test)" : ""}` }]);
 }
@@ -213,7 +220,9 @@ async function trackAgent(assetId: string, mode: "test" | "live", service: RaSer
 /** True when this event was handled before (Palm redelivers): it changes nothing a second time. */
 async function alreadyStored(eventId: string): Promise<boolean> {
   // Unreadable counts as new: the event is handled again rather than dropped.
-  const rows = await sb<{ id: string }[]>(`palm_events?id=eq.${encodeURIComponent(eventId)}&select=id&limit=1`).catch((err) => (console.error("palm-webhook: couldn't check for an earlier delivery", err), []));
+  const rows = await sb<{ id: string }[]>(`palm_events?id=eq.${encodeURIComponent(eventId)}&select=id&limit=1`).catch(
+    (err) => (console.error("palm-webhook: couldn't check for an earlier delivery", err), []),
+  );
   return !!rows?.length;
 }
 
@@ -272,7 +281,9 @@ async function onCase(eventId: string, type: string, assetId: string, entityName
 
 /** The owners' and admins' email addresses. */
 async function ownerEmails(): Promise<string[]> {
-  const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch((err) => (console.error("palm-webhook: couldn't read who to email", err), []));
+  const people = await sb<{ email: string | null }[]>("app_users?status=eq.approved&role=in.(owner,admin)&select=email").catch(
+    (err) => (console.error("palm-webhook: couldn't read who to email", err), []),
+  );
   return [...new Set(people.map((p) => p.email).filter((e): e is string => !!e))];
 }
 
@@ -290,7 +301,10 @@ async function onMonitor(event: PalmEvent, assetId: string, entityName: string |
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
   if (event.type === "business.registration.updated") {
-    const lines = (event.data?.changes ?? []).map((c) => c.summary || `${c.attribute ?? "Record"} ${c.action ?? "updated"}`).filter(Boolean).slice(0, 10);
+    const lines = (event.data?.changes ?? [])
+      .map((c) => c.summary || `${c.attribute ?? "Record"} ${c.action ?? "updated"}`)
+      .filter(Boolean)
+      .slice(0, 10);
     const summary = lines.length ? lines.join("; ") : "Its record changed.";
     await logActivity(assetId, PALM, [{ kind: "palm", summary: `${state} record changed: ${summary}${tag}` }]);
     if (mode === "live") {

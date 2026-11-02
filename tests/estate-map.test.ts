@@ -7,10 +7,17 @@ describe("the estate map", () => {
       {
         t: { name: "Burton Family Revocable Trust", type: "Trust" },
         ll: { name: "Ledger Louise, LLC", ownerId: "t" },
-        tal: { name: "TallulahMD LLC", ownerId: "ll", members: [{ name: "Ledger Louise, LLC", percent: 50, role: "Member" }, { name: "Sameh Elguizaoui", percent: 50, role: "Member" }] },
+        tal: {
+          name: "TallulahMD LLC",
+          ownerId: "ll",
+          members: [
+            { name: "Ledger Louise, LLC", percent: 50, role: "Member" },
+            { name: "Sameh Elguizaoui", percent: 50, role: "Member" },
+          ],
+        },
         old: { name: "Gone, LLC", ownerId: "ll", status: "Dissolved" },
       },
-      { "ledger louise, llc": 600 }
+      { "ledger louise, llc": 600 },
     );
     expect(nodes.map((n) => [n.name, n.parentId])).toEqual([
       ["Ledger Louise, LLC", "t"],

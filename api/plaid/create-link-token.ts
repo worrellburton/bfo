@@ -44,9 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let accessToken: string | undefined;
     if (updateItemId) {
-      const rows = await sb<Array<{ access_token: string }>>(
-        `plaid_items?item_id=eq.${encodeURIComponent(updateItemId)}&select=access_token&limit=1`
-      );
+      const rows = await sb<Array<{ access_token: string }>>(`plaid_items?item_id=eq.${encodeURIComponent(updateItemId)}&select=access_token&limit=1`);
       if (!rows?.[0]) return res.status(404).json({ error: "unknown_item" });
       accessToken = rows[0].access_token;
     }

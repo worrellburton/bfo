@@ -29,11 +29,7 @@ type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
  * Apply one patch to every id, BATCH_MAX at a time, in order. Stops at the
  * first refusal; `done` says how many rows were saved before it.
  */
-export async function postBatchEdit(
-  fetcher: Fetcher,
-  ids: string[],
-  patch: Record<string, string>
-): Promise<{ ok: true } | { ok: false; done: number; message: string }> {
+export async function postBatchEdit(fetcher: Fetcher, ids: string[], patch: Record<string, string>): Promise<{ ok: true } | { ok: false; done: number; message: string }> {
   let done = 0;
   for (const part of chunkIds(ids)) {
     let res: Response;

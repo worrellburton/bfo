@@ -55,7 +55,10 @@ export interface Asset {
   /** Filings Palm Monitor says are due or overdue, by state and kind (api/palm-webhook.ts). */
   palmFilings?: Record<string, PalmFilingDue>;
   /** The latest change Palm Monitor saw on each state's record. */
-  palmMonitor?: Record<string, { lastChange?: { at: number; mode: PalmMode; changes: { attribute: string | null; action: string | null; summary: string | null; from: string | null; to: string | null }[] } }>;
+  palmMonitor?: Record<
+    string,
+    { lastChange?: { at: number; mode: PalmMode; changes: { attribute: string | null; action: string | null; summary: string | null; from: string | null; to: string | null }[] } }
+  >;
   /** What the IRS said about the EIN, through Palm. */
   einCheck?: EinCheck;
   operatingAgreementDate?: string;
@@ -94,8 +97,7 @@ export interface Asset {
 export type Member = { name: string; percent: number | null; role: string | null; address?: string | null };
 
 /** An owner, not only a manager: a Manager/Director/Officer counts once they hold a share. */
-export const holdsOwnership = (m: { role?: string | null; percent?: number | null }) =>
-  !/manager|director|officer/i.test(m.role ?? "") || m.percent != null;
+export const holdsOwnership = (m: { role?: string | null; percent?: number | null }) => !/manager|director|officer/i.test(m.role ?? "") || m.percent != null;
 
 export type EntityProfile = {
   whatItIs: string;
@@ -116,9 +118,7 @@ export type EntityProfile = {
 };
 
 export type VerifyField =
-  | "name" | "type" | "state" | "ein" | "formationDate" | "address"
-  | "registeredAgent" | "llcType" | "operatingAgreementDate" | "articlesOfOrgDate"
-  | "trustees" | "grantors" | "beneficiaries";
+  "name" | "type" | "state" | "ein" | "formationDate" | "address" | "registeredAgent" | "llcType" | "operatingAgreementDate" | "articlesOfOrgDate" | "trustees" | "grantors" | "beneficiaries";
 
 export interface Verification {
   checkedAt: number;
@@ -229,12 +229,7 @@ export const MSA_SERVICES = [
   "Software Development",
 ];
 
-export const LEDGER_LOUISE_SUBS = [
-  "Swisshelm Mountain Ventures, LLC",
-  "Sundown Investments, LLC",
-  "Ledger Burton, LLC",
-  "Worrell Burton, LLC",
-];
+export const LEDGER_LOUISE_SUBS = ["Swisshelm Mountain Ventures, LLC", "Sundown Investments, LLC", "Ledger Burton, LLC", "Worrell Burton, LLC"];
 
 // Older contracts stored two separate AI services that are now one line.
 const SERVICE_ALIASES: Record<string, string> = {
@@ -278,7 +273,12 @@ export function docKind(doc: { contentType?: string; storagePath?: string }): st
   if (ct.includes("spreadsheet") || ct.includes("excel") || ct.includes("csv")) return "XLS";
   if (ct.includes("presentation") || ct.includes("powerpoint")) return "PPT";
   const sub = ct.split("/").pop() || "";
-  return sub.replace(/[^a-z0-9]/g, "").slice(0, 4).toUpperCase() || "FILE";
+  return (
+    sub
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 4)
+      .toUpperCase() || "FILE"
+  );
 }
 
 /** Compare values the way a person would: case, punctuation and legal suffixes aside. */
@@ -342,7 +342,8 @@ export function guessFiling(name: string): FileKind | null {
   if (/trust agreement|declaration of trust|trust instrument|trust indenture|amended and restated .*trust/.test(n)) return "trustAgreement";
   // A file named for the trust itself ("… Burton Family Revocable Trust") is
   // the trust instrument, unless the name says it's something about the trust.
-  if (/(revocable|living|family|irrevocable) trust\b/.test(n) && !/certif|existence|assignment|appointment|amendment|schedule|resignation|memorandum|abstract|deed|transfer/.test(n)) return "trustAgreement";
+  if (/(revocable|living|family|irrevocable) trust\b/.test(n) && !/certif|existence|assignment|appointment|amendment|schedule|resignation|memorandum|abstract|deed|transfer/.test(n))
+    return "trustAgreement";
   if (/schedule a\b|trust schedule|assignment of (membership|interest|llc)|assignment to (the )?trust/.test(n)) return "trustSchedule";
   if (/\bcp[\s-]?261\b|s[- ]?(corp(oration)?)? election accept/.test(n)) return "sElectionAccepted";
   if (/\b2553\b|s[- ]?corp(oration)? election|\bs election\b/.test(n)) return "sElection";
@@ -405,7 +406,7 @@ export const BY_HAND = "Entered by hand";
  * no properties or issues comes back without those keys. Restore them on read.
  */
 export function fromDatabase(raw: Asset): Asset {
-  const list = <T,>(v: T[] | Record<string, T> | undefined | null): T[] => (Array.isArray(v) ? v : v && typeof v === "object" ? Object.values(v) : []);
+  const list = <T>(v: T[] | Record<string, T> | undefined | null): T[] => (Array.isArray(v) ? v : v && typeof v === "object" ? Object.values(v) : []);
   const a: Asset = { ...raw };
   if (a.profile) {
     const p = a.profile;

@@ -3,18 +3,7 @@ import { readActivity } from "../lib/activity.js";
 import { canWrite, currentUser, fail, handleError, isPartner, type AppUser } from "../lib/auth.js";
 import { accessibleAssetIds } from "../lib/entity-access.js";
 import { importAll, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
-import {
-  applyOps,
-  collectionValue,
-  MAX_BODY_BYTES,
-  parseOps,
-  parsePath,
-  readCollection,
-  readIndex,
-  readRows,
-  valueAt,
-  type Collection,
-} from "../lib/tree.js";
+import { applyOps, collectionValue, MAX_BODY_BYTES, parseOps, parsePath, readCollection, readIndex, readRows, valueAt, type Collection } from "../lib/tree.js";
 
 /**
  * The shared JSON tree (lib/tree.ts) for signed-in users. Any approved user
@@ -71,7 +60,7 @@ async function read(req: VercelRequest, res: VercelResponse, only: Set<string> |
 
   if (collection === "assets") {
     await migrateFirebaseFiles(path.length >= 2 ? { assetId: path[1], budgetMs: FILES_BUDGET_MS.one } : { budgetMs: FILES_BUDGET_MS.all }).catch((err) =>
-      console.error("firebase-bridge: file move failed", err)
+      console.error("firebase-bridge: file move failed", err),
     );
   }
 
@@ -100,7 +89,11 @@ async function readOwn(req: VercelRequest, res: VercelResponse, path: string[], 
   if (path[0] !== "assets") return fail(res, 403, "forbidden");
   if (path.length === 1) {
     const view = param(req, "view");
-    const wanted = param(req, "ids") ? param(req, "ids").split(",").filter((id) => only.has(id)) : [...only];
+    const wanted = param(req, "ids")
+      ? param(req, "ids")
+          .split(",")
+          .filter((id) => only.has(id))
+      : [...only];
     const rows = (await readRows("assets", wanted.slice(0, 500))).map(forPartner);
     if (view === "index") return res.status(200).json({ rows: rows.map((r) => ({ id: r.id, updated_at: r.updated_at })) });
     if (param(req, "ids")) return res.status(200).json({ rows });

@@ -6,7 +6,18 @@ import { tap } from "./helpers";
 import type { ListState } from "./list-state";
 
 /** Moving about the page: the URL for a folder, filter, search, mailbox or open message, and the page transitions on phones. */
-export function useMailNavigation({ folder, filter, q, box, openId, cache, listRef, setParams, navigate, location }: {
+export function useMailNavigation({
+  folder,
+  filter,
+  q,
+  box,
+  openId,
+  cache,
+  listRef,
+  setParams,
+  navigate,
+  location,
+}: {
   folder: MailFolder;
   filter: MailFilter;
   q: string;

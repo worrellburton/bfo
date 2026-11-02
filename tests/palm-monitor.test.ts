@@ -45,7 +45,10 @@ describe("startMonitor", () => {
     palmMock.mockResolvedValueOnce(SUB);
     const row = await startMonitor({ assetId: "a1", reg: { state: "AZ", home: true, fileNumber: "L1", palmId: null }, linkedBusinessId: BIZ, mode: "live", by });
     expect(palmMock.mock.calls[0][0]).toBe(`/v1/business/${BIZ}/subscription`);
-    expect(palmMock.mock.calls[0][1]).toMatchObject({ method: "POST", body: { event_types: ["business.registration.updated", "business.filing.due", "business.filing.overdue"], metadata: { bfo_asset_id: "a1", state: "AZ" } } });
+    expect(palmMock.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: { event_types: ["business.registration.updated", "business.filing.due", "business.filing.overdue"], metadata: { bfo_asset_id: "a1", state: "AZ" } },
+    });
     expect(row).toMatchObject({ business_id: BIZ, asset_id: "a1", state: "AZ", status: "active", mode: "live" });
     expect(sbMock.mock.calls[1][0]).toBe("palm_monitors?on_conflict=business_id,mode");
   });

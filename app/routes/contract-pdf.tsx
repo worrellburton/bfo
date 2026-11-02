@@ -78,7 +78,6 @@ export default function ContractPDF() {
         if (data) setContract(data as OperatingContract);
         setLoading(false);
       });
-
     }
 
     setup();
@@ -151,9 +150,7 @@ export default function ContractPDF() {
       const officeSentence = isLedgerLouise
         ? "Manager's principal office is 401 Ryland Street, Suite 200-A, Reno, NV 89502; its notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028."
         : "Manager's notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028.";
-      const venue = isLedgerLouise
-        ? "the state or federal courts located in Washoe County, Nevada"
-        : `the state or federal courts located in ${managerState}`;
+      const venue = isLedgerLouise ? "the state or federal courts located in Washoe County, Nevada" : `the state or federal courts located in ${managerState}`;
 
       // Letterhead identity — toggled in the UI: present as BFO or Robert Burton.
       // With "Entity name only" the entity speaks for itself: no BFO, no Burton
@@ -252,7 +249,9 @@ export default function ContractPDF() {
         }
       }
 
-      function gap(n = 10) { y += n; }
+      function gap(n = 10) {
+        y += n;
+      }
 
       // ── Page 1 ───────────────────────────────────────────────
       paintPage();
@@ -290,7 +289,8 @@ export default function ContractPDF() {
       doc.setCharSpace(1.3);
       doc.text(
         `EFFECTIVE ${String(contract.effectiveDate).toUpperCase()}     ${String(contract.fee).toUpperCase()} / ${String(contract.frequency).toUpperCase()}     TERM ${String(contract.term).toUpperCase()}`,
-        ml, y
+        ml,
+        y,
       );
       doc.setCharSpace(0);
       y += 14;
@@ -341,9 +341,7 @@ export default function ContractPDF() {
         "AI Agent & Automation Development": "AI, Automation & Technology Management",
       };
       const seenSvc = new Set<string>();
-      const services = (contract.services || [])
-        .map((s) => SERVICE_ALIASES[s] || s)
-        .filter((s) => (seenSvc.has(s) ? false : (seenSvc.add(s), true)));
+      const services = (contract.services || []).map((s) => SERVICE_ALIASES[s] || s).filter((s) => (seenSvc.has(s) ? false : (seenSvc.add(s), true)));
       services.forEach((s: string) => {
         body(`—   ${s}`, { indent: 16 });
       });
@@ -356,28 +354,38 @@ export default function ContractPDF() {
       body("2.2  Payment shall be due within thirty (30) days following the end of each billing period.");
       if (contract.referralCredit) {
         gap(6);
-        body("2.3  Referral Credit. If Client refers a prospective client to Manager and such referral results in an executed engagement between Manager and the referred party, Manager shall credit the referral fee otherwise payable in respect of that referral against Client’s Management Fee, in lieu of any cash payment. The credit shall be applied to successive Management Fee invoices until the full amount of the referral fee has been exhausted. By way of illustration, if Client’s Management Fee is $5,000 per month and a qualifying referral generates a $10,000 referral fee, Manager shall waive Client’s Management Fee for the period(s) necessary to apply the full $10,000 credit (e.g., two (2) months), after which the Management Fee shall resume.");
+        body(
+          "2.3  Referral Credit. If Client refers a prospective client to Manager and such referral results in an executed engagement between Manager and the referred party, Manager shall credit the referral fee otherwise payable in respect of that referral against Client’s Management Fee, in lieu of any cash payment. The credit shall be applied to successive Management Fee invoices until the full amount of the referral fee has been exhausted. By way of illustration, if Client’s Management Fee is $5,000 per month and a qualifying referral generates a $10,000 referral fee, Manager shall waive Client’s Management Fee for the period(s) necessary to apply the full $10,000 credit (e.g., two (2) months), after which the Management Fee shall resume.",
+        );
       }
 
       kicker("Article III · Term and Termination");
       const termText = String(contract.term || "").toLowerCase();
       const autoRenew = termText.includes("auto-renew");
       const monthToMonth = termText.includes("month");
-      body(monthToMonth
-        ? "3.1  This Agreement shall commence on the Effective Date and shall continue on a month-to-month basis until terminated. Either party may terminate this Agreement for any reason upon thirty (30) days’ written notice to the other party."
-        : autoRenew
-        ? "3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term."
-        : "3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the \"Initial Term\"). This Agreement shall not automatically renew; any renewal shall require the written agreement of both parties prior to the expiration of the Initial Term.");
+      body(
+        monthToMonth
+          ? "3.1  This Agreement shall commence on the Effective Date and shall continue on a month-to-month basis until terminated. Either party may terminate this Agreement for any reason upon thirty (30) days’ written notice to the other party."
+          : autoRenew
+            ? '3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the "Initial Term"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term.'
+            : '3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the "Initial Term"). This Agreement shall not automatically renew; any renewal shall require the written agreement of both parties prior to the expiration of the Initial Term.',
+      );
       gap(6);
-      body("3.2  Either party may terminate this Agreement for cause upon thirty (30) days’ written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.");
+      body(
+        "3.2  Either party may terminate this Agreement for cause upon thirty (30) days’ written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.",
+      );
       gap(6);
       body("3.3  Upon termination, Manager shall deliver to Client all documents, records, and materials relating to Client’s business within fifteen (15) business days.");
 
       kicker("Article IV · Confidentiality");
-      body("4.1  Each party acknowledges that in the course of performing its obligations under this Agreement, it may receive or have access to confidential and proprietary information of the other party. Each party agrees to maintain the confidentiality of such information and not to disclose it to any third party without the prior written consent of the disclosing party.");
+      body(
+        "4.1  Each party acknowledges that in the course of performing its obligations under this Agreement, it may receive or have access to confidential and proprietary information of the other party. Each party agrees to maintain the confidentiality of such information and not to disclose it to any third party without the prior written consent of the disclosing party.",
+      );
 
       kicker("Article V · Indemnification");
-      body("5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.");
+      body(
+        "5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.",
+      );
 
       kicker("Article VI · Governing Law");
       body(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${managerState}, without regard to its conflict of law provisions.`);
@@ -394,10 +402,7 @@ export default function ContractPDF() {
       // ── Signature block — always anchored to the bottom of the page ──
       doc.setFont("times", "italic");
       doc.setFontSize(10.5);
-      const witnessLines = doc.splitTextToSize(
-        "IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.",
-        tw
-      );
+      const witnessLines = doc.splitTextToSize("IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.", tw);
       const witnessH = witnessLines.length * 10.5 * 1.6;
       const sigBlockH = witnessH + 26 + 138; // witness + gap + columns/lines/fields
       // Keep the whole block together; move to a fresh page only if it won't fit.
@@ -545,7 +550,9 @@ export default function ContractPDF() {
             Back
           </Link>
           <div className="min-w-0">
-            <h1 className="text-lg font-bold break-words">MSA — {asset.name} &rarr; {contract.counterparty}</h1>
+            <h1 className="text-lg font-bold break-words">
+              MSA — {asset.name} &rarr; {contract.counterparty}
+            </h1>
             <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
               {contract.fee}/{contract.frequency} &middot; {contract.status}
             </p>
@@ -557,7 +564,7 @@ export default function ContractPDF() {
               onClick={() => setBrand("bfo")}
               title={contract.entityNameOnly ? `Present the document as ${asset.name}` : "Present the document as Burton Family Office"}
               aria-pressed={brand === "bfo"}
-              className={`px-3 py-2 max-sm:min-h-[40px] max-sm:min-w-[48px] text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
+              className={`px-3 py-2 max-sm:min-h-[40px] max-sm:min-w-[48px] text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}
             >
               {contract.entityNameOnly ? "Entity" : "BFO"}
             </button>
@@ -565,24 +572,24 @@ export default function ContractPDF() {
               onClick={() => setBrand("robert")}
               title="Present the document as Robert Burton"
               aria-pressed={brand === "robert"}
-              className={`px-3 py-2 max-sm:min-h-[40px] text-sm cursor-pointer transition-colors ${brand === "robert" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : (isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900")}`}
+              className={`px-3 py-2 max-sm:min-h-[40px] text-sm cursor-pointer transition-colors ${brand === "robert" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}
             >
               Robert Burton
             </button>
           </div>
           {contractId !== "preview" && !sigReq && (
-          <button
-            onClick={() => setShowSigForm(!showSigForm)}
-            aria-expanded={showSigForm}
-            className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2 ${
-              isDark ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-            Request Signature
-          </button>
+            <button
+              onClick={() => setShowSigForm(!showSigForm)}
+              aria-expanded={showSigForm}
+              className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2 ${
+                isDark ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              Request Signature
+            </button>
           )}
           <button
             onClick={handleDownload}
@@ -609,7 +616,7 @@ export default function ContractPDF() {
           title={`Management Services Agreement - ${contract.counterparty}`}
           assetId={id ?? ""}
           contractId={contractId ?? ""}
-          manager={{ name: isLedgerLouiseName(asset.name) ? "Robert W. Burton" : getUser()?.name ?? "", email: getUser()?.email ?? "", entity: asset.name }}
+          manager={{ name: isLedgerLouiseName(asset.name) ? "Robert W. Burton" : (getUser()?.name ?? ""), email: getUser()?.email ?? "", entity: asset.name }}
           client={{ name: contract.counterparty }}
           pdf={() => pdfBlob.current}
           geometry={() => geom.current}
@@ -634,14 +641,12 @@ export default function ContractPDF() {
       {pdfUrl ? (
         // Fills the window below the header (the page's padding and the header bar come off the height) so the viewer scrolls the pages, not the page.
         <div className={`max-sm:hidden h-[calc(100dvh-10.5rem)] min-h-[480px] rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`}>
-          <iframe
-            src={`${pdfUrl}#view=FitH&navpanes=0`}
-            className="block h-full w-full"
-            title="Contract PDF"
-          />
+          <iframe src={`${pdfUrl}#view=FitH&navpanes=0`} className="block h-full w-full" title="Contract PDF" />
         </div>
       ) : (
-        <div className={`flex items-center justify-center rounded-lg border min-h-[240px] sm:h-[calc(100dvh-10.5rem)] sm:min-h-[480px] ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
+        <div
+          className={`flex items-center justify-center rounded-lg border min-h-[240px] sm:h-[calc(100dvh-10.5rem)] sm:min-h-[480px] ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}
+        >
           <p className="text-gray-500">Generating PDF...</p>
         </div>
       )}

@@ -40,7 +40,7 @@ describe("paper mail reading", () => {
         contents: "Should be dropped without a scan.",
         envelopeText: ["STABLE", "", 7, "LEDGER LOUISE, LLC"],
       },
-      false
+      false,
     );
     expect(r.headline).toBe("Likely a statement from Stable, judging by the envelope");
     expect(r.kind).toBe("other");

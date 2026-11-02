@@ -42,6 +42,7 @@ Optional ones are marked. Never commit values.
 | Variable | Meaning |
 | --- | --- |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | The Supabase project and its service-role key. Every read and write goes through them. |
+| `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` | Only for `npm run migrate` (never on Vercel): a personal access token and the project ref. |
 | `AUTH_SECRET` | optional. Pepper for hashed codes; also the fallback signing key for mail image links. |
 | `SIGNIN_COUNTRY_CODES` | optional. Comma list of country codes that may receive sign-in texts (default `+1`; `*` = any). |
 | `SIGNIN_HOURLY_CAP` | optional. Sign-in codes sent to everyone per hour (default 60). |
@@ -71,14 +72,24 @@ Optional ones are marked. Never commit values.
 ## Check, test, build
 
 ```bash
-npm run typecheck   # react-router typegen, then tsc
-npm test            # vitest run (tests/*.test.ts and lib/*.test.ts)
-npm run build       # react-router build → build/client
+npm run typecheck      # react-router typegen, then tsc
+npm run lint           # eslint
+npm run format         # prettier --write (format:check only reports)
+npm test               # vitest run (tests/*.test.ts and lib/*.test.ts)
+npm run test:coverage  # the same with coverage; fails under the floor in vite.config.ts
+npm run audit          # known vulnerabilities in what ships
+npm run e2e            # the app in Chromium against a running build (e2e/run.cjs)
+npm run build          # react-router build → build/client
+npm run migrate        # apply pending supabase/migrations (see the runbook)
 ```
 
-CI (`.github/workflows/ci.yml`) runs typegen, `tsc --noEmit`, the tests and the
-build on every push and pull request to `main`. Tests are pure-function tests
-plus mocked `sb()`; none touches a network.
+Node 22 (`.nvmrc`; `engines` in package.json). CI (`.github/workflows/ci.yml`)
+runs typecheck, lint, the format check, the tests with their coverage floor, the
+production audit, the build, and the browser checks on every push and pull
+request to `main`; `deploy-check.yml` then waits for production to pick up a
+merged commit and checks it answers. Dependabot opens weekly update PRs. Tests
+are pure-function tests plus mocked `sb()`; none touches a network. Copy
+`.env.example` to `.env` for `vercel dev`.
 
 ## Deploy
 

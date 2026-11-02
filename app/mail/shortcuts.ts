@@ -27,7 +27,28 @@ type Deps = {
   markUnread: (m: MailMessage) => Promise<void>;
 };
 
-export function useMailShortcuts({ draft, open, openId, folder, picked, pickedRows, noAddress, mine, box, toast, listRef, select, closeMessage, move, bulk, remove, setDraft, star, pick, markUnread }: Deps) {
+export function useMailShortcuts({
+  draft,
+  open,
+  openId,
+  folder,
+  picked,
+  pickedRows,
+  noAddress,
+  mine,
+  box,
+  toast,
+  listRef,
+  select,
+  closeMessage,
+  move,
+  bulk,
+  remove,
+  setDraft,
+  star,
+  pick,
+  markUnread,
+}: Deps) {
   // ── Keys (Gmail's, listed on "?"): j/k next/previous, o open, e archive, # delete, r/a/f reply/all/forward,
   // s star, x select, U unread, c new, u back to the list, z undo. Never while typing or over a dialog.
   // Bound fresh each render, so every key acts on the list and message showing now.
@@ -40,7 +61,7 @@ export function useMailShortcuts({ draft, open, openId, folder, picked, pickedRo
       const all = listRows(listRef.current);
       const openRow = open?.message ?? null;
       const focusedId = (document.activeElement as HTMLElement | null)?.closest?.("[data-mail-row]")?.getAttribute("data-mail-row") ?? null;
-      const focused = focusedId ? all.find((m) => m.id === focusedId) ?? null : null;
+      const focused = focusedId ? (all.find((m) => m.id === focusedId) ?? null) : null;
       const act = (fn: () => void) => {
         e.preventDefault();
         fn();
@@ -58,10 +79,11 @@ export function useMailShortcuts({ draft, open, openId, folder, picked, pickedRo
           const rowsShown = [...document.querySelectorAll<HTMLElement>("[data-mail-row]")].filter((r) => r.offsetParent !== null);
           const at = rowsShown.findIndex((r) => r.getAttribute("data-mail-row") === focusedId);
           const target = rowsShown[at < 0 ? 0 : Math.min(rowsShown.length - 1, Math.max(0, at + step))];
-          if (target) act(() => {
-            target.focus();
-            target.scrollIntoView({ block: "nearest" });
-          });
+          if (target)
+            act(() => {
+              target.focus();
+              target.scrollIntoView({ block: "nearest" });
+            });
           return;
         }
         case "o":

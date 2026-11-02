@@ -44,7 +44,10 @@ beforeEach(() => {
   sbCalls.length = 0;
   existing = [];
   uploads.length = 0;
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } })),
+  );
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -70,7 +73,16 @@ describe("keeping a piece", () => {
     await saveMail([item({ scanDetails: { status: "completed", imageUrl: "https://stable/scan", summary: "Annual list due" }, checks: [{}] })], entities);
     expect(uploads).toEqual(["stable/mi_123456/envelope.jpg", "stable/mi_123456/scan.jpg"]);
     const row = sbCalls.find((c) => c.method === "POST")!.body[0];
-    expect(row).toMatchObject({ id: "mi_123456", asset_id: "louise", assigned: "auto", from_name: "Nevada Secretary of State", recipient: "LEDGER LOUISE LLC", summary: "Annual list due", checks: 1, scan_status: "completed" });
+    expect(row).toMatchObject({
+      id: "mi_123456",
+      asset_id: "louise",
+      assigned: "auto",
+      from_name: "Nevada Secretary of State",
+      recipient: "LEDGER LOUISE LLC",
+      summary: "Annual list due",
+      checks: 1,
+      scan_status: "completed",
+    });
   });
 
   it("keeps a choice made by hand, and doesn't copy files twice", async () => {
@@ -94,7 +106,9 @@ describe("/api/stable-webhook", () => {
     process.env.STABLE_API_KEY = "k";
     expect((await call({ token: "wrong" }, { eventType: "mailItem.created", data: { id: "mi_123456" } })).status).toBe(401);
     const fetchMock = vi.fn(async (url: string) =>
-      url.startsWith("https://api.usestable.com") ? new Response(JSON.stringify(item({ from: "From the API" })), { headers: { "content-type": "application/json" } }) : new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } })
+      url.startsWith("https://api.usestable.com")
+        ? new Response(JSON.stringify(item({ from: "From the API" })), { headers: { "content-type": "application/json" } })
+        : new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
     // The request's own copy of the piece is ignored: only its id is used.
@@ -103,7 +117,10 @@ describe("/api/stable-webhook", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.usestable.com/v1/mail-items/mi_123456");
     expect(sbCalls.find((c) => c.method === "POST")!.body[0].from_name).toBe("From the API");
     // A piece Stable doesn't know isn't retried.
-    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"statusCode":404}', { status: 404 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response('{"statusCode":404}', { status: 404 })),
+    );
     expect(await call({ token: "secret-token" }, { eventType: "mailItem.created", data: { id: "mi_gone00" } })).toEqual({ status: 200, json: { ok: true, ignored: true } });
   });
 });

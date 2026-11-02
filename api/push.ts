@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ configured: !!apnsConfig(), devices: devices.length, prefs: pushPrefsOf(rows?.[0]?.notification_prefs) });
     }
 
-    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { action?: string; token?: unknown; platform?: unknown };
+    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as { action?: string; token?: unknown; platform?: unknown };
     const token = typeof body.token === "string" ? body.token.trim() : "";
     switch (body.action) {
       case "register":

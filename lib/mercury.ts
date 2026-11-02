@@ -65,9 +65,7 @@ export async function mercuryTransactions(accountId: string, sinceDay: string): 
   const out: MercuryTxn[] = [];
   const limit = 500;
   for (let offset = 0; offset < 50000; offset += limit) {
-    const data = await mget(
-      `/account/${encodeURIComponent(accountId)}/transactions?limit=${limit}&offset=${offset}&start=${sinceDay}`
-    );
+    const data = await mget(`/account/${encodeURIComponent(accountId)}/transactions?limit=${limit}&offset=${offset}&start=${sinceDay}`);
     const txns = (data.transactions ?? []) as MercuryTxn[];
     out.push(...txns);
     const total = Number(data.total ?? out.length);

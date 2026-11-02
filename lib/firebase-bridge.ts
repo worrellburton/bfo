@@ -79,10 +79,11 @@ async function claimImport(collection: Collection, stale: ImportRow | null): Pro
     return !!inserted?.length;
   }
   // A run that died, or an earlier failure: take it over.
-  const taken = await sb<ImportRow[]>(
-    `tree_imports?collection=eq.${encodeURIComponent(collection)}&status=eq.${stale.status}&started_at=eq.${encodeURIComponent(stale.started_at)}`,
-    { method: "PATCH", body: { status: "running", started_at: now, error: null }, prefer: "return=representation" }
-  );
+  const taken = await sb<ImportRow[]>(`tree_imports?collection=eq.${encodeURIComponent(collection)}&status=eq.${stale.status}&started_at=eq.${encodeURIComponent(stale.started_at)}`, {
+    method: "PATCH",
+    body: { status: "running", started_at: now, error: null },
+    prefer: "return=representation",
+  });
   return !!taken?.length;
 }
 
@@ -279,9 +280,7 @@ export async function migrateFirebaseFiles(opts: { assetId?: string; budgetMs?: 
     // scanning on each request, here and in every later instance.
     filesSettled = true;
     console.warn(`firebase-bridge: giving up on ${remaining} Firebase file(s) that couldn't be moved; marking files_given_up`);
-    await sb("tree_imports?collection=eq.assets", { method: "PATCH", body: { files_given_up: true } }).catch((err) =>
-      console.error("firebase-bridge: couldn't record files_given_up", err)
-    );
+    await sb("tree_imports?collection=eq.assets", { method: "PATCH", body: { files_given_up: true } }).catch((err) => console.error("firebase-bridge: couldn't record files_given_up", err));
   }
   return { moved, remaining };
 }

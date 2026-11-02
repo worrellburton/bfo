@@ -110,25 +110,27 @@ export function AppLock() {
   useEffect(() => {
     if (!native) return;
     let handle: { remove: () => Promise<void> } | null = null;
-    void import("@capacitor/app").then(({ App }) =>
-      App.addListener("appStateChange", ({ isActive }) => {
-        if (verifying.current || !settingOn()) return;
-        if (!isActive) {
-          hiddenAt.current = Date.now();
-          setState((s) => (s === "open" ? "cover" : s));
-          return;
-        }
-        const away = hiddenAt.current ? Date.now() - hiddenAt.current : 0;
-        hiddenAt.current = null;
-        const k = kindRef.current;
-        if (away > LOCK_AFTER_MS && k) {
-          setState("locked");
-          void unlock(k);
-        } else setState((s) => (s === "cover" ? "open" : s));
-      }).then((h) => {
-        handle = h;
-      }),
-    ).catch(() => undefined);
+    void import("@capacitor/app")
+      .then(({ App }) =>
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (verifying.current || !settingOn()) return;
+          if (!isActive) {
+            hiddenAt.current = Date.now();
+            setState((s) => (s === "open" ? "cover" : s));
+            return;
+          }
+          const away = hiddenAt.current ? Date.now() - hiddenAt.current : 0;
+          hiddenAt.current = null;
+          const k = kindRef.current;
+          if (away > LOCK_AFTER_MS && k) {
+            setState("locked");
+            void unlock(k);
+          } else setState((s) => (s === "cover" ? "open" : s));
+        }).then((h) => {
+          handle = h;
+        }),
+      )
+      .catch(() => undefined);
     return () => {
       void handle?.remove();
     };

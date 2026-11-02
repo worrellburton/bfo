@@ -93,4 +93,3 @@ export function forwardDraft(m: MailMessage): Draft {
 
 /** A new message. `from`: the mailbox being looked at, so it goes out from there; unset (All mailboxes), Compose asks. */
 export const blankDraft = (from?: string): Draft => ({ title: "New message", ...(from ? { from } : {}), to: "", cc: "", bcc: "", subject: "", text: "", carried: [], focus: "to" });
-

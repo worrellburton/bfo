@@ -59,7 +59,11 @@ export function PalmQuestions({ openCases = 0, title }: { openCases?: number; ti
   if (!open.length && !error) return null;
   const list = (
     <>
-      {error && <div className="px-5 py-3"><ErrorLine>{error}</ErrorLine></div>}
+      {error && (
+        <div className="px-5 py-3">
+          <ErrorLine>{error}</ErrorLine>
+        </div>
+      )}
       {open.map((c) => (
         <CaseCard key={c.id} c={c} facts={asset} onAnswered={(next) => setCases((list) => list?.map((x) => (x.id === next.id ? next : x)) ?? list)} />
       ))}
@@ -69,7 +73,12 @@ export function PalmQuestions({ openCases = 0, title }: { openCases?: number; ti
   if (title) {
     const waiting = open.filter((c) => c.status === "needs_response").length;
     return (
-      <Section title={title} count={waiting || undefined} alert={waiting > 0} info="Palm opens a case when it can't finish without something only you have — an address the state wants, a document. Answer it here and Palm carries on.">
+      <Section
+        title={title}
+        count={waiting || undefined}
+        alert={waiting > 0}
+        info="Palm opens a case when it can't finish without something only you have — an address the state wants, a document. Answer it here and Palm carries on."
+      >
         {list}
       </Section>
     );
@@ -174,4 +183,3 @@ function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswe
     </div>
   );
 }
-

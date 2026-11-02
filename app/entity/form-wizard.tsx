@@ -91,11 +91,36 @@ type StepMeta = { key: StepKey; label: string; title: (llc: boolean) => string; 
 
 const STEPS: StepMeta[] = [
   { key: "entity", label: "Entity", glyph: "building", title: () => "What are we forming?", lede: () => "The kind of entity, where it's formed, and its name, checked with the state as you type." },
-  { key: "business", label: "Business", glyph: "pin", title: () => "Where it does business", lede: () => "Its office, how to reach it, and what it's for. Palm's contact never appears on the filing." },
-  { key: "ownership", label: "Ownership", glyph: "pie", title: (llc) => (llc ? "Who owns it, and who runs it" : "Shares, shareholders and the board"), lede: (llc) => (llc ? "The members and their shares. Palm drafts the operating agreement from this list." : "The stock the articles authorize, who holds it, and the first directors and officers.") },
-  { key: "filers", label: "Signers", glyph: "pen", title: (llc) => (llc ? "Who signs the articles" : "Who incorporates it"), lede: (llc) => `The ${llc ? "organizer" : "incorporator"} executes the articles. Their address defaults to the principal office.` },
+  {
+    key: "business",
+    label: "Business",
+    glyph: "pin",
+    title: () => "Where it does business",
+    lede: () => "Its office, how to reach it, and what it's for. Palm's contact never appears on the filing.",
+  },
+  {
+    key: "ownership",
+    label: "Ownership",
+    glyph: "pie",
+    title: (llc) => (llc ? "Who owns it, and who runs it" : "Shares, shareholders and the board"),
+    lede: (llc) =>
+      llc ? "The members and their shares. Palm drafts the operating agreement from this list." : "The stock the articles authorize, who holds it, and the first directors and officers.",
+  },
+  {
+    key: "filers",
+    label: "Signers",
+    glyph: "pen",
+    title: (llc) => (llc ? "Who signs the articles" : "Who incorporates it"),
+    lede: (llc) => `The ${llc ? "organizer" : "incorporator"} executes the articles. Their address defaults to the principal office.`,
+  },
   { key: "agent", label: "Agent", glyph: "shield", title: () => "Registered agent", lede: () => "Who accepts legal papers for it in the state. Palm can serve, and forwards what arrives into BFO." },
-  { key: "ein", label: "EIN", glyph: "receipt", title: () => "Federal tax ID", lede: () => "Palm files Form SS-4 with the IRS once the state has formed it, answering exactly what the IRS's own form asks." },
+  {
+    key: "ein",
+    label: "EIN",
+    glyph: "receipt",
+    title: () => "Federal tax ID",
+    lede: () => "Palm files Form SS-4 with the IRS once the state has formed it, answering exactly what the IRS's own form asks.",
+  },
   { key: "state", label: "State", glyph: "flag", title: () => "What the state asks", lede: () => "Questions only this state's filing has." },
   { key: "review", label: "Review", glyph: "check", title: () => "Review and file", lede: () => "Everything Palm will send, what it costs, and Palm's own check of the filing." },
 ];
@@ -354,7 +379,15 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
   })();
 
   const canSubmit =
-    canFile && mode !== null && mode !== "off" && !problems.length && !!requirements?.supported && validation !== "checking" && validation !== null && (validation.ok || !!validation.skipped) && !submitting;
+    canFile &&
+    mode !== null &&
+    mode !== "off" &&
+    !problems.length &&
+    !!requirements?.supported &&
+    validation !== "checking" &&
+    validation !== null &&
+    (validation.ok || !!validation.skipped) &&
+    !submitting;
   const blocked = (here.key === "entity" && requirements !== null && !requirements.supported) || stepProblems.length > 0;
   const progress = Math.round(((step + (blocked ? 0 : 1)) / steps.length) * 100);
 
@@ -385,7 +418,9 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
               const done = i < step && !issues;
               return (
                 <li key={s.key} className="relative">
-                  {i < steps.length - 1 && <span aria-hidden className={`absolute left-[27px] top-[38px] h-[calc(100%-22px)] w-px ${i < step ? "wiz-line-done" : t.dark ? "bg-white/[0.07]" : "bg-gray-200"}`} />}
+                  {i < steps.length - 1 && (
+                    <span aria-hidden className={`absolute left-[27px] top-[38px] h-[calc(100%-22px)] w-px ${i < step ? "wiz-line-done" : t.dark ? "bg-white/[0.07]" : "bg-gray-200"}`} />
+                  )}
                   <button
                     type="button"
                     onClick={() => open && go(i)}
@@ -398,10 +433,16 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
                         on
                           ? "wiz-dot-on border-transparent text-white"
                           : done
-                            ? t.dark ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-600"
+                            ? t.dark
+                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-600"
                             : open && issues
-                              ? t.dark ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-600"
-                              : t.dark ? "border-white/[0.08] bg-[#0d0d10] text-gray-500" : "border-gray-200 bg-white text-gray-400"
+                              ? t.dark
+                                ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                                : "border-amber-200 bg-amber-50 text-amber-600"
+                              : t.dark
+                                ? "border-white/[0.08] bg-[#0d0d10] text-gray-500"
+                                : "border-gray-200 bg-white text-gray-400"
                       }`}
                     >
                       {done ? <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} /> : <Glyph name={s.glyph} className="h-[15px] w-[15px]" />}
@@ -497,7 +538,7 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
         </aside>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -529,7 +570,12 @@ function stepSummary(k: StepKey, { draft: d, llc, state }: Ctx, req: Requirement
     case "ownership":
       return d.owners.length ? `${d.owners.length} owner${d.owners.length === 1 ? "" : "s"} · ${ownersTotal(d.owners)}%` : llc ? "Members, managers" : "Stock, board";
     case "filers":
-      return d.organizers.map((o) => (o.kind === "person" ? personName(o.name) : o.entityName)).filter(Boolean).join(", ") || (llc ? "Organizers" : "Incorporators");
+      return (
+        d.organizers
+          .map((o) => (o.kind === "person" ? personName(o.name) : o.entityName))
+          .filter(Boolean)
+          .join(", ") || (llc ? "Organizers" : "Incorporators")
+      );
     case "agent":
       return agentName(d) || "Registered agent";
     case "ein":
@@ -543,7 +589,19 @@ function stepSummary(k: StepKey, { draft: d, llc, state }: Ctx, req: Requirement
 
 // ── Steps ────────────────────────────────────────────────────────────────
 
-function EntityStep({ ctx, requirements, nameCheck, fee, onType }: { ctx: Ctx; requirements: Requirements | null; nameCheck: NameCheck | null | "checking"; fee: Fee | null; onType: (t: FormationDraft["entityType"]) => void }) {
+function EntityStep({
+  ctx,
+  requirements,
+  nameCheck,
+  fee,
+  onType,
+}: {
+  ctx: Ctx;
+  requirements: Requirements | null;
+  nameCheck: NameCheck | null | "checking";
+  fee: Fee | null;
+  onType: (t: FormationDraft["entityType"]) => void;
+}) {
   const t = useTone();
   const { draft: d, set, llc, state } = ctx;
   const officeState = ctx.office?.region;
@@ -553,7 +611,14 @@ function EntityStep({ ctx, requirements, nameCheck, fee, onType }: { ctx: Ctx; r
     <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <ChoiceCard on={llc} onPick={() => onType("llc")} glyph="layers" title="LLC" text="Members own it; profits pass through by default. Run by its members or by managers." />
-        <ChoiceCard on={!llc} onPick={() => onType("corporation")} glyph="columns" title="Corporation" text="Shares, a board of directors and officers. Taxed as a C corporation unless it elects S." badge="Preview at Palm" />
+        <ChoiceCard
+          on={!llc}
+          onPick={() => onType("corporation")}
+          glyph="columns"
+          title="Corporation"
+          text="Shares, a board of directors and officers. Taxed as a C corporation unless it elects S."
+          badge="Preview at Palm"
+        />
       </div>
 
       <Card title="State of formation">
@@ -573,14 +638,20 @@ function EntityStep({ ctx, requirements, nameCheck, fee, onType }: { ctx: Ctx; r
           </Select>
           <div className="flex flex-wrap gap-1.5">
             {quick.map((abbr) => (
-              <Chip key={abbr} on={d.jurisdiction === `US-${abbr}`} onPick={() => set({ jurisdiction: `US-${abbr}`, principal: { ...d.principal, region: d.principal.region || abbr }, extra: {}, expeditedTier: "" })}>
+              <Chip
+                key={abbr}
+                on={d.jurisdiction === `US-${abbr}`}
+                onPick={() => set({ jurisdiction: `US-${abbr}`, principal: { ...d.principal, region: d.principal.region || abbr }, extra: {}, expeditedTier: "" })}
+              >
                 {stateName(`US-${abbr}`)}
                 {abbr === officeState && <span className={`ml-1 ${t.faint}`}>· our office</span>}
               </Chip>
             ))}
           </div>
           {requirements && !requirements.supported && (
-            <Note tone="warn">Palm can't form {llc ? "an LLC" : "a corporation"} in {state} yet.</Note>
+            <Note tone="warn">
+              Palm can't form {llc ? "an LLC" : "a corporation"} in {state} yet.
+            </Note>
           )}
         </div>
       </Card>
@@ -711,7 +782,11 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
     <>
       <Card
         title={llc ? "Members" : "Shareholders"}
-        hint={llc ? "They go to Palm as the LLC's members. Palm has no field for the percentages: they're kept here and in the operating agreement." : "Kept here; the shares are issued after the state forms it."}
+        hint={
+          llc
+            ? "They go to Palm as the LLC's members. Palm has no field for the percentages: they're kept here and in the operating agreement."
+            : "Kept here; the shares are issued after the state forms it."
+        }
         action={
           <div className="flex items-center gap-3">
             <LinkButton onClick={() => addOwner("entity")}>+ Entity</LinkButton>
@@ -724,7 +799,13 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
         ) : (
           <div className="space-y-4">
             <div className={`flex items-center gap-5 rounded-2xl border p-4 ${t.line} ${t.dark ? "bg-white/[0.015]" : "bg-gray-50/60"}`}>
-              <Donut slices={d.owners.map((o) => ownerPercent(o) || 0)} size={92} label={`${total}%`} sub={total === 100 ? "assigned" : left > 0 ? `${left}% left` : `${-left}% over`} ok={total === 100} />
+              <Donut
+                slices={d.owners.map((o) => ownerPercent(o) || 0)}
+                size={92}
+                label={`${total}%`}
+                sub={total === 100 ? "assigned" : left > 0 ? `${left}% left` : `${-left}% over`}
+                ok={total === 100}
+              />
               <ul className="min-w-0 flex-1 space-y-1.5">
                 {d.owners.map((o, i) => (
                   <li key={i} className="flex items-center gap-2 text-[12.5px]">
@@ -746,16 +827,19 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
         <Card title="Management">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <ChoiceCard small on={d.managed === "members"} onPick={() => set({ managed: "members" })} glyph="people" title="Member-managed" text="The owners run it. Most family holding companies." />
-            <ChoiceCard small on={d.managed === "managers"} onPick={() => set({ managed: "managers", managers: d.managers.length ? d.managers : [emptyOfficial("Manager")] })} glyph="person" title="Manager-managed" text="Named managers run it; owners may not." />
+            <ChoiceCard
+              small
+              on={d.managed === "managers"}
+              onPick={() => set({ managed: "managers", managers: d.managers.length ? d.managers : [emptyOfficial("Manager")] })}
+              glyph="person"
+              title="Manager-managed"
+              text="Named managers run it; owners may not."
+            />
           </div>
           {d.managed === "managers" && (
             <div className="mt-4 space-y-3">
               {d.managers.map((m, i) => (
-                <PersonCard
-                  key={i}
-                  label={`Manager ${i + 1}`}
-                  onRemove={d.managers.length > 1 ? () => set({ managers: d.managers.filter((_, j) => j !== i) }) : undefined}
-                >
+                <PersonCard key={i} label={`Manager ${i + 1}`} onRemove={d.managers.length > 1 ? () => set({ managers: d.managers.filter((_, j) => j !== i) }) : undefined}>
                   <OfficialFields ctx={ctx} value={m} path="initial_governing_persons" onChange={(next) => set({ managers: d.managers.map((x, j) => (j === i ? next : x)) })} />
                 </PersonCard>
               ))}
@@ -771,7 +855,14 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
               {d.directors.length === 0 && <Empty>No directors listed.</Empty>}
               {d.directors.map((p, i) => (
                 <PersonCard key={i} label={`Director ${i + 1}`} onRemove={() => set({ directors: d.directors.filter((_, j) => j !== i) })}>
-                  <OfficialFields ctx={ctx} value={p} path="initial_directors" titleLabel="Board role" titlePlaceholder="Chair (optional)" onChange={(next) => set({ directors: d.directors.map((x, j) => (j === i ? next : x)) })} />
+                  <OfficialFields
+                    ctx={ctx}
+                    value={p}
+                    path="initial_directors"
+                    titleLabel="Board role"
+                    titlePlaceholder="Chair (optional)"
+                    onChange={(next) => set({ directors: d.directors.map((x, j) => (j === i ? next : x)) })}
+                  />
                 </PersonCard>
               ))}
               <AddRow onClick={() => set({ directors: [...d.directors, emptyOfficial()] })}>Add a director</AddRow>
@@ -817,7 +908,14 @@ function StockCard({ ctx }: { ctx: Ctx }) {
           </F>
           <F label="Par value per share" required={s.hasPar}>
             <div className="flex items-center gap-2">
-              <Input inputMode="decimal" value={s.hasPar ? s.par : ""} disabled={!s.hasPar} onChange={(e) => setS({ par: e.target.value })} placeholder={s.hasPar ? "0.0001" : "No par"} className="tabular-nums" />
+              <Input
+                inputMode="decimal"
+                value={s.hasPar ? s.par : ""}
+                disabled={!s.hasPar}
+                onChange={(e) => setS({ par: e.target.value })}
+                placeholder={s.hasPar ? "0.0001" : "No par"}
+                className="tabular-nums"
+              />
             </div>
           </F>
           <F label="Total consideration" hint="What all the shares will bring in, in dollars.">
@@ -839,16 +937,32 @@ function StockCard({ ctx }: { ctx: Ctx }) {
                   <Input value={c.name} onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} placeholder="Preferred Series A" />
                 </F>
                 <F label="Authorized" required>
-                  <Input inputMode="numeric" value={c.authorized} onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, authorized: e.target.value } : x)) })} className="tabular-nums" />
+                  <Input
+                    inputMode="numeric"
+                    value={c.authorized}
+                    onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, authorized: e.target.value } : x)) })}
+                    className="tabular-nums"
+                  />
                 </F>
                 <F label="Issued">
                   <Input inputMode="numeric" value={c.issued} onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, issued: e.target.value } : x)) })} className="tabular-nums" />
                 </F>
                 <F label="Par value">
-                  <Input inputMode="decimal" value={c.par} onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, par: e.target.value } : x)) })} placeholder="No par" className="tabular-nums" />
+                  <Input
+                    inputMode="decimal"
+                    value={c.par}
+                    onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, par: e.target.value } : x)) })}
+                    placeholder="No par"
+                    className="tabular-nums"
+                  />
                 </F>
                 <F label="Consideration" className="col-span-2 sm:col-span-1">
-                  <Input inputMode="decimal" value={c.consideration} onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, consideration: e.target.value } : x)) })} className="tabular-nums" />
+                  <Input
+                    inputMode="decimal"
+                    value={c.consideration}
+                    onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, consideration: e.target.value } : x)) })}
+                    className="tabular-nums"
+                  />
                 </F>
                 <F label="Rights and restrictions" className="col-span-2 sm:col-span-4">
                   <Input value={c.rights} onChange={(e) => setS({ classes: s.classes.map((x, j) => (j === i ? { ...x, rights: e.target.value } : x)) })} placeholder="One vote per share" />
@@ -907,12 +1021,22 @@ function AgentStep({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <ChoiceCard on={a.provider === "palm"} onPick={() => set({ agent: { provider: "palm" } })} glyph="shield" title="Palm" text={`Palm serves in ${state || "the state"} and forwards service of process and state mail into BFO.`} badge="Recommended" />
+        <ChoiceCard
+          on={a.provider === "palm"}
+          onPick={() => set({ agent: { provider: "palm" } })}
+          glyph="shield"
+          title="Palm"
+          text={`Palm serves in ${state || "the state"} and forwards service of process and state mail into BFO.`}
+          badge="Recommended"
+        />
         <ChoiceCard
           on={a.provider === "own"}
           onPick={() =>
             set({
-              agent: a.provider === "own" ? a : { provider: "own", kind: "organization", name: { ...EMPTY_NAME }, entityName: "", address: { ...EMPTY_ADDRESS, region }, mailing: null, email: "", phone: "" },
+              agent:
+                a.provider === "own"
+                  ? a
+                  : { provider: "own", kind: "organization", name: { ...EMPTY_NAME }, entityName: "", address: { ...EMPTY_ADDRESS, region }, mailing: null, email: "", phone: "" },
             })
           }
           glyph="person"
@@ -950,7 +1074,12 @@ function AgentStep({ ctx }: { ctx: Ctx }) {
             </F>
           </div>
           <div className={`mt-4 border-t pt-4 ${t.line}`}>
-            <ToggleRow on={!!a.mailing} onToggle={() => set({ agent: { ...a, mailing: a.mailing ? null : { ...EMPTY_ADDRESS } } })} title="Separate mailing address" text="If the agent receives mail somewhere other than the registered office." />
+            <ToggleRow
+              on={!!a.mailing}
+              onToggle={() => set({ agent: { ...a, mailing: a.mailing ? null : { ...EMPTY_ADDRESS } } })}
+              title="Separate mailing address"
+              text="If the agent receives mail somewhere other than the registered office."
+            />
             {a.mailing && (
               <div className="mt-3">
                 <AddressFields value={a.mailing} onChange={(mailing) => set({ agent: { ...a, mailing } })} />
@@ -1011,7 +1140,11 @@ function EinStep({ ctx }: { ctx: Ctx }) {
         {people.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-1.5">
             {people.map((p) => (
-              <Chip key={p.label} on={personName(p.name) === [e.responsible.first, e.responsible.middle, e.responsible.last].filter((x) => x.trim()).join(" ")} onPick={() => setE({ responsible: { ...e.responsible, first: p.name.first, middle: p.name.middle, last: p.name.last } })}>
+              <Chip
+                key={p.label}
+                on={personName(p.name) === [e.responsible.first, e.responsible.middle, e.responsible.last].filter((x) => x.trim()).join(" ")}
+                onPick={() => setE({ responsible: { ...e.responsible, first: p.name.first, middle: p.name.middle, last: p.name.last } })}
+              >
                 {p.label}
               </Chip>
             ))}
@@ -1028,7 +1161,14 @@ function EinStep({ ctx }: { ctx: Ctx }) {
             <Input value={e.responsible.last} onChange={(x) => setE({ responsible: { ...e.responsible, last: x.target.value } })} autoComplete="off" />
           </F>
           <F label="SSN or ITIN" required>
-            <Input type="password" inputMode="numeric" value={e.responsible.ssn} onChange={(x) => setE({ responsible: { ...e.responsible, ssn: x.target.value } })} placeholder="•••-••-••••" autoComplete="off" />
+            <Input
+              type="password"
+              inputMode="numeric"
+              value={e.responsible.ssn}
+              onChange={(x) => setE({ responsible: { ...e.responsible, ssn: x.target.value } })}
+              placeholder="•••-••-••••"
+              autoComplete="off"
+            />
           </F>
         </div>
       </Card>
@@ -1109,7 +1249,12 @@ function EinStep({ ctx }: { ctx: Ctx }) {
         </div>
         {employees > 0 && (
           <div className="mt-4">
-            <ToggleRow on={e.form944} onToggle={() => setE({ form944: !e.form944 })} title="File Form 944 annually" text="Instead of Form 941 each quarter. For small payrolls (about $1,000 or less in employment tax a year)." />
+            <ToggleRow
+              on={e.form944}
+              onToggle={() => setE({ form944: !e.form944 })}
+              title="File Form 944 annually"
+              text="Instead of Form 941 each quarter. For small payrolls (about $1,000 or less in employment tax a year)."
+            />
           </div>
         )}
       </Card>
@@ -1118,7 +1263,13 @@ function EinStep({ ctx }: { ctx: Ctx }) {
         {llc ? (
           <div className="space-y-4">
             <F label="Number of members" hint={`Blank: ${Math.max(1, d.owners.length)}, from the owners listed.`}>
-              <Input inputMode="numeric" value={e.memberCount} onChange={(x) => setE({ memberCount: x.target.value })} placeholder={String(Math.max(1, d.owners.length))} className="max-w-[140px] tabular-nums" />
+              <Input
+                inputMode="numeric"
+                value={e.memberCount}
+                onChange={(x) => setE({ memberCount: x.target.value })}
+                placeholder={String(Math.max(1, d.owners.length))}
+                className="max-w-[140px] tabular-nums"
+              />
             </F>
             {asksMarried(d) ? (
               <div className={`space-y-4 rounded-xl border p-4 ${t.line}`}>
@@ -1131,8 +1282,20 @@ function EinStep({ ctx }: { ctx: Ctx }) {
                 </div>
                 {e.marriedCouple === "yes" && (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <ChoiceCard small on={e.llcClassification === "single_member"} onPick={() => setE({ llcClassification: "single_member" })} title="One owner, for tax" text="A disregarded entity: it goes on the couple's return." />
-                    <ChoiceCard small on={e.llcClassification === "multi_member"} onPick={() => setE({ llcClassification: "multi_member" })} title="A partnership" text="Files its own partnership return (Form 1065)." />
+                    <ChoiceCard
+                      small
+                      on={e.llcClassification === "single_member"}
+                      onPick={() => setE({ llcClassification: "single_member" })}
+                      title="One owner, for tax"
+                      text="A disregarded entity: it goes on the couple's return."
+                    />
+                    <ChoiceCard
+                      small
+                      on={e.llcClassification === "multi_member"}
+                      onPick={() => setE({ llcClassification: "multi_member" })}
+                      title="A partnership"
+                      text="Files its own partnership return (Form 1065)."
+                    />
                   </div>
                 )}
               </div>
@@ -1174,7 +1337,12 @@ function EinStep({ ctx }: { ctx: Ctx }) {
           <Input type="tel" value={e.phone} onChange={(x) => setE({ phone: x.target.value })} placeholder={d.phone || "Optional"} />
         </F>
         <div className={`mt-4 border-t pt-4 ${t.line}`}>
-          <ToggleRow on={!!e.mailing} onToggle={() => setE({ mailing: e.mailing ? null : { ...EMPTY_ADDRESS } })} title="IRS mail goes somewhere else" text={`Otherwise to ${d.mailing ? "the mailing address" : "the principal office"}.`} />
+          <ToggleRow
+            on={!!e.mailing}
+            onToggle={() => setE({ mailing: e.mailing ? null : { ...EMPTY_ADDRESS } })}
+            title="IRS mail goes somewhere else"
+            text={`Otherwise to ${d.mailing ? "the mailing address" : "the principal office"}.`}
+          />
           {e.mailing && (
             <div className="mt-3">
               <AddressFields value={e.mailing} onChange={(mailing) => setE({ mailing })} />
@@ -1284,7 +1452,7 @@ function ReviewStep({
           {row("State", state)}
           {row("Effective", d.effectiveDate || "When the state accepts it")}
           {row("Processing", d.expeditedTier ? (TIER_LABEL[d.expeditedTier] ?? pretty(d.expeditedTier)) : "Standard")}
-        </>
+        </>,
       )}
       {section(
         "business",
@@ -1297,7 +1465,7 @@ function ReviewStep({
           {d.website && row("Website", d.website)}
           {row("Purpose", d.purpose)}
           {row("Palm contact", [d.contact.name, d.contact.email, d.contact.phone].filter(Boolean).join(" · "))}
-        </>
+        </>,
       )}
       {section(
         "ownership",
@@ -1310,13 +1478,19 @@ function ReviewStep({
               "Stock",
               d.stock.multiClass
                 ? d.stock.classes.map((c) => `${c.name}: ${num(c.authorized).toLocaleString()} authorized${c.par ? ` at $${c.par}` : ", no par"}`).join("\n")
-                : `${num(d.stock.total).toLocaleString()} shares, ${d.stock.hasPar ? `$${d.stock.par} par` : "no par value"}`
+                : `${num(d.stock.total).toLocaleString()} shares, ${d.stock.hasPar ? `$${d.stock.par} par` : "no par value"}`,
             )}
           {!llc && d.directors.length > 0 && row("Directors", d.directors.map((p) => personName(p.name)).join(", "))}
-          {!llc && d.officers.length > 0 && row("Officers", d.officers.map((p) => `${personName(p.name)} (${p.role === "other" ? p.title : OFFICER_ROLES.find(([r]) => r === p.role)?.[1]})`).join("\n"))}
-        </>
+          {!llc &&
+            d.officers.length > 0 &&
+            row("Officers", d.officers.map((p) => `${personName(p.name)} (${p.role === "other" ? p.title : OFFICER_ROLES.find(([r]) => r === p.role)?.[1]})`).join("\n"))}
+        </>,
       )}
-      {section("filers", `${filerWord}s`, row(d.organizers.length === 1 ? filerWord : `${filerWord}s`, d.organizers.map((o) => `${o.kind === "person" ? personName(o.name) : o.entityName}${o.title ? `, ${o.title}` : ""}`).join("\n")))}
+      {section(
+        "filers",
+        `${filerWord}s`,
+        row(d.organizers.length === 1 ? filerWord : `${filerWord}s`, d.organizers.map((o) => `${o.kind === "person" ? personName(o.name) : o.entityName}${o.title ? `, ${o.title}` : ""}`).join("\n")),
+      )}
       {section("agent", "Registered agent", row("Agent", d.agent.provider === "palm" ? "Palm" : `${agentName(d)}\n${addressLine(d.agent.address)}`))}
       {section(
         "ein",
@@ -1331,12 +1505,18 @@ function ReviewStep({
           </>
         ) : (
           row("Application", "Not now")
-        )
+        ),
       )}
       {section(
         "state",
         `${state} questions`,
-        <>{Object.entries(d.extra).filter(([, v]) => v !== "" && v !== undefined).map(([k, v]) => <div key={k}>{row(pretty(k), String(v === true ? "Yes" : v === false ? "No" : v))}</div>)}</>
+        <>
+          {Object.entries(d.extra)
+            .filter(([, v]) => v !== "" && v !== undefined)
+            .map(([k, v]) => (
+              <div key={k}>{row(pretty(k), String(v === true ? "Yes" : v === false ? "No" : v))}</div>
+            ))}
+        </>,
       )}
 
       <Card title="Cost">
@@ -1438,7 +1618,13 @@ function OwnerCard({ ctx, index, owner: o, onChange, onRemove }: { ctx: Ctx; ind
       onRemove={onRemove}
       action={
         <div className="relative w-[96px]">
-          <Input value={o.percent} onChange={(e) => onChange({ ...o, percent: e.target.value.replace(/[^\d.]/g, "") })} inputMode="decimal" className="!h-8 pr-6 text-right font-medium tabular-nums" aria-label="Percent owned" />
+          <Input
+            value={o.percent}
+            onChange={(e) => onChange({ ...o, percent: e.target.value.replace(/[^\d.]/g, "") })}
+            inputMode="decimal"
+            className="!h-8 pr-6 text-right font-medium tabular-nums"
+            aria-label="Percent owned"
+          />
           <span className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] ${t.muted}`}>%</span>
         </div>
       }
@@ -1476,10 +1662,7 @@ function OwnerCard({ ctx, index, owner: o, onChange, onRemove }: { ctx: Ctx; ind
           <NameFields value={o.name} onChange={(name) => onChange({ ...o, name })} />
         )}
       </div>
-      <More
-        open={must("email") || must("phone") || must("title") || !!(o.email || o.phone || o.ssn || o.address)}
-        label={llc ? "Title, address, contact" : "Address"}
-      >
+      <More open={must("email") || must("phone") || must("title") || !!(o.email || o.phone || o.ssn || o.address)} label={llc ? "Title, address, contact" : "Address"}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {llc && (
             <F label="Title" required={must("title")}>
@@ -1633,7 +1816,14 @@ function OfficerFields({ ctx, value: p, onChange }: { ctx: Ctx; value: Formation
           </F>
         )}
       </div>
-      <OfficialFields ctx={ctx} value={p} path="initial_officers" titleLabel="Display title" titlePlaceholder={OFFICER_ROLES.find(([r]) => r === p.role)?.[1]} onChange={(next) => onChange({ ...p, ...next })} />
+      <OfficialFields
+        ctx={ctx}
+        value={p}
+        path="initial_officers"
+        titleLabel="Display title"
+        titlePlaceholder={OFFICER_ROLES.find(([r]) => r === p.role)?.[1]}
+        onChange={(next) => onChange({ ...p, ...next })}
+      />
     </>
   );
 }
@@ -1781,7 +1971,11 @@ function Preview({ ctx, fee }: { ctx: Ctx; fee: Fee | null }) {
           {line("Principal office", d.principal.street1 ? addressLine(d.principal) : blank)}
           {line("Registered agent", d.agent.provider === "palm" ? "Palm" : agentName(d) || blank)}
           {line(llc ? (d.organizers.length > 1 ? "Organizers" : "Organizer") : d.organizers.length > 1 ? "Incorporators" : "Incorporator", filers.length ? filers.join(", ") : blank)}
-          {!llc && line("Authorized stock", d.stock.multiClass ? `${d.stock.classes.length} class${d.stock.classes.length === 1 ? "" : "es"}` : num(d.stock.total) > 0 ? `${num(d.stock.total).toLocaleString()} shares` : blank)}
+          {!llc &&
+            line(
+              "Authorized stock",
+              d.stock.multiClass ? `${d.stock.classes.length} class${d.stock.classes.length === 1 ? "" : "es"}` : num(d.stock.total) > 0 ? `${num(d.stock.total).toLocaleString()} shares` : blank,
+            )}
           {d.effectiveDate && line("Effective", d.effectiveDate)}
         </div>
         {d.owners.length > 0 && (
@@ -1871,7 +2065,11 @@ function F({ label, hint, required, className = "", children }: { label: string;
     <label className={`block min-w-0 ${className}`}>
       <span className={`mb-1.5 flex items-center gap-1 text-[12px] ${t.muted}`}>
         {label}
-        {required && <span className={t.dark ? "text-[#a5b4fc]" : "text-[#4f46e5]"} aria-label="required">*</span>}
+        {required && (
+          <span className={t.dark ? "text-[#a5b4fc]" : "text-[#4f46e5]"} aria-label="required">
+            *
+          </span>
+        )}
       </span>
       {children}
       {hint && <span className={`mt-1 block text-[11.5px] leading-snug ${t.faint}`}>{hint}</span>}
@@ -1944,7 +2142,13 @@ function More({ open: initial, label, children }: { open: boolean; label: string
 function ToggleRow({ on, onToggle, title, text, boxed = false }: { on: boolean; onToggle: () => void; title: string; text?: string; boxed?: boolean }) {
   const t = useTone();
   return (
-    <button type="button" role="switch" aria-checked={on} onClick={onToggle} className={`flex w-full cursor-pointer items-center gap-3 text-left ${boxed ? `rounded-2xl border px-5 py-4 ${t.line}` : ""}`}>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      className={`flex w-full cursor-pointer items-center gap-3 text-left ${boxed ? `rounded-2xl border px-5 py-4 ${t.line}` : ""}`}
+    >
       <span className="min-w-0 flex-1">
         <span className={`block text-[13px] ${boxed ? "font-semibold" : ""} ${t.text}`}>{title}</span>
         {text && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{text}</span>}
@@ -1995,7 +2199,12 @@ function YesNo({ value, onChange }: { value: "" | "yes" | "no" | string; onChang
 function Chip({ on, onPick, children }: { on: boolean; onPick: () => void; children: ReactNode }) {
   const t = useTone();
   return (
-    <button type="button" aria-pressed={on} onClick={onPick} className={`wiz-chip inline-flex h-8 cursor-pointer items-center rounded-full border px-3 text-[12px] font-medium ${on ? "is-on" : `${t.line} ${t.soft}`}`}>
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onPick}
+      className={`wiz-chip inline-flex h-8 cursor-pointer items-center rounded-full border px-3 text-[12px] font-medium ${on ? "is-on" : `${t.line} ${t.soft}`}`}
+    >
       {children}
     </button>
   );
@@ -2004,7 +2213,12 @@ function Chip({ on, onPick, children }: { on: boolean; onPick: () => void; child
 function LinkButton({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }) {
   const t = useTone();
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={`cursor-pointer whitespace-nowrap text-[12.5px] font-medium hover:underline disabled:cursor-default disabled:no-underline disabled:opacity-60 ${t.accent}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`cursor-pointer whitespace-nowrap text-[12.5px] font-medium hover:underline disabled:cursor-default disabled:no-underline disabled:opacity-60 ${t.accent}`}
+    >
       {children}
     </button>
   );
@@ -2013,7 +2227,11 @@ function LinkButton({ onClick, disabled, children }: { onClick: () => void; disa
 function AddRow({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   const t = useTone();
   return (
-    <button type="button" onClick={onClick} className={`flex h-11 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed text-[12.5px] font-medium transition-colors ${t.dark ? "border-white/[0.1] text-gray-400 hover:border-white/25 hover:text-white" : "border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-900"}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-11 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed text-[12.5px] font-medium transition-colors ${t.dark ? "border-white/[0.1] text-gray-400 hover:border-white/25 hover:text-white" : "border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-900"}`}
+    >
       <Icon name="plus" className="h-3.5 w-3.5" strokeWidth={2} />
       {children}
     </button>
@@ -2027,7 +2245,13 @@ function Empty({ children }: { children: ReactNode }) {
 
 function Note({ tone, children }: { tone: "warn"; children: ReactNode }) {
   const t = useTone();
-  return <p className={`rounded-xl border px-3.5 py-2.5 text-[12.5px] ${tone === "warn" ? (t.dark ? "border-amber-400/25 bg-amber-400/[0.06] text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800") : ""}`}>{children}</p>;
+  return (
+    <p
+      className={`rounded-xl border px-3.5 py-2.5 text-[12.5px] ${tone === "warn" ? (t.dark ? "border-amber-400/25 bg-amber-400/[0.06] text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800") : ""}`}
+    >
+      {children}
+    </p>
+  );
 }
 
 function ModeBadge({ mode }: { mode: PalmMode | null | "off" }) {
@@ -2087,7 +2311,10 @@ function Donut({ slices, size, label, sub, ok, thin = false }: { slices: number[
   const stroke = thin ? 7 : 10;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const total = Math.max(100, slices.reduce((n, s) => n + s, 0));
+  const total = Math.max(
+    100,
+    slices.reduce((n, s) => n + s, 0),
+  );
   let at = 0;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
@@ -2131,13 +2358,17 @@ const GLYPHS: Record<GlyphName, string> = {
   pin: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",
   pie: "M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z",
   pen: "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z M19.5 7.125L16.875 4.5 M3 21h18",
-  shield: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z",
-  receipt: "M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z M9.75 9h.008v.008H9.75V9z M14.25 13.5h.008v.008h-.008V13.5z",
+  shield:
+    "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z",
+  receipt:
+    "M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z M9.75 9h.008v.008H9.75V9z M14.25 13.5h.008v.008h-.008V13.5z",
   flag: "M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5",
   check: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  layers: "M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3",
+  layers:
+    "M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3",
   columns: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75z",
-  people: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
+  people:
+    "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
   person: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z",
 };
 
@@ -2148,4 +2379,3 @@ function Glyph({ name, className = "h-4 w-4" }: { name: GlyphName; className?: s
     </svg>
   );
 }
-

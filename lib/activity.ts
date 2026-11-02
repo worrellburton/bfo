@@ -128,7 +128,11 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   for (const code of new Set([...Object.keys(foreignOf(before)), ...Object.keys(foreignOf(after))])) {
     const b = foreignOf(before)[code] ?? {};
     const a = foreignOf(after)[code] ?? {};
-    for (const [k, label] of [["agent", "agent"], ["agentAddress", "agent's address"], ["fileNumber", "file number"]] as const) {
+    for (const [k, label] of [
+      ["agent", "agent"],
+      ["agentAddress", "agent's address"],
+      ["fileNumber", "file number"],
+    ] as const) {
       if (!same(b[k], a[k])) fields.push({ key: `foreign.${code}.${k}`, label: `${code} ${label}`, from: text(b[k]), to: text(a[k]) });
     }
   }
@@ -142,11 +146,7 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     const added = [...now.keys()].filter((n) => !was.has(n));
     const removed = [...was.keys()].filter((n) => !now.has(n));
     const changed = [...now.keys()].filter((n) => was.has(n) && !same(was.get(n), now.get(n)));
-    const bits = [
-      added.length ? `added ${list(added)}` : "",
-      removed.length ? `removed ${list(removed)}` : "",
-      changed.length ? `updated ${list(changed)}` : "",
-    ].filter(Boolean);
+    const bits = [added.length ? `added ${list(added)}` : "", removed.length ? `removed ${list(removed)}` : "", changed.length ? `updated ${list(changed)}` : ""].filter(Boolean);
     const shares = owners(after).map((m) => `${m.name}${typeof m.percent === "number" ? ` ${m.percent}%` : ""}`);
     out.push({ kind: "owners", summary: bits.length ? `Owners: ${bits.join("; ")}` : "Reordered the owners", detail: { owners: shares } });
   }
@@ -157,8 +157,14 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   const da = docs(after);
   const uploaded = Object.keys(da).filter((k) => !db[k] && da[k]?.name);
   const deleted = Object.keys(db).filter((k) => !da[k] && db[k]?.name);
-  if (uploaded.length) out.push({ kind: "upload", summary: uploaded.length === 1 ? `Uploaded ${quote(da[uploaded[0]].name)}` : `Uploaded ${uploaded.length} documents`, detail: { names: uploaded.map((k) => da[k].name) } });
-  if (deleted.length) out.push({ kind: "delete", summary: deleted.length === 1 ? `Deleted ${quote(db[deleted[0]].name)}` : `Deleted ${deleted.length} documents`, detail: { names: deleted.map((k) => db[k].name) } });
+  if (uploaded.length)
+    out.push({
+      kind: "upload",
+      summary: uploaded.length === 1 ? `Uploaded ${quote(da[uploaded[0]].name)}` : `Uploaded ${uploaded.length} documents`,
+      detail: { names: uploaded.map((k) => da[k].name) },
+    });
+  if (deleted.length)
+    out.push({ kind: "delete", summary: deleted.length === 1 ? `Deleted ${quote(db[deleted[0]].name)}` : `Deleted ${deleted.length} documents`, detail: { names: deleted.map((k) => db[k].name) } });
   for (const k of Object.keys(da)) {
     if (db[k]?.name && da[k]?.name && db[k].name !== da[k].name) out.push({ kind: "rename", summary: `Renamed ${quote(db[k].name)} to ${quote(da[k].name)}` });
   }
@@ -192,10 +198,17 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     const fa = pa?.formation as Rec | undefined;
     if (fa && !fb) out.push({ kind: "palm", summary: `Filed the formation with Palm${tag}`, detail: { jurisdiction: fa.jurisdiction ?? null, expedited: fa.expeditedTier ?? null } });
     else if (fa && fb && fa.status !== fb.status) {
-      out.push({ kind: "palm", summary: `The formation ${FILING_STATUS[fa.status] ?? `is ${String(fa.status).replace(/_/g, " ")}`}${tag}`, detail: fa.statusReason ? { reason: fa.statusReason } : null });
+      out.push({
+        kind: "palm",
+        summary: `The formation ${FILING_STATUS[fa.status] ?? `is ${String(fa.status).replace(/_/g, " ")}`}${tag}`,
+        detail: fa.statusReason ? { reason: fa.statusReason } : null,
+      });
     }
     if (fa?.ein && fb?.ein?.status !== fa.ein.status && fb) {
-      out.push({ kind: "palm", summary: fa.ein.status === "completed" ? `The IRS issued the EIN${fa.ein.number ? ` ${fa.ein.number}` : ""}${tag}` : `EIN application ${String(fa.ein.status).replace(/_/g, " ")}${tag}` });
+      out.push({
+        kind: "palm",
+        summary: fa.ein.status === "completed" ? `The IRS issued the EIN${fa.ein.number ? ` ${fa.ein.number}` : ""}${tag}` : `EIN application ${String(fa.ein.status).replace(/_/g, " ")}${tag}`,
+      });
     }
     if (fa && fb && (fa.openCases ?? 0) > (fb.openCases ?? 0)) out.push({ kind: "palm", summary: `Palm opened a case that needs an answer${tag}` });
   }
@@ -209,8 +222,14 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     const moved = (["status", "standing", "address", "agent"] as const).filter((k) => sb0[k] != null && sa[k] != null && !same(sb0[k], sa[k]));
     const say = (k: string, v: any): string =>
       k === "standing"
-        ? `standing ${Object.entries((v ?? {}) as Record<string, string>).map(([part, s]) => `${part === "registration" ? "filings" : part} ${s === "compliant" ? "current" : "behind"}`).join(", ")}`
-        : k === "status" ? `status ${v}` : k === "agent" ? `agent ${v}` : `address ${v}`;
+        ? `standing ${Object.entries((v ?? {}) as Record<string, string>)
+            .map(([part, s]) => `${part === "registration" ? "filings" : part} ${s === "compliant" ? "current" : "behind"}`)
+            .join(", ")}`
+        : k === "status"
+          ? `status ${v}`
+          : k === "agent"
+            ? `agent ${v}`
+            : `address ${v}`;
     if (moved.length) out.push({ kind: "state", summary: `The state's record changed: ${moved.map((k) => say(k, sa[k])).join("; ")}` });
   }
 
@@ -260,8 +279,18 @@ function stepWords(key: string): string {
   if (key.startsWith("state:")) return `the state filing (${key.slice(6)})`;
   if (key.startsWith("withdraw:")) return `the withdrawal in ${key.slice(9)}`;
   return (
-    { consent: "the owners' consent", windup: "winding up", bank: "closing the accounts", tax: "the final tax return", ein: "closing the EIN account", agent: "ending the registered agent", mail: "stopping the mail" } as Record<string, string>
-  )[key] ?? key;
+    (
+      {
+        consent: "the owners' consent",
+        windup: "winding up",
+        bank: "closing the accounts",
+        tax: "the final tax return",
+        ein: "closing the EIN account",
+        agent: "ending the registered agent",
+        mail: "stopping the mail",
+      } as Record<string, string>
+    )[key] ?? key
+  );
 }
 
 /**
@@ -293,7 +322,7 @@ export async function logActivity(assetId: string, actor: Actor, entries: Activi
     if (edit >= 0 && actor.id) {
       const [last] = await sb<ActivityRow[]>(`entity_activity?asset_id=eq.${enc(assetId)}&select=*&order=at.desc&limit=1`);
       if (last && last.kind === "edit" && last.actor_id === actor.id && now - Date.parse(last.at) < MERGE_MS) {
-        const fields = mergeFields(((last.detail?.fields ?? []) as FieldChange[]), (rest[edit].detail?.fields ?? []) as FieldChange[]);
+        const fields = mergeFields((last.detail?.fields ?? []) as FieldChange[], (rest[edit].detail?.fields ?? []) as FieldChange[]);
         rest.splice(edit, 1);
         if (fields.length) {
           await sb(`entity_activity?id=eq.${last.id}`, { method: "PATCH", body: { summary: editSummary(fields), detail: { fields }, at: new Date(now).toISOString() }, prefer: "return=minimal" });

@@ -22,10 +22,7 @@ const nullableString = { type: ["string", "null"] } as const;
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: [
-    "whatItIs", "purpose", "properties", "management", "managers", "members", "taxTreatment",
-    "taxEvidence", "governingLaw", "partnershipRepresentative", "keyTerms", "issues", "sources",
-  ],
+  required: ["whatItIs", "purpose", "properties", "management", "managers", "members", "taxTreatment", "taxEvidence", "governingLaw", "partnershipRepresentative", "keyTerms", "issues", "sources"],
   properties: {
     whatItIs: { type: "string" },
     purpose: nullableString,
@@ -52,10 +49,7 @@ const SCHEMA = {
       },
     },
     taxTreatment: {
-      anyOf: [
-        { type: "string", enum: ["Disregarded Entity", "Partnership", "S Corporation", "C Corporation", "Grantor trust", "Non-grantor trust"] },
-        { type: "null" },
-      ],
+      anyOf: [{ type: "string", enum: ["Disregarded Entity", "Partnership", "S Corporation", "C Corporation", "Grantor trust", "Non-grantor trust"] }, { type: "null" }],
     },
     taxEvidence: nullableString,
     governingLaw: nullableString,
@@ -131,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const file = await fetchDocument(d.url, MAX_DOC_BYTES);
       if (!file) return null;
       return { doc: d, buf: file.buf, ct: (d.contentType || file.contentType).toLowerCase().split(";")[0] };
-    })
+    }),
   );
   const content: Anthropic.Messages.ContentBlockParam[] = [];
   const read: string[] = [];
@@ -171,10 +165,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       // Server-side fallback on a safety decline (not yet in this SDK's types).
       message = await client.messages
-        .stream(
-          { ...params, ...({ fallbacks: "default" } as Record<string, unknown>) },
-          { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
-        )
+        .stream({ ...params, ...({ fallbacks: "default" } as Record<string, unknown>) }, { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } })
         .finalMessage();
     } catch (err) {
       if (!(err instanceof Anthropic.BadRequestError) || outOfCredit(err)) throw err;

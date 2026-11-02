@@ -67,7 +67,10 @@ export async function monitorByBusiness(businessId: string, mode: PalmMode): Pro
 }
 
 export class MonitorError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -78,13 +81,7 @@ export class MonitorError extends Error {
  * registration is found on the state's registry (by Palm's id for it, else
  * the file number) and Palm adds it to the portfolio to watch.
  */
-export async function startMonitor(opts: {
-  assetId: string;
-  reg: Registration;
-  linkedBusinessId: string | null;
-  mode: PalmMode;
-  by: { id: string; name: string | null };
-}): Promise<MonitorRow> {
+export async function startMonitor(opts: { assetId: string; reg: Registration; linkedBusinessId: string | null; mode: PalmMode; by: { id: string; name: string | null } }): Promise<MonitorRow> {
   const { assetId, reg, mode } = opts;
   const already = (await monitorsFor([assetId], mode)).find((m) => m.state === reg.state);
   if (already) return already;
@@ -97,11 +94,7 @@ export async function startMonitor(opts: {
     if (viaPortfolio) {
       sub = await palm<Subscription>(`/v1/business/${viaPortfolio}/subscription`, { method: "POST", body, usage });
     } else {
-      const where = reg.fileNumber
-        ? { registration_jurisdiction: `US-${reg.state}`, registration_number: reg.fileNumber }
-        : reg.palmId
-          ? { palm_id: reg.palmId }
-          : null;
+      const where = reg.fileNumber ? { registration_jurisdiction: `US-${reg.state}`, registration_number: reg.fileNumber } : reg.palmId ? { palm_id: reg.palmId } : null;
       if (!where) throw new MonitorError(422, `Palm needs ${reg.state}'s file number to watch it. Read the state's record first, or add the file number under Edit.`);
       sub = await palm<Subscription>("/v1/business/subscription", { method: "POST", body: { ...body, ...where }, usage });
     }
@@ -165,7 +158,9 @@ export async function refreshMonitors(rows: MonitorRow[]): Promise<MonitorRow[]>
       } catch (err) {
         if (err instanceof PalmError && err.status === 404) {
           const patch = { status: "canceled", ended_at: new Date().toISOString() };
-          await sb(`palm_monitors?business_id=eq.${row.business_id}&mode=eq.${row.mode}`, { method: "PATCH", body: patch, prefer: "return=minimal" }).catch((err) => console.error(`palm-monitor: couldn't save monitor ${row.business_id}`, err));
+          await sb(`palm_monitors?business_id=eq.${row.business_id}&mode=eq.${row.mode}`, { method: "PATCH", body: patch, prefer: "return=minimal" }).catch((err) =>
+            console.error(`palm-monitor: couldn't save monitor ${row.business_id}`, err),
+          );
           return { ...row, ...patch };
         }
         return row; // Palm unreachable: show what we last knew
@@ -216,7 +211,13 @@ export function einCheckText(c: Pick<EinCheck, "matched" | "status">): string {
 
 type Line = { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string };
 type EntityLines = { id: string; name: string; lines: Line[] };
-type AssetData = Monitorable & { name?: string; ein?: string; palm?: Record<string, { businessId?: string | null } | undefined>; einCheck?: EinCheck; stateRecord?: Monitorable["stateRecord"] & { name?: string } };
+type AssetData = Monitorable & {
+  name?: string;
+  ein?: string;
+  palm?: Record<string, { businessId?: string | null } | undefined>;
+  einCheck?: EinCheck;
+  stateRecord?: Monitorable["stateRecord"] & { name?: string };
+};
 
 /** The legal name the IRS is asked about: the state's spelling when it's been read live, else ours. */
 export function einName(a: AssetData): string {
@@ -232,7 +233,10 @@ function einSettled(a: AssetData, mode: PalmMode): boolean {
 /** What the Entities page's bulk actions would do now, and what they'd cost (live). */
 export async function bulkPlan(mode: PalmMode): Promise<{ monitor: { count: number; cents: number; on: number; unidentified: number }; ein: { count: number; cents: number; settled: number } }> {
   const rows = await readCollection("assets");
-  const on = await monitorsFor(rows.map((r) => r.id), mode);
+  const on = await monitorsFor(
+    rows.map((r) => r.id),
+    mode,
+  );
   const watched = new Set(on.map((m) => `${m.asset_id}:${m.state}`));
   let toMonitor = 0;
   let unidentified = 0;
@@ -259,7 +263,10 @@ export async function bulkPlan(mode: PalmMode): Promise<{ monitor: { count: numb
 /** Palm watches every registration of every entity that isn't watched yet. */
 export async function monitorAll(opts: { mode: PalmMode; by: { id: string; name: string | null } }): Promise<EntityLines[]> {
   const rows = await readCollection("assets");
-  const on = await monitorsFor(rows.map((r) => r.id), opts.mode);
+  const on = await monitorsFor(
+    rows.map((r) => r.id),
+    opts.mode,
+  );
   const out: EntityLines[] = [];
   for (const r of rows) {
     const a = (r.data ?? {}) as AssetData;
@@ -274,7 +281,9 @@ export async function monitorAll(opts: { mode: PalmMode; by: { id: string; name:
       try {
         await startMonitor({ assetId: r.id, reg, linkedBusinessId: a.palm?.[opts.mode]?.businessId ?? null, mode: opts.mode, by: opts.by });
         entry.lines.push({ label: `${reg.state} monitor`, tone: "good", text: opts.mode === "live" ? "On ($1.99/month)." : "On (test)." });
-        await logActivity(r.id, { id: opts.by.id, name: opts.by.name, source: "user" }, [{ kind: "palm", summary: `Palm is now monitoring ${reg.state}${opts.mode === "live" ? " ($1.99/month)" : " (test)"}` }]);
+        await logActivity(r.id, { id: opts.by.id, name: opts.by.name, source: "user" }, [
+          { kind: "palm", summary: `Palm is now monitoring ${reg.state}${opts.mode === "live" ? " ($1.99/month)" : " (test)"}` },
+        ]);
       } catch (err) {
         entry.lines.push({ label: `${reg.state} monitor`, tone: err instanceof MonitorError && err.status === 422 ? "warn" : "bad", text: (err as Error).message });
       }

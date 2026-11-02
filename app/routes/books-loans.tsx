@@ -24,19 +24,7 @@ type Loan = {
  * Search-and-attach: find any synced transaction and connect it to a loan.
  * Results come from the same transactions report the Transactions page uses.
  */
-function TxnFinder({
-  loanId,
-  attached,
-  isDark,
-  onAttached,
-  onError,
-}: {
-  loanId: string;
-  attached: Set<string>;
-  isDark: boolean;
-  onAttached: () => void;
-  onError: (message: string) => void;
-}) {
+function TxnFinder({ loanId, attached, isDark, onAttached, onError }: { loanId: string; attached: Set<string>; isDark: boolean; onAttached: () => void; onError: (message: string) => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Txn[]>([]);
   const [searching, setSearching] = useState(false);
@@ -59,9 +47,7 @@ function TxnFinder({
       void (async () => {
         setSearching(true);
         try {
-          const res = await authFetch(
-            `/api/books/data?report=transactions&limit=25&summary=0&q=${encodeURIComponent(q.trim())}`
-          );
+          const res = await authFetch(`/api/books/data?report=transactions&limit=25&summary=0&q=${encodeURIComponent(q.trim())}`);
           const data = await res.json().catch(() => ({}));
           if (!cancelled && res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attachedRef.current.has(r.transaction_id)));
         } finally {
@@ -101,9 +87,7 @@ function TxnFinder({
         onChange={(e) => setQ(e.target.value)}
         placeholder="Find transactions to attach — search any description…"
         aria-label="Find transactions to attach"
-        className={`w-full max-w-md px-3 h-[40px] sm:h-9 rounded-lg text-sm border ${
-          isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-        }`}
+        className={`w-full max-w-md px-3 h-[40px] sm:h-9 rounded-lg text-sm border ${isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`}
       />
       {q.trim() && (
         <div className={`mt-2 rounded-lg border overflow-hidden ${isDark ? "border-white/10" : "border-gray-200"}`}>
@@ -115,21 +99,15 @@ function TxnFinder({
             results.map((t) => (
               <div
                 key={t.transaction_id}
-                className={`flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 px-3 py-2 border-t first:border-t-0 text-sm ${
-                  isDark ? "border-white/5" : "border-gray-100"
-                }`}
+                className={`flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 px-3 py-2 border-t first:border-t-0 text-sm ${isDark ? "border-white/5" : "border-gray-100"}`}
               >
                 <span className={`tabular-nums text-xs whitespace-nowrap ${subtle}`}>{t.date}</span>
                 <span className="truncate flex-1 min-w-[60%] sm:min-w-0">
                   {t.merchant_name || t.name || "—"}
-                  {t.loan_id && (
-                    <span className={`ml-2 text-xs ${subtle}`}>· on another loan</span>
-                  )}
+                  {t.loan_id && <span className={`ml-2 text-xs ${subtle}`}>· on another loan</span>}
                 </span>
                 <span className={`text-xs whitespace-nowrap ${subtle}`}>{t.entity_name ?? "Unmapped"}</span>
-                <span className={`tabular-nums whitespace-nowrap font-medium ${t.amount < 0 ? "text-emerald-500" : ""}`}>
-                  {t.amount < 0 ? `+${money(-t.amount)}` : money(t.amount)}
-                </span>
+                <span className={`tabular-nums whitespace-nowrap font-medium ${t.amount < 0 ? "text-emerald-500" : ""}`}>{t.amount < 0 ? `+${money(-t.amount)}` : money(t.amount)}</span>
                 <button
                   onClick={() => void attach(t)}
                   disabled={attaching === t.transaction_id}
@@ -178,10 +156,7 @@ export default function BooksLoans() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [loansRes, metaRes] = await Promise.all([
-        authFetch("/api/books/data?report=loans"),
-        authFetch("/api/books/data?report=meta"),
-      ]);
+      const [loansRes, metaRes] = await Promise.all([authFetch("/api/books/data?report=loans"), authFetch("/api/books/data?report=meta")]);
       const loansData = await loansRes.json().catch(() => ({}));
       if (!loansRes.ok) throw new Error(loansData?.message || "Couldn't load loans.");
       setLoans(loansData.loans ?? []);
@@ -253,9 +228,7 @@ export default function BooksLoans() {
   const subtle = "text-gray-500";
   const card = isDark ? "glass-card" : "glass-card";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const field = `px-3 py-2 rounded-lg text-sm border ${
-    isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-  }`;
+  const field = `px-3 py-2 rounded-lg text-sm border ${isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`;
 
   const totalOutstanding = loans.reduce((s, l) => s + l.outstanding, 0);
 
@@ -265,15 +238,17 @@ export default function BooksLoans() {
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Loans</h1>
         </div>
-        {writable && <button
-          onClick={() => setAdding((v) => !v)}
-          aria-expanded={adding}
-          className={`px-4 h-[40px] sm:h-9 rounded-full text-sm font-medium transition-colors cursor-pointer ${
-            isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
-          }`}
-        >
-          {adding ? "Cancel" : "Add loan"}
-        </button>}
+        {writable && (
+          <button
+            onClick={() => setAdding((v) => !v)}
+            aria-expanded={adding}
+            className={`px-4 h-[40px] sm:h-9 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+              isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
+            }`}
+          >
+            {adding ? "Cancel" : "Add loan"}
+          </button>
+        )}
       </div>
 
       {adding && (
@@ -287,23 +262,11 @@ export default function BooksLoans() {
         >
           <label className="flex flex-col gap-1 text-xs w-full sm:w-auto sm:min-w-[220px]">
             <span className={subtle}>Who owes it</span>
-            <input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Seven Arrows Recovery"
-              className={`${field} h-[40px] sm:h-auto`}
-            />
+            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Seven Arrows Recovery" className={`${field} h-[40px] sm:h-auto`} />
           </label>
           <label className="flex flex-col gap-1 text-xs w-full sm:w-auto sm:min-w-[180px]">
             <span className={subtle}>Starting balance</span>
-            <input
-              value={newBalance}
-              onChange={(e) => setNewBalance(e.target.value)}
-              inputMode="decimal"
-              placeholder="$0"
-              className={`${field} h-[40px] sm:h-auto`}
-            />
+            <input value={newBalance} onChange={(e) => setNewBalance(e.target.value)} inputMode="decimal" placeholder="$0" className={`${field} h-[40px] sm:h-auto`} />
           </label>
           <button
             type="submit"
@@ -314,28 +277,22 @@ export default function BooksLoans() {
           >
             {saving ? "Saving…" : "Create loan"}
           </button>
-          <p className={`text-xs w-full ${subtle}`}>
-            Starting balance covers anything lent before the transaction history begins — tracked
-            advances and repayments move it from there.
-          </p>
+          <p className={`text-xs w-full ${subtle}`}>Starting balance covers anything lent before the transaction history begins — tracked advances and repayments move it from there.</p>
         </form>
       )}
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {!loading && loans.length > 0 && (
         <div className={`rounded-2xl border p-5 mb-6 flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
           <div>
-            <p className={`text-xs ${subtle}`}>Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}</p>
+            <p className={`text-xs ${subtle}`}>
+              Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}
+            </p>
             <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
           </div>
           <div className={`text-sm ${subtle}`}>
-            Starting {money(loans.reduce((s, l) => s + l.starting_balance, 0))} · Advanced{" "}
-            {money(loans.reduce((s, l) => s + l.advanced, 0))} · Repaid {money(loans.reduce((s, l) => s + l.repaid, 0))}
+            Starting {money(loans.reduce((s, l) => s + l.starting_balance, 0))} · Advanced {money(loans.reduce((s, l) => s + l.advanced, 0))} · Repaid {money(loans.reduce((s, l) => s + l.repaid, 0))}
           </div>
         </div>
       )}
@@ -343,14 +300,14 @@ export default function BooksLoans() {
       {loading ? (
         <p className={`text-sm ${subtle}`}>Loading…</p>
       ) : loans.length === 0 ? (
-        error ? null : <div className={`rounded-2xl border p-10 text-center ${card}`}>
-          <p className="text-sm font-medium">No loans yet</p>
-          <p className={`text-xs mt-1 ${subtle}`}>
-            {writable
-              ? "Add one above, then attach transactions to it from its Find transactions box or any transaction's Loan picker."
-              : "Loans the office tracks will show up here."}
-          </p>
-        </div>
+        error ? null : (
+          <div className={`rounded-2xl border p-10 text-center ${card}`}>
+            <p className="text-sm font-medium">No loans yet</p>
+            <p className={`text-xs mt-1 ${subtle}`}>
+              {writable ? "Add one above, then attach transactions to it from its Find transactions box or any transaction's Loan picker." : "Loans the office tracks will show up here."}
+            </p>
+          </div>
+        )
       ) : (
         loans.map((loan) => {
           const key = loan.id ?? loan.name;
@@ -366,24 +323,15 @@ export default function BooksLoans() {
                   })
                 }
                 aria-expanded={isOpen}
-                className={`w-full flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-left cursor-pointer ${
-                  isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"
-                }`}
+                className={`w-full flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-left cursor-pointer ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
               >
-                <svg
-                  className={`w-4 h-4 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`}
-                  fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
-                >
+                <svg className={`w-4 h-4 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">
                     {loan.name}
-                    {!loan.id && (
-                      <span className={`ml-2 text-xs font-normal ${subtle}`}>
-                        from categories
-                      </span>
-                    )}
+                    {!loan.id && <span className={`ml-2 text-xs font-normal ${subtle}`}>from categories</span>}
                   </p>
                   <p className={`text-xs mt-0.5 ${subtle}`}>
                     {loan.transactions.length} transaction{loan.transactions.length === 1 ? "" : "s"}
@@ -402,13 +350,7 @@ export default function BooksLoans() {
                 <div className={`border-t ${rowBorder}`}>
                   {writable && loan.id && (
                     <div className="px-5 pt-3">
-                      <TxnFinder
-                        loanId={loan.id}
-                        attached={new Set(loan.transactions.map((t) => t.transaction_id))}
-                        isDark={isDark}
-                        onAttached={() => void load()}
-                        onError={setError}
-                      />
+                      <TxnFinder loanId={loan.id} attached={new Set(loan.transactions.map((t) => t.transaction_id))} isDark={isDark} onAttached={() => void load()} onError={setError} />
                     </div>
                   )}
                   {writable && loan.id && (
@@ -450,7 +392,9 @@ export default function BooksLoans() {
                         }}
                         className="flex flex-wrap items-center gap-2"
                       >
-                        <label htmlFor={`loan-rule-${key}`} className={`text-xs w-full sm:w-auto ${subtle}`}>Auto-attach descriptions containing</label>
+                        <label htmlFor={`loan-rule-${key}`} className={`text-xs w-full sm:w-auto ${subtle}`}>
+                          Auto-attach descriptions containing
+                        </label>
                         <input
                           id={`loan-rule-${key}`}
                           value={ruleDraft[key] ?? ""}
@@ -472,12 +416,7 @@ export default function BooksLoans() {
                       {rules
                         .filter((r) => r.loan_id === loan.id)
                         .map((r) => (
-                          <span
-                            key={r.id}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
-                              isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"
-                            }`}
-                          >
+                          <span key={r.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"}`}>
                             “{r.match}”
                             <button
                               onClick={() => {
@@ -500,49 +439,48 @@ export default function BooksLoans() {
                         ))}
                     </div>
                   )}
-                  {writable && <div className="px-5 py-3 flex flex-wrap items-center gap-3">
-                    {editingBalance === key ? (
-                      <>
-                        <input
-                          autoFocus
-                          value={balanceDraft}
-                          onChange={(e) => setBalanceDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") void saveBalance(loan);
-                            else if (e.key === "Escape") setEditingBalance(null);
+                  {writable && (
+                    <div className="px-5 py-3 flex flex-wrap items-center gap-3">
+                      {editingBalance === key ? (
+                        <>
+                          <input
+                            autoFocus
+                            value={balanceDraft}
+                            onChange={(e) => setBalanceDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void saveBalance(loan);
+                              else if (e.key === "Escape") setEditingBalance(null);
+                            }}
+                            inputMode="decimal"
+                            aria-label={`Starting balance for ${loan.name}`}
+                            className={`${field} w-36`}
+                          />
+                          <button
+                            onClick={() => void saveBalance(loan)}
+                            disabled={saving}
+                            className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
+                              isDark ? "bg-white/10 text-white" : "bg-gray-900 text-white"
+                            }`}
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditingBalance(null)} className={`text-xs cursor-pointer px-2 h-[40px] sm:h-auto ${subtle}`}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingBalance(key);
+                            setBalanceDraft(String(loan.starting_balance || ""));
                           }}
-                          inputMode="decimal"
-                          aria-label={`Starting balance for ${loan.name}`}
-                          className={`${field} w-36`}
-                        />
-                        <button
-                          onClick={() => void saveBalance(loan)}
-                          disabled={saving}
-                          className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
-                            isDark ? "bg-white/10 text-white" : "bg-gray-900 text-white"
-                          }`}
+                          className={`text-xs underline cursor-pointer py-[14px] -my-[14px] sm:py-0 sm:my-0 ${subtle} hover:no-underline`}
                         >
-                          Save
+                          {loan.id ? "Edit starting balance" : "Set starting balance"}
                         </button>
-                        <button
-                          onClick={() => setEditingBalance(null)}
-                          className={`text-xs cursor-pointer px-2 h-[40px] sm:h-auto ${subtle}`}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setEditingBalance(key);
-                          setBalanceDraft(String(loan.starting_balance || ""));
-                        }}
-                        className={`text-xs underline cursor-pointer py-[14px] -my-[14px] sm:py-0 sm:my-0 ${subtle} hover:no-underline`}
-                      >
-                        {loan.id ? "Edit starting balance" : "Set starting balance"}
-                      </button>
-                    )}
-                  </div>}
+                      )}
+                    </div>
+                  )}
                   <div className="overflow-x-auto">
                     <TxnTable
                       rows={loan.transactions}

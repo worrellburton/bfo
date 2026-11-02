@@ -9,11 +9,7 @@ const PLAID_SCRIPT = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
 declare global {
   interface Window {
     Plaid?: {
-      create(config: {
-        token: string;
-        onSuccess: (publicToken: string, metadata: any) => void;
-        onExit: (err: any) => void;
-      }): { open: () => void };
+      create(config: { token: string; onSuccess: (publicToken: string, metadata: any) => void; onExit: (err: any) => void }): { open: () => void };
     };
   }
 }

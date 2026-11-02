@@ -26,7 +26,14 @@ import {
   type SignatureRequestRow,
 } from "../lib/sign";
 
-const party = (key: "a" | "b", status: Party["status"] = "pending", extra: Partial<Party> = {}): Party => ({ key, role: key === "a" ? "Manager" : "Client", name: key === "a" ? "Robert Burton" : "Ada Client", email: `${key}@example.com`, status, ...extra });
+const party = (key: "a" | "b", status: Party["status"] = "pending", extra: Partial<Party> = {}): Party => ({
+  key,
+  role: key === "a" ? "Manager" : "Client",
+  name: key === "a" ? "Robert Burton" : "Ada Client",
+  email: `${key}@example.com`,
+  status,
+  ...extra,
+});
 
 const row = (over: Partial<SignatureRequestRow> = {}): SignatureRequestRow => ({
   id: "11111111-1111-4111-8111-111111111111",
@@ -97,7 +104,16 @@ describe("sendBlocker", () => {
 
 describe("cleaning", () => {
   it("keeps a field on the page and inside sane sizes", () => {
-    expect(cleanField({ id: "f", party: "a", type: "signature", page: 1, x: 0.9, y: 0.95, w: 0.3, h: 0.1 }, 1)).toEqual({ id: "f", party: "a", type: "signature", page: 1, x: 0.7, y: 0.9, w: 0.3, h: 0.1 });
+    expect(cleanField({ id: "f", party: "a", type: "signature", page: 1, x: 0.9, y: 0.95, w: 0.3, h: 0.1 }, 1)).toEqual({
+      id: "f",
+      party: "a",
+      type: "signature",
+      page: 1,
+      x: 0.7,
+      y: 0.9,
+      w: 0.3,
+      h: 0.1,
+    });
     expect(cleanField({ party: "a", type: "signature", page: 3, x: 0, y: 0, w: 0.3, h: 0.1 }, 2)).toBeNull();
     expect(cleanField({ party: "c", type: "signature", page: 1, x: 0, y: 0, w: 0.3, h: 0.1 }, 2)).toBeNull();
     expect(cleanField({ party: "a", type: "stamp", page: 1, x: 0, y: 0, w: 0.3, h: 0.1 }, 2)).toBeNull();
@@ -138,7 +154,11 @@ describe("stamping", () => {
     ]);
     const after = await PDFDocument.load(stamped);
     expect(after.getPageCount()).toBe(1);
-    const done = await appendCertificate(stamped, { ...r, parties: [party("a", "signed", { signedAt: "2026-10-28T11:00:00Z", ip: "1.2.3.4" }), party("b", "signed", { signedAt: "2026-10-28T12:00:00Z" })], completed_at: "2026-10-28T12:00:00Z" });
+    const done = await appendCertificate(stamped, {
+      ...r,
+      parties: [party("a", "signed", { signedAt: "2026-10-28T11:00:00Z", ip: "1.2.3.4" }), party("b", "signed", { signedAt: "2026-10-28T12:00:00Z" })],
+      completed_at: "2026-10-28T12:00:00Z",
+    });
     expect((await PDFDocument.load(done)).getPageCount()).toBe(2);
   });
 
@@ -230,7 +250,12 @@ describe("text the PDF fonts can draw", () => {
   it("lets the certificate carry any name", async () => {
     const doc = await PDFDocument.create();
     doc.addPage([612, 792]);
-    const r = { ...row(), title: "Agreement — 契約 🖋", brand: "Ünïcödé, LLC", parties: [party("a", "signed", { name: "Łukasz", signedAt: "2026-10-28T11:00:00Z" }), party("b", "signed", { signedAt: "2026-10-28T12:00:00Z" })] };
+    const r = {
+      ...row(),
+      title: "Agreement — 契約 🖋",
+      brand: "Ünïcödé, LLC",
+      parties: [party("a", "signed", { name: "Łukasz", signedAt: "2026-10-28T11:00:00Z" }), party("b", "signed", { signedAt: "2026-10-28T12:00:00Z" })],
+    };
     const out = await appendCertificate(await doc.save(), r);
     expect((await PDFDocument.load(out)).getPageCount()).toBe(2);
   });

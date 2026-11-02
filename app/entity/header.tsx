@@ -49,16 +49,17 @@ export function EntityHeader() {
               {meta.map((m, i) => (
                 <span key={i} className="whitespace-nowrap">
                   {m}
-                  {(i < meta.length - 1 || owner) && <span aria-hidden="true" className="mx-1.5">·</span>}
+                  {(i < meta.length - 1 || owner) && (
+                    <span aria-hidden="true" className="mx-1.5">
+                      ·
+                    </span>
+                  )}
                 </span>
               ))}{" "}
               {owner && (
                 <span className="whitespace-nowrap">
                   Owned by{" "}
-                  <Link
-                    to={`/assets/${asset.ownerId}`}
-                    className={`relative hover:underline max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.soft}`}
-                  >
+                  <Link to={`/assets/${asset.ownerId}`} className={`relative hover:underline max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-[''] ${t.soft}`}>
                     {owner}
                   </Link>
                 </span>
@@ -86,9 +87,11 @@ export function EntityHeader() {
                 Saved
               </span>
             )}
-            {!isPartner() && <Button icon="edit" onClick={() => (page.editing ? void page.cancelEditing() : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
-              <span className="max-sm:hidden">{page.editing ? "Cancel" : "Edit"}</span>
-            </Button>}
+            {!isPartner() && (
+              <Button icon="edit" onClick={() => (page.editing ? void page.cancelEditing() : page.startEditing())} aria-expanded={page.editing} aria-label={page.editing ? "Cancel editing" : "Edit"}>
+                <span className="max-sm:hidden">{page.editing ? "Cancel" : "Edit"}</span>
+              </Button>
+            )}
             {!isPartner() && <MoreMenu />}
           </div>
         </div>
@@ -102,11 +105,7 @@ export function EntityHeader() {
         ) : (
           <CopyMetric id="ein" label="EIN" value={asset.ein} mono badge={einBadge(asset, page.palmMode)} />
         )}
-        <CopyMetric
-          id="formed"
-          label={isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : etype === "LP" ? "Formed" : "Formation date"}
-          value={formed}
-        />
+        <CopyMetric id="formed" label={isTrust ? "Trust date" : etype === "C-Corp" ? "Incorporated" : etype === "LP" ? "Formed" : "Formation date"} value={formed} />
         {/* One measure of the record: the ring, and how many things are left (the To do card lists them, so this goes there). */}
         <Link
           to={tabPath("overview")}
@@ -121,9 +120,7 @@ export function EntityHeader() {
             <ScoreRing score={score} />
             <div className="min-w-0">
               <p className={`text-[11.5px] ${t.muted}`}>Record</p>
-              <p className={`mt-0.5 truncate text-[15px] font-medium ${t.text}`}>
-                {toDo ? `${toDo} to do` : "Complete"}
-              </p>
+              <p className={`mt-0.5 truncate text-[15px] font-medium ${t.text}`}>{toDo ? `${toDo} to do` : "Complete"}</p>
             </div>
           </div>
         </Link>
@@ -201,7 +198,17 @@ function ScoreRing({ score }: { score: number }) {
     <span className="relative inline-grid h-[38px] w-[38px] shrink-0 place-items-center" aria-label={`${score} of 100`}>
       <svg viewBox="0 0 38 38" className="absolute inset-0 -rotate-90">
         <circle cx="19" cy="19" r={r} fill="none" strokeWidth="3" className={t.dark ? "stroke-white/[0.08]" : "stroke-gray-200"} />
-        <circle cx="19" cy="19" r={r} fill="none" strokeWidth="3" strokeLinecap="round" stroke={color} strokeDasharray={`${(c * score) / 100} ${c}`} style={{ transition: "stroke-dasharray 600ms ease" }} />
+        <circle
+          cx="19"
+          cy="19"
+          r={r}
+          fill="none"
+          strokeWidth="3"
+          strokeLinecap="round"
+          stroke={color}
+          strokeDasharray={`${(c * score) / 100} ${c}`}
+          style={{ transition: "stroke-dasharray 600ms ease" }}
+        />
       </svg>
       <span className={`text-[11px] font-semibold tabular-nums ${t.text}`}>{score}</span>
     </span>
@@ -247,11 +254,17 @@ function CopyMetric({ id, label, value, mono = false, badge }: { id: string; lab
       <span className={`flex items-center gap-1.5 text-[11.5px] ${t.muted}`}>
         {label}
         {badge && (
-          <span title={badge.tone === "good" ? "The IRS has this EIN under this legal name" : "The IRS doesn't match this EIN to this legal name (Compliance tab)"} className={`font-medium ${toneText(badge.tone, t.dark)}`}>
+          <span
+            title={badge.tone === "good" ? "The IRS has this EIN under this legal name" : "The IRS doesn't match this EIN to this legal name (Compliance tab)"}
+            className={`font-medium ${toneText(badge.tone, t.dark)}`}
+          >
             {badge.text}
           </span>
         )}
-        <span aria-live="polite" className={`inline-flex items-center gap-1 ${done ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}>
+        <span
+          aria-live="polite"
+          className={`inline-flex items-center gap-1 ${done ? (t.dark ? "text-emerald-400" : "text-emerald-600") : "opacity-60 sm:opacity-0 sm:group-hover/copy:opacity-100 sm:group-focus-visible/copy:opacity-100"}`}
+        >
           <Icon name={done ? "check" : "copy"} className="h-3 w-3" strokeWidth={2} />
           {done ? "Copied" : ""}
         </span>
@@ -283,11 +296,7 @@ function MoreMenu() {
     <div ref={ref} className="relative">
       <IconButton icon="more" label="More actions" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
       {open && (
-        <div
-          className={`absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-xl border py-1 shadow-lg ${
-            t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"
-          }`}
-        >
+        <div className={`absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-xl border py-1 shadow-lg ${t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"}`}>
           {!asset.closing && asset.type !== "Trust" && isAdmin() && (
             <button
               type="button"
@@ -402,14 +411,10 @@ export function CategoryMenu() {
           </>
         )}
       </div>
-      <div
-        className={`rounded-xl border p-1 max-sm:hidden ${panel}`}
-      >
+      <div className={`rounded-xl border p-1 max-sm:hidden ${panel}`}>
         <div
           ref={strip}
-          className={`flex gap-1 [overflow-x:auto] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-            more ? "[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]" : ""
-          }`}
+          className={`flex gap-1 [overflow-x:auto] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${more ? "[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]" : ""}`}
         >
           {view.tabs.map((tab) => {
             const on = tab.key === view.tab;
@@ -421,9 +426,7 @@ export function CategoryMenu() {
                 aria-current={on ? "page" : undefined}
                 className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-medium transition-colors max-sm:h-[40px] max-sm:px-2.5 ${
                   tab.key === "activity" ? "ml-auto" : ""
-                } ${
-                  on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
-                }`}
+                } ${on ? (t.dark ? "bg-white/[0.09] text-white" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"}`}
               >
                 {tab.label}
                 <Count n={tab.count} alert={tab.alert} />

@@ -94,7 +94,7 @@ export function useEntities(enabled: boolean): Entity[] {
           Object.entries(val)
             .filter(([, a]) => a?.name)
             .map(([id, a]) => ({ id, name: a.name!, type: a.type, state: a.state }))
-            .sort((a, b) => a.name.localeCompare(b.name))
+            .sort((a, b) => a.name.localeCompare(b.name)),
         );
       } catch {
         loaded.current = false; // try again next open
@@ -293,9 +293,7 @@ export function CommandPalette({
                   aria-selected={i === active}
                   onMouseMove={() => setActive(i)}
                   onClick={() => c.run()}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
-                    i === active ? (isDark ? "bg-white/10" : "bg-gray-100") : ""
-                  }`}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${i === active ? (isDark ? "bg-white/10" : "bg-gray-100") : ""}`}
                 >
                   <span className="min-w-0 flex-1 truncate">{c.label}</span>
                   {c.hint && <span className={`shrink-0 truncate text-xs ${muted}`}>{c.hint}</span>}
@@ -379,7 +377,9 @@ export function ShortcutSheet({ open, onClose, isDark }: { open: boolean; onClos
                   <span className={isDark ? "text-gray-300" : "text-gray-600"}>{label}</span>
                   <span className="flex gap-1">
                     {keys.map((k, j) => (
-                      <kbd key={j} className={kbd}>{k}</kbd>
+                      <kbd key={j} className={kbd}>
+                        {k}
+                      </kbd>
                     ))}
                   </span>
                 </li>
@@ -394,7 +394,9 @@ export function ShortcutSheet({ open, onClose, isDark }: { open: boolean; onClos
               <span className={isDark ? "text-gray-300" : "text-gray-600"}>{label}</span>
               <span className="flex gap-1">
                 {keys.map((k, j) => (
-                  <kbd key={j} className={kbd}>{k}</kbd>
+                  <kbd key={j} className={kbd}>
+                    {k}
+                  </kbd>
                 ))}
               </span>
             </li>

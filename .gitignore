@@ -20,3 +20,6 @@
 /*.docx
 /*.xls
 /*.xlsx
+
+# Test coverage output (npm run test:coverage)
+/coverage/

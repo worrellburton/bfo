@@ -1,5 +1,7 @@
-# Checks every pull request and every push to main: types, lint, tests, build.
-# Same Node and cache setup as ios-testflight.yml.
+# Checks every pull request and every push to main: types, lint, formatting,
+# tests with a coverage floor, a production audit of the dependencies, the
+# build, and the app in a real browser (e2e/run.cjs). Same Node and cache
+# setup as ios-testflight.yml. deploy-check.yml runs after a merge.
 name: CI
 
 on:
@@ -18,28 +20,34 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
-
       - run: npm ci
 
       # `react-router typegen && tsc` — typegen writes .react-router/types first.
       - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
 
-      # eslint.config.js. ESLint isn't in devDependencies yet (add it with
-      # `npm i -D eslint @eslint/js typescript-eslint eslint-plugin-react-hooks eslint-plugin-react-refresh globals`
-      # and drop the install line here); until then it's fetched for the run.
-      - name: Lint
+      # vitest with the coverage floor from vite.config.ts (the run fails under it).
+      - run: npm run test:coverage
+      - name: Coverage summary
+        if: always()
         run: |
-          if [ ! -x node_modules/.bin/eslint ]; then
-            npm i --no-save eslint@9 @eslint/js@9 typescript-eslint@8 eslint-plugin-react-hooks@5 eslint-plugin-react-refresh@0.4 globals@15
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "const t=require('./coverage/coverage-summary.json').total; console.log('lines ' + t.lines.pct + '%  functions ' + t.functions.pct + '%  branches ' + t.branches.pct + '%')" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-          npm run lint
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
 
-      - run: npm test
+      # Known vulnerabilities in what ships (devDependencies don't ship).
+      - run: npm run audit
 
       - run: npm run build
 
@@ -52,10 +60,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm i --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
+
+      # Chromium is cached by Playwright version, so a run doesn't download it.
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+      - run: npx playwright install-deps chromium
+
       # The production bundle, served as Vercel serves it (SPA fallback), so the
       # checks see what ships. The dev server's on-the-fly dependency
       # optimization reloads pages mid-check on a cold runner.
@@ -67,3 +88,10 @@ jobs:
       - run: BASE=http://127.0.0.1:5173 npm run e2e
       - if: failure()
         run: tail -50 serve.log
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failures
+          path: e2e/out/
+          if-no-files-found: ignore
+          retention-days: 7

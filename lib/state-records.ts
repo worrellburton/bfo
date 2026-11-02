@@ -87,7 +87,9 @@ export function patchFor(a: Rec, code: string, home: boolean, rec: StateRecord, 
  * everything). `deadline`: a time (ms) after which no more reads start, so a run inside a time-limited
  * function ends cleanly; what's left reports "later".
  */
-export async function checkStateRecords(opts: { ids?: string[]; force?: boolean; freshMs?: number; deadline?: number; now?: number; by?: { id: string; name: string | null } } = {}): Promise<CheckResult[]> {
+export async function checkStateRecords(
+  opts: { ids?: string[]; force?: boolean; freshMs?: number; deadline?: number; now?: number; by?: { id: string; name: string | null } } = {},
+): Promise<CheckResult[]> {
   const mode = palmMode();
   if (!mode) throw new Error("Palm isn't connected.");
   const now = opts.now ?? Date.now();
@@ -125,7 +127,7 @@ export async function checkStateRecords(opts: { ids?: string[]; force?: boolean;
         }
         // Blanks are filled against the entity as it is now, not as the run first read it: someone may have
         // typed in People or the agent while the state answered.
-        const current = (((await readRows("assets", [row.id]))[0]?.data ?? a) as Rec);
+        const current = ((await readRows("assets", [row.id]))[0]?.data ?? a) as Rec;
         const patch = { ...patchFor(current, code, home, got, mode === "live", current.ownerId ? names.get(current.ownerId) : null), ...(miss ? { [`registryMiss/${code}`]: null } : {}) };
         const ops: TreeOp[] = [{ op: "update", path: ["assets", row.id], value: patch as never }];
         await applyOps(ops, ACTOR);

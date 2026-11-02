@@ -102,13 +102,7 @@ export default function TreasuryMappings() {
         }),
       });
       if (!res.ok) throw new Error("Couldn't save that mapping.");
-      setAccounts((prev) =>
-        prev.map((a) =>
-          a.account_id === account.account_id
-            ? { ...a, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null }
-            : a
-        )
-      );
+      setAccounts((prev) => prev.map((a) => (a.account_id === account.account_id ? { ...a, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null } : a)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save that mapping.");
     } finally {
@@ -138,27 +132,20 @@ export default function TreasuryMappings() {
 
   return (
     <div className="max-w-4xl">
-      <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>← Treasury</Link>
+      <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>
+        ← Treasury
+      </Link>
       <div className="flex items-start justify-between gap-4 mt-2 mb-6">
         <div className="min-w-0">
           <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Account mappings</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>
-            Which entity each bank account and card belongs to — Books and the entity P&amp;Ls are
-            built on these.
-          </p>
+          <p className={`text-sm mt-1 ${subtle}`}>Which entity each bank account and card belongs to — Books and the entity P&amp;Ls are built on these.</p>
         </div>
         {unmapped > 0 && (
-          <span className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
-            {unmapped} unmapped
-          </span>
+          <span className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>{unmapped} unmapped</span>
         )}
       </div>
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {loading ? (
         <p className={`text-sm ${subtle}`}>Loading…</p>
@@ -171,16 +158,9 @@ export default function TreasuryMappings() {
             <section key={bank} className={`rounded-xl border overflow-hidden mb-4 ${card}`}>
               <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3">
                 {list[0].institution_logo ? (
-                  <img
-                    src={`data:image/png;base64,${list[0].institution_logo}`}
-                    alt=""
-                    className="w-6 h-6 shrink-0 rounded object-contain bg-white/90 p-0.5"
-                  />
+                  <img src={`data:image/png;base64,${list[0].institution_logo}`} alt="" className="w-6 h-6 shrink-0 rounded object-contain bg-white/90 p-0.5" />
                 ) : (
-                  <span
-                    className="w-6 h-6 shrink-0 rounded flex items-center justify-center text-[10px] font-bold text-white"
-                    style={{ background: `rgba(${rgb}, 0.55)` }}
-                  >
+                  <span className="w-6 h-6 shrink-0 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: `rgba(${rgb}, 0.55)` }}>
                     {bank.slice(0, 1)}
                   </span>
                 )}
@@ -189,26 +169,16 @@ export default function TreasuryMappings() {
               </div>
 
               {list.map((account) => (
-                <div
-                  key={account.account_id}
-                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-5 py-3 border-t ${rowBorder}`}
-                >
+                <div key={account.account_id} className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-5 py-3 border-t ${rowBorder}`}>
                   <div className="min-w-[10rem] flex-1">
                     <p className="text-sm font-medium truncate">
                       {label(account)}
-                      {account.hidden && (
-                        <span className={`ml-2 text-[10px] uppercase tracking-wider ${isDark ? "text-amber-400/70" : "text-amber-600"}`}>hidden</span>
-                      )}
+                      {account.hidden && <span className={`ml-2 text-[10px] uppercase tracking-wider ${isDark ? "text-amber-400/70" : "text-amber-600"}`}>hidden</span>}
                     </p>
                     <p className={`text-xs capitalize ${subtle}`}>{account.subtype || account.type}</p>
                   </div>
 
-                  {!isMapped(account) && (
-                    <span
-                      className="w-2 h-2 rounded-full bg-amber-400 shrink-0"
-                      title={account.entity_id ? "Its entity was deleted" : "Not mapped yet"}
-                    />
-                  )}
+                  {!isMapped(account) && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title={account.entity_id ? "Its entity was deleted" : "Not mapped yet"} />}
                   <select
                     aria-label={`Entity for ${label(account)}`}
                     style={{ colorScheme: isDark ? "dark" : "light" }}
@@ -225,16 +195,16 @@ export default function TreasuryMappings() {
                           : "bg-amber-50 border-amber-300 text-amber-900"
                     }`}
                   >
-                    <option value="">
-                      {entities.length === 0 ? "No entities found" : "Assign to entity…"}
-                    </option>
+                    <option value="">{entities.length === 0 ? "No entities found" : "Assign to entity…"}</option>
                     {!isMapped(account) && account.entity_id && (
                       <option value={account.entity_id} disabled>
                         {account.entity_name ?? "Unknown entity"} (deleted)
                       </option>
                     )}
                     {entities.map((e) => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
                     ))}
                   </select>
                 </div>

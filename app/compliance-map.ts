@@ -83,13 +83,7 @@ function daysUntil(isoDate: string, today: Date): number {
 }
 
 /** One entity, all eight pillars. `all` resolves owners; `mode` is Palm's (null: not connected). */
-export function assessEntity(
-  id: string,
-  a: EntityInput,
-  all: Record<string, EntityInput>,
-  mode: PalmMode | null,
-  today = new Date(),
-): Assessment {
+export function assessEntity(id: string, a: EntityInput, all: Record<string, EntityInput>, mode: PalmMode | null, today = new Date()): Assessment {
   const type = entityType(a);
   const isTrust = type === "Trust";
   const st = stateCode(a.state);
@@ -107,23 +101,41 @@ export function assessEntity(
 
   // ── Palm link ───────────────────────────────────────────────────────
   if (isTrust) pillars.push({ key: "palm", label: "Palm link", status: "na", summary: "Trusts aren't on a state registry" });
-  else if (!mode) pillars.push({ key: "palm", label: "Palm link", status: "missing", summary: "Palm isn't connected", fix: { text: "Add PALM_API_KEY in Vercel so BFO can read the state registries." } });
+  else if (!mode)
+    pillars.push({ key: "palm", label: "Palm link", status: "missing", summary: "Palm isn't connected", fix: { text: "Add PALM_API_KEY in Vercel so BFO can read the state registries." } });
   else if (link?.businessId) pillars.push({ key: "palm", label: "Palm link", status: "good", summary: link.formation ? "Formed through Palm" : "Linked" });
-  else if (rec) pillars.push({ key: "palm", label: "Palm link", status: "warn", summary: "Read from the registry, not added to Palm", fix: { text: "Add it to Palm from its Compliance tab (moving the agent to Palm does this) so state mail and filings reach BFO.", href: page("compliance"), cta: "Open Compliance" } });
+  else if (rec)
+    pillars.push({
+      key: "palm",
+      label: "Palm link",
+      status: "warn",
+      summary: "Read from the registry, not added to Palm",
+      fix: { text: "Add it to Palm from its Compliance tab (moving the agent to Palm does this) so state mail and filings reach BFO.", href: page("compliance"), cta: "Open Compliance" },
+    });
   else
     pillars.push({
       key: "palm",
       label: "Palm link",
       status: "missing",
       summary: "Not linked to Palm",
-      fix: st ? { ...check, text: "Check it with the state: Palm finds it on the registry, then it can be added to Palm." } : { text: "Once its state is set, check it with the state to find it on the registry." },
+      fix: st
+        ? { ...check, text: "Check it with the state: Palm finds it on the registry, then it can be added to Palm." }
+        : { text: "Once its state is set, check it with the state to find it on the registry." },
     });
 
   // ── State record ────────────────────────────────────────────────────
   if (isTrust) pillars.push({ key: "state", label: "State record", status: "na", summary: "No state filing for a trust" });
-  else if (!st) pillars.push({ key: "state", label: "State record", status: "bad", summary: "No state of formation", fix: { text: "Set the state it was formed in, so its record and filings can be looked up.", href: page("overview"), cta: "Open entity" } });
+  else if (!st)
+    pillars.push({
+      key: "state",
+      label: "State record",
+      status: "bad",
+      summary: "No state of formation",
+      fix: { text: "Set the state it was formed in, so its record and filings can be looked up.", href: page("overview"), cta: "Open entity" },
+    });
   else if (!mode) pillars.push({ key: "state", label: "State record", status: "missing", summary: "Needs Palm to read" });
-  else if (!rec) pillars.push({ key: "state", label: "State record", status: "missing", summary: "Never checked with the state", fix: { ...check, text: `Read its record from ${sos} through Palm.` } });
+  else if (!rec)
+    pillars.push({ key: "state", label: "State record", status: "missing", summary: "Never checked with the state", fix: { ...check, text: `Read its record from ${sos} through Palm.` } });
   else if (rec.status && rec.status !== "active") {
     pillars.push({
       key: "state",
@@ -132,7 +144,11 @@ export function assessEntity(
       summary: `The state lists it as ${rec.status}`,
       fix: dissolved
         ? { text: `Marked closed here and ${rec.status} with the state. Nothing to file, unless it should still exist.` }
-        : { text: `If it should still exist, file for reinstatement with ${sos}: the overdue reports and fees, then a reinstatement application. If it was closed on purpose, mark it dissolved here.`, href: page("compliance"), cta: "Open Compliance" },
+        : {
+            text: `If it should still exist, file for reinstatement with ${sos}: the overdue reports and fees, then a reinstatement application. If it was closed on purpose, mark it dissolved here.`,
+            href: page("compliance"),
+            cta: "Open Compliance",
+          },
     });
   } else {
     const age = Math.floor((today.getTime() - rec.checkedAt) / DAY);
@@ -149,14 +165,47 @@ export function assessEntity(
     pillars.push({ key: "standing", label: "Good standing", status: "na", summary: "Doesn't apply to a trust" });
     pillars.push({ key: "tax", label: "Tax standing", status: "na", summary: "Doesn't apply to a trust" });
   } else {
-    if (!rec) pillars.push({ key: "standing", label: "Good standing", status: "missing", summary: "Unknown until the state is checked", fix: mode && st ? { ...check, text: "Check it with the state to learn its standing." } : undefined });
+    if (!rec)
+      pillars.push({
+        key: "standing",
+        label: "Good standing",
+        status: "missing",
+        summary: "Unknown until the state is checked",
+        fix: mode && st ? { ...check, text: "Check it with the state to learn its standing." } : undefined,
+      });
     else if (standing?.registration === "not_compliant")
-      pillars.push({ key: "standing", label: "Good standing", status: dissolved ? "warn" : "bad", summary: "Not in good standing", fix: dissolved ? undefined : { text: `File the overdue annual report and pay what's owed to ${sos}, then check again. Banks and buyers ask for a good-standing certificate.`, href: page("compliance"), cta: "Open Compliance" } });
+      pillars.push({
+        key: "standing",
+        label: "Good standing",
+        status: dissolved ? "warn" : "bad",
+        summary: "Not in good standing",
+        fix: dissolved
+          ? undefined
+          : {
+              text: `File the overdue annual report and pay what's owed to ${sos}, then check again. Banks and buyers ask for a good-standing certificate.`,
+              href: page("compliance"),
+              cta: "Open Compliance",
+            },
+      });
     else if (standing?.registration === "compliant") pillars.push({ key: "standing", label: "Good standing", status: "good", summary: "In good standing" });
-    else pillars.push({ key: "standing", label: "Good standing", status: "warn", summary: "Not reported by the state", fix: { text: `${where ?? "The state"}'s registry doesn't report standing. Order a certificate of good standing from ${sos} to confirm it.` } });
+    else
+      pillars.push({
+        key: "standing",
+        label: "Good standing",
+        status: "warn",
+        summary: "Not reported by the state",
+        fix: { text: `${where ?? "The state"}'s registry doesn't report standing. Order a certificate of good standing from ${sos} to confirm it.` },
+      });
 
     if (!rec) pillars.push({ key: "tax", label: "Tax standing", status: "missing", summary: "Unknown until the state is checked" });
-    else if (standing?.tax === "not_compliant") pillars.push({ key: "tax", label: "Tax standing", status: "bad", summary: "Not compliant on state tax", fix: { text: `Settle the state tax account${where ? ` with ${where}` : ""} (franchise tax, annual tax report or fees), then check again.` } });
+    else if (standing?.tax === "not_compliant")
+      pillars.push({
+        key: "tax",
+        label: "Tax standing",
+        status: "bad",
+        summary: "Not compliant on state tax",
+        fix: { text: `Settle the state tax account${where ? ` with ${where}` : ""} (franchise tax, annual tax report or fees), then check again.` },
+      });
     else if (standing?.tax === "compliant") pillars.push({ key: "tax", label: "Tax standing", status: "good", summary: "Compliant" });
     else pillars.push({ key: "tax", label: "Tax standing", status: "na", summary: "Not reported by this state" });
   }
@@ -165,14 +214,41 @@ export function assessEntity(
   const term = agentTerm(st);
   const ra = link?.ra?.status;
   if (isTrust) pillars.push({ key: "agent", label: term, status: "na", summary: "A trust needs none" });
-  else if (standing?.agent === "not_compliant") pillars.push({ key: "agent", label: term, status: "bad", summary: "The state rejects the agent on file", fix: { text: `Appoint a new ${term.toLowerCase()}; Palm can be the agent and files the change itself.`, href: page("compliance"), cta: "Make Palm the agent" } });
+  else if (standing?.agent === "not_compliant")
+    pillars.push({
+      key: "agent",
+      label: term,
+      status: "bad",
+      summary: "The state rejects the agent on file",
+      fix: { text: `Appoint a new ${term.toLowerCase()}; Palm can be the agent and files the change itself.`, href: page("compliance"), cta: "Make Palm the agent" },
+    });
   else if (ra === "active") pillars.push({ key: "agent", label: term, status: "good", summary: "Palm is the agent" });
   else if (ra === "pending") pillars.push({ key: "agent", label: term, status: "warn", summary: "Moving to Palm", fix: { text: "The change is with the state; nothing to do until it's accepted." } });
-  else if (ra === "failed") pillars.push({ key: "agent", label: term, status: "bad", summary: "The move to Palm didn't go through", fix: { text: "See why on the Compliance tab and try again.", href: page("compliance"), cta: "Open Compliance" } });
+  else if (ra === "failed")
+    pillars.push({
+      key: "agent",
+      label: term,
+      status: "bad",
+      summary: "The move to Palm didn't go through",
+      fix: { text: "See why on the Compliance tab and try again.", href: page("compliance"), cta: "Open Compliance" },
+    });
   else if (rec?.agent && a.registeredAgent && normalizeName(rec.agent) !== normalizeName(a.registeredAgent))
-    pillars.push({ key: "agent", label: term, status: "warn", summary: `State has ${rec.agent}`, fix: { text: `Our record says ${a.registeredAgent}. Update the record, or change the agent with the state.`, href: page("compliance"), cta: "Open Compliance" } });
+    pillars.push({
+      key: "agent",
+      label: term,
+      status: "warn",
+      summary: `State has ${rec.agent}`,
+      fix: { text: `Our record says ${a.registeredAgent}. Update the record, or change the agent with the state.`, href: page("compliance"), cta: "Open Compliance" },
+    });
   else if (rec?.agent || a.registeredAgent?.trim()) pillars.push({ key: "agent", label: term, status: "good", summary: rec?.agent ?? a.registeredAgent!.trim() });
-  else pillars.push({ key: "agent", label: term, status: "missing", summary: "None on file", fix: { text: `Every ${where ?? "state"} entity needs a ${term.toLowerCase()}. Make Palm the agent, or record the one you have.`, href: page("compliance"), cta: "Make Palm the agent" } });
+  else
+    pillars.push({
+      key: "agent",
+      label: term,
+      status: "missing",
+      summary: "None on file",
+      fix: { text: `Every ${where ?? "state"} entity needs a ${term.toLowerCase()}. Make Palm the agent, or record the one you have.`, href: page("compliance"), cta: "Make Palm the agent" },
+    });
 
   // ── Paperwork ───────────────────────────────────────────────────────
   const rules = documentRules(paper).filter((r) => r.level !== "recommended");
@@ -212,14 +288,31 @@ export function assessEntity(
   const next = dated[0];
   const undatedState = due.find((o) => !o.due && o.key === "state-annual");
   if (dissolved) pillars.push({ key: "deadlines", label: "Deadlines", status: "na", summary: "Closed" });
-  else if (undatedState) pillars.push({ key: "deadlines", label: "Deadlines", status: "missing", summary: `${undatedState.title}: date unknown`, fix: { text: `Add the formation date; the ${undatedState.title} is due ${undatedState.rule.toLowerCase()}.`, href: page("overview"), cta: "Open entity" } });
+  else if (undatedState)
+    pillars.push({
+      key: "deadlines",
+      label: "Deadlines",
+      status: "missing",
+      summary: `${undatedState.title}: date unknown`,
+      fix: { text: `Add the formation date; the ${undatedState.title} is due ${undatedState.rule.toLowerCase()}.`, href: page("overview"), cta: "Open entity" },
+    });
   else if (!next) pillars.push({ key: "deadlines", label: "Deadlines", status: due.length ? "good" : "na", summary: due.length ? "Nothing dated" : "Nothing recurring" });
   else {
     const days = daysUntil(next.due!, today);
     const when = days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
     pillars.push(
       days <= 30
-        ? { key: "deadlines", label: "Deadlines", status: "warn", summary: `${next.title} ${when}`, fix: { text: `${next.title} for ${next.agency} is due ${next.due}${next.fee ? ` (${next.fee})` : ""}.`, href: next.url ?? page("compliance"), cta: next.url ? "File it" : "Open Compliance" } }
+        ? {
+            key: "deadlines",
+            label: "Deadlines",
+            status: "warn",
+            summary: `${next.title} ${when}`,
+            fix: {
+              text: `${next.title} for ${next.agency} is due ${next.due}${next.fee ? ` (${next.fee})` : ""}.`,
+              href: next.url ?? page("compliance"),
+              cta: next.url ? "File it" : "Open Compliance",
+            },
+          }
         : { key: "deadlines", label: "Deadlines", status: "good", summary: `Next: ${next.title}, ${next.due}` },
     );
   }

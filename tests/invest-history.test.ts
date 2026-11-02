@@ -6,7 +6,14 @@ const secs = new Map<string, HSecurity>([
   ["MM", { security_id: "MM", ticker: "VMFXX", name: "Federal Money Market", cash: true, price: 1 }],
 ]);
 const closes = new Map<string, Array<[string, number]>>([
-  ["VTSAX", [["2026-10-01", 100], ["2026-10-02", 105], ["2026-10-05", 110]]],
+  [
+    "VTSAX",
+    [
+      ["2026-10-01", 100],
+      ["2026-10-02", 105],
+      ["2026-10-05", 110],
+    ],
+  ],
 ]);
 
 describe("helpers", () => {
@@ -21,7 +28,15 @@ describe("helpers", () => {
     expect(isCashLike("VMFXX", null)).toBe(true);
     expect(isCashLike("CUR:USD", null)).toBe(true);
     expect(isCashLike("VTSAX", "Vanguard Total Stock Market")).toBe(false);
-    expect(cashBuckets([{ account_id: "a", security_id: "MM", quantity: 5 }, { account_id: "a", security_id: "FUND", quantity: 1 }], secs).get("a")).toBe("MM");
+    expect(
+      cashBuckets(
+        [
+          { account_id: "a", security_id: "MM", quantity: 5 },
+          { account_id: "a", security_id: "FUND", quantity: 1 },
+        ],
+        secs,
+      ).get("a"),
+    ).toBe("MM");
   });
   it("reads Yahoo's chart answer", () => {
     // 2026-10-01 20:00 UTC is 16:00 in New York.
@@ -34,7 +49,17 @@ describe("rebuild", () => {
   const days = dayList("2026-10-01", "2026-10-05");
 
   it("prices today's holdings on each day when nothing traded", () => {
-    const { points } = rebuild([{ account_id: "a", security_id: "FUND", quantity: 10 }, { account_id: "a", security_id: "MM", quantity: 500 }], [], secs, closes, days, "units");
+    const { points } = rebuild(
+      [
+        { account_id: "a", security_id: "FUND", quantity: 10 },
+        { account_id: "a", security_id: "MM", quantity: 500 },
+      ],
+      [],
+      secs,
+      closes,
+      days,
+      "units",
+    );
     expect(points.map((p) => p.value)).toEqual([1500, 1550, 1550, 1550, 1600]);
   });
 
@@ -44,7 +69,17 @@ describe("rebuild", () => {
       { date: "2026-10-02", account_id: "a", security_id: "FUND", quantity: 5, amount: 525, type: "buy", subtype: "buy" },
       { date: "2026-10-02", account_id: "a", security_id: "MM", quantity: -525, amount: -525, type: "sell", subtype: "sell" },
     ];
-    const { points } = rebuild([{ account_id: "a", security_id: "FUND", quantity: 10 }, { account_id: "a", security_id: "MM", quantity: 0 }], txns, secs, closes, days, "units");
+    const { points } = rebuild(
+      [
+        { account_id: "a", security_id: "FUND", quantity: 10 },
+        { account_id: "a", security_id: "MM", quantity: 0 },
+      ],
+      txns,
+      secs,
+      closes,
+      days,
+      "units",
+    );
     // Oct 1: 5 FUND at 100 + 525 cash = 1025. A trade at the day's price doesn't change the value.
     expect(points[0]).toEqual({ day: "2026-10-01", value: 1025 });
     expect(points[1].value).toBe(1050);
@@ -52,7 +87,10 @@ describe("rebuild", () => {
 
   it("moves the cash itself when the sweep isn't reported (cash-flows)", () => {
     const txns = [{ date: "2026-10-02", account_id: "a", security_id: "FUND", quantity: 5, amount: 525, type: "buy", subtype: "buy" }];
-    const pos = [{ account_id: "a", security_id: "FUND", quantity: 10 }, { account_id: "a", security_id: "MM", quantity: 0 }];
+    const pos = [
+      { account_id: "a", security_id: "FUND", quantity: 10 },
+      { account_id: "a", security_id: "MM", quantity: 0 },
+    ];
     expect(rebuild(pos, txns, secs, closes, days, "cash-flows").points[0].value).toBe(1025);
     // Read as units, the same data loses the $525: the buy looks like money appearing.
     expect(rebuild(pos, txns, secs, closes, days, "units").points[0].value).toBe(500);

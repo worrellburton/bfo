@@ -23,7 +23,17 @@ const FILE_KIND_COLOR: Record<FileKind, string> = {
   file: "#9ca3af",
 };
 
-export function FileIcon({ kind, className = "h-4 w-4", delay = 0, title }: { kind: FileKind; className?: string; /** ms, so icons side by side don't move in step */ delay?: number; title?: string }) {
+export function FileIcon({
+  kind,
+  className = "h-4 w-4",
+  delay = 0,
+  title,
+}: {
+  kind: FileKind;
+  className?: string;
+  /** ms, so icons side by side don't move in step */ delay?: number;
+  title?: string;
+}) {
   const c = FILE_KIND_COLOR[kind];
   const d = { animationDelay: `${delay}ms` };
   return (

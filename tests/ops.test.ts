@@ -34,16 +34,39 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  for (const k of ["PLAID_CLIENT_ID", "PLAID_SECRET", "PALM_API_KEY", "BIRD_ACCESS_KEY", "BIRD_WORKSPACE_ID", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "VERCEL_GIT_COMMIT_SHA", "APNS_KEY_ID", "APNS_TEAM_ID", "APNS_KEY_P8"]) delete process.env[k];
+  for (const k of [
+    "PLAID_CLIENT_ID",
+    "PLAID_SECRET",
+    "PALM_API_KEY",
+    "BIRD_ACCESS_KEY",
+    "BIRD_WORKSPACE_ID",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "VERCEL_GIT_COMMIT_SHA",
+    "APNS_KEY_ID",
+    "APNS_TEAM_ID",
+    "APNS_KEY_P8",
+  ])
+    delete process.env[k];
 });
 
 function call(method = "GET") {
   const out: { status: number; json?: any; headers: Record<string, string> } = { status: 0, headers: {} };
   const res: any = {
-    status(c: number) { out.status = c; return res; },
-    json(j: unknown) { out.json = j; return res; },
-    end() { return res; },
-    setHeader(k: string, v: string) { out.headers[k] = v; },
+    status(c: number) {
+      out.status = c;
+      return res;
+    },
+    json(j: unknown) {
+      out.json = j;
+      return res;
+    },
+    end() {
+      return res;
+    },
+    setHeader(k: string, v: string) {
+      out.headers[k] = v;
+    },
   };
   return Promise.resolve(handler({ method, headers: {} } as any, res)).then(() => out);
 }
@@ -128,7 +151,11 @@ describe("recordCronRun", () => {
   });
 
   it("records a crash, alerts, and rethrows", async () => {
-    await expect(recordCronRun("treasury-report", async () => { throw new Error("no balances"); })).rejects.toThrow("no balances");
+    await expect(
+      recordCronRun("treasury-report", async () => {
+        throw new Error("no balances");
+      }),
+    ).rejects.toThrow("no balances");
     expect(finish()).toMatchObject({ ok: false, note: "no balances" });
     expect(alerted()[0]).toMatchObject({ kind: "cron:treasury-report", title: "treasury-report cron failed", detail: "no balances" });
   });

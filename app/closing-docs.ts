@@ -49,7 +49,7 @@ export function dissolutionConsent(entity: Rec & { name: string }, lookup: (id: 
   const filing = FILING[st] ? (corp ? FILING[st].corp : FILING[st].llc) : corp ? "articles of dissolution" : "certificate of cancellation";
   const withdraw = withdrawalStates(entity as never).map((c) => stateName(c));
   const acting = corp ? "the Board of Directors and the Shareholders" : input.managed === "managers" && input.managers.length ? `the Manager${input.managers.length > 1 ? "s" : ""}` : `the ${holders}`;
-  const act = corp ? `the corporation law of ${stName}` : ACT[st] ?? `the limited liability company act of ${stName}`;
+  const act = corp ? `the corporation law of ${stName}` : (ACT[st] ?? `the limited liability company act of ${stName}`);
   return {
     title: corp ? "Joint Written Consent of the Board and Shareholders" : `Written Consent of the ${holders}`,
     subtitle: `of ${entity.name}, a ${stName} ${corp ? "corporation" : "limited liability company"}, to dissolve the ${corp ? "Corporation" : "Company"}`,
@@ -76,7 +76,6 @@ export function dissolutionConsent(entity: Rec & { name: string }, lookup: (id: 
     schedule: members.map((m) => [m.name, pct(m.percent)]),
   };
 }
-
 
 /** Shared page furniture: margins, a paragraph writer, page breaks, footers. */
 async function sheet() {
@@ -187,7 +186,10 @@ export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): 
   // Signatures: a block per signer, two across.
   st.y += 10;
   s.room(60);
-  s.para(`IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} signed this consent. It may be signed in counterparts and by electronic signature.`, { align: "justify", gap: 18 });
+  s.para(`IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} signed this consent. It may be signed in counterparts and by electronic signature.`, {
+    align: "justify",
+    gap: 18,
+  });
   const colW = d.signers.length === 1 ? width * 0.62 : (width - 24) / 2;
   const blockH = (n: string) => (isCompany(n) ? 196 : 150);
   for (let k = 0; k < d.signers.length; k += 2) {
@@ -298,7 +300,10 @@ export async function einLetterPdf(l: EinLetter): Promise<Blob> {
   pdf.text(`Re: Request to close business account: ${l.name}, EIN ${l.ein}`, M, st.y);
   st.y += 28;
   s.para("To whom it may concern:", { gap: 10 });
-  s.para(`Please close the business account of ${l.name}, Employer Identification Number ${l.ein}. ${l.reason} It has filed its final return and has no further federal filing requirements.`, { align: "justify", gap: 10 });
+  s.para(`Please close the business account of ${l.name}, Employer Identification Number ${l.ein}. ${l.reason} It has filed its final return and has no further federal filing requirements.`, {
+    align: "justify",
+    gap: 10,
+  });
   s.para("A copy of the EIN assignment notice is enclosed. Please send any correspondence about this request to the address above.", { align: "justify", gap: 10 });
   s.para("Thank you.", { gap: 30 });
   s.para("Sincerely,", { gap: 46 });
@@ -312,4 +317,3 @@ export async function einLetterPdf(l: EinLetter): Promise<Blob> {
   pdf.text(`Enclosure: EIN assignment notice (CP 575 or 147C) for ${l.name}`, M, st.y);
   return pdf.output("blob");
 }
-

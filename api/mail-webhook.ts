@@ -46,15 +46,13 @@ export default alertOnThrow("webhook:mail", "Mail webhook crashed", handle);
 async function handle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   // As pasted into Vercel: stray quotes and spaces aren't part of it.
-  const secret = process.env.BIRD_WEBHOOK_SECRET?.trim().replace(/^["']|["']$/g, "").trim();
+  const secret = process.env.BIRD_WEBHOOK_SECRET?.trim()
+    .replace(/^["']|["']$/g, "")
+    .trim();
   if (!secret) return res.status(503).json({ error: "not_configured" });
 
   const raw = await rawBody(req);
-  const signed = verifyWebhook(
-    raw,
-    { id: header(req, "webhook-id"), timestamp: header(req, "webhook-timestamp"), signature: header(req, "webhook-signature") },
-    secret
-  );
+  const signed = verifyWebhook(raw, { id: header(req, "webhook-id"), timestamp: header(req, "webhook-timestamp"), signature: header(req, "webhook-signature") }, secret);
   if (!signed) {
     // Logged as facts only (never the body or a header's value), so a secret mismatch shows up in the logs.
     console.warn("mail-webhook: refused an unsigned or badly signed delivery", {

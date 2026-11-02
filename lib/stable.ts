@@ -166,7 +166,7 @@ export async function saveMail(items: StableMailItem[], entities?: { id: string;
     const scan = prev?.scan_path ?? (scanned ? await keep(item.scanDetails!.imageUrl!, `${item.id}/scan`) : null);
     rows.push({
       id: item.id,
-      asset_id: prev?.assigned === "hand" ? prev.asset_id : matchEntity(item, list) ?? prev?.asset_id ?? null,
+      asset_id: prev?.assigned === "hand" ? prev.asset_id : (matchEntity(item, list) ?? prev?.asset_id ?? null),
       assigned: prev?.assigned ?? "auto",
       from_name: item.from ?? null,
       recipient: item.recipients?.line1?.text ?? item.businessRecipient ?? null,

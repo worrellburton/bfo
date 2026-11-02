@@ -83,10 +83,7 @@ export default function MSAs() {
     return () => unsub?.();
   }, []);
 
-  const rows = useMemo(
-    () => (activeOnly ? mfas.filter((m) => m.status === "active") : mfas),
-    [mfas, activeOnly]
-  );
+  const rows = useMemo(() => (activeOnly ? mfas.filter((m) => m.status === "active") : mfas), [mfas, activeOnly]);
 
   // A month is active if it falls on/after the contract's effective month.
   // (No termination date is stored, so the fee runs through the selected year.)
@@ -158,7 +155,9 @@ export default function MSAs() {
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Year" value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
             {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
           </select>
           <button onClick={() => setActiveOnly((v) => !v)} aria-pressed={activeOnly} className={activeOnly ? btnActive : btn}>
@@ -166,15 +165,18 @@ export default function MSAs() {
           </button>
           <button onClick={handleExportCSV} disabled={rows.length === 0} aria-label="Export CSV" className={`${btn} disabled:opacity-50 disabled:cursor-not-allowed`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
             </svg>
             CSV
           </button>
         </div>
       </div>
-      <p className={`${subText} text-sm mb-6`}>
-        Management services agreements — the contracted fee shown in full for each active month of {year}.
-      </p>
+      <p className={`${subText} text-sm mb-6`}>Management services agreements — the contracted fee shown in full for each active month of {year}.</p>
 
       {loading ? (
         <div className="flex items-center justify-center py-24">
@@ -182,9 +184,7 @@ export default function MSAs() {
         </div>
       ) : rows.length === 0 ? (
         <div className={`border rounded-xl p-12 text-center ${cardBorder} ${cardBg}`}>
-          <p className={subText}>
-            No {activeOnly ? "active " : ""}MSAs found. Add Operating Contracts on an entity, then they'll show here.
-          </p>
+          <p className={subText}>No {activeOnly ? "active " : ""}MSAs found. Add Operating Contracts on an entity, then they'll show here.</p>
         </div>
       ) : (
         <div className={`border rounded-xl overflow-hidden ${cardBorder} ${cardBg}`}>
@@ -192,13 +192,15 @@ export default function MSAs() {
             <table className="w-full text-xs">
               <thead>
                 <tr className={`${headBg} border-b ${cardBorder}`}>
-                  <th className={`text-left py-2.5 px-4 font-semibold uppercase tracking-wider text-[10px] ${subText} ${stickyHead}`}>
-                    MSA
-                  </th>
+                  <th className={`text-left py-2.5 px-4 font-semibold uppercase tracking-wider text-[10px] ${subText} ${stickyHead}`}>MSA</th>
                   {MONTHS.map((mo) => (
-                    <th key={mo} className={th} style={{ minWidth: "72px" }}>{mo}</th>
+                    <th key={mo} className={th} style={{ minWidth: "72px" }}>
+                      {mo}
+                    </th>
                   ))}
-                  <th className={`${th} border-l ${cardBorder}`} style={{ minWidth: "90px" }}>Total</th>
+                  <th className={`${th} border-l ${cardBorder}`} style={{ minWidth: "90px" }}>
+                    Total
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -207,7 +209,8 @@ export default function MSAs() {
                     <td className={`py-2.5 px-4 ${stickyCell}`}>
                       <div className="font-medium leading-tight">{m.client}</div>
                       <div className={`text-[10px] mt-0.5 ${subText}`}>
-                        {m.feeRaw || fmtMoney(m.fee)}{m.frequency ? ` / ${m.frequency}` : ""}
+                        {m.feeRaw || fmtMoney(m.fee)}
+                        {m.frequency ? ` / ${m.frequency}` : ""}
                         {activeOnly ? "" : ` · ${m.status}`}
                       </div>
                     </td>
@@ -219,9 +222,7 @@ export default function MSAs() {
                         </td>
                       );
                     })}
-                    <td className={`py-2.5 px-3 text-right tabular-nums font-semibold whitespace-nowrap border-l ${cardBorder}`}>
-                      {fmtMoney(rowTotals[ri])}
-                    </td>
+                    <td className={`py-2.5 px-3 text-right tabular-nums font-semibold whitespace-nowrap border-l ${cardBorder}`}>{fmtMoney(rowTotals[ri])}</td>
                   </tr>
                 ))}
               </tbody>
@@ -229,7 +230,9 @@ export default function MSAs() {
                 <tr className={`${headBg} border-t-2 ${cardBorder} font-semibold`}>
                   <td className={`py-2.5 px-4 ${stickyHead}`}>Total</td>
                   {colTotals.map((t, i) => (
-                    <td key={i} className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">{fmtMoney(t)}</td>
+                    <td key={i} className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
+                      {fmtMoney(t)}
+                    </td>
                   ))}
                   <td className={`py-2.5 px-3 text-right tabular-nums whitespace-nowrap border-l ${cardBorder}`}>{fmtMoney(grandTotal)}</td>
                 </tr>

@@ -14,16 +14,7 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: [
-      "build/",
-      "node_modules/",
-      "ios/",
-      "native/",
-      ".react-router/",
-      "generated/",
-      "coverage/",
-      ".vercel/",
-    ],
+    ignores: ["build/", "node_modules/", "ios/", "native/", ".react-router/", "generated/", "coverage/", ".vercel/"],
   },
 
   js.configs.recommended,
@@ -88,20 +79,7 @@ export default tseslint.config(
         "warn",
         {
           allowConstantExport: true,
-          allowExportNames: [
-            "meta",
-            "links",
-            "headers",
-            "loader",
-            "clientLoader",
-            "action",
-            "clientAction",
-            "handle",
-            "shouldRevalidate",
-            "ErrorBoundary",
-            "HydrateFallback",
-            "Layout",
-          ],
+          allowExportNames: ["meta", "links", "headers", "loader", "clientLoader", "action", "clientAction", "handle", "shouldRevalidate", "ErrorBoundary", "HydrateFallback", "Layout"],
         },
       ],
     },

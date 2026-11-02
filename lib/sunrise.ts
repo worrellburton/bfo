@@ -11,7 +11,7 @@ function sunriseUtcHours(
   day: number,
   lat: number,
   lng: number,
-  zenith = 90.833 // official sunrise (accounts for refraction + sun's radius)
+  zenith = 90.833, // official sunrise (accounts for refraction + sun's radius)
 ): number | null {
   const rad = Math.PI / 180;
   const deg = 180 / Math.PI;

@@ -1,6 +1,20 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { f8822bData, f8822bMailTo, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, stateAddressStep, w9Data, W9_BOX, type Rec } from "../app/paperwork-generate";
+import {
+  f8822bData,
+  f8822bMailTo,
+  fill8822B,
+  fillW9,
+  oaInput,
+  oaProblems,
+  operatingAgreement,
+  operatingAgreementPdf,
+  PALM_SLOT,
+  stateAddressStep,
+  w9Data,
+  W9_BOX,
+  type Rec,
+} from "../app/paperwork-generate";
 import { sameAddressText, stateFindings } from "../app/palm";
 
 const OFFICE = "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028";
@@ -81,7 +95,7 @@ describe("operating agreement", () => {
         ],
       },
       lookup,
-      new Date("2026-11-01T12:00:00Z")
+      new Date("2026-11-01T12:00:00Z"),
     );
     expect(input).toMatchObject({ managed: "managers", managers: ["Robert Burton"], taxClass: "Partnership", effective: "2026-11-01" });
     expect(input.members.map((m) => m.percent)).toEqual([60, 40]);
@@ -96,7 +110,18 @@ describe("operating agreement", () => {
 
   it("won't draft without owners whose shares add up", () => {
     expect(oaProblems(oaInput({ name: "Loose, LLC", type: "LLC", state: "NV" }, lookup))).toEqual(["Add its owners: the agreement lists each member and their share."]);
-    const uneven = oaInput({ name: "Uneven, LLC", type: "LLC", state: "NV", members: [{ name: "A", percent: 50, role: "Member" }, { name: "B", percent: 30, role: "Member" }] }, lookup);
+    const uneven = oaInput(
+      {
+        name: "Uneven, LLC",
+        type: "LLC",
+        state: "NV",
+        members: [
+          { name: "A", percent: 50, role: "Member" },
+          { name: "B", percent: 30, role: "Member" },
+        ],
+      },
+      lookup,
+    );
     expect(oaProblems(uneven)).toEqual(["The members' shares add up to 80%, not 100%."]);
   });
 
@@ -153,7 +178,9 @@ describe("address change", () => {
 describe("operating agreement wording and execution page", () => {
   it("sets a typed purpose into a sentence and leaves a full one alone", async () => {
     const { purposeSentence } = await import("../app/paperwork-generate");
-    expect(purposeSentence("any lawful business")).toBe("The purpose of the Company is to engage in any lawful business, and in any other lawful act or activity for which a limited liability company may be formed under the Act.");
+    expect(purposeSentence("any lawful business")).toBe(
+      "The purpose of the Company is to engage in any lawful business, and in any other lawful act or activity for which a limited liability company may be formed under the Act.",
+    );
     expect(purposeSentence("to operate a medical practice.")).toMatch(/^The purpose of the Company is to engage in a medical practice, and/);
     expect(purposeSentence("The Company's purpose is to hold real estate.")).toBe("The Company's purpose is to hold real estate.");
     expect(purposeSentence("")).toMatch(/^The purpose of the Company is to engage in any lawful act/);
@@ -162,11 +189,36 @@ describe("operating agreement wording and execution page", () => {
   it("names each signer's share on the signature page", async () => {
     const { operatingAgreement } = await import("../app/paperwork-generate");
     const doc = operatingAgreement({
-      name: "X LLC", state: "DE", effective: "2026-01-01", address: "", registeredAgent: "", purpose: "", managed: "members", managers: [], taxClass: "Partnership",
-      members: [{ name: "A LLC", percent: 60, address: "" }, { name: "Bea Person", percent: 40, address: "" }],
+      name: "X LLC",
+      state: "DE",
+      effective: "2026-01-01",
+      address: "",
+      registeredAgent: "",
+      purpose: "",
+      managed: "members",
+      managers: [],
+      taxClass: "Partnership",
+      members: [
+        { name: "A LLC", percent: 60, address: "" },
+        { name: "Bea Person", percent: 40, address: "" },
+      ],
     });
-    expect(doc.signers).toEqual([{ name: "A LLC", capacity: "Member", share: "60%" }, { name: "Bea Person", capacity: "Member", share: "40%" }]);
-    const single = operatingAgreement({ name: "Y LLC", state: "DE", effective: "2026-01-01", address: "", registeredAgent: "", purpose: "", managed: "members", managers: [], taxClass: "Disregarded Entity", members: [{ name: "Solo", percent: 100, address: "" }] });
+    expect(doc.signers).toEqual([
+      { name: "A LLC", capacity: "Member", share: "60%" },
+      { name: "Bea Person", capacity: "Member", share: "40%" },
+    ]);
+    const single = operatingAgreement({
+      name: "Y LLC",
+      state: "DE",
+      effective: "2026-01-01",
+      address: "",
+      registeredAgent: "",
+      purpose: "",
+      managed: "members",
+      managers: [],
+      taxClass: "Disregarded Entity",
+      members: [{ name: "Solo", percent: 100, address: "" }],
+    });
     expect(single.signers[0]).toEqual({ name: "Solo", capacity: "Sole Member", share: undefined });
   });
 });

@@ -42,9 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       return { path, status: r.status, body: (await r.text()).slice(0, 200) };
     };
-    report.probes = rawWs
-      ? await Promise.all([probe(`/workspaces/${rawWs}/channels?limit=100`), probe("/workspaces")])
-      : await Promise.all([probe("/workspaces")]);
+    report.probes = rawWs ? await Promise.all([probe(`/workspaces/${rawWs}/channels?limit=100`), probe("/workspaces")]) : await Promise.all([probe("/workspaces")]);
 
     try {
       report.workspace = await birdWorkspace();

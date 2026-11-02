@@ -103,4 +103,3 @@ export function fullDate(iso: string): string {
 export function tap() {
   haptic();
 }
-

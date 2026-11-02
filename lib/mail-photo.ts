@@ -38,7 +38,7 @@ export function dimensions(b: Uint8Array, type: string): { width: number; height
   if (type === "image/png") return b.length >= 24 ? { width: u32be(16), height: u32be(20) } : null;
   if (type === "image/jpeg") {
     // Walk the segments to the first start-of-frame marker.
-    for (let i = 2; i + 9 < b.length; ) {
+    for (let i = 2; i + 9 < b.length;) {
       if (b[i] !== 0xff) return null;
       const marker = b[i + 1];
       if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { height: u16be(i + 5), width: u16be(i + 7) };
@@ -90,13 +90,9 @@ export async function mailFaces(now = Date.now()): Promise<Record<string, string
 }
 
 async function readFaces(): Promise<Record<string, string>> {
-  const users = await sb<{ id: string; mail_address: string; mail_photo: string }[]>(
-    "app_users?status=eq.approved&mail_address=not.is.null&mail_photo=not.is.null&select=id,mail_address,mail_photo"
-  );
+  const users = await sb<{ id: string; mail_address: string; mail_photo: string }[]>("app_users?status=eq.approved&mail_address=not.is.null&mail_photo=not.is.null&select=id,mail_address,mail_photo");
   if (!users?.length) return {};
-  const aliases = await sb<{ address: string; user_id: string }[]>(
-    `mail_aliases?user_id=in.(${users.map((u) => u.id).join(",")})&select=address,user_id`
-  );
+  const aliases = await sb<{ address: string; user_id: string }[]>(`mail_aliases?user_id=in.(${users.map((u) => u.id).join(",")})&select=address,user_id`);
   const faces: Record<string, string> = {};
   await Promise.all(
     users.map(async (u) => {
@@ -105,7 +101,7 @@ async function readFaces(): Promise<Record<string, string>> {
       if (!url) return;
       faces[u.mail_address.toLowerCase()] = url;
       for (const a of aliases ?? []) if (a.user_id === u.id) faces[a.address.toLowerCase()] = url;
-    })
+    }),
   );
   return faces;
 }

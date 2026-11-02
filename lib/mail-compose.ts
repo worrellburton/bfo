@@ -216,13 +216,21 @@ export function composeText(html: string): string {
           out.push(
             items
               .map((k) => {
-                const body = blocks(typeof k === "string" ? [k] : k.tag === "li" ? k.kids : [k]).join("\n").replace(/\n/g, "\n   ");
+                const body = blocks(typeof k === "string" ? [k] : k.tag === "li" ? k.kids : [k])
+                  .join("\n")
+                  .replace(/\n/g, "\n   ");
                 return node.tag === "ol" ? `${++i}. ${body}` : `- ${body}`;
               })
-              .join("\n")
+              .join("\n"),
           );
         } else if (node.tag === "blockquote") {
-          out.push(blocks(node.kids).join("\n\n").split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n"));
+          out.push(
+            blocks(node.kids)
+              .join("\n\n")
+              .split("\n")
+              .map((l) => (l ? `> ${l}` : ">"))
+              .join("\n"),
+          );
         } else out.push(blocks(node.kids).join("\n\n"));
       }
     }

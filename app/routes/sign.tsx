@@ -64,7 +64,7 @@ export default function SignPage() {
         shownKey.current = body.pdfKey;
       }
     },
-    [token]
+    [token],
   );
 
   useEffect(() => {
@@ -175,7 +175,12 @@ export default function SignPage() {
             {signedNow && !view.completed && (
               <p className="mt-3 flex items-center gap-2 text-[13px] text-white/60">
                 <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-                Waiting on {others.filter((p) => p.status !== "signed").map((p) => p.name || p.role).join(" and ") || "the other party"}. This page updates when they sign, and we'll email you the signed copy.
+                Waiting on{" "}
+                {others
+                  .filter((p) => p.status !== "signed")
+                  .map((p) => p.name || p.role)
+                  .join(" and ") || "the other party"}
+                . This page updates when they sign, and we'll email you the signed copy.
               </p>
             )}
 
@@ -184,7 +189,9 @@ export default function SignPage() {
                 frameRef(el);
                 frameEl.current = el;
               }}
-              className="mt-6 overflow-auto rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-6" style={{ maxHeight: "70dvh" }}>
+              className="mt-6 overflow-auto rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-6"
+              style={{ maxHeight: "70dvh" }}
+            >
               {width > 0 && (
                 <PdfPages
                   src={pdfUrl}
@@ -202,7 +209,11 @@ export default function SignPage() {
                                 className={`absolute rounded-[3px] ${yours ? "border-2 border-amber-400 bg-amber-300/25" : "border border-dashed border-black/20 bg-black/[0.03]"}`}
                                 style={{ left: `${f.x * 100}%`, top: `${f.y * 100}%`, width: `${f.w * 100}%`, height: `${f.h * 100}%` }}
                               >
-                                {yours && <span className="absolute -top-[15px] left-0 whitespace-nowrap rounded-sm bg-amber-400 px-1 py-[1px] text-[10px] font-semibold leading-none text-black">{FIELD_LABEL[f.type]} here</span>}
+                                {yours && (
+                                  <span className="absolute -top-[15px] left-0 whitespace-nowrap rounded-sm bg-amber-400 px-1 py-[1px] text-[10px] font-semibold leading-none text-black">
+                                    {FIELD_LABEL[f.type]} here
+                                  </span>
+                                )}
                               </div>
                             );
                           })
@@ -216,7 +227,12 @@ export default function SignPage() {
               <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
                 <label className="block">
                   <span className="mb-1.5 block text-[12px] text-white/60">Your full name</span>
-                  <input value={name} onChange={(e) => setName(e.target.value)} className="h-[44px] w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[16px] text-white focus:border-white/30 focus:outline-none" autoComplete="name" />
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="h-[44px] w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[16px] text-white focus:border-white/30 focus:outline-none"
+                    autoComplete="name"
+                  />
                 </label>
                 <div className="mt-4">
                   <span className="mb-1.5 block text-[12px] text-white/60">Your signature</span>
@@ -224,7 +240,12 @@ export default function SignPage() {
                 </div>
                 {error && !confirming && <p className="mt-3 text-[13px] text-red-400">{error}</p>}
                 <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <button type="button" disabled={busy || !png || !name.trim()} onClick={() => setConfirming(true)} className="h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-40">
+                  <button
+                    type="button"
+                    disabled={busy || !png || !name.trim()}
+                    onClick={() => setConfirming(true)}
+                    className="h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-40"
+                  >
                     Sign
                   </button>
                   {!declining ? (
@@ -233,7 +254,13 @@ export default function SignPage() {
                     </button>
                   ) : (
                     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
-                      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why not? (optional)" aria-label="Why you're declining (optional)" className="h-[44px] flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[14px] text-white focus:outline-none" />
+                      <input
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        placeholder="Why not? (optional)"
+                        aria-label="Why you're declining (optional)"
+                        className="h-[44px] flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[14px] text-white focus:outline-none"
+                      />
                       <button type="button" disabled={busy} onClick={() => post("decline")} className="h-[44px] rounded-xl border border-white/15 px-4 text-[13px] text-white/80 hover:bg-white/10">
                         Decline to sign
                       </button>
@@ -249,10 +276,19 @@ export default function SignPage() {
 
       {confirming && view && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center" role="presentation" onClick={() => !busy && setConfirming(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="esign-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[460px] rounded-2xl border border-white/10 bg-[#0b0b0f] p-5 shadow-2xl sm:p-6">
-            <h2 id="esign-title" className="text-[17px] font-semibold">Sign electronically?</h2>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="esign-title"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[460px] rounded-2xl border border-white/10 bg-[#0b0b0f] p-5 shadow-2xl sm:p-6"
+          >
+            <h2 id="esign-title" className="text-[17px] font-semibold">
+              Sign electronically?
+            </h2>
             <p className="mt-2 text-[13.5px] leading-relaxed text-white/70">
-              You're signing <span className="text-white">{view.title}</span> as <span className="text-white">{name.trim()}</span>. You agree to sign this document electronically, and that your electronic signature is as binding as one in ink.
+              You're signing <span className="text-white">{view.title}</span> as <span className="text-white">{name.trim()}</span>. You agree to sign this document electronically, and that your
+              electronic signature is as binding as one in ink.
             </p>
             {png && (
               <div className="mt-4 flex h-[84px] items-center justify-center rounded-xl bg-[#faf8f2] px-4">

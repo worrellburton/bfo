@@ -82,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { action?: string; ids?: unknown; to?: unknown; text?: unknown; key?: unknown };
+    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as { action?: string; ids?: unknown; to?: unknown; text?: unknown; key?: unknown };
     const stamp = { read_at: new Date().toISOString(), read_by: me.id };
     if (body.action === "send") {
       if (typeof body.to !== "string" || typeof body.text !== "string") return fail(res, 400, "bad_request", "Give a number and a text.");
@@ -101,7 +101,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
     if (body.action === "read") {
-      const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter((id) => /^[\w.:-]{1,200}$/.test(id)).slice(0, 200);
+      const ids = (Array.isArray(body.ids) ? body.ids : [])
+        .map(String)
+        .filter((id) => /^[\w.:-]{1,200}$/.test(id))
+        .slice(0, 200);
       if (!ids.length) return fail(res, 400, "missing_ids");
       await sb(`sms_messages?id=in.(${ids.map((i) => `"${i}"`).join(",")})&read_at=is.null`, { method: "PATCH", body: stamp, prefer: "return=minimal" });
       return res.status(200).json({ ok: true });

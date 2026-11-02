@@ -23,7 +23,7 @@ type LogoStyle = { id: string; name: string; blurb: string; font: BrandFont; fin
 /** What every lockup shares: the two lines of type, flat, on a black presentation board. */
 const BASE_PROMPT =
   "A luxury brand identity logo lockup for Burton Family Office, a private family office. Two lines of type, centered, and nothing else: " +
-  "on top, the words \"BURTON FAMILY OFFICE\" in small, widely letterspaced capitals; below it, much larger, the monogram \"BFO\" (the capital letters B, F and O, exactly those). " +
+  'on top, the words "BURTON FAMILY OFFICE" in small, widely letterspaced capitals; below it, much larger, the monogram "BFO" (the capital letters B, F and O, exactly those). ' +
   "Spell every word exactly as written. Flat, crisp vector artwork, perfectly centered with generous margins, presented on a plain deep black (#0a0a0a) background like a page of a brand reference sheet. " +
   "No mockup, no photo, no extra words, no tagline, no watermark.";
 
@@ -34,7 +34,8 @@ export const LOGO_STYLES: LogoStyle[] = [
     blurb: "High-contrast Bodoni, ivory, a hairline rule between the lines.",
     font: { family: "Bodoni Moda", weight: 500, css: "Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900" },
     finish: "ivory",
-    prompt: "Typeface: a high-contrast Didone serif like Bodoni, razor-thin hairlines and heavy stems, in warm ivory white. A single fine hairline rule separates the two lines. Editorial, like a couture fashion house.",
+    prompt:
+      "Typeface: a high-contrast Didone serif like Bodoni, razor-thin hairlines and heavy stems, in warm ivory white. A single fine hairline rule separates the two lines. Editorial, like a couture fashion house.",
   },
   {
     id: "inscription",
@@ -42,7 +43,8 @@ export const LOGO_STYLES: LogoStyle[] = [
     blurb: "Roman capitals in the Trajan tradition, gold foil.",
     font: { family: "Cinzel", weight: 500, css: "Cinzel:wght@400..900" },
     finish: "gold",
-    prompt: "Typeface: classical Roman inscriptional capitals in the Trajan tradition, like Cinzel, with sharp flared serifs. Rendered in rich brushed gold foil with a subtle metallic sheen. Timeless and monumental, like letters cut into marble.",
+    prompt:
+      "Typeface: classical Roman inscriptional capitals in the Trajan tradition, like Cinzel, with sharp flared serifs. Rendered in rich brushed gold foil with a subtle metallic sheen. Timeless and monumental, like letters cut into marble.",
   },
   {
     id: "monogram",
@@ -50,7 +52,8 @@ export const LOGO_STYLES: LogoStyle[] = [
     blurb: "Garamond capitals, B F O interlaced, inside a fine gold ring.",
     font: { family: "Cormorant Garamond", weight: 500, css: "Cormorant+Garamond:ital,wght@0,300..700;1,300..700" },
     finish: "gold",
-    prompt: "Typeface: an elegant old-style Garamond, like Cormorant Garamond. The letters B, F and O are interlaced into one refined heraldic monogram set inside a thin gold circle, the O wrapping around the B and F. Champagne gold on black. Heritage, like a private bank's seal.",
+    prompt:
+      "Typeface: an elegant old-style Garamond, like Cormorant Garamond. The letters B, F and O are interlaced into one refined heraldic monogram set inside a thin gold circle, the O wrapping around the B and F. Champagne gold on black. Heritage, like a private bank's seal.",
   },
   {
     id: "geometric",
@@ -58,7 +61,8 @@ export const LOGO_STYLES: LogoStyle[] = [
     blurb: "Futura-like geometric sans, wide tracking, silver.",
     font: { family: "Jost", weight: 400, css: "Jost:ital,wght@0,100..900;1,100..900" },
     finish: "silver",
-    prompt: "Typeface: a pure geometric sans-serif like Futura (Jost), perfect circle O, light-to-regular weight, very wide letterspacing on BFO as well. Brushed platinum silver. Minimal and modern, like an architecture firm or a Swiss private bank.",
+    prompt:
+      "Typeface: a pure geometric sans-serif like Futura (Jost), perfect circle O, light-to-regular weight, very wide letterspacing on BFO as well. Brushed platinum silver. Minimal and modern, like an architecture firm or a Swiss private bank.",
   },
   {
     id: "deco",
@@ -66,7 +70,8 @@ export const LOGO_STYLES: LogoStyle[] = [
     blurb: "Fine-line Art Deco capitals with stepped gold sunrays.",
     font: { family: "Italiana", weight: 400, css: "Italiana" },
     finish: "gold",
-    prompt: "Typeface: slender high-contrast Art Deco capitals like Italiana. A restrained 1920s Art Deco ornament of fine stepped lines and a small sunray fan frames the BFO monogram. Polished gold line art on black. Glamorous, like a grand Manhattan lobby.",
+    prompt:
+      "Typeface: slender high-contrast Art Deco capitals like Italiana. A restrained 1920s Art Deco ornament of fine stepped lines and a small sunray fan frames the BFO monogram. Polished gold line art on black. Glamorous, like a grand Manhattan lobby.",
   },
   {
     id: "editorial",
@@ -74,7 +79,8 @@ export const LOGO_STYLES: LogoStyle[] = [
     blurb: "Playfair Display, BFO in italic with a swash, ivory.",
     font: { family: "Playfair Display", weight: 600, css: "Playfair+Display:ital,wght@0,400..900;1,400..900" },
     finish: "ivory",
-    prompt: "Typeface: a transitional display serif like Playfair Display. \"BURTON FAMILY OFFICE\" in upright small capitals; \"BFO\" large in a graceful italic with a single elegant swash on the F. Warm ivory on black. Literary and confident, like a classic publishing house.",
+    prompt:
+      'Typeface: a transitional display serif like Playfair Display. "BURTON FAMILY OFFICE" in upright small capitals; "BFO" large in a graceful italic with a single elegant swash on the F. Warm ivory on black. Literary and confident, like a classic publishing house.',
   },
 ];
 
@@ -143,7 +149,11 @@ export function publicUrl(path: string): string {
 export const IMAGE_MODELS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-1"];
 
 export class ProviderError extends Error {
-  constructor(public provider: "openai" | "meshy", public status: number, message: string) {
+  constructor(
+    public provider: "openai" | "meshy",
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }

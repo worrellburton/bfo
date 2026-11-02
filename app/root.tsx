@@ -1,11 +1,4 @@
-import {
-  isRouteErrorResponse,
-  Links,
-  Meta,
-  Outlet,
-  Scripts,
-  ScrollRestoration,
-} from "react-router";
+import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -89,10 +82,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         <p className="mt-2 text-sm text-gray-400">{details}</p>
         <div className="mt-6 flex justify-center gap-2">
           {!notFound && (
-            <button
-              onClick={() => window.location.reload()}
-              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black hover:bg-gray-200"
-            >
+            <button onClick={() => window.location.reload()} className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black hover:bg-gray-200">
               Reload
             </button>
           )}

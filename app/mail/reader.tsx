@@ -149,160 +149,163 @@ export function Reader({
       {error && <ErrorLine>{error}</ErrorLine>}
 
       <div className="relative">
-      {envelope && !error && (
-        <div className={`reader-envelope relative z-[5] ${m ? "pointer-events-none" : ""} ${reveal === "go" ? "env-out" : ""}`}>
-          {preview ? (
-            <ReaderLoader
-              // Sent mail is sealed with who it went to.
-              seal={<Avatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} size="h-9 w-9 text-[12px]" trusted={!preview.unverified} />}
-              subject={preview.subject || "(no subject)"}
-              from={preview.direction === "out" ? `To ${preview.to.map((a) => senderLabel(a)).join(", ") || "—"}` : senderLabel(preview.from)}
-              snippet={preview.snippet}
-            />
-          ) : (
-            <ReaderLoader />
-          )}
-        </div>
-      )}
-      {m && (
-        <div className={`px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6 ${envelope ? "absolute inset-x-0 top-0" : ""} ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""}`}>
-          {/* Subject, with the star beside it on phones (as Gmail puts it). */}
-          <div className="flex items-start gap-2">
-            <h2 className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}>
-              {m.subject || "(no subject)"}
-            </h2>
-            {starButton(m, "md:hidden -mr-2 -mt-1.5")}
+        {envelope && !error && (
+          <div className={`reader-envelope relative z-[5] ${m ? "pointer-events-none" : ""} ${reveal === "go" ? "env-out" : ""}`}>
+            {preview ? (
+              <ReaderLoader
+                // Sent mail is sealed with who it went to.
+                seal={<Avatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} size="h-9 w-9 text-[12px]" trusted={!preview.unverified} />}
+                subject={preview.subject || "(no subject)"}
+                from={preview.direction === "out" ? `To ${preview.to.map((a) => senderLabel(a)).join(", ") || "—"}` : senderLabel(preview.from)}
+                snippet={preview.snippet}
+              />
+            ) : (
+              <ReaderLoader />
+            )}
           </div>
-
-          {/* Newer in the conversation (newest on top): the latest reads first, a reply just sent slides in. */}
-          {newer.length > 0 && (
-            <div className="mt-4 space-y-2.5">
-              {newer.map((x, i) => (
-                <ThreadCard key={x.id} m={x} me={me} open={i === 0 || x.id === freshId} fresh={x.id === freshId} />
-              ))}
-              <p className={`pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>The message you opened</p>
-            </div>
-          )}
-
-          {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date (not on touch, which has no hover: the top bar has them). */}
-          <div className="group/main">
-          <div className="mt-4 flex items-start gap-3 max-md:mt-6">
-            <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className={`min-w-0 truncate text-[13px] font-semibold max-md:text-[15px] ${t.text}`}>{senderLabel(m.from)}</span>
-                <time dateTime={m.occurredAt} className={`shrink-0 text-[12px] tabular-nums max-md:text-[13px] md:ml-auto md:pl-2 ${t.muted}`}>
-                  <span className="md:hidden">{listDate(m.occurredAt)}</span>
-                  <span className="max-md:hidden">{fullDate(m.occurredAt)}</span>
-                </time>
-                <span className="-my-1 hidden shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover/main:opacity-100 focus-within:opacity-100 md:flex md:pointer-coarse:hidden">
-                  <GlyphButton glyph="reply" label="Reply" onClick={() => onReply(m, "reply")} />
-                  {canReplyAll && <GlyphButton glyph="replyAll" label="Reply all" onClick={() => onReply(m, "all")} />}
-                  <GlyphButton glyph="forward" label="Forward" onClick={() => onForward(m)} />
-                </span>
-              </div>
-              {/* "To me ▾" opens every address. */}
-              <button
-                type="button"
-                aria-expanded={details}
-                onClick={() => setDetails((d) => !d)}
-                className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[40px] max-md:text-[13.5px] md:pointer-coarse:min-h-[40px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+        )}
+        {m && (
+          <div
+            className={`px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6 ${envelope ? "absolute inset-x-0 top-0" : ""} ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""}`}
+          >
+            {/* Subject, with the star beside it on phones (as Gmail puts it). */}
+            <div className="flex items-start gap-2">
+              <h2
+                className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}
               >
-                <span className="truncate">
-                  {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}
-                  {m.cc.length > 0 && <span className="max-md:hidden"> · Cc {toLine(m.cc)}</span>}
-                </span>
-                <Icon name="chevronDown" className={`h-3 w-3 shrink-0 transition-transform ${details ? "rotate-180" : ""}`} strokeWidth={2} />
-              </button>
-              {details && (
-                <dl className={`mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 text-[12px] max-md:text-[13px] ${t.line} ${t.dark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
-                  {[
-                    ["From", [fullAddress(m.from)]],
-                    ["To", m.to.map(fullAddress)],
-                    ["Cc", m.cc.map(fullAddress)],
-                    ["Bcc", m.bcc.map(fullAddress)],
-                    ["Date", [fullDate(m.occurredAt)]],
-                  ]
-                    .filter(([, v]) => (v as string[]).length)
-                    .map(([k, v]) => (
-                      <Fragment key={k as string}>
-                        <dt className={t.muted}>{k}</dt>
-                        <dd className={`min-w-0 break-words ${t.soft}`}>{(v as string[]).join(", ")}</dd>
-                      </Fragment>
-                    ))}
-                </dl>
-              )}
-              {(m.unverifiedSender || failed) && (
-                <div className="mt-1.5 flex flex-wrap gap-3">
-                  {m.unverifiedSender && <Dot tone="muted">Sender not verified</Dot>}
-                  {failed && <Dot tone="bad">Not delivered</Dot>}
+                {m.subject || "(no subject)"}
+              </h2>
+              {starButton(m, "md:hidden -mr-2 -mt-1.5")}
+            </div>
+
+            {/* Newer in the conversation (newest on top): the latest reads first, a reply just sent slides in. */}
+            {newer.length > 0 && (
+              <div className="mt-4 space-y-2.5">
+                {newer.map((x, i) => (
+                  <ThreadCard key={x.id} m={x} me={me} open={i === 0 || x.id === freshId} fresh={x.id === freshId} />
+                ))}
+                <p className={`pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>The message you opened</p>
+              </div>
+            )}
+
+            {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date (not on touch, which has no hover: the top bar has them). */}
+            <div className="group/main">
+              <div className="mt-4 flex items-start gap-3 max-md:mt-6">
+                <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className={`min-w-0 truncate text-[13px] font-semibold max-md:text-[15px] ${t.text}`}>{senderLabel(m.from)}</span>
+                    <time dateTime={m.occurredAt} className={`shrink-0 text-[12px] tabular-nums max-md:text-[13px] md:ml-auto md:pl-2 ${t.muted}`}>
+                      <span className="md:hidden">{listDate(m.occurredAt)}</span>
+                      <span className="max-md:hidden">{fullDate(m.occurredAt)}</span>
+                    </time>
+                    <span className="-my-1 hidden shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover/main:opacity-100 focus-within:opacity-100 md:flex md:pointer-coarse:hidden">
+                      <GlyphButton glyph="reply" label="Reply" onClick={() => onReply(m, "reply")} />
+                      {canReplyAll && <GlyphButton glyph="replyAll" label="Reply all" onClick={() => onReply(m, "all")} />}
+                      <GlyphButton glyph="forward" label="Forward" onClick={() => onForward(m)} />
+                    </span>
+                  </div>
+                  {/* "To me ▾" opens every address. */}
+                  <button
+                    type="button"
+                    aria-expanded={details}
+                    onClick={() => setDetails((d) => !d)}
+                    className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[40px] max-md:text-[13.5px] md:pointer-coarse:min-h-[40px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
+                  >
+                    <span className="truncate">
+                      {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}
+                      {m.cc.length > 0 && <span className="max-md:hidden"> · Cc {toLine(m.cc)}</span>}
+                    </span>
+                    <Icon name="chevronDown" className={`h-3 w-3 shrink-0 transition-transform ${details ? "rotate-180" : ""}`} strokeWidth={2} />
+                  </button>
+                  {details && (
+                    <dl
+                      className={`mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 text-[12px] max-md:text-[13px] ${t.line} ${t.dark ? "bg-white/[0.03]" : "bg-gray-50"}`}
+                    >
+                      {[
+                        ["From", [fullAddress(m.from)]],
+                        ["To", m.to.map(fullAddress)],
+                        ["Cc", m.cc.map(fullAddress)],
+                        ["Bcc", m.bcc.map(fullAddress)],
+                        ["Date", [fullDate(m.occurredAt)]],
+                      ]
+                        .filter(([, v]) => (v as string[]).length)
+                        .map(([k, v]) => (
+                          <Fragment key={k as string}>
+                            <dt className={t.muted}>{k}</dt>
+                            <dd className={`min-w-0 break-words ${t.soft}`}>{(v as string[]).join(", ")}</dd>
+                          </Fragment>
+                        ))}
+                    </dl>
+                  )}
+                  {(m.unverifiedSender || failed) && (
+                    <div className="mt-1.5 flex flex-wrap gap-3">
+                      {m.unverifiedSender && <Dot tone="muted">Sender not verified</Dot>}
+                      {failed && <Dot tone="bad">Not delivered</Dot>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 max-md:mt-6">{m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}</div>
+
+              {(m.attachments?.length ?? 0) > 0 && (
+                <div className="mt-5 flex flex-wrap gap-2 max-md:mt-6">
+                  {(m.attachments ?? []).map((a) => (
+                    <AttachmentChip key={a.id} messageId={m.id} a={a} />
+                  ))}
                 </div>
               )}
+
+              {/* Desktop: Reply, Reply all and Forward as big targets right under the message they answer, before anything earlier. */}
+              <div className="mt-6 hidden md:block">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => onReply(m, "reply")}
+                    className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full px-6 text-[14px] font-semibold shadow-sm transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
+                      t.dark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
+                    }`}
+                  >
+                    <Glyph name="reply" className="h-[18px] w-[18px]" />
+                    Reply
+                  </button>
+                  {canReplyAll && (
+                    <button
+                      type="button"
+                      onClick={() => onReply(m, "all")}
+                      className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
+                        t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
+                      }`}
+                    >
+                      <Glyph name="replyAll" className="h-[18px] w-[18px]" />
+                      Reply all
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onForward(m)}
+                    className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
+                      t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
+                    }`}
+                  >
+                    <Glyph name="forward" className="h-[18px] w-[18px]" />
+                    Forward
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {older.length > 0 && (
+              <div className="mt-7 space-y-2">
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>Earlier in this conversation · {older.length}</p>
+                {older.map((x) => (
+                  <ThreadCard key={x.id} m={x} me={me} open={false} fresh={false} />
+                ))}
+              </div>
+            )}
           </div>
-
-          <div className="mt-5 max-md:mt-6">
-            {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
-          </div>
-
-          {(m.attachments?.length ?? 0) > 0 && (
-            <div className="mt-5 flex flex-wrap gap-2 max-md:mt-6">
-              {(m.attachments ?? []).map((a) => (
-                <AttachmentChip key={a.id} messageId={m.id} a={a} />
-              ))}
-            </div>
-          )}
-
-          {/* Desktop: Reply, Reply all and Forward as big targets right under the message they answer, before anything earlier. */}
-          <div className="mt-6 hidden md:block">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => onReply(m, "reply")}
-                className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full px-6 text-[14px] font-semibold shadow-sm transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
-                  t.dark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
-                }`}
-              >
-                <Glyph name="reply" className="h-[18px] w-[18px]" />
-                Reply
-              </button>
-              {canReplyAll && (
-                <button
-                  type="button"
-                  onClick={() => onReply(m, "all")}
-                  className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
-                    t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
-                  }`}
-                >
-                  <Glyph name="replyAll" className="h-[18px] w-[18px]" />
-                  Reply all
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => onForward(m)}
-                className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
-                  t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
-                }`}
-              >
-                <Glyph name="forward" className="h-[18px] w-[18px]" />
-                Forward
-              </button>
-            </div>
-          </div>
-          </div>
-
-          {older.length > 0 && (
-            <div className="mt-7 space-y-2">
-              <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>Earlier in this conversation · {older.length}</p>
-              {older.map((x) => (
-                <ThreadCard key={x.id} m={x} me={me} open={false} fresh={false} />
-              ))}
-            </div>
-          )}
-
-        </div>
-      )}
+        )}
       </div>
 
       {/* Phones: Reply and Forward within thumb's reach, above the browser's bottom bar. */}
@@ -346,7 +349,7 @@ export function Reader({
               </button>
             )}
           </div>,
-          document.body
+          document.body,
         )}
     </article>
   );
@@ -391,7 +394,6 @@ function ThreadCard({ m, me, open: startOpen, fresh }: { m: MailMessage; me: str
   );
 }
 
-
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g;
 
 /** Plain text with links made clickable. */
@@ -409,7 +411,7 @@ function Linkified({ text }: { text: string }) {
     out.push(
       <a key={at} href={url} target="_blank" rel="noopener noreferrer" className={`underline-offset-2 hover:underline ${accent}`}>
         {url}
-      </a>
+      </a>,
     );
     last = at + url.length;
   }
@@ -444,7 +446,7 @@ function PlainBody({ text, nested = false }: { text: string; nested?: boolean })
             <Linkified text={b.text} />
             {i < blocks.length - 1 ? "\n" : ""}
           </span>
-        )
+        ),
       )}
     </div>
   );

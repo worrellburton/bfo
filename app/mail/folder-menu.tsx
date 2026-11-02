@@ -15,7 +15,19 @@ const FOLDER_GLYPH: Record<MailFolder, keyof typeof GLYPHS> = { active: "chats",
  * off in any combination, and Apply. "Other" (mail to addresses nobody has)
  * is a desktop tab; it appears here only while you're in it.
  */
-export function FolderMenu({ folders, folder, filter, count, onPick }: { folders: { key: MailFolder; label: string }[]; folder: MailFolder; filter: MailFilter; count: { unread: number; otherUnread: number } | null; onPick: (folder: MailFolder, filter: MailFilter) => void }) {
+export function FolderMenu({
+  folders,
+  folder,
+  filter,
+  count,
+  onPick,
+}: {
+  folders: { key: MailFolder; label: string }[];
+  folder: MailFolder;
+  filter: MailFilter;
+  count: { unread: number; otherUnread: number } | null;
+  onPick: (folder: MailFolder, filter: MailFilter) => void;
+}) {
   const t = useTone();
   const [open, setOpen] = useState(false);
   const exit = useExit(open, 180);
@@ -73,7 +85,13 @@ export function FolderMenu({ folders, folder, filter, count, onPick }: { folders
       >
         <Glyph name={FOLDER_GLYPH[folder]} className="h-4 w-4" />
         <span className="truncate">{cur.label}</span>
-        {!narrowed && n(folder) > 0 && <span className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-(--mail-accent)/30 text-white" : "bg-(--mail-accent-deep) text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}>{n(folder)}</span>}
+        {!narrowed && n(folder) > 0 && (
+          <span
+            className={`min-w-[20px] rounded-full px-1.5 text-center text-[11px] tabular-nums leading-5 ${live ? (t.dark ? "bg-(--mail-accent)/30 text-white" : "bg-(--mail-accent-deep) text-white") : t.dark ? "bg-white/15 text-white" : "bg-gray-900 text-white"}`}
+          >
+            {n(folder)}
+          </span>
+        )}
         {flags.unread && (
           <span className={chip}>
             <span className="h-2 w-2 rounded-full bg-(--mail-accent)" />
@@ -108,9 +126,15 @@ export function FolderMenu({ folders, folder, filter, count, onPick }: { folders
                   const c = n(x.key);
                   const tone = on
                     ? isLive
-                      ? t.dark ? "bg-(--mail-accent-deep)/30 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60" : "bg-(--mail-accent-deep) text-white"
-                      : t.dark ? "bg-white/[0.12] text-white ring-1 ring-inset ring-white/15" : "bg-gray-900 text-white"
-                    : t.dark ? "bg-white/[0.04] text-gray-200 hover:bg-white/[0.08]" : "bg-gray-50 text-gray-800 hover:bg-gray-100";
+                      ? t.dark
+                        ? "bg-(--mail-accent-deep)/30 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60"
+                        : "bg-(--mail-accent-deep) text-white"
+                      : t.dark
+                        ? "bg-white/[0.12] text-white ring-1 ring-inset ring-white/15"
+                        : "bg-gray-900 text-white"
+                    : t.dark
+                      ? "bg-white/[0.04] text-gray-200 hover:bg-white/[0.08]"
+                      : "bg-gray-50 text-gray-800 hover:bg-gray-100";
                   return (
                     <button
                       key={x.key}
@@ -124,7 +148,13 @@ export function FolderMenu({ folders, folder, filter, count, onPick }: { folders
                         <Glyph name={FOLDER_GLYPH[x.key]} className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[16px] font-semibold">{x.label}</span>
-                      {c > 0 && <span className={`min-w-[22px] rounded-full px-1.5 text-center text-[12px] tabular-nums leading-[22px] ${on ? "bg-white/20" : t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{c}</span>}
+                      {c > 0 && (
+                        <span
+                          className={`min-w-[22px] rounded-full px-1.5 text-center text-[12px] tabular-nums leading-[22px] ${on ? "bg-white/20" : t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}
+                        >
+                          {c}
+                        </span>
+                      )}
                       {on && <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />}
                     </button>
                   );
@@ -139,14 +169,20 @@ export function FolderMenu({ folders, folder, filter, count, onPick }: { folders
                   onClick={() => setDUnread((v) => !v)}
                   className={`flex h-[52px] cursor-pointer items-center gap-3 rounded-2xl px-3.5 text-left text-[15px] font-semibold transition-colors active:scale-[0.98] ${
                     dUnread
-                      ? t.dark ? "bg-(--mail-accent-deep)/30 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60" : "bg-(--mail-accent-deep) text-white"
-                      : t.dark ? "bg-white/[0.04] text-gray-200 ring-1 ring-inset ring-white/10" : "bg-gray-50 text-gray-800 ring-1 ring-inset ring-gray-200"
+                      ? t.dark
+                        ? "bg-(--mail-accent-deep)/30 text-(--mail-accent-pale) ring-1 ring-inset ring-(--mail-accent)/60"
+                        : "bg-(--mail-accent-deep) text-white"
+                      : t.dark
+                        ? "bg-white/[0.04] text-gray-200 ring-1 ring-inset ring-white/10"
+                        : "bg-gray-50 text-gray-800 ring-1 ring-inset ring-gray-200"
                   }`}
                 >
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dUnread ? "bg-current" : "border-2 border-current opacity-60"}`} />
                   Unread
                   <span className="flex-1" />
-                  <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${dUnread ? "bg-white/25" : t.dark ? "bg-white/10" : "bg-white shadow-sm"}`}>{dUnread && <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.6} />}</span>
+                  <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${dUnread ? "bg-white/25" : t.dark ? "bg-white/10" : "bg-white shadow-sm"}`}>
+                    {dUnread && <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.6} />}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -156,18 +192,29 @@ export function FolderMenu({ folders, folder, filter, count, onPick }: { folders
                   className={`flex h-[52px] cursor-pointer items-center gap-3 rounded-2xl px-3.5 text-left text-[15px] font-semibold transition-colors active:scale-[0.98] ${
                     dStarred
                       ? "bg-amber-400 text-gray-950"
-                      : t.dark ? "bg-amber-400/10 text-amber-200 ring-1 ring-inset ring-amber-300/25" : "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200"
+                      : t.dark
+                        ? "bg-amber-400/10 text-amber-200 ring-1 ring-inset ring-amber-300/25"
+                        : "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200"
                   }`}
                 >
                   <Star on className="h-[18px] w-[18px] shrink-0" />
                   Starred
                   <span className="flex-1" />
-                  <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${dStarred ? "bg-white/40" : t.dark ? "bg-amber-400/15" : "bg-white shadow-sm"}`}>{dStarred && <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.6} />}</span>
+                  <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${dStarred ? "bg-white/40" : t.dark ? "bg-amber-400/15" : "bg-white shadow-sm"}`}>
+                    {dStarred && <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.6} />}
+                  </span>
                 </button>
               </div>
               <div className="mt-3 flex items-center gap-2">
                 {(dUnread || dStarred) && (
-                  <button type="button" onClick={() => { setDUnread(false); setDStarred(false); }} className={`h-[48px] shrink-0 cursor-pointer rounded-2xl px-4 text-[14px] font-medium ${t.dark ? "text-gray-300 hover:bg-white/[0.06]" : "text-gray-600 hover:bg-gray-100"}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDUnread(false);
+                      setDStarred(false);
+                    }}
+                    className={`h-[48px] shrink-0 cursor-pointer rounded-2xl px-4 text-[14px] font-medium ${t.dark ? "text-gray-300 hover:bg-white/[0.06]" : "text-gray-600 hover:bg-gray-100"}`}
+                  >
                     Clear
                   </button>
                 )}
@@ -186,4 +233,3 @@ export function FolderMenu({ folders, folder, filter, count, onPick }: { folders
     </div>
   );
 }
-

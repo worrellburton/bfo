@@ -46,12 +46,7 @@ describe("plaid disconnect", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const out = await run();
     expect(out.body).toEqual({ success: true, cleared_accounts: 1 });
-    expect(calls.filter((c) => c.startsWith("DELETE"))).toEqual([
-      "DELETE plaid_account_prefs",
-      "DELETE book_transactions",
-      "DELETE plaid_account_state",
-      "DELETE plaid_items",
-    ]);
+    expect(calls.filter((c) => c.startsWith("DELETE"))).toEqual(["DELETE plaid_account_prefs", "DELETE book_transactions", "DELETE plaid_account_state", "DELETE plaid_items"]);
     expect(itemRemove).toHaveBeenCalledTimes(1);
   });
 

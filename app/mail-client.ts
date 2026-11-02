@@ -300,7 +300,11 @@ function subscribe(listener: () => void) {
 
 /** The caller's unread count and address; null until the first answer. */
 export function useMailCount(): MailCount | null {
-  const value = useSyncExternalStore(subscribe, () => count, () => null);
+  const value = useSyncExternalStore(
+    subscribe,
+    () => count,
+    () => null,
+  );
   // A remount (e.g. returning to the tab's shell) asks again.
   useEffect(() => {
     if (count) void refreshCount();

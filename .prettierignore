@@ -1,0 +1,11 @@
+build/
+node_modules/
+ios/
+native/
+.react-router/
+.vercel/
+coverage/
+public/
+supabase/schema.sql
+package-lock.json
+*.md

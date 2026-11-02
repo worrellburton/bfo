@@ -115,7 +115,10 @@ describe("revalidate", () => {
     await auth.verifyCode("+15555550100", "123456");
   });
   const answer = (status: number, body: unknown) =>
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })),
+    );
 
   it("keeps the session through a server error, as it does offline", async () => {
     for (const status of [500, 502, 503]) {

@@ -1,16 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import {
-  CODE_RESEND_MS,
-  CODE_TTL_MS,
-  fail,
-  guard,
-  handleError,
-  normalizeIdentifier,
-  sb,
-  signInAllowed,
-  verifyStart,
-  type AppUser,
-} from "../../lib/auth.js";
+import { CODE_RESEND_MS, CODE_TTL_MS, fail, guard, handleError, normalizeIdentifier, sb, signInAllowed, verifyStart, type AppUser } from "../../lib/auth.js";
 import { countRows } from "../../lib/db-pages.js";
 
 const MAX_CODES_PER_HOUR = 5;
@@ -107,9 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const column = identifier.kind === "phone" ? "phone" : "email";
-    const existing = await sb<AppUser[]>(
-      `app_users?${column}=eq.${encodeURIComponent(identifier.value)}&select=*&limit=1`
-    );
+    const existing = await sb<AppUser[]>(`app_users?${column}=eq.${encodeURIComponent(identifier.value)}&select=*&limit=1`);
     let user = existing?.[0];
 
     if (user?.status === "denied") {
@@ -130,9 +117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Throttle: one code per identifier every CODE_RESEND_MS, and a cap per
     // hour — counting the codes requested before this one.
     const recent = await sb<Array<{ created_at: string }>>(
-      `login_codes?identifier=eq.${encodeURIComponent(identifier.value)}` +
-        `&created_at=gte.${hourAgo()}&created_at=lt.${upTo}` +
-        `&select=created_at&order=created_at.desc`
+      `login_codes?identifier=eq.${encodeURIComponent(identifier.value)}` + `&created_at=gte.${hourAgo()}&created_at=lt.${upTo}` + `&select=created_at&order=created_at.desc`,
     );
     const newest = recent?.[0] ? new Date(recent[0].created_at).getTime() : 0;
     const sinceNewest = Date.now() - newest;

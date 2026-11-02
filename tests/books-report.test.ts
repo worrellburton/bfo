@@ -34,7 +34,7 @@ describe("effType", () => {
 });
 
 describe("eliminated", () => {
-  const entityOf = (id: string) => ({ "acct-a": "E1", "acct-b": "E2" } as Record<string, string>)[id];
+  const entityOf = (id: string) => (({ "acct-a": "E1", "acct-b": "E2" }) as Record<string, string>)[id];
   it("all entities: every intercompany row vanishes", () => {
     expect(eliminated(txn({ counterparty_account_id: null }), null, entityOf)).toBe(true);
   });

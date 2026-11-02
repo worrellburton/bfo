@@ -124,7 +124,8 @@ export function PalmCostCard({ isDark, names, refreshKey = 0 }: { isDark: boolea
                   <p>
                     Last received {when(usage.webhook.lastAt)}
                     <span className={t2}>
-                      {" "}· {usage.webhook.lastType}
+                      {" "}
+                      · {usage.webhook.lastType}
                       {usage.webhook.lastMode === "test" ? " (test)" : ""} · {usage.webhook.weekCount} in the last 7 days
                     </span>
                   </p>
@@ -132,7 +133,8 @@ export function PalmCostCard({ isDark, names, refreshKey = 0 }: { isDark: boolea
                   <p className={isDark ? "text-amber-200" : "text-amber-800"}>Nothing has reached BFO from Palm yet.</p>
                 )}
                 <p className={`mt-1 break-all text-[11.5px] ${t3}`}>
-                  Palm Console → Webhooks must point at <span className={isDark ? "text-gray-300" : "text-gray-700"}>{usage.webhook.url}</span>. The bare domain answers with a redirect, which Palm doesn't follow.
+                  Palm Console → Webhooks must point at <span className={isDark ? "text-gray-300" : "text-gray-700"}>{usage.webhook.url}</span>. The bare domain answers with a redirect, which Palm
+                  doesn't follow.
                 </p>
               </div>
             )}
@@ -150,9 +152,9 @@ export function PalmCostCard({ isDark, names, refreshKey = 0 }: { isDark: boolea
               ))}
             </ul>
             <p className={`mt-3 text-[11.5px] leading-relaxed ${t2}`}>
-              Reading a state record is a search and a detail, {dollars(STATE_RECORD_CENTS)} (just the detail, {dollars(PALM_PRICES.detail.cents)}, once the file number is
-              on record). The daily check re-reads each record once a week. Checking a new entity's name is {dollars(PALM_PRICES.name_eligibility.cents)} a check.
-              Business records, agent service, documents and filings aren't billed per call; a filing's state fee shows before you submit it.
+              Reading a state record is a search and a detail, {dollars(STATE_RECORD_CENTS)} (just the detail, {dollars(PALM_PRICES.detail.cents)}, once the file number is on record). The daily check
+              re-reads each record once a week. Checking a new entity's name is {dollars(PALM_PRICES.name_eligibility.cents)} a check. Business records, agent service, documents and filings aren't
+              billed per call; a filing's state fee shows before you submit it.
             </p>
           </div>
         </div>

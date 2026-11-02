@@ -29,8 +29,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (url: string | URL | Request, init: RequestInit = {}) => {
     const u = decodeURIComponent(String(url));
     const method = init.method ?? "GET";
-    const json = (v: unknown) =>
-      new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json", "content-range": "0-0/1" } });
+    const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json", "content-range": "0-0/1" } });
     if (u.includes("bird.com/v1/email/messages")) {
       emails.push(JSON.parse(String(init.body)).to);
       return json({ id: "m1" });
@@ -39,7 +38,26 @@ beforeEach(() => {
       if (u.includes("report=treasury")) {
         return json({
           connections: [{ institution_name: "Wells Fargo", status: "online" }],
-          accounts: [{ item_id: "i", account_id: "a1", institution_name: "Wells Fargo", institution_color: null, name: "Operating", official_name: null, nickname: null, mask: "1886", type: "depository", subtype: "checking", entity_name: "Burton Holdings", balance_current: 1000, balance_available: 1000, balance_limit: null, currency: "USD", change: 10 }],
+          accounts: [
+            {
+              item_id: "i",
+              account_id: "a1",
+              institution_name: "Wells Fargo",
+              institution_color: null,
+              name: "Operating",
+              official_name: null,
+              nickname: null,
+              mask: "1886",
+              type: "depository",
+              subtype: "checking",
+              entity_name: "Burton Holdings",
+              balance_current: 1000,
+              balance_available: 1000,
+              balance_limit: null,
+              currency: "USD",
+              change: 10,
+            },
+          ],
         });
       }
       return json({ transactions: [] });
@@ -54,7 +72,10 @@ beforeEach(() => {
     if (path.startsWith("app_users?status=eq.approved")) {
       recipientQuery = path;
       // Even if a partner row came back, the cron must leave it out.
-      return json([{ ...PARTNER, notification_prefs: DAILY }, { ...STAFF, notification_prefs: { treasuryReport: { frequency: "daily" } } }]);
+      return json([
+        { ...PARTNER, notification_prefs: DAILY },
+        { ...STAFF, notification_prefs: { treasuryReport: { frequency: "daily" } } },
+      ]);
     }
     if (path.startsWith("cron_runs") && method === "POST") return json([{ id: "r1" }]);
     return json([]);
@@ -75,10 +96,7 @@ function fakeRes() {
 describe("treasury report recipients", () => {
   it("a partner's saved prefs keep only phone notices", async () => {
     const { res, out } = fakeRes();
-    await preferences(
-      { method: "PUT", headers: { authorization: "Bearer 22222222-2222-2222-2222-222222222222" }, body: { preferences: { ...DAILY, push: { mail: false } } } } as any,
-      res
-    );
+    await preferences({ method: "PUT", headers: { authorization: "Bearer 22222222-2222-2222-2222-222222222222" }, body: { preferences: { ...DAILY, push: { mail: false } } } } as any, res);
     expect(out.status).toBe(200);
     expect(saved).toEqual({ push: { mail: false } });
   });

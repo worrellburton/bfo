@@ -43,7 +43,11 @@ export default function PaperMailPage() {
       const { db, ref, get, authReady } = await import("../store");
       await authReady;
       const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
-      setEntities(Object.entries(all).map(([id, a]) => ({ id, name: a?.name ?? id })).sort((a, b) => a.name.localeCompare(b.name)));
+      setEntities(
+        Object.entries(all)
+          .map(([id, a]) => ({ id, name: a?.name ?? id }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
     })().catch(() => {});
   }, [writer]);
 
@@ -84,7 +88,9 @@ export default function PaperMailPage() {
   function opened(m: PaperMail) {
     if (m.readAt) return;
     setMail((list) => list?.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)) ?? list);
-    void paperAction({ action: "read", id: m.id }).then(changed).catch(() => {});
+    void paperAction({ action: "read", id: m.id })
+      .then(changed)
+      .catch(() => {});
   }
 
   return (
@@ -124,8 +130,8 @@ export default function PaperMailPage() {
         <div className={`rounded-2xl border p-5 text-[13px] leading-relaxed ${t.surface} ${t.soft}`}>
           <p className={`font-semibold ${t.text}`}>Connect Stable</p>
           <p className="mt-1">
-            In Stable, create an API key under Settings → API keys and add it in Vercel as <code>STABLE_API_KEY</code>. For mail to show up the moment it arrives, add a webhook under
-            Settings → Webhooks pointing at <code>/api/stable-webhook?token=…</code> with the token in Vercel as <code>STABLE_WEBHOOK_TOKEN</code>. Until then, BFO checks every hour.
+            In Stable, create an API key under Settings → API keys and add it in Vercel as <code>STABLE_API_KEY</code>. For mail to show up the moment it arrives, add a webhook under Settings →
+            Webhooks pointing at <code>/api/stable-webhook?token=…</code> with the token in Vercel as <code>STABLE_WEBHOOK_TOKEN</code>. Until then, BFO checks every hour.
           </p>
         </div>
       )}
@@ -169,7 +175,9 @@ export default function PaperMailPage() {
             entities={writer ? entities : undefined}
             onAssign={writer ? (m, id) => void assign(m, id) : undefined}
             onOpen={opened}
-            empty={error || (filter === "all" ? "No paper mail yet. Each piece shows up here as Stable receives it." : filter === "unread" ? "Nothing unread." : "Every piece is filed under an entity.")}
+            empty={
+              error || (filter === "all" ? "No paper mail yet. Each piece shows up here as Stable receives it." : filter === "unread" ? "Nothing unread." : "Every piece is filed under an entity.")
+            }
           />
         )}
       </section>

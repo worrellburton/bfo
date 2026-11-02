@@ -43,12 +43,7 @@ import {
   type RegistryRecord,
   type SeedHold,
 } from "../palm";
-import {
-  documentRules,
-  stateCode,
-  stateName,
-  type PaperworkInput,
-} from "../entity-paperwork";
+import { documentRules, stateCode, stateName, type PaperworkInput } from "../entity-paperwork";
 import {
   MSA_SERVICES,
   LEDGER_LOUISE_SUBS,
@@ -72,7 +67,8 @@ import {
   type EntityTab,
   type FileKind,
   type Classified,
- tidyEin } from "./model";
+  tidyEin,
+} from "./model";
 
 /**
  * Everything the entity page knows and does — the record and its documents,
@@ -184,7 +180,11 @@ export function useEntityPage() {
 
   // Formation filing slots (EIN letter, W-9, Articles, Operating Agreement)
   const [uploadState, setUploadState] = useState<Record<FileKind, { uploading: boolean; progress: number; error: string | null; dragOver: boolean }>>(
-    () => Object.fromEntries(FILING_KINDS.map((k) => [k, { uploading: false, progress: 0, error: null, dragOver: false }])) as Record<FileKind, { uploading: boolean; progress: number; error: string | null; dragOver: boolean }>
+    () =>
+      Object.fromEntries(FILING_KINDS.map((k) => [k, { uploading: false, progress: 0, error: null, dragOver: false }])) as Record<
+        FileKind,
+        { uploading: boolean; progress: number; error: string | null; dragOver: boolean }
+      >,
   );
   // The slots the rule book asks for, plus any other slot that holds a file.
   const kindsFor = (a: Asset | null): FileKind[] => {
@@ -210,8 +210,7 @@ export function useEntityPage() {
   assetRef.current = asset;
   // Slots being filed right now, with the document going into each.
   const claimedRef = useRef<Map<FileKind, string>>(new Map());
-  const setSlot = (k: FileKind, patch: Partial<{ uploading: boolean; progress: number; error: string | null; dragOver: boolean }>) =>
-    setUploadState((s) => ({ ...s, [k]: { ...s[k], ...patch } }));
+  const setSlot = (k: FileKind, patch: Partial<{ uploading: boolean; progress: number; error: string | null; dragOver: boolean }>) => setUploadState((s) => ({ ...s, [k]: { ...s[k], ...patch } }));
 
   // Documents drag-drop zone state
   const [docDrop, setDocDrop] = useState<{
@@ -289,7 +288,7 @@ export function useEntityPage() {
           setLoading(false);
           setLoadError(false);
         },
-        () => setLoadError(true)
+        () => setLoadError(true),
       );
 
       unsub2 = onValue(ref(db, `assets/${id}/documents`), (snapshot) => {
@@ -311,7 +310,13 @@ export function useEntityPage() {
       get(ref(db, "assets"))
         .then((snap) => {
           const all = (snap.val() ?? {}) as Record<string, { name?: string }>;
-          setAssetNames(Object.fromEntries(Object.entries(all).filter(([, v]) => v?.name).map(([k, v]) => [k, v.name as string])));
+          setAssetNames(
+            Object.fromEntries(
+              Object.entries(all)
+                .filter(([, v]) => v?.name)
+                .map(([k, v]) => [k, v.name as string]),
+            ),
+          );
           setAllAssets(all as Record<string, PaperworkInput & { ownerId?: string }>);
         })
         .catch(() => {});
@@ -375,7 +380,7 @@ export function useEntityPage() {
     if (!form.name?.trim()) return;
     const base = editBaseRef.current;
     const live = assetRef.current ?? ({} as Partial<Asset>);
-    const pick = <K extends keyof Asset>(k: K) => ((form[k] ?? "") !== (base[k] ?? "") ? form[k] : live[k] ?? form[k]);
+    const pick = <K extends keyof Asset>(k: K) => ((form[k] ?? "") !== (base[k] ?? "") ? form[k] : (live[k] ?? form[k]));
     const { db } = await import("../store");
     const { ref, update } = await import("../store");
     // Changing the tax class by hand records that it came from a person; a
@@ -452,9 +457,7 @@ export function useEntityPage() {
     if (
       !(await confirmDialog({
         title: `Delete “${doc?.name ?? "this document"}”?`,
-        message: filedAs.length
-          ? `It is filed as ${filedAs.map((k) => filingTitle(k, asset)).join(", ")} — that slot will be emptied.`
-          : "This can't be undone.",
+        message: filedAs.length ? `It is filed as ${filedAs.map((k) => filingTitle(k, asset)).join(", ")} — that slot will be emptied.` : "This can't be undone.",
         tone: "danger",
       }))
     )
@@ -480,10 +483,14 @@ export function useEntityPage() {
   // Upload one document: signed URL → PUT with progress → its record in the tree.
   // Throws on failure; progress is reported as a 0–100 fraction of this file.
   async function uploadDocFile(file: File, onProgress: (pct: number) => void) {
-    const stored = await uploadToStorage(file, (pct) => {
-      setDocDrop((s) => ({ ...s, error: null }));
-      onProgress(pct);
-    }, () => setDocDrop((s) => ({ ...s, error: "Upload is stuck. Check your connection and try again." })));
+    const stored = await uploadToStorage(
+      file,
+      (pct) => {
+        setDocDrop((s) => ({ ...s, error: null }));
+        onProgress(pct);
+      },
+      () => setDocDrop((s) => ({ ...s, error: "Upload is stuck. Check your connection and try again." })),
+    );
 
     const { db, ref: dbRef, push } = await import("../store");
     const displayName = file.name.replace(/\.[^.]+$/, "");
@@ -815,8 +822,7 @@ export function useEntityPage() {
     };
     // The tax class is read again until a document confirms it — older
     // reads didn't look for it, and a seeded or hand-entered value can be wrong.
-    const classUnconfirmed =
-      entityType(asset) !== "Trust" && (!asset.llcTypeSource || asset.llcTypeSource === BY_HAND) && !asset.llcTypeConflict;
+    const classUnconfirmed = entityType(asset) !== "Trust" && (!asset.llcTypeSource || asset.llcTypeSource === BY_HAND) && !asset.llcTypeConflict;
     for (const kind of kindsFor(asset)) {
       const docId = asset[kind]?.docId;
       if (!docId || enriching.current.has(docId)) continue;
@@ -848,8 +854,8 @@ export function useEntityPage() {
       const facts = (await r.json()) as Classified;
       setAiDown(null);
       await fillTrustPeople(facts, doc);
-          await applyTaxClass(facts, doc);
-          await applyRecordFacts(facts, doc);
+      await applyTaxClass(facts, doc);
+      await applyRecordFacts(facts, doc);
       const current = assetRef.current;
       if (!current) return;
       const patch: Record<string, unknown> = {};
@@ -942,7 +948,9 @@ export function useEntityPage() {
    */
   const palmParts = useRef<{ key: string; at: number; parts: Partial<Record<PalmBundlePartName, PalmBundlePart<unknown>>> } | null>(null);
   /** The bundle's reading of the agent and mail when Palm answered before the record arrived; applied once it has. */
-  const pendingRead = useRef<{ raR: PromiseSettledResult<{ service: RaService | null }>; docsR: PromiseSettledResult<{ documents: PalmDocument[]; truncated?: boolean }>; mode: PalmMode } | null>(null);
+  const pendingRead = useRef<{ raR: PromiseSettledResult<{ service: RaService | null }>; docsR: PromiseSettledResult<{ documents: PalmDocument[]; truncated?: boolean }>; mode: PalmMode } | null>(
+    null,
+  );
   function takePalmPart<T>(name: PalmBundlePartName, key: string): PalmBundlePart<T> | null {
     const held = palmParts.current;
     if (!held || held.key !== key || Date.now() - held.at > BUNDLE_FRESH_MS) return null;
@@ -1032,7 +1040,7 @@ export function useEntityPage() {
     if (bundledFor.current !== id) return;
     const status = b.status?.ok ? b.status.value : { configured: false, mode: null, error: b.status?.error?.message ?? "Palm didn't answer." };
     const mode = status.mode;
-    const businessId = mode ? b.businessId ?? null : null;
+    const businessId = mode ? (b.businessId ?? null) : null;
     bundled.current = mode && businessId ? `${mode}:${businessId}` : null;
     palmParts.current = mode ? { key: `${id}:${mode}`, at: Date.now(), parts: { inbox: b.inbox, inboxUnread: b.inboxUnread, cases: b.cases, monitors: b.monitors } } : null;
     setPalmStatus(status);
@@ -1302,7 +1310,10 @@ export function useEntityPage() {
           </>
         ),
         details: [
-          ...plan.states.map((st) => `${stateName(st.code) || st.code}${st.home ? "" : " (foreign)"} state record: ${dollars(st.cents)}${st.cents < STATE_RECORD_CENTS ? " (file number on record)" : " (name search, then the record)"}`),
+          ...plan.states.map(
+            (st) =>
+              `${stateName(st.code) || st.code}${st.home ? "" : " (foreign)"} state record: ${dollars(st.cents)}${st.cents < STATE_RECORD_CENTS ? " (file number on record)" : " (name search, then the record)"}`,
+          ),
           businessId ? "Palm's copy of the business, its agent, and its mail (saved to Documents): free" : "Its agent and mail: read once Palm is its agent",
           "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
         ],
@@ -1333,11 +1344,21 @@ export function useEntityPage() {
         else {
           const findings = st.home && rec ? stateFindings(rec, assetRef.current ?? current).filter((f) => f.tone !== "info") : [];
           const shown = st.home && rec ? effectiveRecord(rec, (assetRef.current ?? current).stateConfirmed) : rec;
-          const notes = st.home && rec ? stateFindings(rec, assetRef.current ?? current).filter((f) => f.tone === "info").map((f) => f.text) : [];
+          const notes =
+            st.home && rec
+              ? stateFindings(rec, assetRef.current ?? current)
+                  .filter((f) => f.tone === "info")
+                  .map((f) => f.text)
+              : [];
           say({ label, tone: findings.length ? "warn" : "good", text: [shown?.status ? `Read · ${shown.status}` : "Read", ...findings.map((f) => f.text), ...notes].join(" ") });
         }
       }
-      if (!plan.states.length) say({ label: "State records", tone: "muted", text: formingNow(current) ? "Read once the state approves the formation." : "Nothing to read: no state on record, or it's a trust or dissolved." });
+      if (!plan.states.length)
+        say({
+          label: "State records",
+          tone: "muted",
+          text: formingNow(current) ? "Read once the state approves the formation." : "Nothing to read: no state on record, or it's a trust or dissolved.",
+        });
 
       // 2. Palm's copy of the business, its agent and its mail.
       if (businessId) {
@@ -1366,21 +1387,31 @@ export function useEntityPage() {
           // Another read of Palm started meanwhile (the Refresh button, say): its answer is the one on the page.
           say({ label: "Agent and mail", tone: "muted", text: "Read again just now by the page; see Compliance." });
         } else {
-        const st = found.service?.status ? RA_STATUS[found.service.status] : null;
-        say({ label: "Registered agent", tone: found?.error && !found.service ? "bad" : st?.tone === "good" ? "good" : st ? "warn" : "muted", text: found?.error && found.service === undefined ? found.error : st ? st.label : "Palm isn't its agent." });
-        if (found?.documents !== undefined) {
-          const saved = found.saved ?? 0;
-          const failed = found.failed ?? 0;
+          const st = found.service?.status ? RA_STATUS[found.service.status] : null;
           say({
-            label: "Mail",
-            tone: failed ? "warn" : "good",
-            text: !found.documents
-              ? "No documents at Palm."
-              : `${found.documents} document${found.documents === 1 ? "" : "s"} at Palm${
-                  mode !== "live" ? " (test mode: not saved to Documents)" : failed ? `; ${saved} newly saved, ${failed} couldn't be saved (sync again)` : saved ? `; ${saved} newly saved to Documents` : "; all already in Documents"
-                }${found.truncated ? ". More than 10,000: the oldest weren't read." : "."}`,
+            label: "Registered agent",
+            tone: found?.error && !found.service ? "bad" : st?.tone === "good" ? "good" : st ? "warn" : "muted",
+            text: found?.error && found.service === undefined ? found.error : st ? st.label : "Palm isn't its agent.",
           });
-        }
+          if (found?.documents !== undefined) {
+            const saved = found.saved ?? 0;
+            const failed = found.failed ?? 0;
+            say({
+              label: "Mail",
+              tone: failed ? "warn" : "good",
+              text: !found.documents
+                ? "No documents at Palm."
+                : `${found.documents} document${found.documents === 1 ? "" : "s"} at Palm${
+                    mode !== "live"
+                      ? " (test mode: not saved to Documents)"
+                      : failed
+                        ? `; ${saved} newly saved, ${failed} couldn't be saved (sync again)`
+                        : saved
+                          ? `; ${saved} newly saved to Documents`
+                          : "; all already in Documents"
+                  }${found.truncated ? ". More than 10,000: the oldest weren't read." : "."}`,
+            });
+          }
         }
       } else {
         say({ label: "Agent and mail", tone: "muted", text: "Not in Palm yet. Its agent and mail are read once Palm is the agent (Compliance → Make Palm the agent)." });
@@ -1442,10 +1473,7 @@ export function useEntityPage() {
     // Palm can't take the file number after the business is added, so it must be known first.
     const fileNumber = current.fileNumber || (rec?.mode === mode ? rec.registrationNumber : undefined);
     if (!current.palm?.[mode]?.businessId && !fileNumber) {
-      await alertDialog(
-        "Check the state record first",
-        "Palm needs the state's file number for this entity, and it can't be added later. Click “Check state record”, then try again.",
-      );
+      await alertDialog("Check the state record first", "Palm needs the state's file number for this entity, and it can't be added later. Click “Check state record”, then try again.");
       return;
     }
     const live = mode === "live";
@@ -1468,7 +1496,9 @@ export function useEntityPage() {
             `The current agent${oldAgent ? ` (${oldAgent})` : ""} stays on file until the state accepts the change. If it fails, nothing changes.`,
             "Once Palm is active, state mail and any legal papers served on the entity arrive here.",
             ...(lapsed
-              ? [`The state's record shows ${rec?.status && rec.status !== "active" ? rec.status : "it isn't in good standing"}. The state may refuse the change until the overdue filing and fees are paid.`]
+              ? [
+                  `The state's record shows ${rec?.status && rec.status !== "active" ? rec.status : "it isn't in good standing"}. The state may refuse the change until the overdue filing and fees are paid.`,
+                ]
               : []),
             ...(oldAgent ? [`Afterwards, once the state shows Palm, cancel ${oldAgent}'s service so it isn't billed twice.`] : []),
           ]
@@ -1580,7 +1610,7 @@ export function useEntityPage() {
       if (profile.taxTreatment) {
         await applyTaxClass(
           { kind: "operating_agreement", confidence: "high", ein: null, date: null, state: null, taxClassification: profile.taxTreatment, taxClassificationEvidence: profile.taxEvidence },
-          { id: "profile", name: profile.sources[0] ?? "the governing documents", url: "", createdAt: 0 }
+          { id: "profile", name: profile.sources[0] ?? "the governing documents", url: "", createdAt: 0 },
         );
       }
     } catch (err) {
@@ -1611,10 +1641,7 @@ export function useEntityPage() {
       filedAs: k as string | null,
     }));
     const filedAs = new Map(FILING_KINDS.filter((k) => a[k]?.docId).map((k) => [a[k]!.docId!, k as string]));
-    return [
-      ...slotOnly,
-      ...readable.map((d) => ({ name: d.name, url: d.url, contentType: d.contentType, filedAs: filedAs.get(d.id) ?? null })),
-    ];
+    return [...slotOnly, ...readable.map((d) => ({ name: d.name, url: d.url, contentType: d.contentType, filedAs: filedAs.get(d.id) ?? null }))];
   }
 
   async function runVerification() {
@@ -1632,7 +1659,7 @@ export function useEntityPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          entity: { ...record, owner: asset.ownerId ? assetNames[asset.ownerId] ?? null : null },
+          entity: { ...record, owner: asset.ownerId ? (assetNames[asset.ownerId] ?? null) : null },
           documents,
         }),
       });
@@ -1774,9 +1801,7 @@ export function useEntityPage() {
         progress: 0,
         index: 0,
         total: 0,
-        error: failures.length > 0
-          ? `${failures.length} of ${total} failed: ${failures.map((f) => `${f.name} (${f.reason})`).join(", ")}`
-          : null,
+        error: failures.length > 0 ? `${failures.length} of ${total} failed: ${failures.map((f) => `${f.name} (${f.reason})`).join(", ")}` : null,
       }));
     }
   }
@@ -1813,10 +1838,7 @@ export function useEntityPage() {
       }
       const suggested: string = String(data.name).trim();
       if (!suggested || suggested === doc.name) return;
-      const confirmed = prompt(
-        `Claude suggests a new name for this document. Edit if you want, then press OK.`,
-        suggested,
-      );
+      const confirmed = prompt(`Claude suggests a new name for this document. Edit if you want, then press OK.`, suggested);
       if (!confirmed || !confirmed.trim() || confirmed.trim() === doc.name) return;
       const { db, authReady } = await import("../store");
       await authReady;
@@ -1862,7 +1884,7 @@ export function useEntityPage() {
   const assetAddressByName = (name: string): string | null => {
     const want = name.trim().toLowerCase();
     const hit = Object.values(allAssets).find((a) => (a.name ?? "").trim().toLowerCase() === want);
-    return hit ? (hit.mailingAddress || hit.address || null) : null;
+    return hit ? hit.mailingAddress || hit.address || null : null;
   };
 
   /** Fill in the IRS's W-9 from the record (a disregarded LLC's goes in its owner's name and TIN). */
@@ -1964,7 +1986,12 @@ export function useEntityPage() {
   async function cancelClosing() {
     const current = assetRef.current;
     if (!current?.closing) return;
-    const ok = await confirmDialog({ title: "Stop closing it?", message: "The steps marked done are cleared. Nothing filed with a state or the IRS is undone.", confirmLabel: "Stop closing", tone: "danger" });
+    const ok = await confirmDialog({
+      title: "Stop closing it?",
+      message: "The steps marked done are cleared. Nothing filed with a state or the IRS is undone.",
+      confirmLabel: "Stop closing",
+      tone: "danger",
+    });
     if (ok) await patchAsset({ closing: null });
   }
 
@@ -2001,7 +2028,10 @@ export function useEntityPage() {
     if (!ok) return null;
     try {
       const { service } = await palmCall<{ service: RaService }>("ra-end", { mode: "live", businessId, assetId: id });
-      await patchAsset({ "palm/live/ra": { status: service.status, name: service.name ?? null, address: formatPalmAddress(service.address) ?? null, checkedAt: Date.now() }, "closing/steps/agent": today() });
+      await patchAsset({
+        "palm/live/ra": { status: service.status, name: service.name ?? null, address: formatPalmAddress(service.address) ?? null, checkedAt: Date.now() },
+        "closing/steps/agent": today(),
+      });
       return null;
     } catch (err) {
       return (err as Error).message;
@@ -2087,7 +2117,11 @@ export function useEntityPage() {
     // What Documents holds now, read fresh: the list on screen may not have loaded yet.
     const { db, ref: dbRef, get, set } = await import("../store");
     const stored = ((await get(dbRef(db, `assets/${id}/documents`))).val() ?? {}) as Record<string, { palmDocumentId?: string }>;
-    const have = new Set(Object.values(stored).map((d) => d?.palmDocumentId).filter(Boolean));
+    const have = new Set(
+      Object.values(stored)
+        .map((d) => d?.palmDocumentId)
+        .filter(Boolean),
+    );
     let saved = 0;
     let failed = 0;
     // Oldest first, so Documents reads in the order Palm received them.
@@ -2104,7 +2138,11 @@ export function useEntityPage() {
         const when = (d.created_at ?? d.upload_date ?? "").slice(0, 10);
         const name = d.filename || (slot ? `${filingTitle(slot, current)}.pdf` : `${DOC_LABEL[kind] ?? "Palm document"}${when ? ` ${when}` : ""}.pdf`);
         const file = new File([blob], name, { type: blob.type || "application/pdf" });
-        const stored = await uploadToStorage(file, () => {}, () => {});
+        const stored = await uploadToStorage(
+          file,
+          () => {},
+          () => {},
+        );
         const record = {
           name: name.replace(/\.[^.]+$/, ""),
           url: stored.url,
@@ -2143,10 +2181,14 @@ export function useEntityPage() {
       const prior = asset?.[kind];
       const priorPath = prior?.storagePath && !prior.docId ? prior.storagePath : null;
 
-      const stored = await uploadToStorage(file, (pct) => {
-        if (pct > 0) setSlot(kind, { error: null });
-        setSlot(kind, { progress: pct });
-      }, () => setSlot(kind, { error: "Upload is stuck. Check your connection and try again." }));
+      const stored = await uploadToStorage(
+        file,
+        (pct) => {
+          if (pct > 0) setSlot(kind, { error: null });
+          setSlot(kind, { progress: pct });
+        },
+        () => setSlot(kind, { error: "Upload is stuck. Check your connection and try again." }),
+      );
 
       const meta: UploadedFile = {
         url: stored.url,
@@ -2215,18 +2257,20 @@ export function useEntityPage() {
     // Library files, plus files uploaded straight into a filing row (those
     // filed from Documents are the library's own).
     const files = [
-      ...new Set([
-        ...docs.map((d) => d.storagePath),
-        ...FILING_KINDS.map((k) => current[k]).filter((f) => f && !f.docId).map((f) => f!.storagePath),
-      ].filter((p): p is string => !!p)),
+      ...new Set(
+        [
+          ...docs.map((d) => d.storagePath),
+          ...FILING_KINDS.map((k) => current[k])
+            .filter((f) => f && !f.docId)
+            .map((f) => f!.storagePath),
+        ].filter((p): p is string => !!p),
+      ),
     ];
 
     const details = [
       `Its key facts, filings${contracts.length ? `, ${contracts.length} contract${contracts.length === 1 ? "" : "s"}` : ""} and notes are removed.`,
       files.length ? `${files.length} uploaded document${files.length === 1 ? " is" : "s are"} deleted from storage.` : "",
-      children.length
-        ? `${children.map(([, a]) => a.name).join(", ")} ${children.length === 1 ? "moves" : "move"} up to ${parentName ?? "the top level"}.`
-        : "",
+      children.length ? `${children.map(([, a]) => a.name).join(", ")} ${children.length === 1 ? "moves" : "move"} up to ${parentName ?? "the top level"}.` : "",
       "It is removed from the Estate Map.",
     ].filter(Boolean);
     const ok = await confirmDialog({
@@ -2254,9 +2298,7 @@ export function useEntityPage() {
         const nodes: Array<{ id: string; name: string; parentId: string | null }> = (Array.isArray(raw) ? raw : Object.values(raw)).filter(Boolean);
         const node = nodes.find((n) => n.name?.trim().toLowerCase() === current.name.trim().toLowerCase());
         if (node) {
-          const next = nodes
-            .filter((n) => n.id !== node.id)
-            .map((n) => (n.parentId === node.id ? { ...n, parentId: node.parentId ?? null } : n));
+          const next = nodes.filter((n) => n.id !== node.id).map((n) => (n.parentId === node.id ? { ...n, parentId: node.parentId ?? null } : n));
           await set(ref(db, "estate-map/entities"), next);
         }
       }
@@ -2279,7 +2321,7 @@ export function useEntityPage() {
         "Couldn't delete this entity",
         err instanceof Error && /permission/i.test(err.message)
           ? "The database refused the change. Sign out and back in, then try again."
-          : "Something went wrong while deleting. Nothing was removed from the entity itself — try again."
+          : "Something went wrong while deleting. Nothing was removed from the entity itself — try again.",
       );
     }
   }
@@ -2452,7 +2494,6 @@ export function useEntityPage() {
   const directors = corpData.directors ? Object.entries(corpData.directors).map(([k, v]) => ({ id: k, ...v })) : [];
   const officers = corpData.officers ? Object.entries(corpData.officers).map(([k, v]) => ({ id: k, ...v })) : [];
   const shareholders = corpData.shareholders ? Object.entries(corpData.shareholders).map(([k, v]) => ({ id: k, ...v })) : [];
-
 
   async function copyValue(key: string, text: string) {
     try {

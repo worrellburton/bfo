@@ -123,11 +123,7 @@ export default function BooksCell() {
         </div>
       </div>
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       <div className={`rounded-2xl border overflow-x-auto ${card}`}>
         {loading ? (
@@ -140,22 +136,26 @@ export default function BooksCell() {
             categories={categories}
             isDark={isDark}
             readOnly={!writable}
-            selection={writable ? {
-              selected,
-              toggle: (id) =>
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  next.has(id) ? next.delete(id) : next.add(id);
-                  return next;
-                }),
-              setAll: (ids) => setSelected(new Set(ids)),
-              selectMany: (ids, on) =>
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  for (const id of ids) on ? next.add(id) : next.delete(id);
-                  return next;
-                }),
-            } : undefined}
+            selection={
+              writable
+                ? {
+                    selected,
+                    toggle: (id) =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        next.has(id) ? next.delete(id) : next.add(id);
+                        return next;
+                      }),
+                    setAll: (ids) => setSelected(new Set(ids)),
+                    selectMany: (ids, on) =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        for (const id of ids) on ? next.add(id) : next.delete(id);
+                        return next;
+                      }),
+                  }
+                : undefined
+            }
             onRowChange={() => void load()}
             onError={setError}
             onReload={() => void load()}

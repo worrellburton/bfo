@@ -192,9 +192,7 @@ describe("scopeFilter / withLiveEntity", () => {
     expect(scopeFilter(prefs, ["ent-zzz"])).toContain('&account_id=in.("none")');
   });
   it("unmapped means every account without an entity", () => {
-    expect(scopeFilter(prefs, "unmapped")).toBe(
-      '&account_id=not.in.("acc-hid")&account_id=not.in.("acc-a1","acc-a2","acc-b1","acc-hid")'
-    );
+    expect(scopeFilter(prefs, "unmapped")).toBe('&account_id=not.in.("acc-hid")&account_id=not.in.("acc-a1","acc-a2","acc-b1","acc-hid")');
   });
   it("overlays the live mapping over the stamped entity", () => {
     const [a, b] = withLiveEntity([txn(), txn({ account_id: "acc-unknown" })], prefs);
@@ -210,12 +208,8 @@ describe("transactionsFilter", () => {
   });
 
   it("keeps every type filter override-aware and server-side", () => {
-    expect(transactionsFilter(prefs, { type: "transfers" })).toContain(
-      "&or=(type_override.eq.transfer,and(type_override.is.null,txn_type.eq.transfer,intercompany.is.false))"
-    );
-    expect(transactionsFilter(prefs, { type: "intercompany" })).toContain(
-      "&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))"
-    );
+    expect(transactionsFilter(prefs, { type: "transfers" })).toContain("&or=(type_override.eq.transfer,and(type_override.is.null,txn_type.eq.transfer,intercompany.is.false))");
+    expect(transactionsFilter(prefs, { type: "intercompany" })).toContain("&or=(type_override.eq.intercompany,and(type_override.is.null,intercompany.is.true))");
     expect(transactionsFilter(prefs, { type: "uncategorized" })).toContain("&book_category=is.null");
     expect(transactionsFilter(prefs, { type: "revenue" })).toContain("&book_category=like.4*");
     expect(transactionsFilter(prefs, { type: "expenses" })).toContain("&or=(book_category.like.6*,book_category.like.7*)");
@@ -234,10 +228,7 @@ describe("transactionsFilter", () => {
 
   it("composes entity, year, type and search in that order", () => {
     const f = transactionsFilter(prefs, { entity: ENT_B, year: "2026", type: "uncategorized", q: "x" });
-    expect(f).toBe(
-      '&account_id=not.in.("acc-hid")&account_id=in.("acc-b1","acc-hid")' +
-        "&date=gte.2026-01-01&date=lte.2026-12-31&book_category=is.null&or=(name.ilike.*x*,merchant_name.ilike.*x*)"
-    );
+    expect(f).toBe('&account_id=not.in.("acc-hid")&account_id=in.("acc-b1","acc-hid")' + "&date=gte.2026-01-01&date=lte.2026-12-31&book_category=is.null&or=(name.ilike.*x*,merchant_name.ilike.*x*)");
   });
 });
 
@@ -251,10 +242,7 @@ describe("auth and routing", () => {
 
   it("lets a viewer read but refuses every write with 403", async () => {
     me = viewer;
-    const actions = [
-      "create_loan", "update_loan", "loan_rule", "delete_rule", "categorize_vendor", "vendor_settings",
-      "batch_update", "add_receipt", "set_sunrise_sync", "delete_receipt",
-    ];
+    const actions = ["create_loan", "update_loan", "loan_rule", "delete_rule", "categorize_vendor", "vendor_settings", "batch_update", "add_receipt", "set_sunrise_sync", "delete_receipt"];
     for (const action of actions) {
       expect(await post({ action }), action).toEqual({ status: 403, json: { error: "forbidden" } });
     }
@@ -292,11 +280,14 @@ describe("report=transactions", () => {
   it("pages with Range + count, overlays live entities, and sums the whole filtered set", async () => {
     routes.unshift(
       [/^GET book_transactions\?select=\*/, () => json(page, 200, { "content-range": "0-1/57" })],
-      [/^GET book_transactions\?select=date,amount/, () => [
-        { date: "2026-01-02", amount: 120 },
-        { date: "2026-02-03", amount: "-40.5" },
-        { date: "2026-03-04", amount: 10.25 },
-      ]]
+      [
+        /^GET book_transactions\?select=date,amount/,
+        () => [
+          { date: "2026-01-02", amount: 120 },
+          { date: "2026-02-03", amount: "-40.5" },
+          { date: "2026-03-04", amount: 10.25 },
+        ],
+      ],
     );
     const r = await get({ report: "transactions", entity: ENT_A, type: "expenses", q: "ac_me", limit: "2", sort: "amount.asc" });
     expect(r.status).toBe(200);
@@ -311,25 +302,26 @@ describe("report=transactions", () => {
     const filter = decodeURIComponent(transactionsFilter(prefs, { entity: ENT_A, type: "expenses", q: "ac_me" }));
     expect(pageCall.path).toBe(`book_transactions?select=*${filter}&order=amount.asc.nullslast,transaction_id.asc`);
     expect(pageCall.headers).toEqual({ Range: "0-1", Prefer: "count=exact" });
-    expect(sumCall.path).toBe(
-      `book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,txn_type${filter}&order=date.asc,transaction_id.asc`
-    );
+    expect(sumCall.path).toBe(`book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,txn_type${filter}&order=date.asc,transaction_id.asc`);
   });
 
   it("leaves transfers, card payments, roll-ups and loans out of income and expenses", async () => {
     routes.unshift(
       [/^GET book_transactions\?select=\*/, () => json(page, 200, { "content-range": "0-1/2" })],
-      [/^GET book_transactions\?select=date,amount/, () => [
-        txn({ date: "2026-01-02", amount: 100, book_category: "6100 Professional Fees" }),
-        txn({ date: "2026-01-03", amount: -1000, book_category: "4000 Rental Income" }),
-        // Card autopay, both legs, and a transfer to savings, both legs.
-        txn({ date: "2026-01-04", amount: 100, book_category: "9150 Credit Card Payments" }),
-        txn({ date: "2026-01-04", amount: -100, book_category: "9150 Credit Card Payments" }),
-        txn({ date: "2026-01-05", amount: 5000, txn_type: "transfer", book_category: null }),
-        txn({ date: "2026-01-05", amount: -5000, txn_type: "transfer", book_category: null }),
-        txn({ date: "2026-01-06", amount: 250, intercompany: true }),
-        txn({ date: "2026-01-07", amount: 900, loan_id: "loan-1" }),
-      ]]
+      [
+        /^GET book_transactions\?select=date,amount/,
+        () => [
+          txn({ date: "2026-01-02", amount: 100, book_category: "6100 Professional Fees" }),
+          txn({ date: "2026-01-03", amount: -1000, book_category: "4000 Rental Income" }),
+          // Card autopay, both legs, and a transfer to savings, both legs.
+          txn({ date: "2026-01-04", amount: 100, book_category: "9150 Credit Card Payments" }),
+          txn({ date: "2026-01-04", amount: -100, book_category: "9150 Credit Card Payments" }),
+          txn({ date: "2026-01-05", amount: 5000, txn_type: "transfer", book_category: null }),
+          txn({ date: "2026-01-05", amount: -5000, txn_type: "transfer", book_category: null }),
+          txn({ date: "2026-01-06", amount: 250, intercompany: true }),
+          txn({ date: "2026-01-07", amount: 900, loan_id: "loan-1" }),
+        ],
+      ],
     );
     const r = await get({ report: "transactions" });
     expect(r.json.summary).toEqual({ count: 8, expenses: 100, income: 1000, first: "2026-01-02", last: "2026-01-07" });
@@ -364,12 +356,14 @@ describe("report=transactions", () => {
 describe("report=home", () => {
   it("returns the four dashboard parts in one round trip", async () => {
     routes.unshift(
-      [/^GET treasury_daily/, () => [
-        { day: "2026-10-02", cash: "100", invested: 50, credit: null },
-        { day: "2026-10-01", cash: 90, invested: "40", credit: 5 },
-      ]],
-      [/^GET book_transactions\?select=transaction_id&pending=eq.false&book_category=is.null/, () =>
-        json([], 200, { "content-range": "0-0/12" })],
+      [
+        /^GET treasury_daily/,
+        () => [
+          { day: "2026-10-02", cash: "100", invested: 50, credit: null },
+          { day: "2026-10-01", cash: 90, invested: "40", credit: 5 },
+        ],
+      ],
+      [/^GET book_transactions\?select=transaction_id&pending=eq.false&book_category=is.null/, () => json([], 200, { "content-range": "0-0/12" })],
     );
     const r = await get({ report: "home" });
     expect(r.status).toBe(200);
@@ -402,16 +396,22 @@ describe("report=meta", () => {
     routes.unshift(
       [/^GET book_transactions\?select=transaction_id&limit=1/, () => json([{ transaction_id: "t" }], 200, { "content-range": "0-0/4321" })],
       [/^GET book_transactions\?select=updated_at/, () => [{ updated_at: "2026-10-26T12:00:00Z" }]],
-      [/^GET book_transactions\?select=merchant_name,name,book_category/, () => [
-        { merchant_name: "Zed Co", name: "x", book_category: "6100 Professional Fees" },
-        { merchant_name: null, name: " Acme ", book_category: "Custom Manual Account" },
-        { merchant_name: "Acme", name: "y", book_category: null },
-      ]],
+      [
+        /^GET book_transactions\?select=merchant_name,name,book_category/,
+        () => [
+          { merchant_name: "Zed Co", name: "x", book_category: "6100 Professional Fees" },
+          { merchant_name: null, name: " Acme ", book_category: "Custom Manual Account" },
+          { merchant_name: "Acme", name: "y", book_category: null },
+        ],
+      ],
       [/^GET book_loans/, () => [{ id: "l1", name: "Family Loan" }]],
     );
     const r = await get({ report: "meta" });
     expect(r.status).toBe(200);
-    expect(r.json.entities).toEqual([{ id: ENT_A, name: "Alpha LLC" }, { id: ENT_B, name: "Beta Trust" }]);
+    expect(r.json.entities).toEqual([
+      { id: ENT_A, name: "Alpha LLC" },
+      { id: ENT_B, name: "Beta Trust" },
+    ]);
     expect(r.json.categories).toContain("6100 Professional Fees");
     expect(r.json.categories).toContain("Custom Manual Account");
     expect(r.json.categories).toEqual([...r.json.categories].sort((a: string, b: string) => a.localeCompare(b)));
@@ -433,7 +433,13 @@ describe("action=categorize_vendor", () => {
 
   it("replaces the old rule, saves the new one and applies it to matching rows", async () => {
     routes.unshift(
-      [/^GET book_rules/, () => [{ id: RULE, match: "ACME" }, { id: "other", match: "zzz" }]],
+      [
+        /^GET book_rules/,
+        () => [
+          { id: RULE, match: "ACME" },
+          { id: "other", match: "zzz" },
+        ],
+      ],
       [/^POST book_rules/, () => json([{ id: "new" }], 201)],
       [/^GET book_transactions\?select=transaction_id,name,merchant_name/, () => matching],
       [/^PATCH book_transactions/, () => json([])],
@@ -579,10 +585,7 @@ describe("receipts", () => {
     routes.unshift([/^GET book_txn_receipt\?id=eq.7/, () => [{ path: "receipts/t1/r.pdf" }]]);
     expect(await post({ action: "delete_receipt", id: 7 })).toEqual({ status: 200, json: { deleted: true } });
     expect(storageRemove).toHaveBeenCalledWith("receipts/t1/r.pdf");
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
-      "GET book_txn_receipt?id=eq.7&select=path&limit=1",
-      "DELETE book_txn_receipt?id=eq.7",
-    ]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET book_txn_receipt?id=eq.7&select=path&limit=1", "DELETE book_txn_receipt?id=eq.7"]);
   });
 
   it("delete_receipt leaves storage alone for an external link", async () => {
@@ -595,10 +598,13 @@ describe("receipts", () => {
   it("report=history signs storage-backed receipts and keeps external urls", async () => {
     routes.unshift(
       [/^GET book_txn_log/, () => [{ field: "book_category", old_value: null, new_value: "6100 Professional Fees" }]],
-      [/^GET book_txn_receipt/, () => [
-        { id: 1, path: "receipts/t1/a.pdf", url: null },
-        { id: 2, path: null, url: "https://docs.example/b.pdf" },
-      ]],
+      [
+        /^GET book_txn_receipt/,
+        () => [
+          { id: 1, path: "receipts/t1/a.pdf", url: null },
+          { id: 2, path: null, url: "https://docs.example/b.pdf" },
+        ],
+      ],
     );
     const r = await get({ report: "history", transaction_id: "t1" });
     expect(r.status).toBe(200);
@@ -621,9 +627,10 @@ describe("POST {transaction_id, …}", () => {
 
   it("saves, logs old → new for the fields that changed, and returns the row", async () => {
     routes.unshift(
-      [/^GET book_transactions\?transaction_id=eq.t1&select=book_category/, () => [
-        { book_category: "6900 Other Operating Expenses", type_override: null, loan_id: null, merchant_name: "Acme", name: "x" },
-      ]],
+      [
+        /^GET book_transactions\?transaction_id=eq.t1&select=book_category/,
+        () => [{ book_category: "6900 Other Operating Expenses", type_override: null, loan_id: null, merchant_name: "Acme", name: "x" }],
+      ],
       [/^PATCH book_transactions/, () => json([txn({ book_category: "6100 Professional Fees" })])],
       [/^POST book_txn_log/, () => json([], 201)],
     );

@@ -42,9 +42,7 @@ export async function fetchAll<T>(pathWithFilters: string, db: DbFetch = sbFetch
   // No usable count header — fall back to sequential paging until a short page.
   let last = out.length;
   while (last === PAGE) {
-    const rows = await rowsOf<T>(
-      await db(pathWithFilters, { headers: { Range: `${out.length}-${out.length + PAGE - 1}` } })
-    );
+    const rows = await rowsOf<T>(await db(pathWithFilters, { headers: { Range: `${out.length}-${out.length + PAGE - 1}` } }));
     out.push(...rows);
     last = rows.length;
   }

@@ -103,7 +103,7 @@ export default function Ask() {
       liveCall.current?.close();
       liveCall.current = null;
     },
-    []
+    [],
   );
   // Leaving the voice stage hangs up.
   useEffect(() => {
@@ -295,7 +295,7 @@ export default function Ask() {
             setLive((l) => (l ? { ...l, text: answer } : l));
           } else if (e.type === "error") setError(e.message);
         },
-        ctl.signal
+        ctl.signal,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError((e as Error).message);
@@ -527,38 +527,46 @@ export default function Ask() {
               className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${t.line} ${t.soft} ${t.hover}`}
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+                />
               </svg>
               Voice
             </button>
           )}
           {!voiceMode && (
+            <button
+              type="button"
+              onClick={toggleSpeak}
+              aria-pressed={speakOn}
+              title={speakOn ? "Answers are read aloud" : "Read answers aloud"}
+              className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] max-sm:min-w-[44px] max-sm:justify-center cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${
+                speakOn ? (t.dark ? "border-[#818cf8]/40 bg-[#818cf8]/15 text-[#c7d2fe]" : "border-[#4f46e5]/30 bg-[#4f46e5]/[0.08] text-[#4338ca]") : `${t.line} ${t.soft} ${t.hover}`
+              }`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"
+                />
+              </svg>
+              <span className="max-sm:sr-only">{speaking ? <span className="ask-pulse">Speaking</span> : speakOn ? "Speaking on" : "Speak answers"}</span>
+            </button>
+          )}
           <button
             type="button"
-            onClick={toggleSpeak}
-            aria-pressed={speakOn}
-            title={speakOn ? "Answers are read aloud" : "Read answers aloud"}
-            className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] max-sm:min-w-[44px] max-sm:justify-center cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${
-              speakOn ? (t.dark ? "border-[#818cf8]/40 bg-[#818cf8]/15 text-[#c7d2fe]" : "border-[#4f46e5]/30 bg-[#4f46e5]/[0.08] text-[#4338ca]") : `${t.line} ${t.soft} ${t.hover}`
-            }`}
+            onClick={() => setHistoryOpen((o) => !o)}
+            aria-expanded={historyOpen}
+            className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${voiceMode ? "" : "lg:hidden"} ${t.line} ${t.soft} ${t.hover}`}
           >
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="max-sm:sr-only">{speaking ? <span className="ask-pulse">Speaking</span> : speakOn ? "Speaking on" : "Speak answers"}</span>
+            History
           </button>
-          )}
-        <button
-          type="button"
-          onClick={() => setHistoryOpen((o) => !o)}
-          aria-expanded={historyOpen}
-          className={`inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] font-medium transition-colors ${voiceMode ? "" : "lg:hidden"} ${t.line} ${t.soft} ${t.hover}`}
-        >
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          History
-        </button>
         </div>
       </header>
 
@@ -589,124 +597,134 @@ export default function Ask() {
             onType={() => setMode("text")}
           />
         ) : (
-        <section className="flex min-h-0 flex-col">
-          <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
-            {empty ? (
-              <div className="mx-auto flex h-full max-w-[560px] flex-col justify-center">
-                <p className={`font-brand text-[30px] leading-[1.15] sm:text-[34px] ${t.text}`}>{firstName ? `Hello, ${firstName}.` : "Hello."}</p>
-                <p className={`mt-2 text-[14px] leading-relaxed ${t.soft}`}>
-                  Ask about any entity, what's due, what came in the mail, what's in the bank, or what the books say. Nothing here changes a record; it reads them.
-                </p>
-                <div className="mt-6 flex flex-wrap gap-2">
-                  {SUGGESTIONS.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => void send(s)}
-                      className={`cursor-pointer rounded-full border px-3.5 py-2 text-left text-[12.5px] transition-colors ${t.line} ${t.soft} ${t.dark ? "hover:border-white/20 hover:text-white" : "hover:border-gray-300 hover:text-gray-900"}`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mx-auto max-w-[720px] space-y-6">
-                {loadingChat && !messages.length && (
-                  <div className="space-y-3">
-                    {[0, 1].map((i) => (
-                      <div key={i} className={`h-12 animate-pulse rounded-2xl ${t.dark ? "bg-white/[0.05]" : "bg-gray-100"}`} style={{ width: i ? "70%" : "45%", marginLeft: i ? 0 : "auto" }} />
+          <section className="flex min-h-0 flex-col">
+            <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
+              {empty ? (
+                <div className="mx-auto flex h-full max-w-[560px] flex-col justify-center">
+                  <p className={`font-brand text-[30px] leading-[1.15] sm:text-[34px] ${t.text}`}>{firstName ? `Hello, ${firstName}.` : "Hello."}</p>
+                  <p className={`mt-2 text-[14px] leading-relaxed ${t.soft}`}>
+                    Ask about any entity, what's due, what came in the mail, what's in the bank, or what the books say. Nothing here changes a record; it reads them.
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => void send(s)}
+                        className={`cursor-pointer rounded-full border px-3.5 py-2 text-left text-[12.5px] transition-colors ${t.line} ${t.soft} ${t.dark ? "hover:border-white/20 hover:text-white" : "hover:border-gray-300 hover:text-gray-900"}`}
+                      >
+                        {s}
+                      </button>
                     ))}
                   </div>
-                )}
-                {messages.map((m, i) => (
-                  <Bubble key={i} m={m} />
-                ))}
-                {live && <Bubble m={{ role: "assistant", text: live.text }} tools={live.tools} streaming />}
-                {error && (
-                  <p role="alert" className={`text-[12.5px] ${t.dark ? "text-red-300/90" : "text-red-600"}`}>
-                    {error}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send(draft);
-            }}
-            className={`border-t px-3 py-3 sm:px-5 ${t.line}`}
-          >
-            <div className={`mx-auto flex max-w-[720px] items-end gap-2 rounded-2xl border px-3 py-1.5 transition-colors ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}>
-              <textarea
-                ref={input}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={onKey}
-                rows={1}
-                placeholder={live ? "Answering…" : mic === "listening" ? "Listening… tap the square when you're done" : mic === "transcribing" ? "Writing down what you said…" : "Ask about the office…"}
-                aria-label="Your question"
-                style={{ outline: "none", boxShadow: "none", border: 0 }}
-                className={`min-h-[44px] flex-1 resize-none bg-transparent py-2.5 text-[14px] leading-relaxed placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
-              />
-              {micAvailable && !live && (
-                <button
-                  type="button"
-                  onClick={() => void toggleMic()}
-                  disabled={mic === "transcribing"}
-                  aria-label={mic === "listening" ? "Stop and send" : "Ask by voice"}
-                  aria-pressed={mic === "listening"}
-                  title={mic === "listening" ? "Tap when you're done" : "Ask by voice"}
-                  className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default ${
-                    mic === "listening"
-                      ? "ask-listening bg-red-500 text-white"
-                      : mic === "transcribing"
-                        ? t.dark
-                          ? "bg-white/10 text-gray-300"
-                          : "bg-gray-100 text-gray-500"
-                        : t.dark
-                          ? "text-gray-400 hover:bg-white/10 hover:text-white"
-                          : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  {mic === "transcribing" ? (
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  ) : mic === "listening" ? (
-                    <span className="h-3 w-3 rounded-[2px] bg-current" />
-                  ) : (
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-                    </svg>
-                  )}
-                </button>
-              )}
-              {live ? (
-                <button
-                  type="button"
-                  onClick={stop}
-                  aria-label="Stop"
-                  className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-colors ${t.dark ? "bg-white/10 text-white hover:bg-white/15" : "bg-gray-100 text-gray-900 hover:bg-gray-200"}`}
-                >
-                  <span className="h-3 w-3 rounded-[2px] bg-current" />
-                </button>
+                </div>
               ) : (
-                <button
-                  type="submit"
-                  disabled={!draft.trim()}
-                  aria-label="Send"
-                  className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default disabled:opacity-30 ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6" />
-                  </svg>
-                </button>
+                <div className="mx-auto max-w-[720px] space-y-6">
+                  {loadingChat && !messages.length && (
+                    <div className="space-y-3">
+                      {[0, 1].map((i) => (
+                        <div key={i} className={`h-12 animate-pulse rounded-2xl ${t.dark ? "bg-white/[0.05]" : "bg-gray-100"}`} style={{ width: i ? "70%" : "45%", marginLeft: i ? 0 : "auto" }} />
+                      ))}
+                    </div>
+                  )}
+                  {messages.map((m, i) => (
+                    <Bubble key={i} m={m} />
+                  ))}
+                  {live && <Bubble m={{ role: "assistant", text: live.text }} tools={live.tools} streaming />}
+                  {error && (
+                    <p role="alert" className={`text-[12.5px] ${t.dark ? "text-red-300/90" : "text-red-600"}`}>
+                      {error}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
-            <p className={`mx-auto mt-1.5 max-w-[720px] text-[10.5px] ${t.faint}`}>Enter to send · Shift+Enter for a new line{micAvailable ? " · Tap the mic to ask by voice" : ""} · It reads the records and can be wrong; check anything that matters.</p>
-          </form>
-        </section>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send(draft);
+              }}
+              className={`border-t px-3 py-3 sm:px-5 ${t.line}`}
+            >
+              <div
+                className={`mx-auto flex max-w-[720px] items-end gap-2 rounded-2xl border px-3 py-1.5 transition-colors ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}
+              >
+                <textarea
+                  ref={input}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={onKey}
+                  rows={1}
+                  placeholder={
+                    live ? "Answering…" : mic === "listening" ? "Listening… tap the square when you're done" : mic === "transcribing" ? "Writing down what you said…" : "Ask about the office…"
+                  }
+                  aria-label="Your question"
+                  style={{ outline: "none", boxShadow: "none", border: 0 }}
+                  className={`min-h-[44px] flex-1 resize-none bg-transparent py-2.5 text-[14px] leading-relaxed placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
+                />
+                {micAvailable && !live && (
+                  <button
+                    type="button"
+                    onClick={() => void toggleMic()}
+                    disabled={mic === "transcribing"}
+                    aria-label={mic === "listening" ? "Stop and send" : "Ask by voice"}
+                    aria-pressed={mic === "listening"}
+                    title={mic === "listening" ? "Tap when you're done" : "Ask by voice"}
+                    className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default ${
+                      mic === "listening"
+                        ? "ask-listening bg-red-500 text-white"
+                        : mic === "transcribing"
+                          ? t.dark
+                            ? "bg-white/10 text-gray-300"
+                            : "bg-gray-100 text-gray-500"
+                          : t.dark
+                            ? "text-gray-400 hover:bg-white/10 hover:text-white"
+                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                    }`}
+                  >
+                    {mic === "transcribing" ? (
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    ) : mic === "listening" ? (
+                      <span className="h-3 w-3 rounded-[2px] bg-current" />
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                )}
+                {live ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    aria-label="Stop"
+                    className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-colors ${t.dark ? "bg-white/10 text-white hover:bg-white/15" : "bg-gray-100 text-gray-900 hover:bg-gray-200"}`}
+                  >
+                    <span className="h-3 w-3 rounded-[2px] bg-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!draft.trim()}
+                    aria-label="Send"
+                    className={`mb-1 grid h-9 w-9 max-md:mb-0 max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:mb-0 md:pointer-coarse:h-[44px] md:pointer-coarse:w-[44px] shrink-0 cursor-pointer place-items-center rounded-full transition-all disabled:cursor-default disabled:opacity-30 ${t.dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <p className={`mx-auto mt-1.5 max-w-[720px] text-[10.5px] ${t.faint}`}>
+                Enter to send · Shift+Enter for a new line{micAvailable ? " · Tap the mic to ask by voice" : ""} · It reads the records and can be wrong; check anything that matters.
+              </p>
+            </form>
+          </section>
         )}
       </div>
     </div>
@@ -718,13 +736,20 @@ function Bubble({ m, tools = [], streaming = false }: { m: ChatMessage; tools?: 
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md px-4 py-2.5 text-[14px] leading-relaxed ${t.dark ? "bg-[#818cf8]/15 text-gray-100" : "bg-[#4f46e5]/[0.08] text-gray-900"}`}>{m.text}</div>
+        <div
+          className={`max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md px-4 py-2.5 text-[14px] leading-relaxed ${t.dark ? "bg-[#818cf8]/15 text-gray-100" : "bg-[#4f46e5]/[0.08] text-gray-900"}`}
+        >
+          {m.text}
+        </div>
       </div>
     );
   }
   return (
     <div className="flex gap-3">
-      <span className={`font-brand mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[10px] font-semibold tracking-[0.04em] ${t.dark ? "border-[#f4ede0]/25 text-[#f4ede0]" : "border-gray-300 text-gray-800"}`} aria-hidden>
+      <span
+        className={`font-brand mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[10px] font-semibold tracking-[0.04em] ${t.dark ? "border-[#f4ede0]/25 text-[#f4ede0]" : "border-gray-300 text-gray-800"}`}
+        aria-hidden
+      >
         BFO
       </span>
       <div className="min-w-0 flex-1">

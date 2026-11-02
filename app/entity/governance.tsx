@@ -63,9 +63,7 @@ export function GovernanceTab() {
                   title={s.name}
                   onClick={() => page.setCorpTab(s.key)}
                   className={`inline-flex h-7 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-[12px] font-medium transition-colors max-sm:h-[40px] ${
-                    on
-                      ? t.dark ? "bg-white/[0.1] text-white" : "bg-white text-gray-900 shadow-sm"
-                      : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
+                    on ? (t.dark ? "bg-white/[0.1] text-white" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
                   }`}
                 >
                   {s.label}

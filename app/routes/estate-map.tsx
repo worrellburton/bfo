@@ -27,7 +27,6 @@ type Entity = {
   type?: EntityType;
 };
 
-
 /** The `assets` record an estate-map entity matches by (lowercased) name. */
 type AssetRec = { id: string; data: CompletenessInput };
 type Compliance = { score: number; missing: string[] };
@@ -56,11 +55,7 @@ function ComplianceRing({ c, size, isDark }: { c: Compliance | null; size: numbe
   const font = size >= 30 ? 10.5 : size >= 26 ? 9.5 : 8.5;
   if (!c) {
     return (
-      <span
-        className="relative grid shrink-0 place-items-center"
-        style={{ width: size, height: size }}
-        title="No entity record with this name, so no compliance score"
-      >
+      <span className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }} title="No entity record with this name, so no compliance score">
         <svg width={size} height={size} className="absolute inset-0" aria-hidden>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={1.25} strokeDasharray="2 2.5" />
         </svg>
@@ -120,7 +115,7 @@ export function mapEntities(assets: Record<string, MapAsset>, order: Record<stri
     .map(([id, a]) => {
       const owner = a.ownerId && ids.has(a.ownerId) && a.ownerId !== id ? a.ownerId : null;
       const ownerName = owner ? norm(assets[owner].name!) : "";
-      const members = (a.members ?? []).filter((m) => m?.name && !/manager|director|officer/i.test(m.role ?? "") || (m?.name && m.percent != null));
+      const members = (a.members ?? []).filter((m) => (m?.name && !/manager|director|officer/i.test(m.role ?? "")) || (m?.name && m.percent != null));
       const partners = members.filter((m) => !names.has(norm(m.name)) && norm(m.name) !== ownerName).map((m) => ({ name: m.name, percent: m.percent ?? null }));
       const mine = members.find((m) => norm(m.name) === ownerName);
       return {
@@ -137,14 +132,11 @@ export function mapEntities(assets: Record<string, MapAsset>, order: Record<stri
     .sort((x, y) => x.x - y.x || x.name.localeCompare(y.name))
     .flatMap((e) =>
       // With People on, each partner is its own card under the entity they co-own.
-      opts.people && e.partners?.length
-        ? [e, ...e.partners.map((p, i) => ({ id: `person:${e.id}:${i}`, name: p.name, parentId: e.id, x: i, y: 0, person: { percent: p.percent } }))]
-        : [e]
+      opts.people && e.partners?.length ? [e, ...e.partners.map((p, i) => ({ id: `person:${e.id}:${i}`, name: p.name, parentId: e.id, x: i, y: 0, person: { percent: p.percent } }))] : [e],
     );
 }
 
 export const isPerson = (id: string) => id.startsWith("person:");
-
 
 // ── Geometry (scene px — the whole scene is scaled to fit the canvas) ─────
 const CARD_W = 264; // room for the name and the compliance ring
@@ -274,7 +266,10 @@ function layoutEstate(entities: Entity[], compact = false): Layout {
       const w = ms.reduce((s, x) => s + x.w, 0) + COL_GAP * (ms.length - 1);
       m = { w: Math.max(own, w), h: cardH + LEVEL_GAP + Math.max(...ms.map((x) => x.h)), stack: false, own, cardH };
     }
-    descMemo.set(id, ch.reduce((s, c) => s + 1 + (descMemo.get(c.id) ?? 0), 0));
+    descMemo.set(
+      id,
+      ch.reduce((s, c) => s + 1 + (descMemo.get(c.id) ?? 0), 0),
+    );
     subs.set(id, m);
     return m;
   }
@@ -287,9 +282,7 @@ function layoutEstate(entities: Entity[], compact = false): Layout {
   trees.sort((a, b) => (descMemo.get(b.id) ?? 0) - (descMemo.get(a.id) ?? 0));
   const orphans = entities.filter((e) => !reached.has(e.id));
 
-  const forestW = trees.length
-    ? trees.reduce((s, t) => s + subs.get(t.id)!.w, 0) + TREE_GAP * (trees.length - 1)
-    : 0;
+  const forestW = trees.length ? trees.reduce((s, t) => s + subs.get(t.id)!.w, 0) + TREE_GAP * (trees.length - 1) : 0;
   const forestH = trees.length ? Math.max(...trees.map((t) => subs.get(t.id)!.h)) : 0;
 
   // Tray geometry first, so the scene width (and the forest's centring) is known.
@@ -631,10 +624,7 @@ export function EstateMapView({
       setView({ k, x: (size.w - layout.width * k) / 2, y: padTop + Math.max(0, free / 2) });
       return;
     }
-    const k = Math.max(
-      ZOOM_MIN,
-      Math.min((size.w - padX * 2) / layout.width, (size.h - padTop - padBottom) / layout.height, 1.35)
-    );
+    const k = Math.max(ZOOM_MIN, Math.min((size.w - padX * 2) / layout.width, (size.h - padTop - padBottom) / layout.height, 1.35));
     setView({
       k,
       x: (size.w - layout.width * k) / 2,
@@ -883,7 +873,6 @@ export function EstateMapView({
     setSelectedEdge(null);
   }
 
-
   function startRename(id: string) {
     const ent = entityById.get(id);
     if (!ent) return;
@@ -949,9 +938,7 @@ export function EstateMapView({
   // ── Skins ───────────────────────────────────────────────────────────────
   const ink = isDark ? "text-gray-100" : "text-gray-900";
   const muted = isDark ? "text-gray-500" : "text-gray-500";
-  const hudChip = isDark
-    ? "border-white/[0.08] bg-[#0b0d14]/80 text-gray-400"
-    : "border-gray-200 bg-white/85 text-gray-500";
+  const hudChip = isDark ? "border-white/[0.08] bg-[#0b0d14]/80 text-gray-400" : "border-gray-200 bg-white/85 text-gray-500";
   const hudBtn = isDark
     ? "border-white/[0.08] bg-[#0b0d14]/80 text-gray-300 hover:text-white hover:border-white/20 hover:bg-white/[0.06]"
     : "border-gray-200 bg-white/90 text-gray-600 hover:text-gray-900 hover:border-gray-300 hover:bg-white";
@@ -1016,9 +1003,7 @@ export function EstateMapView({
     return (
       <div
         className={`relative flex h-full items-center gap-2.5 overflow-hidden rounded-xl border px-3 transition-[opacity,box-shadow,border-color] duration-200 ${
-          isDark
-            ? `${root ? "bg-[#10122a]" : "bg-[#0b0d15]"} border-white/[0.09] ${ink}`
-            : `bg-white border-gray-200 ${ink} shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_20px_-16px_rgba(15,23,42,0.3)]`
+          isDark ? `${root ? "bg-[#10122a]" : "bg-[#0b0d15]"} border-white/[0.09] ${ink}` : `bg-white border-gray-200 ${ink} shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_20px_-16px_rgba(15,23,42,0.3)]`
         } ${orphan ? "border-dashed" : ""}`}
         style={{
           boxShadow: ring,
@@ -1027,16 +1012,8 @@ export function EstateMapView({
         }}
       >
         {/* Hairline accent along the top edge */}
-        <span
-          className="pointer-events-none absolute inset-x-3 top-0 h-px"
-          style={{ background: `linear-gradient(90deg, transparent, ${c}${root ? "" : "b0"}, transparent)` }}
-        />
-        {root && (
-          <span
-            className="pointer-events-none absolute inset-0"
-            style={{ background: `radial-gradient(120% 140% at 50% -40%, ${c}${isDark ? "26" : "14"}, transparent 60%)` }}
-          />
-        )}
+        <span className="pointer-events-none absolute inset-x-3 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${c}${root ? "" : "b0"}, transparent)` }} />
+        {root && <span className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(120% 140% at 50% -40%, ${c}${isDark ? "26" : "14"}, transparent 60%)` }} />}
         <span
           className={`relative grid shrink-0 place-items-center font-mono font-semibold tracking-tight ${ent.person ? "rounded-full" : "rounded-lg"}`}
           style={{
@@ -1063,21 +1040,14 @@ export function EstateMapView({
               }}
               onPointerDown={(e) => e.stopPropagation()}
               onFocus={(e) => e.currentTarget.select()}
-              className={`w-full bg-transparent text-[12.5px] font-semibold outline-none border-b ${
-                isDark ? "border-white/30 text-white" : "border-gray-400 text-gray-900"
-              }`}
+              className={`w-full bg-transparent text-[12.5px] font-semibold outline-none border-b ${isDark ? "border-white/30 text-white" : "border-gray-400 text-gray-900"}`}
             />
           ) : (
-            <div
-              className={`truncate font-semibold tracking-[-0.01em] ${root ? "text-[14px]" : leaf ? "text-[12px]" : "text-[13px]"}`}
-              title={ent.name}
-            >
+            <div className={`truncate font-semibold tracking-[-0.01em] ${root ? "text-[14px]" : leaf ? "text-[12px]" : "text-[13px]"}`} title={ent.name}>
               {info.display}
             </div>
           )}
-          <div className={`mt-0.5 truncate text-[10.5px] ${muted}`}>
-            {metaFor(box, info)}
-          </div>
+          <div className={`mt-0.5 truncate text-[10.5px] ${muted}`}>{metaFor(box, info)}</div>
         </div>
         {!ent.person && <ComplianceRing c={complianceFor(box.id)} size={ringSize} isDark={isDark} />}
       </div>
@@ -1171,8 +1141,12 @@ export function EstateMapView({
             <div
               className={`absolute rounded-2xl border border-dashed transition-colors ${
                 drag?.target === "tray"
-                  ? isDark ? "border-amber-400/70 bg-amber-400/[0.06]" : "border-amber-500/70 bg-amber-50"
-                  : isDark ? "border-white/[0.1] bg-white/[0.015]" : "border-gray-300 bg-white/40"
+                  ? isDark
+                    ? "border-amber-400/70 bg-amber-400/[0.06]"
+                    : "border-amber-500/70 bg-amber-50"
+                  : isDark
+                    ? "border-white/[0.1] bg-white/[0.015]"
+                    : "border-gray-300 bg-white/40"
               }`}
               style={{ left: layout.tray.x, top: layout.tray.y, width: layout.tray.w, height: layout.tray.h }}
             >
@@ -1180,18 +1154,15 @@ export function EstateMapView({
               <div className={`absolute left-4 right-4 top-3 flex min-w-0 items-center gap-2 text-[11px] font-medium ${muted}`}>
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                 <span className="shrink-0 whitespace-nowrap">Unlinked · {layout.tray.count}</span>
-                <span className="min-w-0 truncate normal-case tracking-normal opacity-70" title="Drag onto an entity to place it in the structure">— drag onto an entity to place it in the structure</span>
+                <span className="min-w-0 truncate normal-case tracking-normal opacity-70" title="Drag onto an entity to place it in the structure">
+                  — drag onto an entity to place it in the structure
+                </span>
               </div>
             </div>
           )}
 
           {/* Connectors */}
-          <svg
-            className="absolute left-0 top-0 overflow-visible"
-            width={layout.width}
-            height={layout.height}
-            style={{ pointerEvents: "none" }}
-          >
+          <svg className="absolute left-0 top-0 overflow-visible" width={layout.width} height={layout.height} style={{ pointerEvents: "none" }}>
             {layout.edges.map((edge) => {
               const c = toneColor(edge.tone, isDark);
               const on = !!lit && lit.has(edge.id) && lit.has(edge.parentId);
@@ -1274,52 +1245,58 @@ export function EstateMapView({
               {hoverBox?.id === box.id && !isPerson(box.id) && (
                 // The wrapper's bottom padding bridges the gap to the card, so
                 // moving the pointer up onto the toolbar keeps it open.
-                <div
-                  data-hud
-                  className="absolute bottom-full right-0 z-30 w-max pb-1.5"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onDoubleClick={(e) => e.stopPropagation()}
-                >
-                <div
-                  className={`estate-in flex items-center gap-0.5 rounded-lg border p-0.5 shadow-lg backdrop-blur-md ${
-                    isDark ? "border-white/10 bg-[#11131c]/95 shadow-black/50" : "border-gray-200 bg-white/95 shadow-gray-900/10"
-                  }`}
-                >
-                  {(() => {
-                    const c = complianceFor(box.id);
-                    if (!c) return null;
-                    return (
-                      <span
-                        title={complianceTitle(c)}
-                        className={`h-7 pl-2 pr-2.5 mr-0.5 [@media(pointer:coarse)]:hidden inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-medium tabular-nums whitespace-nowrap ${
-                          isDark ? "bg-white/[0.04] text-gray-300" : "bg-gray-50 text-gray-700"
-                        }`}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: complianceColor(c.score, isDark) }} />
-                        {c.missing.length ? `${c.missing.length} missing` : "All on file"}
-                      </span>
-                    );
-                  })()}
-                  <button
-                    onClick={() => openEntity(box.id)}
-                    disabled={!assetIdFor(box.id)}
-                    title={assetIdFor(box.id) ? "Go to the entity page" : "No entity page with this name yet"}
-                    className={`h-7 ${coarse} px-2.5 inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isDark ? "bg-white text-gray-900 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
+                <div data-hud className="absolute bottom-full right-0 z-30 w-max pb-1.5" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                  <div
+                    className={`estate-in flex items-center gap-0.5 rounded-lg border p-0.5 shadow-lg backdrop-blur-md ${
+                      isDark ? "border-white/10 bg-[#11131c]/95 shadow-black/50" : "border-gray-200 bg-white/95 shadow-gray-900/10"
                     }`}
                   >
-                    Go to entity page
-                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M7 17L17 7M9 7h8v8" /></svg>
-                  </button>
-                  <button className={toolBtn} onClick={() => startRename(box.id)} title="Rename">
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" /></svg>
-                  </button>
-                  {layout.parentOf.has(box.id) && (
-                    <button className={toolBtn} onClick={() => handleUnlink(box.id)} title="Unlink from parent">
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-1 1a4 4 0 105.656 5.656M10.172 13.828a4 4 0 005.656 0l1-1a4 4 0 00-5.656-5.656M4 4l16 16" /></svg>
+                    {(() => {
+                      const c = complianceFor(box.id);
+                      if (!c) return null;
+                      return (
+                        <span
+                          title={complianceTitle(c)}
+                          className={`h-7 pl-2 pr-2.5 mr-0.5 [@media(pointer:coarse)]:hidden inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-medium tabular-nums whitespace-nowrap ${
+                            isDark ? "bg-white/[0.04] text-gray-300" : "bg-gray-50 text-gray-700"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: complianceColor(c.score, isDark) }} />
+                          {c.missing.length ? `${c.missing.length} missing` : "All on file"}
+                        </span>
+                      );
+                    })()}
+                    <button
+                      onClick={() => openEntity(box.id)}
+                      disabled={!assetIdFor(box.id)}
+                      title={assetIdFor(box.id) ? "Go to the entity page" : "No entity page with this name yet"}
+                      className={`h-7 ${coarse} px-2.5 inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+                        isDark ? "bg-white text-gray-900 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
+                      }`}
+                    >
+                      Go to entity page
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M7 17L17 7M9 7h8v8" />
+                      </svg>
                     </button>
-                  )}
-                </div>
+                    <button className={toolBtn} onClick={() => startRename(box.id)} title="Rename">
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
+                      </svg>
+                    </button>
+                    {layout.parentOf.has(box.id) && (
+                      <button className={toolBtn} onClick={() => handleUnlink(box.id)} title="Unlink from parent">
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13.828 10.172a4 4 0 00-5.656 0l-1 1a4 4 0 105.656 5.656M10.172 13.828a4 4 0 005.656 0l1-1a4 4 0 00-5.656-5.656M4 4l16 16"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1353,7 +1330,9 @@ export function EstateMapView({
               onClick={() => handleUnlink(selEdge.id)}
               title="Unlink (Delete)"
             >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M6 18L18 6M6 6l12 12" /></svg>
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
               Unlink
             </button>
           )}
@@ -1366,11 +1345,17 @@ export function EstateMapView({
             Live
           </span>
           <span className={`hidden h-7 items-center gap-3 rounded-lg border px-2.5 backdrop-blur-md sm:inline-flex ${hudChip}`}>
-            <span><b className={`font-semibold ${ink}`}>{stats.entities}</b> entities</span>
+            <span>
+              <b className={`font-semibold ${ink}`}>{stats.entities}</b> entities
+            </span>
             <span className="opacity-40">/</span>
-            <span><b className={`font-semibold ${ink}`}>{stats.branches}</b> branches</span>
+            <span>
+              <b className={`font-semibold ${ink}`}>{stats.branches}</b> branches
+            </span>
             <span className="opacity-40">/</span>
-            <span><b className={`font-semibold ${ink}`}>{stats.levels}</b> levels</span>
+            <span>
+              <b className={`font-semibold ${ink}`}>{stats.levels}</b> levels
+            </span>
           </span>
         </div>
 
@@ -1384,7 +1369,9 @@ export function EstateMapView({
               people ? (isDark ? "border-white/25 bg-white/[0.12] text-white" : "border-gray-900 bg-gray-900 text-white") : hudBtn
             }`}
           >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
             <span className="hidden sm:inline">People</span>
           </button>
           <button
@@ -1392,7 +1379,9 @@ export function EstateMapView({
             aria-label="Add entity"
             className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${hudBtn}`}
           >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" /></svg>
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
+            </svg>
             <span className="hidden sm:inline">Entity</span>
           </button>
           <div className={`inline-flex h-7 [@media(pointer:coarse)]:h-[42px] items-center rounded-lg border backdrop-blur-md ${hudChip}`}>
@@ -1401,7 +1390,9 @@ export function EstateMapView({
               className={`grid h-full w-7 [@media(pointer:coarse)]:w-[40px] place-items-center rounded-l-lg transition-colors cursor-pointer ${isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"}`}
               aria-label="Zoom out"
             >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2.2} d="M5 12h14" /></svg>
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeWidth={2.2} d="M5 12h14" />
+              </svg>
             </button>
             <span className={`w-11 text-center font-mono text-[10.5px] tabular-nums ${ink}`}>{Math.round(view.k * 100)}%</span>
             <button
@@ -1409,7 +1400,9 @@ export function EstateMapView({
               className={`grid h-full w-7 [@media(pointer:coarse)]:w-[40px] place-items-center rounded-r-lg transition-colors cursor-pointer ${isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"}`}
               aria-label="Zoom in"
             >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2.2} d="M12 5v14m7-7H5" /></svg>
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeWidth={2.2} d="M12 5v14m7-7H5" />
+              </svg>
             </button>
           </div>
           <button
@@ -1418,16 +1411,15 @@ export function EstateMapView({
             aria-label="Fit to screen"
             className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${hudBtn}`}
           >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V5a1 1 0 011-1h4M15 4h4a1 1 0 011 1v4M20 15v4a1 1 0 01-1 1h-4M9 20H5a1 1 0 01-1-1v-4" /></svg>
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V5a1 1 0 011-1h4M15 4h4a1 1 0 011 1v4M20 15v4a1 1 0 01-1 1h-4M9 20H5a1 1 0 01-1-1v-4" />
+            </svg>
             <span className="hidden sm:inline">Fit</span>
           </button>
         </div>
 
         {/* HUD: hint */}
-        <div
-          data-hud
-          className={`absolute bottom-3 left-3 hidden items-center gap-3 rounded-lg border px-2.5 py-1.5 text-[11px] backdrop-blur-md md:inline-flex ${hudChip}`}
-        >
+        <div data-hud className={`absolute bottom-3 left-3 hidden items-center gap-3 rounded-lg border px-2.5 py-1.5 text-[11px] backdrop-blur-md md:inline-flex ${hudChip}`}>
           {touchScreen ? (
             <>
               <span>Tap · actions</span>
@@ -1455,13 +1447,9 @@ export function EstateMapView({
 
         {/* HUD corner brackets */}
         {(["left-2 top-2 border-l border-t", "right-2 top-2 border-r border-t", "left-2 bottom-2 border-l border-b", "right-2 bottom-2 border-r border-b"] as const).map((pos) => (
-          <span
-            key={pos}
-            className={`pointer-events-none absolute h-3 w-3 ${pos} ${isDark ? "border-white/25" : "border-gray-400/50"}`}
-          />
+          <span key={pos} className={`pointer-events-none absolute h-3 w-3 ${pos} ${isDark ? "border-white/25" : "border-gray-400/50"}`} />
         ))}
       </div>
-
     </div>
   );
 }

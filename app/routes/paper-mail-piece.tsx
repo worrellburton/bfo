@@ -57,18 +57,21 @@ export default function PaperMailPiece() {
   useFocusTrap(zoomRef, !!zoom);
 
   /** `force` reads it again even when the reading is current, or the last try failed. */
-  const read = useCallback(async (force = false) => {
-    setReading(true);
-    setReadError("");
-    try {
-      const r = await paperAction({ action: "read-piece", id, ...(force ? { force: true } : {}) });
-      setPiece(r.mail);
-    } catch (err) {
-      setReadError((err as Error).message);
-    } finally {
-      setReading(false);
-    }
-  }, [id]);
+  const read = useCallback(
+    async (force = false) => {
+      setReading(true);
+      setReadError("");
+      try {
+        const r = await paperAction({ action: "read-piece", id, ...(force ? { force: true } : {}) });
+        setPiece(r.mail);
+      } catch (err) {
+        setReadError((err as Error).message);
+      } finally {
+        setReading(false);
+      }
+    },
+    [id],
+  );
 
   useEffect(() => {
     asked.current = false;
@@ -82,7 +85,10 @@ export default function PaperMailPiece() {
         if (!r.ok) throw new Error(r.status === 404 ? "This piece of mail isn't here." : j.message || "Couldn't load this piece of mail.");
         const m = j.mail as PaperMailFull;
         setPiece(m);
-        if (!m.readAt) void paperAction({ action: "read", id }).then(changed).catch(() => {});
+        if (!m.readAt)
+          void paperAction({ action: "read", id })
+            .then(changed)
+            .catch(() => {});
       } catch (err) {
         setError((err as Error).message);
       }
@@ -102,7 +108,11 @@ export default function PaperMailPiece() {
       const { db, ref, get, authReady } = await import("../store");
       await authReady;
       const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
-      setEntities(Object.entries(all).map(([key, a]) => ({ id: key, name: a?.name ?? key })).sort((a, b) => a.name.localeCompare(b.name)));
+      setEntities(
+        Object.entries(all)
+          .map(([key, a]) => ({ id: key, name: a?.name ?? key }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
     })().catch(() => {});
   }, [writer]);
 
@@ -156,7 +166,14 @@ export default function PaperMailPiece() {
 
   const r = piece.reading;
   const to = [piece.recipient, piece.recipient2].filter(Boolean).join(" · ");
-  const urgency = r?.urgency === "action" ? { text: "Needs action", cls: t.dark ? "bg-amber-400/15 text-amber-200" : "bg-amber-100 text-amber-800" } : r?.urgency === "junk" ? { text: "Junk mail", cls: t.dark ? "bg-white/[0.06] text-gray-400" : "bg-gray-100 text-gray-500" } : r ? { text: "For your information", cls: t.dark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-600" } : null;
+  const urgency =
+    r?.urgency === "action"
+      ? { text: "Needs action", cls: t.dark ? "bg-amber-400/15 text-amber-200" : "bg-amber-100 text-amber-800" }
+      : r?.urgency === "junk"
+        ? { text: "Junk mail", cls: t.dark ? "bg-white/[0.06] text-gray-400" : "bg-gray-100 text-gray-500" }
+        : r
+          ? { text: "For your information", cls: t.dark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-600" }
+          : null;
   const happenings = [
     piece.returnedToSender ? "Returned to sender" : null,
     piece.checks ? (piece.checks === 1 ? "A check inside" : `${piece.checks} checks inside`) : null,
@@ -233,7 +250,16 @@ export default function PaperMailPiece() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:items-start">
         {/* The paper itself */}
         <div className="space-y-4">
-          <Section title="Envelope" actions={piece.envelopeUrl ? <Button icon="external" onClick={() => window.open(piece.envelopeUrl!, "_blank", "noopener")}>Full size</Button> : undefined}>
+          <Section
+            title="Envelope"
+            actions={
+              piece.envelopeUrl ? (
+                <Button icon="external" onClick={() => window.open(piece.envelopeUrl!, "_blank", "noopener")}>
+                  Full size
+                </Button>
+              ) : undefined
+            }
+          >
             {piece.envelopeUrl ? (
               <button type="button" onClick={() => setZoom(piece.envelopeUrl)} className="block w-full cursor-zoom-in bg-white" aria-label="Enlarge the envelope">
                 <img src={piece.envelopeUrl} alt={`Envelope from ${piece.from || "an unknown sender"}`} className="mx-auto max-h-[520px] w-full object-contain" />
@@ -245,7 +271,13 @@ export default function PaperMailPiece() {
 
           <Section
             title="Contents"
-            actions={piece.scanUrl ? <Button icon="external" onClick={() => window.open(piece.scanUrl!, "_blank", "noopener")}>Open</Button> : undefined}
+            actions={
+              piece.scanUrl ? (
+                <Button icon="external" onClick={() => window.open(piece.scanUrl!, "_blank", "noopener")}>
+                  Open
+                </Button>
+              ) : undefined
+            }
           >
             {piece.scanUrl ? (
               piece.scanIsPdf ? (
@@ -304,7 +336,12 @@ export default function PaperMailPiece() {
             <Rows>
               {writer && (
                 <Row label="Filed under">
-                  <Select value={piece.assetId ?? ""} onChange={(e) => void assign(e.target.value || null)} aria-label="Entity" className={!piece.assetId ? (t.dark ? "!border-amber-400/40" : "!border-amber-300") : ""}>
+                  <Select
+                    value={piece.assetId ?? ""}
+                    onChange={(e) => void assign(e.target.value || null)}
+                    aria-label="Entity"
+                    className={!piece.assetId ? (t.dark ? "!border-amber-400/40" : "!border-amber-300") : ""}
+                  >
                     <option value="">Which entity?</option>
                     {entities.map((e) => (
                       <option key={e.id} value={e.id}>
@@ -356,13 +393,26 @@ export default function PaperMailPiece() {
       {/* Portalled: <main> is its own stacking context, under the mobile header. */}
       {zoom &&
         createPortal(
-        <div ref={zoomRef} role="dialog" aria-modal="true" aria-label={zoom === piece.scanUrl ? "Scan, enlarged" : "Envelope, enlarged"} className="fixed inset-0 z-[90] flex cursor-zoom-out items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setZoom(null)}>
-          <img src={zoom} alt="" className="max-h-full max-w-full rounded-lg bg-white object-contain shadow-2xl" />
-          <button type="button" data-autofocus aria-label="Close" onClick={() => setZoom(null)} className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-white/10 text-white">
-            <Icon name="x" className="h-5 w-5" />
-          </button>
-        </div>,
-          document.body
+          <div
+            ref={zoomRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={zoom === piece.scanUrl ? "Scan, enlarged" : "Envelope, enlarged"}
+            className="fixed inset-0 z-[90] flex cursor-zoom-out items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+            onClick={() => setZoom(null)}
+          >
+            <img src={zoom} alt="" className="max-h-full max-w-full rounded-lg bg-white object-contain shadow-2xl" />
+            <button
+              type="button"
+              data-autofocus
+              aria-label="Close"
+              onClick={() => setZoom(null)}
+              className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-white/10 text-white"
+            >
+              <Icon name="x" className="h-5 w-5" />
+            </button>
+          </div>,
+          document.body,
         )}
     </div>
   );
@@ -373,7 +423,10 @@ function Back({ assetId }: { assetId?: string | null }) {
   const t = useTone();
   const partner = isPartner();
   return (
-    <Link to={!partner ? "/mailbox" : assetId ? `/assets/${encodeURIComponent(assetId)}/documents` : "/assets"} className={`inline-flex h-[36px] items-center gap-1 text-[13px] font-medium ${t.muted} hover:underline`}>
+    <Link
+      to={!partner ? "/mailbox" : assetId ? `/assets/${encodeURIComponent(assetId)}/documents` : "/assets"}
+      className={`inline-flex h-[36px] items-center gap-1 text-[13px] font-medium ${t.muted} hover:underline`}
+    >
       <Icon name="chevronLeft" className="h-4 w-4" strokeWidth={2.2} />
       {!partner ? "Mailbox" : assetId ? "Documents" : "Entities"}
     </Link>

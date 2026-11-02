@@ -65,7 +65,12 @@ describe("formation draft", () => {
   it("asks for the agent and every EIN answer when chosen", () => {
     const d = fullDraft();
     d.agent = { provider: "own", kind: "organization", name: person("", ""), entityName: "", address: { ...EMPTY_ADDRESS, region: "AZ" }, mailing: null, email: "", phone: "" };
-    d.ein = { ...emptyEin(), responsible: { first: "", middle: "", last: "", ssn: "123-45" }, employees: { agricultural: "0", other: "3" }, activity: { category: "real_estate", type: "rent_lease_owned_property" } };
+    d.ein = {
+      ...emptyEin(),
+      responsible: { first: "", middle: "", last: "", ssn: "123-45" },
+      employees: { agricultural: "0", other: "3" },
+      activity: { category: "real_estate", type: "rent_lease_owned_property" },
+    };
     const texts = draftProblems(d).map((p) => p.text);
     expect(texts).toContain("Name the registered agent.");
     expect(texts).toContain("The registered office must be in the state of formation.");
@@ -128,7 +133,13 @@ describe("owners", () => {
     const body = buildFormationRequest(d, "a") as any;
     expect(body.initial_governing_persons).toEqual([
       { name: { type: "entity", entity_name: "Ledger Louise, LLC" }, address: body.principal_address, role: "member", title: "Member" },
-      { name: { type: "person", first: "Jane", last: "Doe" }, address: { street_line_1: "2 Elm St", city: "Reno", region: "NV", postal_code: "89502", country: "US" }, role: "member", title: "Member", email: "jane@example.com" },
+      {
+        name: { type: "person", first: "Jane", last: "Doe" },
+        address: { street_line_1: "2 Elm St", city: "Reno", region: "NV", postal_code: "89502", country: "US" },
+        role: "member",
+        title: "Member",
+        email: "jane@example.com",
+      },
       { name: { type: "person", first: "Robert", last: "Burton" }, role: "manager", title: "Manager", address: body.principal_address },
     ]);
     expect(body.ein.llc_member_count).toBe(2);
@@ -161,7 +172,10 @@ describe("formation request", () => {
     d.organizers = [{ ...emptyParty("Incorporator"), kind: "entity", entityName: "Ledger Louise, LLC", entityType: "limited_liability_company", email: "ops@example.com" }];
     d.stock = { total: "1,000,000", hasPar: true, par: "0.0001", consideration: "100", rights: "", multiClass: false, classes: [] };
     d.directors = [{ ...emptyOfficial("Chair"), name: { first: "Robert", middle: "A", last: "Burton", suffix: "Jr." } }];
-    d.officers = [{ ...emptyOfficer("president"), name: person("Robert", "Burton") }, { ...emptyOfficer("other"), title: "Chief investment officer", name: person("Jane", "Doe") }];
+    d.officers = [
+      { ...emptyOfficer("president"), name: person("Robert", "Burton") },
+      { ...emptyOfficer("other"), title: "Chief investment officer", name: person("Jane", "Doe") },
+    ];
     d.mailing = { street1: "PO Box 9", street2: "", city: "Reno", region: "NV", postal: "89501", county: "Washoe" };
     d.ein = fullEin({
       reason: "other",
@@ -179,12 +193,17 @@ describe("formation request", () => {
     });
     d.extra = { shares_authorized: 1000, blank: "", legal_name: "ignored" };
     const body = buildFormationRequest(d, "a") as any;
-    expect(body.incorporators).toEqual([{ name: { type: "entity", entity_name: "Ledger Louise, LLC" }, address: body.principal_address, title: "Incorporator", email: "ops@example.com", entity_type: "limited_liability_company" }]);
+    expect(body.incorporators).toEqual([
+      { name: { type: "entity", entity_name: "Ledger Louise, LLC" }, address: body.principal_address, title: "Incorporator", email: "ops@example.com", entity_type: "limited_liability_company" },
+    ]);
     expect(body.organizers).toBeUndefined();
     expect(body.mailing_address).toEqual({ street_line_1: "PO Box 9", city: "Reno", region: "NV", postal_code: "89501", county: "Washoe", country: "US" });
     expect(body.stock_structure).toEqual({ total_authorized_shares: 1000000, has_par_value: true, par_value_per_share: 0.0001, total_consideration: 100 });
     expect(body.initial_directors).toEqual([{ name: { first: "Robert", middle: "A", last: "Burton", suffix: "Jr." }, title: "Chair", address: body.principal_address }]);
-    expect(body.initial_officers.map((o: any) => [o.role, o.title])).toEqual([["president", "President"], ["other", "Chief investment officer"]]);
+    expect(body.initial_officers.map((o: any) => [o.role, o.title])).toEqual([
+      ["president", "President"],
+      ["other", "Chief investment officer"],
+    ]);
     expect(body.initial_governing_persons).toBeUndefined();
     expect(body.ein).toEqual({
       responsible_party: { first_name: "Robert", last_name: "Burton", ssn: "123456789" },
@@ -193,7 +212,11 @@ describe("formation request", () => {
       fiscal_year_end_month: 12,
       expected_employee_count: { agricultural: 0, other: 2 },
       wage_date: "2027-01-01",
-      principal_activity: { category: "real_estate", type: "use_capital_to_build_property", construction: { single_trade: false, construction_type: "other_structures", construction_type_detail: "Bridges" } },
+      principal_activity: {
+        category: "real_estate",
+        type: "use_capital_to_build_property",
+        construction: { single_trade: false, construction_type: "other_structures", construction_type_detail: "Bridges" },
+      },
       principal_activity_detail: "Holds family investments",
       has_previous_ein: true,
       previous_ein: "12-3456789",
@@ -213,7 +236,14 @@ describe("formation request", () => {
   it("sends several classes of stock with their total", () => {
     const d = fullDraft();
     d.entityType = "corporation";
-    d.stock = { ...d.stock, multiClass: true, classes: [{ ...emptyStockClass("Common"), authorized: "9000", issued: "1000", par: "0.001" }, { ...emptyStockClass("Preferred"), authorized: "1000", rights: "Liquidation preference" }] };
+    d.stock = {
+      ...d.stock,
+      multiClass: true,
+      classes: [
+        { ...emptyStockClass("Common"), authorized: "9000", issued: "1000", par: "0.001" },
+        { ...emptyStockClass("Preferred"), authorized: "1000", rights: "Liquidation preference" },
+      ],
+    };
     expect((buildFormationRequest(d, "a") as any).stock_structure).toEqual({
       total_authorized_shares: 10000,
       classes: [
@@ -224,20 +254,46 @@ describe("formation request", () => {
   });
 
   it("asks each activity's own follow-ups, and only those that apply", () => {
-    expect(principalActivity({ category: "construction", single_trade: "yes", trade: "Electrical", construction_type: "new_residential" })).toEqual({ category: "construction", detail: { single_trade: true, trade: "Electrical" } });
-    expect(principalActivity({ category: "health_care", includes_md: "no", non_md_role: "dentist", md_role: "psychiatrist" })).toEqual({ category: "health_care", includes_md: false, non_md_role: "dentist" });
-    expect(principalActivity({ category: "wholesale", owns_goods: "yes", receives_commission: "no", goods: "Soap" })).toEqual({ category: "wholesale", owns_goods: true, receives_commission: false, goods: "Soap" });
+    expect(principalActivity({ category: "construction", single_trade: "yes", trade: "Electrical", construction_type: "new_residential" })).toEqual({
+      category: "construction",
+      detail: { single_trade: true, trade: "Electrical" },
+    });
+    expect(principalActivity({ category: "health_care", includes_md: "no", non_md_role: "dentist", md_role: "psychiatrist" })).toEqual({
+      category: "health_care",
+      includes_md: false,
+      non_md_role: "dentist",
+    });
+    expect(principalActivity({ category: "wholesale", owns_goods: "yes", receives_commission: "no", goods: "Soap" })).toEqual({
+      category: "wholesale",
+      owns_goods: true,
+      receives_commission: false,
+      goods: "Soap",
+    });
     expect(principalActivity({ category: "warehousing" })).toEqual({ category: "warehousing" });
     expect(activityQuestions({ category: "transportation", type: "cargo" }).map((q) => q.key)).toEqual(["type", "cargo_mode"]);
   });
 
   it("sends your own agent, and never keeps an SSN in the redacted draft", () => {
     const d = fullDraft();
-    d.agent = { provider: "own", kind: "person", name: person("Ann", "Agent"), entityName: "", address: { street1: "9 Court St", street2: "", city: "Carson City", region: "NV", postal: "89701", county: "" }, mailing: null, email: "ann@example.com", phone: "" };
+    d.agent = {
+      provider: "own",
+      kind: "person",
+      name: person("Ann", "Agent"),
+      entityName: "",
+      address: { street1: "9 Court St", street2: "", city: "Carson City", region: "NV", postal: "89701", county: "" },
+      mailing: null,
+      email: "ann@example.com",
+      phone: "",
+    };
     d.owners = [{ ...emptyOwner("person", "100"), name: person("Jane", "Doe"), ssn: "111-22-3333" }];
     d.ein = fullEin();
     const body = buildFormationRequest(d, "a") as any;
-    expect(body.registered_agent).toEqual({ type: "person", name: { type: "person", first: "Ann", last: "Agent" }, address: { street_line_1: "9 Court St", city: "Carson City", region: "NV", postal_code: "89701", country: "US" }, email: "ann@example.com" });
+    expect(body.registered_agent).toEqual({
+      type: "person",
+      name: { type: "person", first: "Ann", last: "Agent" },
+      address: { street_line_1: "9 Court St", city: "Carson City", region: "NV", postal_code: "89701", country: "US" },
+      email: "ann@example.com",
+    });
     expect(body.initial_governing_persons[0].ssn).toBe("111-22-3333");
     const safe = redactDraft(d);
     expect(JSON.stringify(safe)).not.toMatch(/\d{3}-\d{2}-\d{4}/);
@@ -282,7 +338,20 @@ describe("formation request", () => {
 describe("filing → entity record", () => {
   const FID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   it("summarizes a queued filing and then the completed one", () => {
-    const first = summarizeFiling({ id: FID, status: "queued", type: "formation", entity_type: "llc", jurisdiction: "US-NV", business_id: "b1", created_at: "2026-10-18T10:00:00Z", related_items: [{ object: "filing", id: "ein1", type: "ein", status: "queued" }, { object: "registered_agent", id: "ra1", status: "pending" }], fee: { total: { amount: 425, currency: "USD" } } });
+    const first = summarizeFiling({
+      id: FID,
+      status: "queued",
+      type: "formation",
+      entity_type: "llc",
+      jurisdiction: "US-NV",
+      business_id: "b1",
+      created_at: "2026-10-18T10:00:00Z",
+      related_items: [
+        { object: "filing", id: "ein1", type: "ein", status: "queued" },
+        { object: "registered_agent", id: "ra1", status: "pending" },
+      ],
+      fee: { total: { amount: 425, currency: "USD" } },
+    });
     expect(first.status).toBe("queued");
     expect(first.ein).toEqual({ filingId: "ein1", status: "queued", number: null });
     expect(first.registeredAgent).toEqual({ status: "pending" });
@@ -362,14 +431,27 @@ describe("/api/palm formation actions", () => {
   });
 
   it("checks a name with alternatives", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, { eligible: false, compliant: true, available: false, violations: [{ severity: "error", message: "Taken.", fix: { message: "Try another." } }], alternatives: ["Example Holdings II, LLC"] }));
+    fetchMock.mockResolvedValueOnce(
+      reply(200, {
+        eligible: false,
+        compliant: true,
+        available: false,
+        violations: [{ severity: "error", message: "Taken.", fix: { message: "Try another." } }],
+        alternatives: ["Example Holdings II, LLC"],
+      }),
+    );
     const r = await call({ action: "form-name", jurisdiction: "US-NV", entityType: "llc", name: "Example Holdings, LLC" });
     expect(r.json).toEqual({ eligible: false, compliant: true, available: false, violations: [{ severity: "error", message: "Taken. Try another." }], alternatives: ["Example Holdings II, LLC"] });
     expect(fetchMock.mock.calls[0][0]).toContain("/v1/business/registry/US-NV/name-eligibility?name=Example+Holdings%2C+LLC&entity_type=llc&suggest=true");
   });
 
   it("prices the filing", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, { fee: { total: { amount: 425, currency: "USD" }, items: [{ component_type: "state_fee", name: "articles", amount: 425, currency: "USD" }] }, expedited_tiers: [{ tier: "expedited", fee: { amount: 125, currency: "USD" } }] }));
+    fetchMock.mockResolvedValueOnce(
+      reply(200, {
+        fee: { total: { amount: 425, currency: "USD" }, items: [{ component_type: "state_fee", name: "articles", amount: 425, currency: "USD" }] },
+        expedited_tiers: [{ tier: "expedited", fee: { amount: 125, currency: "USD" } }],
+      }),
+    );
     const r = await call({ action: "form-fee", jurisdiction: "US-NV", entityType: "llc", expeditedTier: "expedited", extra: { member_count: 2, "bad key": 1 } });
     expect(r.json.total).toBe(425);
     expect(r.json.expeditedTiers).toEqual([{ tier: "expedited", amount: 125 }]);
@@ -383,8 +465,18 @@ describe("/api/palm formation actions", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.getpalm.com/v1/filing/formation/llc/validate");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).legal_name).toBe("Example Holdings, LLC");
     // Palm's usual answer: 200, with errors and warnings listed.
-    fetchMock.mockResolvedValueOnce(reply(200, { valid: false, errors: [{ source: "rules", code: "X", path: "organizers.0.email", message: "Email required" }], warnings: [{ source: "payload", code: "UNKNOWN_FIELD", path: "website", message: "Not accepted" }] }));
-    expect((await call({ action: "form-validate", draft: fullDraft() })).json).toEqual({ ok: false, errors: [{ field: "organizers.0.email", message: "Email required" }], warnings: [{ field: "website", message: "Not accepted" }] });
+    fetchMock.mockResolvedValueOnce(
+      reply(200, {
+        valid: false,
+        errors: [{ source: "rules", code: "X", path: "organizers.0.email", message: "Email required" }],
+        warnings: [{ source: "payload", code: "UNKNOWN_FIELD", path: "website", message: "Not accepted" }],
+      }),
+    );
+    expect((await call({ action: "form-validate", draft: fullDraft() })).json).toEqual({
+      ok: false,
+      errors: [{ field: "organizers.0.email", message: "Email required" }],
+      warnings: [{ field: "website", message: "Not accepted" }],
+    });
     fetchMock.mockResolvedValueOnce(reply(200, { valid: true, errors: [], warnings: [] }));
     expect((await call({ action: "form-validate", draft: fullDraft() })).json.ok).toBe(true);
   });

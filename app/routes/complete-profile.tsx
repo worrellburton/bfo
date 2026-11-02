@@ -158,15 +158,10 @@ export default function CompleteProfile() {
                 void saveName();
               }}
             >
-              <label
-                htmlFor="name"
-                className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1"
-              >
+              <label htmlFor="name" className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1">
                 Your name
               </label>
-              <p className="text-white/50 text-xs mb-3">
-                So everyone knows who's who — this is how you'll appear across BFO.
-              </p>
+              <p className="text-white/50 text-xs mb-3">So everyone knows who's who — this is how you'll appear across BFO.</p>
               <input
                 id="name"
                 type="text"
@@ -181,11 +176,7 @@ export default function CompleteProfile() {
                 placeholder="First and last name"
                 className={`${FIELD} auth-delay-1 text-[16px] ${success ? "auth-field-success" : ""}`}
               />
-              <button
-                type="submit"
-                disabled={busy || name.trim().length < 2}
-                className="auth-btn auth-in auth-delay-2 mt-4"
-              >
+              <button type="submit" disabled={busy || name.trim().length < 2} className="auth-btn auth-in auth-delay-2 mt-4">
                 {success ? "All set" : busy ? "Saving…" : missing ? "Continue" : "Finish"}
               </button>
             </form>
@@ -196,17 +187,10 @@ export default function CompleteProfile() {
                 void send();
               }}
             >
-              <label
-                htmlFor="value"
-                className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1"
-              >
+              <label htmlFor="value" className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1">
                 {isEmail ? "Add your email" : "Add your phone"}
               </label>
-              <p className="text-white/50 text-xs mb-3">
-                {isEmailOnly()
-                  ? "One more step and you're in."
-                  : "Every account needs both a phone number and an email. One more step and you're in."}
-              </p>
+              <p className="text-white/50 text-xs mb-3">{isEmailOnly() ? "One more step and you're in." : "Every account needs both a phone number and an email. One more step and you're in."}</p>
               <input
                 id="value"
                 type="text"
@@ -222,11 +206,7 @@ export default function CompleteProfile() {
                 placeholder={isEmail ? "you@example.com" : "(555) 123-4567"}
                 className={`${FIELD} auth-delay-1 text-[16px]`}
               />
-              <button
-                type="submit"
-                disabled={busy || !value.trim()}
-                className="auth-btn auth-in auth-delay-2 mt-4"
-              >
+              <button type="submit" disabled={busy || !value.trim()} className="auth-btn auth-in auth-delay-2 mt-4">
                 {busy ? "Sending…" : "Send code"}
               </button>
             </form>
@@ -259,11 +239,7 @@ export default function CompleteProfile() {
                 placeholder="······"
                 className={`${FIELD} auth-delay-1 text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)] ${success ? "auth-field-success" : error ? "auth-field-error" : ""}`}
               />
-              <button
-                type="submit"
-                disabled={busy || code.length !== 6}
-                className="auth-btn auth-in auth-delay-2 mt-4"
-              >
+              <button type="submit" disabled={busy || code.length !== 6} className="auth-btn auth-in auth-delay-2 mt-4">
                 {success ? "All set" : busy ? "Verifying…" : "Finish"}
               </button>
               <button
@@ -280,7 +256,11 @@ export default function CompleteProfile() {
             </form>
           )}
 
-          {error && <p role="alert" className="text-red-400/90 text-sm mt-4 text-center">{error}</p>}
+          {error && (
+            <p role="alert" className="text-red-400/90 text-sm mt-4 text-center">
+              {error}
+            </p>
+          )}
         </div>
       </div>
     </div>

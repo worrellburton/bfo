@@ -14,9 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!me) return fail(res, 401, "unauthorized");
 
     if (req.method === "GET") {
-      const rows = await sb<Array<{ notification_prefs: Record<string, unknown> }>>(
-        `app_users?id=eq.${me.id}&select=notification_prefs&limit=1`
-      );
+      const rows = await sb<Array<{ notification_prefs: Record<string, unknown> }>>(`app_users?id=eq.${me.id}&select=notification_prefs&limit=1`);
       return res.status(200).json({ preferences: rows?.[0]?.notification_prefs ?? {} });
     }
 
@@ -28,18 +26,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let prefs: Record<string, unknown> = incoming;
     if (isPartner(me)) {
       // Only `push`; a save that leaves it out keeps the one already stored.
-      const stored = "push" in incoming ? null : (await sb<Array<{ notification_prefs: Record<string, unknown> | null }>>(`app_users?id=eq.${me.id}&select=notification_prefs&limit=1`))?.[0]?.notification_prefs;
+      const stored =
+        "push" in incoming ? null : (await sb<Array<{ notification_prefs: Record<string, unknown> | null }>>(`app_users?id=eq.${me.id}&select=notification_prefs&limit=1`))?.[0]?.notification_prefs;
       const push = "push" in incoming ? (incoming as Record<string, unknown>).push : stored?.push;
       prefs = push === undefined ? {} : { push };
     }
-    const updated = await sb<Array<{ notification_prefs: Record<string, unknown> }>>(
-      `app_users?id=eq.${me.id}`,
-      {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: { notification_prefs: prefs },
-      }
-    );
+    const updated = await sb<Array<{ notification_prefs: Record<string, unknown> }>>(`app_users?id=eq.${me.id}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: { notification_prefs: prefs },
+    });
     return res.status(200).json({ preferences: updated?.[0]?.notification_prefs ?? prefs });
   } catch (err) {
     return handleError(res, err);

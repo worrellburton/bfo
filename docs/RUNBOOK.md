@@ -46,18 +46,27 @@ General rules the code enforces:
 
 ### Applying a migration
 
-`supabase/migrations/*.sql` are applied by hand. There is no migration runner
-in CI or at deploy time.
+`supabase/migrations/*.sql` are applied in name order by `scripts/migrate.mjs`,
+which records each one in `public.schema_migrations` so the project and the
+repo can be compared:
 
-1. Open the Supabase SQL editor (or use the Supabase MCP `apply_migration`
-   tool) on the project.
-2. Paste the file and run it. Files are written to be re-runnable
-   (`create … if not exists`, `add column if not exists`), but read the file
-   first; some alter functions or constraints.
-3. Deploy the code that needs it after, not before: a function hitting a
-   column that isn't there logs `supabase 400` and fails the request.
-4. The commit message says it was applied (see `b2b240e`: "Applied to the
-   project.").
+```bash
+npm run migrate -- --check   # what the project hasn't had yet (SUPABASE_URL, SUPABASE_SERVICE_KEY)
+npm run migrate              # apply it (also SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF)
+```
+
+The access token is a personal one from supabase.com/dashboard/account/tokens;
+the project ref is in the project's URL. Each file is run through the same
+call the SQL editor makes, and recorded only after it succeeds; a failure
+stops the run. The Supabase MCP `apply_migration` tool works too, in which case
+insert the file's name into `schema_migrations` by hand so `--check` stays
+true. Files are written to be re-runnable (`create … if not exists`,
+`add column if not exists`), but read the file first; some alter functions or
+constraints.
+
+Deploy the code that needs a migration after it, not before: a function
+hitting a column that isn't there logs `supabase 400` and fails the request.
+The commit message says it was applied ("Applied to the project.").
 
 The tables that predate `20261017_tree_nodes.sql` (`app_users`,
 `app_sessions`, `login_codes`, `plaid_items`, `plaid_account_prefs`,

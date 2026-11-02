@@ -79,7 +79,8 @@ export function toolsFor(scope: Scope): Tool[] {
     },
     {
       name: "get_entity",
-      description: "One entity in full: addresses, agents (home state and foreign), the state's record and standing, owners/members, what its documents say about it, documents on file, Palm formation/agent status, EIN check, closing steps, and its recent activity.",
+      description:
+        "One entity in full: addresses, agents (home state and foreign), the state's record and standing, owners/members, what its documents say about it, documents on file, Palm formation/agent status, EIN check, closing steps, and its recent activity.",
       input_schema: {
         type: "object",
         properties: {
@@ -140,7 +141,8 @@ export function toolsFor(scope: Scope): Tool[] {
       },
       {
         name: "books_transactions",
-        description: "Bank transactions from the books: filter by words (merchant or description), entity, category, and a date range. Amounts: positive is money out, negative is money in. Newest first.",
+        description:
+          "Bank transactions from the books: filter by words (merchant or description), entity, category, and a date range. Amounts: positive is money out, negative is money in. Newest first.",
         input_schema: {
           type: "object",
           properties: {
@@ -155,7 +157,8 @@ export function toolsFor(scope: Scope): Tool[] {
       },
       {
         name: "books_summary",
-        description: "Totals from the books for a date range: money in and out, by category and by entity, transfers and intercompany moves set aside. Use for 'how much did we spend on…' or a month's picture.",
+        description:
+          "Totals from the books for a date range: money in and out, by category and by entity, transfers and intercompany moves set aside. Use for 'how much did we spend on…' or a month's picture.",
         input_schema: {
           type: "object",
           properties: {
@@ -165,7 +168,7 @@ export function toolsFor(scope: Scope): Tool[] {
           },
           required: ["from", "to"],
         },
-      }
+      },
     );
   }
   if (scope.admin) {
@@ -179,7 +182,7 @@ export function toolsFor(scope: Scope): Tool[] {
         name: "people",
         description: "Who has access to BFO: name, role, email and mail address, when they last signed in.",
         input_schema: { type: "object", properties: {} },
-      }
+      },
     );
   }
   return tools;
@@ -282,7 +285,11 @@ async function assetsFor(scope: Scope): Promise<{ id: string; a: Rec }[]> {
 
 const lower = (s: unknown) => String(s ?? "").toLowerCase();
 /** "Ledger Louise, LLC" and "ledger louise llc" are the same name. */
-export const looseName = (s: unknown) => lower(s).replace(/\b(llc|l\.l\.c\.|inc|corp|corporation|lp|trust)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+export const looseName = (s: unknown) =>
+  lower(s)
+    .replace(/\b(llc|l\.l\.c\.|inc|corp|corporation|lp|trust)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
 export function matchEntity<T extends { id: string; a: Rec }>(list: T[], input: { id?: unknown; name?: unknown }): T | null {
   if (input.id) {
@@ -307,7 +314,23 @@ function palmSummary(a: Rec): Rec | null {
   };
 }
 
-const FILE_KEYS = ["w9", "articles", "einLetter", "operatingAgreement", "trustAgreement", "trustCertificate", "trustSchedule", "sElection", "sElectionAccepted", "classElection", "annualReport", "foreignRegistration", "goodStanding", "ownershipLedger", "minutes"] as const;
+const FILE_KEYS = [
+  "w9",
+  "articles",
+  "einLetter",
+  "operatingAgreement",
+  "trustAgreement",
+  "trustCertificate",
+  "trustSchedule",
+  "sElection",
+  "sElectionAccepted",
+  "classElection",
+  "annualReport",
+  "foreignRegistration",
+  "goodStanding",
+  "ownershipLedger",
+  "minutes",
+] as const;
 
 export function entitySummary(id: string, a: Rec, ownerName: string | null): Rec {
   const forming = Object.values(a.palm ?? {}).some((p: any) => p?.formation && p.formation.status !== "completed" && p.formation.status !== "canceled");
@@ -316,7 +339,7 @@ export function entitySummary(id: string, a: Rec, ownerName: string | null): Rec
     name: a.name,
     type: entityType(a),
     state: a.state ?? null,
-    status: a.closing?.dissolvedAt ? "dissolved" : a.closing ? "closing" : forming ? "forming" : a.status ?? "active",
+    status: a.closing?.dissolvedAt ? "dissolved" : a.closing ? "closing" : forming ? "forming" : (a.status ?? "active"),
     owner: ownerName,
     ownerId: a.ownerId ?? null,
     formationDate: a.formationDate ?? null,
@@ -332,7 +355,7 @@ export function entitySummary(id: string, a: Rec, ownerName: string | null): Rec
 async function listEntities(scope: Scope) {
   const list = await assetsFor(scope);
   const names = new Map(list.map((x) => [x.id, x.a.name as string]));
-  return { count: list.length, entities: list.map((x) => entitySummary(x.id, x.a, x.a.ownerId ? names.get(x.a.ownerId) ?? null : null)) };
+  return { count: list.length, entities: list.map((x) => entitySummary(x.id, x.a, x.a.ownerId ? (names.get(x.a.ownerId) ?? null) : null)) };
 }
 
 function trimProfile(p: Rec | undefined) {
@@ -369,13 +392,27 @@ function entityDetail(id: string, a: Rec, ownerName: string | null, all: Map<str
     ein: a.ein ?? null,
     einCheck: a.einCheck ? { matched: a.einCheck.matched, status: a.einCheck.status, at: new Date(a.einCheck.at).toISOString() } : null,
     taxClass: a.llcType ?? null,
-    addresses: { principalOffice: a.address ?? null, mailing: a.mailingAddress ?? null, previous: a.previousAddress ?? null, changedAt: a.addressChangedAt ?? null, addressUpdates: a.addressUpdates ?? null },
+    addresses: {
+      principalOffice: a.address ?? null,
+      mailing: a.mailingAddress ?? null,
+      previous: a.previousAddress ?? null,
+      changedAt: a.addressChangedAt ?? null,
+      addressUpdates: a.addressUpdates ?? null,
+    },
     registeredAgent: { name: a.registeredAgent ?? null, address: a.registeredAgentAddress ?? null, source: a.registeredAgentSource ?? null },
     foreignRegistrations: Object.fromEntries(
       Object.entries(a.foreign ?? {}).map(([code, f]: [string, any]) => [
         code,
-        { state: stateName(code), agent: f?.agent ?? null, agentAddress: f?.agentAddress ?? null, fileNumber: f?.fileNumber ?? null, notNeeded: !!f?.notNeeded, confirmed: !!f?.confirmed, stateStatus: f?.record?.status ?? null },
-      ])
+        {
+          state: stateName(code),
+          agent: f?.agent ?? null,
+          agentAddress: f?.agentAddress ?? null,
+          fileNumber: f?.fileNumber ?? null,
+          notNeeded: !!f?.notNeeded,
+          confirmed: !!f?.confirmed,
+          stateStatus: f?.record?.status ?? null,
+        },
+      ]),
     ),
     fileNumber: a.fileNumber ?? null,
     stateRecord: rec
@@ -416,7 +453,7 @@ async function getEntity(input: Rec, scope: Scope) {
     return { error: "No entity matched.", suggestions: near.map((x) => ({ id: x.id, name: x.a.name })) };
   }
   const names = new Map(list.map((x) => [x.id, x.a.name as string]));
-  const detail = entityDetail(hit.id, hit.a, hit.a.ownerId ? names.get(hit.a.ownerId) ?? null : null, names);
+  const detail = entityDetail(hit.id, hit.a, hit.a.ownerId ? (names.get(hit.a.ownerId) ?? null) : null, names);
   const recent = await readActivity(hit.id, undefined, 12).catch((err) => (console.error("ask: couldn't read recent activity", err), [] as Awaited<ReturnType<typeof readActivity>>));
   detail.recentActivity = recent.map((r) => ({ at: r.at, by: r.actor_name ?? r.source, what: r.summary }));
   detail.ownedEntities = list.filter((x) => x.a.ownerId === hit.id).map((x) => ({ id: x.id, name: x.a.name }));
@@ -443,10 +480,22 @@ async function deadlines(scope: Scope, days: number) {
     }
     for (const d of due) {
       if (!d.due) continue;
-      if (d.due <= horizon) out.push({ entityId: id, entity: a.name, title: d.title, agency: d.agency, due: d.due, overdue: d.due < todayIso, fee: d.fee ?? null, rule: d.rule, link: `/assets/${id}/compliance` });
+      if (d.due <= horizon)
+        out.push({ entityId: id, entity: a.name, title: d.title, agency: d.agency, due: d.due, overdue: d.due < todayIso, fee: d.fee ?? null, rule: d.rule, link: `/assets/${id}/compliance` });
     }
     for (const [key, f] of Object.entries(a.palmFilings ?? {}) as [string, any][]) {
-      if (f?.due) out.push({ entityId: id, entity: a.name, title: f.kind ?? key, agency: `${stateName(key.split(":")[0]) || key} (Palm Monitor)`, due: f.due, overdue: !!f.overdue || f.due < todayIso, fee: null, rule: "Reported by Palm Monitor", link: `/assets/${id}/compliance` });
+      if (f?.due)
+        out.push({
+          entityId: id,
+          entity: a.name,
+          title: f.kind ?? key,
+          agency: `${stateName(key.split(":")[0]) || key} (Palm Monitor)`,
+          due: f.due,
+          overdue: !!f.overdue || f.due < todayIso,
+          fee: null,
+          rule: "Reported by Palm Monitor",
+          link: `/assets/${id}/compliance`,
+        });
     }
   }
   out.sort((x, y) => String(x.due).localeCompare(String(y.due)));
@@ -471,8 +520,7 @@ async function searchMail(input: Rec, scope: Scope) {
   const q = String(input.query ?? "").trim();
   const cond = q ? searchCondition(q) : "";
   const where = cond ? scopeFilter(scope.user.id, scope.admin) : folderFilter(folder, scope.user.id, scope.admin);
-  const rows =
-    (await sb<SummaryRow[]>(`mail_messages?${where}${cond ? `&and=(${cond})` : ""}&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit}`)) ?? [];
+  const rows = (await sb<SummaryRow[]>(`mail_messages?${where}${cond ? `&and=(${cond})` : ""}&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit}`)) ?? [];
   return {
     count: rows.length,
     messages: rows.map((r) => ({
@@ -514,7 +562,9 @@ async function paperMail(input: Rec, scope: Scope) {
   const limit = clampInt(input.limit, 1, 100, 25);
   const entity = input.entity_id ? `&asset_id=eq.${encodeURIComponent(String(input.entity_id))}` : "";
   const rows =
-    (await sb<Rec[]>(`stable_mail?select=id,asset_id,assigned,from_name,recipient,received_at,summary,checks,forward_status,shred_status,archived_at,read_at${entity}&order=received_at.desc&limit=${limit}`)) ?? [];
+    (await sb<Rec[]>(
+      `stable_mail?select=id,asset_id,assigned,from_name,recipient,received_at,summary,checks,forward_status,shred_status,archived_at,read_at${entity}&order=received_at.desc&limit=${limit}`,
+    )) ?? [];
   const names = new Map((await assetsFor(scope)).map((x) => [x.id, x.a.name as string]));
   return {
     count: rows.length,
@@ -523,7 +573,7 @@ async function paperMail(input: Rec, scope: Scope) {
       received: r.received_at,
       from: r.from_name,
       addressedTo: r.recipient,
-      entity: r.asset_id ? names.get(r.asset_id) ?? r.assigned ?? null : r.assigned ?? null,
+      entity: r.asset_id ? (names.get(r.asset_id) ?? r.assigned ?? null) : (r.assigned ?? null),
       summary: r.summary,
       checks: r.checks ?? 0,
       forwarded: r.forward_status ?? null,
@@ -536,7 +586,16 @@ async function paperMail(input: Rec, scope: Scope) {
 
 // ── Treasury and books ─────────────────────────────────────────────────
 
-type Pref = { account_id: string; entity_id: string | null; entity_name: string | null; hidden: boolean; nickname: string | null; account_name: string | null; mask: string | null; institution_name: string | null };
+type Pref = {
+  account_id: string;
+  entity_id: string | null;
+  entity_name: string | null;
+  hidden: boolean;
+  nickname: string | null;
+  account_name: string | null;
+  mask: string | null;
+  institution_name: string | null;
+};
 
 async function treasury() {
   const [daily, prefs, states] = await Promise.all([
@@ -562,13 +621,29 @@ async function treasury() {
   return {
     asOf: latest?.day ?? null,
     totals: latest ? { cash: num(latest.cash), invested: num(latest.invested), credit: num(latest.credit) } : null,
-    change30d: latest && ago && ago !== latest ? { since: ago.day, cash: num(latest.cash)! - num(ago.cash)!, invested: num(latest.invested)! - num(ago.invested)!, credit: num(latest.credit)! - num(ago.credit)! } : null,
+    change30d:
+      latest && ago && ago !== latest
+        ? { since: ago.day, cash: num(latest.cash)! - num(ago.cash)!, invested: num(latest.invested)! - num(ago.invested)!, credit: num(latest.credit)! - num(ago.credit)! }
+        : null,
     accounts,
     link: "/treasury",
   };
 }
 
-type Txn = { transaction_id: string; date: string; amount: number | string; merchant_name: string | null; name: string | null; book_category: string | null; entity_name: string | null; type_override: string | null; txn_type: string | null; intercompany: boolean | null; account_id: string; pending: boolean };
+type Txn = {
+  transaction_id: string;
+  date: string;
+  amount: number | string;
+  merchant_name: string | null;
+  name: string | null;
+  book_category: string | null;
+  entity_name: string | null;
+  type_override: string | null;
+  txn_type: string | null;
+  intercompany: boolean | null;
+  account_id: string;
+  pending: boolean;
+};
 const TXN_COLS = "transaction_id,date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,account_id,pending";
 
 const day = (s: unknown): string | null => (typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
@@ -591,7 +666,9 @@ export function txnKind(t: Pick<Txn, "type_override" | "txn_type" | "intercompan
 }
 
 async function hiddenAccounts(): Promise<string[]> {
-  const prefs = await sb<Pick<Pref, "account_id" | "hidden">[]>("plaid_account_prefs?select=account_id,hidden&hidden=eq.true&archived_at=is.null").catch(emptyAfter<Pick<Pref, "account_id" | "hidden">>("hidden accounts"));
+  const prefs = await sb<Pick<Pref, "account_id" | "hidden">[]>("plaid_account_prefs?select=account_id,hidden&hidden=eq.true&archived_at=is.null").catch(
+    emptyAfter<Pick<Pref, "account_id" | "hidden">>("hidden accounts"),
+  );
   return (prefs ?? []).map((p) => p.account_id);
 }
 
@@ -617,7 +694,15 @@ async function booksTransactions(input: Rec) {
   return {
     count: rows.length,
     note: "amount > 0 is money out, < 0 is money in",
-    transactions: rows.map((t) => ({ date: t.date, amount: money(t.amount), who: t.merchant_name || t.name, description: t.name, category: t.book_category ?? "Uncategorized", entity: t.entity_name, kind: txnKind(t) })),
+    transactions: rows.map((t) => ({
+      date: t.date,
+      amount: money(t.amount),
+      who: t.merchant_name || t.name,
+      description: t.name,
+      category: t.book_category ?? "Uncategorized",
+      entity: t.entity_name,
+      kind: txnKind(t),
+    })),
     link: "/books/transactions",
   };
 }
@@ -655,7 +740,16 @@ export function summarize(rows: Pick<Txn, "amount" | "book_category" | "entity_n
   }
   const rounded = (m: Map<string, { out: number; in: number; count: number }>) =>
     [...m.entries()].map(([k, v]) => ({ name: k, out: money(v.out), in: money(v.in), count: v.count })).sort((a, b) => b.out + b.in - (a.out + a.in));
-  return { transactions: rows.length, moneyOut: money(out), moneyIn: money(inn), net: money(inn - out), transfersSetAside: money(transfers), intercompanySetAside: money(intercompany), byCategory: rounded(byCategory), byEntity: rounded(byEntity) };
+  return {
+    transactions: rows.length,
+    moneyOut: money(out),
+    moneyIn: money(inn),
+    net: money(inn - out),
+    transfersSetAside: money(transfers),
+    intercompanySetAside: money(intercompany),
+    byCategory: rounded(byCategory),
+    byEntity: rounded(byEntity),
+  };
 }
 
 async function booksSummary(input: Rec) {
@@ -673,14 +767,22 @@ async function officeTexts(limit: number) {
   return {
     count: rows.length,
     // Sent ones (direction "out") are replies from the office's number, with Bird's delivery status.
-    texts: rows.map((r) => (r.direction === "out" ? { at: r.received_at, sent: true, to: r.to_number, text: r.body, status: r.status ?? null } : { at: r.received_at, from: r.from_number, text: r.body, code: r.code ?? null })),
+    texts: rows.map((r) =>
+      r.direction === "out"
+        ? { at: r.received_at, sent: true, to: r.to_number, text: r.body, status: r.status ?? null }
+        : { at: r.received_at, from: r.from_number, text: r.body, code: r.code ?? null },
+    ),
     link: "/phone",
   };
 }
 
 async function people() {
   const rows = (await sb<Rec[]>("app_users?select=name,role,status,email,mail_address,last_login_at&order=created_at.asc")) ?? [];
-  return { count: rows.length, people: rows.map((r) => ({ name: r.name, role: r.role, status: r.status, email: r.email, mailAddress: r.mail_address, lastSignedIn: r.last_login_at })) , link: "/users" };
+  return {
+    count: rows.length,
+    people: rows.map((r) => ({ name: r.name, role: r.role, status: r.status, email: r.email, mailAddress: r.mail_address, lastSignedIn: r.last_login_at })),
+    link: "/users",
+  };
 }
 
 // ── Conversation history ───────────────────────────────────────────────

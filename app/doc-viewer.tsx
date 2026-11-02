@@ -153,12 +153,7 @@ function Viewer({ file, opts, onClose }: { file: StoredFileRef; opts: ViewerOpti
   }`;
 
   return (
-    <div
-      className={`fixed inset-0 z-[70] flex flex-col ${dark ? "bg-[#111116]" : "bg-[#e9e9ec]"} ${closing ? "doc-viewer-out" : "doc-viewer-in"}`}
-      role="dialog"
-      aria-modal="true"
-      aria-label={name}
-    >
+    <div className={`fixed inset-0 z-[70] flex flex-col ${dark ? "bg-[#111116]" : "bg-[#e9e9ec]"} ${closing ? "doc-viewer-out" : "doc-viewer-in"}`} role="dialog" aria-modal="true" aria-label={name}>
       <header className={`flex shrink-0 items-center gap-1.5 border-b px-2 backdrop-blur-xl sm:px-3 ${bar}`} style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <button type="button" onClick={close} className={btn} aria-label="Close">
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
@@ -169,7 +164,9 @@ function Viewer({ file, opts, onClose }: { file: StoredFileRef; opts: ViewerOpti
         <div className="min-w-0 flex-1 py-2.5 text-center sm:text-left">
           <div className="truncate text-[13.5px] font-semibold">{name.replace(/\.pdf$/i, "")}</div>
           {(opts.subtitle || (doc && kind === "pdf")) && (
-            <div className={`truncate text-[11.5px] ${dark ? "text-gray-500" : "text-gray-500"}`}>{[opts.subtitle, doc ? `${doc.numPages} page${doc.numPages === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")}</div>
+            <div className={`truncate text-[11.5px] ${dark ? "text-gray-500" : "text-gray-500"}`}>
+              {[opts.subtitle, doc ? `${doc.numPages} page${doc.numPages === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")}
+            </div>
           )}
         </div>
         {kind === "pdf" && doc && (
@@ -275,7 +272,12 @@ function Page({ doc, n, width, dark }: { doc: PdfDoc; n: number; width: number; 
   }, [doc, n, width, near]);
 
   return (
-    <div ref={holder} data-page={n} className={`relative shrink-0 overflow-hidden rounded-[3px] bg-white ${dark ? "shadow-[0_2px_24px_rgba(0,0,0,0.55)]" : "shadow-[0_2px_18px_rgba(0,0,0,0.14)]"}`} style={{ width, height: Math.round(width * ratio) }}>
+    <div
+      ref={holder}
+      data-page={n}
+      className={`relative shrink-0 overflow-hidden rounded-[3px] bg-white ${dark ? "shadow-[0_2px_24px_rgba(0,0,0,0.55)]" : "shadow-[0_2px_18px_rgba(0,0,0,0.14)]"}`}
+      style={{ width, height: Math.round(width * ratio) }}
+    >
       <canvas ref={ref} className="block h-full w-full" aria-label={`Page ${n}`} />
     </div>
   );
@@ -329,7 +331,7 @@ export function openDocumentViewer(file: StoredFileRef, opts: ViewerOptions = {}
           returnFocus?.focus?.();
           resolve();
         }}
-      />
+      />,
     );
   });
 }

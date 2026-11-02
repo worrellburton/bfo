@@ -31,13 +31,7 @@ export const PLAID_HISTORY_DAYS = 730;
 const MONEY_MARKET = ["VMFXX", "VMRXX", "VUSXX", "VMSXX", "VCTXX", "VYFXX", "SPAXX", "FDRXX", "SWVXX", "SNVXX"];
 export function isCashLike(ticker: string | null, name: string | null, type?: string | null, cashEquivalent?: boolean): boolean {
   const t = (ticker ?? "").toUpperCase();
-  return (
-    !!cashEquivalent ||
-    type === "cash" ||
-    t.startsWith("CUR:") ||
-    MONEY_MARKET.includes(t) ||
-    /money market|cash reserves|federal money|treasury money|settlement fund/i.test(name ?? "")
-  );
+  return !!cashEquivalent || type === "cash" || t.startsWith("CUR:") || MONEY_MARKET.includes(t) || /money market|cash reserves|federal money|treasury money|settlement fund/i.test(name ?? "");
 }
 
 /** Every calendar day from `start` to `end`, inclusive (YYYY-MM-DD). */
@@ -85,14 +79,7 @@ export function cashBuckets(positions: HPosition[], securities: Map<string, HSec
  * The value of the accounts on every day in `days` (ascending, ending today),
  * walking back from today's positions through the transactions.
  */
-export function rebuild(
-  positions: HPosition[],
-  txns: HTx[],
-  securities: Map<string, HSecurity>,
-  closes: Closes,
-  days: string[],
-  mode: Mode
-): { points: HPoint[]; unpriced: string[] } {
+export function rebuild(positions: HPosition[], txns: HTx[], securities: Map<string, HSecurity>, closes: Closes, days: string[], mode: Mode): { points: HPoint[]; unpriced: string[] } {
   const key = (a: string, s: string) => `${a}|${s}`;
   const qty = new Map<string, number>();
   for (const p of positions) qty.set(key(p.account_id, p.security_id), (qty.get(key(p.account_id, p.security_id)) ?? 0) + p.quantity);

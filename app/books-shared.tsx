@@ -45,10 +45,7 @@ function signedMoney(amount: number, currency?: string | null): string {
 
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const LONG_MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
+const LONG_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 type DateOpts = { omitCurrentYear?: boolean };
 const showYear = (y: number, opts?: DateOpts) => !(opts?.omitCurrentYear && y === new Date().getFullYear());
@@ -65,7 +62,7 @@ export function shortDate(iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
   if (!m || !d) return iso;
   const v = d % 100;
-  const suffix = v >= 11 && v <= 13 ? "th" : ["th", "st", "nd", "rd"][d % 10] ?? "th";
+  const suffix = v >= 11 && v <= 13 ? "th" : (["th", "st", "nd", "rd"][d % 10] ?? "th");
   return `${SHORT_MONTHS[m - 1]} ${d}${suffix}`;
 }
 
@@ -114,9 +111,7 @@ export function tiers(isDark: boolean): { t1: string; t2: string; t3: string } {
   // any light gray-400/500/600 TEXT outside tiers() must carry `/100` too,
   // or the rescue layer paints it gray-700/800 (the neutral avatar initial
   // came out heavier than the vendor name beside it). Explained only here.
-  return isDark
-    ? { t1: "text-gray-100", t2: "text-gray-400", t3: "text-gray-500" }
-    : { t1: "text-gray-900", t2: "text-gray-500/100", t3: "text-gray-500/80" };
+  return isDark ? { t1: "text-gray-100", t2: "text-gray-400", t3: "text-gray-500" } : { t1: "text-gray-900", t2: "text-gray-500/100", t3: "text-gray-500/80" };
 }
 
 /** The only uppercase, tracked style on the page (callers add a tier colour). */
@@ -157,9 +152,7 @@ export function outlineBtn(isDark: boolean): string {
 
 /** Ghost (text-only) button colours — the quietest action beside a field. */
 export function ghostBtn(isDark: boolean): string {
-  return isDark
-    ? "text-gray-400 hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
-    : "text-gray-500/100 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40";
+  return isDark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white disabled:opacity-40" : "text-gray-500/100 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40";
 }
 
 /** Page-level card colours (callers add `rounded-2xl border`). */
@@ -328,11 +321,11 @@ function tidyMemo(text: string): string {
     }
   }
   // Nothing dangles: a memo never ends on "Ref", "of" or a bare colon.
-  while (
-    out.length > 1 &&
-    (/^[^A-Za-z0-9]+$/.test(out[out.length - 1]) || leadish(out[out.length - 1]) || SMALL_WORDS.has(core(out[out.length - 1]).toLowerCase()))
-  ) out.pop();
-  return out.join(" ").replace(/\s+([,;:])/g, "$1").trim();
+  while (out.length > 1 && (/^[^A-Za-z0-9]+$/.test(out[out.length - 1]) || leadish(out[out.length - 1]) || SMALL_WORDS.has(core(out[out.length - 1]).toLowerCase()))) out.pop();
+  return out
+    .join(" ")
+    .replace(/\s+([,;:])/g, "$1")
+    .trim();
 }
 
 /**
@@ -390,7 +383,11 @@ function descriptorFor(name: string | null, vendor: string | null, entity?: stri
     let end = dt.length;
     while (end > 0 && inEntity(dt[end - 1])) end--;
     if (end === 0) return null;
-    if (dt.length - end >= 2) d = dt.slice(0, end).join(" ").replace(/[,;:]+$/, "");
+    if (dt.length - end >= 2)
+      d = dt
+        .slice(0, end)
+        .join(" ")
+        .replace(/[,;:]+$/, "");
   }
   const dt = d.split(/\s+/).filter(Boolean);
   if (d.replace(/[^A-Za-z]/g, "").length < 3 || dt.every(isJunkToken)) return null;
@@ -401,7 +398,7 @@ function descriptorFor(name: string | null, vendor: string | null, entity?: stri
 // Keys are the normalized form (lowercased, punctuation stripped) so they
 // match what entityTag() computes below.
 const ENTITY_TAGS: Record<string, string> = {
-  "breezewood": "BRZ",
+  breezewood: "BRZ",
   "burton family revocable trust": "BFT",
   "fdj hesperia llc": "FDJ",
   "ledger burton llc": "LDB",
@@ -414,7 +411,12 @@ const ENTITY_TAGS: Record<string, string> = {
 const TAG_STOP = new Set(["llc", "trust", "the", "of", "and", "co", "inc", "lp", "ltd", "corp", "company", "on", "at"]);
 
 const normTagKey = (name: string) =>
-  name.toLowerCase().replace(/\(.*?\)/g, "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+  name
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 // User-set initials (edited on the Entities page, stored on the entity
 // asset). Cached in localStorage so tags render right on first paint;
@@ -463,7 +465,10 @@ export function entityTag(name?: string | null): string {
   if (ENTITY_TAGS[key]) return ENTITY_TAGS[key];
   const words = key.split(" ").filter((w) => w && !TAG_STOP.has(w));
   const base = words.length ? words : key.split(" ");
-  let code = base.map((w) => w[0]).join("").toUpperCase();
+  let code = base
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
   if (code.length < 3) code = ((base[0] || key).toUpperCase().replace(/[^A-Z]/g, "") + code).slice(0, 3);
   return code.slice(0, 3) || "—";
 }
@@ -568,9 +573,12 @@ export function EntityTag({
     shown.current = false;
     setPos(null);
   };
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
   const pill = `${size === "touch" ? TAG_PILL_TOUCH : TAG_PILL} cursor-default ${entityTagClass(name, isDark)}`;
   const sr = srName && <span className="sr-only">{name}</span>;
   if (!tooltip) {
@@ -596,7 +604,7 @@ export function EntityTag({
           >
             {name}
           </div>,
-          document.body
+          document.body,
         )}
     </>
   );
@@ -619,25 +627,19 @@ const AVATAR_TONES: Array<{ dark: string; light: string }> = [
  * meaning. With `icon` (a vendor-less row: transfer, roll-up, ATM) the disc
  * shows the glyph instead.
  */
-function VendorAvatar({
-  name,
-  isDark = false,
-  size = "sm",
-  icon,
-  tone = "hash",
-}: {
-  name: string;
-  isDark?: boolean;
-  size?: "sm" | "lg";
-  icon?: ReactNode;
-  tone?: "hash" | "neutral";
-}) {
+function VendorAvatar({ name, isDark = false, size = "sm", icon, tone = "hash" }: { name: string; isDark?: boolean; size?: "sm" | "lg"; icon?: ReactNode; tone?: "hash" | "neutral" }) {
   const hue = AVATAR_TONES[hueIndex(name, AVATAR_TONES.length)];
   const skin = icon
-    ? isDark ? "bg-white/[0.06] text-gray-400" : "bg-gray-100 text-gray-500/100"
+    ? isDark
+      ? "bg-white/[0.06] text-gray-400"
+      : "bg-gray-100 text-gray-500/100"
     : tone === "neutral"
-      ? isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-600/100"
-      : isDark ? hue.dark : hue.light;
+      ? isDark
+        ? "bg-white/[0.06] text-gray-300"
+        : "bg-gray-100 text-gray-600/100"
+      : isDark
+        ? hue.dark
+        : hue.light;
   return (
     <span
       aria-hidden
@@ -645,7 +647,7 @@ function VendorAvatar({
         icon ? (size === "lg" ? "[&>svg]:w-3.5 [&>svg]:h-3.5" : "[&>svg]:w-3 [&>svg]:h-3") : ""
       }`}
     >
-      {icon ?? (name.trim()[0]?.toUpperCase() ?? "?")}
+      {icon ?? name.trim()[0]?.toUpperCase() ?? "?"}
     </span>
   );
 }
@@ -677,7 +679,8 @@ export const PATHS = {
   sun: "M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z",
   list: "M4 6h16M4 12h16M4 18h16",
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
-  inbox: "M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3",
+  inbox:
+    "M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3",
   sync: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99",
 };
 const P = PATHS;
@@ -709,16 +712,24 @@ export function accountIcon(label: string): ReactNode {
 function AccountDisc({ label, isDark, uncategorized = false }: { label: string; isDark: boolean; uncategorized?: boolean }) {
   const c = label.trim()[0];
   const tone = uncategorized
-    ? isDark ? "bg-amber-500/15 text-amber-300" : "bg-amber-100 text-amber-700"
+    ? isDark
+      ? "bg-amber-500/15 text-amber-300"
+      : "bg-amber-100 text-amber-700"
     : isDark
-    ? c === "4" ? "bg-emerald-500/15 text-emerald-300"
-      : c === "6" ? "bg-orange-500/15 text-orange-300"
-      : c === "7" ? "bg-violet-500/15 text-violet-300"
-      : "bg-white/10 text-gray-300"
-    : c === "4" ? "bg-emerald-100 text-emerald-700"
-      : c === "6" ? "bg-orange-100 text-orange-700"
-      : c === "7" ? "bg-violet-100 text-violet-700"
-      : "bg-gray-200 text-gray-600/100";
+      ? c === "4"
+        ? "bg-emerald-500/15 text-emerald-300"
+        : c === "6"
+          ? "bg-orange-500/15 text-orange-300"
+          : c === "7"
+            ? "bg-violet-500/15 text-violet-300"
+            : "bg-white/10 text-gray-300"
+      : c === "4"
+        ? "bg-emerald-100 text-emerald-700"
+        : c === "6"
+          ? "bg-orange-100 text-orange-700"
+          : c === "7"
+            ? "bg-violet-100 text-violet-700"
+            : "bg-gray-200 text-gray-600/100";
   return (
     <span aria-hidden className={`w-4 h-4 rounded-full shrink-0 inline-flex items-center justify-center ${tone}`}>
       <Icon d={accountIconPath(label)} className="w-2.5 h-2.5" />
@@ -753,12 +764,7 @@ function effType(t: Txn): "normal" | "transfer" | "intercompany" | "loan" {
   return t.txn_type === "transfer" ? "transfer" : "normal";
 }
 
-async function saveTxn(patch: {
-  transaction_id: string;
-  type_override?: string;
-  book_category?: string;
-  loan_id?: string | null;
-}) {
+async function saveTxn(patch: { transaction_id: string; type_override?: string; book_category?: string; loan_id?: string | null }) {
   const res = await authFetch("/api/books/data", { method: "POST", body: JSON.stringify(patch) });
   if (!res.ok) throw new Error("Couldn't save that change.");
   return (await res.json()).transaction as Txn;
@@ -782,8 +788,7 @@ function accountOption(c: string): Option {
 }
 
 // ── Focus management ─────────────────────────────────────────────────────
-const TABBABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 function tabbables(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
 }
@@ -796,11 +801,7 @@ const TRAPS: HTMLElement[] = [];
  * or the container itself with `initial: "container"`), wraps Tab both
  * ways, locks body scroll, and on deactivate restores scroll and focus.
  */
-export function useFocusTrap(
-  ref: React.RefObject<HTMLElement | null>,
-  active: boolean,
-  opts?: { initial?: "first" | "container" }
-): void {
+export function useFocusTrap(ref: React.RefObject<HTMLElement | null>, active: boolean, opts?: { initial?: "first" | "container" }): void {
   const initial = opts?.initial ?? "first";
   useEffect(() => {
     if (!active) return;
@@ -811,7 +812,7 @@ export function useFocusTrap(
     document.body.style.overflow = "hidden";
     TRAPS.push(root);
     if (root.tabIndex < 0 && !root.hasAttribute("tabindex")) root.tabIndex = -1;
-    const target = initial === "container" ? root : root.querySelector<HTMLElement>("[data-autofocus]") ?? tabbables(root)[0] ?? root;
+    const target = initial === "container" ? root : (root.querySelector<HTMLElement>("[data-autofocus]") ?? tabbables(root)[0] ?? root);
     target.focus({ preventScroll: true });
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Tab" || TRAPS[TRAPS.length - 1] !== root) return;
@@ -914,8 +915,7 @@ export function Menu({
 
   const currentIndex = options.findIndex((o) => o.value === value);
   const current = currentIndex >= 0 ? options[currentIndex] : undefined;
-  const text =
-    current?.short ?? current?.label ?? placeholder ?? options[0]?.short ?? options[0]?.label ?? "—";
+  const text = current?.short ?? current?.label ?? placeholder ?? options[0]?.short ?? options[0]?.label ?? "—";
 
   const searchable = options.length > 10;
   // Grouped lists (the chart of accounts) open as one compact scrolling column
@@ -939,9 +939,12 @@ export function Menu({
       setBox(null);
     }
   }, [open]);
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
 
   // Keep the keyboard highlight (or, on open, the current choice) in view.
   useEffect(() => {
@@ -1022,10 +1025,7 @@ export function Menu({
       const width = Math.min(window.innerWidth - 16, Math.max(r.width, floor));
       // Estimated height (rows h-8, group heads ≈ 2.2rem, search 3.5rem, p-1)
       // capped at 60vh — only used to decide whether to flip above.
-      const menuH = Math.min(
-        window.innerHeight * 0.6,
-        options.length * 2 * rem + (grouped ? groupCount * 2.2 * rem : 0) + (options.length > 10 ? 3.5 * rem : 0) + 8
-      );
+      const menuH = Math.min(window.innerHeight * 0.6, options.length * 2 * rem + (grouped ? groupCount * 2.2 * rem : 0) + (options.length > 10 ? 3.5 * rem : 0) + 8);
       const spaceBelow = window.innerHeight - r.bottom;
       const above = spaceBelow < menuH + 12 && r.top > spaceBelow;
       setBox({
@@ -1076,9 +1076,7 @@ export function Menu({
   // The quiet skin is prose that happens to be editable (the Type word beside
   // the Date word), so it follows the prose rule (text-sm); chips are text-xs.
   const type = size === "md" ? "text-sm font-medium" : quiet ? "text-sm" : touch ? "text-sm lg:text-xs" : "text-xs";
-  const padL = leading
-    ? size === "md" ? "pl-2" : touch ? "pl-2 lg:pl-1.5" : "pl-1.5"
-    : size === "md" ? "pl-4" : quiet ? "pl-2" : "pl-3";
+  const padL = leading ? (size === "md" ? "pl-2" : touch ? "pl-2 lg:pl-1.5" : "pl-1.5") : size === "md" ? "pl-4" : quiet ? "pl-2" : "pl-3";
   const padR = size === "md" ? "pr-3" : quiet ? "pr-1.5" : "pr-2.5";
   const width = size === "md" ? "max-w-[240px]" : quiet ? "" : touch ? "max-w-full" : "max-w-[190px]";
   const shift = quiet && size !== "md" ? "-ml-2" : "";
@@ -1108,19 +1106,12 @@ export function Menu({
   }`;
   // Hover-reveal only applies where there is a hover (lg+); touch layouts
   // always show the glyph.
-  const glyph =
-    chevron === "hover" && !open
-      ? "opacity-50 lg:opacity-0 lg:group-hover:opacity-50 lg:group-hover/menu:opacity-50 lg:group-focus-visible/menu:opacity-50"
-      : "opacity-50";
+  const glyph = chevron === "hover" && !open ? "opacity-50 lg:opacity-0 lg:group-hover:opacity-50 lg:group-hover/menu:opacity-50 lg:group-focus-visible/menu:opacity-50" : "opacity-50";
 
-  const optionBase = `w-full flex items-center rounded-lg text-left cursor-pointer transition-colors ${
-    sheet ? "min-h-[44px] px-3 gap-3 text-base" : "h-8 px-2 gap-2 text-xs"
-  }`;
+  const optionBase = `w-full flex items-center rounded-lg text-left cursor-pointer transition-colors ${sheet ? "min-h-[44px] px-3 gap-3 text-base" : "h-8 px-2 gap-2 text-xs"}`;
   // Group heads stick to the top of the scrolling list in both the popover
   // and the sheet, on the surface colour so rows slide underneath.
-  const groupHead = `${LABEL} ${t2} px-2 pt-2 pb-1 sticky top-0 z-10 ${
-    sheet ? (isDark ? "bg-[#161616]/95" : "bg-white/95") : isDark ? "bg-[#161616]" : "bg-white"
-  }`;
+  const groupHead = `${LABEL} ${t2} px-2 pt-2 pb-1 sticky top-0 z-10 ${sheet ? (isDark ? "bg-[#161616]/95" : "bg-white/95") : isDark ? "bg-[#161616]" : "bg-white"}`;
   const enter = sheet ? "sheet-in" : box?.above ? "pop-in-up origin-bottom" : "pop-in origin-top";
   const exit = sheet ? "sheet-out" : box?.above ? "pop-out-up" : "pop-out";
 
@@ -1145,105 +1136,84 @@ export function Menu({
       >
         {leading}
         <span className="truncate">{text}</span>
-        {!readOnly && (
-          <Icon
-            d={P.chevron}
-            strokeWidth={2}
-            className={`w-3 h-3 shrink-0 transition-[opacity,rotate] motion-reduce:transition-none ${open ? "rotate-180" : ""} ${glyph}`}
-          />
-        )}
+        {!readOnly && <Icon d={P.chevron} strokeWidth={2} className={`w-3 h-3 shrink-0 transition-[opacity,rotate] motion-reduce:transition-none ${open ? "rotate-180" : ""} ${glyph}`} />}
       </button>
-      {open && (sheet || box) &&
+      {open &&
+        (sheet || box) &&
         createPortal(
           <>
-          {sheet && (
+            {sheet && <div className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`} onClick={() => requestClose(true)} aria-hidden />}
             <div
-              className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`}
-              onClick={() => requestClose(true)}
-              aria-hidden
-            />
-          )}
-          <div
-            ref={panelRef}
-            id={listId}
-            role="listbox"
-            tabIndex={sheet ? -1 : undefined}
-            aria-labelledby={sheet && label ? titleId : undefined}
-            aria-activedescendant={hi >= 0 ? `${listId}-o${hi}` : undefined}
-            style={
-              sheet
-                ? { position: "fixed", left: 0, right: 0, bottom: 0 }
-                : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width }
-            }
-            onKeyDown={navKey}
-            onAnimationEnd={(e) => {
-              if (closing && e.target === e.currentTarget) finishClose();
-            }}
-            className={`z-[70] border overflow-hidden flex flex-col tabular-nums ${
-              sheet ? "rounded-t-2xl max-h-[72vh] pb-[max(env(safe-area-inset-bottom),12px)]" : "rounded-xl max-h-[60vh]"
-            } ${closing ? `${exit} pointer-events-none` : enter} ${popoverSurface(isDark)}`}
-          >
-            {sheet && (
-              <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
-            )}
-            {sheet && label && <p id={titleId} className={`px-4 pt-2 pb-1 text-base font-semibold ${t1}`}>{label}</p>}
-            {searchable && (
-              <div className={`shrink-0 border-b ${sheet ? "px-2 pt-1 pb-2" : "p-2"} ${hairline(isDark)}`}>
-                <input
-                  autoFocus={!sheet}
-                  value={filter}
-                  onChange={(e) => {
-                    setFilter(e.target.value);
-                    setHi(0);
-                  }}
-                  placeholder="Search…"
-                  aria-label={`Filter ${label ?? "options"}`}
-                  // The popover field is focused for you on open, so the global
-                  // ring would fire on every click; the border step marks it.
-                  // (`!`: app.css's unlayered input ring outranks plain utilities.)
-                  className={`w-full rounded-full border ${sheet ? "h-[40px] px-3.5 text-[16px] placeholder:text-base" : "h-8 px-3 text-xs focus-visible:outline-0!"} ${textInput(isDark)}`}
-                />
-              </div>
-            )}
-            <div ref={listRef} className={`flex-1 min-h-0 overflow-y-auto ${sheet ? "p-2 pb-2" : "p-1"}`}>
-              {shown.length === 0 && (
-                <p className={`px-2 py-2 text-xs ${t2}`}>No matches.</p>
+              ref={panelRef}
+              id={listId}
+              role="listbox"
+              tabIndex={sheet ? -1 : undefined}
+              aria-labelledby={sheet && label ? titleId : undefined}
+              aria-activedescendant={hi >= 0 ? `${listId}-o${hi}` : undefined}
+              style={sheet ? { position: "fixed", left: 0, right: 0, bottom: 0 } : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width }}
+              onKeyDown={navKey}
+              onAnimationEnd={(e) => {
+                if (closing && e.target === e.currentTarget) finishClose();
+              }}
+              className={`z-[70] border overflow-hidden flex flex-col tabular-nums ${
+                sheet ? "rounded-t-2xl max-h-[72vh] pb-[max(env(safe-area-inset-bottom),12px)]" : "rounded-xl max-h-[60vh]"
+              } ${closing ? `${exit} pointer-events-none` : enter} ${popoverSurface(isDark)}`}
+            >
+              {sheet && <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />}
+              {sheet && label && (
+                <p id={titleId} className={`px-4 pt-2 pb-1 text-base font-semibold ${t1}`}>
+                  {label}
+                </p>
               )}
-              {shown.map((o, i) => {
-                const sel = o.value === value;
-                const newGroup = o.group && (i === 0 || shown[i - 1].group !== o.group);
-                return (
-                  <Fragment key={`w-${o.value || "—"}`}>
-                    {newGroup && <p className={groupHead}>{o.group}</p>}
-                    <button
-                      type="button"
-                      id={`${listId}-o${i}`}
-                      role="option"
-                      aria-selected={sel}
-                      data-i={i}
-                      onClick={() => choose(o)}
-                      onMouseEnter={() => setHi(i)}
-                      className={`${optionBase} ${
-                        i === hi ? itemHighlight(isDark) : isDark ? "text-gray-200" : "text-gray-800"
-                      } ${sel ? "font-medium" : ""}`}
-                      title={o.short && o.short !== o.label ? o.label : undefined}
-                    >
-                      {iconSlot ? (
-                        <span className={`inline-flex items-center shrink-0 w-[2.75rem] ${t2}`}>{o.icon}</span>
-                      ) : (
-                        o.icon && <span className={`shrink-0 ${t2}`}>{o.icon}</span>
-                      )}
-                      <span className="truncate flex-1">{o.short ?? o.label}</span>
-                      {o.hint && <span className={`shrink-0 text-xs ${t3}`}>{o.hint}</span>}
-                      {sel && <Icon d={P.check} strokeWidth={2.5} className="ml-auto w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                    </button>
-                  </Fragment>
-                );
-              })}
+              {searchable && (
+                <div className={`shrink-0 border-b ${sheet ? "px-2 pt-1 pb-2" : "p-2"} ${hairline(isDark)}`}>
+                  <input
+                    autoFocus={!sheet}
+                    value={filter}
+                    onChange={(e) => {
+                      setFilter(e.target.value);
+                      setHi(0);
+                    }}
+                    placeholder="Search…"
+                    aria-label={`Filter ${label ?? "options"}`}
+                    // The popover field is focused for you on open, so the global
+                    // ring would fire on every click; the border step marks it.
+                    // (`!`: app.css's unlayered input ring outranks plain utilities.)
+                    className={`w-full rounded-full border ${sheet ? "h-[40px] px-3.5 text-[16px] placeholder:text-base" : "h-8 px-3 text-xs focus-visible:outline-0!"} ${textInput(isDark)}`}
+                  />
+                </div>
+              )}
+              <div ref={listRef} className={`flex-1 min-h-0 overflow-y-auto ${sheet ? "p-2 pb-2" : "p-1"}`}>
+                {shown.length === 0 && <p className={`px-2 py-2 text-xs ${t2}`}>No matches.</p>}
+                {shown.map((o, i) => {
+                  const sel = o.value === value;
+                  const newGroup = o.group && (i === 0 || shown[i - 1].group !== o.group);
+                  return (
+                    <Fragment key={`w-${o.value || "—"}`}>
+                      {newGroup && <p className={groupHead}>{o.group}</p>}
+                      <button
+                        type="button"
+                        id={`${listId}-o${i}`}
+                        role="option"
+                        aria-selected={sel}
+                        data-i={i}
+                        onClick={() => choose(o)}
+                        onMouseEnter={() => setHi(i)}
+                        className={`${optionBase} ${i === hi ? itemHighlight(isDark) : isDark ? "text-gray-200" : "text-gray-800"} ${sel ? "font-medium" : ""}`}
+                        title={o.short && o.short !== o.label ? o.label : undefined}
+                      >
+                        {iconSlot ? <span className={`inline-flex items-center shrink-0 w-[2.75rem] ${t2}`}>{o.icon}</span> : o.icon && <span className={`shrink-0 ${t2}`}>{o.icon}</span>}
+                        <span className="truncate flex-1">{o.short ?? o.label}</span>
+                        {o.hint && <span className={`shrink-0 text-xs ${t3}`}>{o.hint}</span>}
+                        {sel && <Icon d={P.check} strokeWidth={2.5} className="ml-auto w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                      </button>
+                    </Fragment>
+                  );
+                })}
+              </div>
             </div>
-          </div>
           </>,
-          document.body
+          document.body,
         )}
     </>
   );
@@ -1318,9 +1288,7 @@ export function BatchBar({
   const matches = useMemo(() => {
     const q = vendor.trim().toLowerCase();
     if (!q) return [] as string[];
-    return vendorSuggestions
-      .filter((v) => v.toLowerCase().includes(q) && v.toLowerCase() !== q)
-      .slice(0, 8);
+    return vendorSuggestions.filter((v) => v.toLowerCase().includes(q) && v.toLowerCase() !== q).slice(0, 8);
   }, [vendor, vendorSuggestions]);
   const showMenu = vendorFocus && !suggestOff && matches.length > 0;
   function closeSheet() {
@@ -1366,9 +1334,7 @@ export function BatchBar({
   const shownCount = count > 0 ? count : lastCount.current;
   const { t1, t2 } = tiers(isDark);
   const field = `h-[40px] sm:h-9 px-3.5 rounded-full text-[16px] sm:text-sm placeholder:text-sm border ${textInput(isDark)}`;
-  const glass = isDark
-    ? "bg-[#161616]/90 border-white/10 backdrop-blur-xl shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]"
-    : "bg-white/95 border-gray-200 backdrop-blur-xl shadow-xl shadow-gray-900/10";
+  const glass = isDark ? "bg-[#161616]/90 border-white/10 backdrop-blur-xl shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]" : "bg-white/95 border-gray-200 backdrop-blur-xl shadow-xl shadow-gray-900/10";
   const clearBtn = `w-[40px] h-[40px] sm:w-9 sm:h-9 sm:pointer-coarse:w-[40px] sm:pointer-coarse:h-[40px] rounded-full inline-flex items-center justify-center cursor-pointer transition-colors ${TAP.md} sm:pointer-coarse:after:inset-0 ${t2} ${
     isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"
   }`;
@@ -1377,9 +1343,7 @@ export function BatchBar({
     <span
       role="status"
       aria-live="polite"
-      className={`inline-flex items-center h-7 px-2.5 rounded-full text-xs font-medium whitespace-nowrap ${
-        isDark ? "bg-emerald-500/15 text-emerald-300" : "bg-emerald-100 text-emerald-800"
-      }`}
+      className={`inline-flex items-center h-7 px-2.5 rounded-full text-xs font-medium whitespace-nowrap ${isDark ? "bg-emerald-500/15 text-emerald-300" : "bg-emerald-100 text-emerald-800"}`}
     >
       {shownCount} selected
     </span>
@@ -1445,11 +1409,22 @@ export function BatchBar({
               if (!showMenu) return;
               // The popover owns Escape while it shows: preventDefault keeps
               // the bar's document listener from clearing the selection.
-              if (e.key === "Escape") { e.preventDefault(); setSuggestOff(true); return; }
-              if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, matches.length - 1)); }
-              else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
-              else if (e.key === "Enter" || e.key === "Tab") {
-                if (matches[highlight]) { e.preventDefault(); setVendor(matches[highlight]); }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setSuggestOff(true);
+                return;
+              }
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setHighlight((h) => Math.min(h + 1, matches.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setHighlight((h) => Math.max(h - 1, 0));
+              } else if (e.key === "Enter" || e.key === "Tab") {
+                if (matches[highlight]) {
+                  e.preventDefault();
+                  setVendor(matches[highlight]);
+                }
               }
             }}
             placeholder="Vendor…"
@@ -1457,13 +1432,7 @@ export function BatchBar({
             className={`${field} ${stacked ? "w-full" : "w-40"}`}
           />
         </div>
-        <input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description…"
-          aria-label="Description"
-          className={`${field} ${stacked ? "w-full" : "w-56"}`}
-        />
+        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description…" aria-label="Description" className={`${field} ${stacked ? "w-full" : "w-56"}`} />
         <div className={menuWrap}>
           <Menu value={batchType} isDark={isDark} size="md" label="Type" placeholder="Type…" onChange={setBatchType} options={typeOptions} />
         </div>
@@ -1493,72 +1462,69 @@ export function BatchBar({
   return (
     <>
       {createPortal(
-      <div
-        role="toolbar"
-        aria-label="Batch edit"
-        className={`fixed z-[60] left-2 right-2 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max sm:max-w-[calc(100vw-2rem)] md:left-[calc(50%+var(--inset)/2)] md:max-w-[calc(100vw-var(--inset)-4rem)] md:pointer-coarse:max-w-[calc(100vw-var(--inset)-80px)] lg:bottom-6 rounded-xl border tabular-nums grid grid-cols-[auto_1fr_40px] items-center gap-2 p-3 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 ${
-          count > 0 ? "pop-in-up" : "pop-out-up pointer-events-none"
-        } ${glass}`}
-      >
-        {chip}
-        <button
-          type="button"
-          onClick={() => {
-            setSheetClosing(false);
-            setSheetOpen(true);
-          }}
-          className={`${BTN_BASE} sm:hidden h-[40px] px-4 text-sm ${primaryBtn(isDark)}`}
+        <div
+          role="toolbar"
+          aria-label="Batch edit"
+          className={`fixed z-[60] left-2 right-2 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-max sm:max-w-[calc(100vw-2rem)] md:left-[calc(50%+var(--inset)/2)] md:max-w-[calc(100vw-var(--inset)-4rem)] md:pointer-coarse:max-w-[calc(100vw-var(--inset)-80px)] lg:bottom-6 rounded-xl border tabular-nums grid grid-cols-[auto_1fr_40px] items-center gap-2 p-3 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 sm:py-2 ${
+            count > 0 ? "pop-in-up" : "pop-out-up pointer-events-none"
+          } ${glass}`}
         >
-          Edit…
-        </button>
-        <div className={`hidden sm:block w-px h-6 ${isDark ? "bg-white/10" : "bg-gray-200"}`} aria-hidden />
-        <div className="hidden sm:contents">
-          {fields(false)}
-          {applyBtn("")}
-        </div>
-        <button type="button" onClick={onClear} aria-label="Clear selection" title="Clear selection (Esc)" className={clearBtn}>
-          <Icon d={P.close} className="w-4 h-4" />
-        </button>
-      </div>,
-      host
-      )}
-      {sheetOpen && createPortal(
-        <>
-          <div
-            className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${sheetClosing ? "fade-out" : "fade-in"}`}
-            onClick={closeSheet}
-            aria-hidden
-          />
-          <div
-            ref={sheetRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={sheetTitleId}
-            tabIndex={-1}
-            onAnimationEnd={(e) => {
-              if (sheetClosing && e.target === e.currentTarget) finishSheet();
+          {chip}
+          <button
+            type="button"
+            onClick={() => {
+              setSheetClosing(false);
+              setSheetOpen(true);
             }}
-            className={`fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border flex flex-col max-h-[72vh] pb-[max(env(safe-area-inset-bottom),12px)] tabular-nums ${
-              sheetClosing ? "sheet-out pointer-events-none" : "sheet-in"
-            } ${popoverSurface(isDark)}`}
+            className={`${BTN_BASE} sm:hidden h-[40px] px-4 text-sm ${primaryBtn(isDark)}`}
           >
-            <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
-            <p id={sheetTitleId} className={`px-4 pt-2 pb-3 text-base font-semibold ${t1}`}>
-              Edit {shownCount} {shownCount === 1 ? "transaction" : "transactions"}
-            </p>
-            <div className="px-4 space-y-2 overflow-y-auto min-h-0">
-              {fields(true)}
-              <div className="pt-2 space-y-2">
-                {applyBtn("w-full")}
-                <button type="button" onClick={closeSheet} className={`${BTN_BASE} w-full h-[40px] px-4 text-sm ${ghostBtn(isDark)}`}>
-                  Cancel
-                </button>
+            Edit…
+          </button>
+          <div className={`hidden sm:block w-px h-6 ${isDark ? "bg-white/10" : "bg-gray-200"}`} aria-hidden />
+          <div className="hidden sm:contents">
+            {fields(false)}
+            {applyBtn("")}
+          </div>
+          <button type="button" onClick={onClear} aria-label="Clear selection" title="Clear selection (Esc)" className={clearBtn}>
+            <Icon d={P.close} className="w-4 h-4" />
+          </button>
+        </div>,
+        host,
+      )}
+      {sheetOpen &&
+        createPortal(
+          <>
+            <div className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${sheetClosing ? "fade-out" : "fade-in"}`} onClick={closeSheet} aria-hidden />
+            <div
+              ref={sheetRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={sheetTitleId}
+              tabIndex={-1}
+              onAnimationEnd={(e) => {
+                if (sheetClosing && e.target === e.currentTarget) finishSheet();
+              }}
+              className={`fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border flex flex-col max-h-[72vh] pb-[max(env(safe-area-inset-bottom),12px)] tabular-nums ${
+                sheetClosing ? "sheet-out pointer-events-none" : "sheet-in"
+              } ${popoverSurface(isDark)}`}
+            >
+              <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
+              <p id={sheetTitleId} className={`px-4 pt-2 pb-3 text-base font-semibold ${t1}`}>
+                Edit {shownCount} {shownCount === 1 ? "transaction" : "transactions"}
+              </p>
+              <div className="px-4 space-y-2 overflow-y-auto min-h-0">
+                {fields(true)}
+                <div className="pt-2 space-y-2">
+                  {applyBtn("w-full")}
+                  <button type="button" onClick={closeSheet} className={`${BTN_BASE} w-full h-[40px] px-4 text-sm ${ghostBtn(isDark)}`}>
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </>,
-        document.body
-      )}
+          </>,
+          document.body,
+        )}
     </>
   );
 }
@@ -1635,8 +1601,13 @@ function TxnHistoryPanel({
         method: "POST",
         body: JSON.stringify({ action: "add_receipt", transaction_id: transactionId, url: url.trim() }),
       });
-      if (res.ok) { setUrl(""); await load(transactionId); }
-    } finally { setBusy(false); }
+      if (res.ok) {
+        setUrl("");
+        await load(transactionId);
+      }
+    } finally {
+      setBusy(false);
+    }
   }
   async function removeReceipt(id: number) {
     await authFetch("/api/books/data", { method: "POST", body: JSON.stringify({ action: "delete_receipt", id }) });
@@ -1644,7 +1615,10 @@ function TxnHistoryPanel({
   }
   async function uploadFile(file: File) {
     setUploadErr("");
-    if (file.size > 3 * 1024 * 1024) { setUploadErr("Files must be under 3 MB."); return; }
+    if (file.size > 3 * 1024 * 1024) {
+      setUploadErr("Files must be under 3 MB.");
+      return;
+    }
     setBusy(true);
     try {
       const data_base64 = await new Promise<string>((resolve, reject) => {
@@ -1668,7 +1642,11 @@ function TxnHistoryPanel({
   }
 
   const fieldLabel: Record<string, string> = {
-    book_category: "Account", type_override: "Type", loan_id: "Loan", merchant_name: "Vendor", name: "Description",
+    book_category: "Account",
+    type_override: "Type",
+    loan_id: "Loan",
+    merchant_name: "Vendor",
+    name: "Description",
   };
   // The touch-sm token, like the editors row above: one height per surface.
   const smallBtn = `${BTN_BASE} shrink-0 h-8 lg:h-7 px-3 text-sm lg:text-xs ${TAP.pill}`;
@@ -1689,9 +1667,7 @@ function TxnHistoryPanel({
                 >
                   <span className="block truncate">{r.label || r.url}</span>
                 </a>
-                {r.source && r.source !== "manual" && r.source !== "upload" && (
-                  <span className={`shrink-0 text-xs ${t2}`}>{r.source}</span>
-                )}
+                {r.source && r.source !== "manual" && r.source !== "upload" && <span className={`shrink-0 text-xs ${t2}`}>{r.source}</span>}
                 <button
                   type="button"
                   onClick={() => void removeReceipt(r.id)}
@@ -1721,23 +1697,20 @@ function TxnHistoryPanel({
           {/* Field-adjacent actions are ghosts; Add only exists once there is
               a URL to add. Sync now is the only primary fill on the page. */}
           {url.trim() && (
-            <button
-              type="button"
-              onClick={() => void addReceipt()}
-              disabled={busy}
-              className={`${smallBtn} ${ghostBtn(isDark)}`}
-            >
+            <button type="button" onClick={() => void addReceipt()} disabled={busy} className={`${smallBtn} ${ghostBtn(isDark)}`}>
               Add
             </button>
           )}
-          <input ref={fileRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); }} />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-            title="Upload a file"
-            className={`${smallBtn} ${ghostBtn(isDark)}`}
-          >
+          <input
+            ref={fileRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadFile(f);
+            }}
+          />
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} title="Upload a file" className={`${smallBtn} ${ghostBtn(isDark)}`}>
             {busy ? "…" : "Upload"}
           </button>
         </div>
@@ -1837,9 +1810,13 @@ export function ConfirmDialog({
         aria-describedby={message ? msgId : undefined}
         className={`w-full max-w-lg rounded-2xl border p-5 pop-in tabular-nums ${popoverSurface(isDark)}`}
       >
-        <h3 id={titleId} className={`text-lg font-semibold tracking-tight ${t1}`}>{title}</h3>
+        <h3 id={titleId} className={`text-lg font-semibold tracking-tight ${t1}`}>
+          {title}
+        </h3>
         {message && (
-          <div id={msgId} className={`mt-2 text-sm leading-relaxed ${t2}`}>{message}</div>
+          <div id={msgId} className={`mt-2 text-sm leading-relaxed ${t2}`}>
+            {message}
+          </div>
         )}
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
           <button type="button" onClick={onClose} className={`${btn} ${ghost}`}>
@@ -1856,7 +1833,7 @@ export function ConfirmDialog({
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -1905,7 +1882,7 @@ export function Toast({ message, isDark, onClose }: { message: string; isDark: b
         <Icon d={P.close} className="w-3 h-3" strokeWidth={2} />
       </button>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -1948,9 +1925,7 @@ function visibleCols(mdUp: boolean, lgUp: boolean, selection: boolean, balances:
  * measured (8,8,8)) so the stuck head matches the rows it covers.
  */
 function headSkin(isDark: boolean): string {
-  return isDark
-    ? "bg-[#080808] [&>th]:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]"
-    : "bg-white [&>th]:shadow-[inset_0_-1px_0_0_#e5e7eb]";
+  return isDark ? "bg-[#080808] [&>th]:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]" : "bg-white [&>th]:shadow-[inset_0_-1px_0_0_#e5e7eb]";
 }
 
 /** Everything both renderers derive from a row, computed once per row. */
@@ -2004,7 +1979,9 @@ export function TxnTableSkeleton({ isDark, view, selection }: { isDark: boolean;
     );
   }
   const th = (label: string, cls = "", right = false) => (
-    <th scope="col" className={`px-2 py-2.5 font-medium ${right ? "text-right" : ""} ${cls}`}>{label}</th>
+    <th scope="col" className={`px-2 py-2.5 font-medium ${right ? "text-right" : ""} ${cls}`}>
+      {label}
+    </th>
   );
   const td = "px-2 py-3";
   return (
@@ -2031,7 +2008,9 @@ export function TxnTableSkeleton({ isDark, view, selection }: { isDark: boolean;
         {/* Bands exist only below lg (the Date column carries the date at lg+). */}
         {!lgUp && (
           <tr>
-            <td colSpan={cols} className={`${selection ? "pl-11" : "pl-2"} pr-4 pt-3.5 pb-0.5`}>{bar("h-2.5 w-28 rounded!")}</td>
+            <td colSpan={cols} className={`${selection ? "pl-11" : "pl-2"} pr-4 pt-3.5 pb-0.5`}>
+              {bar("h-2.5 w-28 rounded!")}
+            </td>
           </tr>
         )}
         {Array.from({ length: 8 }, (_, i) => (
@@ -2115,11 +2094,14 @@ export function TxnTable({
   const lastPicked = useRef<number | null>(null);
 
   const rows = useMemo(
-    () => (optimistic.size === 0 ? propRows : propRows.map((r) => {
-      const o = optimistic.get(r.transaction_id);
-      return o ? { ...r, ...o } : r;
-    })),
-    [propRows, optimistic]
+    () =>
+      optimistic.size === 0
+        ? propRows
+        : propRows.map((r) => {
+            const o = optimistic.get(r.transaction_id);
+            return o ? { ...r, ...o } : r;
+          }),
+    [propRows, optimistic],
   );
   // Drop overrides the parent has caught up with (or that a reload settled).
   useEffect(() => {
@@ -2128,8 +2110,7 @@ export function TxnTable({
       let next: Map<string, Partial<Txn>> | null = null;
       for (const [id, patch] of prev) {
         const row = propRows.find((r) => r.transaction_id === id);
-        const settled =
-          reloadIds.current.has(id) || (!!row && Object.entries(patch).every(([k, v]) => (row as Record<string, unknown>)[k] === v));
+        const settled = reloadIds.current.has(id) || (!!row && Object.entries(patch).every(([k, v]) => (row as Record<string, unknown>)[k] === v));
         if (settled) {
           (next ??= new Map(prev)).delete(id);
           reloadIds.current.delete(id);
@@ -2143,17 +2124,12 @@ export function TxnTable({
   const hair = hairline(isDark);
   const rule = ruleBorder(isDark);
   const hover = isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50";
-  const selectedSkin = isDark
-    ? "bg-emerald-500/[0.07] shadow-[inset_2px_0_0_0_#10b981]"
-    : "bg-emerald-50 shadow-[inset_2px_0_0_0_#10b981]";
+  const selectedSkin = isDark ? "bg-emerald-500/[0.07] shadow-[inset_2px_0_0_0_#10b981]" : "bg-emerald-50 shadow-[inset_2px_0_0_0_#10b981]";
   // The open row holds the hover tint, so it reads as "the one you touched".
   const expandedBg = isDark ? "bg-white/[0.04]" : "bg-gray-50";
   // Type column resting tier (the quiet pill inherits it): t3 for the default
   // word, lifted to t2 while the row is hovered; exceptions rest at t2.
-  const typeTone = (eff: string) =>
-    eff === "normal"
-      ? isDark ? "text-gray-500 group-hover:text-gray-400" : "text-gray-500/80 group-hover:text-gray-500/100"
-      : t2;
+  const typeTone = (eff: string) => (eff === "normal" ? (isDark ? "text-gray-500 group-hover:text-gray-400" : "text-gray-500/80 group-hover:text-gray-500/100") : t2);
   // One hit-area token for every 28px gutter control (checkbox, chevron):
   // rounded-md with the quiet fill; the open chevron holds a step more.
   const hitFill = isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100";
@@ -2193,22 +2169,18 @@ export function TxnTable({
     // font-medium on the cell itself: the UA's `th { font-weight: bold }`
     // beats anything inherited from the row.
     const thCls = `px-2 py-2.5 font-medium ${align === "right" ? "text-right" : ""} ${className}`;
-    if (!sortable) return <th key={label} scope="col" className={thCls}>{label}</th>;
+    if (!sortable)
+      return (
+        <th key={label} scope="col" className={thCls}>
+          {label}
+        </th>
+      );
     // An arrow, not a chevron: ⌄ belongs to the pickers alone.
     const caret = (
-      <Icon
-        d={active && sort?.dir === "asc" ? P.up : P.down}
-        strokeWidth={2}
-        className={`w-3 h-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover/th:opacity-60"}`}
-      />
+      <Icon d={active && sort?.dir === "asc" ? P.up : P.down} strokeWidth={2} className={`w-3 h-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover/th:opacity-60"}`} />
     );
     return (
-      <th
-        key={label}
-        scope="col"
-        aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"}
-        className={`group/th ${thCls}`}
-      >
+      <th key={label} scope="col" aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"} className={`group/th ${thCls}`}>
         <button
           type="button"
           onClick={() => onSort!(sortKey!)}
@@ -2370,11 +2342,7 @@ export function TxnTable({
         on || mixed ? "bg-emerald-500 border-emerald-500" : isDark ? "border-white/35" : "border-gray-500/80"
       }`}
     >
-      {on ? (
-        <Icon d={P.check} strokeWidth={3} className="w-[11px] h-[11px] text-white" />
-      ) : mixed ? (
-        <span className="w-[7px] h-[2px] rounded-full bg-white" aria-hidden />
-      ) : null}
+      {on ? <Icon d={P.check} strokeWidth={3} className="w-[11px] h-[11px] text-white" /> : mixed ? <span className="w-[7px] h-[2px] rounded-full bg-white" aria-hidden /> : null}
     </span>
   );
   const allSelected = !!selection && rows.length > 0 && rows.every((r) => selection.selected.has(r.transaction_id));
@@ -2389,15 +2357,17 @@ export function TxnTable({
     if (!selection) return;
     if (e.shiftKey && selection.selectMany && lastPicked.current != null) {
       const [from, to] = lastPicked.current < ri ? [lastPicked.current, ri] : [ri, lastPicked.current];
-      selection.selectMany(rows.slice(from, to + 1).map((r) => r.transaction_id), !selection.selected.has(t.transaction_id));
+      selection.selectMany(
+        rows.slice(from, to + 1).map((r) => r.transaction_id),
+        !selection.selected.has(t.transaction_id),
+      );
     } else {
       selection.toggle(t.transaction_id);
     }
     lastPicked.current = ri;
   }
 
-  const catOptionsFor = (t: Txn) =>
-    t.book_category && !categories.includes(t.book_category) ? [accountOption(t.book_category), ...baseCatOptions] : baseCatOptions;
+  const catOptionsFor = (t: Txn) => (t.book_category && !categories.includes(t.book_category) ? [accountOption(t.book_category), ...baseCatOptions] : baseCatOptions);
 
   // The three in-row editors, identical in both views. Always a category
   // picker: a loan-linked row shows the loan as its placeholder; choosing an
@@ -2407,7 +2377,7 @@ export function TxnTable({
     return {
       readOnly,
       value: t.book_category ?? "",
-      placeholder: t.loan_id ? loans.find((l) => l.id === t.loan_id)?.name ?? "Loan" : undefined,
+      placeholder: t.loan_id ? (loans.find((l) => l.id === t.loan_id)?.name ?? "Loan") : undefined,
       onChange: (v: string) => (t.loan_id ? void update(t, { book_category: v, loan_id: null }) : void changeCategory(t, v)),
       options:
         !t.book_category && !t.loan_id
@@ -2448,10 +2418,7 @@ export function TxnTable({
     options: [{ value: "", label: "Not a loan" }, ...loans.map((l) => ({ value: l.id, label: l.name }))],
   });
 
-  const renderEditors = (
-    t: Txn,
-    opts: { type?: boolean; category?: boolean; categoryClass?: string; loan?: boolean; vendorLink?: boolean }
-  ) => {
+  const renderEditors = (t: Txn, opts: { type?: boolean; category?: boolean; categoryClass?: string; loan?: boolean; vendorLink?: boolean }) => {
     const { inflow, eff, vendor } = rowModel(t, isDark);
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-4">
@@ -2478,9 +2445,7 @@ export function TxnTable({
             onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
             // The soft skin, like the pickers beside it: in-row editors and
             // actions share one surface; the bordered skin is the toolbar's.
-            className={`${BTN_BASE} h-8 lg:h-7 px-3 text-sm lg:text-xs ${TAP.pill} ${
-              isDark ? "bg-white/[0.06] text-gray-200 hover:bg-white/[0.09]" : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-            }`}
+            className={`${BTN_BASE} h-8 lg:h-7 px-3 text-sm lg:text-xs ${TAP.pill} ${isDark ? "bg-white/[0.06] text-gray-200 hover:bg-white/[0.09]" : "bg-gray-100 text-gray-800 hover:bg-gray-200"}`}
           >
             Open vendor →
           </button>
@@ -2506,11 +2471,7 @@ export function TxnTable({
               {g.pairs.map((p) => (
                 <Fragment key={p.k}>
                   <dt className={`text-xs truncate ${t2}`}>{p.k}</dt>
-                  {p.mono ? (
-                    <dd className={`min-w-0 font-mono text-xs break-all ${t2}`}>{p.v}</dd>
-                  ) : (
-                    <dd className={`min-w-0 text-sm break-words ${t1}`}>{p.v}</dd>
-                  )}
+                  {p.mono ? <dd className={`min-w-0 font-mono text-xs break-all ${t2}`}>{p.v}</dd> : <dd className={`min-w-0 text-sm break-words ${t1}`}>{p.v}</dd>}
                 </Fragment>
               ))}
               {loanInline && g.title === "Categorization" && loans.length > 0 && (
@@ -2529,9 +2490,7 @@ export function TxnTable({
   );
 
   const expandBtn = (isOpen: boolean, extra: string) =>
-    `w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-colors ${
-      isOpen ? glyphOn : `${t3} ${glyphFill}`
-    } ${extra}`;
+    `w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-colors ${isOpen ? glyphOn : `${t3} ${glyphFill}`} ${extra}`;
   // The table's chevron is the page's ⌄; below lg a card's is a › disclosure
   // so it stops being the same glyph as the category picker beside it.
   const expandGlyph = (isOpen: boolean, disclosure = false) => (
@@ -2544,11 +2503,9 @@ export function TxnTable({
   // Both gutters stay quiet until they matter: revealed on hover, focus, when
   // the row is checked or once any selection exists. Touch layouts always show them.
   const anySelected = (selection?.selected.size ?? 0) > 0;
-  const boxReveal = (checked: boolean) =>
-    checked || anySelected ? "" : "lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100 transition-opacity";
+  const boxReveal = (checked: boolean) => (checked || anySelected ? "" : "lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100 transition-opacity");
   const headReveal = anySelected ? "" : "lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-visible:opacity-100 transition-opacity";
-  const chevronReveal = (isOpen: boolean) =>
-    isOpen ? "" : "lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100 transition-opacity";
+  const chevronReveal = (isOpen: boolean) => (isOpen ? "" : "lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100 transition-opacity");
   // Cards select through the avatar: a small check badge sits on its corner
   // when the card is hovered or selected (and, once anything is selected, a
   // neutral badge on the rest so the affordance is visible on touch too).
@@ -2577,7 +2534,9 @@ export function TxnTable({
           {box(allSelected, someSelected)}
           {allSelected ? "Deselect all" : "Select all"}
         </button>
-        <span role="status" aria-live="polite" className={`text-xs ${t2}`}>{selection.selected.size} selected</span>
+        <span role="status" aria-live="polite" className={`text-xs ${t2}`}>
+          {selection.selected.size} selected
+        </span>
       </div>
     ) : null;
   // A tap on the row itself (not on a control inside it) toggles the detail
@@ -2591,459 +2550,430 @@ export function TxnTable({
   };
 
   return (
-   <>
-    {/* ── Cards: one card per transaction, grouped by day on phones. One
+    <>
+      {/* ── Cards: one card per transaction, grouped by day on phones. One
         column on phones, two on tablets, three on wide screens, four from
         2xl. Nothing scrolls sideways; tapping a card expands the same
         editors, detail grid and history the table's drawer has. ─────────── */}
-    {view !== "list" && (
-    <div className={`${view === "cards" ? "" : "lg:hidden"} tabular-nums`}>
-      {selectAllBar()}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 p-4 fade-in">
-        {rows.map((t, ri) => {
-          const { inflow, eff, vendor, memo, dim, amtTone, primary } = rowModel(t, isDark);
-          const isOpen = open.has(t.transaction_id);
-          const isBusy = busy === t.transaction_id;
-          const panelId = `${uid}-c${ri}`;
-          const newDay = cardBands && (ri === 0 || rows[ri - 1].date !== t.date);
-          const checked = selection?.selected.has(t.transaction_id) ?? false;
-          const descriptor = vendor ? memo : null;
-          // Line 2 only when it says something the card doesn't already:
-          // the date (ungrouped), a real memo, or pending.
-          const meta = [!cardBands ? midDate(t.date, { omitCurrentYear: true }) : null, descriptor].filter(Boolean).join(" · ");
-          const hasMeta = !!meta || t.pending;
-          const dot = typeDot(eff, t.pending, isDark);
-          const surface = checked
-            ? isDark ? "border-emerald-500/50 bg-emerald-500/[0.07]" : "border-emerald-500 bg-emerald-50"
-            : isDark ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]" : "border-gray-200 bg-white hover:bg-gray-50";
-          const avatar = (
-            <VendorAvatar
-              name={vendor || t.name || "?"}
-              isDark={isDark}
-              size="lg"
-              tone="neutral"
-              icon={vendor ? undefined : typeIcon(eff === "intercompany" ? "intercompany" : "transfer", inflow)}
-            />
-          );
-          return (
-            <Fragment key={`m-${t.transaction_id}`}>
-              {newDay && (
-                <div className={`col-span-full pl-[calc(0.75rem+1px)] pt-2 first:pt-0 -mb-1 text-xs font-medium ${t1}`}>
-                  {longDate(t.date, { omitCurrentYear: true })}
-                </div>
-              )}
-              <div
-                data-txn-card
-                data-txn-id={t.transaction_id}
-                aria-busy={isBusy || undefined}
-                className={`group relative flex flex-col gap-2.5 rounded-xl border p-3 transition-colors duration-100 ${surface} ${isOpen ? "col-span-full" : ""}`}
-              >
-                <div className="flex items-center gap-3">
-                  {selection ? (
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={checked}
-                      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                      onClick={(e) => pickRow(e, t, ri)}
-                      aria-label={`Select ${primary}`}
-                      title={checked ? "Deselect" : "Select"}
-                      className={`w-8 h-8 rounded-full shrink-0 cursor-pointer ${TAP.box}`}
-                    >
-                      {avatar}
-                      <span
-                        aria-hidden
-                        className={`absolute -right-0.5 -bottom-0.5 w-4 h-4 lg:w-3.5 lg:h-3.5 rounded-full ring-2 flex items-center justify-center transition-[opacity,background-color] ${badgeRing} ${pickBadge(checked)}`}
-                      >
-                        <Icon d={P.check} strokeWidth={3} className="w-3 h-3 lg:w-2.5 lg:h-2.5" />
-                      </span>
-                    </button>
-                  ) : (
-                    avatar
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => toggle(t.transaction_id, true)}
-                    aria-expanded={isOpen}
-                    aria-controls={isOpen ? panelId : undefined}
-                    // Two text lines are ~31px, one line ~15px; the TAP token
-                    // grows the tap area to ≥40px on touch layouts either way.
-                    // The header keeps the same layout open or closed, so
-                    // nothing moves when a card expands.
-                    className={`flex-1 min-w-0 text-left cursor-pointer ${hasMeta ? TAP.line2 : TAP.line}`}
+      {view !== "list" && (
+        <div className={`${view === "cards" ? "" : "lg:hidden"} tabular-nums`}>
+          {selectAllBar()}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 p-4 fade-in">
+            {rows.map((t, ri) => {
+              const { inflow, eff, vendor, memo, dim, amtTone, primary } = rowModel(t, isDark);
+              const isOpen = open.has(t.transaction_id);
+              const isBusy = busy === t.transaction_id;
+              const panelId = `${uid}-c${ri}`;
+              const newDay = cardBands && (ri === 0 || rows[ri - 1].date !== t.date);
+              const checked = selection?.selected.has(t.transaction_id) ?? false;
+              const descriptor = vendor ? memo : null;
+              // Line 2 only when it says something the card doesn't already:
+              // the date (ungrouped), a real memo, or pending.
+              const meta = [!cardBands ? midDate(t.date, { omitCurrentYear: true }) : null, descriptor].filter(Boolean).join(" · ");
+              const hasMeta = !!meta || t.pending;
+              const dot = typeDot(eff, t.pending, isDark);
+              const surface = checked
+                ? isDark
+                  ? "border-emerald-500/50 bg-emerald-500/[0.07]"
+                  : "border-emerald-500 bg-emerald-50"
+                : isDark
+                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]"
+                  : "border-gray-200 bg-white hover:bg-gray-50";
+              const avatar = (
+                <VendorAvatar
+                  name={vendor || t.name || "?"}
+                  isDark={isDark}
+                  size="lg"
+                  tone="neutral"
+                  icon={vendor ? undefined : typeIcon(eff === "intercompany" ? "intercompany" : "transfer", inflow)}
+                />
+              );
+              return (
+                <Fragment key={`m-${t.transaction_id}`}>
+                  {newDay && <div className={`col-span-full pl-[calc(0.75rem+1px)] pt-2 first:pt-0 -mb-1 text-xs font-medium ${t1}`}>{longDate(t.date, { omitCurrentYear: true })}</div>}
+                  <div
+                    data-txn-card
+                    data-txn-id={t.transaction_id}
+                    aria-busy={isBusy || undefined}
+                    className={`group relative flex flex-col gap-2.5 rounded-xl border p-3 transition-colors duration-100 ${surface} ${isOpen ? "col-span-full" : ""}`}
                   >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span
-                        className={`text-base lg:text-sm leading-5 ${
-                          vendor ? "font-medium truncate" : "font-normal line-clamp-2 lg:line-clamp-1 break-words"
-                        } ${dim ? t2 : t1}`}
-                        title={primary}
+                    <div className="flex items-center gap-3">
+                      {selection ? (
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={checked}
+                          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                          onClick={(e) => pickRow(e, t, ri)}
+                          aria-label={`Select ${primary}`}
+                          title={checked ? "Deselect" : "Select"}
+                          className={`w-8 h-8 rounded-full shrink-0 cursor-pointer ${TAP.box}`}
+                        >
+                          {avatar}
+                          <span
+                            aria-hidden
+                            className={`absolute -right-0.5 -bottom-0.5 w-4 h-4 lg:w-3.5 lg:h-3.5 rounded-full ring-2 flex items-center justify-center transition-[opacity,background-color] ${badgeRing} ${pickBadge(checked)}`}
+                          >
+                            <Icon d={P.check} strokeWidth={3} className="w-3 h-3 lg:w-2.5 lg:h-2.5" />
+                          </span>
+                        </button>
+                      ) : (
+                        avatar
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggle(t.transaction_id, true)}
+                        aria-expanded={isOpen}
+                        aria-controls={isOpen ? panelId : undefined}
+                        // Two text lines are ~31px, one line ~15px; the TAP token
+                        // grows the tap area to ≥40px on touch layouts either way.
+                        // The header keeps the same layout open or closed, so
+                        // nothing moves when a card expands.
+                        className={`flex-1 min-w-0 text-left cursor-pointer ${hasMeta ? TAP.line2 : TAP.line}`}
                       >
-                        {primary}
-                      </span>
-                      <span className="shrink-0 inline-flex items-center gap-1.5">
-                        {dot !== "bg-transparent" && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />}
-                        <span className={`text-base lg:text-sm font-semibold tabular-nums leading-5 whitespace-nowrap ${amtTone}`}>
-                          {signedMoney(t.amount, t.currency)}
-                        </span>
-                      </span>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span
+                            className={`text-base lg:text-sm leading-5 ${vendor ? "font-medium truncate" : "font-normal line-clamp-2 lg:line-clamp-1 break-words"} ${dim ? t2 : t1}`}
+                            title={primary}
+                          >
+                            {primary}
+                          </span>
+                          <span className="shrink-0 inline-flex items-center gap-1.5">
+                            {dot !== "bg-transparent" && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />}
+                            <span className={`text-base lg:text-sm font-semibold tabular-nums leading-5 whitespace-nowrap ${amtTone}`}>{signedMoney(t.amount, t.currency)}</span>
+                          </span>
+                        </div>
+                        {hasMeta && (
+                          <div className={`mt-0.5 flex items-center gap-2 min-w-0 text-sm lg:text-xs ${t2}`}>
+                            {meta && (
+                              <span className="truncate" title={meta}>
+                                {meta}
+                              </span>
+                            )}
+                            {t.pending && <span className={`shrink-0 font-medium ${amberTone(isDark)}`}>Pending</span>}
+                          </div>
+                        )}
+                      </button>
                     </div>
-                    {hasMeta && (
-                      <div className={`mt-0.5 flex items-center gap-2 min-w-0 text-sm lg:text-xs ${t2}`}>
-                        {meta && <span className="truncate" title={meta}>{meta}</span>}
-                        {t.pending && <span className={`shrink-0 font-medium ${amberTone(isDark)}`}>Pending</span>}
-                      </div>
-                    )}
-                  </button>
-                </div>
-                {/* Pinned to the card's bottom edge so pill rows line up across
+                    {/* Pinned to the card's bottom edge so pill rows line up across
                     a grid row whatever the neighbours' line count. */}
-                <div className="mt-auto flex items-center gap-2 min-w-0">
-                  <div className="min-w-0">
-                    <Menu
-                      {...categoryProps(t)}
-                      isDark={isDark}
-                      tone="soft"
-                      size="sm"
-                      touch
-                      chevron="always"
-                      label="Account"
-                      leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
-                    />
-                  </div>
-                  {t.entity_name ? (
-                    <EntityTag name={t.entity_name} isDark={isDark} size="touch" />
-                  ) : (
-                    <span className={`shrink-0 text-xs ${amberTone(isDark)}`}>Unmapped</span>
-                  )}
-                  {/* The whole card body already expands (and is the keyboard
+                    <div className="mt-auto flex items-center gap-2 min-w-0">
+                      <div className="min-w-0">
+                        <Menu
+                          {...categoryProps(t)}
+                          isDark={isDark}
+                          tone="soft"
+                          size="sm"
+                          touch
+                          chevron="always"
+                          label="Account"
+                          leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
+                        />
+                      </div>
+                      {t.entity_name ? <EntityTag name={t.entity_name} isDark={isDark} size="touch" /> : <span className={`shrink-0 text-xs ${amberTone(isDark)}`}>Unmapped</span>}
+                      {/* The whole card body already expands (and is the keyboard
                       stop); the chevron is the quiet secondary affordance.
                       -mr-2 puts the 12px glyph's right edge on the amount's:
                       (w-7 − w-3) / 2 = 5.95px of button padding. */}
-                  <button
-                    type="button"
-                    onClick={() => toggle(t.transaction_id, true)}
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    className={expandBtn(isOpen, `-mr-2 ml-auto shrink-0 ${TAP.box}`)}
-                  >
-                    {expandGlyph(isOpen, !lgUp)}
-                  </button>
-                </div>
-                {isOpen && (
-                  <div id={panelId} className={`mt-0.5 pt-3 border-t fade-in ${rule}`}>
-                    {renderEditors(t, { type: true, loan: true, vendorLink: true })}
-                    <div className="mt-4">{renderDetail(t)}</div>
-                    <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} cache={historyCache.current} />
+                      <button type="button" onClick={() => toggle(t.transaction_id, true)} tabIndex={-1} aria-hidden="true" className={expandBtn(isOpen, `-mr-2 ml-auto shrink-0 ${TAP.box}`)}>
+                        {expandGlyph(isOpen, !lgUp)}
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div id={panelId} className={`mt-0.5 pt-3 border-t fade-in ${rule}`}>
+                        {renderEditors(t, { type: true, loan: true, vendorLink: true })}
+                        <div className="mt-4">{renderDetail(t)}</div>
+                        <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} cache={historyCache.current} />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </Fragment>
-          );
-        })}
-      </div>
-    </div>
-    )}
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-    {/* ── List: the ledger table. Rows group under a date band; the merchant
+      {/* ── List: the ledger table. Rows group under a date band; the merchant
         leads with the descriptor muted beside it; the account is a soft pill
         with a section-tinted disc; transfers drop to the muted tier; the
         amount carries a type dot only where the Type column is hidden.
         Details expand from the trailing chevron. ────────────────────────── */}
-    {view !== "cards" && (
-    <div className={view === "list" ? "" : "hidden lg:block"}>
-    {selectAllBar("lg:hidden")}
-    <table aria-label="Transactions" className={`w-full table-fixed text-sm tabular-nums ${view === "list" ? "table" : "hidden lg:table"}`}>
-      {/* Opaque (rows scrolling underneath never ghost through); the fill and
+      {view !== "cards" && (
+        <div className={view === "list" ? "" : "hidden lg:block"}>
+          {selectAllBar("lg:hidden")}
+          <table aria-label="Transactions" className={`w-full table-fixed text-sm tabular-nums ${view === "list" ? "table" : "hidden lg:table"}`}>
+            {/* Opaque (rows scrolling underneath never ghost through); the fill and
           bottom rule live on the cells — see headSkin. */}
-      <thead className="sticky top-0 z-10">
-        <tr className={`group/head text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
-          {selection && lgUp && (
-            <th scope="col" className={`${COLS.select} font-medium`}>
-              <span className="sr-only">Select</span>
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={allSelected ? true : someSelected ? "mixed" : false}
-                onClick={selectAll}
-                aria-label={allSelected ? "Deselect all" : "Select all"}
-                // -my-1 keeps the h-7 button from setting the header's height.
-                className={`${hitArea} ${TAP.box} -my-1 align-middle ${headReveal}`}
-              >
-                {box(allSelected, someSelected)}
-              </button>
-            </th>
-          )}
-          {/* Merchant is the only fluid column; every other width is fixed so
-              the category pill, tag and numerals sit on the same x at every
-              viewport. */}
-          {th("Merchant", "vendor")}
-          {th("Category", "account", "left", COLS.category)}
-          {th("Entity", "entity", "left", COLS.entity)}
-          {th("Type", undefined, "left", COLS.type)}
-          {th("Date", "date", "left", COLS.date)}
-          {th("Amount", "amount", "right", COLS.amount)}
-          {balances && th("Balance", undefined, "right", COLS.balance)}
-          <th scope="col" className={`${COLS.chevron} font-medium`}>
-            <span className="sr-only">Details</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody className="fade-in">
-        {rows.map((t, ri) => {
-          const { inflow, eff, vendor, vendorText, memo, dim, amtTone } = rowModel(t, isDark);
-          const isOpen = open.has(t.transaction_id);
-          const isBusy = busy === t.transaction_id;
-          const panelId = `${uid}-r${ri}`;
-          const newDay = grouped && (ri === 0 || rows[ri - 1].date !== t.date);
-          const checked = selection?.selected.has(t.transaction_id) ?? false;
-          const dot = typeDot(eff, t.pending, isDark);
-          const rowName = vendorText || memo || t.date;
-          // Rows draw their TOP border (border-collapse lets the first of two
-          // touching borders win, so a day-change rule on a row's top edge
-          // would lose to the hairline on the row above's bottom edge). The
-          // first row under the head draws none — the head's own rule is there.
-          const topRule = dayRules && newDay && ri > 0 ? dayRule : hair;
-          const topBorder = ri === 0 && !tableBands ? "" : `border-t ${topRule}`;
-          const avatar = (
-            <VendorAvatar
-              name={vendor || t.name || "?"}
-              isDark={isDark}
-              size="sm"
-              tone="neutral"
-              icon={vendor ? undefined : typeIcon(eff === "intercompany" ? "intercompany" : "transfer", inflow)}
-            />
-          );
-          return (
-            <Fragment key={t.transaction_id}>
-              {tableBands && newDay && (
-                <tr>
-                  {/* Bands are section titles: they share the avatar's left
-                      edge (checkbox column w-9 + cell px-2 = 2.75rem) and sit
-                      closer to the group beneath than the one above. */}
-                  <th
-                    scope="rowgroup"
-                    colSpan={cols}
-                    className={`${selection ? "pl-11" : "pl-2"} pr-4 ${ri === 0 ? "pt-3.5" : "pt-6"} pb-0.5 text-xs font-medium text-left tabular-nums ${t1}`}
-                  >
-                    {longDate(t.date, { omitCurrentYear: true })}
-                  </th>
-                </tr>
-              )}
-              <tr
-                aria-busy={isBusy || undefined}
-                onClick={lgUp ? undefined : (e) => rowTap(e, t.transaction_id)}
-                // A checked row keeps its tint under the pointer: the hover
-                // fill only exists on unchecked rows (a `hover:` utility
-                // outranks a bare one in both themes, so the two must never
-                // sit on the same row).
-                className={`group transition-[color,background-color,box-shadow] duration-100 max-lg:cursor-pointer ${topBorder} ${checked ? selectedSkin : hover} ${
-                  isOpen ? expandedBg : ""
-                }`}
-              >
+            <thead className="sticky top-0 z-10">
+              <tr className={`group/head text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
                 {selection && lgUp && (
-                  <td className="pl-3 align-middle">
+                  <th scope="col" className={`${COLS.select} font-medium`}>
+                    <span className="sr-only">Select</span>
                     <button
                       type="button"
                       role="checkbox"
-                      aria-checked={checked}
-                      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                      onClick={(e) => pickRow(e, t, ri)}
-                      aria-label={`Select ${rowName}`}
-                      className={`${hitArea} ${TAP.box} align-middle ${boxReveal(checked)}`}
+                      aria-checked={allSelected ? true : someSelected ? "mixed" : false}
+                      onClick={selectAll}
+                      aria-label={allSelected ? "Deselect all" : "Select all"}
+                      // -my-1 keeps the h-7 button from setting the header's height.
+                      className={`${hitArea} ${TAP.box} -my-1 align-middle ${headReveal}`}
                     >
-                      {box(checked)}
+                      {box(allSelected, someSelected)}
                     </button>
-                  </td>
+                  </th>
                 )}
-                <td className={cell}>
-                  {/* One line: vendor, then the descriptor muted beside it.
+                {/* Merchant is the only fluid column; every other width is fixed so
+              the category pill, tag and numerals sit on the same x at every
+              viewport. */}
+                {th("Merchant", "vendor")}
+                {th("Category", "account", "left", COLS.category)}
+                {th("Entity", "entity", "left", COLS.entity)}
+                {th("Type", undefined, "left", COLS.type)}
+                {th("Date", "date", "left", COLS.date)}
+                {th("Amount", "amount", "right", COLS.amount)}
+                {balances && th("Balance", undefined, "right", COLS.balance)}
+                <th scope="col" className={`${COLS.chevron} font-medium`}>
+                  <span className="sr-only">Details</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="fade-in">
+              {rows.map((t, ri) => {
+                const { inflow, eff, vendor, vendorText, memo, dim, amtTone } = rowModel(t, isDark);
+                const isOpen = open.has(t.transaction_id);
+                const isBusy = busy === t.transaction_id;
+                const panelId = `${uid}-r${ri}`;
+                const newDay = grouped && (ri === 0 || rows[ri - 1].date !== t.date);
+                const checked = selection?.selected.has(t.transaction_id) ?? false;
+                const dot = typeDot(eff, t.pending, isDark);
+                const rowName = vendorText || memo || t.date;
+                // Rows draw their TOP border (border-collapse lets the first of two
+                // touching borders win, so a day-change rule on a row's top edge
+                // would lose to the hairline on the row above's bottom edge). The
+                // first row under the head draws none — the head's own rule is there.
+                const topRule = dayRules && newDay && ri > 0 ? dayRule : hair;
+                const topBorder = ri === 0 && !tableBands ? "" : `border-t ${topRule}`;
+                const avatar = (
+                  <VendorAvatar
+                    name={vendor || t.name || "?"}
+                    isDark={isDark}
+                    size="sm"
+                    tone="neutral"
+                    icon={vendor ? undefined : typeIcon(eff === "intercompany" ? "intercompany" : "transfer", inflow)}
+                  />
+                );
+                return (
+                  <Fragment key={t.transaction_id}>
+                    {tableBands && newDay && (
+                      <tr>
+                        {/* Bands are section titles: they share the avatar's left
+                      edge (checkbox column w-9 + cell px-2 = 2.75rem) and sit
+                      closer to the group beneath than the one above. */}
+                        <th scope="rowgroup" colSpan={cols} className={`${selection ? "pl-11" : "pl-2"} pr-4 ${ri === 0 ? "pt-3.5" : "pt-6"} pb-0.5 text-xs font-medium text-left tabular-nums ${t1}`}>
+                          {longDate(t.date, { omitCurrentYear: true })}
+                        </th>
+                      </tr>
+                    )}
+                    <tr
+                      aria-busy={isBusy || undefined}
+                      onClick={lgUp ? undefined : (e) => rowTap(e, t.transaction_id)}
+                      // A checked row keeps its tint under the pointer: the hover
+                      // fill only exists on unchecked rows (a `hover:` utility
+                      // outranks a bare one in both themes, so the two must never
+                      // sit on the same row).
+                      className={`group transition-[color,background-color,box-shadow] duration-100 max-lg:cursor-pointer ${topBorder} ${checked ? selectedSkin : hover} ${isOpen ? expandedBg : ""}`}
+                    >
+                      {selection && lgUp && (
+                        <td className="pl-3 align-middle">
+                          <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked={checked}
+                            onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                            onClick={(e) => pickRow(e, t, ri)}
+                            aria-label={`Select ${rowName}`}
+                            className={`${hitArea} ${TAP.box} align-middle ${boxReveal(checked)}`}
+                          >
+                            {box(checked)}
+                          </button>
+                        </td>
+                      )}
+                      <td className={cell}>
+                        {/* One line: vendor, then the descriptor muted beside it.
                       Both truncate; the vendor keeps a floor so a long
                       descriptor can't squeeze it out. A vendor-less row
                       (a transfer) shows its memo as a quiet description. */}
-                  {/* No overflow-hidden here: it would clip the vendor
+                        {/* No overflow-hidden here: it would clip the vendor
                       link's phone tap box; the children truncate themselves. */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    {avatarSelect ? (
-                      // Below lg the avatar is the checkbox, as on a card
-                      // face: no resting box in every row, and the merchant
-                      // keeps the width.
-                      <button
-                        type="button"
-                        role="checkbox"
-                        aria-checked={checked}
-                        onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                        onClick={(e) => pickRow(e, t, ri)}
-                        aria-label={`Select ${rowName}`}
-                        title={checked ? "Deselect" : "Select"}
-                        className={`w-6 h-6 rounded-full shrink-0 cursor-pointer ${TAP.avatar}`}
-                      >
-                        {avatar}
-                        <span
-                          aria-hidden
-                          className={`absolute -right-1 -bottom-1 w-3.5 h-3.5 rounded-full ring-2 flex items-center justify-center transition-[opacity,background-color] ${badgeRing} ${pickBadge(checked)}`}
-                        >
-                          <Icon d={P.check} strokeWidth={3} className="w-2.5 h-2.5" />
-                        </span>
-                      </button>
-                    ) : (
-                      avatar
-                    )}
-                    {/* flex-1 gives this box a definite width, so the vendor's
+                        <div className="flex items-center gap-3 min-w-0">
+                          {avatarSelect ? (
+                            // Below lg the avatar is the checkbox, as on a card
+                            // face: no resting box in every row, and the merchant
+                            // keeps the width.
+                            <button
+                              type="button"
+                              role="checkbox"
+                              aria-checked={checked}
+                              onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                              onClick={(e) => pickRow(e, t, ri)}
+                              aria-label={`Select ${rowName}`}
+                              title={checked ? "Deselect" : "Select"}
+                              className={`w-6 h-6 rounded-full shrink-0 cursor-pointer ${TAP.avatar}`}
+                            >
+                              {avatar}
+                              <span
+                                aria-hidden
+                                className={`absolute -right-1 -bottom-1 w-3.5 h-3.5 rounded-full ring-2 flex items-center justify-center transition-[opacity,background-color] ${badgeRing} ${pickBadge(checked)}`}
+                              >
+                                <Icon d={P.check} strokeWidth={3} className="w-2.5 h-2.5" />
+                              </span>
+                            </button>
+                          ) : (
+                            avatar
+                          )}
+                          {/* flex-1 gives this box a definite width, so the vendor's
                         percentage cap is half the column, not half itself. */}
-                    <div className="flex-1 min-w-0 flex items-baseline gap-2 leading-5">
-                      {vendor && lgUp ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
-                          title={`Open ${vendorText}`}
-                          className={`text-sm font-medium min-w-0 md:shrink-0 max-w-[240px] xl:max-w-[50%] text-left cursor-pointer hover:underline ${dim ? t2 : t1}`}
-                        >
-                          <span className="block truncate">{vendorText}</span>
-                        </button>
-                      ) : vendor ? (
-                        // Below lg the row is the tap target and it expands;
-                        // the name is plain text so a tap on it does the same
-                        // thing as a tap beside it. "Open vendor →" in the
-                        // expanded editors is the way to leave.
-                        <span className={`text-sm font-medium truncate min-w-0 md:shrink-0 max-w-[240px] ${dim ? t2 : t1}`} title={vendorText}>
-                          {vendorText}
-                        </span>
-                      ) : (
-                        <span className={`text-sm font-normal truncate min-w-0 ${t2}`} title={t.name ?? undefined}>
-                          {memo || "—"}
-                        </span>
-                      )}
-                      {/* No Date column below lg: when the rows aren't in
+                          <div className="flex-1 min-w-0 flex items-baseline gap-2 leading-5">
+                            {vendor && lgUp ? (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/books/vendors/detail?name=${encodeURIComponent(vendor)}`)}
+                                title={`Open ${vendorText}`}
+                                className={`text-sm font-medium min-w-0 md:shrink-0 max-w-[240px] xl:max-w-[50%] text-left cursor-pointer hover:underline ${dim ? t2 : t1}`}
+                              >
+                                <span className="block truncate">{vendorText}</span>
+                              </button>
+                            ) : vendor ? (
+                              // Below lg the row is the tap target and it expands;
+                              // the name is plain text so a tap on it does the same
+                              // thing as a tap beside it. "Open vendor →" in the
+                              // expanded editors is the way to leave.
+                              <span className={`text-sm font-medium truncate min-w-0 md:shrink-0 max-w-[240px] ${dim ? t2 : t1}`} title={vendorText}>
+                                {vendorText}
+                              </span>
+                            ) : (
+                              <span className={`text-sm font-normal truncate min-w-0 ${t2}`} title={t.name ?? undefined}>
+                                {memo || "—"}
+                              </span>
+                            )}
+                            {/* No Date column below lg: when the rows aren't in
                           date order (no bands either) the date rides here. */}
-                      {!grouped && (
-                        <span className={`lg:hidden text-sm shrink-0 ${t2}`}>{midDate(t.date, { omitCurrentYear: true })}</span>
-                      )}
-                      {t.pending && <span className={`text-xs font-medium shrink-0 ${amberTone(isDark)}`}>Pending</span>}
-                      {vendor && memo && (
-                        <span className={`hidden md:block text-sm truncate min-w-0 max-w-[36ch] xl:max-w-none shrink-[4] ${t2}`} title={t.name ?? memo}>
-                          {memo}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                <td className={`${cell} hidden md:table-cell`}>
-                  {/* `touch`: the list is a real tablet mode, so below lg the
+                            {!grouped && <span className={`lg:hidden text-sm shrink-0 ${t2}`}>{midDate(t.date, { omitCurrentYear: true })}</span>}
+                            {t.pending && <span className={`text-xs font-medium shrink-0 ${amberTone(isDark)}`}>Pending</span>}
+                            {vendor && memo && (
+                              <span className={`hidden md:block text-sm truncate min-w-0 max-w-[36ch] xl:max-w-none shrink-[4] ${t2}`} title={t.name ?? memo}>
+                                {memo}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className={`${cell} hidden md:table-cell`}>
+                        {/* `touch`: the list is a real tablet mode, so below lg the
                       pill is h-8 with the 40px hit box like every other
                       in-row control; at lg it is the h-7 pill it always was. */}
-                  <div className="min-w-0 [&>button]:max-w-full">
-                    <Menu
-                      {...categoryProps(t)}
-                      isDark={isDark}
-                      tone="soft"
-                      size="sm"
-                      touch
-                      chevron="hover"
-                      label="Account"
-                      leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
-                    />
-                  </div>
-                </td>
-                <td className={`${cell} whitespace-nowrap`}>
-                  {t.entity_name ? (
-                    <EntityTag name={t.entity_name} isDark={isDark} />
-                  ) : (
-                    <span className={`text-xs ${amberTone(isDark)}`}>Unmapped</span>
-                  )}
-                </td>
-                {/* The default word (Income / Expense) rests a tier below the
+                        <div className="min-w-0 [&>button]:max-w-full">
+                          <Menu
+                            {...categoryProps(t)}
+                            isDark={isDark}
+                            tone="soft"
+                            size="sm"
+                            touch
+                            chevron="hover"
+                            label="Account"
+                            leading={<AccountDisc label={t.book_category ?? ""} isDark={isDark} uncategorized={!t.book_category && !t.loan_id} />}
+                          />
+                        </div>
+                      </td>
+                      <td className={`${cell} whitespace-nowrap`}>
+                        {t.entity_name ? <EntityTag name={t.entity_name} isDark={isDark} /> : <span className={`text-xs ${amberTone(isDark)}`}>Unmapped</span>}
+                      </td>
+                      {/* The default word (Income / Expense) rests a tier below the
                     exceptions so the column recedes and only Transfer /
                     Roll-up / Loan read; hovering the row lifts it to t2 with
                     the chevron. (A readable word at t3 is a deliberate
                     deviation from the tier rule: it repeats on every row and
                     the detail panel states the type in full.) */}
-                <td className={`${cell} hidden lg:table-cell transition-colors duration-100 ${typeTone(eff)}`}>
-                  <Menu {...typeProps(t, eff, inflow)} isDark={isDark} quiet size="sm" chevron="hover" label="Type" />
-                </td>
-                {/* Said once per day while the rows are in date order. */}
-                <td className={`${cell} hidden lg:table-cell text-sm whitespace-nowrap ${t2}`} title={t.date}>
-                  {newDay || !grouped ? midDate(t.date, { omitCurrentYear: true }) : ""}
-                </td>
-                <td className={`${cell} text-right whitespace-nowrap`}>
-                  <span className="inline-flex items-center gap-1.5">
-                    {/* The Type column carries the word at lg+; the dot only
+                      <td className={`${cell} hidden lg:table-cell transition-colors duration-100 ${typeTone(eff)}`}>
+                        <Menu {...typeProps(t, eff, inflow)} isDark={isDark} quiet size="sm" chevron="hover" label="Type" />
+                      </td>
+                      {/* Said once per day while the rows are in date order. */}
+                      <td className={`${cell} hidden lg:table-cell text-sm whitespace-nowrap ${t2}`} title={t.date}>
+                        {newDay || !grouped ? midDate(t.date, { omitCurrentYear: true }) : ""}
+                      </td>
+                      <td className={`${cell} text-right whitespace-nowrap`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          {/* The Type column carries the word at lg+; the dot only
                         speaks where that column is hidden. */}
-                    {dot !== "bg-transparent" && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 lg:hidden ${dot}`} />}
-                    <span className={`text-sm font-semibold tabular-nums ${amtTone}`}>{signedMoney(t.amount, t.currency)}</span>
-                  </span>
-                </td>
-                {balances && (
-                  <td className={`${cell} text-right whitespace-nowrap text-sm font-medium tabular-nums ${t1}`}>
-                    {money(balances[t.transaction_id] ?? 0, t.currency ?? "USD")}
-                  </td>
-                )}
-                {/* Hidden at rest on lg+ like the checkbox, so the two gutters
+                          {dot !== "bg-transparent" && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 lg:hidden ${dot}`} />}
+                          <span className={`text-sm font-semibold tabular-nums ${amtTone}`}>{signedMoney(t.amount, t.currency)}</span>
+                        </span>
+                      </td>
+                      {balances && <td className={`${cell} text-right whitespace-nowrap text-sm font-medium tabular-nums ${t1}`}>{money(balances[t.transaction_id] ?? 0, t.currency ?? "USD")}</td>}
+                      {/* Hidden at rest on lg+ like the checkbox, so the two gutters
                     mirror each other; always visible on touch layouts. */}
-                <td className="pr-2 text-right align-middle">
-                  <button
-                    type="button"
-                    onClick={() => toggle(t.transaction_id)}
-                    aria-expanded={isOpen}
-                    aria-controls={isOpen ? panelId : undefined}
-                    aria-label={`Details for ${rowName}`}
-                    className={expandBtn(isOpen, `${TAP.box} ${chevronReveal(isOpen)}`)}
-                  >
-                    {expandGlyph(isOpen)}
-                  </button>
-                </td>
-              </tr>
-              {isOpen && (
-                <tr id={panelId} className={`border-t ${hair} ${expandedBg}`}>
-                  {/* The panel obeys the row's two gutters: with selection it
+                      <td className="pr-2 text-right align-middle">
+                        <button
+                          type="button"
+                          onClick={() => toggle(t.transaction_id)}
+                          aria-expanded={isOpen}
+                          aria-controls={isOpen ? panelId : undefined}
+                          aria-label={`Details for ${rowName}`}
+                          className={expandBtn(isOpen, `${TAP.box} ${chevronReveal(isOpen)}`)}
+                        >
+                          {expandGlyph(isOpen)}
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr id={panelId} className={`border-t ${hair} ${expandedBg}`}>
+                        {/* The panel obeys the row's two gutters: with selection it
                       spans avatar → numerals (pl-11 / pr-11), without (embeds)
                       the cell inset on both sides. Title x = avatar x. */}
-                  <td colSpan={cols} className={`${selection ? "pl-11 pr-11" : "pl-2 pr-2"} py-4`}>
-                    <div className="fade-in">
-                      {/* Below lg the Type/Category columns are hidden, so the
+                        <td colSpan={cols} className={`${selection ? "pl-11 pr-11" : "pl-2 pr-2"} py-4`}>
+                          <div className="fade-in">
+                            {/* Below lg the Type/Category columns are hidden, so the
                           editors reappear here. */}
-                      <div className="lg:hidden mb-4">
-                        {renderEditors(t, { type: true, category: true, categoryClass: "md:hidden", loan: true, vendorLink: true })}
-                      </div>
-                      {renderDetail(t, true)}
-                      <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} cache={historyCache.current} />
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
-    </div>
-    )}
-    {pendingCat && (
-      <ConfirmDialog
-        isDark={isDark}
-        title={`Categorize all “${pendingCat.match}”?`}
-        message={
-          <>
-            Apply <span className="font-medium">{pendingCat.category}</span> to every “{pendingCat.match}”
-            transaction and keep categorizing new ones the same way — or just this one.
-          </>
-        }
-        confirmLabel="Apply to all & remember"
-        altLabel="Just this one"
-        cancelLabel="Cancel"
-        onConfirm={() => {
-          const p = pendingCat;
-          setPendingCat(null);
-          void applyCategoryAll(p.t, p.category, p.match);
-        }}
-        onAlt={() => {
-          const p = pendingCat;
-          setPendingCat(null);
-          void applyCategoryOne(p.t, p.category);
-        }}
-        onClose={() => setPendingCat(null)}
-      />
-    )}
-   </>
+                            <div className="lg:hidden mb-4">{renderEditors(t, { type: true, category: true, categoryClass: "md:hidden", loan: true, vendorLink: true })}</div>
+                            {renderDetail(t, true)}
+                            <TxnHistoryPanel transactionId={t.transaction_id} isDark={isDark} cache={historyCache.current} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {pendingCat && (
+        <ConfirmDialog
+          isDark={isDark}
+          title={`Categorize all “${pendingCat.match}”?`}
+          message={
+            <>
+              Apply <span className="font-medium">{pendingCat.category}</span> to every “{pendingCat.match}” transaction and keep categorizing new ones the same way — or just this one.
+            </>
+          }
+          confirmLabel="Apply to all & remember"
+          altLabel="Just this one"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            const p = pendingCat;
+            setPendingCat(null);
+            void applyCategoryAll(p.t, p.category, p.match);
+          }}
+          onAlt={() => {
+            const p = pendingCat;
+            setPendingCat(null);
+            void applyCategoryOne(p.t, p.category);
+          }}
+          onClose={() => setPendingCat(null)}
+        />
+      )}
+    </>
   );
 }

@@ -19,7 +19,7 @@
 
 ## Code style
 
-These are observations from the code, not a linter config (there is none).
+ESLint (`eslint.config.js`) and Prettier (`.prettierrc`) enforce the mechanical parts in CI: `npm run lint`, `npm run format:check`. `npm run format` rewrites a file to the house style. The rest is judgement:
 
 - TypeScript, `strict` on. Avoid `any` where a type is easy; a few older
   files use it for PostgREST rows. New row types go next to the code that

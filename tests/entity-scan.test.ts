@@ -16,7 +16,11 @@ const pdf = { name: "Operating Agreement.pdf", url: "https://x/oa.pdf", contentT
 
 function run(asset: Record<string, unknown>) {
   const writes: [string, Record<string, unknown>][] = [];
-  return scanAllEntities({ a: asset as never }, async (p, patch) => void writes.push([p, patch]), () => {}).then((r) => ({ r, writes }));
+  return scanAllEntities(
+    { a: asset as never },
+    async (p, patch) => void writes.push([p, patch]),
+    () => {},
+  ).then((r) => ({ r, writes }));
 }
 
 describe("scan all entities", () => {
@@ -25,7 +29,10 @@ describe("scan all entities", () => {
     replies["/api/documents/classify"] = { kind: "operating_agreement", confidence: "high", taxClassification: "Partnership", taxClassificationEvidence: "three members" };
     replies["/api/documents/profile"] = {
       whatItIs: "A holding company.",
-      members: [{ name: "Ledger Louise, LLC", percent: 65 }, { name: "Laura Fedele", percent: 20 }],
+      members: [
+        { name: "Ledger Louise, LLC", percent: 65 },
+        { name: "Laura Fedele", percent: 20 },
+      ],
       taxTreatment: "Partnership",
       taxEvidence: "CP 575 B requires Form 1065",
       sources: ["Operating Agreement.pdf"],

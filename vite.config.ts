@@ -38,7 +38,19 @@ function vendorChunk(id: string): string | undefined {
 export default defineConfig({
   plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
   // vitest: the repo's own tests only (Claude Code worktrees under .claude/ carry copies).
-  test: { exclude: ["**/node_modules/**", "**/build/**", "**/.claude/**", "**/ios/**", "**/native/**"] },
+  // Coverage is measured on the server code (lib/, api/), where the tests
+  // drive real handlers against a mocked database; the floor fails CI when a
+  // change drops under it (`npm run test:coverage`). Raise it as tests land.
+  test: {
+    exclude: ["**/node_modules/**", "**/build/**", "**/.claude/**", "**/ios/**", "**/native/**"],
+    coverage: {
+      provider: "v8",
+      include: ["lib/**/*.ts", "api/**/*.ts"],
+      exclude: ["**/*.test.ts"],
+      reporter: ["text-summary", "json-summary", "html"],
+      thresholds: { lines: 65, functions: 80, branches: 70 },
+    },
+  },
   build: {
     // Vite's default "assets" folder shares its URL with the /assets
     // (Entities) route: once a chunk named index.* landed in it, the CDN

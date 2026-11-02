@@ -34,7 +34,13 @@ describe("logo styles", () => {
 
 describe("/api/brand", () => {
   const fetchMock = vi.fn();
-  const reply = (status: number, body: unknown) => ({ ok: status < 400, status, text: async () => JSON.stringify(body), arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer, json: async () => body });
+  const reply = (status: number, body: unknown) => ({
+    ok: status < 400,
+    status,
+    text: async () => JSON.stringify(body),
+    arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    json: async () => body,
+  });
   function call(method: string, body: Record<string, unknown> = {}, query: Record<string, string> = {}) {
     const out: { status: number; json?: any; headers: Record<string, string> } = { status: 0, headers: {} };
     const res: any = {
@@ -68,7 +74,9 @@ describe("/api/brand", () => {
     // brand_settings in memory
     sbMock.mockImplementation(async (path: string, init?: { method?: string; body?: any }) => {
       if (path.startsWith("brand_settings?key=in.")) {
-        const keys = decodeURIComponent(path.slice("brand_settings?key=in.(".length, path.indexOf(")"))).split(",").map((k) => k.replace(/"/g, ""));
+        const keys = decodeURIComponent(path.slice("brand_settings?key=in.(".length, path.indexOf(")")))
+          .split(",")
+          .map((k) => k.replace(/"/g, ""));
         return keys.filter((k) => k in settings).map((k) => ({ key: k, value: settings[k] }));
       }
       if (path.startsWith("brand_settings?on_conflict")) {
@@ -126,7 +134,10 @@ describe("/api/brand", () => {
 
   it("builds the model with Meshy and copies the result in once it succeeds", async () => {
     expect((await call("POST", { action: "model", styleId: "monogram" })).status).toBe(409);
-    settings.sheet = { styles: { monogram: { imageUrl: "https://sb.test/storage/v1/object/public/brand/logo/monogram/1.png", imagePath: "logo/monogram/1.png", prompt: "", model: "gpt-image-2", createdAt: 1 } }, generatedAt: 1 };
+    settings.sheet = {
+      styles: { monogram: { imageUrl: "https://sb.test/storage/v1/object/public/brand/logo/monogram/1.png", imagePath: "logo/monogram/1.png", prompt: "", model: "gpt-image-2", createdAt: 1 } },
+      generatedAt: 1,
+    };
     fetchMock.mockResolvedValueOnce(reply(202, { result: "task_1" }));
     const started = await call("POST", { action: "model", styleId: "monogram" });
     expect(started.json.model).toMatchObject({ taskId: "task_1", status: "PENDING" });
@@ -138,7 +149,15 @@ describe("/api/brand", () => {
     expect((await call("POST", { action: "model-status", styleId: "monogram" })).json.model).toMatchObject({ status: "IN_PROGRESS", progress: 55 });
 
     fetchMock
-      .mockResolvedValueOnce(reply(200, { id: "task_1", status: "SUCCEEDED", progress: 100, model_urls: { glb: "https://assets.meshy.ai/x.glb", usdz: "https://assets.meshy.ai/x.usdz" }, alpha_thumbnail_url: "https://assets.meshy.ai/x.png" }))
+      .mockResolvedValueOnce(
+        reply(200, {
+          id: "task_1",
+          status: "SUCCEEDED",
+          progress: 100,
+          model_urls: { glb: "https://assets.meshy.ai/x.glb", usdz: "https://assets.meshy.ai/x.usdz" },
+          alpha_thumbnail_url: "https://assets.meshy.ai/x.png",
+        }),
+      )
       .mockResolvedValueOnce(reply(200, {})) // glb download
       .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "" }) // glb upload
       .mockResolvedValueOnce(reply(200, {})) // usdz download

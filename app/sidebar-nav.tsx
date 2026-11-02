@@ -50,19 +50,8 @@ function childActive(c: NavChild, pathname: string, search: URLSearchParams): bo
 function Badge({ n, tone, isDark }: { n: number; tone: "accent" | "quiet"; isDark: boolean }) {
   if (n <= 0) return null;
   // A quiet count: tinted, not a solid disc.
-  const cls =
-    tone === "accent"
-      ? isDark
-        ? "bg-[#818cf8]/20 text-[#c7d2fe]"
-        : "bg-[#4f46e5]/10 text-[#4338ca]"
-      : isDark
-        ? "bg-white/10 text-gray-300"
-        : "bg-black/[0.06] text-gray-600";
-  return (
-    <span className={`ml-auto min-w-[18px] h-[16px] px-1 rounded-full text-[10px] font-semibold tabular-nums flex items-center justify-center ${cls}`}>
-      {n > 99 ? "99+" : n}
-    </span>
-  );
+  const cls = tone === "accent" ? (isDark ? "bg-[#818cf8]/20 text-[#c7d2fe]" : "bg-[#4f46e5]/10 text-[#4338ca]") : isDark ? "bg-white/10 text-gray-300" : "bg-black/[0.06] text-gray-600";
+  return <span className={`ml-auto min-w-[18px] h-[16px] px-1 rounded-full text-[10px] font-semibold tabular-nums flex items-center justify-center ${cls}`}>{n > 99 ? "99+" : n}</span>;
 }
 
 export function SidebarNav({
@@ -136,9 +125,7 @@ export function SidebarNav({
             {total > 0 && !showLabels && (
               <span
                 aria-hidden="true"
-                className={`absolute -top-[2px] -right-[3px] h-[7px] w-[7px] rounded-full ring-2 ${labelsVisible ? "hidden" : ""} ${
-                  isDark ? "bg-[#818cf8] ring-black" : "bg-[#4f46e5] ring-white"
-                }`}
+                className={`absolute -top-[2px] -right-[3px] h-[7px] w-[7px] rounded-full ring-2 ${labelsVisible ? "hidden" : ""} ${isDark ? "bg-[#818cf8] ring-black" : "bg-[#4f46e5] ring-white"}`}
               />
             )}
           </span>
@@ -170,13 +157,7 @@ export function SidebarNav({
         return (
           <div key={item.to} className={gap}>
             {heading}
-            <button
-              type="button"
-              onClick={() => toggle(item.to)}
-              aria-expanded={isOpen}
-              aria-controls={panel}
-              className={`${rowBase} w-full cursor-pointer ${active && !isOpen ? on : idle}`}
-            >
+            <button type="button" onClick={() => toggle(item.to)} aria-expanded={isOpen} aria-controls={panel} className={`${rowBase} w-full cursor-pointer ${active && !isOpen ? on : idle}`}>
               {iconWithDot}
               <span className="ml-2 flex-1 truncate text-left">{item.label}</span>
               {!isOpen && <Badge n={total} tone="accent" isDark={isDark} />}

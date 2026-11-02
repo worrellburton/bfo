@@ -106,7 +106,10 @@ export function PdfPages({
             <canvas
               ref={(el) => {
                 canvases.current[i] = el;
-              }} className="block rounded-sm bg-white" aria-label={`Page ${i + 1}`} />
+              }}
+              className="block rounded-sm bg-white"
+              aria-label={`Page ${i + 1}`}
+            />
             <div className="absolute inset-0">{overlay?.(i + 1, { w: width, h })}</div>
           </div>
         );

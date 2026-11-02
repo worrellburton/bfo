@@ -101,15 +101,15 @@ describe("diagnose", () => {
   });
 
   it("names each other way texts can't arrive", () => {
-    const d = diagnose(
-      [{ ...MAIL_ONLY, url: "https://burtonfamilyoffice.com/api/mail-webhook", events: ALL, status: "paused" }],
-      [{ ...TOLL_FREE, capabilities: ["voice"] }],
-      NUMBER,
-      { wh_1: { status: "failed", response_status_code: 401 } }
-    );
+    const d = diagnose([{ ...MAIL_ONLY, url: "https://burtonfamilyoffice.com/api/mail-webhook", events: ALL, status: "paused" }], [{ ...TOLL_FREE, capabilities: ["voice"] }], NUMBER, {
+      wh_1: { status: "failed", response_status_code: 401 },
+    });
     expect(d.problems.map((p) => p.code)).toEqual(["wrong_host", "paused", "test_failed", "no_sms"]);
     expect(d.problems.find((p) => p.code === "test_failed")?.message).toMatch(/BIRD_WEBHOOK_SECRET/);
-    expect(diagnose([], [], NUMBER).problems.map((p) => [p.code, p.fixable])).toEqual([["no_webhook", false], ["no_number", false]]);
+    expect(diagnose([], [], NUMBER).problems.map((p) => [p.code, p.fixable])).toEqual([
+      ["no_webhook", false],
+      ["no_number", false],
+    ]);
   });
 
   it("never takes another site's webhook in the same Bird workspace for BFO's, nor changes it", () => {
@@ -219,7 +219,10 @@ describe("can BFO's number text out", () => {
     const pending = sendingReadiness([{ ...SENDER, status: "pending_registrations", destinations: { active: [], pending: ["US"], needs_attention: [] } }], NUMBER);
     expect(pending).toMatchObject({ ready: false, state: "pending" });
     expect(pending.message).toMatch(/toll-free verification is under review/);
-    const refused = sendingReadiness([{ ...SENDER, destinations: { active: [], pending: [], needs_attention: ["US"] }, next: [{ kind: "external", description: "Resubmit the verification with an opt-in screenshot." }] }], NUMBER);
+    const refused = sendingReadiness(
+      [{ ...SENDER, destinations: { active: [], pending: [], needs_attention: ["US"] }, next: [{ kind: "external", description: "Resubmit the verification with an opt-in screenshot." }] }],
+      NUMBER,
+    );
     expect(refused).toMatchObject({ ready: false, state: "needs_attention" });
     expect(refused.message).toMatch(/refused.*Bird says: Resubmit the verification/);
     expect(sendingReadiness([{ ...SENDER, status: "pending_number_ownership", destinations: { active: [], pending: [], needs_attention: ["US"] } }], NUMBER)).toMatchObject({ state: "ownership" });
@@ -231,7 +234,13 @@ describe("can BFO's number text out", () => {
     const out = await call("GET", { view: "setup" });
     expect(calls.find((c) => c.path.startsWith("/v1/sms/senders?"))?.path).toContain("number_id=nda_1");
     expect(out.json.setup).toMatchObject({ ok: true, sending: { ready: true }, missed: 0 });
-    const d = diagnose([{ ...MAIL_ONLY, events: ALL }], [TOLL_FREE], NUMBER, { wh_1: { status: "delivered", response_status_code: 200 } }, { senders: { unreadable: true, status: 403, scope: "sms:read" } });
+    const d = diagnose(
+      [{ ...MAIL_ONLY, events: ALL }],
+      [TOLL_FREE],
+      NUMBER,
+      { wh_1: { status: "delivered", response_status_code: 200 } },
+      { senders: { unreadable: true, status: 403, scope: "sms:read" } },
+    );
     expect(d).toMatchObject({ ok: true, sending: null });
     expect(d.notes[0]).toMatch(/Sending wasn't checked.*"sms:read"/);
   });
@@ -249,7 +258,7 @@ describe("missed texts", () => {
         { id: "a5", event_id: "ev_3", event_type: "email.received", status: "failed", attempted_at: at },
         { id: "a6", event_id: null, event_type: "sms.received", status: "failed", attempted_at: at },
         { id: "a7", event_id: "ev_4", event_type: "sms.received", status: "pending", attempted_at: at },
-      ])
+      ]),
     ).toBe(2);
   });
   it("reads attempts only for the webhook BFO's own secret verifies, over the last day", async () => {

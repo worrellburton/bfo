@@ -42,7 +42,7 @@ function get(url: URL, addr: LookupAddress, signal: AbortSignal): Promise<Upstre
         headers: { Accept: "image/*,*/*;q=0.5", "User-Agent": "BFO-Mail/1.0 (+https://www.burtonfamilyoffice.com)" },
         lookup: (_host, opts, cb) => (opts.all ? cb(null, [addr]) : cb(null, addr.address, addr.family)),
       },
-      (res) => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: res })
+      (res) => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: res }),
     );
     req.on("error", reject);
     req.end();
@@ -96,11 +96,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       url = next;
     }
     const done = () => upstream.body.destroy();
-    if (upstream.status < 200 || upstream.status >= 300) return done(), res.status(upstream.status === 404 ? 404 : 502).end();
-    const type = String(upstream.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
-    if (!type.startsWith("image/")) return done(), res.status(415).end();
+    if (upstream.status < 200 || upstream.status >= 300) return (done(), res.status(upstream.status === 404 ? 404 : 502).end());
+    const type = String(upstream.headers["content-type"] || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!type.startsWith("image/")) return (done(), res.status(415).end());
     const declared = Number(upstream.headers["content-length"] || 0);
-    if (declared > MAX_BYTES) return done(), res.status(413).end();
+    if (declared > MAX_BYTES) return (done(), res.status(413).end());
     const buf = await readCapped(upstream.body, MAX_BYTES);
     if (!buf) return res.status(413).end();
     res.setHeader("Content-Type", type);

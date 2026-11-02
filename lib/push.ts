@@ -58,7 +58,16 @@ export async function devicesFor(userIds: string[]): Promise<Device[]> {
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 
-export type NewMail = { id: string; user_id: string | null; from_email: string | null; from_name: string | null; subject: string | null; snippet: string | null; thread_key?: string | null; occurred_at?: string | null };
+export type NewMail = {
+  id: string;
+  user_id: string | null;
+  from_email: string | null;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+  thread_key?: string | null;
+  occurred_at?: string | null;
+};
 
 /** What a notice for one message says: the sender, the subject, the first words; tapping it opens the message. */
 export function mailPayload(m: NewMail) {
@@ -96,7 +105,12 @@ async function deliver(notices: Notice[], what: string): Promise<number> {
     for (const n of notices) {
       const mine = devices.filter((d) => n.to.includes(d.user_id));
       if (!mine.length) continue;
-      const results = await sendApns(cfg, mine.map((d) => ({ token: d.token, env: d.environment })), n.payload, n.collapseId ? { collapseId: n.collapseId } : undefined);
+      const results = await sendApns(
+        cfg,
+        mine.map((d) => ({ token: d.token, env: d.environment })),
+        n.payload,
+        n.collapseId ? { collapseId: n.collapseId } : undefined,
+      );
       for (const d of mine) {
         const r = results.get(d.token);
         if (!r) continue;
@@ -128,7 +142,7 @@ export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<
     const wanted = fresh.filter((r) => prefs.get(r.user_id!)?.mail !== false);
     return await deliver(
       wanted.map((m) => ({ to: [m.user_id!], payload: mailPayload(m), collapseId: m.id })),
-      "new-mail"
+      "new-mail",
     );
   } catch (err) {
     console.error("push: new-mail notices failed", err);
@@ -160,7 +174,7 @@ export async function notifyNewTexts(rows: NewText[]): Promise<number> {
           collapseId: r.id,
         };
       }),
-      "text"
+      "text",
     );
   } catch (err) {
     console.error("push: text notices failed", err);
@@ -193,7 +207,7 @@ export async function notifyNewPaperMail(rows: NewPaperMail[], now = Date.now())
     if (!to.length) return 0;
     return await deliver(
       fresh.map((r) => ({ to, payload: paperMailPayload(r), collapseId: r.id })),
-      "paper-mail"
+      "paper-mail",
     );
   } catch (err) {
     console.error("push: paper-mail notices failed", err);
@@ -223,17 +237,24 @@ export async function notifyTest(userId: string): Promise<{ devices: number; sen
   if (!cfg) return { devices: 0, sent: 0, error: "not_configured" };
   const devices = await devicesFor([userId]);
   if (!devices.length) return { devices: 0, sent: 0 };
-  const results = await sendApns(cfg, devices.map((d) => ({ token: d.token, env: d.environment })), {
-    aps: { alert: { title: "BFO", body: "Notifications are working. New mail will show up here." }, sound: "default" },
-    url: "/inbox",
-  });
+  const results = await sendApns(
+    cfg,
+    devices.map((d) => ({ token: d.token, env: d.environment })),
+    {
+      aps: { alert: { title: "BFO", body: "Notifications are working. New mail will show up here." }, sound: "default" },
+      url: "/inbox",
+    },
+  );
   let sent = 0;
   let error: string | undefined;
   for (const d of devices) {
     const r = results.get(d.token);
     if (r?.status === 200) {
       sent++;
-      if (r.env !== d.environment) await sb(`push_devices?token=eq.${encodeURIComponent(d.token)}`, { method: "PATCH", body: { environment: r.env } }).catch((err) => console.error("push: couldn't record the device's environment", err));
+      if (r.env !== d.environment)
+        await sb(`push_devices?token=eq.${encodeURIComponent(d.token)}`, { method: "PATCH", body: { environment: r.env } }).catch((err) =>
+          console.error("push: couldn't record the device's environment", err),
+        );
     } else if (r) error = `${r.status}${r.reason ? ` ${r.reason}` : ""}`;
   }
   return { devices: devices.length, sent, ...(error ? { error } : {}) };

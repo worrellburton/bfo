@@ -45,18 +45,39 @@ const KNOWN: Array<[RegExp, string | null]> = [
 const FAMILY_NAME = /^\s*(robert\s+|claire\s+|amanda\s+|worrell\s+)?(l\s+|b\s+)?burton(\s*(jr|sr|ii|iii))?\s*$/i;
 
 const STOPWORDS = new Set([
-  "ach", "pmt", "payment", "paymt", "olb", "mtgpmt", "webxfr", "ck", "des",
-  "ccd", "ppd", "web", "dir", "dbt", "prem", "ins", "epay", "billpay", "bill",
-  "autopay", "auto", "pay", "online", "sched", "transfer", "to", "from", "of",
-  "the", "business",
+  "ach",
+  "pmt",
+  "payment",
+  "paymt",
+  "olb",
+  "mtgpmt",
+  "webxfr",
+  "ck",
+  "des",
+  "ccd",
+  "ppd",
+  "web",
+  "dir",
+  "dbt",
+  "prem",
+  "ins",
+  "epay",
+  "billpay",
+  "bill",
+  "autopay",
+  "auto",
+  "pay",
+  "online",
+  "sched",
+  "transfer",
+  "to",
+  "from",
+  "of",
+  "the",
+  "business",
 ]);
 
-const PREFIXES = [
-  /^business to business ach\s+/i,
-  /^online sched payment\s+/i,
-  /^purchase authorized on \d{1,2}\/\d{1,2}\s+/i,
-  /^recurring payment authorized on \d{1,2}\/\d{1,2}\s+/i,
-];
+const PREFIXES = [/^business to business ach\s+/i, /^online sched payment\s+/i, /^purchase authorized on \d{1,2}\/\d{1,2}\s+/i, /^recurring payment authorized on \d{1,2}\/\d{1,2}\s+/i];
 
 function titleCase(s: string): string {
   return s

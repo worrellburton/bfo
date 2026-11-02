@@ -114,8 +114,12 @@ describe("Bird's refusals, in plain words", () => {
     expect(refusalSentence(422, err("SMSSenderNotConfigured", "x"))).not.toMatch(/toll-free/);
     expect(refusalSentence(422, err("SenderCategoryNotPermitted", "x"))).toMatch(/toll-free verification/);
     expect(refusalSentence(422, err("SMSInvalidRecipient", "x", "validation_error"))).toMatch(/isn't a valid phone number/);
-    expect(refusalSentence(422, JSON.stringify({ error: { type: "validation_error", name: "ValidationFailed", message: "Invalid field values.", param: "to" } }))).toMatch(/isn't a valid phone number/);
-    expect(refusalSentence(422, JSON.stringify({ error: { type: "validation_error", name: "ValidationFailed", message: "x", details: [{ param: "to", message: "bad" }] } }))).toMatch(/valid phone number/);
+    expect(refusalSentence(422, JSON.stringify({ error: { type: "validation_error", name: "ValidationFailed", message: "Invalid field values.", param: "to" } }))).toMatch(
+      /isn't a valid phone number/,
+    );
+    expect(refusalSentence(422, JSON.stringify({ error: { type: "validation_error", name: "ValidationFailed", message: "x", details: [{ param: "to", message: "bad" }] } }))).toMatch(
+      /valid phone number/,
+    );
     expect(refusalSentence(402, err("InsufficientBalance", "x", "billing_error"))).toMatch(/balance is too low/);
     expect(refusalSentence(429, err("RateLimited", "x", "rate_limit_error"))).toMatch(/Wait a minute/);
     expect(refusalSentence(403, err("InsufficientScope", 'This request requires the "sms:write" scope.', "permission_error"))).toMatch(/"sms:write"/);
@@ -159,7 +163,12 @@ describe("/api/texts send", () => {
     const out = await callTexts("POST", { action: "send", to: "(480) 555-1234", text: "  On my way.  ", key: "0b5c7c1e-6f7d-4c55-9d7b-1f0a2b3c4d5e" });
     expect(out.status).toBe(200);
     expect(bird).toEqual([
-      { path: "/v1/sms/messages", method: "POST", body: { to: "+14805551234", from: OURS, text: "On my way.", category: "service" }, headers: { "Idempotency-Key": "0b5c7c1e-6f7d-4c55-9d7b-1f0a2b3c4d5e" } },
+      {
+        path: "/v1/sms/messages",
+        method: "POST",
+        body: { to: "+14805551234", from: OURS, text: "On my way.", category: "service" },
+        headers: { "Idempotency-Key": "0b5c7c1e-6f7d-4c55-9d7b-1f0a2b3c4d5e" },
+      },
     ]);
     const stored = db.find((c) => c.path === "sms_messages?on_conflict=id");
     expect(stored?.init.body).toMatchObject({
@@ -181,7 +190,10 @@ describe("/api/texts send", () => {
     expect(await callTexts("POST", { action: "send", to: "72975", text: "hi" })).toMatchObject({ status: 400, json: { error: "bad_number", message: expect.stringMatching(/short code/) } });
     expect(await callTexts("POST", { action: "send", to: "4805551234", text: "   " })).toMatchObject({ status: 400, json: { error: "empty" } });
     expect(await callTexts("POST", { action: "send", to: "4805551234", text: "a".repeat(1601) })).toMatchObject({ status: 400, json: { error: "too_long" } });
-    expect(await callTexts("POST", { action: "send", to: "4805551234", text: "😀".repeat(500) })).toMatchObject({ status: 400, json: { error: "too_long", message: expect.stringMatching(/12 parts/) } });
+    expect(await callTexts("POST", { action: "send", to: "4805551234", text: "😀".repeat(500) })).toMatchObject({
+      status: 400,
+      json: { error: "too_long", message: expect.stringMatching(/12 parts/) },
+    });
     expect(await callTexts("POST", { action: "send", to: "8445192725", text: "hi" })).toMatchObject({ status: 400, json: { message: "That's BFO's own number." } });
     expect(await callTexts("POST", { action: "send", text: "hi" })).toMatchObject({ status: 400 });
     expect(bird).toEqual([]);
@@ -190,7 +202,21 @@ describe("/api/texts send", () => {
 
   it("answers Bird's refusal with one plain sentence and keeps nothing", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    sendAnswer = { status: 422, body: { error: { type: "validation_error", code: "E00002", name: "ValidationFailed", message: "to +14805551234 is not valid", param: "to", details: [{ param: "to", message: "+14805551234" }], doc_url: "x", request_id: "r" } } };
+    sendAnswer = {
+      status: 422,
+      body: {
+        error: {
+          type: "validation_error",
+          code: "E00002",
+          name: "ValidationFailed",
+          message: "to +14805551234 is not valid",
+          param: "to",
+          details: [{ param: "to", message: "+14805551234" }],
+          doc_url: "x",
+          request_id: "r",
+        },
+      },
+    };
     const out = await callTexts("POST", { action: "send", to: "4805551234", text: "hi" });
     expect(out).toMatchObject({ status: 422, json: { error: "bird_refused", message: expect.stringMatching(/valid phone number/) } });
     expect(db).toEqual([]);
@@ -204,7 +230,10 @@ describe("/api/texts send", () => {
   it("tells the page to keep its key while Bird is still on an earlier try, and after a 5xx", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     sendAnswer = { status: 409, body: { error: { type: "conflict_error", code: "E01004", name: "request_in_progress", message: "x" } } };
-    expect(await callTexts("POST", { action: "send", to: "4805551234", text: "hi", key: "0b5c7c1e-6f7d-4c55" })).toMatchObject({ status: 409, json: { error: "still_sending", message: expect.stringMatching(/still sending/) } });
+    expect(await callTexts("POST", { action: "send", to: "4805551234", text: "hi", key: "0b5c7c1e-6f7d-4c55" })).toMatchObject({
+      status: 409,
+      json: { error: "still_sending", message: expect.stringMatching(/still sending/) },
+    });
     sendAnswer = { status: 503, body: { error: { type: "service_unavailable_error", code: "E01033", name: "IdempotencyUnavailable", message: "x" } } };
     expect((await callTexts("POST", { action: "send", to: "4805551234", text: "hi" })).status).toBe(502);
     // A key used for a different text (E01005) is a plain refusal: the page makes a new one.
@@ -255,7 +284,10 @@ describe("/api/mail-webhook delivery receipts", () => {
     expect(await deliver(receipt("sms.delivered"))).toMatchObject({ status: 200, json: { ok: true, updated: true } });
     expect(bird).toEqual([{ path: "/v1/sms/messages/sms_01out", method: "GET", body: undefined, headers: undefined }]);
     expect(patches()).toEqual([
-      { path: "sms_messages?id=eq.sms_01out&direction=eq.out&or=(status.is.null,status.in.(scheduled,accepted,sent))", init: { method: "PATCH", body: { status: "delivered", error: null }, prefer: "return=minimal" } },
+      {
+        path: "sms_messages?id=eq.sms_01out&direction=eq.out&or=(status.is.null,status.in.(scheduled,accepted,sent))",
+        init: { method: "PATCH", body: { status: "delivered", error: null }, prefer: "return=minimal" },
+      },
     ]);
   });
 
@@ -276,7 +308,10 @@ describe("/api/mail-webhook delivery receipts", () => {
     rows = [{ id: "sms_01out", status: null }];
     lookup = { status: 200, body: { id: "sms_01out", status: "failed", last_error: { code: "recipient_opted_out", description: "Opted out", occurred_at: "2026-10-30T16:00:04Z" } } };
     await deliver(receipt("sms.failed", { error: { code: "recipient_opted_out", description: "Opted out", occurred_at: "2026-10-30T16:00:04Z" } }));
-    expect(patches()[0]).toMatchObject({ path: "sms_messages?id=eq.sms_01out&direction=eq.out&or=(status.is.null,status.in.(scheduled,accepted,sent))", init: { body: { status: "failed", error: expect.stringMatching(/opted out/) } } });
+    expect(patches()[0]).toMatchObject({
+      path: "sms_messages?id=eq.sms_01out&direction=eq.out&or=(status.is.null,status.in.(scheduled,accepted,sent))",
+      init: { body: { status: "failed", error: expect.stringMatching(/opted out/) } },
+    });
   });
 
   it("never takes a final status back when a late receipt arrives out of order", async () => {

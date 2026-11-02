@@ -6,10 +6,7 @@ import { useTheme } from "../theme";
 import { Icon, Menu, PATHS, tiers, textInput, ruleBorder, hairline as hairlineOf } from "../books-shared";
 
 export function meta() {
-  return [
-    { title: "Investments · BFO" },
-    { name: "description", content: "Holdings, allocation and income across every brokerage account." },
-  ];
+  return [{ title: "Investments · BFO" }, { name: "description", content: "Holdings, allocation and income across every brokerage account." }];
 }
 
 // ── Data shapes (api/plaid/data?report=investments) ──────────────────────
@@ -109,8 +106,7 @@ const shortDay = (iso: string) => {
   const d = dayDate(iso);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) });
 };
-const localDay = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 // ── Classification ───────────────────────────────────────────────────────
 
@@ -158,7 +154,7 @@ function accountLabel(a: InvAccount): string {
 }
 
 /** What an account is worth: its positions when it reports any, else its balance. */
-const accountValue = (a: InvAccount) => (a.holdings_count > 0 ? a.holdings_value : a.balance_current ?? 0);
+const accountValue = (a: InvAccount) => (a.holdings_count > 0 ? a.holdings_value : (a.balance_current ?? 0));
 
 // ── Primitives ───────────────────────────────────────────────────────────
 
@@ -180,17 +176,7 @@ type RangeKey = (typeof RANGES)[number]["key"];
 type Point = { day: string; value: number };
 
 /** Invested value over time: hand-rolled SVG, scrubbable (the Home chart's anatomy). */
-function TrendChart({
-  points,
-  isDark,
-  hover,
-  setHover,
-}: {
-  points: Point[];
-  isDark: boolean;
-  hover: number | null;
-  setHover: (i: number | null) => void;
-}) {
+function TrendChart({ points, isDark, hover, setHover }: { points: Point[]; isDark: boolean; hover: number | null; setHover: (i: number | null) => void }) {
   const W = 1000;
   const H = 200;
   const { line, area, xy, gridYs } = useMemo(() => {
@@ -243,16 +229,7 @@ function TrendChart({
           </linearGradient>
         </defs>
         {gridYs.map((y) => (
-          <line
-            key={y}
-            x1={0}
-            x2={W}
-            y1={y}
-            y2={y}
-            stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(17,24,39,0.06)"}
-            strokeDasharray="3 5"
-            vectorEffect="non-scaling-stroke"
-          />
+          <line key={y} x1={0} x2={W} y1={y} y2={y} stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(17,24,39,0.06)"} strokeDasharray="3 5" vectorEffect="non-scaling-stroke" />
         ))}
         <path d={area} fill={`url(#${gid})`} className="motion-safe:animate-[bfo-fade_0.9s_ease-out_both]" />
         <path d={line} fill="none" stroke={accent} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
@@ -267,10 +244,7 @@ function TrendChart({
 
       {active && (
         <>
-          <span
-            className={`pointer-events-none absolute inset-y-0 w-px ${isDark ? "bg-white/20" : "bg-gray-900/15"}`}
-            style={{ left: `${(active[0] / W) * 100}%` }}
-          />
+          <span className={`pointer-events-none absolute inset-y-0 w-px ${isDark ? "bg-white/20" : "bg-gray-900/15"}`} style={{ left: `${(active[0] / W) * 100}%` }} />
           <span
             className={`pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${isDark ? "border-gray-950" : "border-white"}`}
             style={{ left: `${(active[0] / W) * 100}%`, top: `${(active[1] / H) * 100}%`, background: accent }}
@@ -288,8 +262,7 @@ function PointCard({ points, index, x, width, isDark }: { points: Point[]; index
   if (!p) return null;
   const prev = index > 0 ? points[index - 1] : null;
   const start = points[0];
-  const tone = (n: number) =>
-    Math.abs(n) < 0.5 ? "text-gray-500" : n > 0 ? (isDark ? "text-emerald-300" : "text-emerald-600") : isDark ? "text-rose-300" : "text-rose-600";
+  const tone = (n: number) => (Math.abs(n) < 0.5 ? "text-gray-500" : n > 0 ? (isDark ? "text-emerald-300" : "text-emerald-600") : isDark ? "text-rose-300" : "text-rose-600");
   const pct = (n: number, base: number) => (base ? ` (${fmtPct((n / base) * 100)})` : "");
   const date = dayDate(p.day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   const dayMove = prev ? p.value - prev.value : null;
@@ -339,14 +312,7 @@ function PointCard({ points, index, x, width, isDark }: { points: Point[]; index
 /** Institution mark: the Plaid logo when we have it, else a tinted initial. */
 function InstitutionDisc({ a, size = 28 }: { a: { institution_name: string; institution_color: string | null; institution_logo: string | null }; size?: number }) {
   if (a.institution_logo) {
-    return (
-      <img
-        src={`data:image/png;base64,${a.institution_logo}`}
-        alt=""
-        className="shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-black/5"
-        style={{ width: size, height: size }}
-      />
-    );
+    return <img src={`data:image/png;base64,${a.institution_logo}`} alt="" className="shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-black/5" style={{ width: size, height: size }} />;
   }
   return (
     <span
@@ -425,7 +391,7 @@ export default function Investments() {
       setRebuildNote(
         body.days
           ? `Plaid has these accounts' transactions back to ${shortDay(body.from)}, so the chart now starts there${body.error != null ? `. It matches the days BFO recorded within ${(body.error * 100).toFixed(1)}%` : ""}.${unpriced.length ? ` ${unpriced.join(", ")} has no price history, so today's price is used for it.` : ""}${skipped.length ? ` Left out: ${skipped.join("; ")}.` : ""}`
-          : `Nothing to rebuild.${skipped.length ? ` ${skipped.join("; ")}.` : ""}`
+          : `Nothing to rebuild.${skipped.length ? ` ${skipped.join("; ")}.` : ""}`,
       );
       await load();
     } catch (err) {
@@ -483,7 +449,7 @@ export default function Investments() {
           institution: a?.institution_name ?? "",
         };
       }),
-    [data, accountById, total]
+    [data, accountById, total],
   );
 
   const gainTotals = useMemo(() => {
@@ -566,9 +532,7 @@ export default function Investments() {
     const needle = q.trim().toLowerCase();
     const list = rows.filter(
       (r) =>
-        (acct === "all" || r.account_id === acct) &&
-        (cls === "all" || r.klass === cls) &&
-        (!needle || `${r.ticker ?? ""} ${r.name} ${r.accountName} ${r.institution}`.toLowerCase().includes(needle))
+        (acct === "all" || r.account_id === acct) && (cls === "all" || r.klass === cls) && (!needle || `${r.ticker ?? ""} ${r.name} ${r.accountName} ${r.institution}`.toLowerCase().includes(needle)),
     );
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = (r: (typeof rows)[number]): number | string | null => {
@@ -605,8 +569,7 @@ export default function Investments() {
   const filteredValue = filtered.reduce((s, r) => s + r.value, 0);
   const isFiltered = acct !== "all" || cls !== "all" || q.trim() !== "";
 
-  const onSort = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" || key === "account" ? "asc" : "desc" }));
+  const onSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" || key === "account" ? "asc" : "desc" }));
 
   const focusHoldings = (patch: { acct?: string; cls?: AssetClass | "all" }) => {
     if (patch.acct !== undefined) setAcct(patch.acct);
@@ -755,9 +718,7 @@ export default function Investments() {
             Reconnect in Treasury →
           </Link>
         )}
-        {failed && data.errors.some((e) => e.consent) && (
-          <p className={`basis-full text-[12px] ${isDark ? "text-amber-200/80" : "text-amber-800/80"}`}>{failed}</p>
-        )}
+        {failed && data.errors.some((e) => e.consent) && <p className={`basis-full text-[12px] ${isDark ? "text-amber-200/80" : "text-amber-800/80"}`}>{failed}</p>}
       </div>
     ) : null;
 
@@ -785,8 +746,7 @@ export default function Investments() {
         {asOf && !empty && (
           <p className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
-            As of {asOf.toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
-            {asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+            As of {asOf.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, {asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
           </p>
         )}
       </header>
@@ -815,9 +775,7 @@ export default function Investments() {
             <Icon d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" className="h-5 w-5" strokeWidth={1.6} />
           </span>
           <p className="mt-4 text-[14px] font-medium">No investment accounts yet</p>
-          <p className={`mt-1 max-w-[340px] text-[12.5px] ${textMuted}`}>
-            Connect a brokerage in Treasury and its holdings, allocation and income will appear here.
-          </p>
+          <p className={`mt-1 max-w-[340px] text-[12.5px] ${textMuted}`}>Connect a brokerage in Treasury and its holdings, allocation and income will appear here.</p>
           <Link
             to="/treasury"
             className={`mt-5 inline-flex h-8 items-center rounded-full px-4 text-[12px] font-medium text-white transition-colors ${
@@ -860,9 +818,7 @@ export default function Investments() {
                         </>
                       )}
                     </p>
-                    <p className="mt-1.5 text-[24px] font-semibold leading-none tracking-[-0.02em] sm:text-[28px]">
-                      {fmtUSD(hover != null && shown ? shown.value : total)}
-                    </p>
+                    <p className="mt-1.5 text-[24px] font-semibold leading-none tracking-[-0.02em] sm:text-[28px]">{fmtUSD(hover != null && shown ? shown.value : total)}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       {series.length >= 2 ? (
                         <>
@@ -872,9 +828,7 @@ export default function Investments() {
                             {fmtCompact(Math.abs(change))}
                             {changePct != null && <span className="opacity-70">· {fmtPct(changePct)}</span>}
                           </span>
-                          <span className={`text-[11px] ${textMuted}`}>
-                            since {shortDay(first.day)}
-                          </span>
+                          <span className={`text-[11px] ${textMuted}`}>since {shortDay(first.day)}</span>
                         </>
                       ) : (
                         <span className={`text-[11px] ${textMuted}`}>The trend fills in as daily history accrues.</span>
@@ -885,7 +839,8 @@ export default function Investments() {
                     <div className={segWrap} role="group" aria-label="Range">
                       {RANGES.map((r) => {
                         // A range reaching back before the history began shows the same line as "All".
-                        const beyond = Number.isFinite(r.days) && fullSeries.length > 0 && dayDate(fullSeries[0].day).getTime() > dayDate(fullSeries[fullSeries.length - 1].day).getTime() - r.days * 86400000;
+                        const beyond =
+                          Number.isFinite(r.days) && fullSeries.length > 0 && dayDate(fullSeries[0].day).getTime() > dayDate(fullSeries[fullSeries.length - 1].day).getTime() - r.days * 86400000;
                         return (
                           <button
                             key={r.key}
@@ -922,12 +877,17 @@ export default function Investments() {
                   <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-1 pt-1 text-[11px] ${textMuted}`}>
                     {data?.historyRebuilt && (
                       <span>
-                        Before {shortDay(data!.historyRebuilt!.until)}, rebuilt from the accounts' transactions and each day's closing prices. It starts {shortDay(data!.historyRebuilt!.from)}, as far back as
-                        Plaid has the transactions.
+                        Before {shortDay(data!.historyRebuilt!.until)}, rebuilt from the accounts' transactions and each day's closing prices. It starts {shortDay(data!.historyRebuilt!.from)}, as far
+                        back as Plaid has the transactions.
                       </span>
                     )}
                     {canEdit && (
-                      <button type="button" disabled={rebuilding} onClick={() => void rebuildHistory()} className="cursor-pointer underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60">
+                      <button
+                        type="button"
+                        disabled={rebuilding}
+                        onClick={() => void rebuildHistory()}
+                        className="cursor-pointer underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60"
+                      >
                         {rebuilding ? "Rebuilding the past two years…" : data?.historyRebuilt ? "Rebuild" : "Fill in the past two years"}
                       </button>
                     )}
@@ -952,16 +912,12 @@ export default function Investments() {
                   <div className="min-w-0">
                     <p className={kicker}>Cost basis</p>
                     <p className="mt-1 truncate text-[13px] font-medium">{gainTotals.n ? fmtUSD(gainTotals.basis) : "—"}</p>
-                    <p className={`truncate text-[10.5px] ${textMuted}`}>
-                      {gainTotals.n ? `${gainTotals.n} position${gainTotals.n === 1 ? "" : "s"}, ex-cash` : "Not reported"}
-                    </p>
+                    <p className={`truncate text-[10.5px] ${textMuted}`}>{gainTotals.n ? `${gainTotals.n} position${gainTotals.n === 1 ? "" : "s"}, ex-cash` : "Not reported"}</p>
                   </div>
                   <div className="min-w-0">
                     <p className={kicker}>Income · 12 mo</p>
                     <p className="mt-1 truncate text-[13px] font-medium">{data?.income ? fmtUSD(data.income.ttm) : "—"}</p>
-                    {data?.income && total > 0 && (
-                      <p className={`truncate text-[10.5px] ${textMuted}`}>{fmtPct((data.income.ttm / total) * 100, false)} trailing yield</p>
-                    )}
+                    {data?.income && total > 0 && <p className={`truncate text-[10.5px] ${textMuted}`}>{fmtPct((data.income.ttm / total) * 100, false)} trailing yield</p>}
                   </div>
                   <div className="min-w-0">
                     <p className={kicker}>Cash & money market</p>
@@ -1031,9 +987,7 @@ export default function Investments() {
                             <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: isDark ? a.dark : a.light }} aria-hidden />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[12.5px] font-medium">{a.label}</span>
-                              <span className={`block text-[11px] ${textMuted}`}>
-                                {a.count ? `${a.count} holding${a.count === 1 ? "" : "s"}` : "Account balance"}
-                              </span>
+                              <span className={`block text-[11px] ${textMuted}`}>{a.count ? `${a.count} holding${a.count === 1 ? "" : "s"}` : "Account balance"}</span>
                             </span>
                             <span className="text-right">
                               <span className="block text-[12.5px] font-medium">{fmtUSD(a.value)}</span>
@@ -1100,11 +1054,7 @@ export default function Investments() {
             <div className={`flex flex-col gap-3 border-b px-4 py-3 sm:px-5 lg:flex-row lg:items-center ${ruleBorder(isDark)}`}>
               <div className="flex min-w-0 items-baseline gap-2.5 lg:mr-auto">
                 <p className={kicker}>Holdings</p>
-                {!firstLoad && (
-                  <span className={`text-[11px] ${textMuted}`}>
-                    {isFiltered ? `${filtered.length} of ${rows.length} · ${fmtUSD(filteredValue)}` : `${rows.length} positions`}
-                  </span>
-                )}
+                {!firstLoad && <span className={`text-[11px] ${textMuted}`}>{isFiltered ? `${filtered.length} of ${rows.length} · ${fmtUSD(filteredValue)}` : `${rows.length} positions`}</span>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
@@ -1126,10 +1076,7 @@ export default function Investments() {
                       size="md"
                       label="Account"
                       onChange={setAcct}
-                      options={[
-                        { value: "all", label: "All accounts" },
-                        ...accounts.map((a) => ({ value: a.account_id, label: accountLabel(a), hint: a.institution_name })),
-                      ]}
+                      options={[{ value: "all", label: "All accounts" }, ...accounts.map((a) => ({ value: a.account_id, label: accountLabel(a), hint: a.institution_name }))]}
                     />
                   </div>
                 )}
@@ -1164,9 +1111,7 @@ export default function Investments() {
               <div className="px-4 py-14 text-center">
                 <Icon d={PATHS.search} className={`mx-auto h-6 w-6 ${t3}`} strokeWidth={1.4} />
                 <p className={`mt-3 text-sm font-medium ${t1}`}>{rows.length ? "No holdings match" : "No positions reported"}</p>
-                <p className={`mt-1 text-xs ${t2}`}>
-                  {rows.length ? "Try a different search or account." : "These accounts report balances but no individual positions."}
-                </p>
+                <p className={`mt-1 text-xs ${t2}`}>{rows.length ? "Try a different search or account." : "These accounts report balances but no individual positions."}</p>
                 {isFiltered && (
                   <button
                     type="button"
@@ -1202,10 +1147,15 @@ export default function Investments() {
                     </thead>
                     <tbody>
                       {filtered.map((r, i) => (
-                        <tr key={`${r.account_id}-${r.security_id}`} className={`transition-colors ${i ? `border-t ${hairlineOf(isDark)}` : ""} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}>
+                        <tr
+                          key={`${r.account_id}-${r.security_id}`}
+                          className={`transition-colors ${i ? `border-t ${hairlineOf(isDark)}` : ""} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
+                        >
                           <td className="w-full max-w-0 py-2.5 pl-5 pr-2">
                             <div className="flex min-w-0 items-center gap-3">
-                              <span className={tickerBadge} title={r.ticker ?? undefined}>{r.ticker || "—"}</span>
+                              <span className={tickerBadge} title={r.ticker ?? undefined}>
+                                {r.ticker || "—"}
+                              </span>
                               <span className="min-w-0">
                                 <span className={`block max-w-[320px] truncate text-[13px] ${t1}`} title={r.name}>
                                   {r.name}
@@ -1224,9 +1174,7 @@ export default function Investments() {
                           <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @7xl:table-cell ${t2}`}>{qtyFmt.format(r.quantity)}</td>
                           <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @4xl:table-cell ${t2}`}>{usd2.format(r.price)}</td>
                           <td className={`px-2 py-2.5 text-right text-[13px] font-medium ${t1}`}>{fmtUSD(r.value)}</td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @6xl:table-cell ${t2}`}>
-                            {r.klass === "cash" || r.cost_basis == null ? "—" : fmtUSD(r.cost_basis)}
-                          </td>
+                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @6xl:table-cell ${t2}`}>{r.klass === "cash" || r.cost_basis == null ? "—" : fmtUSD(r.cost_basis)}</td>
                           <td className="px-2 py-2.5 text-right">
                             {r.gain == null ? (
                               <span className={t3}>—</span>
@@ -1346,19 +1294,13 @@ export default function Investments() {
                           <button
                             type="button"
                             onClick={() => focusHoldings({ acct: on ? "all" : a.account_id, cls: "all" })}
-                            className={`flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors ${rowHover} ${
-                              on ? (isDark ? "bg-white/[0.035]" : "bg-gray-50") : ""
-                            }`}
+                            className={`flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors ${rowHover} ${on ? (isDark ? "bg-white/[0.035]" : "bg-gray-50") : ""}`}
                             title="Show this account's holdings"
                           >
                             <InstitutionDisc a={a} />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[12.5px] font-medium">{accountLabel(a)}</span>
-                              <span className={`block truncate text-[11px] ${textMuted}`}>
-                                {[a.institution_name, subtypeLabel(a.subtype), a.entity_name]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </span>
+                              <span className={`block truncate text-[11px] ${textMuted}`}>{[a.institution_name, subtypeLabel(a.subtype), a.entity_name].filter(Boolean).join(" · ")}</span>
                             </span>
                             <span className="shrink-0 text-right">
                               <span className="block text-[12.5px] font-medium">{fmtUSD(v)}</span>
@@ -1378,12 +1320,15 @@ export default function Investments() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] font-medium">{e.institution}</span>
-                        <span className={`block truncate text-[11px] ${textMuted}`}>
-                          {e.consent ? "Holdings not shared yet" : e.reconnect ? "Needs reconnecting" : "Temporarily unavailable"}
-                        </span>
+                        <span className={`block truncate text-[11px] ${textMuted}`}>{e.consent ? "Holdings not shared yet" : e.reconnect ? "Needs reconnecting" : "Temporarily unavailable"}</span>
                       </span>
                       {e.consent ? (
-                        <button type="button" disabled={!!consenting} onClick={() => void connectHoldings(e.item_id)} className={`${TAP_Y} shrink-0 cursor-pointer text-[11.5px] font-medium ${accentText} hover:underline disabled:opacity-60`}>
+                        <button
+                          type="button"
+                          disabled={!!consenting}
+                          onClick={() => void connectHoldings(e.item_id)}
+                          className={`${TAP_Y} shrink-0 cursor-pointer text-[11.5px] font-medium ${accentText} hover:underline disabled:opacity-60`}
+                        >
                           {consenting === e.item_id ? "Opening Plaid…" : "Connect holdings →"}
                         </button>
                       ) : (
@@ -1435,12 +1380,7 @@ export default function Investments() {
                   <div className="mt-4">
                     <div className="flex h-[72px] items-end gap-[3px]" onPointerLeave={() => setIncomeHover(null)}>
                       {months.map((m, i) => (
-                        <div
-                          key={m.key}
-                          className="flex h-full flex-1 cursor-default items-end"
-                          onPointerEnter={() => setIncomeHover(i)}
-                          aria-label={`${m.long}: ${fmtUSD(m.total)}`}
-                        >
+                        <div key={m.key} className="flex h-full flex-1 cursor-default items-end" onPointerEnter={() => setIncomeHover(i)} aria-label={`${m.long}: ${fmtUSD(m.total)}`}>
                           <div
                             className="w-full rounded-t-[4px] transition-opacity"
                             style={{
@@ -1459,8 +1399,7 @@ export default function Investments() {
                     <p className={`mt-2 h-4 text-[11.5px] ${textSoft}`} aria-live="polite">
                       {incomeHover != null ? (
                         <>
-                          <span className={isDark ? "text-gray-100" : "text-gray-900"}>{months[incomeHover].long}</span> ·{" "}
-                          {fmtUSD(months[incomeHover].total)}
+                          <span className={isDark ? "text-gray-100" : "text-gray-900"}>{months[incomeHover].long}</span> · {fmtUSD(months[incomeHover].total)}
                           {months[incomeHover].total > 0 && (
                             <span className={textMuted}>
                               {" "}

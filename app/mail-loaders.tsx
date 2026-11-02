@@ -396,7 +396,10 @@ export function ReaderLoader({ seal, subject, from, snippet }: { seal?: ReactNod
   // The first words, in three short lines, as the letter would start.
   const lines = words ? [words.slice(0, 34), words.slice(34, 66), words.slice(66, 92)].map((l) => l.trim()).filter(Boolean) : [];
   return (
-    <div role="status" aria-label={subject ? `Opening “${subject}”` : "Opening the message"} className={`env-scene flex flex-col items-center justify-center px-5 pb-8 max-md:min-h-[calc(100dvh-8rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] ${t.dark ? "" : "env-light"}`}
+    <div
+      role="status"
+      aria-label={subject ? `Opening “${subject}”` : "Opening the message"}
+      className={`env-scene flex flex-col items-center justify-center px-5 pb-8 max-md:min-h-[calc(100dvh-8rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] ${t.dark ? "" : "env-light"}`}
       // Headroom for the letter as it rises out of the envelope; on phones the scene is centred in the screen.
       style={{ paddingTop: 88 }}
     >

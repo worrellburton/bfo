@@ -26,12 +26,15 @@ export function statesToRead(a: StateReadable): { code: string; home: boolean }[
   if (!home) return [];
   // Still being formed: the state has nothing to read yet.
   if (Object.values(a.palm ?? {}).some((p) => p?.formation && p.formation.status !== "completed" && p.formation.status !== "canceled")) return [];
-  const foreign = new Set(Object.entries(a.foreign ?? {}).filter(([c, f]) => c !== home && !f?.notNeeded).map(([c]) => c));
+  const foreign = new Set(
+    Object.entries(a.foreign ?? {})
+      .filter(([c, f]) => c !== home && !f?.notNeeded)
+      .map(([c]) => c),
+  );
   const host = hostState(a);
   if (host && host !== home) foreign.add(host);
   return [{ code: home, home: true }, ...[...foreign].sort().map((code) => ({ code, home: false }))];
 }
-
 
 /**
  * What reading every state's record costs, state by state: the record alone
@@ -50,11 +53,11 @@ export function stateReadCost(
     const rec = home ? a.stateRecord : a.foreign?.[code]?.record;
     return !!rec && rec.mode === mode && now - rec.checkedAt < opts.freshMs;
   };
-  const states = statesToRead(a).filter(({ code, home }) => !kept(code, home)).map(({ code, home }) => {
-    const hasNumber = !!(home ? a.fileNumber : a.foreign?.[code]?.fileNumber)?.trim();
-    return { code, home, cents: mode === "live" ? stateRecordCents(hasNumber) : 0 };
-  });
+  const states = statesToRead(a)
+    .filter(({ code, home }) => !kept(code, home))
+    .map(({ code, home }) => {
+      const hasNumber = !!(home ? a.fileNumber : a.foreign?.[code]?.fileNumber)?.trim();
+      return { code, home, cents: mode === "live" ? stateRecordCents(hasNumber) : 0 };
+    });
   return { states, cents: states.reduce((n, s) => n + s.cents, 0) };
 }
-
-

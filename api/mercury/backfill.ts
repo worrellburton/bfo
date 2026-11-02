@@ -74,10 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Only fill history Plaid doesn't already cover for this account.
-      const earliestRes = await db(
-        `book_transactions?account_id=eq.${encodeURIComponent(pref.account_id)}` +
-          `&select=date&order=date.asc&limit=1`
-      );
+      const earliestRes = await db(`book_transactions?account_id=eq.${encodeURIComponent(pref.account_id)}` + `&select=date&order=date.asc&limit=1`);
       // A failed read must stop the run: read as "no Plaid rows", it would
       // insert all 24 months on top of what Plaid already has.
       if (!earliestRes.ok) {
@@ -114,9 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             plaid_category: null,
             plaid_category_detailed: null,
             payment_channel: t.kind ?? null,
-            txn_type: (rule.type === "intercompany" ? "transfer" : rule.type ?? "normal") as
-              | "normal"
-              | "transfer",
+            txn_type: (rule.type === "intercompany" ? "transfer" : (rule.type ?? "normal")) as "normal" | "transfer",
             intercompany: rule.type === "intercompany",
             book_category: rule.category,
             entity_id: pref.entity_id ?? null,
@@ -145,9 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (eligible.length) {
         const ids = inList(eligible.map((t) => `mercury_${t.id}`));
         const existingRes = await db(`book_txn_receipt?transaction_id=in.(${ids})&select=transaction_id,label`);
-        const existing = new Set(
-          existingRes.ok ? ((await existingRes.json()) as any[]).map((r) => `${r.transaction_id}|${r.label}`) : []
-        );
+        const existing = new Set(existingRes.ok ? ((await existingRes.json()) as any[]).map((r) => `${r.transaction_id}|${r.label}`) : []);
         for (const t of eligible) {
           for (const att of t.attachments ?? []) {
             if (!att.url) continue;

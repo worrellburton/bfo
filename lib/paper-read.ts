@@ -151,7 +151,10 @@ export function toReading(raw: unknown, fromScan: boolean): PaperReading {
     dates: pairs(o.dates, "label", "date"),
     references: pairs(o.references, "label", "value"),
     contents: fromScan ? str(o.contents) : null,
-    envelopeText: (Array.isArray(o.envelopeText) ? o.envelopeText : []).map(str).filter((s): s is string => !!s).slice(0, 40),
+    envelopeText: (Array.isArray(o.envelopeText) ? o.envelopeText : [])
+      .map(str)
+      .filter((s): s is string => !!s)
+      .slice(0, 40),
     fromScan,
   };
 }
@@ -171,7 +174,7 @@ export async function readPiece(row: MailRow): Promise<PaperReading> {
   if (row.scan_path && !scan && (!envelope || row.reading_from === envelopeOnly)) {
     // Remembered, so opening the piece doesn't fetch the scan again and fail the same way; "Try again" still can.
     await sb(`stable_mail?id=eq.${encodeURIComponent(row.id)}`, { method: "PATCH", body: { reading_from: FAILED + readingKey(row) } }).catch((e) =>
-      console.error("paper-read: couldn't record an unreadable scan", e)
+      console.error("paper-read: couldn't record an unreadable scan", e),
     );
     throw new ReadingUnavailable("BFO couldn't read the scan: it's too large, in a format BFO can't read, or storage didn't answer. Open it, or try again.");
   }
@@ -213,7 +216,7 @@ export async function readPiece(row: MailRow): Promise<PaperReading> {
   } catch (err) {
     // The model ran and was billed: remember the failure so the next open doesn't pay again.
     await sb(`stable_mail?id=eq.${encodeURIComponent(row.id)}`, { method: "PATCH", body: { reading_from: FAILED + readingKey(row) } }).catch((e) =>
-      console.error("paper-read: couldn't record a failed reading", e)
+      console.error("paper-read: couldn't record a failed reading", e),
     );
     throw err instanceof ReadingUnavailable ? err : new ReadingUnavailable("BFO couldn't make sense of this piece; try again.");
   }

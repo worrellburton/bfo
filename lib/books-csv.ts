@@ -22,7 +22,11 @@ type PlannedRow<T> = T & {
 };
 
 const cents = (amount: number | string) => Math.round(Number(amount) * 100);
-const norm = (s: string | null | undefined) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const norm = (s: string | null | undefined) =>
+  String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 
 /**
  * `rows` and `existing` are both in Books sign (outflows positive); an
@@ -31,7 +35,7 @@ const norm = (s: string | null | undefined) => String(s ?? "").toLowerCase().rep
  */
 export function planCsvImport<T extends { date: string; amount: number; description: string }>(
   rows: T[],
-  existing: Array<{ date: string; amount: number | string; name?: string | null }>
+  existing: Array<{ date: string; amount: number | string; name?: string | null }>,
 ): { rows: PlannedRow<T>[]; skipped: number } {
   // How many stored rows each date|amount still has to absorb, by description.
   const stored = new Map<string, Map<string, number>>();

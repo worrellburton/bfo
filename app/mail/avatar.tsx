@@ -27,7 +27,13 @@ export function Avatar({ a, size = "h-10 w-10 text-[13px]", trusted = true }: { 
       <span aria-hidden="true" className={`relative inline-flex shrink-0 overflow-hidden rounded-full ${size}`}>
         {loaded !== photo && (
           <span className="absolute inset-0">
-            <InitialsAvatar a={a} size={`h-full w-full ${size.split(" ").filter((c) => c.startsWith("text-")).join(" ")}`} />
+            <InitialsAvatar
+              a={a}
+              size={`h-full w-full ${size
+                .split(" ")
+                .filter((c) => c.startsWith("text-"))
+                .join(" ")}`}
+            />
           </span>
         )}
         <img
@@ -93,4 +99,3 @@ function InitialsAvatar({ a, size }: { a: MailAddress; size: string }) {
     </span>
   );
 }
-

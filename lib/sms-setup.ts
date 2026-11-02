@@ -32,7 +32,12 @@ export type BirdNumber = { id?: string; number?: string | null; capabilities?: s
 
 /** The receipts that move a sent text's status (lib/sms-send.ts applySmsStatus). */
 export const SMS_STATUS_EVENTS = ["sms.sent", "sms.delivered", "sms.undelivered", "sms.failed", "sms.rejected", "sms.expired"] as const;
-export type BirdSender = { id: string; status?: string | null; destinations?: { active?: string[]; pending?: string[]; needs_attention?: string[] } | null; next?: { kind?: string; description?: string }[] | null };
+export type BirdSender = {
+  id: string;
+  status?: string | null;
+  destinations?: { active?: string[]; pending?: string[]; needs_attention?: string[] } | null;
+  next?: { kind?: string; description?: string }[] | null;
+};
 /** One delivery attempt from GET /v1/webhooks/{id}/attempts. */
 export type WebhookAttempt = { id: string; event_id?: string | null; event_type?: string; status: "delivered" | "pending" | "failed"; attempted_at?: string };
 
@@ -99,13 +104,20 @@ export function sendingReadiness(senders: BirdSender[], ourNumber: string): NonN
   const sender = senders[0];
   if (!sender) return { ready: false, state: "unknown", message: `Bird lists no SMS sender for ${ourNumber}, so it can't send texts from it yet.` };
   const d = sender.destinations ?? {};
-  const next = (sender.next ?? []).map((n) => n.description?.trim()).filter(Boolean).join(" ");
+  const next = (sender.next ?? [])
+    .map((n) => n.description?.trim())
+    .filter(Boolean)
+    .join(" ");
   const then = next ? ` Bird says: ${next}` : "";
   if ((d.active ?? []).includes("US")) return { ready: true, state: "ready", message: "BFO can text US numbers from this number." };
   if (sender.status === "pending_number_ownership")
     return { ready: false, state: "ownership", message: `Bird is waiting for the paperwork proving BFO owns this number; no text can be sent from it until that's accepted.${then}` };
   if ((d.needs_attention ?? []).includes("US"))
-    return { ready: false, state: "needs_attention", message: `Bird needs something before BFO can text US numbers: the toll-free verification was refused, or US texting is switched off in Bird (SMS → Destinations).${then}` };
+    return {
+      ready: false,
+      state: "needs_attention",
+      message: `Bird needs something before BFO can text US numbers: the toll-free verification was refused, or US texting is switched off in Bird (SMS → Destinations).${then}`,
+    };
   if ((d.pending ?? []).includes("US"))
     return { ready: false, state: "pending", message: "The toll-free verification is under review with the carriers. BFO can text out once it's approved; texts still arrive here meanwhile." };
   return { ready: false, state: "needs_attention", message: `US texting isn't set up for this number yet: submit the toll-free verification in Bird (SMS → Senders).${then}` };
@@ -124,7 +136,7 @@ export function diagnose(
   numbersOrNot: BirdNumber[] | Unreadable,
   ourNumber: string,
   tests: Record<string, WebhookTest> = {},
-  more: { senders?: BirdSender[] | Unreadable; attempts?: WebhookAttempt[] | Unreadable } = {}
+  more: { senders?: BirdSender[] | Unreadable; attempts?: WebhookAttempt[] | Unreadable } = {},
 ): SmsSetup {
   // Everything below stops texts unless it says otherwise.
   const problems: (Omit<SetupProblem, "blocking"> & { blocking?: boolean })[] = [];
@@ -132,7 +144,7 @@ export function diagnose(
   const hooks = isUnreadable(hooksOrNot) ? null : hooksOrNot;
   const ours = hooks ? bfoHooks(hooks) : [];
   const hook = hooks ? mailHook(hooks, tests) : null;
-  const test = hook ? tests[hook.id] ?? null : null;
+  const test = hook ? (tests[hook.id] ?? null) : null;
   if (isUnreadable(hooksOrNot)) {
     const { scope, status } = hooksOrNot;
     problems.push({
@@ -158,9 +170,15 @@ export function diagnose(
         fixable: true,
         blocking: false,
       });
-    if (hostOf(hook.url) !== SITE_HOST) problems.push({ code: "wrong_host", message: `Bird's webhook to BFO uses the bare domain, not ${SITE_HOST}. The bare domain redirects, and Bird doesn't follow redirects.`, fixable: true });
+    if (hostOf(hook.url) !== SITE_HOST)
+      problems.push({ code: "wrong_host", message: `Bird's webhook to BFO uses the bare domain, not ${SITE_HOST}. The bare domain redirects, and Bird doesn't follow redirects.`, fixable: true });
     if (hook.status === "paused") problems.push({ code: "paused", message: "Bird's webhook to BFO is paused.", fixable: true });
-    if (hook.status === "degraded") problems.push({ code: "degraded", message: "Bird reports that deliveries to BFO's webhook have been failing. Check that BIRD_WEBHOOK_SECRET in Vercel matches the webhook's signing secret.", fixable: false });
+    if (hook.status === "degraded")
+      problems.push({
+        code: "degraded",
+        message: "Bird reports that deliveries to BFO's webhook have been failing. Check that BIRD_WEBHOOK_SECRET in Vercel matches the webhook's signing secret.",
+        fixable: false,
+      });
     if (test && test.status !== "delivered") {
       const code = test.response_status_code;
       problems.push({
@@ -169,12 +187,12 @@ export function diagnose(
           code === 401 && ours.length > 1
             ? `${ours.length} webhooks in Bird point at BFO, and BFO turned down the signed test from each: BIRD_WEBHOOK_SECRET in Vercel matches none of them. In Bird, open the webhook you made for BFO, copy its signing secret (it starts with whsec_), paste it into Vercel exactly, and redeploy. Point the other one back to its own site.`
             : code === 401
-            ? "BFO turned down Bird's signed test: BIRD_WEBHOOK_SECRET in Vercel doesn't match this webhook's signing secret. In Bird, open the webhook, copy its signing secret (it starts with whsec_), paste it into Vercel exactly, and redeploy."
-            : code === 503
-              ? "BFO isn't set up to take Bird's webhook: BIRD_WEBHOOK_SECRET isn't set in Vercel."
-              : code
-                ? `BFO answered Bird's test text with HTTP ${code}.`
-                : `Bird couldn't reach BFO's webhook${test.error ? ` (${test.error})` : ""}.`,
+              ? "BFO turned down Bird's signed test: BIRD_WEBHOOK_SECRET in Vercel doesn't match this webhook's signing secret. In Bird, open the webhook, copy its signing secret (it starts with whsec_), paste it into Vercel exactly, and redeploy."
+              : code === 503
+                ? "BFO isn't set up to take Bird's webhook: BIRD_WEBHOOK_SECRET isn't set in Vercel."
+                : code
+                  ? `BFO answered Bird's test text with HTTP ${code}.`
+                  : `Bird couldn't reach BFO's webhook${test.error ? ` (${test.error})` : ""}.`,
         fixable: false,
       });
     }
@@ -194,17 +212,28 @@ export function diagnose(
     notes.push(
       numbersOrNot.scope
         ? `The number itself wasn't checked: BFO's Bird key needs the "${numbersOrNot.scope}" permission to look it up.`
-        : `The number itself wasn't checked: Bird didn't answer (HTTP ${numbersOrNot.status}).`
+        : `The number itself wasn't checked: Bird didn't answer (HTTP ${numbersOrNot.status}).`,
     );
   } else if (!mine) {
     problems.push({ code: "no_number", message: `Bird doesn't list ${ourNumber} among this workspace's numbers, so it can't deliver texts to it here.`, fixable: false });
   } else {
-    if (!(mine.capabilities ?? []).includes("sms")) problems.push({ code: "no_sms", message: `Bird says ${ourNumber} can't take SMS. Texting needs a number with the SMS capability.`, fixable: false });
+    if (!(mine.capabilities ?? []).includes("sms"))
+      problems.push({ code: "no_sms", message: `Bird says ${ourNumber} can't take SMS. Texting needs a number with the SMS capability.`, fixable: false });
     if (mine.status === "released") problems.push({ code: "released", message: `${ourNumber} has been released in Bird.`, fixable: false });
   }
   const { senders, attempts } = more;
-  if (isUnreadable(senders)) notes.push(senders.scope ? `Sending wasn't checked: BFO's Bird key needs the "${senders.scope}" permission to read SMS senders.` : `Sending wasn't checked: Bird didn't answer${senders.status ? ` (HTTP ${senders.status})` : ""}.`);
-  if (isUnreadable(attempts)) notes.push(attempts.scope ? `Missed texts weren't counted: BFO's Bird key needs the "${attempts.scope}" permission to read webhook deliveries.` : `Missed texts weren't counted: Bird didn't answer${attempts.status ? ` (HTTP ${attempts.status})` : ""}.`);
+  if (isUnreadable(senders))
+    notes.push(
+      senders.scope
+        ? `Sending wasn't checked: BFO's Bird key needs the "${senders.scope}" permission to read SMS senders.`
+        : `Sending wasn't checked: Bird didn't answer${senders.status ? ` (HTTP ${senders.status})` : ""}.`,
+    );
+  if (isUnreadable(attempts))
+    notes.push(
+      attempts.scope
+        ? `Missed texts weren't counted: BFO's Bird key needs the "${attempts.scope}" permission to read webhook deliveries.`
+        : `Missed texts weren't counted: Bird didn't answer${attempts.status ? ` (HTTP ${attempts.status})` : ""}.`,
+    );
   const all: SetupProblem[] = problems.map((p) => ({ ...p, blocking: p.blocking ?? true }));
   return {
     ok: !all.some((p) => p.blocking),
@@ -242,7 +271,11 @@ async function birdListOrWhy<T>(path: string): Promise<T[] | Unreadable> {
 }
 
 class BirdRefused extends Error {
-  constructor(readonly status: number, readonly scope: string | null, message: string) {
+  constructor(
+    readonly status: number,
+    readonly scope: string | null,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -282,14 +315,11 @@ const DAY_MS = 24 * 60 * 60_000;
 
 /** Bird's answers, and a signed test text, diagnosed. */
 export async function smsSetup(ourNumber: string): Promise<SmsSetup> {
-  const [hooks, numbers] = await Promise.all([
-    birdListOrWhy<BirdWebhook>("/v1/webhooks"),
-    birdListOrWhy<BirdNumber>(`/v1/numbers?number=${encodeURIComponent(ourNumber)}`),
-  ]);
+  const [hooks, numbers] = await Promise.all([birdListOrWhy<BirdWebhook>("/v1/webhooks"), birdListOrWhy<BirdNumber>(`/v1/numbers?number=${encodeURIComponent(ourNumber)}`)]);
   // Every webhook pointing at BFO gets a signed test: the one BFO accepts is BFO's.
   const ours = isUnreadable(hooks) ? [] : bfoHooks(hooks).slice(0, 5);
   const results = await Promise.all(
-    ours.map((h) => testHook(h.id).catch((err): WebhookTest => ({ status: "failed", response_status_code: null, error: err instanceof Error ? err.message : String(err) })))
+    ours.map((h) => testHook(h.id).catch((err): WebhookTest => ({ status: "failed", response_status_code: null, error: err instanceof Error ? err.message : String(err) }))),
   );
   const tests = Object.fromEntries(ours.map((h, i) => [h.id, results[i]]));
   // The number's SMS sender (exactly one per number), and missed texts on the webhook BFO's own secret verifies, only.
@@ -338,7 +368,7 @@ export async function replayMissedTexts(ourNumber: string): Promise<SmsSetup> {
         ? `BFO's Bird key isn't allowed to replay webhook deliveries${scope ? ` (it needs the "${scope}" permission)` : ""}.`
         : quota
           ? "Bird allows 20 replays a day across the organization (shared with Impact Advisory), and today's are used up. Try again tomorrow."
-          : "Bird is busy with replays just now. Try again in a minute."
+          : "Bird is busy with replays just now. Try again in a minute.",
     );
     return before;
   }
@@ -351,7 +381,7 @@ export async function fixSmsSetup(ourNumber: string): Promise<SmsSetup> {
   const hooks = await birdListOrWhy<BirdWebhook>("/v1/webhooks");
   // Only the webhook BFO's own secret verifies is changed (smsSetup tested each one just now).
   const before = await smsSetup(ourNumber);
-  const hook = isUnreadable(hooks) || !before.test?.delivered ? null : bfoHooks(hooks).find((h) => h.id === before.webhook?.id) ?? null;
+  const hook = isUnreadable(hooks) || !before.test?.delivered ? null : (bfoHooks(hooks).find((h) => h.id === before.webhook?.id) ?? null);
   const body = hook ? fixBody(hook) : null;
   if (hook && body) {
     const r = await birdPlatformFetch(`/v1/webhooks/${encodeURIComponent(hook.id)}`, { method: "PATCH", body });

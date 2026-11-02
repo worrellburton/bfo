@@ -40,9 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const client = getPlaidClient();
-    const items = await sb<Array<{ item_id: string; access_token: string; institution_name: string }>>(
-      "plaid_items?select=item_id,access_token,institution_name"
-    );
+    const items = await sb<Array<{ item_id: string; access_token: string; institution_name: string }>>("plaid_items?select=item_id,access_token,institution_name");
 
     // Ask every live connection which accounts it still has. A connection we
     // can't reach is skipped rather than treated as "everything is gone".
@@ -74,8 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Only mappings worth keeping count as stale — bare identity rows carry
     // nothing to preserve.
     const prefs = await sb<Array<{ account_id: string; nickname: string | null; entity_name: string | null }>>(
-      "plaid_account_prefs?select=account_id,nickname,entity_name&archived_at=is.null" +
-        "&or=(entity_id.not.is.null,nickname.not.is.null,hidden.is.true)"
+      "plaid_account_prefs?select=account_id,nickname,entity_name&archived_at=is.null" + "&or=(entity_id.not.is.null,nickname.not.is.null,hidden.is.true)",
     );
     const states = await sb<Array<{ account_id: string }>>("plaid_account_state?select=account_id");
 
@@ -86,9 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Books rows for accounts the banks no longer report. Only those rows are
     // read, every page of them (PostgREST stops at 1,000 rows without saying).
     const notLive = live.size ? `&account_id=not.in.(${quotedList(live)})` : "";
-    const bookAccounts = await fetchAll<{ account_id: string }>(
-      `book_transactions?select=account_id${notLive}&order=transaction_id.asc`
-    );
+    const bookAccounts = await fetchAll<{ account_id: string }>(`book_transactions?select=account_id${notLive}&order=transaction_id.asc`);
     const staleBooks = new Set<string>();
     for (const b of bookAccounts ?? []) if (!live.has(b.account_id)) staleBooks.add(b.account_id);
 
@@ -132,10 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sbFetch(`plaid_account_state?account_id=in.(${inList(stale)})`, { method: "DELETE" });
     }
     if (staleBooks.size) {
-      const countRes = await sbFetch(
-        `book_transactions?account_id=in.(${inList(staleBooks)})&select=transaction_id&limit=1`,
-        { headers: { Prefer: "count=exact" } }
-      );
+      const countRes = await sbFetch(`book_transactions?account_id=in.(${inList(staleBooks)})&select=transaction_id&limit=1`, { headers: { Prefer: "count=exact" } });
       removedTxns = Number(countRes.headers.get("content-range")?.split("/")[1] ?? 0);
       await sbFetch(`book_transactions?account_id=in.(${inList(staleBooks)})`, { method: "DELETE" });
     }

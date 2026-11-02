@@ -23,7 +23,10 @@ const SECRET_SECONDS = 600;
 type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" | "beta"; expiresAt: number };
 
 export class RealtimeError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -101,7 +104,14 @@ export async function mintRealtimeSecret(opts: { instructions: string; tools: An
   });
   if (beta.ok) {
     const j = (await beta.json()) as { client_secret?: { value?: string; expires_at?: number } };
-    if (j.client_secret?.value) return { secret: j.client_secret.value, model: REALTIME_MODEL_BETA, voice: REALTIME_VOICE_BETA, api: "beta", expiresAt: j.client_secret.expires_at ? j.client_secret.expires_at * 1000 : expiresAt };
+    if (j.client_secret?.value)
+      return {
+        secret: j.client_secret.value,
+        model: REALTIME_MODEL_BETA,
+        voice: REALTIME_VOICE_BETA,
+        api: "beta",
+        expiresAt: j.client_secret.expires_at ? j.client_secret.expires_at * 1000 : expiresAt,
+      };
   }
   const betaText = await beta.text().catch(() => "");
   throw new RealtimeError(502, `The live voice isn't available right now (${ga.status}: ${problem(gaText)}; ${beta.status}: ${problem(betaText)}).`);

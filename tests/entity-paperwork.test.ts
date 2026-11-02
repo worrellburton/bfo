@@ -1,14 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  addressState,
-  documentRules,
-  entityType,
-  obligations,
-  paperworkChecks,
-  stateCode,
-  taxClassOf,
-  taxHome,
-} from "../app/entity-paperwork";
+import { addressState, documentRules, entityType, obligations, paperworkChecks, stateCode, taxClassOf, taxHome } from "../app/entity-paperwork";
 import { entityCompleteness } from "../app/entity-completeness";
 
 const PHX = "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028";
@@ -164,8 +155,19 @@ describe("tax roll-up", () => {
 describe("completeness on the rule book", () => {
   it("scores a fully papered Delaware LLC run from Arizona only once it's registered there", () => {
     const base = {
-      name: "Ledger Burton, LLC", type: "LLC", state: "Delaware", address: PHX, ein: "93-3749778", formationDate: "2023-08-17",
-      registeredAgent: "Agent", registeredAgentAddress: "1 Rodney Sq, Wilmington, DE 19801", llcType: "Disregarded Entity", articles: {}, einLetter: {}, w9: {}, operatingAgreement: {},
+      name: "Ledger Burton, LLC",
+      type: "LLC",
+      state: "Delaware",
+      address: PHX,
+      ein: "93-3749778",
+      formationDate: "2023-08-17",
+      registeredAgent: "Agent",
+      registeredAgentAddress: "1 Rodney Sq, Wilmington, DE 19801",
+      llcType: "Disregarded Entity",
+      articles: {},
+      einLetter: {},
+      w9: {},
+      operatingAgreement: {},
     };
     const before = entityCompleteness(base, today);
     expect(before.score).toBeLessThan(100);

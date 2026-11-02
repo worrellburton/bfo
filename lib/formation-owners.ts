@@ -19,7 +19,11 @@ export const emptyOwner = (kind: FormationOwner["kind"], percent = ""): Formatio
 });
 
 /** "Jane A. Doe Jr." */
-export const personName = (n: PersonName) => [n.first, n.middle, n.last, n.suffix].map((x) => (x ?? "").trim()).filter(Boolean).join(" ");
+export const personName = (n: PersonName) =>
+  [n.first, n.middle, n.last, n.suffix]
+    .map((x) => (x ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
 
 /** An owner's name as the filing and the record write it. */
 export const ownerName = (o: FormationOwner) => (o.kind === "person" ? personName(o.name) : o.entityName.trim());

@@ -31,14 +31,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!isAdmin(me)) return fail(res, 403, "forbidden");
 
     if (req.method === "GET") {
-      const [alerts, runs] = await Promise.all([
-        sb<OpsAlert[]>("ops_alerts?select=*&order=created_at.desc&limit=50"),
-        sb<CronRunRow[]>("cron_runs?select=*&order=started_at.desc&limit=200"),
-      ]);
+      const [alerts, runs] = await Promise.all([sb<OpsAlert[]>("ops_alerts?select=*&order=created_at.desc&limit=50"), sb<CronRunRow[]>("cron_runs?select=*&order=started_at.desc&limit=200")]);
       return res.status(200).json({ alerts: alerts ?? [], crons: latestRuns(runs ?? []) });
     }
 
-    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { action?: unknown; id?: unknown };
+    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as { action?: unknown; id?: unknown };
     if (body.action !== "ack") return fail(res, 400, "unknown_action");
     const id = String(body.id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(id)) return fail(res, 400, "bad_id");

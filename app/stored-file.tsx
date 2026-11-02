@@ -57,9 +57,7 @@ export async function storedFileUrl(file: StoredFileRef): Promise<string> {
     const r = await authFetch(`/api/documents/url?path=${encodeURIComponent(path)}`);
     const data = await r.json().catch(() => null);
     if (!r.ok || typeof data?.url !== "string") {
-      throw new Error(
-        r.status === 403 ? "You don't have access to this document." : r.status === 404 ? "That file isn't in storage anymore." : data?.message || "Couldn't open that document."
-      );
+      throw new Error(r.status === 403 ? "You don't have access to this document." : r.status === 404 ? "That file isn't in storage anymore." : data?.message || "Couldn't open that document.");
     }
     cache.set(path, { url: data.url, until: Date.now() + REUSE_MS });
     return data.url as string;
@@ -151,19 +149,7 @@ export async function copyStoredFileLink(file: StoredFileRef): Promise<void> {
  * (expiring) URL; until then there's no href (never "#"), and once the link
  * lapses it's taken out again.
  */
-export function StoredFileLink({
-  file,
-  className,
-  title,
-  ariaLabel,
-  children,
-}: {
-  file: StoredFileRef;
-  className?: string;
-  title?: string;
-  ariaLabel?: string;
-  children: ReactNode;
-}) {
+export function StoredFileLink({ file, className, title, ariaLabel, children }: { file: StoredFileRef; className?: string; title?: string; ariaLabel?: string; children: ReactNode }) {
   const [, setTick] = useState(0);
   const ours = !!storagePathOf(file);
   const ready = ours ? cachedFileUrl(file) : null;
@@ -175,7 +161,11 @@ export function StoredFileLink({
     return () => clearTimeout(t);
   }, [ready, file]);
   const warm = () => {
-    if (ours && !cachedFileUrl(file)) void storedFileUrl(file).then(() => setTick((n) => n + 1), () => {});
+    if (ours && !cachedFileUrl(file))
+      void storedFileUrl(file).then(
+        () => setTick((n) => n + 1),
+        () => {},
+      );
   };
   // A plain click opens the reader; a modifier or middle click opens a tab, natively once the signed link is
   // the href, else through openStoredFile.

@@ -10,10 +10,7 @@ import { HomeBackground } from "../home-background";
 import { useTheme } from "../theme";
 
 export function meta() {
-  return [
-    { title: "BFO" },
-    { name: "description", content: "Look, feel and perform your best every day." },
-  ];
+  return [{ title: "BFO" }, { name: "description", content: "Look, feel and perform your best every day." }];
 }
 
 // ── Data shapes ──────────────────────────────────────────────────────────
@@ -121,7 +118,8 @@ const ICONS = {
   receipt: "M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z",
   arrowDown: "M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3",
   arrowUp: "M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18",
-  calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
+  calendar:
+    "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
 } as const;
 
 function Icon({ name, className = "h-4 w-4", strokeWidth = 1.7 }: { name: keyof typeof ICONS; className?: string; strokeWidth?: number }) {
@@ -303,9 +301,7 @@ function TrendChart({
         opacity: len ? 1 : 0,
         animation: play && len ? "home-draw 1.1s cubic-bezier(0.3, 0, 0.15, 1) 120ms forwards" : "none",
       };
-  const areaStyle: CSSProperties = reduced
-    ? {}
-    : { opacity: 0, animation: play ? "home-area 1s cubic-bezier(0.16, 1, 0.3, 1) 380ms forwards" : "none" };
+  const areaStyle: CSSProperties = reduced ? {} : { opacity: 0, animation: play ? "home-area 1s cubic-bezier(0.16, 1, 0.3, 1) 380ms forwards" : "none" };
 
   return (
     <div
@@ -349,11 +345,7 @@ function TrendChart({
 
       {/* Live endpoint: lands once the line reaches it. */}
       {last && hover == null && drawn && (
-        <span
-          key={`dot-${drawKey}`}
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${(last[0] / W) * 100}%`, top: `${(last[1] / H) * 100}%` }}
-        >
+        <span key={`dot-${drawKey}`} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${(last[0] / W) * 100}%`, top: `${(last[1] / H) * 100}%` }}>
           <span className="absolute inset-0 rounded-full motion-safe:animate-ping" style={{ background: accent, opacity: 0.35 }} />
           <span
             className="relative block h-2 w-2 rounded-full"
@@ -365,10 +357,7 @@ function TrendChart({
       {/* Scrub crosshair */}
       {active && (
         <>
-          <span
-            className={`pointer-events-none absolute inset-y-0 w-px ${isDark ? "bg-white/20" : "bg-gray-900/15"}`}
-            style={{ left: `${(active[0] / W) * 100}%` }}
-          />
+          <span className={`pointer-events-none absolute inset-y-0 w-px ${isDark ? "bg-white/20" : "bg-gray-900/15"}`} style={{ left: `${(active[0] / W) * 100}%` }} />
           <span
             className={`pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${isDark ? "border-gray-950" : "border-white"}`}
             style={{ left: `${(active[0] / W) * 100}%`, top: `${(active[1] / H) * 100}%`, background: accent }}
@@ -381,17 +370,7 @@ function TrendChart({
 }
 
 /** The popup for one point on the chart: the day's full position and what moved. */
-function PointCard({
-  points,
-  index,
-  x,
-  isDark,
-}: {
-  points: { day: string; value: number; cash: number; invested: number; credit: number }[];
-  index: number;
-  x: number;
-  isDark: boolean;
-}) {
+function PointCard({ points, index, x, isDark }: { points: { day: string; value: number; cash: number; invested: number; credit: number }[]; index: number; x: number; isDark: boolean }) {
   const p = points[index];
   if (!p) return null;
   const prev = index > 0 ? points[index - 1] : null;
@@ -452,9 +431,7 @@ function PointCard({
           <p key={r.label} className="flex items-baseline justify-between gap-3">
             <span className="text-gray-500">{r.label}</span>
             <span className="flex items-baseline gap-2">
-              {r.delta != null && Math.abs(r.delta) >= 0.5 && (
-                <span className={`text-[10.5px] ${tone(r.delta * r.good)}`}>{signed(r.delta)}</span>
-              )}
+              {r.delta != null && Math.abs(r.delta) >= 0.5 && <span className={`text-[10.5px] ${tone(r.delta * r.good)}`}>{signed(r.delta)}</span>}
               <span className="font-medium">{fmtUSD(r.value)}</span>
             </span>
           </p>
@@ -566,7 +543,12 @@ function FlowCard({
             {before > 0 || now > 0 ? (
               <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium tabular-nums ${chip}`}>
                 {delta >= 0 ? "↑" : "↓"} {fmtCompact(Math.abs(delta))}
-                {pct != null && <span className="opacity-80">· {pct >= 0 ? "+" : "−"}{Math.abs(pct).toFixed(0)}%</span>}
+                {pct != null && (
+                  <span className="opacity-80">
+                    · {pct >= 0 ? "+" : "−"}
+                    {Math.abs(pct).toFixed(0)}%
+                  </span>
+                )}
               </span>
             ) : null}
             <span className={textMuted}>vs the 30 days before</span>
@@ -623,8 +605,13 @@ function FlowCard({
                 <ul className={`-mx-2 divide-y ${isDark ? "divide-white/[0.05]" : "divide-gray-100"}`}>
                   {recent.slice(0, SHOWN).map((t) => (
                     <li key={t.id || `${t.date}-${t.who}-${t.amount}`}>
-                      <Link to={`/books/transactions?q=${encodeURIComponent(t.who)}`} className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}>
-                        <span className={`w-[38px] shrink-0 text-[10.5px] tabular-nums ${textMuted}`}>{new Date(`${t.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                      <Link
+                        to={`/books/transactions?q=${encodeURIComponent(t.who)}`}
+                        className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
+                      >
+                        <span className={`w-[38px] shrink-0 text-[10.5px] tabular-nums ${textMuted}`}>
+                          {new Date(`${t.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[11.5px]">{t.who}</span>
                           <span className={`block truncate text-[10px] ${textMuted}`}>{[t.entity, t.account].filter(Boolean).join(" · ")}</span>
@@ -660,8 +647,7 @@ function buildStructure(scored: Scored[], byId: Map<string, Scored>, childrenOf:
     }
     return out;
   };
-  const count = (id: string, s = new Set<string>()): number =>
-    kids(id).reduce((n, k) => (s.has(k.id) ? n : (s.add(k.id), n + 1 + count(k.id, s))), 0);
+  const count = (id: string, s = new Set<string>()): number => kids(id).reduce((n, k) => (s.has(k.id) ? n : (s.add(k.id), n + 1 + count(k.id, s))), 0);
 
   const roots = scored.filter((a) => !a.ownerId || !byId.has(a.ownerId));
   const owners = roots.filter((r) => kids(r.id).length > 0).sort((a, b) => count(b.id) - count(a.id) || byName(a, b));
@@ -719,19 +705,7 @@ function buildStructure(scored: Scored[], byId: Map<string, Scored>, childrenOf:
  * items; each item goes to the currently shortest column (by `weight`) and the
  * last card in each column stretches, so the bottoms line up.
  */
-function Masonry<T>({
-  items,
-  weight,
-  minWidth,
-  gap,
-  render,
-}: {
-  items: T[];
-  weight: (item: T) => number;
-  minWidth: number;
-  gap: number;
-  render: (item: T, stretch: boolean) => ReactNode;
-}) {
+function Masonry<T>({ items, weight, minWidth, gap, render }: { items: T[]; weight: (item: T) => number; minWidth: number; gap: number; render: (item: T, stretch: boolean) => ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(1);
   useLayoutEffect(() => {
@@ -810,7 +784,7 @@ export default function Home() {
                     const a = { id, ...(value as Omit<Asset, "id">) };
                     return { ...a, type: entityType(a) };
                   })
-                : []
+                : [],
             );
             setAssetsLoading(false);
             setAssetsError(false);
@@ -818,7 +792,7 @@ export default function Home() {
           () => {
             setAssetsLoading(false);
             setAssetsError(true);
-          }
+          },
         );
       } catch {
         if (cancelled) return;
@@ -897,10 +871,7 @@ export default function Home() {
   const lateAssets = late.assets ? "home-late" : "";
 
   // ── Derived: entities ──────────────────────────────────────────────────
-  const scored = useMemo(
-    () => assets.map((a) => ({ ...a, ...entityCompleteness(a) })),
-    [assets]
-  );
+  const scored = useMemo(() => assets.map((a) => ({ ...a, ...entityCompleteness(a) })), [assets]);
   const byId = useMemo(() => new Map(scored.map((a) => [a.id, a])), [scored]);
   const childrenOf = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -910,9 +881,7 @@ export default function Home() {
   const structure = useMemo(() => buildStructure(scored, byId, childrenOf), [scored, byId, childrenOf]);
   const avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length) : 0;
   // A revocable (grantor) trust uses the grantor's SSN — it has no EIN to miss.
-  const missingEin = scored.filter(
-    (a) => !a.ein?.trim() && !(entityType(a) === "Trust" && !/non-grantor/i.test(a.llcType ?? ""))
-  );
+  const missingEin = scored.filter((a) => !a.ein?.trim() && !(entityType(a) === "Trust" && !/non-grantor/i.test(a.llcType ?? "")));
   const lowest = scored
     .filter((a) => a.score < 100)
     .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
@@ -940,15 +909,8 @@ export default function Home() {
   const inflows = home?.inflows ?? null;
   const review = home?.review ?? null;
   const upcoming = useMemo(
-    () =>
-      inflows
-        ? [...inflows.streams].sort(
-            (a, b) =>
-              Number(b.overdue) - Number(a.overdue) ||
-              (a.nextExpected ?? "9999").localeCompare(b.nextExpected ?? "9999")
-          )
-        : [],
-    [inflows]
+    () => (inflows ? [...inflows.streams].sort((a, b) => Number(b.overdue) - Number(a.overdue) || (a.nextExpected ?? "9999").localeCompare(b.nextExpected ?? "9999")) : []),
+    [inflows],
   );
   const overdue = upcoming.filter((s) => s.overdue);
 
@@ -1013,10 +975,7 @@ export default function Home() {
       key: "filings-due",
       icon: "clock",
       tone: first.days <= 14 ? "amber" : "neutral",
-      title:
-        dueSoon.length === 1
-          ? `${first.entity}: ${first.title} due ${relDay(first.due)}`
-          : `${dueSoon.length} filings due in the next ${first.days <= 30 ? "month" : "two months"}`,
+      title: dueSoon.length === 1 ? `${first.entity}: ${first.title} due ${relDay(first.due)}` : `${dueSoon.length} filings due in the next ${first.days <= 30 ? "month" : "two months"}`,
       detail:
         dueSoon.length === 1
           ? "Open the entity for the fee and where to file"
@@ -1033,10 +992,11 @@ export default function Home() {
       icon: "id",
       tone: "neutral",
       title: `${missingEin.length} ${missingEin.length === 1 ? "entity is" : "entities are"} missing an EIN`,
-      detail: missingEin
-        .slice(0, 3)
-        .map((a) => a.name)
-        .join(", ") + (missingEin.length > 3 ? ` +${missingEin.length - 3} more` : ""),
+      detail:
+        missingEin
+          .slice(0, 3)
+          .map((a) => a.name)
+          .join(", ") + (missingEin.length > 3 ? ` +${missingEin.length - 3} more` : ""),
       to: missingEin.length === 1 ? `/assets/${missingEin[0].id}` : "/assets",
     });
   }
@@ -1095,8 +1055,6 @@ export default function Home() {
 
   const showHero = homeLoading || !!(treasury && series.length >= 2);
   const showComing = homeLoading || !!inflows;
-
-
 
   const quickLinks: { to: string; label: string; icon: keyof typeof ICONS }[] = [
     { to: "/estate-map", label: "Estate Map", icon: "map" },
@@ -1198,9 +1156,7 @@ export default function Home() {
                       <span className="mx-1.5 opacity-50">/</span>
                       {hover != null ? shortDay(shown.day) : "cash + invested"}
                     </p>
-                    <p className="mt-1.5 text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums sm:text-[26px]">
-                      {fmtUSD(shown.value)}
-                    </p>
+                    <p className="mt-1.5 text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums sm:text-[26px]">{fmtUSD(shown.value)}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className={`${chipBase} ${change >= 0 ? posChip : negChip}`}>
                         <Icon name={change >= 0 ? "arrowUp" : "arrowDown"} className="h-2.5 w-2.5" strokeWidth={2.4} />
@@ -1208,16 +1164,10 @@ export default function Home() {
                         {fmtCompact(Math.abs(change))}
                         {changePct != null && <span className="opacity-70">· {fmtPct(changePct)}</span>}
                       </span>
-                      <span className={`text-[11px] ${textMuted}`}>
-                        {hover != null ? `since ${shortDay(first.day)}` : `over ${series.length - 1} days`}
-                      </span>
+                      <span className={`text-[11px] ${textMuted}`}>{hover != null ? `since ${shortDay(first.day)}` : `over ${series.length - 1} days`}</span>
                     </div>
                   </div>
-                  <div
-                    className={`flex rounded-lg border p-0.5 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`}
-                    role="group"
-                    aria-label="Range"
-                  >
+                  <div className={`flex rounded-lg border p-0.5 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`} role="group" aria-label="Range">
                     {RANGES.map((r) => (
                       <button
                         key={r.key}
@@ -1228,11 +1178,7 @@ export default function Home() {
                         }}
                         aria-pressed={range === r.key}
                         className={`${TAP_Y} h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
-                          range === r.key
-                            ? isDark
-                              ? "bg-white/[0.09] text-white"
-                              : "bg-white text-gray-900 shadow-sm"
-                            : `${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`
+                          range === r.key ? (isDark ? "bg-white/[0.09] text-white" : "bg-white text-gray-900 shadow-sm") : `${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`
                         }`}
                       >
                         {r.label}
@@ -1249,44 +1195,44 @@ export default function Home() {
                   <span>{shortDay(series[series.length - 1].day)}</span>
                 </div>
 
-                {latest && (() => {
-                  const net = latest.cash + latest.invested;
-                  const cashPct = net > 0 ? (latest.cash / net) * 100 : 50;
-                  const cashColor = isDark ? "rgba(129,140,248,0.45)" : "rgba(79,70,229,0.35)";
-                  const invColor = isDark ? "#818cf8" : "#4f46e5";
-                  const parts = [
-                    { label: "Cash", value: latest.cash, dot: cashColor },
-                    { label: "Invested", value: latest.invested, dot: invColor },
-                    { label: "Credit owed", value: latest.credit, dot: isDark ? "rgba(255,255,255,0.25)" : "rgba(17,24,39,0.2)" },
-                  ];
-                  return (
-                    <div className={`mt-2 border-t px-5 pb-4 pt-3 ${hairline} ${enter}`}>
-                      <div className="flex h-1.5 overflow-hidden rounded-full">
-                        <span style={{ width: `${cashPct}%`, background: cashColor }} />
-                        <span className="ml-[2px] flex-1" style={{ background: invColor }} />
+                {latest &&
+                  (() => {
+                    const net = latest.cash + latest.invested;
+                    const cashPct = net > 0 ? (latest.cash / net) * 100 : 50;
+                    const cashColor = isDark ? "rgba(129,140,248,0.45)" : "rgba(79,70,229,0.35)";
+                    const invColor = isDark ? "#818cf8" : "#4f46e5";
+                    const parts = [
+                      { label: "Cash", value: latest.cash, dot: cashColor },
+                      { label: "Invested", value: latest.invested, dot: invColor },
+                      { label: "Credit owed", value: latest.credit, dot: isDark ? "rgba(255,255,255,0.25)" : "rgba(17,24,39,0.2)" },
+                    ];
+                    return (
+                      <div className={`mt-2 border-t px-5 pb-4 pt-3 ${hairline} ${enter}`}>
+                        <div className="flex h-1.5 overflow-hidden rounded-full">
+                          <span style={{ width: `${cashPct}%`, background: cashColor }} />
+                          <span className="ml-[2px] flex-1" style={{ background: invColor }} />
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-3">
+                          {parts.map((p) => (
+                            <div key={p.label} className="min-w-0">
+                              <p className={`flex items-center gap-1.5 ${kicker}`}>
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: p.dot }} />
+                                <span className="truncate">{p.label}</span>
+                              </p>
+                              <p className="mt-1 truncate text-[12.5px] font-medium tabular-nums">
+                                <span className="sm:hidden">{fmtCompact(p.value)}</span>
+                                <span className="hidden sm:inline">{fmtUSD(p.value)}</span>
+                              </p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="mt-3 grid grid-cols-3 gap-3">
-                        {parts.map((p) => (
-                          <div key={p.label} className="min-w-0">
-                            <p className={`flex items-center gap-1.5 ${kicker}`}>
-                              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: p.dot }} />
-                              <span className="truncate">{p.label}</span>
-                            </p>
-                            <p className="mt-1 truncate text-[12.5px] font-medium tabular-nums">
-                              <span className="sm:hidden">{fmtCompact(p.value)}</span>
-                              <span className="hidden sm:inline">{fmtUSD(p.value)}</span>
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
               </div>
             )}
           </section>
         )}
-
       </div>
 
       {/* ── Revenue · Expenses · Coming in ───────────────────────────── */}
@@ -1334,16 +1280,10 @@ export default function Home() {
                       <Link to="/books/calendar" className={`flex items-center gap-3 px-5 py-2.5 transition-colors ${rowHover}`}>
                         <span
                           className={`flex w-10 shrink-0 flex-col items-center rounded-lg border py-1 ${
-                            s.overdue
-                              ? isDark
-                                ? "border-amber-500/25 bg-amber-500/[0.06]"
-                                : "border-amber-200 bg-amber-50"
-                              : `${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`
+                            s.overdue ? (isDark ? "border-amber-500/25 bg-amber-500/[0.06]" : "border-amber-200 bg-amber-50") : `${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`
                           }`}
                         >
-                          <span className={`text-[9.5px] font-medium ${s.overdue ? "text-amber-400" : textMuted}`}>
-                            {d ? d.toLocaleDateString("en-US", { month: "short" }) : "—"}
-                          </span>
+                          <span className={`text-[9.5px] font-medium ${s.overdue ? "text-amber-400" : textMuted}`}>{d ? d.toLocaleDateString("en-US", { month: "short" }) : "—"}</span>
                           <span className="text-[13px] font-semibold leading-tight tabular-nums">{d ? d.getDate() : "?"}</span>
                         </span>
                         <span className="min-w-0 flex-1">
@@ -1415,18 +1355,13 @@ export default function Home() {
                       <span className={`block truncate text-[11px] ${textMuted}`}>{a.detail}</span>
                     </span>
                     {a.aside}
-                    <Icon
-                      name="chevron"
-                      className={`h-3.5 w-3.5 shrink-0 ${textMuted} transition-transform motion-safe:group-hover:translate-x-0.5`}
-                      strokeWidth={2}
-                    />
+                    <Icon name="chevron" className={`h-3.5 w-3.5 shrink-0 ${textMuted} transition-transform motion-safe:group-hover:translate-x-0.5`} strokeWidth={2} />
                   </Link>
                 </li>
               ))}
             </ul>
           )}
         </section>
-
       </div>
 
       {/* ── Entities ─────────────────────────────────────────────────── */}
@@ -1436,7 +1371,8 @@ export default function Home() {
             <p className={kicker}>Holding structure</p>
             {!assetsLoading && !assetsError && (
               <span className={`text-[11px] tabular-nums ${textMuted}`}>
-                {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp{trustCount ? ` · ${trustCount} trust${trustCount === 1 ? "" : "s"}` : ""} · {stateCount} state{stateCount === 1 ? "" : "s"}
+                {scored.length} entities · {llcCount} LLC · {corpCount} C-Corp{trustCount ? ` · ${trustCount} trust${trustCount === 1 ? "" : "s"}` : ""} · {stateCount} state
+                {stateCount === 1 ? "" : "s"}
               </span>
             )}
             {!assetsLoading && scored.length > 0 && (
@@ -1482,11 +1418,7 @@ export default function Home() {
               {structure.chains.map((c) => (
                 <div key={c.links[0].id} className={`mb-3 flex flex-col items-start gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-y-2 ${enter}`}>
                   {c.links.map((e, i) => (
-                    <span
-                      key={e.id}
-                      className="flex min-w-0 max-w-full items-center gap-1.5 pl-[calc(var(--i)*16px)] sm:pl-0"
-                      style={{ ["--i" as string]: Math.max(0, i - 1) } as CSSProperties}
-                    >
+                    <span key={e.id} className="flex min-w-0 max-w-full items-center gap-1.5 pl-[calc(var(--i)*16px)] sm:pl-0" style={{ ["--i" as string]: Math.max(0, i - 1) } as CSSProperties}>
                       {i > 0 && <Icon name="chevron" className={`hidden h-3 w-3 shrink-0 sm:block ${textMuted}`} strokeWidth={2} />}
                       {i > 0 && <span aria-hidden className={`ml-[9px] h-3 w-2.5 shrink-0 -translate-y-1.5 rounded-bl-[5px] border-b border-l sm:hidden ${guide}`} />}
                       <Link
@@ -1512,25 +1444,15 @@ export default function Home() {
                 minWidth={240}
                 gap={12}
                 render={(g, stretch) => (
-                  <div
-                    key={g.key}
-                    className={`flex flex-col overflow-hidden rounded-xl border ${stretch ? "flex-1" : ""} ${hairline} ${isDark ? "bg-white/[0.015]" : "bg-white"} ${enter}`}
-                  >
+                  <div key={g.key} className={`flex flex-col overflow-hidden rounded-xl border ${stretch ? "flex-1" : ""} ${hairline} ${isDark ? "bg-white/[0.015]" : "bg-white"} ${enter}`}>
                     {g.head ? (
-                      <Link
-                        to={`/assets/${g.head.id}`}
-                        className={`group flex min-w-0 items-center gap-2.5 px-3 py-2.5 transition-colors ${rowHover}`}
-                      >
+                      <Link to={`/assets/${g.head.id}`} className={`group flex min-w-0 items-center gap-2.5 px-3 py-2.5 transition-colors ${rowHover}`}>
                         <Ring score={g.head.score} size={30} stroke={2.5} isDark={isDark} />
                         <span className="min-w-0 flex-1">
                           <span className="line-clamp-2 text-[12.5px] font-medium leading-[1.3]">{g.head.name}</span>
                           <span className={`block truncate text-[11px] ${textMuted}`}>{g.caption}</span>
                         </span>
-                        <Icon
-                          name="arrowUpRight"
-                          className={`h-3.5 w-3.5 shrink-0 ${textMuted} opacity-0 transition-opacity group-hover:opacity-100`}
-                          strokeWidth={2}
-                        />
+                        <Icon name="arrowUpRight" className={`h-3.5 w-3.5 shrink-0 ${textMuted} opacity-0 transition-opacity group-hover:opacity-100`} strokeWidth={2} />
                       </Link>
                     ) : (
                       <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
@@ -1548,34 +1470,30 @@ export default function Home() {
                         const next = g.rows.slice(i + 1).find((r) => r.depth <= depth);
                         const lastSibling = !next || next.depth < depth;
                         return (
-                        <li key={e.id} style={{ paddingLeft: depth * 14 }}>
-                          <Link
-                            to={`/assets/${e.id}`}
-                            title={`${e.name} · ${e.score}% complete`}
-                            className={`group relative flex min-w-0 items-center gap-2 rounded-lg py-[11px] sm:py-[5px] pl-2 pr-1.5 transition-colors ${
-                              isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"
-                            }`}
-                          >
-                            {depth > 0 && (
-                              <>
-                                <span aria-hidden className={`absolute -left-[5px] top-0 h-1/2 w-[9px] rounded-bl-[5px] border-b border-l ${guide}`} />
-                                {!lastSibling && <span aria-hidden className={`absolute -left-[5px] top-1/2 bottom-0 border-l ${guide}`} />}
-                              </>
-                            )}
-                            <Ring score={e.score} size={16} stroke={2} isDark={isDark} label={false} />
-                            <span className="min-w-0 flex-1 truncate text-[12px]">{e.name}</span>
-                            {e.type !== "LLC" && (
-                              <span
-                                className={`shrink-0 rounded px-1 py-px text-[10px] font-medium ${
-                                  isDark ? "bg-[#818cf8]/12 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]"
-                                }`}
-                              >
-                                {e.type}
-                              </span>
-                            )}
-                            <span className={`w-6 shrink-0 text-right text-[10.5px] tabular-nums ${textMuted}`}>{e.score}</span>
-                          </Link>
-                        </li>
+                          <li key={e.id} style={{ paddingLeft: depth * 14 }}>
+                            <Link
+                              to={`/assets/${e.id}`}
+                              title={`${e.name} · ${e.score}% complete`}
+                              className={`group relative flex min-w-0 items-center gap-2 rounded-lg py-[11px] sm:py-[5px] pl-2 pr-1.5 transition-colors ${
+                                isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"
+                              }`}
+                            >
+                              {depth > 0 && (
+                                <>
+                                  <span aria-hidden className={`absolute -left-[5px] top-0 h-1/2 w-[9px] rounded-bl-[5px] border-b border-l ${guide}`} />
+                                  {!lastSibling && <span aria-hidden className={`absolute -left-[5px] top-1/2 bottom-0 border-l ${guide}`} />}
+                                </>
+                              )}
+                              <Ring score={e.score} size={16} stroke={2} isDark={isDark} label={false} />
+                              <span className="min-w-0 flex-1 truncate text-[12px]">{e.name}</span>
+                              {e.type !== "LLC" && (
+                                <span className={`shrink-0 rounded px-1 py-px text-[10px] font-medium ${isDark ? "bg-[#818cf8]/12 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]"}`}>
+                                  {e.type}
+                                </span>
+                              )}
+                              <span className={`w-6 shrink-0 text-right text-[10.5px] tabular-nums ${textMuted}`}>{e.score}</span>
+                            </Link>
+                          </li>
                         );
                       })}
                     </ul>

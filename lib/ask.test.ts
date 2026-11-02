@@ -88,7 +88,14 @@ describe("transcript", () => {
     const t = transcript(rows);
     expect(t.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(t[0].content).toBe("one\n\ntwo");
-    const capped = transcript([{ role: "user", content: { text: "x".repeat(50) } }, { role: "assistant", content: { text: "y".repeat(50) } }, { role: "user", content: { text: "z" } }], 60);
+    const capped = transcript(
+      [
+        { role: "user", content: { text: "x".repeat(50) } },
+        { role: "assistant", content: { text: "y".repeat(50) } },
+        { role: "user", content: { text: "z" } },
+      ],
+      60,
+    );
     expect(capped.length).toBe(1);
     expect(capped[0].content).toBe("z");
   });

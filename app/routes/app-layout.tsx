@@ -44,9 +44,15 @@ const mailFolder = (f: string) => (pathname: string, search: URLSearchParams) =>
 const physicalMailChild: NavChild = {
   to: "/mailbox",
   label: "Physical",
-  icon: <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V9a4.5 4.5 0 014.5-4.5h10.5a4.5 4.5 0 014.5 4.5v6.75a1.5 1.5 0 01-1.5 1.5H12M2.25 12.75h7.5v6a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-6zM6.75 4.5a4.5 4.5 0 014.5 4.5v3.75M15 9h3" />
-      </svg>,
+  icon: (
+    <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.25 12.75V9a4.5 4.5 0 014.5-4.5h10.5a4.5 4.5 0 014.5 4.5v6.75a1.5 1.5 0 01-1.5 1.5H12M2.25 12.75h7.5v6a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-6zM6.75 4.5a4.5 4.5 0 014.5 4.5v3.75M15 9h3"
+      />
+    </svg>
+  ),
 };
 
 /** Shown to admins (and anyone given access): mail to addresses nobody has yet. */
@@ -56,7 +62,11 @@ const otherMailChild: NavChild = {
   match: mailFolder("other"),
   icon: (
     <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3"
+      />
     </svg>
   ),
 };
@@ -67,7 +77,11 @@ const navItems: NavItem[] = [
     label: "Home",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
+        />
       </svg>
     ),
   },
@@ -81,7 +95,11 @@ const navItems: NavItem[] = [
         match: mailFolder("active"),
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"
+            />
           </svg>
         ),
       },
@@ -91,7 +109,11 @@ const navItems: NavItem[] = [
         match: mailFolder("inbox"),
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z"
+            />
           </svg>
         ),
       },
@@ -111,14 +133,22 @@ const navItems: NavItem[] = [
         match: mailFolder("archive"),
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
+            />
           </svg>
         ),
       },
     ] as NavChild[],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+        />
       </svg>
     ),
   },
@@ -127,7 +157,11 @@ const navItems: NavItem[] = [
     label: "Phone",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
+        />
       </svg>
     ),
   },
@@ -136,7 +170,11 @@ const navItems: NavItem[] = [
     label: "Entities",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+        />
       </svg>
     ),
   },
@@ -185,7 +223,11 @@ const navItems: NavItem[] = [
         label: "Calendar",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
+            />
           </svg>
         ),
       },
@@ -194,7 +236,11 @@ const navItems: NavItem[] = [
         label: "Reports",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
+            />
           </svg>
         ),
       },
@@ -203,7 +249,11 @@ const navItems: NavItem[] = [
         label: "Vendors",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"
+            />
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
           </svg>
         ),
@@ -213,7 +263,11 @@ const navItems: NavItem[] = [
         label: "Rules",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+            />
           </svg>
         ),
       },
@@ -222,14 +276,22 @@ const navItems: NavItem[] = [
         label: "Loans",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"
+            />
           </svg>
         ),
       },
     ],
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
+        />
       </svg>
     ),
   },
@@ -238,23 +300,33 @@ const navItems: NavItem[] = [
     label: "Tools",
     icon: (
       <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"
+        />
       </svg>
     ),
     children: [
       {
         to: "/msas",
         label: "MSAs",
-        icon: <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M9 3v18M15 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
-      </svg>,
+        icon: (
+          <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M9 3v18M15 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
+          </svg>
+        ),
       },
       {
         to: "/tools/signatures",
         label: "Signatures",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M3 21h18" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M3 21h18"
+            />
           </svg>
         ),
       },
@@ -263,7 +335,11 @@ const navItems: NavItem[] = [
         label: "Entity compliance",
         icon: (
           <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+            />
           </svg>
         ),
       },
@@ -276,7 +352,11 @@ const navItems: NavItem[] = [
 
 const usersIcon = (
   <svg className={iconCls} fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
+    />
   </svg>
 );
 
@@ -393,7 +473,12 @@ export default function AppLayout() {
       const { db, ref, get, authReady } = await import("../store");
       await authReady;
       const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string }>;
-      if (live) setMyEntities(Object.entries(all).map(([id, a]) => ({ id, name: a?.name ?? "Entity" })).sort((a, b) => a.name.localeCompare(b.name)));
+      if (live)
+        setMyEntities(
+          Object.entries(all)
+            .map(([id, a]) => ({ id, name: a?.name ?? "Entity" }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
     })().catch(() => {});
     return () => {
       live = false;
@@ -479,7 +564,7 @@ export default function AppLayout() {
       { to: "/treasury/mappings", label: "Account mappings", section: "Treasury" },
       { to: "/notes", label: "Notes" },
       { to: "/notifications", label: "Notifications", keywords: "alerts email report" },
-      { to: "/settings", label: "Settings", keywords: "profile preferences" }
+      { to: "/settings", label: "Settings", keywords: "profile preferences" },
     );
     if (isAdmin(user)) list.push({ to: "/users", label: "Users", keywords: "people access approve" });
     return list;
@@ -565,7 +650,7 @@ export default function AppLayout() {
             ...(emailOnly ? [] : [{ ...physicalMailChild, badge: paperUnread }]),
           ],
         }
-      : withMailbox(i)
+      : withMailbox(i),
   );
 
   // Accounts: every account signed in on this browser, Gmail-style. Switching
@@ -604,11 +689,10 @@ export default function AppLayout() {
   }`;
 
   return (
-    <div
-      className={`min-h-screen relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
-      style={{ ["--rail" as any]: `${railWidth}px`, ["--inset" as any]: `${contentInset}px` }}
-    >
-      <a href="#main" inert={drawerModal} className="skip-link">Skip to content</a>
+    <div className={`min-h-screen relative ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`} style={{ ["--rail" as any]: `${railWidth}px`, ["--inset" as any]: `${contentInset}px` }}>
+      <a href="#main" inert={drawerModal} className="skip-link">
+        Skip to content
+      </a>
       <RouteProgress />
 
       {/* Drifting aurora — the app shell shares the landing atmosphere and the
@@ -621,9 +705,7 @@ export default function AppLayout() {
       </div>
       {!mailOnly && <ParticleCanvas className="particle-field" />}
 
-      {drawerOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={dismissDrawer} />
-      )}
+      {drawerOpen && <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={dismissDrawer} />}
 
       <aside
         ref={drawerRef}
@@ -666,7 +748,13 @@ export default function AppLayout() {
             );
             // Touch screens from md up (iPad): the wordmark opens and closes the rail.
             return isDesktop && !hoverCapable ? (
-              <button type="button" onClick={() => setPinned((p) => !p)} aria-label={pinned ? "Collapse menu" : "Expand menu"} aria-expanded={pinned} className="flex cursor-pointer items-center rounded-lg">
+              <button
+                type="button"
+                onClick={() => setPinned((p) => !p)}
+                aria-label={pinned ? "Collapse menu" : "Expand menu"}
+                aria-expanded={pinned}
+                className="flex cursor-pointer items-center rounded-lg"
+              >
                 {mark}
               </button>
             ) : (
@@ -677,9 +765,7 @@ export default function AppLayout() {
             type="button"
             onClick={dismissDrawer}
             aria-label="Close menu"
-            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${
-              railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"
-            }`}
+            className={`ml-auto flex h-[44px] w-[44px] items-center justify-center rounded-full md:hidden ${railDark ? "text-gray-300 hover:bg-white/10" : "text-gray-600 hover:bg-gray-100"}`}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
@@ -701,14 +787,13 @@ export default function AppLayout() {
               railDark ? "hover:bg-white/5 text-gray-300" : "hover:bg-black/5 text-gray-600"
             }`}
           >
-            <div
-              className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold shrink-0 ${
-                railDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
-              }`}
-            >
+            <div className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold shrink-0 ${railDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"}`}>
               {initials(user)}
               {pending > 0 && isAdmin(user) && (
-                <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${railDark ? "ring-black" : "ring-white"}`} aria-label={`${pending} waiting for approval`} />
+                <span
+                  className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ${railDark ? "ring-black" : "ring-white"}`}
+                  aria-label={`${pending} waiting for approval`}
+                />
               )}
             </div>
           </button>
@@ -723,35 +808,37 @@ export default function AppLayout() {
               {/* Accounts signed in on this browser: the current one, the others to switch to, and one more. */}
               <div className="py-1.5">
                 <p className={`px-4 pb-1 pt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] ${railDark ? "text-gray-500" : "text-gray-400"}`}>Accounts</p>
-                {[user, ...others].filter((u): u is User => !!u).map((u, i) => {
-                  const current = i === 0;
-                  return (
-                    <button
-                      key={u.id}
-                      onClick={() => (current ? setUserMenuOpen(false) : switchTo(u))}
-                      role="menuitemradio"
-                      aria-checked={current}
-                      className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors cursor-pointer ${railDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
-                    >
-                      <span
-                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-bold shrink-0 ${
-                          current ? (railDark ? "bg-white text-black" : "bg-gray-900 text-white") : railDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
-                        }`}
+                {[user, ...others]
+                  .filter((u): u is User => !!u)
+                  .map((u, i) => {
+                    const current = i === 0;
+                    return (
+                      <button
+                        key={u.id}
+                        onClick={() => (current ? setUserMenuOpen(false) : switchTo(u))}
+                        role="menuitemradio"
+                        aria-checked={current}
+                        className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors cursor-pointer ${railDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
                       >
-                        {initials(u)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className={`block truncate text-[13px] ${current ? "font-semibold" : ""} ${railDark ? "text-gray-100" : "text-gray-900"}`}>{displayName(u)}</span>
-                        <span className={`block truncate text-[11.5px] ${railDark ? "text-gray-500" : "text-gray-500"}`}>{u.mailAddress || u.email || u.phoneFormatted}</span>
-                      </span>
-                      {current && (
-                        <svg className={`w-4 h-4 shrink-0 ${railDark ? "text-indigo-300" : "text-indigo-600"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                        </svg>
-                      )}
-                    </button>
-                  );
-                })}
+                        <span
+                          className={`w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-bold shrink-0 ${
+                            current ? (railDark ? "bg-white text-black" : "bg-gray-900 text-white") : railDark ? "bg-white/10 text-white" : "bg-black/5 text-gray-700"
+                          }`}
+                        >
+                          {initials(u)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={`block truncate text-[13px] ${current ? "font-semibold" : ""} ${railDark ? "text-gray-100" : "text-gray-900"}`}>{displayName(u)}</span>
+                          <span className={`block truncate text-[11.5px] ${railDark ? "text-gray-500" : "text-gray-500"}`}>{u.mailAddress || u.email || u.phoneFormatted}</span>
+                        </span>
+                        {current && (
+                          <svg className={`w-4 h-4 shrink-0 ${railDark ? "text-indigo-300" : "text-indigo-600"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
                 <button onClick={addAccount} className={menuItemCls} role="menuitem">
                   <span className={`w-7 h-7 -ml-0.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${railDark ? "border-white/25" : "border-gray-300"}`}>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
@@ -773,7 +860,11 @@ export default function AppLayout() {
                   role="menuitem"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25M12 7v5m0 0l-2-2m2 2l2-2" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25M12 7v5m0 0l-2-2m2 2l2-2"
+                    />
                   </svg>
                   <span className="flex-1">Install app</span>
                   <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>its own window</span>
@@ -787,14 +878,28 @@ export default function AppLayout() {
                       const r = await authFetch("/api/push", { method: "POST", body: JSON.stringify({ action: "test" }) })
                         .then((x) => x.json())
                         .catch(() => null);
-                      setPushNote(!r ? "Couldn't reach BFO" : r.error === "not_configured" ? "Not set up on the server yet" : r.sent ? "Sent. Check your lock screen" : r.devices ? `Apple refused it (${r.error ?? "unknown"})` : "This phone isn't registered yet");
+                      setPushNote(
+                        !r
+                          ? "Couldn't reach BFO"
+                          : r.error === "not_configured"
+                            ? "Not set up on the server yet"
+                            : r.sent
+                              ? "Sent. Check your lock screen"
+                              : r.devices
+                                ? `Apple refused it (${r.error ?? "unknown"})`
+                                : "This phone isn't registered yet",
+                      );
                     } else setPush(await enablePush());
                   }}
                   className={menuItemCls}
                   role="menuitem"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
+                    />
                   </svg>
                   <span className="flex-1">{push === "granted" ? "Send a test notification" : push === "denied" ? "Notifications are off" : "Turn on notifications"}</span>
                   {(pushNote || push === "denied") && <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>{pushNote ?? "in iPhone Settings"}</span>}
@@ -804,23 +909,24 @@ export default function AppLayout() {
               {lock.kind && (
                 <button onClick={() => lock.set(!lock.on)} className={menuItemCls} role="menuitemcheckbox" aria-checked={lock.on}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+                    />
                   </svg>
                   <span className="flex-1">{lock.kind} lock</span>
-                  <span className={`text-[11px] font-medium ${lock.on ? (railDark ? "text-emerald-400" : "text-emerald-600") : railDark ? "text-gray-500" : "text-gray-400"}`}>{lock.on ? "On" : "Off"}</span>
+                  <span className={`text-[11px] font-medium ${lock.on ? (railDark ? "text-emerald-400" : "text-emerald-600") : railDark ? "text-gray-500" : "text-gray-400"}`}>
+                    {lock.on ? "On" : "Off"}
+                  </span>
                 </button>
               )}
-
 
               {!emailOnly && isAdmin(user) && (
                 <button onClick={() => go("/users")} className={menuItemCls} role="menuitem">
                   <span className="inline-flex [&>svg]:h-4 [&>svg]:w-4">{usersIcon}</span>
                   <span className="flex-1">Users</span>
-                  {pending > 0 && (
-                    <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
-                      {pending}
-                    </span>
-                  )}
+                  {pending > 0 && <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">{pending}</span>}
                 </button>
               )}
 
@@ -848,14 +954,22 @@ export default function AppLayout() {
                 <>
                   <button onClick={() => go("/notifications")} className={menuItemCls} role="menuitem">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z"
+                      />
                     </svg>
                     Notifications
                   </button>
 
                   <button onClick={() => go("/settings")} className={menuItemCls} role="menuitem">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                      />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     Settings
@@ -886,9 +1000,7 @@ export default function AppLayout() {
           holds every destination, so there is no bottom dock. */}
       <header
         inert={drawerModal}
-        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl md:hidden ${mailOnly ? "hidden" : ""} ${
-          isDark ? "border-white/10 bg-black/60" : "border-gray-200 bg-white/70"
-        }`}
+        className={`fixed inset-x-0 top-0 z-30 border-b backdrop-blur-2xl md:hidden ${mailOnly ? "hidden" : ""} ${isDark ? "border-white/10 bg-black/60" : "border-gray-200 bg-white/70"}`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         <div className="relative flex h-14 items-center justify-center px-2">
@@ -925,9 +1037,9 @@ export default function AppLayout() {
               }`}
             >
               <svg className="h-[20px] w-[20px] shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-                  <circle cx="11" cy="11" r="7" />
-                  <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
-                </svg>
+                <circle cx="11" cy="11" r="7" />
+                <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
+              </svg>
             </button>
           )}
         </div>
@@ -938,7 +1050,9 @@ export default function AppLayout() {
         inert={drawerModal}
         tabIndex={-1}
         className={`sidebar-content outline-none relative z-10 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:p-8 md:pb-8 md:ml-[var(--inset)] ${
-          mailOnly ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))]" : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
+          mailOnly
+            ? "pt-[calc(0.5rem+env(safe-area-inset-top))] sm:pt-[calc(0.75rem+env(safe-area-inset-top))]"
+            : "pt-[calc(4.5rem+env(safe-area-inset-top))] sm:pt-[calc(5rem+env(safe-area-inset-top))]"
         } md:pt-[calc(2rem+env(safe-area-inset-top))]`}
       >
         {/* Email-only members see the inbox and nothing else; partners their entities and a piece of their paper mail (api/stable.ts scopes it). Redirect before any other page mounts. */}
@@ -962,7 +1076,11 @@ export default function AppLayout() {
           style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
         >
           <svg className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"
+            />
           </svg>
         </Link>
       )}
@@ -976,9 +1094,33 @@ export default function AppLayout() {
             pages={pages}
             isDark={isDark}
             actions={[
-              { id: "ask", label: "Ask BFO…", hint: "A question about the office", run: () => { setPaletteOpen(false); navigate("/ask"); } },
-              { id: "theme", label: appTheme === "dark" ? "Switch to light mode" : "Switch to dark mode", hint: "Appearance", run: () => { toggle(); setPaletteOpen(false); } },
-              { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", run: () => { setPaletteOpen(false); setSheetOpen(true); } },
+              {
+                id: "ask",
+                label: "Ask BFO…",
+                hint: "A question about the office",
+                run: () => {
+                  setPaletteOpen(false);
+                  navigate("/ask");
+                },
+              },
+              {
+                id: "theme",
+                label: appTheme === "dark" ? "Switch to light mode" : "Switch to dark mode",
+                hint: "Appearance",
+                run: () => {
+                  toggle();
+                  setPaletteOpen(false);
+                },
+              },
+              {
+                id: "shortcuts",
+                label: "Keyboard shortcuts",
+                hint: "?",
+                run: () => {
+                  setPaletteOpen(false);
+                  setSheetOpen(true);
+                },
+              },
               { id: "logout", label: "Log out", run: signOut },
             ]}
           />
@@ -989,8 +1131,6 @@ export default function AppLayout() {
       {appearanceOpen && <AppearancePanel onClose={() => setAppearanceOpen(false)} />}
       <AppLock />
       <OfflineBanner isDark={isDark} />
-
-
     </div>
   );
 }

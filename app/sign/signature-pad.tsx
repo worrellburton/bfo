@@ -148,7 +148,11 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
         {tab("draw", "Draw")}
         {tab("type", "Type")}
         {mode === "draw" && hasInk && (
-          <button type="button" onClick={clear} className={`ml-auto inline-flex items-center px-2 text-[12px] max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}>
+          <button
+            type="button"
+            onClick={clear}
+            className={`ml-auto inline-flex items-center px-2 text-[12px] max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}
+          >
             Clear
           </button>
         )}
@@ -175,7 +179,11 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
       ) : (
         <div className="flex h-[150px] items-center justify-center rounded-xl bg-[#faf8f2] px-6">
           <span className="text-[40px] leading-none text-[#0a0a0c]" style={{ fontFamily: SCRIPT }}>
-            {name.trim() || <span className="text-[13px] text-black/30" style={{ fontFamily: "inherit" }}>Type your name above</span>}
+            {name.trim() || (
+              <span className="text-[13px] text-black/30" style={{ fontFamily: "inherit" }}>
+                Type your name above
+              </span>
+            )}
           </span>
         </div>
       )}

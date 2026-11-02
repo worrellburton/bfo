@@ -13,13 +13,7 @@ import { sbFetch as db } from "../auth.js";
  * here lets the next sync quietly undo the edit. Returns false when the write
  * failed even after one retry, so the caller can tell the person.
  */
-export async function logChanges(
-  transaction_ids: string[],
-  before: Record<string, unknown> | null,
-  patch: Record<string, unknown>,
-  source: string,
-  actor: string | null
-): Promise<boolean> {
+export async function logChanges(transaction_ids: string[], before: Record<string, unknown> | null, patch: Record<string, unknown>, source: string, actor: string | null): Promise<boolean> {
   const rows: any[] = [];
   for (const id of transaction_ids) {
     for (const [field, next] of Object.entries(patch)) {
@@ -47,10 +41,7 @@ export async function logChanges(
       detail = err instanceof Error ? err.message : String(err);
     }
   }
-  console.error(
-    `BOOKS AUDIT LOG WRITE FAILED: ${transaction_ids.length} edited row(s) are not protected from the next bank sync`,
-    { source, transaction_ids: transaction_ids.slice(0, 20), detail }
-  );
+  console.error(`BOOKS AUDIT LOG WRITE FAILED: ${transaction_ids.length} edited row(s) are not protected from the next bank sync`, { source, transaction_ids: transaction_ids.slice(0, 20), detail });
   return false;
 }
 

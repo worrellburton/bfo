@@ -48,11 +48,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Every account_id that belongs to this item, from both places that track it,
     // so the per-account prefs (entity mapping, nickname, hidden) get cleared too.
     const accountIds = new Set<string>();
-    for (const p of [
-      `plaid_account_state?item_id=eq.${enc}&select=account_id`,
-      `book_transactions?item_id=eq.${enc}&select=account_id`,
-    ]) {
-      const rows = (await rest(p).then((r) => r.json()).catch((err) => (console.error("plaid/disconnect: couldn't list the item's accounts", err), []))) as Array<{ account_id: string }>;
+    for (const p of [`plaid_account_state?item_id=eq.${enc}&select=account_id`, `book_transactions?item_id=eq.${enc}&select=account_id`]) {
+      const rows = (await rest(p)
+        .then((r) => r.json())
+        .catch((err) => (console.error("plaid/disconnect: couldn't list the item's accounts", err), []))) as Array<{ account_id: string }>;
       for (const r of rows) if (r.account_id) accountIds.add(r.account_id);
     }
 

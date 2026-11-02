@@ -42,8 +42,21 @@ const SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: [
-    "kind", "confidence", "entityName", "ein", "date", "state", "trustees", "grantors", "beneficiaries",
-    "taxClassification", "taxClassificationEvidence", "filingYear", "registeredAgent", "principalAddress", "members",
+    "kind",
+    "confidence",
+    "entityName",
+    "ein",
+    "date",
+    "state",
+    "trustees",
+    "grantors",
+    "beneficiaries",
+    "taxClassification",
+    "taxClassificationEvidence",
+    "filingYear",
+    "registeredAgent",
+    "principalAddress",
+    "members",
   ],
   properties: {
     kind: { type: "string", enum: [...KINDS] },
@@ -180,10 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let message: Anthropic.Messages.Message;
     try {
       // Server-side fallback on a safety decline (not yet in this SDK's types).
-      message = await client.messages.create(
-        { ...params, ...({ fallbacks: "default" } as Record<string, unknown>) },
-        { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
-      );
+      message = await client.messages.create({ ...params, ...({ fallbacks: "default" } as Record<string, unknown>) }, { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } });
     } catch (err) {
       // If the fallback option itself is refused, run the plain request.
       if (!(err instanceof Anthropic.BadRequestError) || outOfCredit(err)) throw err;
@@ -213,9 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       principalAddress: string | null;
       members: { name: string; percent: number | null; role: string | null }[] | null;
     };
-    const ein = parsed.ein && /^\d{2}-?\d{7}$/.test(parsed.ein.trim())
-      ? parsed.ein.trim().replace(/^(\d{2})-?(\d{7})$/, "$1-$2")
-      : null;
+    const ein = parsed.ein && /^\d{2}-?\d{7}$/.test(parsed.ein.trim()) ? parsed.ein.trim().replace(/^(\d{2})-?(\d{7})$/, "$1-$2") : null;
     const date = parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : null;
     return res.status(200).json({ ...parsed, ein, date, read: true });
   } catch (err) {

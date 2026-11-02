@@ -149,7 +149,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         prefer: "return=representation",
         body: { asset_id: assetId, assigned: "hand" },
       });
-      if (assetId && updated) await logActivity(assetId, { id: me.id, name: me.name || me.email, source: "user" }, [{ kind: "mail", summary: `Filed paper mail from ${updated.from_name || "an unknown sender"} here`, detail: { mailId: id } }]);
+      if (assetId && updated)
+        await logActivity(assetId, { id: me.id, name: me.name || me.email, source: "user" }, [
+          { kind: "mail", summary: `Filed paper mail from ${updated.from_name || "an unknown sender"} here`, detail: { mailId: id } },
+        ]);
       return res.status(200).json({ mail: await present(updated) });
     }
     return fail(res, 400, "unknown_action");
