@@ -72,8 +72,8 @@ type Box = { min: THREE.Vector3; max: THREE.Vector3 };
 // ── Layout (meters; y up; the start island is at the origin, the theater far down -z) ──
 /** The island you wake on: its top is y = 0. */
 const START = { half: 7 };
-/** The theater's island: far enough that the blocks take about half a minute at a walk. */
-const ISLAND = { x0: -30, x1: 30, z1: -126, z0: -126 - 74 };
+/** The theater's island: far enough that the blocks take about twenty seconds at a walk. */
+const ISLAND = { x0: -30, x1: 30, z1: -90, z0: -90 - 74 };
 /** The building: interior width, front doors at z1, screen wall at z0. */
 const BLDG = { halfW: 13, z1: ISLAND.z1 - 14, z0: ISLAND.z1 - 66, height: 11 };
 const LOBBY = { z0: BLDG.z1 - 12, z1: BLDG.z1, height: 5 };
@@ -108,26 +108,30 @@ const BOOTH = { x: -4.4, z: BLDG.z1 + 8.5, w: 2.6, d: 1.8, h: 2.9 };
 const SPAWN = new THREE.Vector3(0, 0, 4.5);
 /**
  * The floating blocks from the start island to the theater island, one every
- * 2.8 m: a wandering line that rises and falls, with a resting island every so
- * often (reaching one is a checkpoint). About 30 seconds at a walk, nonstop.
+ * 2.6 m: a wandering line that rises and falls gently, with a resting island
+ * every so often (reaching one is a checkpoint). Every gap clears at a walk:
+ * no running jumps needed. Some blocks move (see MOVERS).
  */
 const BLOCKS: Array<[x: number, top: number, z: number, size: number]> = (() => {
   const out: Array<[number, number, number, number]> = [];
-  const n = Math.floor((-9.5 - (ISLAND.z1 + 3)) / 2.8);
+  const n = Math.floor((-9.5 - (ISLAND.z1 + 3)) / 2.6);
   for (let i = 0; i <= n; i++) {
-    const z = -9.5 - i * 2.8;
-    const rest = i > 0 && i % 11 === 0 && i < n - 2;
-    const top = Math.round((1.6 + 1.5 * Math.sin(i * 0.42) + 0.35 * Math.sin(i * 1.3)) * 10) / 10;
-    const x = rest ? 0 : Math.round(2.4 * Math.sin(i * 0.75) * 10) / 10;
-    out.push([x, Math.max(0.1, top), z, rest ? 6 : 1.8 + (i % 3) * 0.2]);
+    const z = -9.5 - i * 2.6;
+    const rest = i > 0 && i % 10 === 0 && i < n - 2;
+    const top = Math.round((1.4 + 1.2 * Math.sin(i * 0.42) + 0.25 * Math.sin(i * 1.3)) * 10) / 10;
+    const x = rest ? 0 : Math.round(1.7 * Math.sin(i * 0.75) * 10) / 10;
+    out.push([x, Math.max(0.1, top), z, rest ? 6 : 1.9 + (i % 3) * 0.2]);
   }
   return out;
 })();
 const RESTS = BLOCKS.filter((b) => b[3] >= 6);
+/** Which blocks move, and how: a slide side to side or a slow rise and fall. */
+const MOVERS = (i: number, size: number): { axis: "x" | "y"; amp: number; period: number } | null =>
+  size >= 6 || i < 2 || i % 4 !== 3 ? null : i % 8 === 3 ? { axis: "x", amp: 1.6, period: 5200 } : { axis: "y", amp: 0.7, period: 4200 };
 /** Below this you've fallen off the world. */
 const ABYSS = -18;
 
-const PLAYER = { radius: 0.3, height: 1.7, eye: 1.6, speed: 4, jump: 7.2, gravity: 20, step: 0.45 };
+const PLAYER = { radius: 0.3, height: 1.7, eye: 1.6, speed: 4, jump: 7.6, gravity: 20, step: 0.45 };
 
 export class SigningGame {
   private readonly scene = new THREE.Scene();
@@ -179,6 +183,9 @@ export class SigningGame {
   private label!: THREE.Sprite;
   private marqueeBulbs: THREE.MeshStandardMaterial[] = [];
   private clouds: THREE.Object3D[] = [];
+  /** Blocks that move, with the box the player stands on; the player rides along. */
+  private movers: Array<{ mesh: THREE.Mesh; box: Box; base: THREE.Vector3; axis: "x" | "y"; amp: number; period: number; phase: number }> = [];
+  private birds: Array<{ group: THREE.Group; wings: THREE.Mesh[]; cx: number; cz: number; r: number; y: number; speed: number; phase: number }> = [];
   private dim = 0; // 0 house lights up .. 1 movie dark
 
   // Media
@@ -319,17 +326,35 @@ export class SigningGame {
 
     // ── The blocks ──
     const blockTop = pixelTexture(0x3f8a3a, 22);
-    for (const [x, top, z, size] of BLOCKS) {
+    const moverTop = pixelTexture(0x8ab4e8, 22);
+    BLOCKS.forEach(([x, top, z, size], i) => {
       const h = size > 4 ? 2.2 : 0.8;
+      const mover = MOVERS(i, size);
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(size, h, size),
-        [dirt, dirt, blockTop, dirt, dirt, dirt].map((t) => new THREE.MeshLambertMaterial({ map: t })),
+        [dirt, dirt, mover ? moverTop : blockTop, dirt, dirt, dirt].map((t) => new THREE.MeshLambertMaterial({ map: t })),
       );
       m.position.set(x, top - h / 2, z);
       m.castShadow = true;
       m.receiveShadow = true;
       s.add(m);
-      this.solids.push({ min: new THREE.Vector3(x - size / 2, top - h, z - size / 2), max: new THREE.Vector3(x + size / 2, top, z + size / 2) });
+      const box = { min: new THREE.Vector3(x - size / 2, top - h, z - size / 2), max: new THREE.Vector3(x + size / 2, top, z + size / 2) };
+      this.solids.push(box);
+      if (mover) this.movers.push({ mesh: m, box, base: m.position.clone(), ...mover, phase: i * 1.7 });
+    });
+    // Birds wheeling over the sky between the islands.
+    for (let i = 0; i < 7; i++) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.22), new THREE.MeshLambertMaterial({ color: 0x23232a }));
+      const wings = [-1, 1].map((side) => {
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.7), new THREE.MeshLambertMaterial({ color: 0x33333c }));
+        w.position.set(0, 0.05, side * 0.4);
+        g.add(w);
+        return w;
+      });
+      g.add(body);
+      s.add(g);
+      this.birds.push({ group: g, wings, cx: (i % 2 ? 1 : -1) * (8 + i * 2), cz: -12 - i * 11, r: 6 + (i % 3) * 3, y: 7 + (i % 4) * 2.5, speed: 0.35 + (i % 3) * 0.12, phase: i * 0.9 });
     }
     RESTS.forEach(([x, top, z], i) => this.signpost(x + 2.2, top, z + 1.2, [i === RESTS.length - 1 ? "NEARLY THERE" : `REST ${i + 1} OF ${RESTS.length}`, "Fall and you start from here."]));
 
@@ -1130,7 +1155,7 @@ export class SigningGame {
     this.setPhase("outside");
     this.lockPointer();
     void this.music?.play().catch(() => {});
-    this.hint("The theater is on the island ahead. Jump the blocks to get there: W A S D to move, mouse to look, space to jump.", 8000);
+    this.hint("The theater is on the island ahead. Jump the blocks to get there: W A S D to move, mouse to look, space to jump. The blue ones move.", 8000);
   }
 
   /** The HUD's "click to continue" after Escape. */
@@ -1452,7 +1477,7 @@ export class SigningGame {
         this.yaw = 0;
         this.pitch = 0;
         this.falls++;
-        this.hint(this.falls < 3 ? "Back to the island. Take a run-up and jump a touch earlier." : "Back to the island. Hold Shift to run: a longer jump.", 4000);
+        this.hint(this.falls < 3 ? "Back to the island. Walk to the edge and jump a touch earlier." : "Back to the island. Wait for a moving block to come to you.", 4000);
       }
     } else if (this.phase === "lobby" && p.z < LOBBY.z0 - 0.4) {
       this.setPhase("theater");
@@ -1502,6 +1527,37 @@ export class SigningGame {
       const c = this.clouds[i];
       c.position.x += dt * (0.4 + (i % 3) * 0.25);
       if (c.position.x > 110) c.position.x = -110;
+    }
+    // Moving blocks carry whoever is standing on them.
+    for (const mv of this.movers) {
+      const off = mv.amp * Math.sin((now / mv.period) * Math.PI * 2 + mv.phase);
+      const next = mv.base.clone();
+      next[mv.axis] += off;
+      const d = next.clone().sub(mv.mesh.position);
+      if (!d.lengthSq()) continue;
+      const p = this.pos;
+      const riding =
+        this.grounded &&
+        Math.abs(p.y - mv.box.max.y) < 0.08 &&
+        p.x + PLAYER.radius > mv.box.min.x &&
+        p.x - PLAYER.radius < mv.box.max.x &&
+        p.z + PLAYER.radius > mv.box.min.z &&
+        p.z - PLAYER.radius < mv.box.max.z;
+      mv.mesh.position.copy(next);
+      mv.box.min.add(d);
+      mv.box.max.add(d);
+      if (riding && this.walking()) {
+        p.add(d);
+        this.camera.position.set(p.x, p.y + PLAYER.eye, p.z);
+      }
+    }
+    for (const b of this.birds) {
+      const a = (now / 1000) * b.speed + b.phase;
+      b.group.position.set(b.cx + b.r * Math.cos(a), b.y + 0.4 * Math.sin(a * 3), b.cz + b.r * Math.sin(a));
+      b.group.rotation.y = -a;
+      const flap = Math.sin(now / 90 + b.phase) * 0.6;
+      b.wings[0].rotation.x = flap;
+      b.wings[1].rotation.x = -flap;
     }
     if (this.judyHead) this.judyHead.rotation.y = this.phase === "talk" ? 0.12 * Math.sin(now / 420) : 0.3 * Math.sin(now / 2600);
     if (this.hud.ticket && this.frontOpen < 1) {

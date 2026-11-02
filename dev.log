@@ -1,0 +1,30 @@
+
+> dev
+> react-router dev
+
+  ⚠️  Future Flag Warning: Route middleware support is changing in React Router v8.
+     You can use the `future.v8_middleware` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_middleware
+  ⚠️  Future Flag Warning: Route module splitting behavior is changing in React Router v8.
+     You can use the `future.v8_splitRouteModules` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_splitroutemodules
+  ⚠️  Future Flag Warning: Vite Environment API usage is changing in React Router v8.
+     You can use the `future.v8_viteEnvironmentApi` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_viteenvironmentapi
+  ⚠️  Future Flag Warning: Request handling behavior is changing in React Router v8.
+     You can use the `future.v8_passThroughRequests` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_passthroughrequests
+  ⚠️  Future Flag Warning: Data request URL formats are changing in React Router v8.
+     You can use the `future.v8_trailingSlashAwareDataRequests` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_trailingslashawaredatarequests
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+7:03:11 PM [vite] (client) hmr update /app/sign/game/index.tsx
+7:03:11 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+7:03:11 PM [vite] (ssr) hmr update /app/app.css
+7:03:11 PM [vite] (client) hmr update /app/sign/game/index.tsx
+7:03:11 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+7:03:11 PM [vite] (ssr) hmr update /app/app.css
+7:03:12 PM [vite] (client) hmr update /app/sign/game/index.tsx
+7:03:12 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+7:03:12 PM [vite] (ssr) hmr update /app/app.css

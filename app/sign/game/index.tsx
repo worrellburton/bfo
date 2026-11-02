@@ -206,8 +206,6 @@ export function GameGate({
               <dd>Mouse</dd>
               <dt className="text-white/45">Jump</dt>
               <dd>Space</dd>
-              <dt className="text-white/45">Run</dt>
-              <dd>Hold Shift</dd>
               <dt className="text-white/45">Sit, sign</dt>
               <dd>E</dd>
               <dt className="text-white/45">Free the mouse</dt>
