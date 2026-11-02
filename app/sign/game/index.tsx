@@ -229,7 +229,7 @@ export function GameGate({
 
       {/* The title screen: the document to sign, full screen, Start at the bottom. */}
       {hud.phase === "intro" && (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#07070a]/92 backdrop-blur-sm">
+        <div className="absolute inset-0 z-30 flex flex-col bg-[#07070a]">
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
             <p className="auth-eyebrow text-[11px] uppercase tracking-[0.32em] text-amber-300/80" style={rise(0)}>
               {brand || "Burton Family Office"}
