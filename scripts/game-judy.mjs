@@ -31,7 +31,7 @@ const all = args.includes("--all");
 const only = args.filter((a) => !a.startsWith("--"));
 
 const judy = JSON.parse(await readFile(SCRIPT, "utf8"));
-const lines = [judy.greeting, ...judy.rounds.flatMap((r) => [...r.options.map((o) => o.judy), r.core]), judy.final];
+const lines = [judy.greeting, ...judy.rounds.flatMap((r) => [...r.options.map((o) => o.judy), r.core]), judy.final, ...Object.values(judy.extras ?? {})];
 
 async function pickVoice() {
   if (process.env.JUDY_VOICE_ID) return process.env.JUDY_VOICE_ID;

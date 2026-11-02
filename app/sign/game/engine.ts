@@ -34,7 +34,12 @@ export type JudyScript = {
   greeting: JudyLine;
   rounds: Array<{ options: Array<{ sam: string; judy: JudyLine }>; core: JudyLine }>;
   final: JudyLine;
+  /** Lines said elsewhere: "pa" comes over the theater's speakers during the film. */
+  extras?: Record<string, JudyLine>;
 };
+
+/** The film's name, on the marquee, the poster, the ticket. */
+export const FILM_TITLE = "Sam Signs the Operating Agreement";
 
 export const EMPTY_MANIFEST: Manifest = { movie: null, youtube: "LnVy5ZEcbH0", music: null, sounds: {}, models: {}, voice: {} };
 
@@ -462,7 +467,7 @@ export class SigningGame {
     marquee.position.set(0, doorTop + 3.4, BLDG.z1 + 0.75);
     marquee.castShadow = true;
     s.add(marquee);
-    this.sign(["NOW SHOWING", "ANYTHING IS POSSIBLE"], 0, doorTop + 3.5, BLDG.z1 + 1.36, 16, 2.4, 0, "#14141a", "#ffd166");
+    this.sign(["NOW SHOWING", FILM_TITLE.toUpperCase()], 0, doorTop + 3.5, BLDG.z1 + 1.36, 16, 2.4, 0, "#14141a", "#ffd166");
     for (let i = 0; i < 24; i++) {
       const mat = new THREE.MeshStandardMaterial({ color: 0xfff4cc, emissive: 0xffe08a, emissiveIntensity: 1.5 });
       this.marqueeBulbs.push(mat);
@@ -516,7 +521,7 @@ export class SigningGame {
     this.wall((bw + doorHalf) / 2, byc, LOBBY.z0, bw - doorHalf, bh, 0.3, wall);
     this.wall(0, (doorTop + BLDG.height) / 2, LOBBY.z0, doorHalf * 2, BLDG.height - doorTop, 0.3, wall);
     this.sign(["AUDITORIUM", "▼"], 0, doorTop + 0.55, LOBBY.z0 + 0.16, 2.6, 0.8, 0, "#111118", "#f4ede0");
-    this.sign(["NOW SHOWING", "ANYTHING", "IS POSSIBLE"], -bw + 0.02, 2.4, LOBBY.z1 - 6, 2.4, 3, Math.PI / 2, "#1a0f2e", "#ffd166");
+    this.sign(["NOW SHOWING", "SAM SIGNS", "THE OPERATING", "AGREEMENT"], -bw + 0.02, 2.4, LOBBY.z1 - 6, 2.4, 3, Math.PI / 2, "#1a0f2e", "#ffd166");
     this.sign(["RESERVED", "SEATING", `FOR ${this.opts.signerName.toUpperCase()}`], bw - 0.02, 2.4, LOBBY.z1 - 6, 2.4, 3, -Math.PI / 2, "#2e0f14", "#f4ede0");
     this.sign([this.opts.title.toUpperCase().slice(0, 30)], 0, 4.2, LOBBY.z1 - 0.17, 9, 1, Math.PI, "#111118", "#f4ede0");
     this.popcorn(-6, 0, LOBBY.z1 - 4);
@@ -1182,6 +1187,7 @@ export class SigningGame {
 
   private startMovie() {
     this.setPhase("movie");
+    this.heckle();
     if (this.video) {
       this.theaterAcoustics();
       void this.audio?.resume().catch(() => {});
@@ -1202,6 +1208,35 @@ export class SigningGame {
       const t = setTimeout(tryPlay, 1500);
       this.disposers.push(() => clearTimeout(t));
     }
+  }
+
+  /** Twelve seconds into the film, Judy over the speakers. */
+  private paTimer: ReturnType<typeof setTimeout> | null = null;
+  private heckle() {
+    const line = this.opts.judy?.extras?.pa;
+    if (!line) return;
+    if (this.paTimer) clearTimeout(this.paTimer);
+    this.paTimer = setTimeout(() => {
+      if (this.phase !== "movie") return;
+      const speaker = `${this.opts.judy?.name ?? "Judy"}, over the speakers`;
+      const url = this.opts.manifest.voice[line.id];
+      const chunks = subtitleChunks(line.text);
+      const show = (i: number) => {
+        if (this.phase !== "movie") return;
+        if (i >= chunks.length) return this.setHud({ dialogue: null });
+        this.setHud({ dialogue: { speaker, text: chunks[i], options: null } });
+        this.talkTimers.push(setTimeout(() => show(i + 1), 2600));
+      };
+      if (url) {
+        const a = new Audio(url);
+        a.volume = 0.9;
+        void a.play().catch(() => {});
+      }
+      show(0);
+    }, 12000);
+    this.disposers.push(() => {
+      if (this.paTimer) clearTimeout(this.paTimer);
+    });
   }
 
   private movieEnded() {

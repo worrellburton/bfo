@@ -294,7 +294,7 @@ export async function fillMissing(opts: { deadline: number; judyUrl: string }): 
     try {
       const r = await fetch(opts.judyUrl);
       const judy = r.ok ? ((await r.json()) as JudyLike) : null;
-      const lines = judy ? [judy.greeting, ...judy.rounds.flatMap((x) => [...x.options.map((o) => o.judy), x.core]), judy.final] : [];
+      const lines = judy ? [judy.greeting, ...judy.rounds.flatMap((x) => [...x.options.map((o) => o.judy), x.core]), judy.final, ...Object.values(judy.extras ?? {})] : [];
       if (!lines.length) out.errors.push(`judy.json couldn't be read from ${opts.judyUrl}`);
       else {
         const ask = requests.judy;
@@ -389,4 +389,6 @@ type JudyLike = {
   greeting: { id: string; text: string };
   rounds: Array<{ options: Array<{ judy: { id: string; text: string } }>; core: { id: string; text: string } }>;
   final: { id: string; text: string };
+  /** Lines said elsewhere (over the PA during the film). */
+  extras?: Record<string, { id: string; text: string }>;
 };

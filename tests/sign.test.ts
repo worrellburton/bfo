@@ -19,6 +19,7 @@ import {
   placeField,
   sendBlocker,
   signedCopyEmail,
+  signedNoticeEmail,
   signRequestEmail,
   stampPdf,
   TOKEN_RE,
@@ -187,6 +188,13 @@ describe("emails", () => {
     expect(m.text).toContain("https://www.burtonfamilyoffice.com/sign/abc");
     expect(m.html).toContain("Ada Client");
     expect(signRequestEmail({ title: "MSA", created_by_name: null, brand: null }, party("b"), "x", true).subject).toMatch(/^Reminder/);
+  });
+  it("tells the office who signed, and when everyone has", () => {
+    const m = signedNoticeEmail({ id: "11111111-1111-4111-8111-111111111111", title: "MSA" }, "Sam Example", false);
+    expect(m.subject).toBe("Sam Example signed MSA");
+    expect(m.text).toContain("/tools/signatures/11111111-1111-4111-8111-111111111111");
+    expect(m.html).toContain("Waiting on the other party");
+    expect(signedNoticeEmail({ id: "x", title: "MSA" }, "Sam", true).subject).toBe("Signed by everyone: MSA");
   });
   it("tells a game-mode signer to open it on a computer", () => {
     const m = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: null, mode: "game" }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");

@@ -96,5 +96,11 @@
   "final": {
     "id": "final",
     "text": "All right. Here's a ticket. Row six, on the aisle, it has your name on it. It's good to see you, Sam. Really. And Sam. The spreadsheet."
+  },
+  "extras": {
+    "pa": {
+      "id": "pa",
+      "text": "Sam, if you can hear this, the popcorn is not complimentary. Enjoy the film."
+    }
   }
 }

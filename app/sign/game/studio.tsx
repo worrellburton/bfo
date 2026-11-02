@@ -56,7 +56,7 @@ export function GameStudio({ onChanged }: { onChanged: () => void }) {
   const voiceJudy = (redo: boolean) =>
     run("judy", async () => {
       const judy = (await fetch("/game/judy.json").then((r) => r.json())) as JudyScript;
-      const lines = [judy.greeting, ...judy.rounds.flatMap((r) => [...r.options.map((o) => o.judy), r.core]), judy.final];
+      const lines = [judy.greeting, ...judy.rounds.flatMap((r) => [...r.options.map((o) => o.judy), r.core]), judy.final, ...Object.values(judy.extras ?? {})];
       let remaining = lines.length;
       let first = true;
       while (remaining > 0) {

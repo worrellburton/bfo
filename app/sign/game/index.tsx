@@ -7,6 +7,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Hud, JudyScript, Manifest, SigningGame } from "./engine";
 
+/** The film's name, as on the marquee (kept here too so the HUD doesn't load the engine for it). */
+const FILM_TITLE = "Sam Signs the Operating Agreement";
+
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
 
@@ -148,13 +151,13 @@ export function GameGate({
           style={{ animation: "ticket-in 600ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both" }}
         >
           <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-[#8c2a2f]">Admit one</span>
-          <span className="block font-[var(--font-brand)] text-[13px]">Anything Is Possible</span>
+          <span className="block font-[var(--font-brand)] text-[13px]">{FILM_TITLE}</span>
           <span className="block text-[10px] text-[#2e0f14]/70">Row 6, aisle · {signerName}</span>
         </div>
       )}
 
       {/* Talking to Judy: her subtitles, then Sam's replies. */}
-      {hud.dialogue && hud.phase === "talk" && (
+      {hud.dialogue && (hud.phase === "talk" || hud.phase === "movie") && (
         <div className="absolute bottom-0 left-0 right-0 z-30 flex justify-center p-4 pb-6">
           <div className="w-full max-w-[760px]">
             <div role="status" aria-live="polite" className="rounded-2xl border border-white/10 bg-black/75 px-5 py-4 text-center backdrop-blur">
@@ -367,58 +370,11 @@ function PhoneScreen({
           </span>
         </div>
 
-        {/* The island, the theater, the sky: a small animated scene. */}
-        <div
-          className="relative mt-5 h-[220px] overflow-hidden rounded-2xl border border-white/10"
-          style={{ ...rise(2), background: "linear-gradient(180deg, #2f6fc4 0%, #6fa9e6 55%, #c9ddf0 100%)" }}
-        >
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="absolute rounded-full bg-white/90"
-              style={{
-                width: 70 + i * 22,
-                height: 26 + i * 6,
-                left: `${8 + i * 22}%`,
-                top: `${12 + (i % 2) * 22}%`,
-                filter: "blur(0.5px)",
-                animation: `drift ${7 + i * 2}s ease-in-out ${i * 0.7}s infinite alternate`,
-              }}
-            />
-          ))}
-          {/* The far island with the theater on it. */}
-          <div className="absolute left-1/2 top-[44%] -translate-x-1/2" style={{ animation: "float-y 3.6s ease-in-out infinite alternate" }}>
-            <div className="relative mx-auto h-[46px] w-[120px]">
-              <div className="absolute inset-x-[18px] bottom-0 h-[28px] rounded-sm bg-[#8c2a2f]" />
-              <div className="absolute inset-x-[10px] bottom-[26px] h-[14px] rounded-sm bg-[#14141a]" />
-              <div className="absolute inset-x-[14px] bottom-[29px] flex justify-between px-1">
-                {[0, 1, 2, 3, 4, 5, 6].map((b) => (
-                  <span key={b} className="block h-[3px] w-[3px] rounded-full bg-amber-200" style={{ animation: `blink 0.7s ease-in-out ${(b % 2) * 0.35}s infinite` }} />
-                ))}
-              </div>
-              <div className="absolute bottom-0 left-1/2 h-[10px] w-[8px] -translate-x-1/2 bg-[#5a3a1a]" />
-            </div>
-            <div className="h-[18px] w-[160px] rounded-[40%] bg-[#4f8a34] shadow-[0_18px_0_-6px_#5e452a]" />
-          </div>
-          {/* The blocks between the islands. */}
-          {[0, 1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="absolute h-[9px] w-[16px] rounded-[2px] bg-[#4f8a34] shadow-[0_5px_0_0_#5e452a]"
-              style={{ left: `${30 + i * 9}%`, top: `${80 - i * 5}%`, animation: `float-y ${2.4 + i * 0.3}s ease-in-out ${i * 0.25}s infinite alternate` }}
-            />
-          ))}
-          {/* The near island, at the bottom. */}
-          <div className="absolute -bottom-[26px] left-[-10%] h-[70px] w-[70%] rounded-[50%] bg-[#4f8a34] shadow-[0_26px_0_-8px_#5e452a]" />
-          <div className="absolute bottom-[6px] left-3 rounded-full bg-black/35 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-white/85">Anything Is Possible</div>
-        </div>
-
-        <h1 className="mt-6 text-[24px] font-semibold leading-tight" style={rise(3)}>
-          This one's best on a computer
+        <h1 className="mt-8 text-[26px] font-semibold leading-tight" style={rise(2)}>
+          You need a computer to sign this
         </h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-white/65" style={rise(4)}>
-          Before the signature there's a short game, played with a keyboard and a mouse: across the floating blocks to the theater, a ticket from Judy, a seat with your name on it, a film, and a
-          staircase to the contract. Open this same link on a laptop or desktop and it starts there.
+        <p className="mt-2 text-[14px] leading-relaxed text-white/65" style={rise(3)}>
+          Open this same link on a laptop or desktop and the signing starts there.
         </p>
 
         <div className="mt-6 grid gap-2" style={rise(5)}>

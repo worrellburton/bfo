@@ -21,6 +21,7 @@ import {
   shownSize,
   SIGN_BUCKET,
   signedCopyEmail,
+  signedNoticeEmail,
   signLink,
   signRequestEmail,
   stampPdf,
@@ -517,6 +518,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
   if (!done) return fail(res, 409, "busy", "Someone else signed at the same moment. Try again.");
 
   const completed = done.status === "completed";
+  // The office hears about every signature: a push and an email to each owner and admin.
   void notifyAdmins(
     {
       aps: { alert: { title: completed ? "Signed by everyone" : "Signature received", body: `${name} signed ${done.title}` }, sound: "default" },
@@ -524,7 +526,22 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     },
     `sign-${done.id}`,
   );
+  void emailAdmins(done, name, completed);
   return res.status(200).json({ ok: true, completed });
+}
+
+/** Emails every approved owner and admin that a party signed; a failure is logged, never shown to the signer. */
+async function emailAdmins(row: SignatureRequestRow, signer: string, completed: boolean) {
+  try {
+    const admins = await sb<Array<{ email: string | null }>>("app_users?role=in.(owner,admin)&status=eq.approved&select=email");
+    const mail = signedNoticeEmail(row, signer, completed);
+    for (const a of admins ?? []) {
+      if (!a.email) continue;
+      await sendEmail(a.email, mail.subject, mail.text, mail.html).catch((err) => console.error("sign: notice email failed", { to: !!a.email, error: err instanceof Error ? err.message : err }));
+    }
+  } catch (err) {
+    console.error("sign: couldn't email the office", err instanceof Error ? err.message : err);
+  }
 }
 
 /** The PNG bytes of a data: URL the signature pad produced (a few hundred KB at most). */
