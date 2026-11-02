@@ -176,7 +176,11 @@ describe("api/game-assets", () => {
   });
 
   it("lets the job token in, and nothing like it", async () => {
-    const withAuth = (authorization: string) => handler({ method: "GET", query: { studio: "1" }, headers: { authorization } } as any, mockRes());
+    const withAuth = async (authorization: string) => {
+      const res = mockRes();
+      await handler({ method: "GET", query: { studio: "1" }, headers: { authorization } } as any, res);
+      return res;
+    };
     process.env.GAME_JOB_TOKEN = "job-token-123";
     const ok = await withAuth("Bearer job-token-123");
     expect(ok.statusCode).toBe(200);
