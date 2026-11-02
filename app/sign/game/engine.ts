@@ -228,6 +228,18 @@ export class SigningGame {
   private seatLight!: THREE.PointLight;
   private label!: THREE.Sprite;
   private marqueeBulbs: THREE.MeshStandardMaterial[] = [];
+  /** The marquee over the doors and its twin on the roof, which the top of the stairs can read. */
+  private marqueeSign: THREE.Mesh | null = null;
+  private roofSign: THREE.Mesh | null = null;
+  /** Clouds around the staircase, at eye level on the way up, swaying in place. */
+  private stairClouds: Array<{ group: THREE.Group; base: THREE.Vector3; phase: number }> = [];
+  /** Wind on the stairs: filtered noise that rises with the climb. */
+  private wind: { ctx: AudioContext; gain: GainNode; filter: BiquadFilterNode } | null = null;
+  /** The pen beside the contract, and the same pen once it's in hand. */
+  private pen: THREE.Mesh | null = null;
+  private penHand: THREE.Group | null = null;
+  private penTakenAt = 0;
+  private signedAt = 0;
   private clouds: THREE.Object3D[] = [];
   /** Blocks that move, with the box the player stands on; the player rides along. */
   private movers: Array<{ mesh: THREE.Mesh; box: Box; base: THREE.Vector3; axis: "x" | "y"; amp: number; period: number; phase: number }> = [];
@@ -475,7 +487,26 @@ export class SigningGame {
     marquee.position.set(0, doorTop + 3.4, BLDG.z1 + 0.75);
     marquee.castShadow = true;
     s.add(marquee);
-    this.sign(["NOW SHOWING", FILM_TITLE.toUpperCase()], 0, doorTop + 3.5, BLDG.z1 + 1.36, 16, 2.4, 0, "#14141a", "#ffd166");
+    this.marqueeSign = this.sign(["NOW SHOWING", FILM_TITLE.toUpperCase()], 0, doorTop + 3.5, BLDG.z1 + 1.36, 16, 2.4, 0, "#14141a", "#ffd166");
+    // The same words on a board up a mast at the back of the roof, turned toward the top of the stairs, clear of the cloud.
+    {
+      const top = STEP_POS(STAIR.steps - 1);
+      const sx = 10;
+      const sy = BLDG.height + 0.3 + 8;
+      const sz = STAIR.cz - 1;
+      const board = new THREE.Mesh(new THREE.BoxGeometry(10.4, 3.6, 0.3), flat(0x14141a));
+      board.position.set(sx, sy, sz);
+      board.lookAt(top.x, top.y + 1.5, top.z);
+      s.add(board);
+      this.roofSign = this.sign(["NOW SHOWING", FILM_TITLE.toUpperCase()], sx, sy, sz, 10, 3.2, 0, "#14141a", "#ffd166");
+      this.roofSign.lookAt(top.x, top.y + 1.5, top.z);
+      this.roofSign.translateZ(0.17);
+      for (const dx of [-3.5, 3.5]) {
+        const mast = new THREE.Mesh(new THREE.BoxGeometry(0.25, sy - 1.8 - (BLDG.height + 0.3), 0.25), flat(0x2a2a30));
+        mast.position.set(sx + dx, (sy - 1.8 + BLDG.height + 0.3) / 2, sz);
+        s.add(mast);
+      }
+    }
     for (let i = 0; i < 24; i++) {
       const mat = new THREE.MeshStandardMaterial({ color: 0xfff4cc, emissive: 0xffe08a, emissiveIntensity: 1.5 });
       this.marqueeBulbs.push(mat);
@@ -646,19 +677,91 @@ export class SigningGame {
     s.add(cloud);
     const hs = HEAVEN.size / 2;
     this.solids.push({ min: new THREE.Vector3(HEAVEN.x - hs, HEAVEN.y - 2, HEAVEN.z - hs), max: new THREE.Vector3(HEAVEN.x + hs, HEAVEN.y, HEAVEN.z + hs) });
-    const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.9), gold);
-    pedestal.position.set(HEAVEN.x, HEAVEN.y + 0.55, HEAVEN.z);
-    s.add(pedestal);
+    // A lectern of light: a glowing column with a slanted gold top, where the pedestal was.
+    const glow = (r0: number, r1: number, h: number, opacity: number) =>
+      new THREE.Mesh(
+        new THREE.CylinderGeometry(r0, r1, h, 24, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0xfff1c0, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+      );
+    const column = glow(0.3, 0.55, 1.1, 0.42);
+    column.position.set(HEAVEN.x, HEAVEN.y + 0.55, HEAVEN.z);
+    const core = glow(0.1, 0.16, 1.1, 0.8);
+    core.position.copy(column.position);
+    s.add(column, core);
+    const top = STEP_POS(STAIR.steps - 1);
+    const toStairs = new THREE.Vector3(top.x - HEAVEN.x, 0, top.z - HEAVEN.z).normalize();
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, 0.9), gold);
+    desk.position.set(HEAVEN.x, HEAVEN.y + 1.12, HEAVEN.z);
+    desk.lookAt(HEAVEN.x + toStairs.x, HEAVEN.y + 1.12 + 0.45, HEAVEN.z + toStairs.z);
+    s.add(desk);
     this.solids.push({ min: new THREE.Vector3(HEAVEN.x - 0.45, HEAVEN.y, HEAVEN.z - 0.45), max: new THREE.Vector3(HEAVEN.x + 0.45, HEAVEN.y + 1.1, HEAVEN.z + 0.45) });
+    // The document, open to the signature page, facing whoever comes up the stairs.
     this.contract = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.62, 0.8),
+      new THREE.PlaneGeometry(0.95, 1.25),
       new THREE.MeshBasicMaterial({
-        map: textTexture([this.opts.title.slice(0, 28), "", "— — — — — —", "— — — — — —", "— — — —", "", "", "Signature: ________"], 230, 300, "#faf8f2", "#1a1a1f", 18),
+        map: textTexture(
+          [this.opts.title.slice(0, 30), "", "SIGNATURE PAGE", "", "", "Signed:", "X ________________", this.opts.signerName, "", "Date: ____________"],
+          300,
+          400,
+          "#faf8f2",
+          "#1a1a1f",
+          20,
+        ),
         side: THREE.DoubleSide,
       }),
     );
-    this.contract.position.set(HEAVEN.x, HEAVEN.y + 1.75, HEAVEN.z);
+    this.contract.position.set(HEAVEN.x, HEAVEN.y + 1.85, HEAVEN.z);
+    this.contract.lookAt(HEAVEN.x + toStairs.x * 10, HEAVEN.y + 1.85 - 1.5, HEAVEN.z + toStairs.z * 10);
+    const edge = new THREE.Mesh(new THREE.PlaneGeometry(1.01, 1.31), new THREE.MeshBasicMaterial({ color: 0x2e2410, side: THREE.DoubleSide }));
+    edge.position.z = -0.006;
+    this.contract.add(edge);
     s.add(this.contract);
+    // The pen, waiting beside it.
+    const penGeo = new THREE.CylinderGeometry(0.022, 0.01, 0.42, 10);
+    this.pen = new THREE.Mesh(penGeo, gold);
+    this.pen.position.set(HEAVEN.x + 0.7, HEAVEN.y + 1.45, HEAVEN.z);
+    this.pen.rotation.z = 0.5;
+    s.add(this.pen);
+    const penHand = new THREE.Group();
+    const held = new THREE.Mesh(penGeo, new THREE.MeshBasicMaterial({ color: 0xd4af37 }));
+    const nib = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 8), new THREE.MeshBasicMaterial({ color: 0x3a2a05 }));
+    nib.position.y = -0.235;
+    nib.rotation.x = Math.PI;
+    penHand.add(held, nib);
+    penHand.scale.setScalar(0.42);
+    penHand.visible = false;
+    this.camera.add(penHand);
+    this.penHand = penHand;
+    // A shaft of light from the cloud down to the theater's roof: the destination, seen from the courtyard and the stairs.
+    const shaftTop = HEAVEN.y - 2;
+    const shaftBottom = BLDG.height + 0.3;
+    const shaft = glow(2.2, 3.4, shaftTop - shaftBottom, 0.16);
+    shaft.position.set(HEAVEN.x, (shaftTop + shaftBottom) / 2, HEAVEN.z);
+    s.add(shaft);
+    // Clouds around the staircase, at eye level on the way up.
+    {
+      let seed = 23;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let k = 0; k < 12; k++) {
+        const i = 6 + k * 5;
+        const p = STEP_POS(i);
+        const a = STEP_ANGLE(i) + (rnd() - 0.5) * 0.6;
+        const r = k % 4 === 3 ? 2.5 : STAIR.r + 6 + rnd() * 6;
+        const g = new THREE.Group();
+        const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 2, emissive: 0xe6eef7, emissiveIntensity: 0.55, transparent: true, opacity: 0.9 });
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let j = 0; j < n; j++) {
+          const m = new THREE.Mesh(new THREE.SphereGeometry(0.8 + rnd() * 1.0, 14, 10), mat);
+          m.position.set((rnd() - 0.5) * 4, (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 2.5);
+          m.scale.y = 0.55 + rnd() * 0.2;
+          g.add(m);
+        }
+        const base = new THREE.Vector3(STAIR.cx + r * Math.cos(a), p.y + 1.2 + (rnd() - 0.5) * 1.2, STAIR.cz + r * Math.sin(a));
+        g.position.copy(base);
+        s.add(g);
+        this.stairClouds.push({ group: g, base, phase: rnd() * Math.PI * 2 });
+      }
+    }
     const halo = new THREE.PointLight(0xffe9b0, 40, 18, 2);
     halo.position.set(HEAVEN.x, HEAVEN.y + 3.2, HEAVEN.z);
     s.add(halo);
@@ -784,6 +887,21 @@ export class SigningGame {
     m.position.set(x, y, z);
     m.rotation.y = rotY;
     this.scene.add(m);
+    return m;
+  }
+
+  /** What the marquee says: over the doors, and on the roof for the top of the stairs. */
+  private setMarquee(lines: string[]) {
+    for (const [m, w, h] of [
+      [this.marqueeSign, 16, 2.4],
+      [this.roofSign, 10, 3.2],
+    ] as const) {
+      if (!m) continue;
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.map?.dispose();
+      mat.map = textTexture(lines, Math.round(w * 160), Math.round(h * 160), "#14141a", "#ffd166");
+      mat.needsUpdate = true;
+    }
   }
 
   private signpost(x: number, y: number, z: number, lines: string[]) {
@@ -1278,6 +1396,7 @@ export class SigningGame {
   private movieEnded() {
     if (this.phase !== "movie") return;
     this.setPhase("ended");
+    this.setMarquee(["SOLD OUT", `${(this.opts.signerName.trim().split(/\s+/)[0] || "Sam").toUpperCase()} WAS HERE`]);
     this.doorOpenAt = performance.now();
     this.play("door");
     this.exitSign.emissiveIntensity = 2.2;
@@ -1625,16 +1744,100 @@ export class SigningGame {
     this.setHud({ prompt: "" });
     this.hint("Through the open door by the screen: a staircase climbs into the sky. The contract is at the top.", 8000);
     this.fadeInMusic();
+    this.startWind();
     this.lockPointer();
+  }
+
+  /** On the stairs: the wind rises with the height, and so does the music. Both ease off once signed. */
+  private climb(now: number) {
+    if (this.phase !== "exit" && this.phase !== "done") return;
+    const f = this.phase === "done" ? 0 : Math.max(0, Math.min(1, (this.pos.y - FRONT_FLOOR) / (HEAVEN.y - FRONT_FLOOR)));
+    if (this.wind) {
+      const w = this.wind;
+      w.filter.frequency.value = 260 + 140 * Math.sin(now / 1700) + 70 * Math.sin(now / 530);
+      w.gain.gain.setTargetAtTime(0.5 * f * f, w.ctx.currentTime, 0.25);
+    }
+    if (this.music && this.musicFade === null && this.phase === "exit") this.music.volume = Math.min(1, 0.4 + 0.6 * f);
+  }
+
+  private startWind() {
+    if (this.wind) return;
+    try {
+      const ctx = new AudioContext();
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < d.length; i++) {
+        last = 0.98 * last + 0.02 * (Math.random() * 2 - 1);
+        d[i] = last * 6;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = 300;
+      filter.Q.value = 0.7;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(filter).connect(gain).connect(ctx.destination);
+      src.start();
+      this.wind = { ctx, gain, filter };
+      this.disposers.push(() => void ctx.close().catch(() => {}));
+    } catch {
+      /* no Web Audio: a quiet climb */
+    }
+  }
+
+  private static readonly PEN_FROM = { pos: new THREE.Vector3(0.24, -0.42, -0.34), rot: new THREE.Euler(0.4, 0.2, -1.2) };
+  private static readonly PEN_HELD = { pos: new THREE.Vector3(0.16, -0.11, -0.3), rot: new THREE.Euler(0.95, 0.25, -0.55) };
+
+  /** The pen floats up into the hand at the contract; after the signature it scribbles for a moment. */
+  private handPen(now: number) {
+    const g = this.penHand;
+    if (!g) return;
+    if (!this.penTakenAt && this.phase === "exit" && this.nearContract()) {
+      this.penTakenAt = now;
+      if (this.pen) this.pen.visible = false;
+      g.visible = true;
+    }
+    if (!g.visible) return;
+    const t = Math.min(1, (now - this.penTakenAt) / 700);
+    const e = t * t * (3 - 2 * t);
+    const F = SigningGame.PEN_FROM;
+    const H = SigningGame.PEN_HELD;
+    g.position.copy(F.pos).lerp(H.pos, e);
+    g.rotation.set(F.rot.x + (H.rot.x - F.rot.x) * e, F.rot.y + (H.rot.y - F.rot.y) * e, F.rot.z + (H.rot.z - F.rot.z) * e);
+    if (this.signedAt) {
+      const k = (now - this.signedAt) / 1000;
+      if (k < 1.1) {
+        g.position.x += 0.03 * Math.sin(k * 26);
+        g.position.y -= 0.02 * Math.abs(Math.sin(k * 9));
+      } else g.visible = false;
+    }
   }
 
   private finish() {
     this.setPhase("done");
     this.play("sign");
+    this.signedAt = performance.now();
+    const first = this.opts.signerName.trim().split(/\s+/)[0] || "Sam";
+    this.setMarquee(["SIGNED", first.toUpperCase()]);
     if (this.locked) document.exitPointerLock();
     this.setHud({ prompt: "" });
-    const t = setTimeout(() => this.opts.onDone(), 900);
-    this.disposers.push(() => clearTimeout(t));
+    // A moment with the pen, then a glide back to the top step for a look down at the marquee, then the signed page.
+    const look = setTimeout(() => {
+      if (!this.roofSign) return;
+      const top = STEP_POS(STAIR.steps - 1);
+      const to = new THREE.Vector3(top.x, top.y + PLAYER.eye, top.z);
+      const qTo = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(to, this.roofSign.position, new THREE.Vector3(0, 1, 0)));
+      this.tween = { from: this.camera.position.clone(), to, qFrom: this.camera.quaternion.clone(), qTo, start: performance.now(), dur: 1600 };
+    }, 1100);
+    const t = setTimeout(() => this.opts.onDone(), 4200);
+    this.disposers.push(() => {
+      clearTimeout(look);
+      clearTimeout(t);
+    });
   }
 
   // ── Each frame ──────────────────────────────────────────────────────────
@@ -1905,8 +2108,15 @@ export class SigningGame {
 
   private animate(now: number, dt: number) {
     this.label.position.y = this.reservedSeat().y + 2.0 + 0.12 * Math.sin(now / 500);
-    this.contract.position.y = HEAVEN.y + 1.75 + 0.15 * Math.sin(now / 700);
-    this.contract.rotation.y = now / 1800;
+    this.contract.position.y = HEAVEN.y + 1.85 + 0.08 * Math.sin(now / 900);
+    if (this.pen) this.pen.position.y = HEAVEN.y + 1.45 + 0.06 * Math.sin(now / 600 + 1);
+    for (const c of this.stairClouds) {
+      c.group.position.x = c.base.x + 1.4 * Math.sin(now / 4200 + c.phase);
+      c.group.position.z = c.base.z + 1.0 * Math.cos(now / 5100 + c.phase);
+      c.group.position.y = c.base.y + 0.3 * Math.sin(now / 2600 + c.phase);
+    }
+    this.climb(now);
+    this.handPen(now);
     const blink = Math.floor(now / 350) % 2;
     this.marqueeBulbs.forEach((m, i) => (m.emissiveIntensity = (i + blink) % 2 ? 1.6 : 0.25));
     for (let i = 0; i < this.clouds.length; i++) {
@@ -1984,7 +2194,7 @@ export class SigningGame {
         t.then?.();
       }
     }
-    if (this.phase === "done") this.setHud({ dark: Math.min(1, this.hud.dark + dt / 0.8) });
+    if (this.phase === "done" && now - this.signedAt > 3300) this.setHud({ dark: Math.min(1, this.hud.dark + dt / 0.8) });
     else if (this.hud.dark > 0 && this.walking()) this.setHud({ dark: Math.max(0, this.hud.dark - dt / 0.7) });
     // Landing dust drifts out and fades.
     for (let i = this.dust.length - 1; i >= 0; i--) {
