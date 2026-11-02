@@ -67,6 +67,7 @@ Optional ones are marked. Never commit values.
 | `OPENAI_API_KEY` | Voice (transcription, speech, Realtime) and the logo reference sheet. |
 | `MESHY_API_KEY` | optional. Image-to-3D for the logo studio and the signing game's props (the game studio, or `npm run game:props`). |
 | `ELEVENLABS_API_KEY` | optional. Judy's voice and the sound effects for the signing game (the game studio, or `npm run game:judy` and `game:sounds`). |
+| `GAME_JOB_TOKEN` | optional. A token minted for a Claude session so it can run the game studio (`api/game-assets.ts`) from outside with the keys staying on Vercel; delete it to revoke. |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8` | Apple push key for the iPhone app. `APNS_BUNDLE_ID` optional (default `com.burtonfamilyoffice.app`). |
 | `SITE_URL` | optional. Site origin used in emails (default `https://www.burtonfamilyoffice.com`). |
 

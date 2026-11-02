@@ -15,7 +15,7 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
   return {
     ...actual,
     currentUser: vi.fn(async (req: { headers?: Record<string, string> }) =>
-      req.headers?.authorization ? { id: "u1", name: "Robert", email: "r@x.com", phone: null, role: "owner", status: "approved" } : null,
+      req.headers?.authorization === "Bearer x" ? { id: "u1", name: "Robert", email: "r@x.com", phone: null, role: "owner", status: "approved" } : null,
     ),
     sb: async (path: string, init: { method?: string; body?: any } = {}) => {
       if (!path.startsWith("brand_settings")) return [];
@@ -40,12 +40,17 @@ vi.mock("../lib/storage.js", () => ({
 const { default: handler } = await import("../api/game-assets");
 const { default: cron } = await import("../api/cron/game-assets");
 
-function call(method: "GET" | "POST", body: Record<string, unknown> = {}, query: Record<string, string> = {}, auth = true) {
+function mockRes() {
   const res: any = { statusCode: 200, body: null as any, headers: {} as Record<string, string> };
   res.status = (c: number) => ((res.statusCode = c), res);
   res.json = (b: unknown) => ((res.body = b), res);
   res.setHeader = (k: string, v: string) => ((res.headers[k] = v), res);
   res.end = () => res;
+  return res;
+}
+
+function call(method: "GET" | "POST", body: Record<string, unknown> = {}, query: Record<string, string> = {}, auth = true) {
+  const res = mockRes();
   return handler({ method, body, query, headers: auth ? { authorization: "Bearer x" } : {} } as any, res).then(() => res);
 }
 
@@ -163,10 +168,22 @@ describe("api/game-assets", () => {
   });
 
   it("refuses the studio to anyone not signed in as staff", async () => {
+    delete process.env.GAME_JOB_TOKEN;
     const r = await call("GET", {}, { studio: "1" }, false);
     expect(r.statusCode).toBe(401);
     const r2 = await call("POST", { action: "prop", name: "throne" });
     expect(r2.statusCode).toBe(400);
+  });
+
+  it("lets the job token in, and nothing like it", async () => {
+    const withAuth = (authorization: string) => handler({ method: "GET", query: { studio: "1" }, headers: { authorization } } as any, mockRes());
+    process.env.GAME_JOB_TOKEN = "job-token-123";
+    const ok = await withAuth("Bearer job-token-123");
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body.configured.elevenlabs).toBe(true);
+    expect((await withAuth("Bearer job-token-124")).statusCode).toBe(401);
+    delete process.env.GAME_JOB_TOKEN;
+    expect((await withAuth("Bearer job-token-123")).statusCode).toBe(401);
   });
 });
 

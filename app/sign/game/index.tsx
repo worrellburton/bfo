@@ -189,40 +189,44 @@ export function GameGate({
         </p>
       )}
 
-      {/* The start card. */}
+      {/* The title screen: what they're here to sign, full screen, Start at the bottom. */}
       {hud.phase === "intro" && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-[520px] rounded-2xl border border-white/10 bg-[#0b0b0f] p-6 text-center shadow-2xl sm:p-8">
-            <p className="auth-eyebrow text-[11px] uppercase tracking-[0.28em] text-amber-300/80">{brand || "Burton Family Office"} presents</p>
-            <h1 className="mt-3 font-[var(--font-brand)] text-[34px] leading-none">Anything Is Possible</h1>
-            <p className="mt-3 text-[13.5px] leading-relaxed text-white/65">
-              Hello, {signerName}. Before you sign <span className="text-white">{title}</span>, cross the floating blocks to the theater, get your ticket from Judy, find your seat and watch the film.
-              When it's over, a staircase climbs to the contract.
+        <div className="absolute inset-0 z-30 flex flex-col bg-[#07070a]/92 backdrop-blur-sm">
+          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+            <p className="auth-eyebrow text-[11px] uppercase tracking-[0.32em] text-amber-300/80">{brand || "Burton Family Office"}</p>
+            <p className="mt-6 text-[13px] uppercase tracking-[0.22em] text-white/50">You're here to sign</p>
+            <h1 className="mt-3 max-w-[900px] font-[var(--font-brand)] text-[40px] leading-[1.05] text-white sm:text-[56px]">{title}</h1>
+            <p className="mt-6 max-w-[640px] text-[15px] leading-relaxed text-white/65">
+              Hello, {signerName}. The contract is waiting on the other side of a short film: cross the floating blocks to the theater, get your ticket from Judy, take the seat with your name on it,
+              and when the film ends, climb the stairs to the contract.
             </p>
-            <dl className="mx-auto mt-5 grid max-w-[360px] grid-cols-2 gap-x-6 gap-y-1.5 text-left text-[12.5px] text-white/70">
-              <dt className="text-white/45">Move</dt>
+            <dl className="mt-8 grid grid-cols-2 gap-x-10 gap-y-1.5 text-left text-[12.5px] text-white/70 sm:grid-cols-3">
+              <dt className="text-white/40">Move</dt>
               <dd>W A S D or arrows</dd>
-              <dt className="text-white/45">Look</dt>
+              <dt className="text-white/40">Look</dt>
               <dd>Mouse</dd>
-              <dt className="text-white/45">Jump</dt>
+              <dt className="text-white/40">Jump</dt>
               <dd>Space</dd>
-              <dt className="text-white/45">Sit, sign</dt>
+              <dt className="text-white/40">Sit, sign</dt>
               <dd>E</dd>
-              <dt className="text-white/45">Free the mouse</dt>
+              <dt className="text-white/40">Free the mouse</dt>
               <dd>Esc</dd>
-              <dt className="text-white/45">Seated</dt>
+              <dt className="text-white/40">Seated</dt>
               <dd>Drag to look around</dd>
             </dl>
+          </div>
+          <div className="flex flex-col items-center gap-3 px-6 pb-10 pt-4">
             <button
               type="button"
               disabled={loading !== "ready"}
               onClick={() => game.current?.begin()}
-              className="mt-6 h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-50"
+              className="h-[56px] min-w-[260px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-50"
             >
-              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Click to begin"}
+              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start"}
             </button>
+            <p className="text-[11.5px] text-white/35">Anything Is Possible · a short film, then your signature</p>
             {loading === "failed" && (
-              <p className="mt-3 text-[12.5px] text-white/60">
+              <p className="text-[12.5px] text-white/60">
                 Your browser couldn't run it.{" "}
                 <button type="button" onClick={onSkip} className="underline hover:text-white">
                   Sign the normal way
