@@ -112,20 +112,12 @@ export function AgreementsTab() {
           <Rows>
             {contracts.map((c) =>
               page.editingContractId === c.id ? (
-                <ContractEditor
-                  key={c.id}
-                  f={page.editContractForm}
-                  setF={page.setEditContractForm}
-                  onSave={page.saveEditContract}
-                  onCancel={() => page.setEditingContractId(null)}
-                />
+                <ContractEditor key={c.id} f={page.editContractForm} setF={page.setEditContractForm} onSave={page.saveEditContract} onCancel={() => page.setEditingContractId(null)} />
               ) : (
                 <ContractRow key={c.id} c={c} />
               ),
             )}
-            {page.addingContract && (
-              <ContractEditor isNew f={page.contractForm} setF={page.setContractForm} onSave={page.addContract} onCancel={() => page.setAddingContract(false)} />
-            )}
+            {page.addingContract && <ContractEditor isNew f={page.contractForm} setF={page.setContractForm} onSave={page.addContract} onCancel={() => page.setAddingContract(false)} />}
           </Rows>
         </>
       )}
@@ -210,19 +202,7 @@ function StatusSelect({ c }: { c: OperatingContract }) {
 
 // ── Editor (new contract and row edit) ───────────────────────────────────
 
-function ContractEditor({
-  f,
-  setF,
-  onSave,
-  onCancel,
-  isNew = false,
-}: {
-  f: ContractForm;
-  setF: (next: ContractForm) => void;
-  onSave: () => Promise<void>;
-  onCancel: () => void;
-  isNew?: boolean;
-}) {
+function ContractEditor({ f, setF, onSave, onCancel, isNew = false }: { f: ContractForm; setF: (next: ContractForm) => void; onSave: () => Promise<void>; onCancel: () => void; isNew?: boolean }) {
   const t = useTone();
   const [saving, setSaving] = useState(false);
   const { page } = useEntity();
@@ -256,12 +236,7 @@ function ContractEditor({
     <div className={`px-5 py-4 ${t.dark ? "bg-[#818cf8]/[0.04]" : "bg-indigo-50/40"}`}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Counterparty" wide>
-          <Input
-            value={f.counterparty}
-            onChange={(e) => setF({ ...f, counterparty: e.target.value })}
-            placeholder={isNew ? "e.g. Acme Holdings, LLC" : undefined}
-            autoFocus
-          />
+          <Input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} placeholder={isNew ? "e.g. Acme Holdings, LLC" : undefined} autoFocus />
         </Field>
         <Field label="Fee">
           <Input value={f.fee} onChange={(e) => setF({ ...f, fee: e.target.value })} placeholder={isNew ? "$500" : undefined} className="tabular-nums" />
@@ -376,9 +351,7 @@ function ServicesPicker({ selected, onChange }: { selected: string[]; onChange: 
       <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Services included</span>
       <div className="flex flex-wrap items-center gap-2">
         <Button aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          <span className="tabular-nums">
-            {all ? "All services" : `${selected.length} of ${MSA_SERVICES.length} service${MSA_SERVICES.length === 1 ? "" : "s"}`}
-          </span>
+          <span className="tabular-nums">{all ? "All services" : `${selected.length} of ${MSA_SERVICES.length} service${MSA_SERVICES.length === 1 ? "" : "s"}`}</span>
           <Icon name="chevronDown" className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} strokeWidth={2.25} />
         </Button>
         {open && (

@@ -163,9 +163,7 @@ export function PaperMailList({
                 <p className={`truncate text-[13.5px] group-hover:underline ${unread ? "font-semibold" : "font-medium"} ${t.text}`}>{m.from || "Unknown sender"}</p>
                 <span className={`shrink-0 text-[12px] tabular-nums ${t.muted}`}>{when(m.receivedAt)}</span>
               </div>
-              <p className={`mt-0.5 truncate text-[12px] ${t.muted}`}>
-                To {[m.recipient, m.recipient2].filter(Boolean).join(" · ") || "—"}
-              </p>
+              <p className={`mt-0.5 truncate text-[12px] ${t.muted}`}>To {[m.recipient, m.recipient2].filter(Boolean).join(" · ") || "—"}</p>
               {m.summary && <p className={`mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed ${t.soft}`}>{m.summary}</p>}
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
                 {statusOf(m).map((s) => (

@@ -24,7 +24,11 @@ export function palmMode(key = process.env.PALM_API_KEY): PalmMode | null {
 }
 
 export class PalmError extends Error {
-  constructor(public status: number, message: string, public detail?: unknown) {
+  constructor(
+    public status: number,
+    message: string,
+    public detail?: unknown,
+  ) {
     super(message);
   }
 }
@@ -36,10 +40,7 @@ export type PalmUsage = { actorId?: string | null; actorName?: string | null; as
  * One Palm API call. Throws PalmError with Palm's own explanation on failure.
  * A call Palm bills for (lib/palm-pricing.ts) is logged in palm_usage.
  */
-export async function palm<T = unknown>(
-  path: string,
-  init: { method?: string; body?: unknown; headers?: Record<string, string>; usage?: PalmUsage } = {}
-): Promise<T> {
+export async function palm<T = unknown>(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string>; usage?: PalmUsage } = {}): Promise<T> {
   const key = process.env.PALM_API_KEY;
   const mode = palmMode(key);
   if (!mode) throw new PalmError(503, "Palm isn't connected. Add PALM_API_KEY (sk_test_… or sk_live_…) in Vercel.");
@@ -180,7 +181,10 @@ export function palmEntityType(type?: string): "llc" | "corporation" | "lp" | "o
 export function vaultAddress(address?: string): Record<string, string> {
   const m = /^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\s*$/.exec((address ?? "").trim());
   if (!m) return {};
-  const street = m[1].split(",").map((s) => s.trim()).filter(Boolean);
+  const street = m[1]
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   return {
     "business.address_line_1": street[0],
     ...(street.length > 1 ? { "business.address_line_2": street.slice(1).join(", ") } : {}),
@@ -208,7 +212,10 @@ export type RegisteredAgentService = {
  * Where Palm's copy of the business (its vault, as cached on the business)
  * disagrees with our record. Only fields Palm shows and we have are compared.
  */
-export function businessDifferences(vault: Record<string, unknown>, e: { name?: string; ein?: string; fileNumber?: string; formationDate?: string; address?: string }): { field: string; palm: string; ours: string }[] {
+export function businessDifferences(
+  vault: Record<string, unknown>,
+  e: { name?: string; ein?: string; fileNumber?: string; formationDate?: string; address?: string },
+): { field: string; palm: string; ours: string }[] {
   const v = (k: string) => (typeof vault[k] === "string" ? (vault[k] as string).trim() : "");
   const out: { field: string; palm: string; ours: string }[] = [];
   const add = (field: string, palmValue: string, ours: string | undefined, same: (a: string, b: string) => boolean) => {
@@ -218,7 +225,9 @@ export function businessDifferences(vault: Record<string, unknown>, e: { name?: 
   add("EIN", v("business.ein"), e.ein, (a, b) => normalizeEin(a) === normalizeEin(b));
   add("File number", v("business.registration_number"), e.fileNumber, (a, b) => a.replace(/\W/g, "").toLowerCase() === b.replace(/\W/g, "").toLowerCase());
   add("Formation date", v("business.formation_date").slice(0, 10), e.formationDate, (a, b) => a === b.slice(0, 10));
-  const palmAddress = [v("business.address_line_1"), v("business.address_line_2"), v("business.city"), [v("business.region"), v("business.postal_code")].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const palmAddress = [v("business.address_line_1"), v("business.address_line_2"), v("business.city"), [v("business.region"), v("business.postal_code")].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
   add("Address", palmAddress, e.address, sameAddressText);
   return out;
 }

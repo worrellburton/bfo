@@ -122,10 +122,7 @@ async function markIntercompany(sinceDate: string): Promise<number> {
     amount: number;
     entity_id: string | null;
     intercompany: boolean;
-  }>(
-    `book_transactions?txn_type=eq.transfer&date=gte.${sinceDate}` +
-      `&select=transaction_id,account_id,date,amount,entity_id,intercompany&order=date.asc,transaction_id.asc`
-  );
+  }>(`book_transactions?txn_type=eq.transfer&date=gte.${sinceDate}` + `&select=transaction_id,account_id,date,amount,entity_id,intercompany&order=date.asc,transaction_id.asc`);
 
   // Bucket by |amount| in cents, then greedily pair an out-leg with an in-leg
   // from a different account within 3 days.
@@ -145,10 +142,7 @@ async function markIntercompany(sinceDate: string): Promise<number> {
     const taken = new Set<string>();
     for (const out of outs) {
       const match = ins.find(
-        (candidate) =>
-          !taken.has(candidate.transaction_id) &&
-          candidate.account_id !== out.account_id &&
-          Math.abs(new Date(candidate.date).getTime() - new Date(out.date).getTime()) <= 3 * 86_400_000
+        (candidate) => !taken.has(candidate.transaction_id) && candidate.account_id !== out.account_id && Math.abs(new Date(candidate.date).getTime() - new Date(out.date).getTime()) <= 3 * 86_400_000,
       );
       if (!match) continue;
       taken.add(match.transaction_id);
@@ -249,10 +243,7 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
       const userRules = await loadUserRules();
       const groups = new Map<string, string[]>();
       for (let from = 0; ; from += 1000) {
-        const r = await db(
-          "book_transactions?select=transaction_id,name,merchant_name,plaid_category",
-          { headers: { Range: `${from}-${from + 999}` } }
-        );
+        const r = await db("book_transactions?select=transaction_id,name,merchant_name,plaid_category", { headers: { Range: `${from}-${from + 999}` } });
         if (!r.ok) throw new Error(await r.text());
         const rows = (await r.json()) as any[];
         for (const t of rows) {
@@ -305,18 +296,12 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
     // 1,000-row cap), and a failed read aborts the sync: an empty set here
     // would treat every edit as never made and overwrite it.
     const editedIds = new Set<string>(
-      (
-        await fetchAll<{ transaction_id: string }>(
-          "book_txn_log?select=transaction_id&order=changed_at.asc,transaction_id.asc,field.asc"
-        )
-      ).map((r) => r.transaction_id)
+      (await fetchAll<{ transaction_id: string }>("book_txn_log?select=transaction_id&order=changed_at.asc,transaction_id.asc,field.asc")).map((r) => r.transaction_id),
     );
 
     // Likewise the account mappings: without them every upserted row would be
     // stamped with no entity.
-    const prefs = new Map<string, any>(
-      (await fetchAll<any>("plaid_account_prefs?select=*")).map((p) => [p.account_id, p])
-    );
+    const prefs = new Map<string, any>((await fetchAll<any>("plaid_account_prefs?select=*")).map((p) => [p.account_id, p]));
 
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - HISTORY_MONTHS);
@@ -333,102 +318,97 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
       let removed = 0;
 
       try {
-       // Plaid can mutate the item mid-pagination; the documented recovery is
-       // to restart from the original cursor. Upserts are idempotent, so a
-       // single restart is safe.
-       for (let attempt = 0; ; attempt++) {
-        try {
-        let hasMore = true;
-        while (hasMore) {
-          const sync = await client.transactionsSync({
-            access_token: item.access_token,
-            cursor,
-            count: 500,
-          });
-          const data = sync.data;
+        // Plaid can mutate the item mid-pagination; the documented recovery is
+        // to restart from the original cursor. Upserts are idempotent, so a
+        // single restart is safe.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            let hasMore = true;
+            while (hasMore) {
+              const sync = await client.transactionsSync({
+                access_token: item.access_token,
+                cursor,
+                count: 500,
+              });
+              const data = sync.data;
 
-          const rows: TxnRow[] = [...data.added, ...data.modified]
-            .filter((t) => t.date >= cutoffDay)
-            .map((t) => {
-              const pref = prefs.get(t.account_id);
-              return {
-                transaction_id: t.transaction_id,
-                account_id: t.account_id,
-                item_id: item.item_id,
-                date: t.date,
-                name: t.name ?? null,
-                merchant_name:
-                  userVendor(userRules, t.name ?? null, t.merchant_name ?? null) ??
-                  mercuryPayee(t.name) ??
-                  betterVendor(t.name ?? null, t.merchant_name ?? null),
-                amount: t.amount,
-                pending: !!t.pending,
-                currency: t.iso_currency_code ?? null,
-                plaid_category: t.personal_finance_category?.primary ?? null,
-                plaid_category_detailed: t.personal_finance_category?.detailed ?? null,
-                payment_channel: t.payment_channel ?? null,
-                ...(() => {
-                  // The chart-of-accounts rules classify each transaction; a
-                  // rule that forces a type beats the Plaid heuristic. A
-                  // user's type_override (not written here) beats both, and a
-                  // user-taught category rule beats the built-in chart.
-                  const taught = userCategory(userRules, t.name ?? null, t.merchant_name ?? null);
-                  const cls = classify(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null, taught);
-                  const heuristic = isTransfer(t) ? "transfer" : "normal";
+              const rows: TxnRow[] = [...data.added, ...data.modified]
+                .filter((t) => t.date >= cutoffDay)
+                .map((t) => {
+                  const pref = prefs.get(t.account_id);
                   return {
-                    txn_type: (cls.type === "intercompany" ? "transfer" : cls.type ?? heuristic) as "normal" | "transfer",
-                    intercompany: cls.type === "intercompany",
-                    book_category: cls.category,
-                    // A vendor-level type rule rides in as the row's override.
+                    transaction_id: t.transaction_id,
+                    account_id: t.account_id,
+                    item_id: item.item_id,
+                    date: t.date,
+                    name: t.name ?? null,
+                    merchant_name: userVendor(userRules, t.name ?? null, t.merchant_name ?? null) ?? mercuryPayee(t.name) ?? betterVendor(t.name ?? null, t.merchant_name ?? null),
+                    amount: t.amount,
+                    pending: !!t.pending,
+                    currency: t.iso_currency_code ?? null,
+                    plaid_category: t.personal_finance_category?.primary ?? null,
+                    plaid_category_detailed: t.personal_finance_category?.detailed ?? null,
+                    payment_channel: t.payment_channel ?? null,
                     ...(() => {
-                      const ut = userType(userRules, t.name ?? null, t.merchant_name ?? null);
-                      return ut ? { type_override: ut } : {};
+                      // The chart-of-accounts rules classify each transaction; a
+                      // rule that forces a type beats the Plaid heuristic. A
+                      // user's type_override (not written here) beats both, and a
+                      // user-taught category rule beats the built-in chart.
+                      const taught = userCategory(userRules, t.name ?? null, t.merchant_name ?? null);
+                      const cls = classify(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null, taught);
+                      const heuristic = isTransfer(t) ? "transfer" : "normal";
+                      return {
+                        txn_type: (cls.type === "intercompany" ? "transfer" : (cls.type ?? heuristic)) as "normal" | "transfer",
+                        intercompany: cls.type === "intercompany",
+                        book_category: cls.category,
+                        // A vendor-level type rule rides in as the row's override.
+                        ...(() => {
+                          const ut = userType(userRules, t.name ?? null, t.merchant_name ?? null);
+                          return ut ? { type_override: ut } : {};
+                        })(),
+                      };
                     })(),
+                    entity_id: pref?.entity_id ?? null,
+                    entity_name: pref?.entity_name ?? null,
+                    hidden: pref?.hidden ?? false,
+                    updated_at: now,
                   };
-                })(),
-                entity_id: pref?.entity_id ?? null,
-                entity_name: pref?.entity_name ?? null,
-                hidden: pref?.hidden ?? false,
-                updated_at: now,
-              };
-            });
-          // Hand-edited rows keep the fields a person set; everything else
-          // gets the full refresh. Each partition keeps uniform keys, which
-          // the PostgREST bulk upsert requires.
-          const fresh = rows.filter((r) => !editedIds.has(r.transaction_id));
-          const guarded = rows
-            .filter((r) => editedIds.has(r.transaction_id))
-            .map(({ merchant_name, name, book_category, type_override, ...keep }) => keep);
-          await upsertChunked(fresh.filter((r) => r.type_override === undefined));
-          await upsertChunked(fresh.filter((r) => r.type_override !== undefined));
-          await upsertChunked(guarded);
-          added += data.added.length;
-          modified += data.modified.length;
+                });
+              // Hand-edited rows keep the fields a person set; everything else
+              // gets the full refresh. Each partition keeps uniform keys, which
+              // the PostgREST bulk upsert requires.
+              const fresh = rows.filter((r) => !editedIds.has(r.transaction_id));
+              const guarded = rows.filter((r) => editedIds.has(r.transaction_id)).map(({ merchant_name, name, book_category, type_override, ...keep }) => keep);
+              await upsertChunked(fresh.filter((r) => r.type_override === undefined));
+              await upsertChunked(fresh.filter((r) => r.type_override !== undefined));
+              await upsertChunked(guarded);
+              added += data.added.length;
+              modified += data.modified.length;
 
-          if (data.removed.length) {
-            const ids = inList(data.removed.map((t) => t.transaction_id).filter(Boolean));
-            // fetch resolves on HTTP errors, so check ok: a failed delete must
-            // throw before the cursor below moves past these removals for good.
-            const del = await db(`book_transactions?transaction_id=in.(${ids})`, { method: "DELETE" });
-            if (!del.ok) throw new Error(`delete of removed transactions failed: ${(await del.text()).slice(0, 300)}`);
-            removed += data.removed.length;
-          }
+              if (data.removed.length) {
+                const ids = inList(data.removed.map((t) => t.transaction_id).filter(Boolean));
+                // fetch resolves on HTTP errors, so check ok: a failed delete must
+                // throw before the cursor below moves past these removals for good.
+                const del = await db(`book_transactions?transaction_id=in.(${ids})`, { method: "DELETE" });
+                if (!del.ok) throw new Error(`delete of removed transactions failed: ${(await del.text()).slice(0, 300)}`);
+                removed += data.removed.length;
+              }
 
-          cursor = data.next_cursor;
-          hasMore = data.has_more;
-        }
-        break;
-        } catch (pageErr: any) {
-          if (pageErr.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" && attempt === 0) {
-            cursor = item.transactions_cursor || undefined;
-            added = 0;
-            modified = 0;
-            removed = 0;
-            continue;
+              cursor = data.next_cursor;
+              hasMore = data.has_more;
+            }
+            break;
+          } catch (pageErr: any) {
+            if (pageErr.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" && attempt === 0) {
+              cursor = item.transactions_cursor || undefined;
+              added = 0;
+              modified = 0;
+              removed = 0;
+              continue;
+            }
+            throw pageErr;
           }
-          throw pageErr;
         }
-       }
 
         await db(`plaid_items?item_id=eq.${encodeURIComponent(item.item_id)}`, {
           method: "PATCH",
@@ -451,9 +431,7 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
     // Nightly runs only need to re-pair recent activity; a first sync pairs
     // the whole window.
     const anyFirst = summary.some((s) => s.first_sync);
-    const pairSince = anyFirst
-      ? cutoffDay
-      : new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
+    const pairSince = anyFirst ? cutoffDay : new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
     const intercompanyMarked = await markIntercompany(pairSince);
 
     // Auto-attach rules: descriptions the user tied to a loan. Only unset

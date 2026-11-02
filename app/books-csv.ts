@@ -12,14 +12,19 @@ export function parseCsv(text: string): string[][] {
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (inQ) {
-      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') inQ = false;
+      if (c === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (c === '"') inQ = false;
       else cell += c;
     } else if (c === '"') inQ = true;
-    else if (c === ",") { row.push(cell); cell = ""; }
-    else if (c === "\n" || c === "\r") {
+    else if (c === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (c === "\n" || c === "\r") {
       if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); cell = "";
+      row.push(cell);
+      cell = "";
       if (row.some((v) => v.trim() !== "")) rows.push(row);
       row = [];
     } else cell += c;
@@ -49,7 +54,9 @@ export function normalizeCsv(rows: string[][]): CsvRow[] {
   const first = rows[0].map((v) => v.trim().toLowerCase());
   const hasHeader = first.some((v) => /date|amount|description|memo|payee/.test(v)) && !toIsoDate(rows[0][0] ?? "");
   const body = hasHeader ? rows.slice(1) : rows;
-  let di = 0, ai = 1, ti = 4; // Wells Fargo default layout
+  let di = 0,
+    ai = 1,
+    ti = 4; // Wells Fargo default layout
   if (hasHeader) {
     di = first.findIndex((v) => v.includes("date"));
     ai = first.findIndex((v) => v.includes("amount"));
@@ -60,7 +67,9 @@ export function normalizeCsv(rows: string[][]): CsvRow[] {
   return body.flatMap((r) => {
     const date = toIsoDate(r[di] ?? "");
     // "$1,234.50", "-12.00" and accounting-style "(12.00)" all parse.
-    const raw = String(r[ai] ?? "").trim().replace(/[$,\s]/g, "");
+    const raw = String(r[ai] ?? "")
+      .trim()
+      .replace(/[$,\s]/g, "");
     const paren = /^\((.*)\)$/.exec(raw);
     const amount = paren ? -Number(paren[1]) : Number(raw);
     const description = (r[ti] ?? "").trim();

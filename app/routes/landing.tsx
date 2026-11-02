@@ -4,10 +4,7 @@ import { BrandLockup } from "../brand-lockup";
 import { Logo3D } from "../logo-3d";
 
 export function meta() {
-  return [
-    { title: "BFO" },
-    { name: "description", content: "BFO — Ledger Louise, LLC" },
-  ];
+  return [{ title: "BFO" }, { name: "description", content: "BFO — Ledger Louise, LLC" }];
 }
 
 /** Whether the landing page has already been seen this visit: coming back from /mission, it doesn't replay its entrance. */

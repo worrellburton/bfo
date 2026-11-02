@@ -9,7 +9,10 @@ import { scopeFilter } from "./prefs.js";
 /** Comma-separated entity ids, or null meaning "all". */
 export function parseEntities(raw: string | undefined): string[] | null {
   if (!raw || raw === "all") return null;
-  const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const ids = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   return ids.length ? ids : null;
 }
 

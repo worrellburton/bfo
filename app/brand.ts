@@ -97,7 +97,11 @@ export function useBrandLogo(): Logo | null | undefined {
 }
 
 class BrandError extends Error {
-  constructor(message: string, public code?: string, public status?: number) {
+  constructor(
+    message: string,
+    public code?: string,
+    public status?: number,
+  ) {
     super(message);
   }
 }

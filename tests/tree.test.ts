@@ -57,7 +57,10 @@ beforeEach(() => {
   sbCalls.length = 0;
   sbRoutes = [[imported[0], imported[1]]];
   me = member;
-  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("{}", { status: 500 })),
+  );
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -86,8 +89,20 @@ describe("paths", () => {
 
   it("orders children as Firebase did: numbers first, then strings", () => {
     expect(["b", "10", "a", "2", "-M1"].sort(compareKeys)).toEqual(["2", "10", "-M1", "a", "b"]);
-    expect(collectionValue([{ id: "b", data: 1 }, { id: "a", data: 2 }])).toEqual({ a: 2, b: 1 });
-    expect(Object.keys(collectionValue([{ id: "b", data: 1 }, { id: "a", data: 2 }]) as object)).toEqual(["a", "b"]);
+    expect(
+      collectionValue([
+        { id: "b", data: 1 },
+        { id: "a", data: 2 },
+      ]),
+    ).toEqual({ a: 2, b: 1 });
+    expect(
+      Object.keys(
+        collectionValue([
+          { id: "b", data: 1 },
+          { id: "a", data: 2 },
+        ]) as object,
+      ),
+    ).toEqual(["a", "b"]);
     expect(collectionValue([])).toBeNull();
   });
 });
@@ -118,7 +133,7 @@ describe("operations", () => {
     expect(parseOps({ ops: [{ op: "set", path: "secrets/x", value: 1 }] })).toMatchObject({ error: "bad_path" });
   });
 
-  it("refuses update keys with an empty segment, which tree_apply would keep as a field named \"\"", () => {
+  it('refuses update keys with an empty segment, which tree_apply would keep as a field named ""', () => {
     for (const key of ["/abc", "a//b", "a/", ""]) {
       expect(parseOps({ ops: [{ op: "update", path: "assets/x", value: { [key]: 1 } }] })).toMatchObject({ error: "bad_path" });
     }
@@ -175,11 +190,14 @@ describe("partners (invited entity owners)", () => {
   beforeEach(() => {
     me = partner;
     sbRoutes.push([/GET entity_access\?user_id=eq\.p1/, () => [{ asset_id: "mine" }]]);
-    sbRoutes.push([/GET tree_nodes\?collection=eq\.assets&id=in\./, (c) =>
-      [
-        { collection: "assets", id: "mine", data: { name: "TallulahMD LLC", notes: "internal", contracts: { c1: {} }, operatingAgreement: { url: "u" } }, updated_at: "t" },
-        { collection: "assets", id: "theirs", data: { name: "Other, LLC" }, updated_at: "t" },
-      ].filter((r) => c.path.includes(`"${r.id}"`))]);
+    sbRoutes.push([
+      /GET tree_nodes\?collection=eq\.assets&id=in\./,
+      (c) =>
+        [
+          { collection: "assets", id: "mine", data: { name: "TallulahMD LLC", notes: "internal", contracts: { c1: {} }, operatingAgreement: { url: "u" } }, updated_at: "t" },
+          { collection: "assets", id: "theirs", data: { name: "Other, LLC" }, updated_at: "t" },
+        ].filter((r) => c.path.includes(`"${r.id}"`)),
+    ]);
   });
 
   it("read only the entities they were given, without the office's notes and contracts", async () => {
@@ -208,10 +226,13 @@ describe("/api/tree", () => {
   });
 
   it("reads a collection as one object, and any node inside a row", async () => {
-    sbRoutes.push([/GET tree_nodes\?collection=eq\.notes&select=collection,id,data,updated_at&order=id/, () => [
-      { collection: "notes", id: "b", data: { text: "two" }, updated_at: "t" },
-      { collection: "notes", id: "a", data: { text: "one" }, updated_at: "t" },
-    ]]);
+    sbRoutes.push([
+      /GET tree_nodes\?collection=eq\.notes&select=collection,id,data,updated_at&order=id/,
+      () => [
+        { collection: "notes", id: "b", data: { text: "two" }, updated_at: "t" },
+        { collection: "notes", id: "a", data: { text: "one" }, updated_at: "t" },
+      ],
+    ]);
     sbRoutes.push([/GET tree_nodes\?collection=eq\.notes&id=in\./, () => [{ collection: "notes", id: "a", data: { text: "one", tags: { x: 1 } }, updated_at: "t" }]]);
     expect((await call("GET", { query: { path: "notes" } })).json).toEqual({ value: { a: { text: "one" }, b: { text: "two" } }, updated: { a: "t", b: "t" } });
     expect((await call("GET", { query: { path: "notes/a/tags/x" } })).json).toEqual({ value: 1 });
@@ -221,10 +242,13 @@ describe("/api/tree", () => {
 
   it("reads a collection past PostgREST's 1,000-row page, in id order", async () => {
     const all = Array.from({ length: 1500 }, (_, i) => ({ id: `n${String(i).padStart(4, "0")}`, updated_at: "t" }));
-    sbRoutes.push([/GET tree_nodes\?collection=eq\.notes&select=id,updated_at&order=id&limit=1000&offset=\d+$/, (c) => {
-      const offset = Number(/offset=(\d+)/.exec(c.path)![1]);
-      return all.slice(offset, offset + 1000);
-    }]);
+    sbRoutes.push([
+      /GET tree_nodes\?collection=eq\.notes&select=id,updated_at&order=id&limit=1000&offset=\d+$/,
+      (c) => {
+        const offset = Number(/offset=(\d+)/.exec(c.path)![1]);
+        return all.slice(offset, offset + 1000);
+      },
+    ]);
     expect((await call("GET", { query: { path: "notes", view: "index" } })).json.rows).toHaveLength(1500);
     expect(sbCalls.filter((c) => c.path.includes("select=id,updated_at")).map((c) => /offset=\d+/.exec(c.path)![0])).toEqual(["offset=0", "offset=1000"]);
   });
@@ -247,7 +271,7 @@ describe("/api/tree", () => {
         // Firebase answers "null" for a node that was never written.
         if (url.includes(".json?auth=")) return new Response("null");
         return new Response("{}", { status: 404 });
-      })
+      }),
     );
     // Firebase holds only notes; the other collections come back empty and are marked done too.
     forgetImports();
@@ -265,7 +289,14 @@ describe("/api/tree", () => {
 
   it("writes through tree_apply and hands back the rows touched", async () => {
     sbRoutes.push([/GET tree_nodes\?collection=eq\.assets&id=in\./, () => [{ collection: "assets", id: "x", data: { name: "A", ein: "1" }, updated_at: "t2" }]]);
-    const r = await call("POST", { body: { ops: [{ op: "update", path: "assets/x", value: { ein: "1" } }, { op: "set", path: "assets/gone", value: null }] } });
+    const r = await call("POST", {
+      body: {
+        ops: [
+          { op: "update", path: "assets/x", value: { ein: "1" } },
+          { op: "set", path: "assets/gone", value: null },
+        ],
+      },
+    });
     expect(r.status).toBe(200);
     expect(r.json.rows).toEqual([
       { collection: "assets", id: "x", data: { name: "A", ein: "1" }, updated_at: "t2" },

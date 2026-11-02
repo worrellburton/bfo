@@ -92,7 +92,7 @@ export function ContractSignature({
       if (request) onChange((await signApi.get(request.id, "unchanged")).request);
     },
     10000,
-    isOpen(request?.status)
+    isOpen(request?.status),
   );
 
   async function send(e: React.FormEvent) {
@@ -183,7 +183,11 @@ export function ContractSignature({
         </div>
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
         <div className="mt-4 flex items-center gap-2">
-          <button type="submit" disabled={!!busy} className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg text-sm disabled:opacity-50 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}>
+          <button
+            type="submit"
+            disabled={!!busy}
+            className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg text-sm disabled:opacity-50 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
+          >
             {busy ? "Sending…" : "Send to both parties"}
           </button>
           <button type="button" onClick={onClose} className={`px-3 py-2 max-sm:min-h-[40px] text-sm ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}>
@@ -216,7 +220,10 @@ export function ContractSignature({
               </Small>
             </>
           )}
-          <Link to={`/tools/signatures/${request.id}`} className={`inline-flex h-7 items-center rounded-lg px-2.5 text-[12px] font-medium ${isDark ? "bg-white/[0.06] text-gray-200 hover:bg-white/10" : "bg-black/[0.04] text-gray-700 hover:bg-black/[0.08]"}`}>
+          <Link
+            to={`/tools/signatures/${request.id}`}
+            className={`inline-flex h-7 items-center rounded-lg px-2.5 text-[12px] font-medium ${isDark ? "bg-white/[0.06] text-gray-200 hover:bg-white/10" : "bg-black/[0.04] text-gray-700 hover:bg-black/[0.08]"}`}
+          >
             Open in Tools
           </Link>
         </div>
@@ -227,7 +234,10 @@ export function ContractSignature({
             <PartyDot status={p.status} />
             <span className="font-medium">{p.name}</span>
             <span className={`text-xs ${t2}`}>{p.role}</span>
-            <span className={`text-xs ${t2}`}>· {PARTY_LABEL[p.status]}{p.signedAt ? ` ${when(p.signedAt)}` : p.viewedAt ? ` ${when(p.viewedAt)}` : ""}</span>
+            <span className={`text-xs ${t2}`}>
+              · {PARTY_LABEL[p.status]}
+              {p.signedAt ? ` ${when(p.signedAt)}` : p.viewedAt ? ` ${when(p.viewedAt)}` : ""}
+            </span>
           </li>
         ))}
       </ul>

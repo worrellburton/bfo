@@ -48,9 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const path = `assets/${safeAsset}/${Date.now()}-${safeName}`;
 
     // Create a signed upload URL valid for a one-time PUT.
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUploadUrl(path);
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path);
 
     if (error || !data) {
       return res.status(500).json({ error: "signed_url_failed" });

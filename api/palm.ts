@@ -137,7 +137,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "entity-bundle") {
     const assetId = String(body.assetId || "");
     if (!/^[\w-]{1,80}$/.test(assetId)) return res.status(400).json({ error: "missing_params" });
-    const parts = Array.isArray(body.parts) ? (body.parts as unknown[]).filter((p): p is BundlePartName => typeof p === "string" && (BUNDLE_PARTS as readonly string[]).includes(p)) : [...BUNDLE_PARTS];
+    const parts = Array.isArray(body.parts)
+      ? (body.parts as unknown[]).filter((p): p is BundlePartName => typeof p === "string" && (BUNDLE_PARTS as readonly string[]).includes(p))
+      : [...BUNDLE_PARTS];
     try {
       return res.status(200).json(await entityBundle(mode, assetId, parts));
     } catch (err) {
@@ -191,8 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!assetId || !e.name || !isJurisdiction(e.jurisdiction)) return res.status(400).json({ error: "missing_params", message: "The entity needs a name and a state." });
 
         const ein = normalizeEin(e.ein);
-        const search = async (q: Record<string, unknown>) =>
-          (await palm<{ data: Business[] }>("/v1/business/search", { method: "POST", body: { ...q, limit: 50 } }))?.data ?? [];
+        const search = async (q: Record<string, unknown>) => (await palm<{ data: Business[] }>("/v1/business/search", { method: "POST", body: { ...q, limit: 50 } }))?.data ?? [];
         const ours = (b: Business) => b.metadata?.bfo_asset_id === assetId;
         const unclaimed = (b: Business) => !b.metadata?.bfo_asset_id;
         const sameState = (b: Business) => {
@@ -224,7 +225,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           (b) => unclaimed(b) && sameState(b) && normalizeLegalName(String(b.vault?.["business.legal_name"] ?? b.display_name ?? "")) === want,
         );
         if (byName.length === 1) return adopt(byName[0]);
-        if (byName.length > 1) return res.status(409).json({ error: "ambiguous", message: "Palm has more than one unlinked business with this name in this state. Sort it out in Palm Console first." });
+        if (byName.length > 1)
+          return res.status(409).json({ error: "ambiguous", message: "Palm has more than one unlinked business with this name in this state. Sort it out in Palm Console first." });
 
         const vault: Record<string, string> = {
           "business.legal_name": e.name,
@@ -423,12 +425,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "form-name": {
         const jurisdiction = isJurisdiction(body.jurisdiction) ? body.jurisdiction : null;
         const entityType = formationType(body.entityType);
-        const name = String(body.name ?? "").trim().slice(0, 200);
+        const name = String(body.name ?? "")
+          .trim()
+          .slice(0, 200);
         if (!jurisdiction || !entityType || name.length < 2) return res.status(400).json({ error: "missing_params" });
         const q = new URLSearchParams({ name, entity_type: entityType, suggest: "true" });
         const r = await palm<{ eligible: boolean; compliant: boolean; available: boolean; violations?: { severity: string; message: string; fix?: { message?: string } }[]; alternatives?: string[] }>(
           `/v1/business/registry/${jurisdiction}/name-eligibility?${q}`,
-          { usage: usage("Name check for a new entity") }
+          { usage: usage("Name check for a new entity") },
         );
         return res.status(200).json({
           eligible: !!r.eligible,
@@ -451,9 +455,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (/^[a-z0-9_]{1,40}$/.test(k) && (typeof v === "number" || typeof v === "boolean" || (typeof v === "string" && v.length <= 40))) q.set(k, String(v));
         }
         try {
-          const r = await palm<{ fee?: { total?: { amount?: number; currency?: string }; items?: { component_type: string; name: string; amount: number; currency: string }[] }; expedited_tiers?: { tier: string; fee: { amount: number; currency: string } }[] }>(
-            `/v1/filing/formation/fee?${q}`
-          );
+          const r = await palm<{
+            fee?: { total?: { amount?: number; currency?: string }; items?: { component_type: string; name: string; amount: number; currency: string }[] };
+            expedited_tiers?: { tier: string; fee: { amount: number; currency: string } }[];
+          }>(`/v1/filing/formation/fee?${q}`);
           return res.status(200).json({
             total: r.fee?.total?.amount ?? null,
             currency: r.fee?.total?.currency ?? "USD",
@@ -473,7 +478,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           // Palm answers every problem at once: errors block the filing, warnings (a field the state ignores) don't.
           type Issue = { path?: string; code?: string; message?: string };
-          const r = await palm<{ valid?: boolean; errors?: Issue[]; warnings?: Issue[] } | null>(`/v1/filing/formation/${entityType}/validate`, { method: "POST", body: buildFormationRequest(draft, "pending") });
+          const r = await palm<{ valid?: boolean; errors?: Issue[]; warnings?: Issue[] } | null>(`/v1/filing/formation/${entityType}/validate`, {
+            method: "POST",
+            body: buildFormationRequest(draft, "pending"),
+          });
           const list = (xs: Issue[] | undefined) => (xs ?? []).map((e) => ({ field: e.path || null, message: e.message || e.code || "Problem" }));
           const errors = list(r?.errors);
           return res.status(200).json({ ok: r?.valid ?? !errors.length, errors, warnings: list(r?.warnings) });
@@ -491,7 +499,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const draft = body.draft as FormationDraft | undefined;
         const entityType = formationType(draft?.entityType);
         const assetId = String(body.assetId ?? "");
-        const stateName = String(body.stateName ?? "").trim().slice(0, 40);
+        const stateName = String(body.stateName ?? "")
+          .trim()
+          .slice(0, 40);
         const idempotencyKey = String(body.idempotencyKey ?? "").trim();
         if (!draft || !entityType || !isJurisdiction(draft.jurisdiction)) return res.status(400).json({ error: "missing_params" });
         if (!/^[\w-]{8,64}$/.test(assetId) || !stateName || !/^[\w-]{8,255}$/.test(idempotencyKey)) return res.status(400).json({ error: "bad_params" });
@@ -512,7 +522,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         const state = summarizeFiling(filing);
         // The business Palm created is this entity's: stamp it so documents, mail and the agent find their way back.
-        if (filing.business_id) await palm(`/v1/business/${filing.business_id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } }).catch((err) => console.error("palm: couldn't tag the business with its entity", err));
+        if (filing.business_id)
+          await palm(`/v1/business/${filing.business_id}`, { method: "PATCH", body: { metadata: { bfo_asset_id: assetId } } }).catch((err) =>
+            console.error("palm: couldn't tag the business with its entity", err),
+          );
         const a = draft.principal;
         const owners = Array.isArray(draft.owners) ? draft.owners : [];
         const record: Record<string, unknown> = {
@@ -633,7 +646,9 @@ async function readInbox(mode: PalmMode, assetId: string, unread: boolean): Prom
     "select=id,type,asset_id,business_id,document_id,document_type,filename,status,rejection_reason,occurred_at,read_at",
     "order=occurred_at.desc",
     "limit=100",
-  ].filter(Boolean).join("&");
+  ]
+    .filter(Boolean)
+    .join("&");
   return { events: await sb<unknown[]>(`palm_events?${q}`) };
 }
 
@@ -646,11 +661,15 @@ async function readCases(mode: PalmMode, row: AssetRow | undefined): Promise<{ c
   if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
   if (link?.businessId) parents.push(["business", link.businessId]);
   const lists = await Promise.all(
-    parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm: couldn't list cases for ${type} ${id}`, err), null)))
+    parents
+      .filter(([, id]) => UUID.test(id))
+      .map(([type, id]) =>
+        palm<{ data?: PalmCase[] } | PalmCase[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm: couldn't list cases for ${type} ${id}`, err), null)),
+      ),
   );
   const seen = new Set<string>();
   const cases = lists
-    .flatMap((l) => (Array.isArray(l) ? l : l?.data ?? []))
+    .flatMap((l) => (Array.isArray(l) ? l : (l?.data ?? [])))
     .filter((c) => c?.id && !seen.has(c.id) && seen.add(c.id))
     .sort((a, b) => Number(b.status === "needs_response") - Number(a.status === "needs_response") || String(b.opened_at).localeCompare(String(a.opened_at)));
   return { cases };
@@ -752,9 +771,11 @@ async function usageReport() {
 async function webhookHealth(): Promise<{ lastAt: string | null; lastType: string | null; lastMode: string | null; weekCount: number; url: string }> {
   const since = new Date(Date.now() - 7 * 86400_000).toISOString();
   const [last, week] = await Promise.all([
-    sb<{ type: string; occurred_at: string; mode: string }[]>("palm_events?select=type,occurred_at,mode&order=occurred_at.desc&limit=1").catch((err) => (console.error("palm: couldn't read the latest event", err), [])),
+    sb<{ type: string; occurred_at: string; mode: string }[]>("palm_events?select=type,occurred_at,mode&order=occurred_at.desc&limit=1").catch(
+      (err) => (console.error("palm: couldn't read the latest event", err), []),
+    ),
     sb<{ id: string }[]>(`palm_events?select=id&occurred_at=gte.${encodeURIComponent(since)}&limit=500`).catch((err) => (console.error("palm: couldn't count recent events", err), [])),
   ]);
-  const site = (process.env.SITE_URL?.replace(/\/$/, "") || "https://www.burtonfamilyoffice.com");
+  const site = process.env.SITE_URL?.replace(/\/$/, "") || "https://www.burtonfamilyoffice.com";
   return { lastAt: last[0]?.occurred_at ?? null, lastType: last[0]?.type ?? null, lastMode: last[0]?.mode ?? null, weekCount: week.length, url: `${site}/api/palm-webhook` };
 }

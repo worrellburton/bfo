@@ -13,13 +13,7 @@
 
 export type EntityType = "LLC" | "C-Corp" | "LP" | "Trust";
 
-type TaxClass =
-  | "Disregarded Entity"
-  | "Partnership"
-  | "S Corporation"
-  | "C Corporation"
-  | "Grantor trust"
-  | "Non-grantor trust";
+type TaxClass = "Disregarded Entity" | "Partnership" | "S Corporation" | "C Corporation" | "Grantor trust" | "Non-grantor trust";
 
 /** Tax classifications that fit each type. */
 export const TAX_CLASSES: Record<EntityType, TaxClass[]> = {
@@ -117,20 +111,59 @@ export type PaperworkInput = {
 // ── States ────────────────────────────────────────────────────────────────
 
 const STATE_CODES: Record<string, string> = {
-  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO",
-  connecticut: "CT", delaware: "DE", florida: "FL", georgia: "GA", hawaii: "HI", idaho: "ID",
-  illinois: "IL", indiana: "IN", iowa: "IA", kansas: "KS", kentucky: "KY", louisiana: "LA",
-  maine: "ME", maryland: "MD", massachusetts: "MA", michigan: "MI", minnesota: "MN",
-  mississippi: "MS", missouri: "MO", montana: "MT", nebraska: "NE", nevada: "NV",
-  "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
-  "north carolina": "NC", "north dakota": "ND", ohio: "OH", oklahoma: "OK", oregon: "OR",
-  pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
-  tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT", virginia: "VA", washington: "WA",
-  "west virginia": "WV", wisconsin: "WI", wyoming: "WY", "district of columbia": "DC",
+  alabama: "AL",
+  alaska: "AK",
+  arizona: "AZ",
+  arkansas: "AR",
+  california: "CA",
+  colorado: "CO",
+  connecticut: "CT",
+  delaware: "DE",
+  florida: "FL",
+  georgia: "GA",
+  hawaii: "HI",
+  idaho: "ID",
+  illinois: "IL",
+  indiana: "IN",
+  iowa: "IA",
+  kansas: "KS",
+  kentucky: "KY",
+  louisiana: "LA",
+  maine: "ME",
+  maryland: "MD",
+  massachusetts: "MA",
+  michigan: "MI",
+  minnesota: "MN",
+  mississippi: "MS",
+  missouri: "MO",
+  montana: "MT",
+  nebraska: "NE",
+  nevada: "NV",
+  "new hampshire": "NH",
+  "new jersey": "NJ",
+  "new mexico": "NM",
+  "new york": "NY",
+  "north carolina": "NC",
+  "north dakota": "ND",
+  ohio: "OH",
+  oklahoma: "OK",
+  oregon: "OR",
+  pennsylvania: "PA",
+  "rhode island": "RI",
+  "south carolina": "SC",
+  "south dakota": "SD",
+  tennessee: "TN",
+  texas: "TX",
+  utah: "UT",
+  vermont: "VT",
+  virginia: "VA",
+  washington: "WA",
+  "west virginia": "WV",
+  wisconsin: "WI",
+  wyoming: "WY",
+  "district of columbia": "DC",
 };
-const CODE_NAMES: Record<string, string> = Object.fromEntries(
-  Object.entries(STATE_CODES).map(([n, c]) => [c, n.replace(/\b\w/g, (m) => m.toUpperCase())])
-);
+const CODE_NAMES: Record<string, string> = Object.fromEntries(Object.entries(STATE_CODES).map(([n, c]) => [c, n.replace(/\b\w/g, (m) => m.toUpperCase())]));
 
 /** "Arizona" / "AZ" / "az" → "AZ"; anything else → null. */
 export function stateCode(raw?: string | null): string | null {
@@ -327,7 +360,7 @@ export function documentRules(a: PaperworkInput, today = new Date()): DocRule[] 
         level: "recommended",
         weight: 0,
         why: "The list of assets in the trust, with the assignments or deeds that retitled each one (e.g. LLC interests assigned to the trustee). Without them, assets can fall outside the trust.",
-      }
+      },
     );
     if (!grantor) {
       rules.push({
@@ -456,7 +489,7 @@ export function documentRules(a: PaperworkInput, today = new Date()): DocRule[] 
         weight: 8,
         why: "The IRS notice accepting the election — the proof the entity files 1120-S. No CP261 means the election may never have taken.",
         howTo: LINKS.irsCp261,
-      }
+      },
     );
   }
   if (type === "LLC" && tax === "C Corporation") {
@@ -630,7 +663,14 @@ export function obligations(a: PaperworkInput, today = new Date(), taxHomeName?:
     if (tax === "Non-grantor trust") {
       out.push({ key: "fed", title: "Form 1041", agency: irs, due: iso(nextOn(4, 15, today)), rule: "April 15 (extension to Sept 30)", note: "Plus K-1s to beneficiaries who receive distributions." });
     } else {
-      out.push({ key: "fed", title: "No separate return", agency: irs, due: null, rule: "While the grantor is alive", note: "A revocable (grantor) trust reports on the grantor's Form 1040 under their SSN. At the grantor's death it becomes irrevocable: it then needs a new EIN and files Form 1041." });
+      out.push({
+        key: "fed",
+        title: "No separate return",
+        agency: irs,
+        due: null,
+        rule: "While the grantor is alive",
+        note: "A revocable (grantor) trust reports on the grantor's Form 1040 under their SSN. At the grantor's death it becomes irrevocable: it then needs a new EIN and files Form 1041.",
+      });
     }
   } else if (tax === "Disregarded Entity") {
     out.push({
@@ -642,9 +682,23 @@ export function obligations(a: PaperworkInput, today = new Date(), taxHomeName?:
       note: `Its income and expenses go on ${taxHomeName ? taxHomeName : "its owner's"} return. It still keeps its own EIN for banking and payroll.`,
     });
   } else if (tax === "Partnership") {
-    out.push({ key: "fed", title: "Form 1065 + Schedule K-1s", agency: irs, due: iso(nextOn(3, 15, today)), rule: "15th day of the 3rd month (Form 7004 extends 6 months)", note: "K-1s go to every partner by the same date." });
+    out.push({
+      key: "fed",
+      title: "Form 1065 + Schedule K-1s",
+      agency: irs,
+      due: iso(nextOn(3, 15, today)),
+      rule: "15th day of the 3rd month (Form 7004 extends 6 months)",
+      note: "K-1s go to every partner by the same date.",
+    });
   } else if (tax === "S Corporation") {
-    out.push({ key: "fed", title: "Form 1120-S + Schedule K-1s", agency: irs, due: iso(nextOn(3, 15, today)), rule: "15th day of the 3rd month (Form 7004 extends 6 months)", note: "K-1s go to every shareholder by the same date." });
+    out.push({
+      key: "fed",
+      title: "Form 1120-S + Schedule K-1s",
+      agency: irs,
+      due: iso(nextOn(3, 15, today)),
+      rule: "15th day of the 3rd month (Form 7004 extends 6 months)",
+      note: "K-1s go to every shareholder by the same date.",
+    });
   } else if (tax === "C Corporation") {
     out.push({ key: "fed", title: "Form 1120", agency: irs, due: iso(nextOn(4, 15, today)), rule: "15th day of the 4th month (Form 7004 extends 6 months)" });
   }
@@ -674,13 +728,23 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
   const out: PaperworkIssue[] = [];
 
   if (!st && type !== "Trust") {
-    out.push({ key: "no-state", severity: "medium", title: "State of formation is missing", detail: "Every state rule — annual filings, agent, foreign registration — depends on it. It's on the formation filing." });
+    out.push({
+      key: "no-state",
+      severity: "medium",
+      title: "State of formation is missing",
+      detail: "Every state rule — annual filings, agent, foreign registration — depends on it. It's on the formation filing.",
+    });
   } else if (a.state && !stateCode(a.state)) {
     out.push({ key: "bad-state", severity: "low", title: `“${a.state}” isn't a recognised state`, detail: "Use the full state name, e.g. Arizona." });
   }
 
   if (recorded && !TAX_CLASSES[type].includes(recorded as TaxClass)) {
-    out.push({ key: "class-type", severity: "high", title: `“${recorded}” doesn't apply to a${type === "LLC" || type === "LP" ? "n" : ""} ${type === "C-Corp" ? "corporation" : type}`, detail: `Valid: ${TAX_CLASSES[type].join(", ")}.` });
+    out.push({
+      key: "class-type",
+      severity: "high",
+      title: `“${recorded}” doesn't apply to a${type === "LLC" || type === "LP" ? "n" : ""} ${type === "C-Corp" ? "corporation" : type}`,
+      detail: `Valid: ${TAX_CLASSES[type].join(", ")}.`,
+    });
   }
 
   if (type === "LLC") {
@@ -710,7 +774,8 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
         key: "s-corp-owner",
         severity: "high",
         title: `${owner.name ?? "Its owner"} can't hold S corporation shares`,
-        detail: "S corporation shareholders must be individuals, certain trusts (grantor trusts count) or entities disregarded into one. A partnership, C corporation or multi-member LLC owner breaks the election.",
+        detail:
+          "S corporation shareholders must be individuals, certain trusts (grantor trusts count) or entities disregarded into one. A partnership, C corporation or multi-member LLC owner breaks the election.",
       });
     }
   }
@@ -739,18 +804,29 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
 
   if (type === "Trust") {
     if (tax.value === "Non-grantor trust" && !a.ein?.trim()) {
-      out.push({ key: "trust-ein", severity: "high", title: "Non-grantor trust without an EIN", detail: "An irrevocable or non-grantor trust is its own taxpayer — it needs an EIN and files Form 1041." });
+      out.push({
+        key: "trust-ein",
+        severity: "high",
+        title: "Non-grantor trust without an EIN",
+        detail: "An irrevocable or non-grantor trust is its own taxpayer — it needs an EIN and files Form 1041.",
+      });
     }
     if (tax.value === "Grantor trust" && a.ein?.trim()) {
       out.push({
         key: "grantor-ein",
         severity: "low",
         title: "A revocable trust with its own EIN",
-        detail: "While the grantor is alive a revocable trust normally uses the grantor's SSN. An EIN is fine if it was obtained deliberately — but if the grantor has died, the trust is now irrevocable and should be classed as non-grantor.",
+        detail:
+          "While the grantor is alive a revocable trust normally uses the grantor's SSN. An EIN is fine if it was obtained deliberately — but if the grantor has died, the trust is now irrevocable and should be classed as non-grantor.",
       });
     }
     if (!a.trustees?.trim()) {
-      out.push({ key: "trustees", severity: "medium", title: "No trustees on record", detail: "The trustees act for the trust — banks and title companies ask for them. They're named in the trust agreement and the certification of trust." });
+      out.push({
+        key: "trustees",
+        severity: "medium",
+        title: "No trustees on record",
+        detail: "The trustees act for the trust — banks and title companies ask for them. They're named in the trust agreement and the certification of trust.",
+      });
     }
   } else if (!a.registeredAgent?.trim() && !a.forming) {
     out.push({
@@ -773,10 +849,7 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
  * owners up the chain to the first one that files. `lookup` resolves an
  * owner id to its record.
  */
-export function taxHome<T extends PaperworkInput & { ownerId?: string }>(
-  a: T,
-  lookup: (id: string) => T | undefined
-): { name: string; form: string } | null {
+export function taxHome<T extends PaperworkInput & { ownerId?: string }>(a: T, lookup: (id: string) => T | undefined): { name: string; form: string } | null {
   if (taxClassOf(a).value !== "Disregarded Entity") return null;
   const seen = new Set<string>();
   let cur: T | undefined = a.ownerId ? lookup(a.ownerId) : undefined;

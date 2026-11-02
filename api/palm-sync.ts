@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: "unauthorized" });
     if (!isAdmin(user)) return res.status(403).json({ error: "forbidden", message: "Only an owner or admin can sync with Palm (state records are billed)." });
-    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as { ids?: unknown; action?: unknown; mode?: unknown };
+    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as { ids?: unknown; action?: unknown; mode?: unknown };
     const action = typeof body.action === "string" ? body.action : "sync";
     if (action !== "sync") {
       const mode = palmMode();
@@ -37,7 +37,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (action === "ein-all") return res.status(200).json({ mode, entities: await checkAllEins({ mode, by }) });
       return res.status(400).json({ error: "bad_action" });
     }
-    const ids = Array.isArray(body.ids) ? body.ids.map(String).filter((id) => /^[\w-]{1,80}$/.test(id)).slice(0, 300) : undefined;
+    const ids = Array.isArray(body.ids)
+      ? body.ids
+          .map(String)
+          .filter((id) => /^[\w-]{1,80}$/.test(id))
+          .slice(0, 300)
+      : undefined;
     return res.status(200).json(await syncAllWithPalm({ ids, by: { id: user.id, name: user.name } }));
   } catch (err) {
     if (err instanceof Error && /Palm isn't connected/.test(err.message)) return res.status(503).json({ error: "not_connected", message: err.message });

@@ -1,18 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import {
-  currentUser,
-  fail,
-  guard,
-  handleError,
-  isAdmin,
-  normalizeEmail,
-  normalizePhone,
-  publicUser,
-  sb,
-  type AppUser,
-  type Role,
-  type Status,
-} from "../../lib/auth.js";
+import { currentUser, fail, guard, handleError, isAdmin, normalizeEmail, normalizePhone, publicUser, sb, type AppUser, type Role, type Status } from "../../lib/auth.js";
 import { aliasOwner, ensureMailAddress, parseMailAddress } from "../../lib/mail-address.js";
 
 const ROLES: Role[] = ["owner", "admin", "member", "viewer", "email", "partner"];
@@ -139,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(201).json({ user: publicUser(user) });
     }
 
-    const id = String(req.method === "DELETE" ? req.query.id ?? "" : req.body?.id ?? "");
+    const id = String(req.method === "DELETE" ? (req.query.id ?? "") : (req.body?.id ?? ""));
     if (!/^[0-9a-f-]{36}$/i.test(id)) return fail(res, 400, "invalid_id");
 
     const targets = await sb<AppUser[]>(`app_users?id=eq.${id}&select=*&limit=1`);

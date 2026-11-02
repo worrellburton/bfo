@@ -113,9 +113,7 @@ export function MyPhoto({ address, name, onFaces }: { address: string; name: str
         }}
       />
       {open && (
-        <div
-          className={`absolute left-0 top-full z-30 mt-2 w-[240px] overflow-hidden rounded-xl border py-1 shadow-lg ${t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"}`}
-        >
+        <div className={`absolute left-0 top-full z-30 mt-2 w-[240px] overflow-hidden rounded-xl border py-1 shadow-lg ${t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"}`}>
           <p className={`px-3 pb-1.5 pt-2 text-[11.5px] leading-[1.45] ${t.muted}`}>Shown beside your mail in everyone's inbox here.</p>
           <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className={item}>
             <Icon name="upload" />
@@ -133,4 +131,3 @@ export function MyPhoto({ address, name, onFaces }: { address: string; name: str
     </div>
   );
 }
-

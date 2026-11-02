@@ -8,18 +8,7 @@ import { MailAurora, mailboxHue } from "../mail-aurora";
 import { PullToRefresh } from "../mail-pull";
 import { usePushState } from "../push";
 import { supportsViewTransitions } from "../view-transition";
-import {
-  deleteMail,
-  getFaces,
-  markRead,
-  moveMail,
-  notifyMailChanged,
-  syncMail,
-  useMailCount,
-  type MailFaces,
-  type MailFilter,
-  type MailFolder,
-} from "../mail-client";
+import { deleteMail, getFaces, markRead, moveMail, notifyMailChanged, syncMail, useMailCount, type MailFaces, type MailFilter, type MailFolder } from "../mail-client";
 import { FacesContext } from "../mail/avatar";
 import { EMPTY, FOLDERS, NOTHING, VIEW_KEY, savedView, type View } from "../mail/constants";
 import { eachRow, listRows } from "../mail/list-state";
@@ -109,9 +98,44 @@ export default function Inbox() {
 
   const { cache, open, setOpen, thread, setThread, freshId, setFreshId } = useOpenMessage({ openId, listRef, patchRow });
 
-  const { prefetch, returnedId, select, closeMessage, choosePlace, chooseFolder, chooseFilter, search, chooseBox, openIdRef, navStateRef, queryRef, mountedRef } = useMailNavigation({ folder, filter, q, box, openId, cache, listRef, setParams, navigate, location });
+  const { prefetch, returnedId, select, closeMessage, choosePlace, chooseFolder, chooseFilter, search, chooseBox, openIdRef, navStateRef, queryRef, mountedRef } = useMailNavigation({
+    folder,
+    filter,
+    q,
+    box,
+    openId,
+    cache,
+    listRef,
+    setParams,
+    navigate,
+    location,
+  });
 
-  const { resetList, move, archiveRow, remove, star, undoWith, markUnread, onSent } = useMailActions({ folder, filter, q, cache, listRef, setList, setListError, loadList, refreshActive, patchRow, setOpen, thread, setThread, setFreshId, setDraft, setToast, setToastState, closeMessage, setParams, openIdRef, navStateRef, queryRef, mountedRef });
+  const { resetList, move, archiveRow, remove, star, undoWith, markUnread, onSent } = useMailActions({
+    folder,
+    filter,
+    q,
+    cache,
+    listRef,
+    setList,
+    setListError,
+    loadList,
+    refreshActive,
+    patchRow,
+    setOpen,
+    thread,
+    setThread,
+    setFreshId,
+    setDraft,
+    setToast,
+    setToastState,
+    closeMessage,
+    setParams,
+    openIdRef,
+    navStateRef,
+    queryRef,
+    mountedRef,
+  });
 
   useEffect(() => {
     if (!toast) return;
@@ -122,7 +146,10 @@ export default function Inbox() {
       setToastState(null);
       setToastLeaving(false);
     }, total);
-    return () => { clearTimeout(id); clearTimeout(leave); };
+    return () => {
+      clearTimeout(id);
+      clearTimeout(leave);
+    };
   }, [toast]);
 
   const syncError = isAdmin(me) ? count?.sync?.error : undefined;
@@ -178,8 +205,13 @@ export default function Inbox() {
     if (action === "delete") {
       const ok = await confirmDialog(
         whole
-          ? { title: `Delete ${ids.length} conversation${ids.length === 1 ? "" : "s"}?`, message: "Every message in them, received and sent, is deleted for good.", confirmLabel: "Delete", tone: "danger" }
-          : { title: `Delete ${ids.length} message${ids.length === 1 ? "" : "s"}?`, confirmLabel: "Delete", tone: "danger" }
+          ? {
+              title: `Delete ${ids.length} conversation${ids.length === 1 ? "" : "s"}?`,
+              message: "Every message in them, received and sent, is deleted for good.",
+              confirmLabel: "Delete",
+              tone: "danger",
+            }
+          : { title: `Delete ${ids.length} message${ids.length === 1 ? "" : "s"}?`, confirmLabel: "Delete", tone: "danger" },
       );
       if (!ok) return;
     }
@@ -243,7 +275,7 @@ export default function Inbox() {
       thread={thread && thread.id === open?.id ? thread.messages : []}
       wholeConversation={folder === "active" && !q}
       freshId={freshId}
-      preview={openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null}
+      preview={openId ? ((rows ?? []).find((r) => r.id === openId) ?? null) : null}
     />
   );
 
@@ -251,7 +283,10 @@ export default function Inbox() {
   useMailShortcuts({ draft, open, openId, folder, picked, pickedRows, noAddress, mine, box, toast, listRef, select, closeMessage, move, bulk, remove, setDraft, star, pick, markUnread });
   const bulkBar = pickedRows.length > 0 && rows && <BulkBar rows={rows} pickedRows={pickedRows} bulkBusy={bulkBusy} folder={folder} pickAll={pickAll} bulk={bulk} setPicked={setPicked} />;
   // Phones: the same bar, floating at the bottom (portalled: the list is a containing block for fixed things).
-  const bulkFloat = pickedRows.length > 0 && rows && createPortal(<BulkBar floating rows={rows} pickedRows={pickedRows} bulkBusy={bulkBusy} folder={folder} pickAll={pickAll} bulk={bulk} setPicked={setPicked} />, document.body);
+  const bulkFloat =
+    pickedRows.length > 0 &&
+    rows &&
+    createPortal(<BulkBar floating rows={rows} pickedRows={pickedRows} bulkBusy={bulkBusy} folder={folder} pickAll={pickAll} bulk={bulk} setPicked={setPicked} />, document.body);
 
   // The iPhone app: invite notifications for new mail once, until answered (app/push.ts).
   const [pushAsk, setPushAsk] = usePushState();
@@ -263,12 +298,54 @@ export default function Inbox() {
       setPushDismissed(false);
     }
   }, []);
-  const pushInvite =
-    pushAsk === "prompt" && !pushDismissed && rows && !q ? <PushInvite setPushDismissed={setPushDismissed} setPushAsk={setPushAsk} /> : null;
+  const pushInvite = pushAsk === "prompt" && !pushDismissed && rows && !q ? <PushInvite setPushDismissed={setPushDismissed} setPushAsk={setPushAsk} /> : null;
 
-  const listBody = <ListBody rows={rows} listError={listError} loaderLeaving={loaderLeaving} q={q} view={view} folder={folder} filter={filter} noAddress={noAddress} address={address} emptyText={emptyText} sent={sent} mixed={mixed} list={list} rowsFresh={rowsFresh} returnedId={returnedId} openId={openId} picked={picked} select={select} prefetch={prefetch} star={star} pick={pick} pickAll={pickAll} archiveRow={archiveRow} loadingMore={loadingMore} loadMore={loadMore} retry={() => void loadList(folder, filter, q, box, "replace")} />;
+  const listBody = (
+    <ListBody
+      rows={rows}
+      listError={listError}
+      loaderLeaving={loaderLeaving}
+      q={q}
+      view={view}
+      folder={folder}
+      filter={filter}
+      noAddress={noAddress}
+      address={address}
+      emptyText={emptyText}
+      sent={sent}
+      mixed={mixed}
+      list={list}
+      rowsFresh={rowsFresh}
+      returnedId={returnedId}
+      openId={openId}
+      picked={picked}
+      select={select}
+      prefetch={prefetch}
+      star={star}
+      pick={pick}
+      pickAll={pickAll}
+      archiveRow={archiveRow}
+      loadingMore={loadingMore}
+      loadMore={loadMore}
+      retry={() => void loadList(folder, filter, q, box, "replace")}
+    />
+  );
 
-  const toolbar = <Toolbar q={q} rows={rows} list={list} folders={folders} folder={folder} filter={filter} count={count} search={search} choosePlace={choosePlace} chooseFolder={chooseFolder} chooseFilter={chooseFilter} />;
+  const toolbar = (
+    <Toolbar
+      q={q}
+      rows={rows}
+      list={list}
+      folders={folders}
+      folder={folder}
+      filter={filter}
+      count={count}
+      search={search}
+      choosePlace={choosePlace}
+      chooseFolder={chooseFolder}
+      chooseFilter={chooseFilter}
+    />
+  );
 
   // Phones: the title shrinks into a glass bar as the list scrolls under it.
   const [scrolled, setScrolled] = useState(false);
@@ -329,32 +406,69 @@ export default function Inbox() {
 
   return (
     <FacesContext.Provider value={faces}>
-    <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
-    {openId && <ReadingProgress />}
-    {/* Phones: the status bar overlays the page (no app header here), so once the page scrolls, glass behind it keeps rows and text from running under the clock. */}
-    <div
-      aria-hidden="true"
-      className={`pointer-events-none fixed inset-x-0 top-0 z-[25] transition-opacity duration-300 mail-glass-top md:hidden ${moved ? "opacity-100" : "opacity-0"} ${t.dark ? "bg-[#0b0b10]/[0.92]" : "bg-white/[0.92]"}`}
-      style={{ height: "env(safe-area-inset-top)" }}
-    />
-    <div className="@container relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]" style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}>
-      <MailHeader openId={openId} me={me} address={address} noAddress={noAddress} aliases={aliases} box={box} chooseBox={chooseBox} scrolled={scrolled} count={count} toggleMailTheme={toggleMailTheme} setFaces={setFaces} q={q} search={search} view={view} chooseView={chooseView} setDraft={setDraft} />
+      <MailAurora hue={mailboxHue(box)} dark={t.dark} className="mail-aurora" />
+      {openId && <ReadingProgress />}
+      {/* Phones: the status bar overlays the page (no app header here), so once the page scrolls, glass behind it keeps rows and text from running under the clock. */}
+      <div
+        aria-hidden="true"
+        className={`pointer-events-none fixed inset-x-0 top-0 z-[25] transition-opacity duration-300 mail-glass-top md:hidden ${moved ? "opacity-100" : "opacity-0"} ${t.dark ? "bg-[#0b0b10]/[0.92]" : "bg-white/[0.92]"}`}
+        style={{ height: "env(safe-area-inset-top)" }}
+      />
+      <div
+        className="@container relative mx-auto flex max-w-[1400px] flex-col gap-3 sm:gap-4 md:h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] lg:h-[calc(100dvh-4rem-env(safe-area-inset-top))]"
+        style={{ ["--mail-hue" as string]: Math.round(mailboxHue(box) * 360) }}
+      >
+        <MailHeader
+          openId={openId}
+          me={me}
+          address={address}
+          noAddress={noAddress}
+          aliases={aliases}
+          box={box}
+          chooseBox={chooseBox}
+          scrolled={scrolled}
+          count={count}
+          toggleMailTheme={toggleMailTheme}
+          setFaces={setFaces}
+          q={q}
+          search={search}
+          view={view}
+          chooseView={chooseView}
+          setDraft={setDraft}
+        />
 
-      {!openId && <SearchField value={q} onSearch={search} className="search-glow mx-1 md:hidden" />}
+        {!openId && <SearchField value={q} onSearch={search} className="search-glow mx-1 md:hidden" />}
 
-      {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
+        {syncError && <p className={`-mt-1 text-[12px] ${t.muted}`}>Can't fetch new mail: {syncError}</p>}
 
-      {view === "table" ? (
-        /* One card: the table, or the open message in its place. */
-        /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
-        <section
-          aria-label={tableReading ? "Message" : "Messages"}
-          className={`mail-card flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible ${tableReading ? "md:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
-        >
-          {tableReading ? (
-            <div className={`min-h-0 flex-1 md:overflow-y-auto ${supportsViewTransitions() ? "" : "reader-in md:[animation:none]"}`}>{reader}</div>
-          ) : (
-            <>
+        {view === "table" ? (
+          /* One card: the table, or the open message in its place. */
+          /* While reading, the card mustn't clip: the reader's toolbar sticks to the page, not to the card. */
+          <section
+            aria-label={tableReading ? "Message" : "Messages"}
+            className={`mail-card flex min-h-0 flex-1 flex-col rounded-2xl border max-md:overflow-visible ${tableReading ? "md:overflow-hidden" : "overflow-hidden"} ${t.surface}`}
+          >
+            {tableReading ? (
+              <div className={`min-h-0 flex-1 md:overflow-y-auto ${supportsViewTransitions() ? "" : "reader-in md:[animation:none]"}`}>{reader}</div>
+            ) : (
+              <>
+                {toolbar}
+                <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
+                  {freshPill}
+                  {pushInvite}
+                  {bulkBar}
+                  {listBody}
+                </PullToRefresh>
+              </>
+            )}
+          </section>
+        ) : (
+          <div className="flex min-h-0 flex-1 gap-3">
+            {/* The list */}
+            <section
+              aria-label="Messages"
+              className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible @min-[680px]:w-[300px] @min-[680px]:flex-none @min-[900px]:w-[400px] ${t.surface} ${openId ? "@max-[680px]:hidden" : ""}`}
+            >
               {toolbar}
               <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
                 {freshPill}
@@ -362,86 +476,78 @@ export default function Inbox() {
                 {bulkBar}
                 {listBody}
               </PullToRefresh>
-            </>
-          )}
-        </section>
-      ) : (
-        <div className="flex min-h-0 flex-1 gap-3">
-          {/* The list */}
-          <section
-            aria-label="Messages"
-            className={`mail-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border max-md:overflow-visible @min-[680px]:w-[300px] @min-[680px]:flex-none @min-[900px]:w-[400px] ${t.surface} ${openId ? "@max-[680px]:hidden" : ""}`}
-          >
-            {toolbar}
-            <PullToRefresh enabled={!openId} onRefresh={refreshFromPull} className="min-h-0 flex-1 overflow-y-auto max-md:overflow-visible max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]">
-              {freshPill}
-              {pushInvite}
-              {bulkBar}
-              {listBody}
-            </PullToRefresh>
-          </section>
+            </section>
 
-          {/* The reader */}
-          <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border md:overflow-y-auto ${t.surface} ${openId ? "" : "@max-[680px]:hidden"}`}>
-            {!open ? (
-              <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
-                <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
-                Pick a message to read it here
-              </div>
-            ) : (
-              reader
-            )}
-          </section>
-        </div>
-      )}
-
-      {/* Phones and small tablets: compose floats above the list, clear of the browser's bottom bar. */}
-      {!openId && !draft && !noAddress && !pickedRows.length &&
-        createPortal(
-          <button
-            type="button"
-            aria-label="New message"
-            title="New message"
-            onClick={() => setDraft(blankDraft(box || undefined))}
-            className="mail-fab fab-in fab-glass fixed right-5 z-40 flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 md:hidden"
-            style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
-          >
-            <Icon name="edit" className="h-[26px] w-[26px]" strokeWidth={1.9} />
-          </button>,
-          document.body
-        )}
-
-      {bulkFloat}
-
-      {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
-      {draft && createPortal(<Compose draft={draft} addresses={mine} onClose={() => setDraft(null)} onSent={(m) => onSent(m, draft.replyToId ?? draft.forwardId)} />, document.body)}
-
-      {toast &&
-        createPortal(
-          // Phones: above the reader's Reply/Forward bar, or the picked messages' bar, when one is up.
-          <div
-            role="status"
-            className={`pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4 md:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] ${
-              openId ? "bottom-[calc(76px+env(safe-area-inset-bottom))]" : pickedRows.length ? "bottom-[calc(112px+env(safe-area-inset-bottom))]" : "bottom-[calc(1.25rem+env(safe-area-inset-bottom))]"
-            }`}
-          >
-            <span className={`${toastLeaving ? "toast-out" : "toast-in"} pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}>
-              {toast.text}
-              {toast.undo && (
-                <button
-                  type="button"
-                  onClick={() => toast.undo?.()}
-                  title="Undo (z)"
-                  className={`-my-1 cursor-pointer rounded-full px-2 py-1 font-semibold underline-offset-2 hover:underline ${t.dark ? "text-(--mail-accent-ink)" : "text-(--mail-accent-pale)"}`}
-                >
-                  Undo
-                </button>
+            {/* The reader */}
+            <section aria-label="Message" className={`mail-card min-w-0 flex-1 rounded-2xl border md:overflow-y-auto ${t.surface} ${openId ? "" : "@max-[680px]:hidden"}`}>
+              {!open ? (
+                <div className={`flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-[12.5px] ${t.faint}`}>
+                  <Icon name="mail" className="h-6 w-6" strokeWidth={1.4} />
+                  Pick a message to read it here
+                </div>
+              ) : (
+                reader
               )}
-            </span>
-          </div>,
-          document.body
+            </section>
+          </div>
         )}
-    </div>
+
+        {/* Phones and small tablets: compose floats above the list, clear of the browser's bottom bar. */}
+        {!openId &&
+          !draft &&
+          !noAddress &&
+          !pickedRows.length &&
+          createPortal(
+            <button
+              type="button"
+              aria-label="New message"
+              title="New message"
+              onClick={() => setDraft(blankDraft(box || undefined))}
+              className="mail-fab fab-in fab-glass fixed right-5 z-40 flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 md:hidden"
+              style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
+            >
+              <Icon name="edit" className="h-[26px] w-[26px]" strokeWidth={1.9} />
+            </button>,
+            document.body,
+          )}
+
+        {bulkFloat}
+
+        {/* Portalled: <main> is its own stacking context, under the rail and the mobile header. */}
+        {draft && createPortal(<Compose draft={draft} addresses={mine} onClose={() => setDraft(null)} onSent={(m) => onSent(m, draft.replyToId ?? draft.forwardId)} />, document.body)}
+
+        {toast &&
+          createPortal(
+            // Phones: above the reader's Reply/Forward bar, or the picked messages' bar, when one is up.
+            <div
+              role="status"
+              className={`pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4 md:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] ${
+                openId
+                  ? "bottom-[calc(76px+env(safe-area-inset-bottom))]"
+                  : pickedRows.length
+                    ? "bottom-[calc(112px+env(safe-area-inset-bottom))]"
+                    : "bottom-[calc(1.25rem+env(safe-area-inset-bottom))]"
+              }`}
+            >
+              <span
+                className={`${toastLeaving ? "toast-out" : "toast-in"} pointer-events-auto inline-flex items-center gap-3 rounded-full px-4 py-2 text-[12.5px] font-medium shadow-lg ${t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"}`}
+              >
+                {toast.text}
+                {toast.undo && (
+                  <button
+                    type="button"
+                    onClick={() => toast.undo?.()}
+                    title="Undo (z)"
+                    className={`-my-1 cursor-pointer rounded-full px-2 py-1 font-semibold underline-offset-2 hover:underline ${t.dark ? "text-(--mail-accent-ink)" : "text-(--mail-accent-pale)"}`}
+                  >
+                    Undo
+                  </button>
+                )}
+              </span>
+            </div>,
+            document.body,
+          )}
+      </div>
     </FacesContext.Provider>
   );
 }

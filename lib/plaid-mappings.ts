@@ -57,7 +57,7 @@ export async function adoptMappings(live: LiveAccount[]): Promise<number> {
         carriesMeaning(p) &&
         // Only take over a mapping whose own account is gone, or which is a
         // duplicate of this same account under another connection.
-        !liveIds.has(p.account_id)
+        !liveIds.has(p.account_id),
     );
     if (candidates.length !== 1) continue;
 

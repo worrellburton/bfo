@@ -91,7 +91,11 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
   }
 
   // Models under way at Meshy: ask every few seconds until they finish.
-  const pending = studio ? Object.entries(studio.models).filter(([, m]) => m && (m.status === "PENDING" || m.status === "IN_PROGRESS")).map(([id]) => id) : [];
+  const pending = studio
+    ? Object.entries(studio.models)
+        .filter(([, m]) => m && (m.status === "PENDING" || m.status === "IN_PROGRESS"))
+        .map(([id]) => id)
+    : [];
   const pendingKey = pending.join(",");
   const pollRef = useRef(pending);
   pollRef.current = pending;
@@ -175,7 +179,10 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
             const built = model?.status === "SUCCEEDED" && !!model.glbUrl;
             const showModel = built && (view[s.id] ?? "picture") === "model";
             return (
-              <div key={s.id} className={`overflow-hidden rounded-xl border ${inUse ? "ring-2 ring-indigo-500 ring-offset-2 " + (isDark ? "ring-offset-black border-transparent" : "ring-offset-white border-transparent") : isDark ? "border-white/10" : "border-gray-200"}`}>
+              <div
+                key={s.id}
+                className={`overflow-hidden rounded-xl border ${inUse ? "ring-2 ring-indigo-500 ring-offset-2 " + (isDark ? "ring-offset-black border-transparent" : "ring-offset-white border-transparent") : isDark ? "border-white/10" : "border-gray-200"}`}
+              >
                 <div className={`relative aspect-square ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
                   {showModel && model?.glbUrl ? (
                     <Logo3D src={model.glbUrl} poster={model.posterUrl} className="h-full w-full" interactive />
@@ -224,11 +231,19 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                     <div className="min-w-0">
                       <div className={`text-xs font-semibold ${t1}`}>{s.name}</div>
                       <div className={`text-[11px] ${t2}`}>{s.blurb}</div>
-                      <div className={`mt-1.5 truncate text-[15px] leading-tight ${t1}`} style={{ fontFamily: `"${s.font.family}", Georgia, serif`, fontWeight: s.font.weight }} title={`Typeface: ${s.font.family}`}>
+                      <div
+                        className={`mt-1.5 truncate text-[15px] leading-tight ${t1}`}
+                        style={{ fontFamily: `"${s.font.family}", Georgia, serif`, fontWeight: s.font.weight }}
+                        title={`Typeface: ${s.font.family}`}
+                      >
                         {s.font.family} <span className={t3}>· Burton Family Office</span>
                       </div>
                     </div>
-                    <button type="button" onClick={() => setAdjusting(adjusting === s.id ? null : s.id)} className={`shrink-0 cursor-pointer text-[11px] font-medium ${isDark ? "text-indigo-300 hover:underline" : "text-indigo-600 hover:underline"}`}>
+                    <button
+                      type="button"
+                      onClick={() => setAdjusting(adjusting === s.id ? null : s.id)}
+                      className={`shrink-0 cursor-pointer text-[11px] font-medium ${isDark ? "text-indigo-300 hover:underline" : "text-indigo-600 hover:underline"}`}
+                    >
                       {adjusting === s.id ? "Done" : "Adjust"}
                     </button>
                   </div>
@@ -252,12 +267,24 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
                       </button>
                     )}
                     {entry && !built && (
-                      <button type="button" onClick={() => void build(s.id)} disabled={building || starting.has(s.id) || !studio.configured.meshy} title={studio.configured.meshy ? undefined : "Add MESHY_API_KEY in Vercel to build 3D models."} className={`${btn} ${ghostBtn(isDark)}`}>
+                      <button
+                        type="button"
+                        onClick={() => void build(s.id)}
+                        disabled={building || starting.has(s.id) || !studio.configured.meshy}
+                        title={studio.configured.meshy ? undefined : "Add MESHY_API_KEY in Vercel to build 3D models."}
+                        className={`${btn} ${ghostBtn(isDark)}`}
+                      >
                         {building ? "Building…" : starting.has(s.id) ? "Starting…" : model?.status === "FAILED" ? "Try 3D again" : "Make it 3D"}
                       </button>
                     )}
                     {built && (
-                      <button type="button" onClick={() => void build(s.id)} disabled={starting.has(s.id) || !studio.configured.meshy} className={`${btn} ${ghostBtn(isDark)}`} title="Build a fresh model from the same picture">
+                      <button
+                        type="button"
+                        onClick={() => void build(s.id)}
+                        disabled={starting.has(s.id) || !studio.configured.meshy}
+                        className={`${btn} ${ghostBtn(isDark)}`}
+                        title="Build a fresh model from the same picture"
+                      >
                         Rebuild
                       </button>
                     )}
@@ -274,7 +301,8 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
         </div>
       )}
       <p className={`mt-4 text-[11px] ${t3}`}>
-        Drawing takes about a minute per lockup; Meshy takes a few minutes per model. The site sets the chosen logo as live type in its Google font; pictures and models are kept in the brand bucket, so the site never depends on OpenAI or Meshy being up.
+        Drawing takes about a minute per lockup; Meshy takes a few minutes per model. The site sets the chosen logo as live type in its Google font; pictures and models are kept in the brand bucket,
+        so the site never depends on OpenAI or Meshy being up.
       </p>
     </section>
   );

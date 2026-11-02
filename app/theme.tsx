@@ -45,11 +45,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
   const setTheme = (t: Theme) => setThemeState(t);
 
-  return (
-    <ThemeContext.Provider value={{ theme: effective, appTheme: theme, overridden: override !== null, toggle, setTheme, setOverride }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ theme: effective, appTheme: theme, overridden: override !== null, toggle, setTheme, setOverride }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

@@ -20,10 +20,8 @@ const ROLE_LABELS: Record<Role, string> = {
 type Tab = "all" | "incoming";
 
 function statusChip(status: Status, isDark: boolean) {
-  if (status === "approved")
-    return isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700";
-  if (status === "incoming")
-    return isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700";
+  if (status === "approved") return isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700";
+  if (status === "incoming") return isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700";
   return isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700";
 }
 
@@ -137,13 +135,10 @@ export default function Users() {
     setBusyId(user.id);
     setError("");
     try {
-      const res = await authFetch(
-        method === "DELETE" ? `/api/auth/users?id=${user.id}` : "/api/auth/users",
-        {
-          method,
-          ...(method === "PATCH" ? { body: JSON.stringify({ id: user.id, ...patch }) } : {}),
-        }
-      );
+      const res = await authFetch(method === "DELETE" ? `/api/auth/users?id=${user.id}` : "/api/auth/users", {
+        method,
+        ...(method === "PATCH" ? { body: JSON.stringify({ id: user.id, ...patch }) } : {}),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message ?? "That didn't work.");
       if (method === "DELETE") setUsers((prev) => prev.filter((u) => u.id !== user.id));
@@ -193,7 +188,7 @@ export default function Users() {
         u.email?.toLowerCase().includes(q) ||
         u.mailAddress?.includes(q) ||
         u.phone?.includes(q.replace(/\D/g, "") || q) ||
-        u.phoneFormatted?.toLowerCase().includes(q)
+        u.phoneFormatted?.toLowerCase().includes(q),
     );
   }, [users, incoming, tab, search]);
 
@@ -201,22 +196,17 @@ export default function Users() {
   const subtle = isDark ? "text-gray-500" : "text-gray-500";
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const input = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border transition-colors focus:outline-none ${
-    isDark
-      ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25"
-      : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
+    isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
   }`;
-  const th = `text-left text-[11px] uppercase tracking-wider font-medium px-4 py-3 ${
-    isDark ? "text-gray-400" : "text-gray-500"
-  }`;
+  const th = `text-left text-[11px] uppercase tracking-wider font-medium px-4 py-3 ${isDark ? "text-gray-400" : "text-gray-500"}`;
   const td = `px-4 py-3 border-t ${rowBorder}`;
   // Phones: each user is a stacked card; cells show their column name.
-  const stack = "max-sm:block max-sm:border-t-0 max-sm:px-0 max-sm:py-1 max-sm:before:block max-sm:before:text-[11px] max-sm:before:uppercase max-sm:before:tracking-wider max-sm:before:text-gray-500 max-sm:before:content-[attr(data-label)]";
+  const stack =
+    "max-sm:block max-sm:border-t-0 max-sm:px-0 max-sm:py-1 max-sm:before:block max-sm:before:text-[11px] max-sm:before:uppercase max-sm:before:tracking-wider max-sm:before:text-gray-500 max-sm:before:content-[attr(data-label)]";
 
   const tabCls = (active: boolean) =>
     `flex items-center gap-2 px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-      active
-        ? isDark ? "bg-white/10 text-white" : "bg-black/5 text-black"
-        : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
+      active ? (isDark ? "bg-white/10 text-white" : "bg-black/5 text-black") : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
     }`;
 
   return (
@@ -224,9 +214,7 @@ export default function Users() {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Users</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>
-            Who can sign in to BFO, and what they can do once they're in
-          </p>
+          <p className={`text-sm mt-1 ${subtle}`}>Who can sign in to BFO, and what they can do once they're in</p>
         </div>
         <button
           onClick={() => setAdding((v) => !v)}
@@ -239,20 +227,14 @@ export default function Users() {
         </button>
       </div>
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {/* Approval notification — links to the Incoming tab */}
       {tab === "all" && incoming.length > 0 && (
         <button
           onClick={() => setTab("incoming")}
           className={`w-full flex items-center gap-3 rounded-lg px-4 py-3 max-sm:min-h-[44px] mb-4 text-sm text-left transition-colors cursor-pointer ${
-            isDark
-              ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15"
-              : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+            isDark ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15" : "bg-amber-50 text-amber-800 hover:bg-amber-100"
           }`}
         >
           <span className="w-2 h-2 rounded-full bg-amber-400 motion-safe:animate-pulse shrink-0" />
@@ -266,23 +248,24 @@ export default function Users() {
       {adding && (
         <form onSubmit={addUser} className={`rounded-xl border p-5 mb-4 ${card}`}>
           <div className="grid gap-3 sm:grid-cols-4">
-            <input className={input} value={draft.name} placeholder="Name" aria-label="Name" autoComplete="off"
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            <input className={input} value={draft.phone} placeholder="Phone" aria-label="Phone" type="tel" inputMode="tel"
-              onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
-            <input className={input} value={draft.email} placeholder="Email" aria-label="Email" type="email"
-              onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
-            <select className={`${input} cursor-pointer`} value={draft.role} aria-label="Role"
-              onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}>
+            <input className={input} value={draft.name} placeholder="Name" aria-label="Name" autoComplete="off" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <input className={input} value={draft.phone} placeholder="Phone" aria-label="Phone" type="tel" inputMode="tel" onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+            <input className={input} value={draft.email} placeholder="Email" aria-label="Email" type="email" onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
+            <select className={`${input} cursor-pointer`} value={draft.role} aria-label="Role" onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}>
               {(["admin", "member", "viewer", "email", "partner", ...(canSetOwner ? ["owner"] : [])] as Role[]).map((r) => (
-                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
               ))}
             </select>
           </div>
-          <button type="submit" disabled={busyId === "new"}
+          <button
+            type="submit"
+            disabled={busyId === "new"}
             className={`mt-3 px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
               isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
-            }`}>
+            }`}
+          >
             {busyId === "new" ? "Adding…" : "Add user"}
           </button>
         </form>
@@ -296,21 +279,10 @@ export default function Users() {
         </button>
         <button className={tabCls(tab === "incoming")} onClick={() => setTab("incoming")}>
           Incoming
-          {incoming.length > 0 && (
-            <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">
-              {incoming.length}
-            </span>
-          )}
+          {incoming.length > 0 && <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">{incoming.length}</span>}
         </button>
         <div className="flex-1 max-sm:hidden" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, email, phone…"
-          aria-label="Search users"
-          type="search"
-          className={`${input} w-56 max-sm:w-full`}
-        />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email, phone…" aria-label="Search users" type="search" className={`${input} w-56 max-sm:w-full`} />
       </div>
 
       {/* The spreadsheet */}
@@ -331,7 +303,11 @@ export default function Users() {
             </thead>
             <tbody className="max-sm:block">
               {loading && (
-                <tr className="max-sm:block"><td colSpan={8} className={`${td} ${subtle} max-sm:block max-sm:border-t-0`}>Loading…</td></tr>
+                <tr className="max-sm:block">
+                  <td colSpan={8} className={`${td} ${subtle} max-sm:block max-sm:border-t-0`}>
+                    Loading…
+                  </td>
+                </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr className="max-sm:block">
@@ -383,7 +359,14 @@ export default function Users() {
                             >
                               <span className={user.name ? "" : subtle}>{user.name || "Add a name"}</span>
                               {self && <span className={`text-xs font-normal ${subtle}`}>you</span>}
-                              <svg className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                              <svg
+                                className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden`}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                viewBox="0 0 24 24"
+                                aria-hidden
+                              >
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
                               </svg>
                             </button>
@@ -431,7 +414,14 @@ export default function Users() {
                               }`}
                             >
                               <span>{user.mailAddress || "No address"}</span>
-                              <svg className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                              <svg
+                                className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60 group-disabled:hidden"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                viewBox="0 0 24 24"
+                                aria-hidden
+                              >
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
                               </svg>
                             </button>
@@ -439,7 +429,9 @@ export default function Users() {
                         </span>
                       </span>
                     </td>
-                    <td data-label="Email" className={`${td} whitespace-nowrap ${user.email ? "" : subtle} ${stack} max-sm:col-span-2 max-sm:whitespace-normal max-sm:break-all`}>{user.email ?? "—"}</td>
+                    <td data-label="Email" className={`${td} whitespace-nowrap ${user.email ? "" : subtle} ${stack} max-sm:col-span-2 max-sm:whitespace-normal max-sm:break-all`}>
+                      {user.email ?? "—"}
+                    </td>
                     <td data-label="Phone" className={`${td} whitespace-nowrap tabular-nums ${user.phone ? "" : subtle} ${stack}`}>
                       {user.phoneFormatted || user.phone || "—"}
                     </td>
@@ -454,7 +446,9 @@ export default function Users() {
                         }`}
                       >
                         {(["admin", "member", "viewer", "email", "partner", ...(canSetOwner || user.role === "owner" ? ["owner"] : [])] as Role[]).map((r) => (
-                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                          <option key={r} value={r}>
+                            {ROLE_LABELS[r]}
+                          </option>
                         ))}
                       </select>
                     </td>
@@ -463,8 +457,12 @@ export default function Users() {
                         {user.status === "approved" ? "Active" : user.status === "denied" ? "Denied" : "Incoming"}
                       </span>
                     </td>
-                    <td data-label="Last active" className={`${td} whitespace-nowrap tabular-nums ${subtle} ${stack}`}>{when(user.lastSeenAt ?? user.lastLoginAt)}</td>
-                    <td data-label="Added" className={`${td} whitespace-nowrap tabular-nums ${subtle} ${stack}`}>{when(user.createdAt)}</td>
+                    <td data-label="Last active" className={`${td} whitespace-nowrap tabular-nums ${subtle} ${stack}`}>
+                      {when(user.lastSeenAt ?? user.lastLoginAt)}
+                    </td>
+                    <td data-label="Added" className={`${td} whitespace-nowrap tabular-nums ${subtle} ${stack}`}>
+                      {when(user.createdAt)}
+                    </td>
                     <td className={`${td} whitespace-nowrap text-right max-sm:col-span-2 max-sm:block max-sm:border-t-0 max-sm:px-0 max-sm:pt-2 max-sm:pb-0 max-sm:text-left`}>
                       <span className="inline-flex items-center gap-1.5">
                         {user.status === "incoming" && (
@@ -528,7 +526,11 @@ export default function Users() {
                           }`}
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                            />
                           </svg>
                         </button>
                       </span>

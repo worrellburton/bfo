@@ -12,7 +12,10 @@ describe("an entity's addresses", () => {
     const a = entityAddresses(tallulah);
     expect(a.principal.value).toBe(STABLE);
     expect(a.mailing).toMatchObject({ value: STABLE, same: true });
-    expect(a.agents.map((g) => [g.state, g.term, g.home])).toEqual([["DE", "Registered agent", true], ["AZ", "Statutory agent", false]]);
+    expect(a.agents.map((g) => [g.state, g.term, g.home])).toEqual([
+      ["DE", "Registered agent", true],
+      ["AZ", "Statutory agent", false],
+    ]);
     // Its address is in Phoenix: BFO asks whether it does business in Arizona.
     expect(a.gaps[0]).toMatchObject({ tone: "warn", where: "Statutory agent · Arizona" });
     expect(a.agents[1].ask).toBe(true);
@@ -33,7 +36,9 @@ describe("an entity's addresses", () => {
     expect(a.principal.checks).toEqual([{ tone: "warn", text: "The state has 11201 N Tatum Blvd, Phoenix, AZ 85028." }]);
     expect(a.agents[0].checks).toEqual([{ tone: "good", text: "Matches Delaware's record" }]);
     expect(a.agents[1].checks).toEqual([]);
-    expect(entityAddresses({ ...tallulah, stateRecord: { ...rec, agentAddress: "1 Other St, Dover, DE 19901" } }).agents[0].checks[0].text).toBe("Delaware's record has the agent at 1 Other St, Dover, DE 19901.");
+    expect(entityAddresses({ ...tallulah, stateRecord: { ...rec, agentAddress: "1 Other St, Dover, DE 19901" } }).agents[0].checks[0].text).toBe(
+      "Delaware's record has the agent at 1 Other St, Dover, DE 19901.",
+    );
   });
 
   it("lists every state it's registered in, home state aside", () => {
@@ -50,14 +55,26 @@ describe("an entity's addresses", () => {
 
 describe("a state with no registration", () => {
   it("says it isn't registered there yet", () => {
-    const a = entityAddresses({ name: "Ledger Louise, LLC", type: "LLC", state: "Nevada", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014", registeredAgent: "NW", registeredAgentAddress: "732 S 6th St, Las Vegas, NV 89101", registryMiss: { AZ: { outcome: "not_found", at: Date.parse("2026-10-20T21:40:00Z") } }, foreign: { AZ: { confirmed: true } } });
+    const a = entityAddresses({
+      name: "Ledger Louise, LLC",
+      type: "LLC",
+      state: "Nevada",
+      address: "5227 N 7th St STE 48575, Phoenix, AZ 85014",
+      registeredAgent: "NW",
+      registeredAgentAddress: "732 S 6th St, Las Vegas, NV 89101",
+      registryMiss: { AZ: { outcome: "not_found", at: Date.parse("2026-10-20T21:40:00Z") } },
+      foreign: { AZ: { confirmed: true } },
+    });
     expect(a.agents[1].checks[0].text).toMatch(/^Not registered in Arizona: its registry had no entry for this name \(checked Oct 20\)/);
   });
 });
 
 describe("an entity formed through BFO, still with the state", () => {
   const forming = {
-    name: "TallulahMD LLC", type: "LLC", state: "Delaware", address: "5227 N 7th St STE 48575, Phoenix, AZ 85014",
+    name: "TallulahMD LLC",
+    type: "LLC",
+    state: "Delaware",
+    address: "5227 N 7th St STE 48575, Phoenix, AZ 85014",
     palm: { live: { formation: { status: "processing", registeredAgent: { status: "pending" } } } },
     registryMiss: { DE: { outcome: "not_found" as const, at: 0 }, AZ: { outcome: "not_found" as const, at: 0 } },
   };

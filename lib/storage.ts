@@ -70,11 +70,7 @@ export async function storageDownload(path: string, bucket = BUCKET): Promise<Ui
  * null when it's missing, larger than `maxBytes`, or the read fails or runs
  * past `timeoutMs`. Streams, so a file over the cap is never held in full.
  */
-export async function storageRead(
-  path: string,
-  bucket: string,
-  opts: { maxBytes: number; timeoutMs?: number }
-): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+export async function storageRead(path: string, bucket: string, opts: { maxBytes: number; timeoutMs?: number }): Promise<{ bytes: Uint8Array; contentType: string } | null> {
   try {
     const { url, key } = cfg();
     const r = await fetch(`${url}/storage/v1/object/${bucket}/${encodeURI(path)}`, {

@@ -1,13 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { authFetch, getUser, isAdmin, isPartner } from "../auth";
@@ -96,20 +87,24 @@ type SortDir = "asc" | "desc";
 type EntView = "list" | "cards" | "map";
 type Score = { score: number; items: CompletenessItem[]; missing: CompletenessItem[] };
 
-
 const FILING_KEYS = ["einLetter", "w9", "articles", "operatingAgreement"] as const;
 
 // ── States ──────────────────────────────────────────────────────────────────
 // The fifty states plus DC, for the state filter's mega menu. Records may hold
 // a name ("Arizona") or a postal code ("AZ"); both fold to the name.
-const STATE_KEY = new Map<string, string>(US_STATES.flatMap(([abbr, name]) => [[abbr.toLowerCase(), name], [name.toLowerCase(), name]]));
+const STATE_KEY = new Map<string, string>(
+  US_STATES.flatMap(([abbr, name]) => [
+    [abbr.toLowerCase(), name],
+    [name.toLowerCase(), name],
+  ]),
+);
 const STATE_ABBR = new Map<string, string>(US_STATES.map(([abbr, name]) => [name, abbr]));
 /** The value the "No state" choice stands for in the filter. */
 const NO_STATE = "__none";
 /** A record's state as the filter sees it: the full name for US states, else the trimmed text ("" when blank). */
 function canonState(raw: string | undefined): string {
   const s = (raw || "").trim();
-  return s ? STATE_KEY.get(s.toLowerCase()) ?? s : "";
+  return s ? (STATE_KEY.get(s.toLowerCase()) ?? s) : "";
 }
 
 /**
@@ -131,9 +126,7 @@ function readStoredView(): EntView | null {
 
 /** The head's fill and bottom rule live on the cells (see books-shared headSkin). */
 function headSkin(isDark: boolean): string {
-  return isDark
-    ? "bg-[#080808] [&>th]:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]"
-    : "bg-white [&>th]:shadow-[inset_0_-1px_0_0_#e5e7eb]";
+  return isDark ? "bg-[#080808] [&>th]:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]" : "bg-white [&>th]:shadow-[inset_0_-1px_0_0_#e5e7eb]";
 }
 
 // Fixed widths in px (the root is 85%, so rem columns would drift). Entity is
@@ -159,8 +152,7 @@ function missingSummary(s: Score, max = 2): string {
   return `Missing: ${names.join(", ")}${more > 0 ? ` +${more} more` : ""} (+${100 - s.score} pts)`;
 }
 
-const PERSON_PATH =
-  "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z";
+const PERSON_PATH = "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z";
 
 /**
  * A trust isn't owned the way an LLC is — trustees act for it. Where an LLC
@@ -204,19 +196,7 @@ function Ring({ score, size, isDark, stroke = 2, children }: { score: number; si
     <span className={`relative inline-flex items-center justify-center shrink-0 ${scoreTone(score, isDark)}`} style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className={isDark ? "stroke-white/10" : "stroke-gray-200"} />
-        {score > 0 && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={c}
-            strokeDashoffset={off}
-          />
-        )}
+        {score > 0 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />}
       </svg>
       {children && <span className="absolute inset-0 flex items-center justify-center">{children}</span>}
     </span>
@@ -232,21 +212,7 @@ let tipWarmUntil = 0;
  * table). The trigger is a real button so it takes keyboard focus and a tap
  * opens it on touch; the summary rides on aria-label for screen readers.
  */
-function Tip({
-  isDark,
-  label,
-  content,
-  children,
-  className = "",
-  width = 232,
-}: {
-  isDark: boolean;
-  label: string;
-  content: ReactNode;
-  children: ReactNode;
-  className?: string;
-  width?: number;
-}) {
+function Tip({ isDark, label, content, children, className = "", width = 232 }: { isDark: boolean; label: string; content: ReactNode; children: ReactNode; className?: string; width?: number }) {
   const ref = useRef<HTMLButtonElement>(null);
   const timer = useRef<number | null>(null);
   const shown = useRef(false);
@@ -282,9 +248,12 @@ function Tip({
       window.removeEventListener("resize", h);
     };
   }, [pos]);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
   return (
     <>
       <button
@@ -319,7 +288,7 @@ function Tip({
           >
             {content}
           </div>,
-          document.body
+          document.body,
         )}
     </>
   );
@@ -332,19 +301,7 @@ type RowAction = { label: string; run?: () => void; href?: string };
  * same idiom as the ledger's ⋯). Arrow keys move, Escape / Tab close, focus
  * returns to the trigger.
  */
-function RowMenu({
-  isDark,
-  name,
-  actions,
-  onOpenChange,
-  className = "",
-}: {
-  isDark: boolean;
-  name: string;
-  actions: RowAction[];
-  onOpenChange?: (open: boolean) => void;
-  className?: string;
-}) {
+function RowMenu({ isDark, name, actions, onOpenChange, className = "" }: { isDark: boolean; name: string; actions: RowAction[]; onOpenChange?: (open: boolean) => void; className?: string }) {
   const { t1, t3 } = tiers(isDark);
   const smUp = useMedia("(min-width: 640px)");
   const [open, setOpen] = useState(false);
@@ -433,9 +390,7 @@ function RowMenu({
     list[next].focus();
   };
 
-  const itemSkin = isDark
-    ? "text-gray-200 hover:bg-white/[0.08] focus-visible:bg-white/[0.08]"
-    : "text-gray-800 hover:bg-gray-100 focus-visible:bg-gray-100";
+  const itemSkin = isDark ? "text-gray-200 hover:bg-white/[0.08] focus-visible:bg-white/[0.08]" : "text-gray-800 hover:bg-gray-100 focus-visible:bg-gray-100";
   const itemCls = sheet
     ? `w-full min-h-[44px] px-3 rounded-lg text-base text-left inline-flex items-center gap-3 cursor-pointer transition-colors ${itemSkin}`
     : `w-full h-8 px-2 rounded-lg text-xs text-left inline-flex items-center whitespace-nowrap cursor-pointer transition-colors ${itemSkin}`;
@@ -460,7 +415,7 @@ function RowMenu({
         >
           {a.label}
         </button>
-      )
+      ),
     );
 
   return (
@@ -522,7 +477,7 @@ function RowMenu({
               {renderItems()}
             </div>
           ),
-          document.body
+          document.body,
         )}
     </>
   );
@@ -571,29 +526,25 @@ function StateMegaMenu({
 
   const inUse: StateChoice[] = useMemo(
     () => [
-      ...[...counts.entries()]
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([name, count]) => ({ value: name, label: name, abbr: STATE_ABBR.get(name), count })),
+      ...[...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ value: name, label: name, abbr: STATE_ABBR.get(name), count })),
       ...(noState ? [{ value: NO_STATE, label: "No state", count: noState }] : []),
     ],
-    [counts, noState]
+    [counts, noState],
   );
-  const others: StateChoice[] = useMemo(
-    () => US_STATES.filter(([, name]) => !counts.has(name)).map(([abbr, name]) => ({ value: name, label: name, abbr, count: 0 })),
-    [counts]
-  );
+  const others: StateChoice[] = useMemo(() => US_STATES.filter(([, name]) => !counts.has(name)).map(([abbr, name]) => ({ value: name, label: name, abbr, count: 0 })), [counts]);
   const needle = q.trim().toLowerCase();
-  const hit = (c: StateChoice) =>
-    !needle || c.label.toLowerCase().includes(needle) || c.abbr?.toLowerCase() === needle || (c.value === NO_STATE && "none".startsWith(needle));
+  const hit = (c: StateChoice) => !needle || c.label.toLowerCase().includes(needle) || c.abbr?.toLowerCase() === needle || (c.value === NO_STATE && "none".startsWith(needle));
   const shownInUse = inUse.filter(hit);
   const shownOthers = others.filter(hit);
 
-  const text =
-    value.length === 0 ? "All states" : value.length === 1 ? (value[0] === NO_STATE ? "No state" : value[0]) : `${value.length} states`;
+  const text = value.length === 0 ? "All states" : value.length === 1 ? (value[0] === NO_STATE ? "No state" : value[0]) : `${value.length} states`;
 
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
 
   function finishClose() {
     if (closeTimer.current) {
@@ -639,7 +590,7 @@ function StateMegaMenu({
       setBox(
         below < 360 && above > below
           ? { left, bottom: window.innerHeight - r.top + 8, width, maxH: Math.min(560, above - 8) }
-          : { left, top: r.bottom + 8, width, maxH: Math.max(240, Math.min(560, below - 8)) }
+          : { left, top: r.bottom + 8, width, maxH: Math.max(240, Math.min(560, below - 8)) },
       );
     }
     place();
@@ -687,9 +638,7 @@ function StateMegaMenu({
       return;
     }
     if (e.key === "Tab" && !sheet) {
-      const list = Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>("input, button:not([disabled])") ?? []
-      ).filter((el) => el.offsetParent !== null);
+      const list = Array.from(panelRef.current?.querySelectorAll<HTMLElement>("input, button:not([disabled])") ?? []).filter((el) => el.offsetParent !== null);
       if (!list.length) return;
       const first = list[0];
       const last = list[list.length - 1];
@@ -755,8 +704,12 @@ function StateMegaMenu({
       aria-hidden
       className={`shrink-0 inline-flex items-center justify-center rounded-[4px] border transition-colors ${sheet ? "w-[18px] h-[18px]" : "w-[14px] h-[14px]"} ${
         on
-          ? isDark ? "bg-indigo-500 border-indigo-500 text-white" : "bg-indigo-600 border-indigo-600 text-white"
-          : isDark ? "border-white/25 group-hover/opt:border-white/40" : "border-gray-300 group-hover/opt:border-gray-400"
+          ? isDark
+            ? "bg-indigo-500 border-indigo-500 text-white"
+            : "bg-indigo-600 border-indigo-600 text-white"
+          : isDark
+            ? "border-white/25 group-hover/opt:border-white/40"
+            : "border-gray-300 group-hover/opt:border-gray-400"
       }`}
     >
       {on && <Icon d={PATHS.check} strokeWidth={3} className={sheet ? "w-3 h-3" : "w-2.5 h-2.5"} />}
@@ -859,23 +812,13 @@ function StateMegaMenu({
       >
         {value.length > 0 && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? "bg-indigo-400" : "bg-indigo-600"}`} />}
         <span className="truncate">{text}</span>
-        <Icon
-          d={PATHS.chevron}
-          strokeWidth={2}
-          className={`w-3 h-3 shrink-0 opacity-50 transition-[rotate] motion-reduce:transition-none ${open && !closing ? "rotate-180" : ""}`}
-        />
+        <Icon d={PATHS.chevron} strokeWidth={2} className={`w-3 h-3 shrink-0 opacity-50 transition-[rotate] motion-reduce:transition-none ${open && !closing ? "rotate-180" : ""}`} />
       </button>
       {open &&
         (sheet || box) &&
         createPortal(
           <>
-            {sheet && (
-              <div
-                className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`}
-                onClick={() => requestClose(true)}
-                aria-hidden
-              />
-            )}
+            {sheet && <div className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`} onClick={() => requestClose(true)} aria-hidden />}
             <div
               ref={panelRef}
               role="dialog"
@@ -886,11 +829,7 @@ function StateMegaMenu({
               onAnimationEnd={(e) => {
                 if (closing && e.target === e.currentTarget) finishClose();
               }}
-              style={
-                sheet
-                  ? { position: "fixed", left: 0, right: 0, bottom: 0 }
-                  : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width, maxHeight: box!.maxH }
-              }
+              style={sheet ? { position: "fixed", left: 0, right: 0, bottom: 0 } : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width, maxHeight: box!.maxH }}
               className={`z-[70] border overflow-hidden flex flex-col tabular-nums ${
                 sheet ? "rounded-t-2xl max-h-[82vh] pb-[max(env(safe-area-inset-bottom),12px)]" : "rounded-xl"
               } ${closing ? `${exit} pointer-events-none` : enter} ${popoverSurface(isDark)}`}
@@ -906,7 +845,7 @@ function StateMegaMenu({
               {panelBody}
             </div>
           </>,
-          document.body
+          document.body,
         )}
     </>
   );
@@ -936,7 +875,7 @@ function PartnerEntities() {
         setList(
           Object.entries(all)
             .map(([id, a]) => ({ id, name: a?.name ?? "Entity", type: a?.type, state: a?.state, files: Object.keys(a?.documents ?? {}).length }))
-            .sort((a, b) => a.name.localeCompare(b.name))
+            .sort((a, b) => a.name.localeCompare(b.name)),
         );
     })().catch(() => live && setList([]));
     return () => {
@@ -950,24 +889,26 @@ function PartnerEntities() {
       <h1 className="mt-2 font-brand text-[30px] leading-tight sm:text-[38px]">{first ? `Welcome, ${first}.` : "Welcome."}</h1>
       <p className={`mt-2 text-[14px] ${dark ? "text-gray-400" : "text-gray-600"}`}>The entities you're part of. Open one to see its documents and who owns it.</p>
       <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {list === null
-          ? [0, 1].map((i) => <div key={i} className="shimmer h-[104px] rounded-2xl" />)
-          : list.length === 0
-            ? <p className={`text-[13px] ${dark ? "text-gray-500" : "text-gray-500"}`}>Nothing has been shared with you yet.</p>
-            : list.map((e) => (
-                <Link
-                  key={e.id}
-                  to={`/assets/${e.id}`}
-                  className={`group rounded-2xl border p-5 transition-colors ${dark ? "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]" : "border-gray-200 bg-white hover:border-gray-300"}`}
-                >
-                  <span className="block font-brand text-[20px] leading-snug">{e.name}</span>
-                  <span className={`mt-1 block text-[12.5px] ${dark ? "text-gray-500" : "text-gray-500"}`}>
-                    {[e.type, e.state].filter(Boolean).join(" · ")}
-                    {e.files ? ` · ${e.files} document${e.files === 1 ? "" : "s"}` : ""}
-                  </span>
-                  <span className={`mt-4 inline-flex items-center gap-1 text-[12.5px] font-medium ${dark ? "text-[#a5b4fc]" : "text-[#4f46e5]"}`}>Open →</span>
-                </Link>
-              ))}
+        {list === null ? (
+          [0, 1].map((i) => <div key={i} className="shimmer h-[104px] rounded-2xl" />)
+        ) : list.length === 0 ? (
+          <p className={`text-[13px] ${dark ? "text-gray-500" : "text-gray-500"}`}>Nothing has been shared with you yet.</p>
+        ) : (
+          list.map((e) => (
+            <Link
+              key={e.id}
+              to={`/assets/${e.id}`}
+              className={`group rounded-2xl border p-5 transition-colors ${dark ? "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]" : "border-gray-200 bg-white hover:border-gray-300"}`}
+            >
+              <span className="block font-brand text-[20px] leading-snug">{e.name}</span>
+              <span className={`mt-1 block text-[12.5px] ${dark ? "text-gray-500" : "text-gray-500"}`}>
+                {[e.type, e.state].filter(Boolean).join(" · ")}
+                {e.files ? ` · ${e.files} document${e.files === 1 ? "" : "s"}` : ""}
+              </span>
+              <span className={`mt-4 inline-flex items-center gap-1 text-[12.5px] font-medium ${dark ? "text-[#a5b4fc]" : "text-[#4f46e5]"}`}>Open →</span>
+            </Link>
+          ))
+        )}
       </div>
     </div>
   );
@@ -1011,7 +952,11 @@ function StaffAssets() {
   const palmPlan = useMemo(() => {
     // Records read in the last day are kept by the server's sync, so they cost nothing here.
     const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode, { freshMs: SYNC_FRESH_MS }) }));
-    return { cents: per.reduce((n, x) => n + x.cost.cents, 0), states: per.reduce((n, x) => n + x.cost.states.length, 0), entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length };
+    return {
+      cents: per.reduce((n, x) => n + x.cost.cents, 0),
+      states: per.reduce((n, x) => n + x.cost.states.length, 0),
+      entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length,
+    };
   }, [assets, palmMode]);
   const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode; title?: string } | null>(null);
 
@@ -1083,7 +1028,8 @@ function StaffAssets() {
   async function scanAll() {
     const ok = await confirmDialog({
       title: "Scan every entity's documents?",
-      message: "Each document not read yet is read once and filed into its empty slot; blank facts are filled, the tax class is checked, and each operating agreement is read into the entity's profile. Nothing already on record is overwritten — disagreements are flagged.",
+      message:
+        "Each document not read yet is read once and filed into its empty slot; blank facts are filled, the tax class is checked, and each operating agreement is read into the entity's profile. Nothing already on record is overwritten — disagreements are flagged.",
       confirmLabel: "Scan all",
     });
     if (!ok) return;
@@ -1175,7 +1121,7 @@ function StaffAssets() {
           console.error("Assets load error:", err);
           setLoadError("Couldn't load entities.");
           setLoading(false);
-        }
+        },
       );
     }
 
@@ -1248,7 +1194,7 @@ function StaffAssets() {
     }
     return m;
   }, [assets, byId]);
-  const ownerName = (a: Asset) => (a.ownerId ? byId.get(a.ownerId)?.name ?? "" : "");
+  const ownerName = (a: Asset) => (a.ownerId ? (byId.get(a.ownerId)?.name ?? "") : "");
   const tagOf = (a: { name: string; initials?: string }) => a.initials || entityTag(a.name);
   const filingCount = (a: Asset) => FILING_KEYS.filter((k) => !!a[k]).length;
 
@@ -1340,10 +1286,7 @@ function StaffAssets() {
     if (!x !== !y) return x ? -1 : 1;
     return x.localeCompare(y) * dir || a.name.localeCompare(b.name);
   };
-  const onSort = (key: SortKey) =>
-    setSort((s) =>
-      s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }
-    );
+  const onSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
 
   type Row = { asset: Asset; depth: number; kids: number; context: boolean };
   // The tree: matches plus their ancestors (shown muted, for context), in
@@ -1430,14 +1373,10 @@ function StaffAssets() {
   const hair = hairline(isDark);
   const field = textInput(isDark);
   const searchField = `h-[40px] sm:h-9 w-full pl-9 pr-4 rounded-full text-[16px] sm:text-sm placeholder:text-sm border cursor-text [&::-webkit-search-cancel-button]:appearance-none ${field}`;
-  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${
-    isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"
-  }`;
+  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"}`;
   const segment = "inline-flex items-center justify-center h-full min-w-[44px] sm:min-w-0 px-3 rounded-full text-sm font-medium whitespace-nowrap transition-colors cursor-pointer";
   const segOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200";
-  const segOff = isDark
-    ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]"
-    : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
+  const segOff = isDark ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]" : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
   const viewSeg = `h-full w-[40px] sm:w-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${TAP.seg}`;
   const hover = isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50";
   // The row whose menu is open holds a tint, so it reads as "the one you touched".
@@ -1497,8 +1436,12 @@ function StaffAssets() {
       title={a.type === "LLC" && a.llcType ? `LLC · ${a.llcType}` : a.type}
       className={`inline-flex items-center shrink-0 h-5 px-1.5 rounded-md text-xs font-medium leading-none ${
         a.type === "C-Corp" || a.type === "Trust" || a.type === "LP"
-          ? isDark ? "border border-white/15 text-gray-300" : "border border-gray-300 text-gray-700"
-          : isDark ? "bg-white/[0.05] text-gray-400" : "bg-gray-100 text-gray-500/100"
+          ? isDark
+            ? "border border-white/15 text-gray-300"
+            : "border border-gray-300 text-gray-700"
+          : isDark
+            ? "bg-white/[0.05] text-gray-400"
+            : "bg-gray-100 text-gray-500/100"
       }`}
     >
       {a.type || "—"}
@@ -1524,7 +1467,9 @@ function StaffAssets() {
           </ul>
         </>
       ) : (
-        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>Every requirement for {a.type === "C-Corp" ? "a C-Corp" : a.type === "Trust" ? "a trust" : a.type === "LP" ? "a limited partnership" : "an LLC"} is on file.</p>
+        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>
+          Every requirement for {a.type === "C-Corp" ? "a C-Corp" : a.type === "Trust" ? "a trust" : a.type === "LP" ? "a limited partnership" : "an LLC"} is on file.
+        </p>
       )}
     </>
   );
@@ -1562,7 +1507,14 @@ function StaffAssets() {
     return (
       <Tip
         isDark={isDark}
-        label={`Filings: ${on.length} of ${filings.length} on file${on.length < filings.length ? ` — missing ${filings.filter((f) => !f.done).map((f) => f.label).join(", ")}` : ""}`}
+        label={`Filings: ${on.length} of ${filings.length} on file${
+          on.length < filings.length
+            ? ` — missing ${filings
+                .filter((f) => !f.done)
+                .map((f) => f.label)
+                .join(", ")}`
+            : ""
+        }`}
         content={filingsCard(a, s)}
         className={`h-7 px-1.5 -mx-1.5 gap-[4px] ${TAP.head} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
       >
@@ -1570,9 +1522,7 @@ function StaffAssets() {
           <span
             key={f.key}
             aria-hidden
-            className={`w-[7px] h-[7px] rounded-full ${
-              f.done ? (isDark ? "bg-emerald-400" : "bg-emerald-600") : `border-[1.5px] ${isDark ? "border-white/25" : "border-gray-300"}`
-            }`}
+            className={`w-[7px] h-[7px] rounded-full ${f.done ? (isDark ? "bg-emerald-400" : "bg-emerald-600") : `border-[1.5px] ${isDark ? "border-white/25" : "border-gray-300"}`}`}
           />
         ))}
       </Tip>
@@ -1654,26 +1604,18 @@ function StaffAssets() {
           ["Trust", "Trust"],
         ] as const
       ).map(([value, label]) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => setTypeF(value)}
-          aria-pressed={typeF === value}
-          className={`${segment} ${TAP.seg} ${typeF === value ? segOn : segOff}`}
-        >
+        <button key={value} type="button" onClick={() => setTypeF(value)} aria-pressed={typeF === value} className={`${segment} ${TAP.seg} ${typeF === value ? segOn : segOff}`}>
           {label}
         </button>
       ))}
     </div>
   );
-  const stateMenu = () => (
-    <StateMegaMenu isDark={isDark} value={stateF} onChange={setStateF} counts={stateCounts} noState={statelessCount} />
-  );
+  const stateMenu = () => <StateMegaMenu isDark={isDark} value={stateF} onChange={setStateF} counts={stateCounts} noState={statelessCount} />;
   // On the map the state filter and the search light the matching entities (by name).
   const mapHighlight = useMemo(
     () => (stateF.length || needle ? new Set(assets.filter((a) => inStates(a) && matchesNeedle(a)).map((a) => a.name.toLowerCase())) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [assets, stateF, needle]
+    [assets, stateF, needle],
   );
   const attentionToggle = () => (
     <button
@@ -1705,22 +1647,10 @@ function StaffAssets() {
         [
           ["list", "List view", PATHS.list],
           ["cards", "Card view", PATHS.grid],
-          [
-            "map",
-            "Map view",
-            "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7",
-          ],
+          ["map", "Map view", "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"],
         ] as const
       ).map(([v, name, d]) => (
-        <button
-          key={v}
-          type="button"
-          aria-label={name}
-          title={name}
-          aria-pressed={view === v}
-          onClick={() => pickView(v)}
-          className={`${viewSeg} ${view === v ? segOn : segOff}`}
-        >
+        <button key={v} type="button" aria-label={name} title={name} aria-pressed={view === v} onClick={() => pickView(v)} className={`${viewSeg} ${view === v ? segOn : segOff}`}>
           <Icon d={d} className="w-3.5 h-3.5" />
         </button>
       ))}
@@ -1754,13 +1684,7 @@ function StaffAssets() {
       ),
     },
   ];
-  const stripBorder = [
-    "",
-    "border-l",
-    "border-t md:border-t-0 md:border-l",
-    "border-l border-t md:border-t-0",
-    "col-span-2 md:col-span-1 border-t md:border-t-0 md:border-l",
-  ] as const;
+  const stripBorder = ["", "border-l", "border-t md:border-t-0 md:border-l", "border-l border-t md:border-t-0", "col-span-2 md:col-span-1 border-t md:border-t-0 md:border-l"] as const;
 
   // ── Skeletons ────────────────────────────────────────────────────────────
   const bar = (cls: string) => <div className={`shimmer ${cls}`} aria-hidden />;
@@ -1768,15 +1692,33 @@ function StaffAssets() {
     <table className="w-full table-fixed text-sm" aria-busy="true" aria-label="Loading entities">
       <thead>
         <tr className={`text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
-          <th scope="col" className="pl-4 pr-2 py-2.5 font-medium">Entity</th>
-          <th scope="col" className={`${COLS.type} px-2 py-2.5 font-medium`}>Type</th>
-          <th scope="col" className={`${COLS.llcType} px-2 py-2.5 font-medium`}>Tax classification</th>
-          <th scope="col" className={`${COLS.state} px-2 py-2.5 font-medium`}>State</th>
-          <th scope="col" className={`${COLS.ein} px-2 py-2.5 font-medium`}>EIN</th>
-          <th scope="col" className={`${COLS.owner} px-2 py-2.5 font-medium`}>Owned by</th>
-          <th scope="col" className={`${COLS.filings} px-2 py-2.5 font-medium`}>Filings</th>
-          <th scope="col" className={`${COLS.score} px-2 py-2.5 font-medium`}>Compliance</th>
-          <th scope="col" className={COLS.menu}><span className="sr-only">Actions</span></th>
+          <th scope="col" className="pl-4 pr-2 py-2.5 font-medium">
+            Entity
+          </th>
+          <th scope="col" className={`${COLS.type} px-2 py-2.5 font-medium`}>
+            Type
+          </th>
+          <th scope="col" className={`${COLS.llcType} px-2 py-2.5 font-medium`}>
+            Tax classification
+          </th>
+          <th scope="col" className={`${COLS.state} px-2 py-2.5 font-medium`}>
+            State
+          </th>
+          <th scope="col" className={`${COLS.ein} px-2 py-2.5 font-medium`}>
+            EIN
+          </th>
+          <th scope="col" className={`${COLS.owner} px-2 py-2.5 font-medium`}>
+            Owned by
+          </th>
+          <th scope="col" className={`${COLS.filings} px-2 py-2.5 font-medium`}>
+            Filings
+          </th>
+          <th scope="col" className={`${COLS.score} px-2 py-2.5 font-medium`}>
+            Compliance
+          </th>
+          <th scope="col" className={COLS.menu}>
+            <span className="sr-only">Actions</span>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -1848,62 +1790,70 @@ function StaffAssets() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-        {isAdmin() && palmMode && (
+          {isAdmin() && palmMode && (
+            <button
+              type="button"
+              onClick={() => void syncAllWithPalm()}
+              disabled={!!palmSync?.running}
+              title="Every entity's state records, and for the ones Palm holds, their agent, Palm's copy and their mail"
+              aria-label={`Sync everything with Palm, ${palmMode === "test" ? "free in test mode" : palmPlan.cents ? `estimated ${dollars(palmPlan.cents)}` : "free"}`}
+              className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
+                isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <Icon
+                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                strokeWidth={1.8}
+                className={`w-3.5 h-3.5 ${palmSync?.running && !palmSync.title ? "animate-spin" : ""}`}
+              />
+              <span className="max-sm:hidden">{palmSync?.running && !palmSync.title ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
+              <span className={t2}>{palmMode === "test" ? "free in test mode" : palmPlan.cents ? `est. ${dollars(palmPlan.cents)}` : "free"}</span>
+            </button>
+          )}
+          {isAdmin() && palmMode && (
+            <button
+              type="button"
+              onClick={() => void openPalmChecks()}
+              disabled={!!palmSync?.running}
+              title="Palm Monitor on every registration, and every EIN checked with the IRS"
+              aria-label="Monitor and verify with Palm"
+              className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
+                isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <Icon
+                d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                strokeWidth={1.8}
+                className="w-3.5 h-3.5"
+              />
+              <span className="max-sm:hidden">{palmSync?.running && palmSync.title ? "Working with Palm…" : "Monitor & verify"}</span>
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => void syncAllWithPalm()}
-            disabled={!!palmSync?.running}
-            title="Every entity's state records, and for the ones Palm holds, their agent, Palm's copy and their mail"
-            aria-label={`Sync everything with Palm, ${palmMode === "test" ? "free in test mode" : palmPlan.cents ? `estimated ${dollars(palmPlan.cents)}` : "free"}`}
+            onClick={() => void scanAll()}
+            disabled={!!scan && !scan.done}
+            title="Read every entity's documents: file them, fill blank facts, check the tax class, and read each operating agreement"
             className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
               isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
             }`}
           >
-            <Icon d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" strokeWidth={1.8} className={`w-3.5 h-3.5 ${palmSync?.running && !palmSync.title ? "animate-spin" : ""}`} />
-            <span className="max-sm:hidden">{palmSync?.running && !palmSync.title ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
-            <span className={t2}>{palmMode === "test" ? "free in test mode" : palmPlan.cents ? `est. ${dollars(palmPlan.cents)}` : "free"}</span>
+            {scan && !scan.done ? `Scanning ${scan.index}/${scan.total}…` : "Scan all documents"}
           </button>
-        )}
-        {isAdmin() && palmMode && (
-          <button
-            type="button"
-            onClick={() => void openPalmChecks()}
-            disabled={!!palmSync?.running}
-            title="Palm Monitor on every registration, and every EIN checked with the IRS"
-            aria-label="Monitor and verify with Palm"
-            className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
-              isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            <Icon d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z" strokeWidth={1.8} className="w-3.5 h-3.5" />
-            <span className="max-sm:hidden">{palmSync?.running && palmSync.title ? "Working with Palm…" : "Monitor & verify"}</span>
+          <button type="button" onClick={() => setShowForm(true)} className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 pl-3.5 pr-4 gap-1.5 text-sm ${TAP.md} ${primaryBtn(isDark)}`}>
+            <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className="w-3.5 h-3.5" />
+            New entity
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => void scanAll()}
-          disabled={!!scan && !scan.done}
-          title="Read every entity's documents: file them, fill blank facts, check the tax class, and read each operating agreement"
-          className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
-            isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
-          }`}
-        >
-          {scan && !scan.done ? `Scanning ${scan.index}/${scan.total}…` : "Scan all documents"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowForm(true)}
-          className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 pl-3.5 pr-4 gap-1.5 text-sm ${TAP.md} ${primaryBtn(isDark)}`}
-        >
-          <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className="w-3.5 h-3.5" />
-          New entity
-        </button>
         </div>
       </div>
 
       {palmChecks &&
         createPortal(
-          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmChecks(null)} onKeyDown={(e) => e.key === "Escape" && setPalmChecks(null)}>
+          <div
+            className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+            onClick={() => setPalmChecks(null)}
+            onKeyDown={(e) => e.key === "Escape" && setPalmChecks(null)}
+          >
             <div
               role="dialog"
               aria-modal="true"
@@ -1913,7 +1863,12 @@ function StaffAssets() {
             >
               <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
                 <p className="text-sm font-semibold">Monitor &amp; verify with Palm{palmChecks.plan?.mode === "test" ? " (test mode)" : ""}</p>
-                <button type="button" autoFocus onClick={() => setPalmChecks(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => setPalmChecks(null)}
+                  className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+                >
                   Close
                 </button>
               </div>
@@ -1943,7 +1898,10 @@ function StaffAssets() {
                       },
                     ];
                     return rows.map((row) => (
-                      <div key={row.key} className={`flex flex-col gap-2 border-b py-3.5 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${isDark ? "border-white/[0.06]" : "border-gray-100"}`}>
+                      <div
+                        key={row.key}
+                        className={`flex flex-col gap-2 border-b py-3.5 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${isDark ? "border-white/[0.06]" : "border-gray-100"}`}
+                      >
                         <div className="min-w-0">
                           <p className="text-sm font-medium">{row.title}</p>
                           <p className={`mt-0.5 text-[12.5px] leading-snug ${t2}`}>{row.text}</p>
@@ -1963,12 +1921,17 @@ function StaffAssets() {
               </div>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
 
-      {palmSync && !palmSync.running &&
+      {palmSync &&
+        !palmSync.running &&
         createPortal(
-          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={() => setPalmSync(null)} onKeyDown={(e) => e.key === "Escape" && setPalmSync(null)}>
+          <div
+            className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+            onClick={() => setPalmSync(null)}
+            onKeyDown={(e) => e.key === "Escape" && setPalmSync(null)}
+          >
             <div
               role="dialog"
               aria-modal="true"
@@ -1980,9 +1943,16 @@ function StaffAssets() {
                 <p className="text-sm font-semibold">
                   {palmSync.title
                     ? `${palmSync.title}${palmSync.error ? ": didn't finish" : ` · ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"}`}${palmSync.mode === "test" ? " (test mode)" : ""}`
-                    : palmSync.error ? "Couldn't sync with Palm" : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
+                    : palmSync.error
+                      ? "Couldn't sync with Palm"
+                      : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
                 </p>
-                <button type="button" autoFocus onClick={() => setPalmSync(null)} className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => setPalmSync(null)}
+                  className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
+                >
                   Close
                 </button>
               </div>
@@ -2012,7 +1982,7 @@ function StaffAssets() {
               </div>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
 
       {scan &&
@@ -2026,9 +1996,7 @@ function StaffAssets() {
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[13px] font-medium">
-                  {scan.paused ? "Scan paused" : scan.done ? "Scan complete" : `Scanning ${scan.index} of ${scan.total}`}
-                </p>
+                <p className="text-[13px] font-medium">{scan.paused ? "Scan paused" : scan.done ? "Scan complete" : `Scanning ${scan.index} of ${scan.total}`}</p>
                 {scan.done && (
                   <button type="button" onClick={() => setScan(null)} className={`text-[12px] ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"}`}>
                     Close
@@ -2043,12 +2011,14 @@ function StaffAssets() {
               </div>
               {scan.done && scan.notes.length > 0 && (
                 <ul className={`mt-2 max-h-40 space-y-0.5 overflow-y-auto text-[11.5px] ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                  {scan.notes.map((n, i) => <li key={i}>{n}</li>)}
+                  {scan.notes.map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
                 </ul>
               )}
             </div>
           </div>,
-          document.body
+          document.body,
         )}
 
       <NewEntityDialog
@@ -2064,7 +2034,10 @@ function StaffAssets() {
       <FormEntityWizard
         open={showWizard}
         onClose={() => setShowWizard(false)}
-        entities={assets.filter((a) => a.type !== "Trust").map((a) => ({ id: a.id, name: a.name, address: a.address })).sort((a, b) => a.name.localeCompare(b.name))}
+        entities={assets
+          .filter((a) => a.type !== "Trust")
+          .map((a) => ({ id: a.id, name: a.name, address: a.address }))
+          .sort((a, b) => a.name.localeCompare(b.name))}
         onCreated={(id) => {
           setShowWizard(false);
           navigate(`/assets/${id}`);
@@ -2111,7 +2084,11 @@ function StaffAssets() {
               <div className="shrink-0">{stateMenu()}</div>
               {searchBox()}
               <p className={`order-1 flex-1 min-w-0 truncate text-sm ${t2} hidden lg:block lg:ml-1`}>
-                {needle ? `${mapHighlight?.size ?? 0} matching ${mapHighlight?.size === 1 ? "entity is" : "entities are"} lit` : stateF.length ? "Entities in the chosen states are lit" : "Ownership map"}
+                {needle
+                  ? `${mapHighlight?.size ?? 0} matching ${mapHighlight?.size === 1 ? "entity is" : "entities are"} lit`
+                  : stateF.length
+                    ? "Entities in the chosen states are lit"
+                    : "Ownership map"}
                 <span className="hidden lg:inline [@media(pointer:coarse)]:!hidden"> — drag to pan, scroll to zoom</span>
                 <span className="hidden [@media(pointer:coarse)]:lg:inline"> — drag to pan, pinch to zoom</span>
               </p>
@@ -2133,7 +2110,11 @@ function StaffAssets() {
         </div>
 
         {view === "map" ? null : loading ? (
-          view === "list" ? listSkeleton : cardsSkeleton
+          view === "list" ? (
+            listSkeleton
+          ) : (
+            cardsSkeleton
+          )
         ) : assets.length === 0 ? (
           <div className="px-4 py-16 text-center">
             <Icon d={PATHS.building} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
@@ -2182,7 +2163,7 @@ function StaffAssets() {
                     >
                       Show tree
                     </button>
-                  ) : undefined
+                  ) : undefined,
                 )}
                 {th("Type", "type", COLS.type)}
                 {th("Tax classification", "llcType", COLS.llcType)}
@@ -2203,10 +2184,7 @@ function StaffAssets() {
                 const menuOpen = menuRow === a.id;
                 const mute = context ? "opacity-55" : "";
                 return (
-                  <tr
-                    key={a.id}
-                    className={`group transition-colors duration-100 ${ri === 0 ? "" : `border-t ${hair}`} ${menuOpen ? activeRow : hover}`}
-                  >
+                  <tr key={a.id} className={`group transition-colors duration-100 ${ri === 0 ? "" : `border-t ${hair}`} ${menuOpen ? activeRow : hover}`}>
                     <td className={`pl-4 pr-2 py-3.5 lg:py-3`}>
                       <div className="flex items-center gap-2 min-w-0" style={{ paddingLeft: depth * 18 }}>
                         {treeMode &&
@@ -2227,11 +2205,7 @@ function StaffAssets() {
                               aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${a.name}`}
                               className={chevBtn}
                             >
-                              <Icon
-                                d={PATHS.chevronRight}
-                                strokeWidth={2.2}
-                                className={`w-3 h-3 transition-transform motion-reduce:transition-none ${isCollapsed ? "" : "rotate-90"}`}
-                              />
+                              <Icon d={PATHS.chevronRight} strokeWidth={2.2} className={`w-3 h-3 transition-transform motion-reduce:transition-none ${isCollapsed ? "" : "rotate-90"}`} />
                             </button>
                           ) : (
                             <span className="w-5 shrink-0" aria-hidden />
@@ -2260,9 +2234,7 @@ function StaffAssets() {
                           type="button"
                           onClick={() => copyEin(a.ein)}
                           title="Copy EIN"
-                          className={`font-mono text-xs tabular-nums cursor-pointer rounded hover:underline decoration-dotted underline-offset-2 ${
-                            copiedEin === a.ein ? incomeTone(isDark) : t2
-                          }`}
+                          className={`font-mono text-xs tabular-nums cursor-pointer rounded hover:underline decoration-dotted underline-offset-2 ${copiedEin === a.ein ? incomeTone(isDark) : t2}`}
                         >
                           {copiedEin === a.ein ? "Copied" : a.ein}
                         </button>
@@ -2274,19 +2246,19 @@ function StaffAssets() {
                       {entityType(a) === "Trust" ? (
                         <TrusteesCell a={a} t3={t3} onOpen={() => navigate(`/assets/${a.id}`)} />
                       ) : (
-                      <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
-                        <Menu
-                          value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
-                          options={ownerOptions(a)}
-                          onChange={(v) => void updateOwner(a.id, v)}
-                          isDark={isDark}
-                          tone="soft"
-                          size="sm"
-                          touch
-                          chevron="hover"
-                          label="Owned by"
-                        />
-                      </div>
+                        <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
+                          <Menu
+                            value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
+                            options={ownerOptions(a)}
+                            onChange={(v) => void updateOwner(a.id, v)}
+                            isDark={isDark}
+                            tone="soft"
+                            size="sm"
+                            touch
+                            chevron="hover"
+                            label="Owned by"
+                          />
+                        </div>
                       )}
                     </td>
                     <td className={`${cell} ${COLS.filings} ${mute}`}>{filingPips(a, s)}</td>
@@ -2298,9 +2270,7 @@ function StaffAssets() {
                         className={`h-7 px-1.5 -mx-1.5 gap-2 ${TAP.head} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
                       >
                         <Ring score={s.score} size={16} isDark={isDark} />
-                        <span className={`text-sm font-medium tabular-nums ${scoreText(s.score, isDark, t1)}`}>
-                          {s.score}
-                        </span>
+                        <span className={`text-sm font-medium tabular-nums ${scoreText(s.score, isDark, t1)}`}>{s.score}</span>
                       </Tip>
                     </td>
                     <td className="pr-2 text-right align-middle">
@@ -2324,8 +2294,12 @@ function StaffAssets() {
               const s = scoreOf(a);
               const menuOpen = menuRow === a.id;
               const surface = menuOpen
-                ? isDark ? "border-white/[0.12] bg-white/[0.05]" : "border-gray-300 bg-gray-50"
-                : isDark ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]" : "border-gray-200 bg-white hover:bg-gray-50";
+                ? isDark
+                  ? "border-white/[0.12] bg-white/[0.05]"
+                  : "border-gray-300 bg-gray-50"
+                : isDark
+                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]"
+                  : "border-gray-200 bg-white hover:bg-gray-50";
               return (
                 <div key={a.id} className={`group relative flex flex-col gap-2.5 rounded-xl border p-3 transition-colors duration-100 ${surface}`}>
                   <div className="flex items-center gap-3">
@@ -2367,7 +2341,9 @@ function StaffAssets() {
                   ) : (
                     <p className={`flex items-baseline gap-1 min-w-0 text-sm lg:text-xs ${t2}`} title={missingSummary(s, 99)}>
                       <span className="truncate">Missing: {s.missing.map((m) => m.label).join(", ")}</span>
-                      <span className={`shrink-0 ${amberTone(isDark)}`} title="Points the record gains once these are on file">+{100 - s.score} pts</span>
+                      <span className={`shrink-0 ${amberTone(isDark)}`} title="Points the record gains once these are on file">
+                        +{100 - s.score} pts
+                      </span>
                     </p>
                   )}
                   <div className="mt-auto flex items-center gap-3 min-w-0">
@@ -2376,28 +2352,22 @@ function StaffAssets() {
                         <TrusteesCell a={a} t3={t3} onOpen={() => navigate(`/assets/${a.id}`)} />
                       </div>
                     ) : (
-                    <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
-                      <Menu
-                        value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
-                        options={ownerOptions(a)}
-                        onChange={(v) => void updateOwner(a.id, v)}
-                        isDark={isDark}
-                        tone="soft"
-                        size="sm"
-                        touch
-                        label="Owned by"
-                        leading={<Icon d={PATHS.building} className="w-3.5 h-3.5 shrink-0 opacity-60" />}
-                      />
-                    </div>
+                      <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
+                        <Menu
+                          value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
+                          options={ownerOptions(a)}
+                          onChange={(v) => void updateOwner(a.id, v)}
+                          isDark={isDark}
+                          tone="soft"
+                          size="sm"
+                          touch
+                          label="Owned by"
+                          leading={<Icon d={PATHS.building} className="w-3.5 h-3.5 shrink-0 opacity-60" />}
+                        />
+                      </div>
                     )}
                     <span className="shrink-0">{filingPips(a, s)}</span>
-                    <RowMenu
-                      isDark={isDark}
-                      name={a.name}
-                      actions={rowActions(a)}
-                      onOpenChange={(o) => setMenuRow(o ? a.id : null)}
-                      className="ml-auto -mr-1.5 shrink-0"
-                    />
+                    <RowMenu isDark={isDark} name={a.name} actions={rowActions(a)} onOpenChange={(o) => setMenuRow(o ? a.id : null)} className="ml-auto -mr-1.5 shrink-0" />
                   </div>
                 </div>
               );
@@ -2503,14 +2473,7 @@ function NewEntityDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <form
-        ref={ref}
-        onSubmit={submit}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-entity-title"
-        className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}
-      >
+      <form ref={ref} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="new-entity-title" className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}>
         <h2 id="new-entity-title" className={`text-lg font-semibold tracking-tight ${t1}`}>
           New entity
         </h2>
@@ -2551,16 +2514,7 @@ function NewEntityDialog({
         <label htmlFor="new-entity-name" className={label}>
           Name
         </label>
-        <input
-          id="new-entity-name"
-          data-autofocus
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Entity name"
-          required
-          className={`${fieldCls} mb-3`}
-        />
+        <input id="new-entity-name" data-autofocus type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Entity name" required className={`${fieldCls} mb-3`} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
           <div>
             <label htmlFor="new-entity-state" className={label}>
@@ -2572,15 +2526,7 @@ function NewEntityDialog({
             <label htmlFor="new-entity-ein" className={label}>
               EIN
             </label>
-            <input
-              id="new-entity-ein"
-              type="text"
-              inputMode="numeric"
-              value={ein}
-              onChange={(e) => setEin(e.target.value)}
-              placeholder="Optional"
-              className={`${fieldCls} font-mono`}
-            />
+            <input id="new-entity-ein" type="text" inputMode="numeric" value={ein} onChange={(e) => setEin(e.target.value)} placeholder="Optional" className={`${fieldCls} font-mono`} />
           </div>
         </div>
 
@@ -2594,17 +2540,12 @@ function NewEntityDialog({
           <button type="button" onClick={onClose} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${ghostBtn(isDark)}`}>
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={!name.trim()}
-            aria-busy={busy || undefined}
-            className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm aria-busy:pointer-events-none ${primaryBtn(isDark)}`}
-          >
+          <button type="submit" disabled={!name.trim()} aria-busy={busy || undefined} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm aria-busy:pointer-events-none ${primaryBtn(isDark)}`}>
             {busy ? "Creating…" : `Create ${type}`}
           </button>
         </div>
       </form>
     </div>,
-    document.body
+    document.body,
   );
 }

@@ -13,15 +13,16 @@ export const eachRow = (l: ListState, fn: (rows: MailSummary[]) => MailSummary[]
 /** Active's order: latest activity first, then the conversation's key (as the server sorts). */
 export function threadSortsAfter(m: MailSummary, last: MailSummary): boolean {
   if (!m.threadAt || !last.threadAt) return sortsAfter(m, last);
-  const a = Date.parse(m.threadAt), b = Date.parse(last.threadAt);
+  const a = Date.parse(m.threadAt),
+    b = Date.parse(last.threadAt);
   if (a !== b) return a < b;
   return (m.threadKey ?? "") > (last.threadKey ?? "");
 }
 
 export function sortsAfter(m: MailSummary, last: MailSummary): boolean {
-  const a = Date.parse(m.occurredAt), b = Date.parse(last.occurredAt);
+  const a = Date.parse(m.occurredAt),
+    b = Date.parse(last.occurredAt);
   if (a !== b) return a < b;
   if (m.occurredAt !== last.occurredAt) return m.occurredAt < last.occurredAt;
   return m.id < last.id;
 }
-

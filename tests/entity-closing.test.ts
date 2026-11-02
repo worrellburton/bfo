@@ -5,8 +5,13 @@ import { describeChange } from "../lib/activity";
 
 const lookup = () => undefined;
 const louise = {
-  name: "Ledger Louise, LLC", type: "LLC", state: "Nevada", llcType: "Disregarded Entity", ein: "93-3776895",
-  address: "5227 N 7th St STE 48575, Phoenix, AZ 85014", registeredAgent: "Northwest Registered Agent LLC",
+  name: "Ledger Louise, LLC",
+  type: "LLC",
+  state: "Nevada",
+  llcType: "Disregarded Entity",
+  ein: "93-3776895",
+  address: "5227 N 7th St STE 48575, Phoenix, AZ 85014",
+  registeredAgent: "Northwest Registered Agent LLC",
   members: [{ name: "Burton Family Revocable Trust", percent: 100, role: "Member" }],
   foreign: { AZ: { confirmed: true } },
 };
@@ -22,7 +27,10 @@ describe("closing an entity", () => {
   });
 
   it("ends Palm's service from here only when Palm is the agent", () => {
-    expect(closingSteps({ ...louise, registeredAgent: "Palm Registered Agents LLC", palm: { live: { ra: { status: "active" } } } }).find((s) => s.key === "agent")).toMatchObject({ palmEnd: true, title: "End Palm's registered agent service" });
+    expect(closingSteps({ ...louise, registeredAgent: "Palm Registered Agents LLC", palm: { live: { ra: { status: "active" } } } }).find((s) => s.key === "agent")).toMatchObject({
+      palmEnd: true,
+      title: "End Palm's registered agent service",
+    });
     expect(closingSteps(louise).find((s) => s.key === "agent")?.title).toBe("Tell Northwest Registered Agent LLC to stop service");
   });
 

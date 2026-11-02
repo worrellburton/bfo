@@ -49,9 +49,7 @@ const birdMock = vi.fn(async (path: string, init: { method?: string; body?: unkn
   const hit = birdRoutes.find(([re]) => re.test(`${c.method} ${c.path}`));
   return (hit ? hit[1](c) : new Response(JSON.stringify({ error: { message: "not found" } }), { status: 404 })) as Response;
 });
-const currentUserMock = vi.fn(async (_req: unknown, opts: { allowEmailOnly?: boolean } = {}) =>
-  me && (me.role !== "email" || opts.allowEmailOnly) ? me : null
-);
+const currentUserMock = vi.fn(async (_req: unknown, opts: { allowEmailOnly?: boolean } = {}) => (me && (me.role !== "email" || opts.allowEmailOnly) ? me : null));
 
 vi.mock("../lib/auth.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/auth")>();
@@ -167,7 +165,7 @@ beforeEach(() => {
       storageCalls.push(c);
       const hit = storageRoutes.find(([re]) => re.test(`${c.method} ${c.path}`));
       return hit ? hit[1](c) : json({});
-    })
+    }),
   );
 });
 afterEach(() => {
@@ -179,8 +177,7 @@ afterEach(() => {
 const SECRET = "whsec_" + Buffer.from("bird-signing-key").toString("base64");
 const now = 1_790_000_000_000;
 const ts = String(Math.floor(now / 1000));
-const sign = (id: string, t: string, body: string, key = Buffer.from("bird-signing-key")) =>
-  `v1,${createHmac("sha256", key).update(`${id}.${t}.${body}`).digest("base64")}`;
+const sign = (id: string, t: string, body: string, key = Buffer.from("bird-signing-key")) => `v1,${createHmac("sha256", key).update(`${id}.${t}.${body}`).digest("base64")}`;
 
 describe("mail webhook signature", () => {
   const body = JSON.stringify({ type: "email.received", data: { inbound_message_id: "rem_1" } });
@@ -213,7 +210,7 @@ describe("routing", () => {
       ourRecipients({
         to: [{ email: "Robert@BurtonFamilyOffice.com" }, { email: "jane@example.com" }],
         cc: [{ email: "robert@burtonfamilyoffice.com" }, { email: CLAIRE }, { email: "x@evil-burtonfamilyoffice.com" }],
-      })
+      }),
     ).toEqual([ROBERT, CLAIRE]);
   });
 
@@ -236,9 +233,11 @@ describe("bodies", () => {
   it("snips text, or HTML stripped to text", () => {
     expect(snippetOf("  Hello\n\n  there  ")).toBe("Hello there");
     // A help desk's wrapping says nothing about the message.
-    expect(snippetOf("##- Please type your reply above this line -##\n----------------\nLawrence P., Oct 22\nIt is rejected and returned to sender.\n\nThis email is a service from Earth Class Mail. Delivered by Zendesk\n[209REE-6G6XY]")).toBe(
-      "Lawrence P., Oct 22 It is rejected and returned to sender. This email is a service from Earth Class Mail. Delivered by Zendesk"
-    );
+    expect(
+      snippetOf(
+        "##- Please type your reply above this line -##\n----------------\nLawrence P., Oct 22\nIt is rejected and returned to sender.\n\nThis email is a service from Earth Class Mail. Delivered by Zendesk\n[209REE-6G6XY]",
+      ),
+    ).toBe("Lawrence P., Oct 22 It is rejected and returned to sender. This email is a service from Earth Class Mail. Delivered by Zendesk");
     expect(snippetOf("Sounds good.\n\nSent from my iPhone")).toBe("Sounds good.");
     expect(snippetOf(null, "<html><head><style>p{color:red}</style></head><body><p>Hi&nbsp;<b>Robert</b> &amp; co</p></body></html>")).toBe("Hi Robert & co");
     const long = snippetOf("word ".repeat(100));
@@ -252,7 +251,12 @@ describe("bodies", () => {
     expect(snippetOf("Sounds good.\r\n\r\nOn Sat, Oct 17, 2026 at 9:11 AM Robert Burton <\r\nrobert@burtonfamilyoffice.com> wrote:\r\n> a\r\n> b")).toBe("Sounds good.");
     expect(snippetOf("Yes\n-----Original Message-----\nFrom: Jane\nSent: Monday\nhello")).toBe("Yes");
     expect(snippetOf("> only a quote\n> nothing new")).toBe("> only a quote > nothing new");
-    expect(snippetOf(null, '<div dir="ltr">Thanks!<div class="gmail_quote">On Sat, Robert wrote:<br><blockquote class="gmail_quote"><div>ttest<blockquote>older</blockquote></div></blockquote></div></div>')).toBe("Thanks!");
+    expect(
+      snippetOf(
+        null,
+        '<div dir="ltr">Thanks!<div class="gmail_quote">On Sat, Robert wrote:<br><blockquote class="gmail_quote"><div>ttest<blockquote>older</blockquote></div></blockquote></div></div>',
+      ),
+    ).toBe("Thanks!");
     expect(snippetOf("Nothing quoted here")).toBe("Nothing quoted here");
   });
 
@@ -313,10 +317,28 @@ describe("send requests", () => {
 
 describe("rows to the API", () => {
   it("maps a received row", () => {
-    const r = row({ attachments: [{ id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" }, { id: "rea_2", filename: "", contentType: "", size: 1, path: null }] });
+    const r = row({
+      attachments: [
+        { id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" },
+        { id: "rea_2", filename: "", contentType: "", size: 1, path: null },
+      ],
+    });
     expect(toSummary(r)).toEqual({
-      id: MSG, folder: "inbox", direction: "in", from: { email: "jane@example.com", name: "Jane" }, to: [{ email: ROBERT }], cc: [],
-      subject: "Hello", snippet: "Hi Robert", occurredAt: "2026-10-14T12:00:00.000Z", read: false, starred: false, attachmentCount: 2, attachmentKinds: ["pdf", "file"], status: null, other: false,
+      id: MSG,
+      folder: "inbox",
+      direction: "in",
+      from: { email: "jane@example.com", name: "Jane" },
+      to: [{ email: ROBERT }],
+      cc: [],
+      subject: "Hello",
+      snippet: "Hi Robert",
+      occurredAt: "2026-10-14T12:00:00.000Z",
+      read: false,
+      starred: false,
+      attachmentCount: 2,
+      attachmentKinds: ["pdf", "file"],
+      status: null,
+      other: false,
     });
     const m = toMessage(r);
     expect(m.attachments).toEqual([
@@ -341,7 +363,13 @@ describe("ingest", () => {
       [/GET \/v1\/email\/inbound-messages\/rem_1\/attachments\/rea_1$/, () => new Response(new Uint8Array([1, 2, 3]))],
     ];
     sbRoutes = [
-      [/GET app_users\?status=eq\.approved&mail_address=in\.\("robert@burtonfamilyoffice\.com","claire@burtonfamilyoffice\.com"\)/, () => [{ id: U1, mail_address: ROBERT }, { id: U2, mail_address: CLAIRE }]],
+      [
+        /GET app_users\?status=eq\.approved&mail_address=in\.\("robert@burtonfamilyoffice\.com","claire@burtonfamilyoffice\.com"\)/,
+        () => [
+          { id: U1, mail_address: ROBERT },
+          { id: U2, mail_address: CLAIRE },
+        ],
+      ],
       [/POST mail_messages\?on_conflict=dedupe_key/, (c) => c.body.map((_: unknown, i: number) => ({ id: `r${i}` }))],
     ];
     const n = await ingestInbound(inbound({ cc: [{ email: CLAIRE }], attachments: [{ id: "rea_1", filename: "a.pdf", content_type: "application/pdf", size: 3 }] }));
@@ -353,8 +381,14 @@ describe("ingest", () => {
       [U2, `in:rem_1:${U2}`, CLAIRE],
     ]);
     expect(ins.body[0]).toMatchObject({
-      folder: "inbox", direction: "in", bird_id: "rem_1", from_email: "jane@example.com", from_name: "Jane", snippet: "Hi Robert",
-      references_ids: ["<r0@example.com>"], attachments: [{ id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" }],
+      folder: "inbox",
+      direction: "in",
+      bird_id: "rem_1",
+      from_email: "jane@example.com",
+      from_name: "Jane",
+      snippet: "Hi Robert",
+      references_ids: ["<r0@example.com>"],
+      attachments: [{ id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" }],
     });
     expect(storageCalls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/object/mail/in/rem_1/rea_1"]);
     expect(birdCalls.some((c) => c.path.endsWith("/raw"))).toBe(false);
@@ -428,8 +462,7 @@ describe("ingest", () => {
     await ingestInbound(forged);
     const lookup = () => sbCalls.find((c) => c.path.startsWith("mail_messages?direction=eq.out"));
     expect(lookup()!.path).toBe(
-      `mail_messages?direction=eq.out&from_email=eq.${ROBERT}&subject=eq.Wire today` +
-        "&occurred_at=gte.2026-10-14T11:45:00.000Z&occurred_at=lte.2026-10-14T12:05:00.000Z&select=id&limit=1"
+      `mail_messages?direction=eq.out&from_email=eq.${ROBERT}&subject=eq.Wire today` + "&occurred_at=gte.2026-10-14T11:45:00.000Z&occurred_at=lte.2026-10-14T12:05:00.000Z&select=id&limit=1",
     );
     expect(inserted()!.body[0]).toMatchObject({ from_email: ROBERT, spf_pass: null, dkim_pass: null });
     expect(toMessage({ ...row(), ...inserted()!.body[0] }).unverifiedSender).toBe(true);
@@ -467,7 +500,7 @@ describe("ingest", () => {
         from: { email: "jane@example.com", name: "Ja\ud83dne" },
         cc: [{ email: "bob@example.com", name: "B\u0000ob" }],
         attachments: [{ id: "rea_1", filename: "a\u0000.pdf", content_type: "application/pdf", size: 1 }],
-      })
+      }),
     );
     const r = inserted()!.body[0];
     expect(r).toMatchObject({ subject: "Hi there", from_name: "Jane", html_body: "<p>ab</p>", text_body: "x".repeat(158) + "😀 more", snippet: "x".repeat(158) + "…" });
@@ -530,8 +563,20 @@ describe("sync", () => {
     sbRoutes = [
       [/PATCH mail_sync\?id=eq\.inbound&or=/, () => [{ id: "inbound", cursor: db.cursor, synced_at: null, error: null }]],
       [/PATCH mail_sync\?id=eq\.inbound$/, (c) => ((db.cursor = c.body.cursor), null)],
-      [/GET mail_messages\?bird_id=in\./, (c) => ids(c).filter((id) => db.stored.has(id)).map((bird_id) => ({ bird_id }))],
-      [/GET mail_deleted\?bird_id=in\./, (c) => ids(c).filter((id) => db.deleted.has(id)).map((bird_id) => ({ bird_id }))],
+      [
+        /GET mail_messages\?bird_id=in\./,
+        (c) =>
+          ids(c)
+            .filter((id) => db.stored.has(id))
+            .map((bird_id) => ({ bird_id })),
+      ],
+      [
+        /GET mail_deleted\?bird_id=in\./,
+        (c) =>
+          ids(c)
+            .filter((id) => db.deleted.has(id))
+            .map((bird_id) => ({ bird_id })),
+      ],
       [/GET app_users/, () => [{ id: U1, mail_address: ROBERT }]],
       [/POST mail_messages/, (c) => c.body.map((r: any) => (db.stored.add(r.bird_id), db.inserts.push(r.bird_id), { id: r.bird_id }))],
     ];
@@ -551,7 +596,11 @@ describe("sync", () => {
   it("walks forward a day at a time, stores what's new oldest-first, and moves the cursor to now", async () => {
     const db = mailbox("2026-10-14T00:00:00.000Z");
     db.stored.add("rem_new");
-    const all = [inbound({ id: "rem_new", received_at: "2026-10-14T12:00:00Z" }), inbound({ id: "rem_old", received_at: "2026-10-14T11:00:00Z" }), inbound({ id: "rem_late", received_at: "2026-10-15T09:00:00Z" })];
+    const all = [
+      inbound({ id: "rem_new", received_at: "2026-10-14T12:00:00Z" }),
+      inbound({ id: "rem_old", received_at: "2026-10-14T11:00:00Z" }),
+      inbound({ id: "rem_late", received_at: "2026-10-15T09:00:00Z" }),
+    ];
     birdRoutes = [
       [/GET \/v1\/email\/inbound-messages\?/, birdList(all)],
       [/\/body$/, () => json({ html: null, text: "x" })],
@@ -778,7 +827,7 @@ describe("/api/mail", () => {
     await call("GET", { query: { view: "list", q: "sow", before: "2026-10-15T00:00:00Z", beforeId: MSG } });
     expect(sbCalls[0].path).toMatch(/&and=\(or\(occurred_at\.lt\."2026-10-15T00:00:00Z",and\(occurred_at\.eq\."2026-10-15T00:00:00Z",id\.lt\.[-0-9a-f]+\)\),or\(subject\.ilike\.\*sow\*/);
     // LIKE metacharacters in the term are escaped and typed wildcards are just wildcards.
-    expect(searchCondition('a*b%c_d\\e')).toContain(`*${encodeURIComponent("a*b\\%c\\_d\\\\e")}*`);
+    expect(searchCondition("a*b%c_d\\e")).toContain(`*${encodeURIComponent("a*b\\%c\\_d\\\\e")}*`);
     expect(searchCondition("   ")).toBe("");
   });
 
@@ -831,7 +880,10 @@ describe("/api/mail", () => {
       [/GET mail_messages\?/, () => [row({ id: "newest", thread_key: "<c@x>", read_at: "2026-10-20T00:00:00Z" }), row({ id: "solo", thread_key: "<d@x>", read_at: "2026-10-20T00:00:00Z" })]],
     ];
     const r = await call("GET", { query: { view: "list", folder: "active" } });
-    expect(r.json.messages.map((m: any) => [m.id, m.read])).toEqual([["newest", false], ["solo", true]]);
+    expect(r.json.messages.map((m: any) => [m.id, m.read])).toEqual([
+      ["newest", false],
+      ["solo", true],
+    ]);
   });
 
   it("archives whole conversations from Active, and brings them back", async () => {
@@ -894,7 +946,11 @@ describe("/api/mail", () => {
     const at = "2026-10-14T12:00:00+00:00";
     const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
     // A burst received in the same second, between an older and a newer message.
-    const db = [row({ id: id(9), occurred_at: "2026-10-14T12:00:01+00:00" }), ...[1, 2, 3, 4, 5].map((n) => row({ id: id(n), occurred_at: at })), row({ id: id(7), occurred_at: "2026-10-14T11:59:59+00:00" })];
+    const db = [
+      row({ id: id(9), occurred_at: "2026-10-14T12:00:01+00:00" }),
+      ...[1, 2, 3, 4, 5].map((n) => row({ id: id(n), occurred_at: at })),
+      row({ id: id(7), occurred_at: "2026-10-14T11:59:59+00:00" }),
+    ];
     sbRoutes = [
       [/GET mail_messages\?.*starred_at=not\.is\.null/, () => []],
       [
@@ -971,10 +1027,13 @@ describe("/api/mail", () => {
     me = owner;
     const SENT = "55555555-5555-4555-8555-555555555555";
     sbRoutes = [
-      [/GET mail_messages\?id=in\./, () => [
-        row({ attachments: [{ id: "rea_1", filename: "a", contentType: "x/y", size: 1, path: "in/rem_1/rea_1" }] }),
-        row({ id: SENT, direction: "out", folder: "sent", dedupe_key: "out:em_1", bird_id: "em_1", attachments: [{ id: "a0", filename: "b", contentType: "x/y", size: 1, path: "out/m/0-b" }] }),
-      ]],
+      [
+        /GET mail_messages\?id=in\./,
+        () => [
+          row({ attachments: [{ id: "rea_1", filename: "a", contentType: "x/y", size: 1, path: "in/rem_1/rea_1" }] }),
+          row({ id: SENT, direction: "out", folder: "sent", dedupe_key: "out:em_1", bird_id: "em_1", attachments: [{ id: "a0", filename: "b", contentType: "x/y", size: 1, path: "out/m/0-b" }] }),
+        ],
+      ],
       [/GET mail_messages\?attachments=cs\.\[\{"path":"in\/rem_1\/rea_1"\}\]/, () => [{ id: "copy" }]],
     ];
     expect(await call("POST", { body: { action: "delete", ids: [MSG, SENT] } })).toEqual({ status: 200, json: { ok: true } });
@@ -997,14 +1056,20 @@ describe("/api/mail", () => {
       sbRoutes = [
         [/GET mail_aliases\?user_id=eq\./, () => aliases.map((a) => ({ address: a.address }))],
         [/GET app_users\?mail_address=eq\./, (c) => (c.path.includes("claire") ? [{ id: U2 }] : [])],
-        [/POST mail_aliases$/, (c) => {
-          aliases.push(...c.body);
-          return null;
-        }],
-        [/DELETE mail_aliases\?/, (c) => {
-          aliases = aliases.filter((a) => !decodeURIComponent(c.path).includes(a.address));
-          return null;
-        }],
+        [
+          /POST mail_aliases$/,
+          (c) => {
+            aliases.push(...c.body);
+            return null;
+          },
+        ],
+        [
+          /DELETE mail_aliases\?/,
+          (c) => {
+            aliases = aliases.filter((a) => !decodeURIComponent(c.path).includes(a.address));
+            return null;
+          },
+        ],
       ];
     });
 
@@ -1081,7 +1146,10 @@ describe("/api/mail", () => {
       unreadTotal = 201; // this send's own reservation included
       expect(await send()).toMatchObject({ status: 400, json: { error: "too_many_sends" } });
       const [held] = reservations();
-      expect(held).toMatchObject({ path: "mail_sends?on_conflict=user_id,send_id", body: { user_id: U1, send_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/) } });
+      expect(held).toMatchObject({
+        path: "mail_sends?on_conflict=user_id,send_id",
+        body: { user_id: U1, send_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/) },
+      });
       expect(held.prefer).toContain("resolution=ignore-duplicates");
       // Reserved before counting, so parallel sends can't all slip under the limit.
       expect(sbCalls.indexOf(held)).toBeLessThan(sbCalls.findIndex((c) => c.method === "COUNT"));
@@ -1129,8 +1197,15 @@ describe("/api/mail", () => {
       const stored = storedCopy()!;
       expect(stored.prefer).toContain("resolution=ignore-duplicates");
       expect(stored.body).toMatchObject({
-        user_id: U1, dedupe_key: "out:em_1", folder: "sent", direction: "out", bird_id: "em_1", status: "accepted",
-        in_reply_to: "<orig@example.com>", references_ids: ["<root@example.com>", "<orig@example.com>"], to_addrs: [{ email: "jane@example.com" }],
+        user_id: U1,
+        dedupe_key: "out:em_1",
+        folder: "sent",
+        direction: "out",
+        bird_id: "em_1",
+        status: "accepted",
+        in_reply_to: "<orig@example.com>",
+        references_ids: ["<root@example.com>", "<orig@example.com>"],
+        to_addrs: [{ email: "jane@example.com" }],
       });
       expect(stored.body.read_at).toBeTruthy();
       expect(r.json.message).toMatchObject({ folder: "sent", direction: "out", read: true, subject: "Re: Hello", to: [{ email: "jane@example.com" }] });

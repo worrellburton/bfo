@@ -187,16 +187,24 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
         <div className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${t.muted}`}>
           {remoteImages &&
             (images ? (
-              <TextButton className={touch} onClick={() => setImages(false)}>Hide images</TextButton>
+              <TextButton className={touch} onClick={() => setImages(false)}>
+                Hide images
+              </TextButton>
             ) : (
               <>
                 Images hidden
                 <span aria-hidden="true">·</span>
-                <TextButton className={touch} onClick={() => setImages(true)}>Show images</TextButton>
+                <TextButton className={touch} onClick={() => setImages(true)}>
+                  Show images
+                </TextButton>
               </>
             ))}
           {remoteImages && t.dark && <span aria-hidden="true">·</span>}
-          {t.dark && <TextButton className={touch} onClick={() => setOriginal((o) => !o)}>{original ? "Dark colors" : "Original colors"}</TextButton>}
+          {t.dark && (
+            <TextButton className={touch} onClick={() => setOriginal((o) => !o)}>
+              {original ? "Dark colors" : "Original colors"}
+            </TextButton>
+          )}
         </div>
       )}
       <div className={`overflow-hidden rounded-xl border ${t.dark ? "border-white/[0.07]" : "border-gray-200"}`}>

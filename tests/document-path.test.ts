@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  assetPathSegment,
-  documentAssetId,
-  documentStoragePath,
-  isDocumentPath,
-  readableEntity,
-  recordReferencesPath,
-  storagePathOf,
-} from "../lib/document-path";
+import { assetPathSegment, documentAssetId, documentStoragePath, isDocumentPath, readableEntity, recordReferencesPath, storagePathOf } from "../lib/document-path";
 
 const SB = "https://abc.supabase.co";
 const P = "assets/-Nx1/1700000000000-Operating_Agreement.pdf";

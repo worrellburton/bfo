@@ -14,16 +14,16 @@ export function ThemeButton({ dark, onToggle, className = "", iconClassName = "h
       className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 ${className}`}
     >
       <span key={dark ? "sun" : "moon"} className="theme-icon-in inline-flex">
-      {dark ? (
-        <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2.5v2M12 19.5v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2.5 12h2M19.5 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-        </svg>
-      ) : (
-        <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M20.5 14.5A8.5 8.5 0 019.5 3.5a8.5 8.5 0 1011 11z" />
-        </svg>
-      )}
+        {dark ? (
+          <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2.5v2M12 19.5v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2.5 12h2M19.5 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.5 14.5A8.5 8.5 0 019.5 3.5a8.5 8.5 0 1011 11z" />
+          </svg>
+        )}
       </span>
     </button>
   );
@@ -91,9 +91,7 @@ export function Segmented<K extends string>({
             onClick={() => onChange(o.key)}
             className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[9px] text-[12px] font-medium transition-colors max-sm:h-[38px] max-sm:text-[13.5px] md:pointer-coarse:h-[36px] ${
               stretch ? "flex-1 justify-center px-2" : iconsOnly ? "w-7 justify-center max-sm:w-[40px] md:pointer-coarse:w-[40px]" : "px-2.5 max-sm:px-3 md:pointer-coarse:px-3"
-            } ${
-              on ? (t.dark ? "bg-white/[0.1] text-white shadow-sm" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"
-            }`}
+            } ${on ? (t.dark ? "bg-white/[0.1] text-white shadow-sm" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"}`}
           >
             {o.icon}
             {!iconsOnly && o.label}
@@ -115,7 +113,12 @@ export function SearchField({ value, onSearch, className = "" }: { value: string
   const timer = useRef<number | null>(null);
   // Back/forward or a cleared search: the box follows the URL.
   useEffect(() => setTerm(value), [value]);
-  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    },
+    [],
+  );
   function change(next: string) {
     setTerm(next);
     if (timer.current) window.clearTimeout(timer.current);
@@ -212,11 +215,7 @@ export function SelectBox({ on, mixed = false, onToggle, label, className = "" }
         }`}
       >
         <svg viewBox="0 0 12 12" className="h-[9px] w-[9px]" fill="none" stroke="white" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          {mixed ? (
-            <path d="M3 6h6" />
-          ) : (
-            <path d="M2.5 6.3l2.3 2.3 4.7-5" style={{ strokeDasharray: 12, strokeDashoffset: on ? 0 : 12, transition: "stroke-dashoffset 220ms ease 60ms" }} />
-          )}
+          {mixed ? <path d="M3 6h6" /> : <path d="M2.5 6.3l2.3 2.3 4.7-5" style={{ strokeDasharray: 12, strokeDashoffset: on ? 0 : 12, transition: "stroke-dashoffset 220ms ease 60ms" }} />}
         </svg>
       </span>
     </button>
@@ -271,4 +270,3 @@ export function ReadingProgress() {
   if (pct <= 0) return null;
   return <div aria-hidden="true" className="read-progress md:hidden" style={{ width: `${pct}%`, top: "env(safe-area-inset-top)" }} />;
 }
-

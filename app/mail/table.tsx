@@ -88,9 +88,13 @@ export function MailTable({
               }}
               className={`group cursor-pointer transition-colors duration-150 ${
                 on
-                  ? t.dark ? "bg-(--mail-accent-deep)/[0.13] hover:bg-(--mail-accent-deep)/[0.17]" : "bg-(--mail-accent-deep)/10 hover:bg-(--mail-accent-deep)/15"
+                  ? t.dark
+                    ? "bg-(--mail-accent-deep)/[0.13] hover:bg-(--mail-accent-deep)/[0.17]"
+                    : "bg-(--mail-accent-deep)/10 hover:bg-(--mail-accent-deep)/15"
                   : unread
-                    ? t.dark ? "bg-(--mail-accent-deep)/[0.09] hover:bg-(--mail-accent-deep)/[0.14]" : "bg-(--mail-accent-deep)/[0.055] hover:bg-(--mail-accent-deep)/[0.09]"
+                    ? t.dark
+                      ? "bg-(--mail-accent-deep)/[0.09] hover:bg-(--mail-accent-deep)/[0.14]"
+                      : "bg-(--mail-accent-deep)/[0.055] hover:bg-(--mail-accent-deep)/[0.09]"
                     : t.hover
               } focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
             >
@@ -110,7 +114,9 @@ export function MailTable({
               <td className={`px-1 py-2.5 align-middle ${t.muted}`}>
                 {m.attachmentCount > 0 && <FileKindIcons kinds={m.attachmentKinds?.length ? m.attachmentKinds : ["file"]} count={m.attachmentCount} className="h-4 w-4" />}
               </td>
-              <td className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? `font-semibold ${t.dark ? "text-(--mail-accent)" : "text-(--mail-accent-ink)"}` : t.muted}`}>
+              <td
+                className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? `font-semibold ${t.dark ? "text-(--mail-accent)" : "text-(--mail-accent-ink)"}` : t.muted}`}
+              >
                 <time dateTime={m.occurredAt} title={fullDate(m.occurredAt)}>
                   {listDate(m.occurredAt)}
                 </time>

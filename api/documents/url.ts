@@ -40,7 +40,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!row || !recordReferencesPath(row.data, path)) return fail(res, 403, "forbidden");
     }
 
-    const download = param(req, "download").replace(/[\u0000-\u001f\u007f"\\/]+/g, " ").trim().slice(0, 200) || undefined;
+    const download =
+      param(req, "download")
+        .replace(/[\u0000-\u001f\u007f"\\/]+/g, " ")
+        .trim()
+        .slice(0, 200) || undefined;
     const url = await storageSignedUrl(path, SIGNED_URL_TTL_S, DOCUMENTS_BUCKET, download);
     if (!url) return fail(res, 404, "not_found");
     return res.status(200).json({ url, expiresIn: SIGNED_URL_TTL_S });

@@ -8,7 +8,19 @@ import { authFetch } from "./auth";
 import { stateCode } from "./entity-paperwork";
 import type { FormationState } from "./formation";
 import type { RaSnapshot } from "../lib/palm-agent";
-import { activeConfirmation, effectiveRecord, normalizeName, pickRegistryMatch, sameAddressText, toStateRecord, type PalmAddress, type PalmMode, type RegistryRecord, type StateConfirmation, type StateRecord } from "../lib/registry";
+import {
+  activeConfirmation,
+  effectiveRecord,
+  normalizeName,
+  pickRegistryMatch,
+  sameAddressText,
+  toStateRecord,
+  type PalmAddress,
+  type PalmMode,
+  type RegistryRecord,
+  type StateConfirmation,
+  type StateRecord,
+} from "../lib/registry";
 
 export type { PalmAddress, PalmMode, RegistryRecord, StateConfirmation, StateRecord } from "../lib/registry";
 export { DOC_LABEL, docKindOf } from "../lib/palm-docs";
@@ -71,7 +83,10 @@ export function stateFindings(
   if (confirmed) {
     const said = [palmRec.status && palmRec.status !== "active" ? palmRec.status : null, palmRec.standing?.registration === "not_compliant" ? "not in good standing" : null].filter(Boolean).join(", ");
     const when = new Date(confirmed.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    out.push({ tone: "info", text: `Active and in good standing on the state's own site (confirmed ${when}${confirmed.by ? ` by ${confirmed.by}` : ""}${confirmed.note ? `: ${confirmed.note}` : ""}). Palm's copy still says ${said}; it's behind the state.` });
+    out.push({
+      tone: "info",
+      text: `Active and in good standing on the state's own site (confirmed ${when}${confirmed.by ? ` by ${confirmed.by}` : ""}${confirmed.note ? `: ${confirmed.note}` : ""}). Palm's copy still says ${said}; it's behind the state.`,
+    });
   }
   if (rec.status && rec.status !== "active") out.push({ tone: "bad", text: `The state lists it as ${rec.status}, not active.` });
   const s = rec.standing ?? {};
@@ -104,8 +119,6 @@ export const RA_STATUS: Record<NonNullable<RaService["status"]>, { label: string
   canceled: { label: "Canceled", tone: "muted" },
 };
 
-
-
 export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
   const rank = (d: PalmDocument) => (docKindOf(d) === "service_of_process" ? 0 : docKindOf(d) === "notice" ? 1 : 2);
   return [...docs].sort((a, b) => rank(a) - rank(b) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
@@ -117,10 +130,7 @@ export function sortDocuments(docs: PalmDocument[]): PalmDocument[] {
  * matched more than one or none exactly, or why it couldn't be read.
  * `choice` is the registry entry the user picked from that list.
  */
-type StateLookup =
-  | { kind: "record"; record: StateRecord; patch: Record<string, unknown> }
-  | { kind: "choices"; results: RegistryRecord[]; message?: string }
-  | { kind: "error"; message: string };
+type StateLookup = { kind: "record"; record: StateRecord; patch: Record<string, unknown> } | { kind: "choices"; results: RegistryRecord[]; message?: string } | { kind: "error"; message: string };
 
 export async function lookupStateRecord(
   entity: { name: string; state?: string; fileNumber?: string; registeredAgent?: string; registeredAgentAddress?: string; assetId?: string },
@@ -157,7 +167,12 @@ export async function lookupStateRecord(
   const patch: Record<string, unknown> = { stateRecord: JSON.parse(JSON.stringify(snapshot)) };
   if (mode === "live" && !entity.fileNumber && snapshot.registrationNumber) patch.fileNumber = snapshot.registrationNumber;
   // The agent's street address, as the state has it, when ours is blank and it's the same agent.
-  if (mode === "live" && !entity.registeredAgentAddress?.trim() && snapshot.agentAddress && (!entity.registeredAgent || normalizeName(entity.registeredAgent) === normalizeName(snapshot.agent ?? ""))) {
+  if (
+    mode === "live" &&
+    !entity.registeredAgentAddress?.trim() &&
+    snapshot.agentAddress &&
+    (!entity.registeredAgent || normalizeName(entity.registeredAgent) === normalizeName(snapshot.agent ?? ""))
+  ) {
     patch.registeredAgentAddress = snapshot.agentAddress;
     if (!entity.registeredAgent && snapshot.agent) patch.registeredAgent = snapshot.agent;
   }
@@ -168,7 +183,11 @@ export class PalmUnavailable extends Error {}
 
 /** A refused Palm action, with the server's error code (e.g. "mode_changed", "business_mismatch"). */
 export class PalmCallError extends Error {
-  constructor(message: string, public code?: string, public status?: number) {
+  constructor(
+    message: string,
+    public code?: string,
+    public status?: number,
+  ) {
     super(message);
   }
 }

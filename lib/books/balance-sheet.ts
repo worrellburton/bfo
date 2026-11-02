@@ -23,9 +23,7 @@ export async function balanceSheetReport(query: Query): Promise<Reply> {
     hidden: boolean;
     archived_at: string | null;
   }>("plaid_account_prefs?select=*&archived_at=is.null");
-  const states = await fetchAll<{ account_id: string; balance: number | null; seen_at: string }>(
-    "plaid_account_state?select=account_id,balance,seen_at"
-  );
+  const states = await fetchAll<{ account_id: string; balance: number | null; seen_at: string }>("plaid_account_state?select=account_id,balance,seen_at");
   const stateBy = new Map(states.map((st) => [st.account_id, st]));
 
   const INVESTISH = /ira|brokerage|trust|401|403|roth|529|pension|annuity|mutual/i;
@@ -50,9 +48,7 @@ export async function balanceSheetReport(query: Query): Promise<Reply> {
 
     const subtype = (id.subtype ?? "").toLowerCase();
     const label = id.entity_name || id.nickname || id.account_name || "Account";
-    const detailBits = [id.institution_name, id.mask ? `····${id.mask}` : null, id.subtype]
-      .filter(Boolean)
-      .join(" · ");
+    const detailBits = [id.institution_name, id.mask ? `····${id.mask}` : null, id.subtype].filter(Boolean).join(" · ");
     const row: Row = { label, detail: detailBits, balance: Number(st.balance) };
 
     if (LIABILITY.test(subtype)) credit.push(row);

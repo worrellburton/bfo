@@ -38,7 +38,11 @@ export default function ToolsSignatures() {
     void load();
   }, [load]);
   // Statuses change as people sign; refresh while anything is still out.
-  usePoll(load, 15000, (rows ?? []).some((r) => isOpen(r.status)));
+  usePoll(
+    load,
+    15000,
+    (rows ?? []).some((r) => isOpen(r.status)),
+  );
 
   const t2 = isDark ? "text-gray-400" : "text-gray-600";
   const t3 = isDark ? "text-gray-500" : "text-gray-400";
@@ -71,7 +75,11 @@ export default function ToolsSignatures() {
     setBusy("new");
     setError("");
     try {
-      const title = file.name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim() || "Document";
+      const title =
+        file.name
+          .replace(/\.pdf$/i, "")
+          .replace(/[_-]+/g, " ")
+          .trim() || "Document";
       const created = await signApi.act("create", { title, parties: [{ role: "Party A" }, { role: "Party B" }] });
       await signApi.attach(created.id, file);
       navigate(`/tools/signatures/${created.id}`);
@@ -99,7 +107,16 @@ export default function ToolsSignatures() {
         if (action === "void" && !(await confirmDialog({ title: `Void "${r.title}"?`, message: "The signing links stop working. Nobody is told.", tone: "danger", confirmLabel: "Void" }))) return;
         const next = await signApi.act(action, { id: r.id });
         setRows((cur) => (cur ?? []).map((x) => (x.id === next.id ? next : x)));
-        setNote(action === "remind" ? `Reminded ${next.parties.filter((p) => p.status !== "signed").map((p) => p.name).join(" and ")}.` : action === "send-copy" ? `Sent the signed copy to ${next.parties.map((p) => p.name).join(" and ")}.` : "Voided.");
+        setNote(
+          action === "remind"
+            ? `Reminded ${next.parties
+                .filter((p) => p.status !== "signed")
+                .map((p) => p.name)
+                .join(" and ")}.`
+            : action === "send-copy"
+              ? `Sent the signed copy to ${next.parties.map((p) => p.name).join(" and ")}.`
+              : "Voided.",
+        );
       }
     } catch (err) {
       tab?.close();
@@ -170,7 +187,8 @@ export default function ToolsSignatures() {
       </ul>
     );
 
-  const empty = rows === null ? "Loading…" : shown.length === 0 ? (rows.length === 0 ? "Nothing sent for signature yet. Drop a PDF above, or open an MSA and request a signature." : "Nothing here.") : "";
+  const empty =
+    rows === null ? "Loading…" : shown.length === 0 ? (rows.length === 0 ? "Nothing sent for signature yet. Drop a PDF above, or open an MSA and request a signature." : "Nothing here.") : "";
 
   return (
     <div className="mx-auto max-w-[1400px] pb-16">
@@ -198,7 +216,13 @@ export default function ToolsSignatures() {
             onClick={() => setFilter(f)}
             aria-pressed={filter === f}
             className={`h-8 max-md:h-[44px] md:pointer-coarse:h-[44px] rounded-full px-3.5 text-[12px] font-medium transition-colors ${
-              filter === f ? (isDark ? "bg-white text-black" : "bg-gray-900 text-white") : isDark ? "bg-white/[0.05] text-gray-300 hover:bg-white/10" : "bg-black/[0.04] text-gray-600 hover:bg-black/[0.08]"
+              filter === f
+                ? isDark
+                  ? "bg-white text-black"
+                  : "bg-gray-900 text-white"
+                : isDark
+                  ? "bg-white/[0.05] text-gray-300 hover:bg-white/10"
+                  : "bg-black/[0.04] text-gray-600 hover:bg-black/[0.08]"
             }`}
           >
             {f === "all" ? "All" : f === "waiting" ? "Waiting" : f === "signed" ? "Signed" : "Drafts"} {counts[f]}
@@ -315,7 +339,14 @@ export function PartyDot({ status }: { status: SignatureRequest["parties"][numbe
   return <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${c}`} />;
 }
 
-export function Small({ children, isDark, primary, danger, className = "", ...rest }: { children: React.ReactNode; isDark: boolean; primary?: boolean; danger?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function Small({
+  children,
+  isDark,
+  primary,
+  danger,
+  className = "",
+  ...rest
+}: { children: React.ReactNode; isDark: boolean; primary?: boolean; danger?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const tone = primary
     ? isDark
       ? "bg-white text-black hover:bg-gray-200"
@@ -329,7 +360,11 @@ export function Small({ children, isDark, primary, danger, className = "", ...re
         : "bg-black/[0.04] text-gray-700 hover:bg-black/[0.08]";
   return (
     // A finger-sized target on a phone or a touch screen (an iPad).
-    <button type="button" {...rest} className={`h-7 max-md:h-[44px] max-md:px-3.5 max-md:text-[14px] md:pointer-coarse:h-[44px] cursor-pointer whitespace-nowrap rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${tone} ${className}`}>
+    <button
+      type="button"
+      {...rest}
+      className={`h-7 max-md:h-[44px] max-md:px-3.5 max-md:text-[14px] md:pointer-coarse:h-[44px] cursor-pointer whitespace-nowrap rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${tone} ${className}`}
+    >
       {children}
     </button>
   );

@@ -1,16 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import {
-  currentUser,
-  fail,
-  guard,
-  handleError,
-  normalizeIdentifier,
-  publicUser,
-  sb,
-  verifyCheck,
-  verifyStart,
-  type AppUser,
-} from "../../lib/auth.js";
+import { currentUser, fail, guard, handleError, normalizeIdentifier, publicUser, sb, verifyCheck, verifyStart, type AppUser } from "../../lib/auth.js";
 
 /**
  * Every account needs both an email and a phone number ("Email only" members
@@ -48,17 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const column = identifier.kind === "phone" ? "phone" : "email";
     if (me[column]) {
-      return fail(
-        res,
-        400,
-        "already_set",
-        column === "phone" ? "Your account already has a phone number." : "Your account already has an email."
-      );
+      return fail(res, 400, "already_set", column === "phone" ? "Your account already has a phone number." : "Your account already has an email.");
     }
 
-    const clash = await sb<Array<{ id: string }>>(
-      `app_users?${column}=eq.${encodeURIComponent(identifier.value)}&id=neq.${me.id}&select=id&limit=1`
-    );
+    const clash = await sb<Array<{ id: string }>>(`app_users?${column}=eq.${encodeURIComponent(identifier.value)}&id=neq.${me.id}&select=id&limit=1`);
     if (clash?.[0]) {
       return fail(res, 409, "already_exists", "That's already attached to another user.");
     }

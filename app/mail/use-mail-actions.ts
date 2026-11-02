@@ -33,7 +33,31 @@ type Deps = {
 };
 
 /** Archive, delete, star, unread, undo and the rest: each changes the list and the open message at once, with a toast. */
-export function useMailActions({ folder, filter, q, cache, listRef, setList, setListError, loadList, refreshActive, patchRow, setOpen, thread, setThread, setFreshId, setDraft, setToast, setToastState, closeMessage, setParams, openIdRef, navStateRef, queryRef, mountedRef }: Deps) {
+export function useMailActions({
+  folder,
+  filter,
+  q,
+  cache,
+  listRef,
+  setList,
+  setListError,
+  loadList,
+  refreshActive,
+  patchRow,
+  setOpen,
+  thread,
+  setThread,
+  setFreshId,
+  setDraft,
+  setToast,
+  setToastState,
+  closeMessage,
+  setParams,
+  openIdRef,
+  navStateRef,
+  queryRef,
+  mountedRef,
+}: Deps) {
   function dropFromList(id: string) {
     // The one after it (or before, at the end), to open in its place, as Gmail does after an archive.
     const all = listRows(listRef.current);

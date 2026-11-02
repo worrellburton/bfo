@@ -12,20 +12,10 @@ import { ok, type BookTxn, type Pref, type Query, type Reply } from "./types.js"
  */
 
 /** The year's posted rows for the selected entities, hidden accounts excluded, stamped with live entities. */
-async function yearRows(
-  year: string,
-  prefs: Map<string, Pref>,
-  selection: string[] | null,
-  order: string
-): Promise<BookTxn[]> {
+async function yearRows(year: string, prefs: Map<string, Pref>, selection: string[] | null, order: string): Promise<BookTxn[]> {
   return withLiveEntity(
-    await fetchAll<BookTxn>(
-      `book_transactions?select=*&pending=eq.false` +
-        `&date=gte.${year}-01-01&date=lte.${year}-12-31` +
-        scopeFilter(prefs, selection) +
-        `&order=${order}`
-    ),
-    prefs
+    await fetchAll<BookTxn>(`book_transactions?select=*&pending=eq.false` + `&date=gte.${year}-01-01&date=lte.${year}-12-31` + scopeFilter(prefs, selection) + `&order=${order}`),
+    prefs,
   );
 }
 
@@ -41,9 +31,7 @@ export async function pnlReport(query: Query, report: "pnl" | "cell"): Promise<R
   const rows = await yearRows(year, prefs, selection, "date.asc,transaction_id.asc");
 
   const monthOf = (d: string) => Number(d.slice(5, 7)) - 1;
-  const loanNames = new Map(
-    (await fetchAll<{ id: string; name: string }>("book_loans?select=id,name")).map((l) => [l.id, l.name])
-  );
+  const loanNames = new Map((await fetchAll<{ id: string; name: string }>("book_loans?select=id,name")).map((l) => [l.id, l.name]));
   const rowLabel = (t: BookTxn) => (t.loan_id ? `${loanNames.get(t.loan_id) ?? "Loan"} (loan)` : label(t));
 
   // Which income-statement group a 'normal' row lands in: its account's
@@ -72,10 +60,7 @@ export async function pnlReport(query: Query, report: "pnl" | "cell"): Promise<R
         }
         if (section === "net") return eff === "normal" && !flowAcct(t);
         if (section === "transfers") {
-          return (
-            (eff === "transfer" || eff === "loan" || (eff === "normal" && flowAcct(t))) &&
-            (!wantLabel || rowLabel(t) === wantLabel)
-          );
+          return (eff === "transfer" || eff === "loan" || (eff === "normal" && flowAcct(t))) && (!wantLabel || rowLabel(t) === wantLabel);
         }
         if (section === "intercompany") {
           return eff === "intercompany" && !eliminatedIn(t, selection, (id) => prefs.get(id)?.entity_id);
@@ -88,9 +73,9 @@ export async function pnlReport(query: Query, report: "pnl" | "cell"): Promise<R
 
   // ── The P&L matrix itself — grouped into GAAP statement sections ──────
   const zeros = () => Array(12).fill(0) as number[];
-  const revenue = new Map<string, number[]>();   // inflows positive
+  const revenue = new Map<string, number[]>(); // inflows positive
   const operating = new Map<string, number[]>(); // outflows positive (expense)
-  const other = new Map<string, number[]>();      // 7000s: outflows positive
+  const other = new Map<string, number[]>(); // 7000s: outflows positive
   const transferCats = new Map<string, number[]>(); // net by category
   const transfersIn = zeros();
   const transfersOut = zeros();
@@ -145,8 +130,7 @@ export async function pnlReport(query: Query, report: "pnl" | "cell"): Promise<R
   const revenueRows = toRows(revenue);
   const operatingRows = toRows(operating);
   const otherRows = toRows(other);
-  const sumMonthly = (rs: Array<{ monthly: number[] }>) =>
-    zeros().map((_, m) => rs.reduce((s, r) => s + r.monthly[m], 0));
+  const sumMonthly = (rs: Array<{ monthly: number[] }>) => zeros().map((_, m) => rs.reduce((s, r) => s + r.monthly[m], 0));
   const revenueMonthly = sumMonthly(revenueRows);
   const operatingMonthly = sumMonthly(operatingRows);
   const otherMonthly = sumMonthly(otherRows);
@@ -198,7 +182,8 @@ export async function statementsReport(query: Query): Promise<Reply> {
   for (const t of rows) {
     const acct = label(t);
     const a = accounts.get(acct) ?? { debit: 0, credit: 0 };
-    if (t.amount > 0) a.debit += t.amount; else a.credit += -t.amount;
+    if (t.amount > 0) a.debit += t.amount;
+    else a.credit += -t.amount;
     accounts.set(acct, a);
 
     const sec = sectionOf(acct);
@@ -310,8 +295,6 @@ export async function vendorsReport(query: Query): Promise<Reply> {
 
   return ok({
     year: Number(year),
-    vendors: [...vendors.values()]
-      .map((v) => ({ ...v, entities: [...v.entities].sort() }))
-      .sort((a, b) => b.spent - a.spent),
+    vendors: [...vendors.values()].map((v) => ({ ...v, entities: [...v.entities].sort() })).sort((a, b) => b.spent - a.spent),
   });
 }

@@ -187,10 +187,7 @@ describe("signing", () => {
     readsExpected = 2;
     gated = 2;
     const view: any = { statusCode: 200, setHeader: () => view, status: (c: number) => ((view.statusCode = c), view), json: (b: unknown) => ((view.body = b), view), end: () => view };
-    await Promise.all([
-      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }),
-      handler({ method: "GET", query: { token: tokenB }, headers: {} } as any, view),
-    ]);
+    await Promise.all([call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }), handler({ method: "GET", query: { token: tokenB }, headers: {} } as any, view)]);
     expect(row.parties[0].status).toBe("signed");
   });
 });

@@ -99,12 +99,22 @@ const PO_BOX = /\b(p\.?\s*o\.?\s*box|post office box|pmb|private mail ?box|box\s
 /** A mailbox store or virtual mailbox: fine for mail, never for an agent. */
 const MAILBOX = /\b(pmb|#\s*\d{5,}|ste\.?\s*\d{5,}|suite\s*\d{5,})\b/i;
 
-const norm = (s?: string | null) => (s ?? "").toLowerCase().replace(/[.,]/g, "").replace(/\b(llc|inc|corp|corporation|company|co|ltd)\b/g, "").replace(/\s+/g, " ").trim();
+const norm = (s?: string | null) =>
+  (s ?? "")
+    .toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\b(llc|inc|corp|corporation|company|co|ltd)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 /** The states that need a foreign registration: where it's run from, plus any already on record. */
 export function foreignStates(a: AddressInput): string[] {
   const home = stateCode(a.state);
-  const out = new Set(Object.entries(a.foreign ?? {}).filter(([c, f]) => c !== home && !f?.notNeeded).map(([c]) => c));
+  const out = new Set(
+    Object.entries(a.foreign ?? {})
+      .filter(([c, f]) => c !== home && !f?.notNeeded)
+      .map(([c]) => c),
+  );
   const host = hostState(a);
   if (home && host && host !== home) out.add(host);
   return [...out].sort();
@@ -114,12 +124,16 @@ function agentChecks(line: Omit<AgentLine, "checks">): Check[] {
   const where = line.stateLabel || line.state;
   const out: Check[] = [];
   if (!line.name) {
-    out.push({ tone: "bad", text: line.home ? `No ${line.term.toLowerCase()} on record. Every entity must keep one in ${where}.` : `${where} needs a ${line.term.toLowerCase()} before it can register there.` });
+    out.push({
+      tone: "bad",
+      text: line.home ? `No ${line.term.toLowerCase()} on record. Every entity must keep one in ${where}.` : `${where} needs a ${line.term.toLowerCase()} before it can register there.`,
+    });
   } else if (!line.address) {
     out.push({ tone: "warn", text: line.palm ? "Palm's address appears once Palm reports it: refresh on Compliance." : `Add the agent's street address in ${where}.` });
   }
   if (line.address) {
-    if (PO_BOX.test(line.address) || MAILBOX.test(line.address)) out.push({ tone: "bad", text: "An agent's address must be a street address where papers can be handed over, not a PO box or mailbox." });
+    if (PO_BOX.test(line.address) || MAILBOX.test(line.address))
+      out.push({ tone: "bad", text: "An agent's address must be a street address where papers can be handed over, not a PO box or mailbox." });
     const at = addressState(line.address);
     if (at && at !== line.state) out.push({ tone: "bad", text: `The agent's address is in ${stateName(at)}; it must be in ${where}.` });
   }
@@ -176,13 +190,19 @@ export function entityAddresses(a: AddressInput): Addresses {
     if (forming?.palmAgent && !base.name) Object.assign(base, { name: "Palm", palm: true });
     const homeMiss = !rec && !forming ? a.registryMiss?.[home] : undefined;
     const homeLead: Check[] = homeMiss
-      ? [{ tone: "warn", text: `${base.stateLabel}'s registry had ${homeMiss.outcome === "not_found" ? "no entry" : "more than one entry"} for this name (checked ${new Date(homeMiss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}). Add the state file number under Edit, unless it's still being formed.` }]
+      ? [
+          {
+            tone: "warn",
+            text: `${base.stateLabel}'s registry had ${homeMiss.outcome === "not_found" ? "no entry" : "more than one entry"} for this name (checked ${new Date(homeMiss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}). Add the state file number under Edit, unless it's still being formed.`,
+          },
+        ]
       : [];
     agents.push({
       ...base,
-      checks: forming?.palmAgent && base.palm
-        ? [{ tone: "info", text: `Palm becomes the registered agent when ${base.stateLabel} approves the formation; its address shows then.` }]
-        : [...homeLead, ...agentChecks(base)],
+      checks:
+        forming?.palmAgent && base.palm
+          ? [{ tone: "info", text: `Palm becomes the registered agent when ${base.stateLabel} approves the formation; its address shows then.` }]
+          : [...homeLead, ...agentChecks(base)],
     });
     for (const code of foreignStates(a)) {
       const f = a.foreign?.[code] ?? {};
@@ -203,7 +223,10 @@ export function entityAddresses(a: AddressInput): Addresses {
       const lead: Check[] = miss
         ? [
             miss.outcome === "not_found"
-              ? { tone: "bad", text: `Not registered in ${line.stateLabel}: its registry had no entry for this name (checked ${when}). File the foreign registration, or add the file number under Edit if it is registered.` }
+              ? {
+                  tone: "bad",
+                  text: `Not registered in ${line.stateLabel}: its registry had no entry for this name (checked ${when}). File the foreign registration, or add the file number under Edit if it is registered.`,
+                }
               : { tone: "warn", text: `${line.stateLabel}'s registry has more than one entry like this name (checked ${when}). Add the file number under Edit.` },
           ]
         : [];
@@ -211,7 +234,12 @@ export function entityAddresses(a: AddressInput): Addresses {
       agents.push({
         ...line,
         checks: line.ask
-          ? [{ tone: "warn", text: `Its address is in ${line.stateLabel}. If it does business there (an office, staff, patients or customers, operating property), it must register there as a foreign ${what}, with a ${line.term.toLowerCase()} in ${line.stateLabel}. If ${line.stateLabel} is only where its mail goes, it doesn't.` }]
+          ? [
+              {
+                tone: "warn",
+                text: `Its address is in ${line.stateLabel}. If it does business there (an office, staff, patients or customers, operating property), it must register there as a foreign ${what}, with a ${line.term.toLowerCase()} in ${line.stateLabel}. If ${line.stateLabel} is only where its mail goes, it doesn't.`,
+              },
+            ]
           : [...lead, ...agentChecks(line)],
       });
     }
@@ -230,7 +258,10 @@ export function entityAddresses(a: AddressInput): Addresses {
     principal: { value: principal, checks: pChecks },
     mailing: { value: mailingOwn ?? principal, same: !mailingOwn, checks: mChecks },
     agents,
-    notNeeded: Object.entries(a.foreign ?? {}).filter(([, f]) => f?.notNeeded).map(([c]) => c).sort(),
+    notNeeded: Object.entries(a.foreign ?? {})
+      .filter(([, f]) => f?.notNeeded)
+      .map(([c]) => c)
+      .sort(),
     gaps,
   };
 }

@@ -67,10 +67,7 @@ export function sbFetch(path: string, init: RequestInit = {}): Promise<Response>
   });
 }
 
-export async function sb<T = any>(
-  path: string,
-  init: { method?: string; body?: unknown; prefer?: string } = {}
-): Promise<T> {
+export async function sb<T = any>(path: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<T> {
   const res = await sbFetch(path, {
     method: init.method ?? "GET",
     ...(init.prefer ? { headers: { Prefer: init.prefer } } : {}),
@@ -133,7 +130,9 @@ export function formatPhone(e164: string | null): string {
 type Identifier = { kind: "phone" | "email"; value: string };
 
 export function normalizeEmail(raw: string): string | null {
-  const value = String(raw ?? "").trim().toLowerCase();
+  const value = String(raw ?? "")
+    .trim()
+    .toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value) ? value : null;
 }
 
@@ -222,10 +221,7 @@ export async function birdWorkspace(): Promise<string> {
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 200);
     if (res.status === 401) {
-      throw new ConfigError(
-        "Bird rejected the access key (401). Create the key under Settings → Security → " +
-          "Access Keys with the \"Application Developer\" role, then redeploy."
-      );
+      throw new ConfigError("Bird rejected the access key (401). Create the key under Settings → Security → " + 'Access Keys with the "Application Developer" role, then redeploy.');
     }
     throw new ConfigError(`Couldn't list Bird workspaces (${res.status}): ${detail}`);
   }
@@ -248,15 +244,13 @@ async function listChannels(): Promise<BirdChannel[]> {
     const detail = (await res.text()).slice(0, 200);
     console.error(`bird channels ${res.status} (workspace ${workspaceId}): ${detail}`);
     if (res.status === 401) {
-      throw new ConfigError(
-        "Bird rejected the access key (401). It needs the \"Application Developer\" role."
-      );
+      throw new ConfigError('Bird rejected the access key (401). It needs the "Application Developer" role.');
     }
     if (res.status === 404) {
       throw new ConfigError(
         "This Bird key can send but can't list channels — its scopes cover the sms/emails " +
           "products, not channel management. Set BIRD_SMS_CHANNEL_ID and BIRD_EMAIL_CHANNEL_ID " +
-          "(from the channel's URL in the Bird dashboard) and discovery is skipped entirely."
+          "(from the channel's URL in the Bird dashboard) and discovery is skipped entirely.",
       );
     }
     throw new ConfigError(`Couldn't list Bird channels (${res.status}): ${detail}`);
@@ -295,7 +289,7 @@ export async function sendEmail(
   html: string,
   headers?: Record<string, string>,
   attachments?: EmailAttachment[],
-  opts?: { idempotencyKey?: string; replyTo?: string; fromName?: string }
+  opts?: { idempotencyKey?: string; replyTo?: string; fromName?: string },
 ): Promise<void> {
   // Platform email product endpoint (matches the key's emails scope). The
   // sender must be on a domain verified in the Bird workspace.
@@ -319,7 +313,7 @@ export async function sendEmail(
       ...(headers ? { headers } : {}),
       ...(attachments?.length ? { attachments } : {}),
     },
-    opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}
+    opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {},
   );
   if (!res.ok) {
     throw new Error(`bird email ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -345,24 +339,16 @@ function birdVerifyBase(): string {
   const key = birdKey();
   const region = /^bk_([a-z0-9]+)_/i.exec(key)?.[1]?.toLowerCase();
   if (!region) {
-    throw new ConfigError(
-      "BIRD_ACCESS_KEY is not in the bk_{region}_{token} format Verify expects."
-    );
+    throw new ConfigError("BIRD_ACCESS_KEY is not in the bk_{region}_{token} format Verify expects.");
   }
   return `https://${region}.platform.bird.com`;
 }
 
 function verifyRecipient(identifier: Identifier) {
-  return identifier.kind === "phone"
-    ? { phone_number: identifier.value }
-    : { email_address: identifier.value };
+  return identifier.kind === "phone" ? { phone_number: identifier.value } : { email_address: identifier.value };
 }
 
-async function birdVerifyFetch(
-  path: string,
-  body: unknown,
-  requestHeaders: Record<string, string> = {}
-): Promise<Response> {
+async function birdVerifyFetch(path: string, body: unknown, requestHeaders: Record<string, string> = {}): Promise<Response> {
   return birdPlatformFetch(path, { method: "POST", body, headers: requestHeaders });
 }
 
@@ -370,10 +356,7 @@ async function birdVerifyFetch(
  * Any call to Bird's platform API (https://{region}.platform.bird.com) with
  * the workspace key — email, inbound mail, domains. Returns the raw Response.
  */
-export async function birdPlatformFetch(
-  path: string,
-  init: { method?: string; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}
-): Promise<Response> {
+export async function birdPlatformFetch(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Response> {
   return fetch(`${birdVerifyBase()}${path}`, {
     method: init.method ?? "GET",
     headers: {
@@ -447,16 +430,11 @@ export function bearerToken(req: VercelRequest): string | null {
  * opt in with `allowEmailOnly` (their session, profile and mail), so every
  * other endpoint refuses them without needing its own check.
  */
-export async function currentUser(
-  req: VercelRequest,
-  opts: { allowEmailOnly?: boolean; allowPartner?: boolean } = {}
-): Promise<AppUser | null> {
+export async function currentUser(req: VercelRequest, opts: { allowEmailOnly?: boolean; allowPartner?: boolean } = {}): Promise<AppUser | null> {
   const token = bearerToken(req);
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return null;
 
-  const sessions = await sb<Array<{ user_id: string; expires_at: string }>>(
-    `app_sessions?token=eq.${encodeURIComponent(token)}&select=user_id,expires_at&limit=1`
-  );
+  const sessions = await sb<Array<{ user_id: string; expires_at: string }>>(`app_sessions?token=eq.${encodeURIComponent(token)}&select=user_id,expires_at&limit=1`);
   const session = sessions?.[0];
   if (!session) return null;
   if (new Date(session.expires_at).getTime() < Date.now()) return null;
@@ -475,9 +453,7 @@ export async function currentUser(
   if (Date.now() - seenAt > SEEN_THROTTLE_MS) {
     const now = new Date().toISOString();
     user.last_seen_at = now;
-    void sb(`app_users?id=eq.${user.id}`, { method: "PATCH", body: { last_seen_at: now } }).catch(
-      () => {}
-    );
+    void sb(`app_users?id=eq.${user.id}`, { method: "PATCH", body: { last_seen_at: now } }).catch(() => {});
   }
   return user;
 }
@@ -534,12 +510,7 @@ export function refuseCron(req: VercelRequest, res: VercelResponse, name: string
     ua: req.headers["user-agent"] ?? null,
   });
   if (outcome === "unconfigured") {
-    return fail(
-      res,
-      503,
-      "cron_secret_missing",
-      "CRON_SECRET is not set, so scheduled runs are refused. Set it in Vercel (Production) and redeploy."
-    );
+    return fail(res, 503, "cron_secret_missing", "CRON_SECRET is not set, so scheduled runs are refused. Set it in Vercel (Production) and redeploy.");
   }
   return fail(res, 401, "unauthorized");
 }
@@ -568,11 +539,7 @@ export function fail(res: VercelResponse, status: number, error: string, message
 }
 
 /** Shared entry guard: handles CORS preflight and method allow-listing. */
-export function guard(
-  req: VercelRequest,
-  res: VercelResponse,
-  methods: string[]
-): boolean {
+export function guard(req: VercelRequest, res: VercelResponse, methods: string[]): boolean {
   if (req.method === "OPTIONS") {
     res.status(200).end();
     return false;

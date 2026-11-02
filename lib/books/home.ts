@@ -21,9 +21,7 @@ export async function homeReport(): Promise<Reply> {
       const r = await db("treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=120");
       if (!r.ok) throw new Error((await r.text()).slice(0, 200));
       const rows = (await r.json()) as Array<{ day: string; cash: number | string | null; invested: number | string | null; credit: number | string | null }>;
-      return rows
-        .map((x) => ({ day: x.day, cash: Number(x.cash ?? 0), invested: Number(x.invested ?? 0), credit: Number(x.credit ?? 0) }))
-        .reverse();
+      return rows.map((x) => ({ day: x.day, cash: Number(x.cash ?? 0), invested: Number(x.invested ?? 0), credit: Number(x.credit ?? 0) })).reverse();
     } catch (err: any) {
       console.error("home treasury failed:", err?.message ?? err);
       return null;
@@ -41,7 +39,7 @@ export async function homeReport(): Promise<Reply> {
         "book_transactions?select=transaction_id,date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id,merchant_name,name,entity_name" +
           `&pending=eq.false&date=gte.${since < priorFrom ? since : priorFrom}` +
           scopeFilter(prefs, null) +
-          "&order=transaction_id.asc"
+          "&order=transaction_id.asc",
       );
       return flowSummary(rows, now, (id) => prefs.get(id)?.entity_name);
     } catch (err: any) {
@@ -54,10 +52,7 @@ export async function homeReport(): Promise<Reply> {
     try {
       const prefs = await prefsP;
       if (!prefs) return null;
-      const r = await db(
-        `book_transactions?select=transaction_id&pending=eq.false&book_category=is.null${scopeFilter(prefs, null)}`,
-        { headers: { Range: "0-0", Prefer: "count=exact" } }
-      );
+      const r = await db(`book_transactions?select=transaction_id&pending=eq.false&book_category=is.null${scopeFilter(prefs, null)}`, { headers: { Range: "0-0", Prefer: "count=exact" } });
       if (!r.ok) throw new Error((await r.text()).slice(0, 200));
       const total = Number(r.headers.get("content-range")?.split("/")[1]);
       return { uncategorized: Number.isFinite(total) ? total : 0 };
@@ -75,15 +70,13 @@ export async function homeReport(): Promise<Reply> {
       const [rows, adjustments] = await Promise.all([
         fetchAll<InflowRow & { account_id: string }>(
           "book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id" +
-            `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc,transaction_id.asc`
+            `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc,transaction_id.asc`,
         ),
         fetchAll<{ kind: string; name: string; amount: number | string | null; cadence: string | null; expected_day: number | null; entity_name: string | null; note: string | null }>(
-          "books_expected_inflows?select=kind,name,amount,cadence,expected_day,entity_name,note&active=eq.true&order=created_at.asc"
+          "books_expected_inflows?select=kind,name,amount,cadence,expected_day,entity_name,note&active=eq.true&order=created_at.asc",
         ).catch(() => []),
       ]);
-      const visible = rows
-        .filter((r) => !prefs.get(r.account_id)?.hidden)
-        .map((r) => ({ ...r, entity_name: prefs.get(r.account_id)?.entity_name ?? r.entity_name ?? null }));
+      const visible = rows.filter((r) => !prefs.get(r.account_id)?.hidden).map((r) => ({ ...r, entity_name: prefs.get(r.account_id)?.entity_name ?? r.entity_name ?? null }));
       const planned: PlannedInflow[] = adjustments
         .filter((a) => a.kind === "manual")
         .map((a) => ({

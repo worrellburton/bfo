@@ -89,10 +89,7 @@ export default function Login() {
     if (step === "identifier") idInput.current?.focus();
   }, [step]);
 
-  const valid = useMemo(
-    () => isValidPhone(identifier),
-    [identifier]
-  );
+  const valid = useMemo(() => isValidPhone(identifier), [identifier]);
 
   function shakeOut(message: string) {
     setError(message);

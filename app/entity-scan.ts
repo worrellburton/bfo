@@ -96,11 +96,7 @@ function taxPatch(asset: Asset, value: string | null | undefined, evidence: stri
  * is called as it goes. Stops early (with `paused`) if document reading is
  * unavailable.
  */
-export async function scanAllEntities(
-  assets: Record<string, Asset>,
-  write: Write,
-  onProgress: (p: ScanProgress) => void
-): Promise<ScanProgress> {
+export async function scanAllEntities(assets: Record<string, Asset>, write: Write, onProgress: (p: ScanProgress) => void): Promise<ScanProgress> {
   const entries = Object.entries(assets).filter(([, a]) => a?.name);
   const notes: string[] = [];
   const note = (s: string) => notes.push(s);

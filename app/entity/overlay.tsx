@@ -42,21 +42,13 @@ export function ScanToast() {
       ? `Reading documents · ${Math.min(done + 1, total)} of ${total}`
       : `Reading ${plural(sorting, "document")}…`;
 
-  const detail = aiDown
-    ? "Paused — the document reader is unavailable."
-    : finished
-      ? `${plural(total, "document")} checked`
-      : scan?.current ?? null;
+  const detail = aiDown ? "Paused — the document reader is unavailable." : finished ? `${plural(total, "document")} checked` : (scan?.current ?? null);
 
   const fill = finished ? "bg-emerald-500" : t.dark ? "bg-[#818cf8]" : "bg-[#4f46e5]";
   const good = t.dark ? "text-emerald-400" : "text-emerald-600";
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4 lg:bottom-6"
-    >
+    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4 lg:bottom-6">
       <style>
         {"@keyframes entity-toast-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}" +
           "@keyframes entity-bar{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}"}
@@ -67,11 +59,7 @@ export function ScanToast() {
         }`}
       >
         <div className="flex items-center gap-3 px-5 pb-2.5 pt-3">
-          {finished ? (
-            <Icon name="check" className={`h-3.5 w-3.5 ${good}`} strokeWidth={2.5} />
-          ) : (
-            <Icon name="sparkle" className={`h-3.5 w-3.5 motion-safe:animate-pulse ${t.accent}`} />
-          )}
+          {finished ? <Icon name="check" className={`h-3.5 w-3.5 ${good}`} strokeWidth={2.5} /> : <Icon name="sparkle" className={`h-3.5 w-3.5 motion-safe:animate-pulse ${t.accent}`} />}
           <p className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-snug">
             <span className={`text-[13px] font-semibold tabular-nums ${t.text}`}>{title}</span>
             {detail && (
@@ -88,10 +76,7 @@ export function ScanToast() {
             {indeterminate ? (
               <div className={`h-full w-1/3 rounded-full motion-safe:animate-[entity-bar_1.4s_ease-in-out_infinite] ${fill}`} />
             ) : (
-              <div
-                className={`h-full rounded-full transition-[width] duration-500 ${fill}`}
-                style={{ width: `${finished ? 100 : Math.max(6, pct ?? 0)}%` }}
-              />
+              <div className={`h-full rounded-full transition-[width] duration-500 ${fill}`} style={{ width: `${finished ? 100 : Math.max(6, pct ?? 0)}%` }} />
             )}
           </div>
         </div>
@@ -102,11 +87,7 @@ export function ScanToast() {
               <ul className="max-h-36 space-y-1 overflow-y-auto px-5 pb-3">
                 {notes.map((n, i) => (
                   <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
-                    <Icon
-                      name={isFiled(n) ? "check" : "doc"}
-                      className={`mt-px h-3 w-3 ${isFiled(n) ? good : t.muted}`}
-                      strokeWidth={isFiled(n) ? 2.25 : 1.75}
-                    />
+                    <Icon name={isFiled(n) ? "check" : "doc"} className={`mt-px h-3 w-3 ${isFiled(n) ? good : t.muted}`} strokeWidth={isFiled(n) ? 2.25 : 1.75} />
                     <span className={`min-w-0 break-words ${isFiled(n) ? t.text : t.muted}`}>{n}</span>
                   </li>
                 ))}

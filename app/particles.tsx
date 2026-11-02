@@ -83,10 +83,11 @@ export function ParticleCanvas({ density = 56, speed = 0.18, connectionDistance 
       canvas!.height = Math.round(height * dpr);
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (!motes.length) seed();
-      else for (const m of motes) {
-        m.x = Math.min(m.x, width);
-        m.y = Math.min(m.y, height);
-      }
+      else
+        for (const m of motes) {
+          m.x = Math.min(m.x, width);
+          m.y = Math.min(m.y, height);
+        }
     }
     resize();
     const ro = new ResizeObserver(resize);
@@ -94,9 +95,7 @@ export function ParticleCanvas({ density = 56, speed = 0.18, connectionDistance 
 
     function palette() {
       const light = themeAware && document.documentElement.classList.contains("light");
-      return light
-        ? { sat: 70, lum: 42, dot: 0.22, glow: 0.1, line: 0.09 }
-        : { sat: 85, lum: 74, dot: 0.8, glow: 0.3, line: 0.14 };
+      return light ? { sat: 70, lum: 42, dot: 0.22, glow: 0.1, line: 0.09 } : { sat: 85, lum: 74, dot: 0.8, glow: 0.3, line: 0.14 };
     }
 
     function frame(now: number) {

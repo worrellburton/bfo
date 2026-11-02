@@ -41,9 +41,9 @@ export type Loan = {
 const cleanName = (category: string) => category.replace(/\s*\(loan\)\s*$/i, "").trim();
 
 export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding: number }> {
-  const registry = await sb<
-    Array<{ id: string; name: string; starting_balance: number; show_on_report: boolean; archived_at: string | null }>
-  >("book_loans?archived_at=is.null&select=id,name,starting_balance,show_on_report,archived_at&order=created_at.asc");
+  const registry = await sb<Array<{ id: string; name: string; starting_balance: number; show_on_report: boolean; archived_at: string | null }>>(
+    "book_loans?archived_at=is.null&select=id,name,starting_balance,show_on_report,archived_at&order=created_at.asc",
+  );
 
   // Every page: a balance summed from the first 1,000 rows is silently wrong.
   const txns = await fetchAll<LoanTxn>(
@@ -52,14 +52,12 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
       // class. (The old "Name (loan)" category convention was retired when the
       // chart of accounts went numeric — those rows now carry a loan_id.)
       "&or=(loan_id.not.is.null,intercompany_class.eq.loan)" +
-      "&order=date.desc,transaction_id.asc"
+      "&order=date.desc,transaction_id.asc",
   );
 
   // Entities resolve live from the mappings, not from the stamp written at
   // sync time — the same overlay every other Books read applies.
-  const prefs = await sb<Array<{ account_id: string; entity_id: string | null; entity_name: string | null }>>(
-    "plaid_account_prefs?select=account_id,entity_id,entity_name&archived_at=is.null"
-  );
+  const prefs = await sb<Array<{ account_id: string; entity_id: string | null; entity_name: string | null }>>("plaid_account_prefs?select=account_id,entity_id,entity_name&archived_at=is.null");
   const prefByAccount = new Map((prefs ?? []).map((p) => [p.account_id, p]));
   for (const t of txns ?? []) {
     const pref = prefByAccount.get(t.account_id);
@@ -88,9 +86,7 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
     let loan: Loan | undefined;
     if (t.loan_id) loan = byId.get(t.loan_id);
     if (!loan) {
-      const name = t.book_category
-        ? cleanName(t.book_category)
-        : (t.merchant_name || t.name || "Loan").trim();
+      const name = t.book_category ? cleanName(t.book_category) : (t.merchant_name || t.name || "Loan").trim();
       const key = (name || "Loan").toLowerCase();
       loan = loans.get(key);
       if (!loan) {

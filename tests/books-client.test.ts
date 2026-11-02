@@ -23,10 +23,14 @@ describe("chunkIds", () => {
 describe("postBatchEdit", () => {
   it("posts every id, 500 at a time, with the patch", async () => {
     const bodies: any[] = [];
-    const r = await postBatchEdit(async (_url, init) => {
-      bodies.push(JSON.parse(String(init?.body)));
-      return json({ updated: 1 });
-    }, ids(1200), { book_category: "6250 Utilities" });
+    const r = await postBatchEdit(
+      async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ updated: 1 });
+      },
+      ids(1200),
+      { book_category: "6250 Utilities" },
+    );
     expect(r).toEqual({ ok: true });
     expect(bodies.map((b) => b.transaction_ids.length)).toEqual([500, 500, 200]);
     expect(bodies[0]).toMatchObject({ action: "batch_update", book_category: "6250 Utilities" });
@@ -49,21 +53,22 @@ describe("postBatchEdit", () => {
 describe("fetchAllTxns", () => {
   it("pages by 500 until a short page", async () => {
     const urls: string[] = [];
-    const rows = await fetchAllTxns<{ id: number }>(async (url) => {
-      urls.push(url);
-      const offset = Number(new URL(url, "http://x").searchParams.get("offset"));
-      const size = offset < 1000 ? 500 : 168;
-      return json({ transactions: Array.from({ length: size }, (_, i) => ({ id: offset + i })) });
-    }, new URLSearchParams({ report: "transactions", q: "Amazon" }));
+    const rows = await fetchAllTxns<{ id: number }>(
+      async (url) => {
+        urls.push(url);
+        const offset = Number(new URL(url, "http://x").searchParams.get("offset"));
+        const size = offset < 1000 ? 500 : 168;
+        return json({ transactions: Array.from({ length: size }, (_, i) => ({ id: offset + i })) });
+      },
+      new URLSearchParams({ report: "transactions", q: "Amazon" }),
+    );
     expect(rows).toHaveLength(1168);
     expect(urls).toHaveLength(3);
     expect(urls[2]).toBe("/api/books/data?report=transactions&q=Amazon&limit=500&offset=1000&summary=0");
   });
 
   it("throws the server's message, or the fallback", async () => {
-    await expect(fetchAllTxns(async () => json({}, 500), new URLSearchParams(), "Couldn't load this vendor.")).rejects.toThrow(
-      "Couldn't load this vendor."
-    );
+    await expect(fetchAllTxns(async () => json({}, 500), new URLSearchParams(), "Couldn't load this vendor.")).rejects.toThrow("Couldn't load this vendor.");
   });
 });
 

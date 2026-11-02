@@ -28,10 +28,32 @@ export type { FormationDraft, FormationState };
 
 /** Fields every formation has; anything else in a state's schema is state-specific. */
 const COMMON_FIELDS = new Set([
-  "jurisdiction", "legal_name", "entity_name", "purpose", "phone", "email", "website", "effective_date",
-  "contact", "principal_address", "mailing_address", "organizers", "incorporators", "initial_governing_persons", "initial_directors", "initial_officers",
-  "stock_structure", "directors", "officers",
-  "registered_agent", "ein", "fein", "note", "metadata", "expedited_tier", "idempotency_key",
+  "jurisdiction",
+  "legal_name",
+  "entity_name",
+  "purpose",
+  "phone",
+  "email",
+  "website",
+  "effective_date",
+  "contact",
+  "principal_address",
+  "mailing_address",
+  "organizers",
+  "incorporators",
+  "initial_governing_persons",
+  "initial_directors",
+  "initial_officers",
+  "stock_structure",
+  "directors",
+  "officers",
+  "registered_agent",
+  "ein",
+  "fein",
+  "note",
+  "metadata",
+  "expedited_tier",
+  "idempotency_key",
 ]);
 
 type ExtraField = {
@@ -93,8 +115,7 @@ function address(a: FormationAddress): Record<string, string> {
 }
 
 const personName = (n: PersonName) => some({ first: clean(n.first), middle: clean(n.middle), last: clean(n.last), suffix: clean(n.suffix) });
-const partyName = (kind: "person" | "entity", n: PersonName, entityName: string) =>
-  kind === "person" ? { type: "person", ...personName(n) } : { type: "entity", entity_name: clean(entityName) };
+const partyName = (kind: "person" | "entity", n: PersonName, entityName: string) => (kind === "person" ? { type: "person", ...personName(n) } : { type: "entity", entity_name: clean(entityName) });
 
 /** A manager / director / officer: name, and whatever else was given. */
 function official(p: FormationOfficial, principal: Record<string, string>, extra: Record<string, unknown> = {}) {
@@ -140,7 +161,12 @@ function einRequest(d: FormationDraft, e: FormationEin): Record<string, unknown>
   const employees = { agricultural: Math.max(0, Math.floor(number(e.employees.agricultural) ?? 0)), other: Math.max(0, Math.floor(number(e.employees.other) ?? 0)) };
   const married = asksMarried(d) ? yesNo(e.marriedCouple) : undefined;
   return some({
-    responsible_party: some({ first_name: clean(e.responsible.first), middle_name: clean(e.responsible.middle), last_name: clean(e.responsible.last), ssn: clean(e.responsible.ssn).replace(/-/g, "") }),
+    responsible_party: some({
+      first_name: clean(e.responsible.first),
+      middle_name: clean(e.responsible.middle),
+      last_name: clean(e.responsible.last),
+      ssn: clean(e.responsible.ssn).replace(/-/g, ""),
+    }),
     reason: e.reason || "started_new_business",
     reason_detail: e.reason === "other" ? clean(e.reasonDetail) : "",
     fiscal_year_end_month: e.fiscalYearEndMonth || 12,
@@ -175,7 +201,7 @@ function stockStructure(s: FormationStock): Record<string, unknown> {
         par_value_per_share: number(c.par),
         consideration: number(c.consideration),
         rights_and_restrictions: clean(c.rights),
-      })
+      }),
     );
     return some({
       total_authorized_shares: s.classes.reduce((n, c) => n + (number(c.authorized) ?? 0), 0),
@@ -210,7 +236,7 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
       email: clean(o.email),
       phone: clean(o.phone),
       entity_type: o.kind === "entity" ? clean(o.entityType) : "",
-    })
+    }),
   );
   const governing = llc
     ? [
@@ -223,7 +249,7 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
             email: clean(o.email),
             phone: clean(o.phone),
             ssn: o.kind === "person" ? clean(o.ssn) : "",
-          })
+          }),
         ),
         ...(d.managed === "managers" ? d.managers.map((m) => official(m, principal, { role: "manager" })) : []),
       ].map((g) => {

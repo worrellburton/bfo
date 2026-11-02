@@ -160,12 +160,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         const v = encodeURIComponent(`"${to}"`);
         // Mail from before extra addresses existed has no delivered-to: it came to the main one.
         const received = to === main ? `or(delivered_to.eq.${v},delivered_to.is.null)` : `delivered_to.eq.${v}`;
-        box =
-          folder === "sent"
-            ? `from_email.eq.${v}`
-            : folder === "active"
-              ? `or(and(direction.eq.out,from_email.eq.${v}),and(direction.eq.in,${received}))`
-              : received;
+        box = folder === "sent" ? `from_email.eq.${v}` : folder === "active" ? `or(and(direction.eq.out,from_email.eq.${v}),and(direction.eq.in,${received}))` : received;
       }
       // A search looks through everything the caller may see, whatever folder is open.
       const where = searchCondition(param(req, "q")) ? scopeFilter(me.id, admin) : folderFilter(folder, me.id, admin);
@@ -177,7 +172,13 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
       // At most 30 conversations (Active) or 100 messages are pinned; any more stay in the dated list, by date.
       const starredKeys =
         pins && active
-          ? [...new Set(((await sb<{ thread_key: string | null }[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=thread_key&order=starred_at.desc&limit=200`)) ?? []).map((r) => r.thread_key).filter((k): k is string => !!k))].slice(0, 30)
+          ? [
+              ...new Set(
+                ((await sb<{ thread_key: string | null }[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=thread_key&order=starred_at.desc&limit=200`)) ?? [])
+                  .map((r) => r.thread_key)
+                  .filter((k): k is string => !!k),
+              ),
+            ].slice(0, 30)
           : [];
       // Each starred conversation's newest message, from one bounded read. Only the conversations that made it
       // into the read are pinned and kept out of the dated list (on every page), so none shows nowhere.
@@ -185,10 +186,14 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         ? conversationHeads(
             (await sb<SummaryRow[]>(`mail_messages?${where}&${keysIn(starredKeys)}${inBox}&select=${before ? "id,thread_key" : SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=400`)) ?? [],
             100,
-            Infinity
+            Infinity,
           ).heads
         : [];
-      const keyList = pinnedHeads.map((r) => r.thread_key).filter((k): k is string => !!k).map(pgQuote).join(",");
+      const keyList = pinnedHeads
+        .map((r) => r.thread_key)
+        .filter((k): k is string => !!k)
+        .map(pgQuote)
+        .join(",");
       const pinnedRows =
         pins && !active
           ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${before ? "id" : SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=100`)) ?? [])
@@ -200,8 +205,12 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         !before
           ? ""
           : active
-            ? beforeKey ? activeAfter(before, beforeKey) : `thread_at.lt.${at}`
-            : beforeId ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))` : `occurred_at.lt.${at}`,
+            ? beforeKey
+              ? activeAfter(before, beforeKey)
+              : `thread_at.lt.${at}`
+            : beforeId
+              ? `or(occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${beforeId}))`
+              : `occurred_at.lt.${at}`,
         searchCondition(param(req, "q")),
         box,
       ].filter(Boolean);
@@ -210,24 +219,19 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         const pinned = before ? [] : pinnedHeads;
         // A conversation's messages come together, newest first; read enough to fill a page of them.
         const fetched = Math.min(limit * 4, 400);
-        const rows = await sb<SummaryRow[]>(
-          `mail_messages?${where}${filterClause(filter)}${extra}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=${fetched}`
-        );
+        const rows = await sb<SummaryRow[]>(`mail_messages?${where}${filterClause(filter)}${extra}&select=${SUMMARY_COLUMNS}&order=${ACTIVE_ORDER}&limit=${fetched}`);
         const { heads, more } = conversationHeads(rows ?? [], limit, fetched);
         // A conversation shows unread while any message in it is, not just its newest.
         const keys = [...heads, ...pinned].map((r) => r.thread_key).filter((k): k is string => !!k);
         const unread = new Set(
-          keys.length ? ((await sb<{ thread_key: string }[]>(`mail_messages?${where}&read_at=is.null&direction=eq.in&${keysIn(keys)}&select=thread_key`)) ?? []).map((r) => r.thread_key) : []
+          keys.length ? ((await sb<{ thread_key: string }[]>(`mail_messages?${where}&read_at=is.null&direction=eq.in&${keysIn(keys)}&select=thread_key`)) ?? []).map((r) => r.thread_key) : [],
         );
         const head = (r: SummaryRow) => ({ ...toSummary(r), ...(r.thread_key && unread.has(r.thread_key) ? { read: false } : {}) });
         // A pinned conversation shows starred, whichever of its messages carries the star.
         return res.status(200).json({ messages: heads.map(head), hasMore: more, ...(pins ? { pinned: pinned.map((r) => ({ ...head(r), starred: true })) } : {}) });
       }
       const pinned = before ? [] : pinnedRows;
-      const rows = await sb<SummaryRow[]>(
-        `mail_messages?${where}${filterClause(filter)}${extra}` +
-          `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`
-      );
+      const rows = await sb<SummaryRow[]>(`mail_messages?${where}${filterClause(filter)}${extra}` + `&select=${SUMMARY_COLUMNS}&order=occurred_at.desc,id.desc&limit=${limit + 1}`);
       return res.status(200).json({
         messages: (rows ?? []).slice(0, limit).map(toSummary),
         hasMore: (rows ?? []).length > limit,
@@ -267,7 +271,11 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         if (next.length === ids.length) break;
         ids = next;
       }
-      const messages = [...found.values()].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))).slice(0, 40).map(toMessage).map(withProxiedImages);
+      const messages = [...found.values()]
+        .sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
+        .slice(0, 40)
+        .map(toMessage)
+        .map(withProxiedImages);
       return res.status(200).json({ messages });
     }
 

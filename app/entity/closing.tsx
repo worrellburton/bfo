@@ -67,8 +67,12 @@ export function ClosingCard() {
                 aria-pressed={!!at}
                 className={`mt-0.5 flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border text-[11px] tabular-nums transition-colors disabled:cursor-default ${
                   at
-                    ? t.dark ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-300" : "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : t.dark ? "border-white/15 text-gray-400 hover:border-white/40" : "border-gray-300 text-gray-500 hover:border-gray-500"
+                    ? t.dark
+                      ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-300"
+                      : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : t.dark
+                      ? "border-white/15 text-gray-400 hover:border-white/40"
+                      : "border-gray-300 text-gray-500 hover:border-gray-500"
                 }`}
               >
                 {at ? <Icon name="check" className="h-3 w-3" strokeWidth={2.5} /> : i + 1}
@@ -101,11 +105,13 @@ export function ClosingCard() {
                           {s.link.label} <Icon name="external" className="h-3 w-3" />
                         </a>
                       )}
-                      {admin && !finished && (
-                        <TextButton onClick={() => void page.markClosingStep(s.key, true)}>Mark done</TextButton>
-                      )}
+                      {admin && !finished && <TextButton onClick={() => void page.markClosingStep(s.key, true)}>Mark done</TextButton>}
                     </div>
-                    {err && <div className="mt-2"><ErrorLine>{err}</ErrorLine></div>}
+                    {err && (
+                      <div className="mt-2">
+                        <ErrorLine>{err}</ErrorLine>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

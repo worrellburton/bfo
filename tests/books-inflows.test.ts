@@ -2,8 +2,17 @@ import { describe, expect, it } from "vitest";
 import { anticipateInflows, cadenceFromGap, type InflowRow } from "../lib/books-inflows";
 
 const row = (date: string, amount: number, merchant: string, extra: Partial<InflowRow> = {}): InflowRow => ({
-  date, amount, merchant_name: merchant, name: merchant, book_category: "4000 Rental Income", entity_name: "FDJ Hesperia, LLC",
-  type_override: null, txn_type: "special", intercompany: false, loan_id: null, ...extra,
+  date,
+  amount,
+  merchant_name: merchant,
+  name: merchant,
+  book_category: "4000 Rental Income",
+  entity_name: "FDJ Hesperia, LLC",
+  type_override: null,
+  txn_type: "special",
+  intercompany: false,
+  loan_id: null,
+  ...extra,
 });
 
 describe("cadenceFromGap", () => {

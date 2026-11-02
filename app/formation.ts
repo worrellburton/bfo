@@ -14,16 +14,56 @@ export { emptyOwner, ownerName, ownerPercent, ownersTotal, parentOwnerId, person
  */
 
 export const US_STATES: ReadonlyArray<readonly [string, string]> = [
-  ["AL", "Alabama"], ["AK", "Alaska"], ["AZ", "Arizona"], ["AR", "Arkansas"], ["CA", "California"],
-  ["CO", "Colorado"], ["CT", "Connecticut"], ["DE", "Delaware"], ["DC", "District of Columbia"], ["FL", "Florida"],
-  ["GA", "Georgia"], ["HI", "Hawaii"], ["ID", "Idaho"], ["IL", "Illinois"], ["IN", "Indiana"],
-  ["IA", "Iowa"], ["KS", "Kansas"], ["KY", "Kentucky"], ["LA", "Louisiana"], ["ME", "Maine"],
-  ["MD", "Maryland"], ["MA", "Massachusetts"], ["MI", "Michigan"], ["MN", "Minnesota"], ["MS", "Mississippi"],
-  ["MO", "Missouri"], ["MT", "Montana"], ["NE", "Nebraska"], ["NV", "Nevada"], ["NH", "New Hampshire"],
-  ["NJ", "New Jersey"], ["NM", "New Mexico"], ["NY", "New York"], ["NC", "North Carolina"], ["ND", "North Dakota"],
-  ["OH", "Ohio"], ["OK", "Oklahoma"], ["OR", "Oregon"], ["PA", "Pennsylvania"], ["RI", "Rhode Island"],
-  ["SC", "South Carolina"], ["SD", "South Dakota"], ["TN", "Tennessee"], ["TX", "Texas"], ["UT", "Utah"],
-  ["VT", "Vermont"], ["VA", "Virginia"], ["WA", "Washington"], ["WV", "West Virginia"], ["WI", "Wisconsin"],
+  ["AL", "Alabama"],
+  ["AK", "Alaska"],
+  ["AZ", "Arizona"],
+  ["AR", "Arkansas"],
+  ["CA", "California"],
+  ["CO", "Colorado"],
+  ["CT", "Connecticut"],
+  ["DE", "Delaware"],
+  ["DC", "District of Columbia"],
+  ["FL", "Florida"],
+  ["GA", "Georgia"],
+  ["HI", "Hawaii"],
+  ["ID", "Idaho"],
+  ["IL", "Illinois"],
+  ["IN", "Indiana"],
+  ["IA", "Iowa"],
+  ["KS", "Kansas"],
+  ["KY", "Kentucky"],
+  ["LA", "Louisiana"],
+  ["ME", "Maine"],
+  ["MD", "Maryland"],
+  ["MA", "Massachusetts"],
+  ["MI", "Michigan"],
+  ["MN", "Minnesota"],
+  ["MS", "Mississippi"],
+  ["MO", "Missouri"],
+  ["MT", "Montana"],
+  ["NE", "Nebraska"],
+  ["NV", "Nevada"],
+  ["NH", "New Hampshire"],
+  ["NJ", "New Jersey"],
+  ["NM", "New Mexico"],
+  ["NY", "New York"],
+  ["NC", "North Carolina"],
+  ["ND", "North Dakota"],
+  ["OH", "Ohio"],
+  ["OK", "Oklahoma"],
+  ["OR", "Oregon"],
+  ["PA", "Pennsylvania"],
+  ["RI", "Rhode Island"],
+  ["SC", "South Carolina"],
+  ["SD", "South Dakota"],
+  ["TN", "Tennessee"],
+  ["TX", "Texas"],
+  ["UT", "Utah"],
+  ["VT", "Vermont"],
+  ["VA", "Virginia"],
+  ["WA", "Washington"],
+  ["WV", "West Virginia"],
+  ["WI", "Wisconsin"],
   ["WY", "Wyoming"],
 ];
 
@@ -89,9 +129,18 @@ export type FormationOfficial = {
 };
 
 export const OFFICER_ROLES: [string, string][] = [
-  ["president", "President"], ["vice_president", "Vice president"], ["secretary", "Secretary"], ["treasurer", "Treasurer"],
-  ["ceo", "CEO"], ["cfo", "CFO"], ["coo", "COO"], ["chair", "Chair"],
-  ["assistant_secretary", "Assistant secretary"], ["assistant_treasurer", "Assistant treasurer"], ["clerk", "Clerk"], ["other", "Other"],
+  ["president", "President"],
+  ["vice_president", "Vice president"],
+  ["secretary", "Secretary"],
+  ["treasurer", "Treasurer"],
+  ["ceo", "CEO"],
+  ["cfo", "CFO"],
+  ["coo", "COO"],
+  ["chair", "Chair"],
+  ["assistant_secretary", "Assistant secretary"],
+  ["assistant_treasurer", "Assistant treasurer"],
+  ["clerk", "Clerk"],
+  ["other", "Other"],
 ];
 
 export type FormationOfficer = FormationOfficial & { role: string };
@@ -275,7 +324,10 @@ export function emptyDraft(): FormationDraft {
 export function parseAddress(line: string | null | undefined): FormationAddress | null {
   const m = /^(.*?),\s*([^,]+),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)\s*$/.exec((line ?? "").trim());
   if (!m) return null;
-  const [first, ...rest] = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+  const [first, ...rest] = m[1]
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
   if (!first) return null;
   return { street1: first, street2: rest.join(", "), city: m[2].trim(), region: m[3].toUpperCase(), postal: m[4], county: "" };
 }
@@ -285,7 +337,16 @@ export const sameAddress = (a: FormationAddress, b: FormationAddress) =>
 
 /** One line: "1 Main St, Suite 2, Reno, NV 89501". */
 export const addressLine = (a: FormationAddress) =>
-  [[a.street1, a.street2].map((x) => x.trim()).filter(Boolean).join(", "), a.city.trim(), `${a.region.trim().toUpperCase()} ${a.postal.trim()}`.trim()].filter(Boolean).join(", ");
+  [
+    [a.street1, a.street2]
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .join(", "),
+    a.city.trim(),
+    `${a.region.trim().toUpperCase()} ${a.postal.trim()}`.trim(),
+  ]
+    .filter(Boolean)
+    .join(", ");
 
 /** The office the family's entities share: the address most of them have on record, if any. */
 export function officeAddress(addresses: (string | null | undefined)[]): FormationAddress | null {
@@ -371,10 +432,11 @@ export type ActivityQuestion = {
   when?: (a: EinActivity) => boolean;
 };
 
-const opts = (...pairs: string[]): [string, string][] => pairs.map((p) => {
-  const [v, l] = p.split("|");
-  return [v, l ?? v.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())];
-});
+const opts = (...pairs: string[]): [string, string][] =>
+  pairs.map((p) => {
+    const [v, l] = p.split("|");
+    return [v, l ?? v.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())];
+  });
 
 /** The construction questions (asked for construction, and for real estate built with your own capital). */
 export const CONSTRUCTION_QUESTIONS: ActivityQuestion[] = [
@@ -394,59 +456,229 @@ const builds = (a: EinActivity) => a.type === "use_capital_to_build_property";
 
 /** Palm's principal-activity categories, in the IRS's words, with each one's follow-ups. */
 export const EIN_ACTIVITIES: { value: string; label: string; hint: string; questions: ActivityQuestion[] }[] = [
-  { value: "finance", label: "Finance", hint: "Investing, holding, lending, advice", questions: [
-    { key: "type", label: "Kind of finance", kind: "choice", options: opts("investment_holding|Investment holding", "portfolio_management|Portfolio management", "investment_advice|Investment advice", "investment_club|Investment club", "venture_capital|Venture capital", "trust_administration|Trust administration", "securities_broker|Securities broker", "commodities_broker|Commodities broker", "mortgage_broker|Mortgage broker", "mortgage_company|Mortgage company", "sales_financing|Sales financing", "credit_card_issuing|Credit card issuing", "other|Other") },
-  ] },
-  { value: "real_estate", label: "Real estate", hint: "Renting, building, selling, managing property", questions: [
-    { key: "type", label: "Kind of real estate", kind: "choice", options: opts("rent_lease_owned_property|Rents or leases property it owns", "use_capital_to_build_property|Builds property with its own capital", "sell_property_for_others|Sells property for others", "manage_real_estate_for_others|Manages property for others", "other|Other") },
-    { key: "rental_property_type", label: "What it rents", kind: "choice", options: opts("residential|Residential", "commercial_industrial|Commercial or industrial", "other|Other"), when: (a) => a.type === "rent_lease_owned_property" },
-    ...CONSTRUCTION_QUESTIONS.map((q) => ({ ...q, when: (a: EinActivity) => builds(a) && (!q.when || q.when(a)) })),
-  ] },
-  { value: "rental_and_leasing", label: "Rental and leasing", hint: "Renting out real estate or goods", questions: [
-    { key: "type", label: "What it rents or leases", kind: "choice", options: opts("rent_lease_sell_real_estate|Real estate", "rent_or_lease_goods|Goods", "manage_real_estate_for_others|Manages real estate for others") },
-    { key: "real_estate_activity", label: "Real estate activity", kind: "choice", options: opts("rent_residential|Rents residential", "rent_commercial_industrial|Rents commercial or industrial", "real_estate_agent|Real estate agent"), when: (a) => a.type === "rent_lease_sell_real_estate" },
-    { key: "goods", label: "Goods rented or leased", kind: "text", placeholder: "Construction equipment", when: (a) => a.type === "rent_or_lease_goods" },
-  ] },
+  {
+    value: "finance",
+    label: "Finance",
+    hint: "Investing, holding, lending, advice",
+    questions: [
+      {
+        key: "type",
+        label: "Kind of finance",
+        kind: "choice",
+        options: opts(
+          "investment_holding|Investment holding",
+          "portfolio_management|Portfolio management",
+          "investment_advice|Investment advice",
+          "investment_club|Investment club",
+          "venture_capital|Venture capital",
+          "trust_administration|Trust administration",
+          "securities_broker|Securities broker",
+          "commodities_broker|Commodities broker",
+          "mortgage_broker|Mortgage broker",
+          "mortgage_company|Mortgage company",
+          "sales_financing|Sales financing",
+          "credit_card_issuing|Credit card issuing",
+          "other|Other",
+        ),
+      },
+    ],
+  },
+  {
+    value: "real_estate",
+    label: "Real estate",
+    hint: "Renting, building, selling, managing property",
+    questions: [
+      {
+        key: "type",
+        label: "Kind of real estate",
+        kind: "choice",
+        options: opts(
+          "rent_lease_owned_property|Rents or leases property it owns",
+          "use_capital_to_build_property|Builds property with its own capital",
+          "sell_property_for_others|Sells property for others",
+          "manage_real_estate_for_others|Manages property for others",
+          "other|Other",
+        ),
+      },
+      {
+        key: "rental_property_type",
+        label: "What it rents",
+        kind: "choice",
+        options: opts("residential|Residential", "commercial_industrial|Commercial or industrial", "other|Other"),
+        when: (a) => a.type === "rent_lease_owned_property",
+      },
+      ...CONSTRUCTION_QUESTIONS.map((q) => ({ ...q, when: (a: EinActivity) => builds(a) && (!q.when || q.when(a)) })),
+    ],
+  },
+  {
+    value: "rental_and_leasing",
+    label: "Rental and leasing",
+    hint: "Renting out real estate or goods",
+    questions: [
+      {
+        key: "type",
+        label: "What it rents or leases",
+        kind: "choice",
+        options: opts("rent_lease_sell_real_estate|Real estate", "rent_or_lease_goods|Goods", "manage_real_estate_for_others|Manages real estate for others"),
+      },
+      {
+        key: "real_estate_activity",
+        label: "Real estate activity",
+        kind: "choice",
+        options: opts("rent_residential|Rents residential", "rent_commercial_industrial|Rents commercial or industrial", "real_estate_agent|Real estate agent"),
+        when: (a) => a.type === "rent_lease_sell_real_estate",
+      },
+      { key: "goods", label: "Goods rented or leased", kind: "text", placeholder: "Construction equipment", when: (a) => a.type === "rent_or_lease_goods" },
+    ],
+  },
   { value: "construction", label: "Construction", hint: "Contractors and trades", questions: CONSTRUCTION_QUESTIONS },
-  { value: "retail", label: "Retail", hint: "Selling to consumers", questions: [
-    { key: "type", label: "How it sells", kind: "choice", options: opts("selling_goods_online|Online", "storefront_sales|Storefront", "direct_sales|Direct sales", "auction_house|Auction house", "other|Other") },
-    { key: "direct_sales_method", label: "Direct-sales method", kind: "choice", options: opts("catalogue|Catalogue", "mail_order|Mail order", "door_to_door|Door to door"), when: (a) => a.type === "direct_sales" },
-  ] },
-  { value: "wholesale", label: "Wholesale", hint: "Selling to businesses for resale", questions: [
-    { key: "owns_goods", label: "Does it own or take title to the goods?", kind: "yesno" },
-    { key: "receives_commission", label: "Does it receive a commission or fee?", kind: "yesno" },
-    { key: "goods", label: "Goods sold", kind: "text", placeholder: "Industrial cleaning supplies" },
-  ] },
-  { value: "manufacturing", label: "Manufacturing", hint: "Making goods from materials", questions: [
-    { key: "goods", label: "Goods made, and the main materials", kind: "text", placeholder: "Aluminum cans from sheet aluminum" },
-  ] },
-  { value: "accommodations", label: "Accommodations", hint: "Hotels, motels", questions: [
-    { key: "type", label: "Kind of accommodation", kind: "choice", options: opts("hotel|Hotel", "motel|Motel", "casino_hotel|Casino hotel", "other|Other") },
-  ] },
-  { value: "food_service", label: "Food service", hint: "Restaurants, bars, catering", questions: [
-    { key: "type", label: "Kind of food service", kind: "choice", options: opts("full_service_restaurant|Full-service restaurant", "fast_food_restaurant|Fast food", "bar|Bar", "bar_and_restaurant|Bar and restaurant", "coffee_shop|Coffee shop", "ice_cream_shop|Ice cream shop", "catering_service|Catering", "mobile_food_service|Mobile food", "other|Other") },
-  ] },
-  { value: "health_care", label: "Health care", hint: "Practices, clinics, hospitals", questions: [
-    { key: "includes_md", label: "Does it include M.D. practitioners?", kind: "yesno" },
-    { key: "md_role", label: "Practitioners", kind: "choice", options: opts("medical_doctor|Medical doctor", "psychiatrist|Psychiatrist", "other_mental_health_practitioner|Other mental health"), when: (a) => a.includes_md === "yes" },
-    { key: "non_md_role", label: "Practice", kind: "choice", options: opts("chiropractor|Chiropractor", "dentist|Dentist", "hmo_medical_center|HMO medical center", "hospital|Hospital", "kidney_dialysis_center|Kidney dialysis center", "optometrist|Optometrist", "outpatient_care_center|Outpatient care center", "podiatrist|Podiatrist", "psychologist|Psychologist", "other_mental_health_practitioner|Other mental health", "other|Other"), when: (a) => a.includes_md === "no" },
-  ] },
-  { value: "insurance", label: "Insurance", hint: "Carriers, agents, brokers", questions: [
-    { key: "type", label: "Kind of insurance", kind: "choice", options: opts("insurance_carrier|Carrier", "insurance_agent_or_broker|Agent or broker", "other|Other") },
-    { key: "support_activity_detail", label: "The support activity", kind: "text", placeholder: "Claims adjusting", when: (a) => a.type === "other" },
-  ] },
-  { value: "social_assistance", label: "Social assistance", hint: "Nursing homes, shelters, youth", questions: [
-    { key: "type", label: "Kind of assistance", kind: "choice", options: opts("nursing_home|Nursing home", "shelter|Shelter", "youth_services|Youth services", "other|Other") },
-  ] },
-  { value: "transportation", label: "Transportation", hint: "Moving cargo or passengers", questions: [
-    { key: "type", label: "What it transports", kind: "choice", options: opts("cargo|Cargo", "passengers|Passengers", "support_activity|Support activity") },
-    { key: "cargo_mode", label: "How", kind: "choice", options: opts("trucking|Trucking", "air|Air", "rail|Rail", "water|Water", "other|Other"), when: (a) => a.type === "cargo" },
-    { key: "passenger_mode", label: "How", kind: "choice", options: opts("limousine|Limousine", "shuttle_bus|Shuttle bus", "taxi|Taxi", "other|Other"), when: (a) => a.type === "passengers" },
-  ] },
+  {
+    value: "retail",
+    label: "Retail",
+    hint: "Selling to consumers",
+    questions: [
+      {
+        key: "type",
+        label: "How it sells",
+        kind: "choice",
+        options: opts("selling_goods_online|Online", "storefront_sales|Storefront", "direct_sales|Direct sales", "auction_house|Auction house", "other|Other"),
+      },
+      {
+        key: "direct_sales_method",
+        label: "Direct-sales method",
+        kind: "choice",
+        options: opts("catalogue|Catalogue", "mail_order|Mail order", "door_to_door|Door to door"),
+        when: (a) => a.type === "direct_sales",
+      },
+    ],
+  },
+  {
+    value: "wholesale",
+    label: "Wholesale",
+    hint: "Selling to businesses for resale",
+    questions: [
+      { key: "owns_goods", label: "Does it own or take title to the goods?", kind: "yesno" },
+      { key: "receives_commission", label: "Does it receive a commission or fee?", kind: "yesno" },
+      { key: "goods", label: "Goods sold", kind: "text", placeholder: "Industrial cleaning supplies" },
+    ],
+  },
+  {
+    value: "manufacturing",
+    label: "Manufacturing",
+    hint: "Making goods from materials",
+    questions: [{ key: "goods", label: "Goods made, and the main materials", kind: "text", placeholder: "Aluminum cans from sheet aluminum" }],
+  },
+  {
+    value: "accommodations",
+    label: "Accommodations",
+    hint: "Hotels, motels",
+    questions: [{ key: "type", label: "Kind of accommodation", kind: "choice", options: opts("hotel|Hotel", "motel|Motel", "casino_hotel|Casino hotel", "other|Other") }],
+  },
+  {
+    value: "food_service",
+    label: "Food service",
+    hint: "Restaurants, bars, catering",
+    questions: [
+      {
+        key: "type",
+        label: "Kind of food service",
+        kind: "choice",
+        options: opts(
+          "full_service_restaurant|Full-service restaurant",
+          "fast_food_restaurant|Fast food",
+          "bar|Bar",
+          "bar_and_restaurant|Bar and restaurant",
+          "coffee_shop|Coffee shop",
+          "ice_cream_shop|Ice cream shop",
+          "catering_service|Catering",
+          "mobile_food_service|Mobile food",
+          "other|Other",
+        ),
+      },
+    ],
+  },
+  {
+    value: "health_care",
+    label: "Health care",
+    hint: "Practices, clinics, hospitals",
+    questions: [
+      { key: "includes_md", label: "Does it include M.D. practitioners?", kind: "yesno" },
+      {
+        key: "md_role",
+        label: "Practitioners",
+        kind: "choice",
+        options: opts("medical_doctor|Medical doctor", "psychiatrist|Psychiatrist", "other_mental_health_practitioner|Other mental health"),
+        when: (a) => a.includes_md === "yes",
+      },
+      {
+        key: "non_md_role",
+        label: "Practice",
+        kind: "choice",
+        options: opts(
+          "chiropractor|Chiropractor",
+          "dentist|Dentist",
+          "hmo_medical_center|HMO medical center",
+          "hospital|Hospital",
+          "kidney_dialysis_center|Kidney dialysis center",
+          "optometrist|Optometrist",
+          "outpatient_care_center|Outpatient care center",
+          "podiatrist|Podiatrist",
+          "psychologist|Psychologist",
+          "other_mental_health_practitioner|Other mental health",
+          "other|Other",
+        ),
+        when: (a) => a.includes_md === "no",
+      },
+    ],
+  },
+  {
+    value: "insurance",
+    label: "Insurance",
+    hint: "Carriers, agents, brokers",
+    questions: [
+      { key: "type", label: "Kind of insurance", kind: "choice", options: opts("insurance_carrier|Carrier", "insurance_agent_or_broker|Agent or broker", "other|Other") },
+      { key: "support_activity_detail", label: "The support activity", kind: "text", placeholder: "Claims adjusting", when: (a) => a.type === "other" },
+    ],
+  },
+  {
+    value: "social_assistance",
+    label: "Social assistance",
+    hint: "Nursing homes, shelters, youth",
+    questions: [{ key: "type", label: "Kind of assistance", kind: "choice", options: opts("nursing_home|Nursing home", "shelter|Shelter", "youth_services|Youth services", "other|Other") }],
+  },
+  {
+    value: "transportation",
+    label: "Transportation",
+    hint: "Moving cargo or passengers",
+    questions: [
+      { key: "type", label: "What it transports", kind: "choice", options: opts("cargo|Cargo", "passengers|Passengers", "support_activity|Support activity") },
+      { key: "cargo_mode", label: "How", kind: "choice", options: opts("trucking|Trucking", "air|Air", "rail|Rail", "water|Water", "other|Other"), when: (a) => a.type === "cargo" },
+      { key: "passenger_mode", label: "How", kind: "choice", options: opts("limousine|Limousine", "shuttle_bus|Shuttle bus", "taxi|Taxi", "other|Other"), when: (a) => a.type === "passengers" },
+    ],
+  },
   { value: "warehousing", label: "Warehousing", hint: "Storage", questions: [] },
-  { value: "other", label: "Something else", hint: "Consulting, services, repair…", questions: [
-    { key: "type", label: "Kind of activity", kind: "choice", options: opts("consulting|Consulting", "service|Services", "organization|Organization", "rental|Rental", "repair|Repair", "sell_goods|Selling goods", "manufacturing|Manufacturing", "other|Other") },
-  ] },
+  {
+    value: "other",
+    label: "Something else",
+    hint: "Consulting, services, repair…",
+    questions: [
+      {
+        key: "type",
+        label: "Kind of activity",
+        kind: "choice",
+        options: opts(
+          "consulting|Consulting",
+          "service|Services",
+          "organization|Organization",
+          "rental|Rental",
+          "repair|Repair",
+          "sell_goods|Selling goods",
+          "manufacturing|Manufacturing",
+          "other|Other",
+        ),
+      },
+    ],
+  },
 ];
 
 /** The follow-ups showing for this activity's answers so far. */

@@ -8,17 +8,7 @@
  * never scored.
  */
 
-import {
-  agentTerm,
-  documentRules,
-  entityType,
-  stateCode,
-  stateName,
-  TAX_CLASSES,
-  type DocKey,
-  type DocRule,
-  type PaperworkInput,
-} from "./entity-paperwork";
+import { agentTerm, documentRules, entityType, stateCode, stateName, TAX_CLASSES, type DocKey, type DocRule, type PaperworkInput } from "./entity-paperwork";
 import { foreignStates } from "./entity-addresses";
 
 export { entityType, TAX_CLASSES };

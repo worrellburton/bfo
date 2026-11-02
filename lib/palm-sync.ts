@@ -73,7 +73,12 @@ async function saveDocument(assetId: string, data: Data, d: PalmDocumentRow, act
   return true;
 }
 
-export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; name: string | null }; budgetMs?: number; now?: () => number }): Promise<{ mode: "test" | "live"; entities: EntitySync[] }> {
+export async function syncAllWithPalm(opts: {
+  ids?: string[];
+  by: { id: string; name: string | null };
+  budgetMs?: number;
+  now?: () => number;
+}): Promise<{ mode: "test" | "live"; entities: EntitySync[] }> {
   const mode = palmMode();
   if (!mode) throw new Error("Palm isn't connected.");
   const clock = opts.now ?? Date.now;
@@ -89,12 +94,17 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
   const states = await checkStateRecords({ ids: opts.ids, freshMs: SYNC_FRESH_MS, deadline: started + budget * 0.6, by: opts.by });
   for (const r of states) {
     const text =
-      r.outcome === "read" ? `Read${r.detail ? ` · ${r.detail}` : ""}`
-      : r.outcome === "not_found" ? "No registry entry matched the name. Add its file number under Edit."
-      : r.outcome === "ambiguous" ? "More than one registry entry matched. Pick the right one on its Compliance tab."
-      : r.outcome === "error" ? r.detail ?? "Couldn't reach Palm."
-      : r.outcome === "later" ? "Not read this time (out of time); sync again to read it."
-      : "Read in the last day; kept.";
+      r.outcome === "read"
+        ? `Read${r.detail ? ` · ${r.detail}` : ""}`
+        : r.outcome === "not_found"
+          ? "No registry entry matched the name. Add its file number under Edit."
+          : r.outcome === "ambiguous"
+            ? "More than one registry entry matched. Pick the right one on its Compliance tab."
+            : r.outcome === "error"
+              ? (r.detail ?? "Couldn't reach Palm.")
+              : r.outcome === "later"
+                ? "Not read this time (out of time); sync again to read it."
+                : "Read in the last day; kept.";
     lineFor(r.id, r.name).lines.push({ label: `${r.state} record`, tone: STATE_LINE[r.outcome], text });
   }
 
@@ -125,7 +135,11 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
         if (!(err instanceof PalmError && err.status === 404)) throw err;
       }
       Object.assign(patch, raPatch(data as Parameters<typeof raPatch>[0], service, mode, clock()));
-      say({ label: "Registered agent", tone: service?.status === "active" ? "good" : service?.status ? "warn" : "muted", text: service?.status ? service.status.replace(/_/g, " ") : "Palm isn't its agent." });
+      say({
+        label: "Registered agent",
+        tone: service?.status === "active" ? "good" : service?.status ? "warn" : "muted",
+        text: service?.status ? service.status.replace(/_/g, " ") : "Palm isn't its agent.",
+      });
     } catch (err) {
       say({ label: "Registered agent", tone: "bad", text: (err as Error).message });
     }
@@ -139,7 +153,11 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
         if (ours.name?.trim() && business.display_name !== ours.name.trim()) await palm(`/v1/business/${businessId}`, { method: "PATCH", body: { display_name: ours.name.trim() } });
         const diff = businessDifferences(business.vault ?? {}, ours);
         patch[`palm/${mode}/business`] = { differences: diff, checkedAt: clock() };
-        say({ label: "Palm's copy", tone: diff.length ? "warn" : "good", text: diff.length ? `${diff.map((d) => `${d.field}: Palm has ${d.palm}, ours is ${d.ours}.`).join(" ")} Correct these in Palm Console.` : "Matches our record." });
+        say({
+          label: "Palm's copy",
+          tone: diff.length ? "warn" : "good",
+          text: diff.length ? `${diff.map((d) => `${d.field}: Palm has ${d.palm}, ours is ${d.ours}.`).join(" ")} Correct these in Palm Console.` : "Matches our record.",
+        });
       }
     } catch (err) {
       say({ label: "Palm's copy", tone: "bad", text: (err as Error).message });
@@ -150,7 +168,11 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
       let saved = 0;
       let left = 0;
       if (mode === "live") {
-        const have = new Set(Object.values(data.documents ?? {}).map((d) => d?.palmDocumentId).filter(Boolean));
+        const have = new Set(
+          Object.values(data.documents ?? {})
+            .map((d) => d?.palmDocumentId)
+            .filter(Boolean),
+        );
         const missing = documents.filter((d) => !have.has(d.id)).sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
         for (const d of missing) {
           if (clock() - started > budget) {
@@ -180,8 +202,21 @@ export async function syncAllWithPalm(opts: { ids?: string[]; by: { id: string; 
       const parents: [string, string][] = [["business", businessId]];
       if (link?.formation?.filingId) parents.push(["filing", link.formation.filingId]);
       if (link?.formation?.ein?.filingId) parents.push(["filing", link.formation.ein.filingId]);
-      const lists = await Promise.all(parents.filter(([, id]) => UUID.test(id)).map(([type, id]) => palm<{ data?: { id: string; status: string }[] } | { id: string; status: string }[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch((err) => (console.error(`palm-sync: couldn't list cases for ${type} ${id}`, err), null))));
-      const waiting = new Set(lists.flatMap((l) => (Array.isArray(l) ? l : l?.data ?? [])).filter((c) => c?.status === "needs_response").map((c) => c.id)).size;
+      const lists = await Promise.all(
+        parents
+          .filter(([, id]) => UUID.test(id))
+          .map(([type, id]) =>
+            palm<{ data?: { id: string; status: string }[] } | { id: string; status: string }[]>(`/v1/case?parent_type=${type}&parent_id=${id}`).catch(
+              (err) => (console.error(`palm-sync: couldn't list cases for ${type} ${id}`, err), null),
+            ),
+          ),
+      );
+      const waiting = new Set(
+        lists
+          .flatMap((l) => (Array.isArray(l) ? l : (l?.data ?? [])))
+          .filter((c) => c?.status === "needs_response")
+          .map((c) => c.id),
+      ).size;
       say({ label: "Palm's questions", tone: waiting ? "warn" : "good", text: waiting ? `${waiting} waiting on an answer (Compliance).` : "None open." });
     } catch (err) {
       say({ label: "Palm's questions", tone: "bad", text: (err as Error).message });

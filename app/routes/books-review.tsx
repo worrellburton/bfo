@@ -30,10 +30,7 @@ export default function BooksReview() {
   useEffect(() => {
     void (async () => {
       try {
-        const [r, c] = await Promise.all([
-          authFetch("/api/books/data?report=review"),
-          authFetch("/api/books/data?report=reconciliation"),
-        ]);
+        const [r, c] = await Promise.all([authFetch("/api/books/data?report=review"), authFetch("/api/books/data?report=reconciliation")]);
         if (r.ok) setReview(await r.json());
         if (c.ok) setRecon(await c.json());
         if (!r.ok && !c.ok) setFailed(true);
@@ -66,9 +63,7 @@ export default function BooksReview() {
     return (
       <div className="w-full max-w-4xl">
         <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Review</h1>
-        <div className={`mt-5 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          Couldn't load the review. Refresh to try again.
-        </div>
+        <div className={`mt-5 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>Couldn't load the review. Refresh to try again.</div>
       </div>
     );
   }
@@ -85,11 +80,13 @@ export default function BooksReview() {
 
       {/* Headline counts */}
       <div className="grid grid-cols-3 gap-3">
-        {([
-          ["Uncategorized", c.uncategorized, "/books/transactions?type=uncategorized"],
-          ["Low confidence", c.low_confidence, c.low_confidence ? "#low-confidence" : null],
-          ["Duplicate groups", c.duplicate_groups, null],
-        ] as const).map(([label, n, href]) => {
+        {(
+          [
+            ["Uncategorized", c.uncategorized, "/books/transactions?type=uncategorized"],
+            ["Low confidence", c.low_confidence, c.low_confidence ? "#low-confidence" : null],
+            ["Duplicate groups", c.duplicate_groups, null],
+          ] as const
+        ).map(([label, n, href]) => {
           const inner = (
             <>
               <p className={`text-xs leading-snug ${subtle}`}>{label}</p>
@@ -98,11 +95,17 @@ export default function BooksReview() {
           );
           // A hash jumps to the list further down this page.
           return href?.startsWith("#") ? (
-            <a key={label} href={href} className={`rounded-2xl border p-4 rise-in ${card} hover:border-current transition-colors`}>{inner}</a>
+            <a key={label} href={href} className={`rounded-2xl border p-4 rise-in ${card} hover:border-current transition-colors`}>
+              {inner}
+            </a>
           ) : href ? (
-            <Link key={label} to={href} className={`rounded-2xl border p-4 rise-in ${card} hover:border-current transition-colors`}>{inner}</Link>
+            <Link key={label} to={href} className={`rounded-2xl border p-4 rise-in ${card} hover:border-current transition-colors`}>
+              {inner}
+            </Link>
           ) : (
-            <div key={label} className={`rounded-2xl border p-4 rise-in ${card}`}>{inner}</div>
+            <div key={label} className={`rounded-2xl border p-4 rise-in ${card}`}>
+              {inner}
+            </div>
           );
         })}
       </div>
@@ -134,13 +137,7 @@ export default function BooksReview() {
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">{money(a.ledger_net)}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{money(a.bank_balance)}</td>
-                    <td className="px-4 py-2 text-right">
-                      {!a.has_ledger ? (
-                        <span className={`text-xs ${amber}`}>No ledger rows</span>
-                      ) : (
-                        <span className={`text-xs ${subtle}`}>—</span>
-                      )}
-                    </td>
+                    <td className="px-4 py-2 text-right">{!a.has_ledger ? <span className={`text-xs ${amber}`}>No ledger rows</span> : <span className={`text-xs ${subtle}`}>—</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -184,10 +181,7 @@ export default function BooksReview() {
                   <tr key={t.transaction_id} className={`border-t first:border-t-0 ${rowBorder}`}>
                     <td className={`pl-4 pr-2 sm:px-4 py-2 whitespace-nowrap ${subtle}`}>{shortDate(t.date)}</td>
                     <td className="px-2 sm:px-4 py-2 w-full max-w-0" title={who(t)}>
-                      <Link
-                        to={`/books/vendors/detail?name=${encodeURIComponent(who(t))}`}
-                        className="block truncate py-2.5 -my-2.5 hover:underline"
-                      >
+                      <Link to={`/books/vendors/detail?name=${encodeURIComponent(who(t))}`} className="block truncate py-2.5 -my-2.5 hover:underline">
                         {who(t)}
                       </Link>
                       <span className={`block truncate text-xs sm:hidden ${subtle}`}>{(t.book_category ?? "").replace(/^\d{4}\s+/, "")}</span>

@@ -56,13 +56,9 @@ export function label(t: Pick<ReportTxn, "book_category" | "plaid_category">): s
  * too. Unpaired rows under a partial selection stay visible rather than
  * silently disappearing.
  */
-export function eliminated(
-  t: Pick<ReportTxn, "counterparty_account_id">,
-  selection: string[] | null,
-  entityOfAccount: (accountId: string) => string | null | undefined,
-): boolean {
+export function eliminated(t: Pick<ReportTxn, "counterparty_account_id">, selection: string[] | null, entityOfAccount: (accountId: string) => string | null | undefined): boolean {
   if (selection === null) return true;
-  const counterEntity = t.counterparty_account_id ? entityOfAccount(t.counterparty_account_id) ?? null : null;
+  const counterEntity = t.counterparty_account_id ? (entityOfAccount(t.counterparty_account_id) ?? null) : null;
   return !!counterEntity && selection.includes(counterEntity);
 }
 
@@ -72,9 +68,10 @@ export function eliminated(
  * payments, internal transfers) are moving the family's own money, not
  * earning or spending it. Negative amounts are money in.
  */
-export function incomeExpense(
-  rows: Array<Pick<ReportTxn, "amount" | "book_category" | "plaid_category" | "loan_id" | "type_override" | "intercompany" | "txn_type">>
-): { income: number; expenses: number } {
+export function incomeExpense(rows: Array<Pick<ReportTxn, "amount" | "book_category" | "plaid_category" | "loan_id" | "type_override" | "intercompany" | "txn_type">>): {
+  income: number;
+  expenses: number;
+} {
   let income = 0;
   let expenses = 0;
   for (const t of rows) {

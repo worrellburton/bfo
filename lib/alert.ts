@@ -37,7 +37,7 @@ export async function alertAdmins(kind: string, title: string, detail: unknown, 
         url: opts.url ?? "/notifications",
         alertKind: kind,
       },
-      `ops:${kind}`
+      `ops:${kind}`,
     );
     return "sent";
   } catch (err) {

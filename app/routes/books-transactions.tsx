@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { alertDialog } from "../confirm-dialog";
 import { useSearchParams } from "react-router";
@@ -203,9 +194,7 @@ export default function BooksTransactions() {
   // (visible) item once the menu has rendered. A mouse click leaves focus put.
   const moreFocusFirst = useRef(false);
   const menuItems = () =>
-    Array.from(
-      (moreSheetRef.current ?? moreRef.current)?.querySelectorAll<HTMLButtonElement>("[role='menuitem'], [role='menuitemcheckbox']") ?? []
-    ).filter((el) => el.offsetParent !== null);
+    Array.from((moreSheetRef.current ?? moreRef.current)?.querySelectorAll<HTMLButtonElement>("[role='menuitem'], [role='menuitemcheckbox']") ?? []).filter((el) => el.offsetParent !== null);
   const closeMore = (refocus: boolean) => {
     if (moreSheetRef.current) {
       if (moreClosing) return;
@@ -221,9 +210,12 @@ export default function BooksTransactions() {
   };
   const closeMoreRef = useRef(closeMore);
   closeMoreRef.current = closeMore;
-  useEffect(() => () => {
-    if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current);
+    },
+    [],
+  );
   useFocusTrap(moreSheetRef, moreSheet && !moreClosing, { initial: "container" });
   // The kebab menu closes on an outside click or Escape, like every popover
   // (the sheet's backdrop is its outside click).
@@ -369,12 +361,11 @@ export default function BooksTransactions() {
       if (!(sort.key === "date" && sort.dir === "desc")) params.set("sort", `${sort.key}.${sort.dir}`);
       return `/api/books/data?${params}`;
     },
-    [entity, type, year, q, sort, tagMatch]
+    [entity, type, year, q, sort, tagMatch],
   );
 
   // Click a column: same column flips direction, a new column starts descending.
-  const onSort = (key: string) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
+  const onSort = (key: string) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
 
   // Infinite scroll: the next page loads as the sentinel nears the viewport.
   // After a failed page the observer stands down — the Load more button is
@@ -387,7 +378,7 @@ export default function BooksTransactions() {
       (entries) => {
         if (entries[0].isIntersecting) void loadMore();
       },
-      { rootMargin: "600px" }
+      { rootMargin: "600px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -534,21 +525,15 @@ export default function BooksTransactions() {
   // The type segments and the view toggle share one skin. The active segment
   // is raised, not inverted, so Sync now stays the only saturated fill above
   // the ledger.
-  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${
-    isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"
-  }`;
+  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"}`;
   // A floor on phones so "All" isn't the narrowest control on the page.
   const segment = "inline-flex items-center justify-center h-full min-w-[44px] sm:min-w-0 px-3 rounded-full text-sm font-medium whitespace-nowrap transition-colors cursor-pointer";
   const segOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200";
-  const segOff = isDark
-    ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]"
-    : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
+  const segOff = isDark ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]" : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
   const viewSeg = `h-full w-[40px] sm:w-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${TAP.seg}`;
   // Popover items share the Menu option's vocabulary (h-8 px-2 text-xs);
   // sheet items the Menu sheet's (min-h-[44px] px-3 text-base).
-  const menuItemSkin = isDark
-    ? "text-gray-200 hover:bg-white/[0.08] focus-visible:bg-white/[0.08]"
-    : "text-gray-800 hover:bg-gray-100 focus-visible:bg-gray-100";
+  const menuItemSkin = isDark ? "text-gray-200 hover:bg-white/[0.08] focus-visible:bg-white/[0.08]" : "text-gray-800 hover:bg-gray-100 focus-visible:bg-gray-100";
   const menuItem = `w-full h-8 px-2 rounded-lg text-xs text-left whitespace-nowrap cursor-pointer transition-colors ${menuItemSkin}`;
   const sheetItem = `w-full min-h-[44px] px-3 rounded-lg text-base text-left inline-flex items-center gap-3 cursor-pointer transition-colors ${menuItemSkin}`;
   // The kebab's actions, in one place for the popover and the sheet.
@@ -569,13 +554,7 @@ export default function BooksTransactions() {
   // travel is exactly 16px. The "on" track is the accent (the checked
   // checkbox's fill), so "on" means one colour everywhere; the sun icon
   // alone carries the sunrise amber.
-  const sunIcon = (
-    <Icon
-      d={PATHS.sun}
-      strokeWidth={1.6}
-      className={`w-4 h-4 shrink-0 transition-colors ${sunriseOn ? (isDark ? "text-amber-400" : "text-amber-600") : ""}`}
-    />
-  );
+  const sunIcon = <Icon d={PATHS.sun} strokeWidth={1.6} className={`w-4 h-4 shrink-0 transition-colors ${sunriseOn ? (isDark ? "text-amber-400" : "text-amber-600") : ""}`} />;
   const switchTrack = (
     <span
       aria-hidden
@@ -625,14 +604,7 @@ export default function BooksTransactions() {
     />
   );
   const timeMenu = () => (
-    <Menu
-      value={year}
-      isDark={isDark}
-      size="md"
-      label="Period"
-      onChange={setYear}
-      options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]}
-    />
+    <Menu value={year} isDark={isDark} size="md" label="Period" onChange={setYear} options={[{ value: "all", label: "All time" }, ...years.map((y) => ({ value: y, label: y }))]} />
   );
   const typeSegments = () => (
     <div role="group" aria-label="Type" className={segContainer}>
@@ -646,13 +618,7 @@ export default function BooksTransactions() {
           ["uncategorized", "Uncategorized"],
         ] as const
       ).map(([value, label]) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => setType(value)}
-          aria-pressed={type === value}
-          className={`${segment} ${TAP.seg} ${type === value ? segOn : segOff}`}
-        >
+        <button key={value} type="button" onClick={() => setType(value)} aria-pressed={type === value} className={`${segment} ${TAP.seg} ${type === value ? segOn : segOff}`}>
           {label}
           {value === "uncategorized" && uncat ? <span className="ml-1 font-normal">{uncat}</span> : null}
         </button>
@@ -683,13 +649,7 @@ export default function BooksTransactions() {
     </div>
   );
   const clearButton = () => (
-    <button
-      type="button"
-      onClick={clearFilters}
-      aria-label="Clear filters"
-      title="Clear filters"
-      className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${TAP.md} ${outlineBtn(isDark)}`}
-    >
+    <button type="button" onClick={clearFilters} aria-label="Clear filters" title="Clear filters" className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${TAP.md} ${outlineBtn(isDark)}`}>
       Clear
     </button>
   );
@@ -729,9 +689,7 @@ export default function BooksTransactions() {
   // 11.9px card amounts), 22.3px at lg+ — above the 17.85px h1, so the page
   // has one headline. The shimmer below derives its height from the same classes.
   const kpiSize = "text-xl lg:text-3xl leading-none";
-  const kpi = `block mt-1 ${kpiSize} font-semibold tracking-tight truncate transition-opacity ${
-    refreshing ? "opacity-60 delay-150" : ""
-  }`;
+  const kpi = `block mt-1 ${kpiSize} font-semibold tracking-tight truncate transition-opacity ${refreshing ? "opacity-60 delay-150" : ""}`;
 
   return (
     // tabular-nums inherits to the strip and footer; books-shared carries its
@@ -748,15 +706,13 @@ export default function BooksTransactions() {
           {/* Two clauses, one capital each. The switch beside them is the
               status; no amber dot repeats it. */}
           {sunriseError ? (
-            <p role="alert" className="order-3 basis-full -mt-2 sm:basis-auto sm:mt-1 text-xs text-red-500">{sunriseError}</p>
+            <p role="alert" className="order-3 basis-full -mt-2 sm:basis-auto sm:mt-1 text-xs text-red-500">
+              {sunriseError}
+            </p>
           ) : (
             (lastSynced || sunriseOn) && (
               <p className={`order-3 basis-full -mt-2 sm:basis-auto sm:mt-1 text-xs flex flex-wrap items-center gap-x-1.5 gap-y-0.5 ${t2}`}>
-                {lastSynced && (
-                  <span>
-                    Synced {new Date(lastSynced).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                  </span>
-                )}
+                {lastSynced && <span>Synced {new Date(lastSynced).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>}
                 {lastSynced && sunriseOn && <span aria-hidden>·</span>}
                 {sunriseOn && (
                   <span>
@@ -769,123 +725,119 @@ export default function BooksTransactions() {
           )}
         </div>
         {writable && (
-        <div className="order-2 flex items-center gap-2 sm:-mt-0.5">
-          {/* Sync at sunrise — a daily automatic sync at local dawn. A
+          <div className="order-2 flex items-center gap-2 sm:-mt-0.5">
+            {/* Sync at sunrise — a daily automatic sync at local dawn. A
               setting, so on phones it lives in the kebab sheet (the meta
               line already states it) and the header stays title · Sync · ⋯. */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={sunriseOn}
-            aria-label="Sunrise sync"
-            aria-busy={sunriseBusy || undefined}
-            onClick={() => void toggleSunrise()}
-            title={sunriseOn && nextSunriseLabel ? `Next sync ${nextSunriseLabel} · ${lastRanLabel}` : "Sync automatically at sunrise"}
-            className={`hidden sm:inline-flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${TAP.md} ${busyBtn} ${outlineBtn(isDark)}`}
-          >
-            {sunIcon}
-            <span>Sunrise sync</span>
-            {switchTrack}
-          </button>
-          {/* Phones: an icon-only Sync in the cluster (the kebab also carries
+            <button
+              type="button"
+              role="switch"
+              aria-checked={sunriseOn}
+              aria-label="Sunrise sync"
+              aria-busy={sunriseBusy || undefined}
+              onClick={() => void toggleSunrise()}
+              title={sunriseOn && nextSunriseLabel ? `Next sync ${nextSunriseLabel} · ${lastRanLabel}` : "Sync automatically at sunrise"}
+              className={`hidden sm:inline-flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${TAP.md} ${busyBtn} ${outlineBtn(isDark)}`}
+            >
+              {sunIcon}
+              <span>Sunrise sync</span>
+              {switchTrack}
+            </button>
+            {/* Phones: an icon-only Sync in the cluster (the kebab also carries
               the labelled item); sm+: the page's single primary button, at a
               fixed width so the cluster never shifts while it works. */}
-          <button
-            type="button"
-            onClick={() => void syncNow()}
-            aria-label="Sync now"
-            title="Sync now"
-            aria-busy={syncing || undefined}
-            className={`${BTN_BASE} sm:hidden w-[40px] h-[40px] ${busyBtn} ${outlineBtn(isDark)}`}
-          >
-            <Icon d={PATHS.sync} className={`w-4 h-4 ${syncing ? "animate-spin motion-reduce:animate-none" : ""}`} />
-          </button>
-          <span className="hidden sm:contents">
             <button
               type="button"
               onClick={() => void syncNow()}
+              aria-label="Sync now"
+              title="Sync now"
               aria-busy={syncing || undefined}
-              className={`${BTN_BASE} h-9 px-4 text-sm min-w-[6.5rem] ${TAP.md} ${busyBtn} ${primaryBtn(isDark)}`}
+              className={`${BTN_BASE} sm:hidden w-[40px] h-[40px] ${busyBtn} ${outlineBtn(isDark)}`}
             >
-              {syncLabel}
+              <Icon d={PATHS.sync} className={`w-4 h-4 ${syncing ? "animate-spin motion-reduce:animate-none" : ""}`} />
             </button>
-          </span>
-          <div className="relative" ref={moreRef} onKeyDown={onMenuKey}>
-            <button
-              ref={moreBtnRef}
-              type="button"
-              onClick={() => (moreOpen ? closeMore(false) : setMoreOpen(true))}
-              onKeyDown={onKebabKey}
-              aria-expanded={moreOpen}
-              aria-haspopup="menu"
-              aria-label="More actions"
-              className={`w-[40px] h-[40px] sm:w-9 sm:h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${TAP.md} ${outlineBtn(isDark)} ${
-                isDark
-                  ? "aria-expanded:bg-white/[0.1] aria-expanded:border-white/20 aria-expanded:text-white"
-                  : "aria-expanded:bg-gray-100 aria-expanded:border-gray-300 aria-expanded:text-gray-900"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-              </svg>
-            </button>
-            {moreOpen && !moreSheet && (
-              <div role="menu" className={`absolute right-0 mt-2 w-48 rounded-xl border p-1 pop-in z-40 ${popoverSurface(isDark)}`}>
-                {moreActions.map(([label, run, extra]) => (
-                  <button key={label} type="button" role="menuitem" onClick={() => runAction(run)} className={`${menuItem} ${extra}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {/* The phone sheet: the same recipe as every picker sheet, with the
-              Sunrise switch as its first row. */}
-          {moreSheet &&
-            createPortal(
-              <>
-                <div
-                  className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${moreClosing ? "fade-out" : "fade-in"}`}
-                  onClick={() => closeMore(true)}
-                  aria-hidden
-                />
-                <div
-                  ref={moreSheetRef}
-                  role="menu"
-                  aria-label="More actions"
-                  tabIndex={-1}
-                  onKeyDown={onMenuKey}
-                  className={`fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border flex flex-col pb-[max(env(safe-area-inset-bottom),12px)] ${
-                    moreClosing ? "sheet-out pointer-events-none" : "sheet-in"
-                  } ${popoverSurface(isDark)}`}
-                >
-                  <div className={`mx-auto mt-2 mb-1 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
-                  <div className="p-2">
-                    <button
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={sunriseOn}
-                      aria-busy={sunriseBusy || undefined}
-                      onClick={() => void toggleSunrise()}
-                      className={`${sheetItem} justify-between ${busyBtn}`}
-                    >
-                      <span className="inline-flex items-center gap-3">
-                        {sunIcon}
-                        Sunrise sync
-                      </span>
-                      {switchTrack}
+            <span className="hidden sm:contents">
+              <button
+                type="button"
+                onClick={() => void syncNow()}
+                aria-busy={syncing || undefined}
+                className={`${BTN_BASE} h-9 px-4 text-sm min-w-[6.5rem] ${TAP.md} ${busyBtn} ${primaryBtn(isDark)}`}
+              >
+                {syncLabel}
+              </button>
+            </span>
+            <div className="relative" ref={moreRef} onKeyDown={onMenuKey}>
+              <button
+                ref={moreBtnRef}
+                type="button"
+                onClick={() => (moreOpen ? closeMore(false) : setMoreOpen(true))}
+                onKeyDown={onKebabKey}
+                aria-expanded={moreOpen}
+                aria-haspopup="menu"
+                aria-label="More actions"
+                className={`w-[40px] h-[40px] sm:w-9 sm:h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${TAP.md} ${outlineBtn(isDark)} ${
+                  isDark ? "aria-expanded:bg-white/[0.1] aria-expanded:border-white/20 aria-expanded:text-white" : "aria-expanded:bg-gray-100 aria-expanded:border-gray-300 aria-expanded:text-gray-900"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <circle cx="5" cy="12" r="1.6" />
+                  <circle cx="12" cy="12" r="1.6" />
+                  <circle cx="19" cy="12" r="1.6" />
+                </svg>
+              </button>
+              {moreOpen && !moreSheet && (
+                <div role="menu" className={`absolute right-0 mt-2 w-48 rounded-xl border p-1 pop-in z-40 ${popoverSurface(isDark)}`}>
+                  {moreActions.map(([label, run, extra]) => (
+                    <button key={label} type="button" role="menuitem" onClick={() => runAction(run)} className={`${menuItem} ${extra}`}>
+                      {label}
                     </button>
-                    {moreActions.map(([label, run]) => (
-                      <button key={label} type="button" role="menuitem" onClick={() => runAction(run)} className={sheetItem}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  ))}
                 </div>
-              </>,
-              document.body
-            )}
-        </div>
+              )}
+            </div>
+            {/* The phone sheet: the same recipe as every picker sheet, with the
+              Sunrise switch as its first row. */}
+            {moreSheet &&
+              createPortal(
+                <>
+                  <div className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${moreClosing ? "fade-out" : "fade-in"}`} onClick={() => closeMore(true)} aria-hidden />
+                  <div
+                    ref={moreSheetRef}
+                    role="menu"
+                    aria-label="More actions"
+                    tabIndex={-1}
+                    onKeyDown={onMenuKey}
+                    className={`fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border flex flex-col pb-[max(env(safe-area-inset-bottom),12px)] ${
+                      moreClosing ? "sheet-out pointer-events-none" : "sheet-in"
+                    } ${popoverSurface(isDark)}`}
+                  >
+                    <div className={`mx-auto mt-2 mb-1 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
+                    <div className="p-2">
+                      <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        aria-checked={sunriseOn}
+                        aria-busy={sunriseBusy || undefined}
+                        onClick={() => void toggleSunrise()}
+                        className={`${sheetItem} justify-between ${busyBtn}`}
+                      >
+                        <span className="inline-flex items-center gap-3">
+                          {sunIcon}
+                          Sunrise sync
+                        </span>
+                        {switchTrack}
+                      </button>
+                      {moreActions.map(([label, run]) => (
+                        <button key={label} type="button" role="menuitem" onClick={() => runAction(run)} className={sheetItem}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>,
+                document.body,
+              )}
+          </div>
         )}
       </div>
 
@@ -927,10 +879,7 @@ export default function BooksTransactions() {
       </div>
 
       {error && (
-        <div
-          role="alert"
-          className={`mb-5 rounded-2xl pl-4 pr-2 py-2 flex items-center gap-3 text-sm fade-in ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}
-        >
+        <div role="alert" className={`mb-5 rounded-2xl pl-4 pr-2 py-2 flex items-center gap-3 text-sm fade-in ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
           <span className="flex-1 min-w-0">{error}</span>
           <button
             type="button"
@@ -988,11 +937,7 @@ export default function BooksTransactions() {
                   <Icon d={PATHS.search} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
                   <p className={`mt-3 text-sm font-medium ${t1}`}>No transactions match</p>
                   <p className={`mt-1 text-xs ${t2}`}>Try another search or clear the filters.</p>
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className={`${BTN_BASE} mt-4 h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}
-                  >
+                  <button type="button" onClick={clearFilters} className={`${BTN_BASE} mt-4 h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}>
                     Clear filters
                   </button>
                 </>
@@ -1002,23 +947,14 @@ export default function BooksTransactions() {
                   <p className={`mt-3 text-sm font-medium ${t1}`}>Nothing synced yet</p>
                   <p className={`mt-1 text-xs ${t2}`}>Run a sync or import a bank CSV to get started.</p>
                   {writable && (
-                  <div className="mt-4 flex justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void syncNow()}
-                      aria-busy={syncing || undefined}
-                      className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${busyBtn} ${primaryBtn(isDark)}`}
-                    >
-                      {syncLabel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportOpen(true)}
-                      className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}
-                    >
-                      Import CSV…
-                    </button>
-                  </div>
+                    <div className="mt-4 flex justify-center gap-2">
+                      <button type="button" onClick={() => void syncNow()} aria-busy={syncing || undefined} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${busyBtn} ${primaryBtn(isDark)}`}>
+                        {syncLabel}
+                      </button>
+                      <button type="button" onClick={() => setImportOpen(true)} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}>
+                        Import CSV…
+                      </button>
+                    </div>
                   )}
                 </>
               )}
@@ -1032,22 +968,26 @@ export default function BooksTransactions() {
               sort={sort}
               onSort={onSort}
               readOnly={!writable}
-              selection={writable ? {
-                selected,
-                toggle: (id) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    next.has(id) ? next.delete(id) : next.add(id);
-                    return next;
-                  }),
-                setAll: (ids) => setSelected(new Set(ids)),
-                selectMany: (ids, on) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    for (const id of ids) on ? next.add(id) : next.delete(id);
-                    return next;
-                  }),
-              } : undefined}
+              selection={
+                writable
+                  ? {
+                      selected,
+                      toggle: (id) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          next.has(id) ? next.delete(id) : next.add(id);
+                          return next;
+                        }),
+                      setAll: (ids) => setSelected(new Set(ids)),
+                      selectMany: (ids, on) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const id of ids) on ? next.add(id) : next.delete(id);
+                          return next;
+                        }),
+                    }
+                  : undefined
+              }
               onRowChange={(t) => {
                 // Filing a row on or off the books moves the Uncategorized count.
                 const was = rows.find((r) => r.transaction_id === t.transaction_id);
@@ -1123,17 +1063,7 @@ export default function BooksTransactions() {
  * the first time it opens, parses the chosen file, posts the rows and reports
  * the result; the route only learns that an import landed (`onImported`).
  */
-function ImportCsvDialog({
-  isDark,
-  open,
-  onClose,
-  onImported,
-}: {
-  isDark: boolean;
-  open: boolean;
-  onClose: () => void;
-  onImported: () => void;
-}) {
+function ImportCsvDialog({ isDark, open, onClose, onImported }: { isDark: boolean; open: boolean; onClose: () => void; onImported: () => void }) {
   const { t1, t2 } = tiers(isDark);
   const ref = useRef<HTMLDivElement>(null);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -1192,8 +1122,7 @@ function ImportCsvDialog({
       alive = false;
     };
   }, [open, bankAccounts.length]);
-  const accountsLabel =
-    accounts === "loading" ? "Loading accounts…" : accounts === "error" ? "Couldn't load accounts" : "No bank accounts connected";
+  const accountsLabel = accounts === "loading" ? "Loading accounts…" : accounts === "error" ? "Couldn't load accounts" : "No bank accounts connected";
 
   function onCsvFile(file: File) {
     setCsvName(file.name);
@@ -1243,20 +1172,17 @@ function ImportCsvDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="import-title"
-        className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}
-      >
-        <h2 id="import-title" className={`text-lg font-semibold tracking-tight ${t1}`}>Import bank CSV</h2>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="import-title" className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}>
+        <h2 id="import-title" className={`text-lg font-semibold tracking-tight ${t1}`}>
+          Import bank CSV
+        </h2>
         <p className={`mt-1 text-xs mb-4 ${t2}`}>
-          For history Plaid can't reach (Wells Fargo beyond 90 days). Export the range from the
-          bank's site, pick the account it belongs to, and import — duplicates are skipped.
+          For history Plaid can't reach (Wells Fargo beyond 90 days). Export the range from the bank's site, pick the account it belongs to, and import — duplicates are skipped.
         </p>
 
-        <label htmlFor="import-account" className={`block text-xs font-semibold ${t2} mb-1`}>Account</label>
+        <label htmlFor="import-account" className={`block text-xs font-semibold ${t2} mb-1`}>
+          Account
+        </label>
         <select
           id="import-account"
           value={importAccount}
@@ -1271,7 +1197,9 @@ function ImportCsvDialog({
           ))}
         </select>
 
-        <span id="import-file-label" className={`block text-xs font-semibold ${t2} mb-1`}>CSV file</span>
+        <span id="import-file-label" className={`block text-xs font-semibold ${t2} mb-1`}>
+          CSV file
+        </span>
         <div className="flex items-center min-w-0 mb-3">
           <input
             id="import-file"
@@ -1291,13 +1219,14 @@ function ImportCsvDialog({
 
         {csvRows.length > 0 && (
           <p className={`text-xs mb-3 ${t2}`}>
-            <span className={`font-medium ${t1}`}>{csvRows.length} rows</span>,{" "}
-            {csvRows.reduce((min, r) => (r.date < min ? r.date : min), csvRows[0].date)} →{" "}
+            <span className={`font-medium ${t1}`}>{csvRows.length} rows</span>, {csvRows.reduce((min, r) => (r.date < min ? r.date : min), csvRows[0].date)} →{" "}
             {csvRows.reduce((max, r) => (r.date > max ? r.date : max), csvRows[0].date)}
           </p>
         )}
         {result && (
-          <p role="status" className={`text-xs mb-3 ${result.ok ? incomeTone(isDark) : "text-red-500"}`}>{result.text}</p>
+          <p role="status" className={`text-xs mb-3 ${result.ok ? incomeTone(isDark) : "text-red-500"}`}>
+            {result.text}
+          </p>
         )}
 
         <div className="flex justify-end gap-2">

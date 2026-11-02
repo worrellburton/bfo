@@ -13,21 +13,51 @@ export const MAIL_DOMAIN = (process.env.MAIL_DOMAIN?.trim().toLowerCase() || "bu
  * (reports@) whose replies belong in the shared "Other" folder.
  */
 const RESERVED = new Set([
-  "abuse", "accounting", "admin", "administrator", "billing", "bounce", "bounces", "careers",
-  "contact", "dmarc", "finance", "hello", "help", "hostmaster", "hr", "info", "invoices", "it",
-  "jobs", "legal", "mail", "mailer-daemon", "marketing", "no-reply", "noreply", "office", "ops",
-  "payroll", "postmaster", "press", "privacy", "reports", "root", "sales", "security", "support",
-  "team", "webmaster",
+  "abuse",
+  "accounting",
+  "admin",
+  "administrator",
+  "billing",
+  "bounce",
+  "bounces",
+  "careers",
+  "contact",
+  "dmarc",
+  "finance",
+  "hello",
+  "help",
+  "hostmaster",
+  "hr",
+  "info",
+  "invoices",
+  "it",
+  "jobs",
+  "legal",
+  "mail",
+  "mailer-daemon",
+  "marketing",
+  "no-reply",
+  "noreply",
+  "office",
+  "ops",
+  "payroll",
+  "postmaster",
+  "press",
+  "privacy",
+  "reports",
+  "root",
+  "sales",
+  "security",
+  "support",
+  "team",
+  "webmaster",
 ]);
 
 /**
  * Of those, the ones nobody gets even as an extra address: the system sender
  * and the addresses mail servers and DMARC reports use.
  */
-const SYSTEM = new Set([
-  "abuse", "bounce", "bounces", "dmarc", "hostmaster", "mail", "mailer-daemon", "no-reply", "noreply",
-  "postmaster", "reports", "root", "webmaster",
-]);
+const SYSTEM = new Set(["abuse", "bounce", "bounces", "dmarc", "hostmaster", "mail", "mailer-daemon", "no-reply", "noreply", "postmaster", "reports", "root", "webmaster"]);
 
 const LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
 
@@ -95,10 +125,7 @@ export async function addAlias(user: Pick<AppUser, "id" | "mail_address">, input
   if ("error" in parsed) return { error: "invalid_mail_address", message: parsed.error };
   const { address } = parsed;
   if (address === user.mail_address) return { error: "address_taken", message: `${address} is already your address.` };
-  const [owner, mine] = await Promise.all([
-    sb<{ id: string }[]>(`app_users?mail_address=eq.${encodeURIComponent(address)}&select=id&limit=1`),
-    listAliases(user.id),
-  ]);
+  const [owner, mine] = await Promise.all([sb<{ id: string }[]>(`app_users?mail_address=eq.${encodeURIComponent(address)}&select=id&limit=1`), listAliases(user.id)]);
   if (owner?.length) return { error: "address_taken", message: `${address} is taken.` };
   if (mine.includes(address)) return { address };
   if (mine.length >= MAX_ALIASES) return { error: "too_many", message: `An account can have up to ${MAX_ALIASES} extra addresses.` };
@@ -149,19 +176,17 @@ export function addressCandidates(name: string | null, id: string): string[] {
  * people chose for themselves could claim robert@ or accounting@, so they
  * get user-xxxxxx until an admin renames it.
  */
-export async function ensureMailAddress(
-  user: Pick<AppUser, "id" | "name" | "mail_address">,
-  opts: { trustName?: boolean } = {}
-): Promise<string> {
+export async function ensureMailAddress(user: Pick<AppUser, "id" | "name" | "mail_address">, opts: { trustName?: boolean } = {}): Promise<string> {
   if (user.mail_address) return user.mail_address;
   for (const local of addressCandidates(opts.trustName ? user.name : null, user.id)) {
     const address = addressFor(local);
     try {
       // Only fill an empty slot, so two requests racing for the same user agree.
-      const rows = await sb<Array<{ mail_address: string | null }>>(
-        `app_users?id=eq.${user.id}&mail_address=is.null`,
-        { method: "PATCH", body: { mail_address: address }, prefer: "return=representation" }
-      );
+      const rows = await sb<Array<{ mail_address: string | null }>>(`app_users?id=eq.${user.id}&mail_address=is.null`, {
+        method: "PATCH",
+        body: { mail_address: address },
+        prefer: "return=representation",
+      });
       if (rows?.length) {
         user.mail_address = address;
         return address;

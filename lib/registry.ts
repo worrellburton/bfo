@@ -102,7 +102,10 @@ export function baseName(name?: string | null): string {
 
 /** The name to search a registry with: BFO's notes in parentheses ("(100%)") dropped. */
 export function searchName(name: string): string {
-  return name.replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
+  return name
+    .replace(/\(.*?\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function toStateRecord(r: RegistryRecord, mode: PalmMode, checkedAt = Date.now()): StateRecord {

@@ -70,7 +70,7 @@ export function ActivityTab() {
       if (!r.ok) throw new Error(j.message || "Couldn't load the activity.");
       return (j.activity ?? []) as ActivityItem[];
     },
-    [page.id]
+    [page.id],
   );
 
   const load = useCallback(async () => {
@@ -130,18 +130,32 @@ export function ActivityTab() {
 
   const dotCls = (s: ActivityItem["source"]) =>
     s === "palm"
-      ? t.dark ? "bg-[#818cf8]/15 text-[#a5b4fc] ring-[#818cf8]/25" : "bg-indigo-50 text-indigo-600 ring-indigo-100"
+      ? t.dark
+        ? "bg-[#818cf8]/15 text-[#a5b4fc] ring-[#818cf8]/25"
+        : "bg-indigo-50 text-indigo-600 ring-indigo-100"
       : s === "stable"
-        ? t.dark ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/20" : "bg-emerald-50 text-emerald-700 ring-emerald-100"
-        : t.dark ? "bg-white/[0.05] text-gray-300 ring-white/[0.08]" : "bg-gray-50 text-gray-600 ring-gray-200";
+        ? t.dark
+          ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/20"
+          : "bg-emerald-50 text-emerald-700 ring-emerald-100"
+        : t.dark
+          ? "bg-white/[0.05] text-gray-300 ring-white/[0.08]"
+          : "bg-gray-50 text-gray-600 ring-gray-200";
 
   return (
     <Section
       title="Activity"
       info="Every change to this entity, who made it and when: edits, uploads and filings in BFO, Palm moving its filings along, and paper mail Stable received for it. Edits one person makes within a few minutes of each other show as one line."
-      actions={<Button icon="refresh" onClick={() => void load()}>Refresh</Button>}
+      actions={
+        <Button icon="refresh" onClick={() => void load()}>
+          Refresh
+        </Button>
+      }
     >
-      {error && <div className="px-5 pt-3"><ErrorLine>{error}</ErrorLine></div>}
+      {error && (
+        <div className="px-5 pt-3">
+          <ErrorLine>{error}</ErrorLine>
+        </div>
+      )}
       {items === null ? (
         <p className={`px-5 py-5 text-[12.5px] ${t.muted}`}>Loading…</p>
       ) : !items.length ? (
@@ -191,7 +205,9 @@ export function ActivityTab() {
                               </p>
                             ))}
                             {names.map((n) => (
-                              <p key={n} className="break-words">{n}</p>
+                              <p key={n} className="break-words">
+                                {n}
+                              </p>
                             ))}
                             {item.detail?.owners?.length ? <p>Now: {item.detail.owners.join(" · ")}</p> : null}
                             {item.detail?.reason && <p>{item.detail.reason}</p>}

@@ -66,8 +66,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (body.action !== "invite") return fail(res, 400, "unknown_action");
-    const name = String(body.name ?? "").trim().slice(0, 120);
-    const memberName = String(body.memberName ?? "").trim().slice(0, 200) || name;
+    const name = String(body.name ?? "")
+      .trim()
+      .slice(0, 120);
+    const memberName =
+      String(body.memberName ?? "")
+        .trim()
+        .slice(0, 200) || name;
     const phone = normalizePhone(String(body.phone ?? ""));
     const rawEmail = String(body.email ?? "").trim();
     const email = rawEmail ? normalizeEmail(rawEmail) : null;

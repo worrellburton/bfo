@@ -38,7 +38,11 @@ export function apnsConfig(): ApnsConfig | null {
 export function pemOf(raw: string): string {
   const text = raw.replace(/\\n/g, "\n").trim();
   if (text.includes("-----BEGIN")) return text;
-  const body = text.replace(/\s+/g, "").match(/.{1,64}/g)?.join("\n") ?? "";
+  const body =
+    text
+      .replace(/\s+/g, "")
+      .match(/.{1,64}/g)
+      ?.join("\n") ?? "";
   return `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
 }
 

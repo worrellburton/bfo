@@ -51,4 +51,3 @@ export const FILTERS: { key: MailFilter; label: string }[] = [
 ];
 
 export const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred.", "unread-starred": "Nothing both unread and starred." };
-

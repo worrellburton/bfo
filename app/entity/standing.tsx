@@ -86,9 +86,7 @@ export function Standing() {
   const more = list.length - shown.length;
 
   // The next filing ahead, for the foot.
-  const next = view.deadlines
-    .filter((d) => d.due && daysUntil(d.due) > SOON_DAYS)
-    .sort((a, b) => String(a.due).localeCompare(String(b.due)))[0];
+  const next = view.deadlines.filter((d) => d.due && daysUntil(d.due) > SOON_DAYS).sort((a, b) => String(a.due).localeCompare(String(b.due)))[0];
   const unread = !view.isTrust && !rec;
   const good = list.length === 0;
   const dot = good ? "bg-emerald-400" : list.some((n) => n.tone === "bad") ? "bg-red-400" : "bg-amber-400";
@@ -127,7 +125,14 @@ export function Standing() {
         )}
         {good && (
           <div className={`px-5 py-3 text-[13px] ${t.text}`}>
-            Nothing needed{next?.due ? <span className={t.muted}>. Next: {next.title}, {fmtDate(next.due)}.</span> : "."}
+            Nothing needed
+            {next?.due ? (
+              <span className={t.muted}>
+                . Next: {next.title}, {fmtDate(next.due)}.
+              </span>
+            ) : (
+              "."
+            )}
           </div>
         )}
         {unread && (

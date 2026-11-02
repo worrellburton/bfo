@@ -36,15 +36,15 @@ async function findRule(match: string): Promise<{ id: string; match: string } | 
   // which would mis-handle _ % and other metacharacters.
   const existing = await db("book_rules?select=id,match&loan_id=is.null");
   if (!existing.ok) return undefined;
-  return ((await existing.json()) as Array<{ id: string; match: string }>).find(
-    (x) => x.match.toLowerCase() === match.toLowerCase()
-  );
+  return ((await existing.json()) as Array<{ id: string; match: string }>).find((x) => x.match.toLowerCase() === match.toLowerCase());
 }
 
 // ── Loan registry actions ───────────────────────────────────────────────
 
 export async function createLoan({ body }: WriteCtx): Promise<Reply> {
-  const name = String(body.name ?? "").trim().slice(0, 80);
+  const name = String(body.name ?? "")
+    .trim()
+    .slice(0, 80);
   if (!name) return fail(400, { error: "missing_name", message: "Give the loan a name." });
   const starting = Number(body.starting_balance ?? 0);
   const r = await db("book_loans", {
@@ -90,7 +90,9 @@ export async function updateLoan({ body }: WriteCtx): Promise<Reply> {
 // ── Auto-attach rule: descriptions containing X belong to this loan ──────
 
 export async function loanRule({ body }: WriteCtx): Promise<Reply> {
-  const match = String(body.match ?? "").trim().slice(0, 120);
+  const match = String(body.match ?? "")
+    .trim()
+    .slice(0, 120);
   const loanId = String(body.loan_id ?? "");
   if (!match || match.length < 3) {
     return fail(400, { error: "match_too_short", message: "Use at least 3 characters." });
@@ -128,8 +130,12 @@ export async function deleteRule({ body }: WriteCtx): Promise<Reply> {
 // ── "All of these, and from now on": bulk categorize + store a rule ──────
 
 export async function categorizeVendor({ body }: WriteCtx): Promise<Reply> {
-  const match = String(body.match ?? "").trim().slice(0, 120);
-  const category = String(body.book_category ?? "").trim().slice(0, 60);
+  const match = String(body.match ?? "")
+    .trim()
+    .slice(0, 120);
+  const category = String(body.book_category ?? "")
+    .trim()
+    .slice(0, 60);
   if (!match || !category) return fail(400, { error: "missing_fields" });
 
   // Remember the rule (replacing any earlier rule for the same text) so
@@ -155,7 +161,9 @@ export async function categorizeVendor({ body }: WriteCtx): Promise<Reply> {
 //    arrivals; existing rows are patched immediately. ──────────────────────
 
 export async function vendorSettings({ body }: WriteCtx): Promise<Reply> {
-  const match = String(body.match ?? "").trim().slice(0, 200);
+  const match = String(body.match ?? "")
+    .trim()
+    .slice(0, 200);
   const vendorName = body.vendor_name !== undefined ? String(body.vendor_name).trim().slice(0, 80) : undefined;
   const category = body.book_category !== undefined ? String(body.book_category).trim().slice(0, 60) : undefined;
   const typeOverride = body.type_override !== undefined ? String(body.type_override) : undefined;
@@ -196,9 +204,7 @@ export async function vendorSettings({ body }: WriteCtx): Promise<Reply> {
 // ── Batch edits: vendor/description across selected rows ────────────────
 
 export async function batchUpdate({ body, user }: WriteCtx): Promise<Reply> {
-  const ids = Array.isArray(body.transaction_ids)
-    ? (body.transaction_ids as unknown[]).map(String).filter((id) => id.length > 0 && id.length < 100)
-    : [];
+  const ids = Array.isArray(body.transaction_ids) ? (body.transaction_ids as unknown[]).map(String).filter((id) => id.length > 0 && id.length < 100) : [];
   if (!ids.length || ids.length > 500) return fail(400, { error: "bad_selection" });
   const patch: Record<string, unknown> = {};
   if (body.merchant_name !== undefined) {
@@ -228,7 +234,10 @@ export async function batchUpdate({ body, user }: WriteCtx): Promise<Reply> {
   let updated = 0;
   let failedChunk: string | null = null;
   for (let i = 0; i < ids.length; i += 200) {
-    const list = ids.slice(i, i + 200).map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+    const list = ids
+      .slice(i, i + 200)
+      .map((id) => `"${id.replace(/"/g, "")}"`)
+      .join(",");
     const r = await db(`book_transactions?transaction_id=in.(${list})`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -296,10 +305,8 @@ export async function editTransaction({ body, user }: WriteCtx): Promise<Reply> 
   if (!Object.keys(patch).length) return fail(400, { error: "nothing_to_update" });
 
   // Capture the old values first, so the audit log records old → new.
-  const beforeRes = await db(
-    `book_transactions?transaction_id=eq.${encodeURIComponent(transaction_id)}&select=book_category,type_override,loan_id,merchant_name,name&limit=1`
-  );
-  const before = beforeRes.ok ? ((await beforeRes.json()) as any[])[0] ?? null : null;
+  const beforeRes = await db(`book_transactions?transaction_id=eq.${encodeURIComponent(transaction_id)}&select=book_category,type_override,loan_id,merchant_name,name&limit=1`);
+  const before = beforeRes.ok ? (((await beforeRes.json()) as any[])[0] ?? null) : null;
 
   const r = await db(`book_transactions?transaction_id=eq.${encodeURIComponent(transaction_id)}`, {
     method: "PATCH",
@@ -315,8 +322,7 @@ export async function editTransaction({ body, user }: WriteCtx): Promise<Reply> 
   // Re-saving the same values logs nothing, unless the row has no history
   // at all, which is what retrying after a failed log write looks like.
   // Log it then, so the retry really does protect the edit from the sync.
-  const unchanged =
-    !!before && Object.entries(patch).every(([f, v]) => String(before[f] ?? "") === String(v ?? ""));
+  const unchanged = !!before && Object.entries(patch).every(([f, v]) => String(before[f] ?? "") === String(v ?? ""));
   const logBefore = unchanged && !(await hasHistory(transaction_id)) ? null : before;
   if (!(await logChanges([transaction_id], logBefore, patch, "edit", user.id))) {
     return fail(500, { ...HISTORY_FAILED, transaction: rows[0] });

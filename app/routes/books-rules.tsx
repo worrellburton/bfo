@@ -49,7 +49,9 @@ export default function BooksRules() {
       setLoading(false);
     }
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
 
   async function remove(id: string) {
     const before = rules;
@@ -92,7 +94,9 @@ export default function BooksRules() {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Rules</h1>
-          <p className={`text-sm mt-0.5 ${subtle}`}>What the books have learned — {rules.length} rule{rules.length === 1 ? "" : "s"}. New ones are created whenever you choose “apply to all”.</p>
+          <p className={`text-sm mt-0.5 ${subtle}`}>
+            What the books have learned — {rules.length} rule{rules.length === 1 ? "" : "s"}. New ones are created whenever you choose “apply to all”.
+          </p>
         </div>
         <input
           type="search"
@@ -106,11 +110,7 @@ export default function BooksRules() {
         />
       </div>
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {loading ? (
         <div className={`rounded-2xl border p-4 space-y-2.5 rise-in ${card}`}>
@@ -119,78 +119,81 @@ export default function BooksRules() {
           ))}
         </div>
       ) : shown.length === 0 ? (
-        error && rules.length === 0 ? null :
-        <p className={`text-sm ${subtle}`}>{rules.length === 0 ? "No rules yet. Categorize a vendor with “apply to all” to teach your first one." : "No rules match that search."}</p>
+        error && rules.length === 0 ? null : (
+          <p className={`text-sm ${subtle}`}>{rules.length === 0 ? "No rules yet. Categorize a vendor with “apply to all” to teach your first one." : "No rules match that search."}</p>
+        )
       ) : (
         <>
-        {/* Below lg each rule is a card — the match, what it does (chips
+          {/* Below lg each rule is a card — the match, what it does (chips
             wrap), then its match count and Delete — so nothing hides off to
             the side of a narrow column. */}
-        <ul className={`lg:hidden rounded-2xl border rise-in ${card}`}>
-          {shown.map((r) => (
-            <li key={r.id} className={`px-4 pt-3 pb-1 border-t first:border-t-0 ${rowBorder}`}>
-              <p className="text-sm font-medium break-all">“{r.match}”</p>
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {effect(r).map((b) => (
-                  <span key={b} className={`px-2 py-0.5 rounded-full text-xs break-all ${chip}`}>{b}</span>
-                ))}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className={`text-xs tabular-nums ${subtle}`}>{r.matches} match{r.matches === 1 ? "" : "es"}</span>
-                {writable && (
-                  <button
-                    onClick={() => setConfirming(r)}
-                    aria-label={`Delete rule “${r.match}”`}
-                    className={`h-[44px] px-3 -mr-3 text-sm cursor-pointer ${subtle} hover:text-red-500`}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-        <div className={`hidden lg:block rounded-2xl border overflow-x-auto rise-in ${card}`}>
-          <table className="w-full text-sm min-w-[640px]">
-            <thead>
-              <tr className={`${head} border-b ${border}`}>
-                <th className="px-4 py-2.5 text-left font-medium">When description contains</th>
-                <th className="px-4 py-2.5 text-left font-medium">Do this</th>
-                <th className="px-4 py-2.5 text-right font-medium">Matches</th>
-                <th className="px-4 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((r) => (
-                <tr key={r.id} className={`border-t ${rowBorder}`}>
-                  <td className="px-4 py-2.5 font-medium break-all max-w-[280px]">“{r.match}”</td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {effect(r).map((b) => (
-                        <span key={b} className={`px-2 py-0.5 rounded-full text-xs ${chip}`}>{b}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className={`px-4 py-2.5 text-right tabular-nums ${r.matches ? "" : subtle}`}>{r.matches}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    {/* The padding is the tap box (a touch iPad shows this
-                        table too); the negative margins keep the row slim. */}
-                    {writable && (
-                      <button
-                        onClick={() => setConfirming(r)}
-                        title="Delete this rule"
-                        aria-label={`Delete rule “${r.match}”`}
-                        className={`text-xs cursor-pointer px-3 py-[14px] -my-[14px] -mr-3 ${subtle} hover:text-red-500`}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </td>
+          <ul className={`lg:hidden rounded-2xl border rise-in ${card}`}>
+            {shown.map((r) => (
+              <li key={r.id} className={`px-4 pt-3 pb-1 border-t first:border-t-0 ${rowBorder}`}>
+                <p className="text-sm font-medium break-all">“{r.match}”</p>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {effect(r).map((b) => (
+                    <span key={b} className={`px-2 py-0.5 rounded-full text-xs break-all ${chip}`}>
+                      {b}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs tabular-nums ${subtle}`}>
+                    {r.matches} match{r.matches === 1 ? "" : "es"}
+                  </span>
+                  {writable && (
+                    <button onClick={() => setConfirming(r)} aria-label={`Delete rule “${r.match}”`} className={`h-[44px] px-3 -mr-3 text-sm cursor-pointer ${subtle} hover:text-red-500`}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className={`hidden lg:block rounded-2xl border overflow-x-auto rise-in ${card}`}>
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className={`${head} border-b ${border}`}>
+                  <th className="px-4 py-2.5 text-left font-medium">When description contains</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Do this</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Matches</th>
+                  <th className="px-4 py-2.5" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.id} className={`border-t ${rowBorder}`}>
+                    <td className="px-4 py-2.5 font-medium break-all max-w-[280px]">“{r.match}”</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {effect(r).map((b) => (
+                          <span key={b} className={`px-2 py-0.5 rounded-full text-xs ${chip}`}>
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums ${r.matches ? "" : subtle}`}>{r.matches}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      {/* The padding is the tap box (a touch iPad shows this
+                        table too); the negative margins keep the row slim. */}
+                      {writable && (
+                        <button
+                          onClick={() => setConfirming(r)}
+                          title="Delete this rule"
+                          aria-label={`Delete rule “${r.match}”`}
+                          className={`text-xs cursor-pointer px-3 py-[14px] -my-[14px] -mr-3 ${subtle} hover:text-red-500`}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
       {confirming && (

@@ -18,7 +18,8 @@ export const GLYPHS = {
     "M9 3.75H6.912a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M12 3v8.25m0 0l-3-3m3 3l3-3",
   send: "M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5",
   at: "M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zm0 0c0 1.657 1.007 3 2.25 3S21 13.657 21 12a9 9 0 10-2.636 6.364",
-  unread: "M21.75 9v.906a2.25 2.25 0 01-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 001.183 1.981l6.478 3.488m8.839 2.51l-4.66-2.51m0 0l-1.023-.55a2.25 2.25 0 00-2.134 0l-1.022.55m0 0l-4.661 2.51m16.5 1.615a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V8.844a2.25 2.25 0 011.183-1.981l7.5-4.039a2.25 2.25 0 012.134 0l7.5 4.039a2.25 2.25 0 011.183 1.98V19.5z",
+  unread:
+    "M21.75 9v.906a2.25 2.25 0 01-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 001.183 1.981l6.478 3.488m8.839 2.51l-4.66-2.51m0 0l-1.023-.55a2.25 2.25 0 00-2.134 0l-1.022.55m0 0l-4.661 2.51m16.5 1.615a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V8.844a2.25 2.25 0 011.183-1.981l7.5-4.039a2.25 2.25 0 012.134 0l7.5 4.039a2.25 2.25 0 011.183 1.98V19.5z",
 } as const;
 
 export function Glyph({ name, className = "h-3.5 w-3.5" }: { name: keyof typeof GLYPHS; className?: string }) {
@@ -30,12 +31,23 @@ export function Glyph({ name, className = "h-3.5 w-3.5" }: { name: keyof typeof 
 }
 
 /** IconButton with one of this page's glyphs. */
-export function GlyphButton({ glyph, label, tone = "ghost", className = "", glyphClassName, ...rest }: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger"; glyphClassName?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function GlyphButton({
+  glyph,
+  label,
+  tone = "ghost",
+  className = "",
+  glyphClassName,
+  ...rest
+}: { glyph: keyof typeof GLYPHS; label: string; tone?: "ghost" | "danger"; glyphClassName?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { dark } = useTone();
   const t =
     tone === "danger"
-      ? dark ? "text-gray-500 hover:bg-red-500/10 hover:text-red-400" : "text-gray-400 hover:bg-red-50 hover:text-red-600"
-      : dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900";
+      ? dark
+        ? "text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+        : "text-gray-400 hover:bg-red-50 hover:text-red-600"
+      : dark
+        ? "text-gray-400 hover:bg-white/[0.06] hover:text-white"
+        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900";
   return (
     <button
       type="button"
@@ -58,4 +70,3 @@ export function Star({ on, className = "h-3.5 w-3.5", strokeWidth = 1.6 }: { on:
     </svg>
   );
 }
-

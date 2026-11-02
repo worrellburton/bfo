@@ -110,9 +110,26 @@ export const SUMMARY_COLUMNS =
 
 export type SummaryRow = Pick<
   MailRow,
-  | "id" | "user_id" | "folder" | "direction" | "from_email" | "from_name" | "to_addrs" | "cc_addrs"
-  | "subject" | "snippet" | "occurred_at" | "created_at" | "read_at" | "starred_at" | "attachments" | "status"
-  | "thread_key" | "thread_at" | "spf_pass" | "dkim_pass"
+  | "id"
+  | "user_id"
+  | "folder"
+  | "direction"
+  | "from_email"
+  | "from_name"
+  | "to_addrs"
+  | "cc_addrs"
+  | "subject"
+  | "snippet"
+  | "occurred_at"
+  | "created_at"
+  | "read_at"
+  | "starred_at"
+  | "attachments"
+  | "status"
+  | "thread_key"
+  | "thread_at"
+  | "spf_pass"
+  | "dkim_pass"
 >;
 
 export const BUCKET = "mail";
@@ -150,8 +167,7 @@ const enc = encodeURIComponent;
 
 // ── Addresses ─────────────────────────────────────────────────────────
 
-const EMAIL_RE =
-  /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const EMAIL_RE = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** One plain address, lowercase. */
 function isValidEmail(address: string): boolean {
@@ -250,7 +266,8 @@ export function htmlToText(html: string): string {
 }
 
 /** Where a reply's quoted original starts: "On … wrote:", Outlook's separator, or a forward header. */
-const QUOTE_HEADER_RE = /(?:^|\n)[ \t]*(?:On [^\n]{0,300}?(?:\n[^\n]{0,200}?)?wrote:[ \t]*(?:\n|$)|-{3,}[ \t]*Original Message[ \t]*-{3,}|-{3,}[ \t]*Forwarded message[ \t]*-{3,}|From:[ \t][^\n]*\nSent:[ \t])/i;
+const QUOTE_HEADER_RE =
+  /(?:^|\n)[ \t]*(?:On [^\n]{0,300}?(?:\n[^\n]{0,200}?)?wrote:[ \t]*(?:\n|$)|-{3,}[ \t]*Original Message[ \t]*-{3,}|-{3,}[ \t]*Forwarded message[ \t]*-{3,}|From:[ \t][^\n]*\nSent:[ \t])/i;
 
 /** The message's own words: quoted lines and everything from the quote header on are dropped. */
 export function withoutQuotes(text: string): string {
@@ -321,7 +338,7 @@ function renderLines(lines: string[]): string {
     if (plain.length) out.push(plain.map(escapeHtml).join("<br>") + (beforeQuote ? "<br>" : ""));
     plain = [];
   };
-  for (let i = 0; i < lines.length; ) {
+  for (let i = 0; i < lines.length;) {
     if (lines[i].startsWith(">")) {
       flush(true);
       const quoted: string[] = [];
@@ -496,7 +513,6 @@ export function filterClause(filter: MailFilter): string {
   return "";
 }
 
-
 const SEARCH_MAX = 100;
 
 /**
@@ -548,10 +564,13 @@ function addressList(input: unknown): string[] | Refusal {
 }
 
 const cleanFilename = (name: unknown) =>
-  storable(typeof name === "string" ? name : "").replace(/[\r\n\t"\\/]+/g, " ").trim().slice(0, 200).replace(/[\ud800-\udbff]$/, "") || "attachment";
+  storable(typeof name === "string" ? name : "")
+    .replace(/[\r\n\t"\\/]+/g, " ")
+    .trim()
+    .slice(0, 200)
+    .replace(/[\ud800-\udbff]$/, "") || "attachment";
 
-const cleanContentType = (type: unknown) =>
-  typeof type === "string" && /^[\w.+-]+\/[\w.+-]+$/.test(type.trim()) ? type.trim().toLowerCase() : "application/octet-stream";
+const cleanContentType = (type: unknown) => (typeof type === "string" && /^[\w.+-]+\/[\w.+-]+$/.test(type.trim()) ? type.trim().toLowerCase() : "application/octet-stream");
 
 /** Validate a send request from the browser. Everything is checked before anything is sent. */
 export function parseSend(body: Record<string, unknown>): SendRequest | Refusal {
@@ -572,7 +591,9 @@ export function parseSend(body: Record<string, unknown>): SendRequest | Refusal 
     return { error: "too_many_recipients", message: `Send to ${LIMITS.recipients} people or fewer.` };
   }
 
-  const subject = storable(typeof body.subject === "string" ? body.subject : "").replace(/[\r\n]+/g, " ").trim();
+  const subject = storable(typeof body.subject === "string" ? body.subject : "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
   if (subject.length > LIMITS.subject) return { error: "subject_too_long", message: `Keep the subject under ${LIMITS.subject} characters.` };
 
   // A formatted message (the editor's HTML) is cleaned to the allowlist again here; its text part is written from it.
@@ -607,14 +628,20 @@ export function parseSend(body: Record<string, unknown>): SendRequest | Refusal 
 
 /** A Bird call that failed; the message is one plain line for people. */
 export class BirdError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
 
 /** A send refused once the forwarded files are counted in (too many, too big). */
 export class SendRefused extends Error {
-  constructor(public code: string, message: string) {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -636,7 +663,10 @@ function birdProblem(status: number, body: string, task: BirdTask): string {
   } catch {
     /* not JSON */
   }
-  detail = String(detail ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+  detail = String(detail ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
   if (status === 401) return "Bird refused (401): the API key isn't valid";
   if (status === 403) return `Bird refused (403): ${SCOPE_HINT[task]}`;
   if (status === 429) return "Bird is busy (429): try again in a minute";
@@ -736,13 +766,8 @@ async function usersAt(addresses: string[]): Promise<{ id: string; mail_address:
     sb<{ address: string; user_id: string }[]>(`mail_aliases?address=in.(${list})&select=address,user_id`),
   ]);
   const extraOwners = [...new Set((extra ?? []).map((r) => r.user_id))];
-  const approved = extraOwners.length
-    ? new Set((await sb<{ id: string }[]>(`app_users?status=eq.approved&id=in.(${extraOwners.join(",")})&select=id`) ?? []).map((u) => u.id))
-    : new Set<string>();
-  const hits = [
-    ...(main ?? []).map((u) => ({ id: u.id, address: u.mail_address })),
-    ...(extra ?? []).filter((r) => approved.has(r.user_id)).map((r) => ({ id: r.user_id, address: r.address })),
-  ];
+  const approved = extraOwners.length ? new Set(((await sb<{ id: string }[]>(`app_users?status=eq.approved&id=in.(${extraOwners.join(",")})&select=id`)) ?? []).map((u) => u.id)) : new Set<string>();
+  const hits = [...(main ?? []).map((u) => ({ id: u.id, address: u.mail_address })), ...(extra ?? []).filter((r) => approved.has(r.user_id)).map((r) => ({ id: r.user_id, address: r.address }))];
   const out: { id: string; mail_address: string }[] = [];
   for (const addr of addresses) {
     for (const h of hits) {
@@ -778,8 +803,7 @@ async function sentByUs(fromEmail: string, subject: string | null, receivedAt: s
   const until = new Date(at + OWN_SENT_SKEW_MS).toISOString();
   const sameSubject = subject ? `subject=eq.${enc(subject)}` : `or=(subject.is.null,subject.eq."")`;
   const rows = await sb<{ id: string }[]>(
-    `mail_messages?direction=eq.out&from_email=eq.${enc(fromEmail)}&${sameSubject}` +
-      `&occurred_at=gte.${enc(since)}&occurred_at=lte.${enc(until)}&select=id&limit=1`
+    `mail_messages?direction=eq.out&from_email=eq.${enc(fromEmail)}&${sameSubject}` + `&occurred_at=gte.${enc(since)}&occurred_at=lte.${enc(until)}&select=id&limit=1`,
   );
   return !!rows?.length;
 }
@@ -795,7 +819,10 @@ export function forOtherApp(msg: { to?: { email?: string }[] | null; cc?: { emai
   const named = [...(msg.to ?? []), ...(msg.cc ?? [])].map((a) => (typeof a?.email === "string" ? a.email.toLowerCase() : ""));
   const envelope: string[] = [];
   for (const line of headers ? headerBlock(headers).split(/\r?\n/) : []) {
-    const name = line.slice(0, Math.max(0, line.indexOf(":"))).trim().toLowerCase();
+    const name = line
+      .slice(0, Math.max(0, line.indexOf(":")))
+      .trim()
+      .toLowerCase();
     const value = line.slice(line.indexOf(":") + 1);
     if (name === "delivered-to" || name === "x-original-to") for (const m of value.matchAll(/([^\s<>,;"]+@[^\s<>,;"]+)/g)) envelope.push(m[1].toLowerCase());
     else if (name === "received") for (const m of value.matchAll(/\bfor\s+<?([^\s<>,;"]+@[^\s<>,;"]+)/gi)) envelope.push(m[1].toLowerCase());
@@ -821,9 +848,7 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
     // The Bird workspace also receives for another app's domain (Impact Advisory): its mail isn't ours, not even for "Other".
     if (!recipients.length && forOtherApp(msg, headers)) return 0;
   }
-  const targets = users.length
-    ? users.map((u) => ({ userId: u.id as string | null, deliveredTo: u.mail_address as string | null }))
-    : [{ userId: null, deliveredTo: recipients[0] ?? null }];
+  const targets = users.length ? users.map((u) => ({ userId: u.id as string | null, deliveredTo: u.mail_address as string | null })) : [{ userId: null, deliveredTo: recipients[0] ?? null }];
   const keyFor = (userId: string | null) => `in:${msg.id}:${userId ?? "other"}`;
 
   const [stored, deleted] = await Promise.all([
@@ -1011,9 +1036,7 @@ export async function mailStatus() {
     .then(async (res) => {
       const list = ((await res.json()) as { data?: any[] }).data ?? [];
       const d = list.find((x) => String(x?.domain ?? "").toLowerCase() === MAIL_DOMAIN);
-      return d
-        ? { found: true, inbound: (d.capabilities?.inbound?.status as string) ?? null, receiving: (d.receiving?.state as string) ?? null }
-        : { found: false, inbound: null, receiving: null };
+      return d ? { found: true, inbound: (d.capabilities?.inbound?.status as string) ?? null, receiving: (d.receiving?.state as string) ?? null } : { found: false, inbound: null, receiving: null };
     })
     .catch((err) => ({ error: problemText(err) }));
   const read = bird("/v1/email/inbound-messages?limit=1", "read")
@@ -1097,9 +1120,7 @@ export async function sendMail(sender: Sender, req: SendRequest, original: MailR
     text: req.text,
     html: req.html,
     ...(Object.keys(headers).length ? { headers } : {}),
-    ...(files.length
-      ? { attachments: files.map((f) => ({ filename: f.filename, content: f.bytes.toString("base64"), content_type: f.contentType })) }
-      : {}),
+    ...(files.length ? { attachments: files.map((f) => ({ filename: f.filename, content: f.bytes.toString("base64"), content_type: f.contentType })) } : {}),
     category: "transactional",
     track_opens: false,
     track_clicks: false,
@@ -1196,9 +1217,7 @@ export async function sendMail(sender: Sender, req: SendRequest, original: MailR
     });
   }
   if (lost) {
-    await sb(`mail_messages?id=eq.${id}`, { method: "PATCH", body: { attachments } }).catch((err) =>
-      console.error("mail: couldn't mark a sent attachment unavailable", err)
-    );
+    await sb(`mail_messages?id=eq.${id}`, { method: "PATCH", body: { attachments } }).catch((err) => console.error("mail: couldn't mark a sent attachment unavailable", err));
     return { ...stored, attachments };
   }
   return stored;
@@ -1214,7 +1233,7 @@ export async function sendMail(sender: Sender, req: SendRequest, original: MailR
 export async function deleteMessages(ids: string[], scope: string): Promise<void> {
   if (!ids.length) return;
   const rows = await sb<Pick<MailRow, "id" | "attachments" | "dedupe_key" | "bird_id" | "direction">[]>(
-    `mail_messages?id=in.(${ids.join(",")})&${scope}&select=id,attachments,dedupe_key,bird_id,direction`
+    `mail_messages?id=in.(${ids.join(",")})&${scope}&select=id,attachments,dedupe_key,bird_id,direction`,
   );
   if (!rows?.length) return;
   const tombstones = rows.filter((r) => r.direction === "in" && r.bird_id).map((r) => ({ dedupe_key: r.dedupe_key, bird_id: r.bird_id }));

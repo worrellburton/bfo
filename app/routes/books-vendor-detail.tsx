@@ -151,9 +151,7 @@ export default function BooksVendorDetail() {
 
   // Newest-first rows for the table; the balance accumulates oldest-first.
   const { ordered, balances } = useMemo(() => {
-    const asc = [...txns].sort(
-      (a, b) => a.date.localeCompare(b.date) || a.transaction_id.localeCompare(b.transaction_id)
-    );
+    const asc = [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.transaction_id.localeCompare(b.transaction_id));
     let bal = 0;
     const map: Record<string, number> = {};
     for (const t of asc) {
@@ -192,7 +190,9 @@ export default function BooksVendorDetail() {
 
   return (
     <div className="w-full">
-      <Link to="/books/vendors" className={`inline-flex items-center min-h-[40px] sm:min-h-0 -my-[12px] sm:my-0 text-sm ${subtle} hover:underline`}>← Vendors</Link>
+      <Link to="/books/vendors" className={`inline-flex items-center min-h-[40px] sm:min-h-0 -my-[12px] sm:my-0 text-sm ${subtle} hover:underline`}>
+        ← Vendors
+      </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-3 mt-2 mb-7">
         <div className="min-w-0 max-w-3xl">
@@ -232,14 +232,19 @@ export default function BooksVendorDetail() {
               title={writable ? "Rename this vendor" : undefined}
               className="group flex items-center gap-2.5 min-h-[40px] text-left cursor-pointer max-w-full disabled:cursor-default"
             >
-              <h1 className={`text-2xl font-bold tracking-tight truncate ${isDark ? "" : "text-gray-900"}`}>
-                {name || "Vendor"}
-              </h1>
+              <h1 className={`text-2xl font-bold tracking-tight truncate ${isDark ? "" : "text-gray-900"}`}>{name || "Vendor"}</h1>
               <svg
                 className={`w-4 h-4 shrink-0 transition-colors ${writable ? "" : "hidden"} ${isDark ? "text-gray-600 group-hover:text-gray-300" : "text-gray-300 group-hover:text-gray-600"}`}
-                fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.6}
+                viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"
+                />
               </svg>
             </button>
           )}
@@ -283,24 +288,24 @@ export default function BooksVendorDetail() {
               />
             </span>
             {/* Fold this vendor's whole history into another vendor. */}
-            {writable && <span className="inline-flex items-center gap-2">
-              <span className={`text-xs ${subtle}`}>Merge into</span>
-              <Menu
-                value=""
-                isDark={isDark}
-                touch
-                label="Merge into"
-                disabled={saving || loading || vendors.length < 2}
-                placeholder="Choose vendor…"
-                onChange={(target) => {
-                  if (!target || target === name) return;
-                  setMergeTarget(target);
-                }}
-                options={vendors
-                  .filter((v) => v !== name)
-                  .map((v) => ({ value: v, label: v }))}
-              />
-            </span>}
+            {writable && (
+              <span className="inline-flex items-center gap-2">
+                <span className={`text-xs ${subtle}`}>Merge into</span>
+                <Menu
+                  value=""
+                  isDark={isDark}
+                  touch
+                  label="Merge into"
+                  disabled={saving || loading || vendors.length < 2}
+                  placeholder="Choose vendor…"
+                  onChange={(target) => {
+                    if (!target || target === name) return;
+                    setMergeTarget(target);
+                  }}
+                  options={vendors.filter((v) => v !== name).map((v) => ({ value: v, label: v }))}
+                />
+              </span>
+            )}
           </div>
         </div>
 
@@ -323,11 +328,7 @@ export default function BooksVendorDetail() {
         )}
       </div>
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {loading ? (
         <div className={`rounded-2xl border p-4 space-y-2.5 rise-in ${card}`}>
@@ -336,9 +337,9 @@ export default function BooksVendorDetail() {
           ))}
         </div>
       ) : txns.length === 0 ? (
-        error ? null : <p className={`text-sm ${subtle}`}>
-          {name ? "No transactions found for this vendor." : "No vendor chosen — pick one from the Vendors list."}
-        </p>
+        error ? null : (
+          <p className={`text-sm ${subtle}`}>{name ? "No transactions found for this vendor." : "No vendor chosen — pick one from the Vendors list."}</p>
+        )
       ) : (
         <>
           {/* Monthly shape, one row per year. */}
@@ -348,7 +349,9 @@ export default function BooksVendorDetail() {
                 <tr className={`${head} border-b ${border}`}>
                   <th className="px-3 py-2.5 text-left font-medium">Year</th>
                   {MONTHS.map((m) => (
-                    <th key={m} className="px-3 py-2.5 text-right font-medium">{m}</th>
+                    <th key={m} className="px-3 py-2.5 text-right font-medium">
+                      {m}
+                    </th>
                   ))}
                   <th className={`px-3 py-2.5 text-right font-medium border-l ${rowBorder}`}>Total</th>
                 </tr>
@@ -358,11 +361,11 @@ export default function BooksVendorDetail() {
                   <tr key={year} className={`border-t ${rowBorder}`}>
                     <td className={`px-3 py-2 font-medium ${subtle}`}>{year}</td>
                     {monthly.map((v, i) => (
-                      <td key={i} className={`${num} ${v === 0 ? faint : ""}`}>{moneyRounded(v)}</td>
+                      <td key={i} className={`${num} ${v === 0 ? faint : ""}`}>
+                        {moneyRounded(v)}
+                      </td>
                     ))}
-                    <td className={`${num} font-semibold border-l ${rowBorder}`}>
-                      {moneyRounded(monthly.reduce((s, v) => s + v, 0))}
-                    </td>
+                    <td className={`${num} font-semibold border-l ${rowBorder}`}>{moneyRounded(monthly.reduce((s, v) => s + v, 0))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -378,25 +381,27 @@ export default function BooksVendorDetail() {
               isDark={isDark}
               balances={balances}
               readOnly={!writable}
-              selection={writable ? {
-                selected,
-                toggle: (id) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    next.has(id) ? next.delete(id) : next.add(id);
-                    return next;
-                  }),
-                setAll: (ids) => setSelected(new Set(ids)),
-                selectMany: (ids, on) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    for (const id of ids) on ? next.add(id) : next.delete(id);
-                    return next;
-                  }),
-              } : undefined}
-              onRowChange={(t) =>
-                setTxns((prev) => prev.map((x) => (x.transaction_id === t.transaction_id ? { ...t, entity_id: x.entity_id, entity_name: x.entity_name } : x)))
+              selection={
+                writable
+                  ? {
+                      selected,
+                      toggle: (id) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          next.has(id) ? next.delete(id) : next.add(id);
+                          return next;
+                        }),
+                      setAll: (ids) => setSelected(new Set(ids)),
+                      selectMany: (ids, on) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const id of ids) on ? next.add(id) : next.delete(id);
+                          return next;
+                        }),
+                    }
+                  : undefined
               }
+              onRowChange={(t) => setTxns((prev) => prev.map((x) => (x.transaction_id === t.transaction_id ? { ...t, entity_id: x.entity_id, entity_name: x.entity_name } : x)))}
               onError={setError}
               onReload={() => void load()}
             />
@@ -429,8 +434,7 @@ export default function BooksVendorDetail() {
           title={`Merge into “${mergeTarget}”?`}
           message={
             <>
-              All {stats.count} transaction{stats.count === 1 ? "" : "s"} under “{name}” will move to{" "}
-              “{mergeTarget}”, and future ones will follow.
+              All {stats.count} transaction{stats.count === 1 ? "" : "s"} under “{name}” will move to “{mergeTarget}”, and future ones will follow.
             </>
           }
           confirmLabel="Merge"

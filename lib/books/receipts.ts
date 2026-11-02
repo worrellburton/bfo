@@ -42,10 +42,7 @@ export async function historyReport(query: Query): Promise<Reply> {
   const txnId = String(query.transaction_id ?? "").trim();
   if (!txnId) return fail(400, { error: "missing_transaction_id" });
   const enc = encodeURIComponent(txnId);
-  const [logRes, recRes] = await Promise.all([
-    db(`book_txn_log?transaction_id=eq.${enc}&order=changed_at.desc&limit=200`),
-    db(`book_txn_receipt?transaction_id=eq.${enc}&order=uploaded_at.desc`),
-  ]);
+  const [logRes, recRes] = await Promise.all([db(`book_txn_log?transaction_id=eq.${enc}&order=changed_at.desc&limit=200`), db(`book_txn_receipt?transaction_id=eq.${enc}&order=uploaded_at.desc`)]);
   const log = logRes.ok ? await logRes.json() : [];
   const rawReceipts = recRes.ok ? ((await recRes.json()) as any[]) : [];
   // Storage-backed receipts are private — hand back a short-lived signed
@@ -53,10 +50,8 @@ export async function historyReport(query: Query): Promise<Reply> {
   const receipts = await Promise.all(
     rawReceipts.map(async (r) => ({
       ...r,
-      url: r.path
-        ? await storageSignedUrl(r.path).catch((err) => (console.error("books: couldn't sign a receipt link", err), null))
-        : r.url,
-    }))
+      url: r.path ? await storageSignedUrl(r.path).catch((err) => (console.error("books: couldn't sign a receipt link", err), null)) : r.url,
+    })),
   );
   return ok({ log, receipts });
 }

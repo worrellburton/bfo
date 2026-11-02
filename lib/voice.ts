@@ -12,7 +12,10 @@ const VOICE = "nova";
 const SPEECH_MAX = 1800;
 
 export class VoiceError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -55,7 +58,13 @@ export async function speak(text: string): Promise<Uint8Array> {
     const r = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, voice: VOICE, input, response_format: "mp3", ...(model.startsWith("gpt-4o") ? { instructions: "Calm, clear and unhurried, like a trusted assistant reading a short note aloud." } : {}) }),
+      body: JSON.stringify({
+        model,
+        voice: VOICE,
+        input,
+        response_format: "mp3",
+        ...(model.startsWith("gpt-4o") ? { instructions: "Calm, clear and unhurried, like a trusted assistant reading a short note aloud." } : {}),
+      }),
       signal: AbortSignal.timeout(45_000),
     });
     if (r.ok) return new Uint8Array(await r.arrayBuffer());
@@ -95,7 +104,11 @@ export function spokenForm(md: string): string {
     }
     if (/^\|?\s*:?-{2,}/.test(line) && line.includes("-")) continue; // the table's rule
     if (line.startsWith("|")) {
-      const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      const cells = line
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((c) => c.trim());
       if (!header) {
         header = cells;
         continue;
@@ -103,8 +116,15 @@ export function spokenForm(md: string): string {
       out.push(cells.map((c, i) => (header![i] && i > 0 ? `${header![i]}: ${c}` : c)).join(", ") + ".");
       continue;
     }
-    line = line.replace(/^#{1,4}\s+/, "").replace(/^\s*[-*•]\s+/, "").replace(/^\s*\d{1,3}[.)]\s+/, "");
-    line = line.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1");
+    line = line
+      .replace(/^#{1,4}\s+/, "")
+      .replace(/^\s*[-*•]\s+/, "")
+      .replace(/^\s*\d{1,3}[.)]\s+/, "");
+    line = line
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1");
     out.push(line);
   }
   return out

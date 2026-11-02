@@ -12,9 +12,7 @@ import type { BookTxn, Pref } from "./types.js";
  * transaction at sync time — remapping an account takes effect at once.
  */
 export async function getPrefs(): Promise<Map<string, Pref>> {
-  const rows = await fetchAll<Pref>(
-    "plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name&archived_at=is.null"
-  );
+  const rows = await fetchAll<Pref>("plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name&archived_at=is.null");
   return new Map(rows.map((p) => [p.account_id, p]));
 }
 
@@ -35,9 +33,7 @@ export function scopeFilter(prefs: Map<string, Pref>, selection: string[] | null
     return base + (mapped.length ? `&account_id=not.in.(${idList(mapped)})` : "");
   }
 
-  const wanted = [...prefs.values()]
-    .filter((p) => p.entity_id && selection.includes(p.entity_id))
-    .map((p) => p.account_id);
+  const wanted = [...prefs.values()].filter((p) => p.entity_id && selection.includes(p.entity_id)).map((p) => p.account_id);
   return base + `&account_id=in.(${wanted.length ? idList(wanted) : '"none"'})`;
 }
 

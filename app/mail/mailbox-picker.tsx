@@ -18,10 +18,36 @@ import { useExit } from "./controls";
 /** A long address on a narrow screen wraps after the @, not mid-word. */
 function wrapAddress(a: string) {
   const at = a.indexOf("@");
-  return at < 0 ? a : <>{a.slice(0, at + 1)}<wbr />{a.slice(at + 1)}</>;
+  return at < 0 ? (
+    a
+  ) : (
+    <>
+      {a.slice(0, at + 1)}
+      <wbr />
+      {a.slice(at + 1)}
+    </>
+  );
 }
 
-export function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = false, compact = false, unread = 0 }: { address: string; aliases: string[]; box: string; onChoose: (next: string) => void; canAdd: boolean; /** The phone's top: the mailbox is the title. */ big?: boolean; /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean; unread?: number }) {
+export function MailboxPicker({
+  address,
+  aliases,
+  box,
+  onChoose,
+  canAdd,
+  big = false,
+  compact = false,
+  unread = 0,
+}: {
+  address: string;
+  aliases: string[];
+  box: string;
+  onChoose: (next: string) => void;
+  canAdd: boolean;
+  /** The phone's top: the mailbox is the title. */ big?: boolean;
+  /** The title shrunk into a bar while the list scrolls under it. */ compact?: boolean;
+  unread?: number;
+}) {
   const t = useTone();
   const domain = address.slice(address.indexOf("@") + 1);
   // The server's answer to an add or remove shows at once; the shared count catches up after.
@@ -136,12 +162,16 @@ export function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = f
   }
 
   const current = mine.find((m) => m.toLowerCase() === box) ?? null;
-  const label = mine.length === 1 ? address : current ?? "All mailboxes";
+  const label = mine.length === 1 ? address : (current ?? "All mailboxes");
   const localPart = (a: string) => a.slice(0, a.indexOf("@"));
   const hueOf = (a: string) => `hsl(${Math.round(mailboxHue(a) * 360)} 70% ${t.dark ? 62 : 48}%)`;
   /** The mailbox's mark: its initial on its own colour. */
   const bubble = (a: string, size = "h-7 w-7 text-[12px]") => (
-    <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${size}`} style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})`, boxShadow: `0 0 18px ${hueOf(a).replace(/\)$/, " / 0.33)")}` }}>
+    <span
+      aria-hidden="true"
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${size}`}
+      style={{ background: `linear-gradient(135deg, ${hueOf(a)}, ${hueOf(a + "x")})`, boxShadow: `0 0 18px ${hueOf(a).replace(/\)$/, " / 0.33)")}` }}
+    >
       {a ? localPart(a).slice(0, 1).toUpperCase() : "∗"}
     </span>
   );
@@ -177,12 +207,26 @@ export function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = f
             <span className={`flex items-center gap-1.5 font-semibold leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${compact ? "text-[15px]" : "text-[19px]"} ${t.text}`}>
               <span className="min-w-0 break-words">{wrapAddress(current ?? (mine.length === 1 ? address : "All mailboxes"))}</span>
               <Icon name="chevronDown" className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${t.muted}`} strokeWidth={2.2} />
-              {compact && unread > 0 && <span className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>{unread}</span>}
+              {compact && unread > 0 && (
+                <span
+                  className={`ml-auto inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}
+                >
+                  {unread}
+                </span>
+              )}
             </span>
             <span className={`flex items-center gap-2 overflow-hidden text-[12.5px] transition-all duration-300 ${compact ? "max-h-0 opacity-0" : "mt-0.5 max-h-6 opacity-100"} ${t.muted}`}>
-              <span className="truncate">{current ? `${localPart(current)} · ${mine.length > 1 ? `one of ${mine.length} addresses` : "your mailbox"}` : mine.length === 1 ? localPart(address) : `${address}${mine.length > 2 ? ` and ${mine.length - 1} more` : ` and ${mine[1]}`}`}</span>
+              <span className="truncate">
+                {current
+                  ? `${localPart(current)} · ${mine.length > 1 ? `one of ${mine.length} addresses` : "your mailbox"}`
+                  : mine.length === 1
+                    ? localPart(address)
+                    : `${address}${mine.length > 2 ? ` and ${mine.length - 1} more` : ` and ${mine[1]}`}`}
+              </span>
               {unread > 0 && (
-                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}>
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-px text-[11px] font-semibold tabular-nums ${t.dark ? "bg-(--mail-accent-deep)/25 text-(--mail-accent-pale)" : "bg-(--mail-accent-deep)/15 text-(--mail-accent-ink)"}`}
+                >
                   <span className="unread-glow h-1.5 w-1.5 rounded-full bg-(--mail-accent)" />
                   {unread} unread
                 </span>
@@ -205,105 +249,147 @@ export function MailboxPicker({ address, aliases, box, onChoose, canAdd, big = f
         </button>
       )}
 
-      {exit.shown && place && createPortal(
-        <>
-          {place.sheet && <div className={`fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px] ${exit.leaving ? "backdrop-out" : "backdrop-in"}`} onClick={() => setOpen(false)} aria-hidden="true" />}
-          <div
-            ref={menuRef}
-            role="menu"
-            aria-label="Mailbox"
-            style={{ position: "fixed", top: place.top, bottom: place.bottom !== undefined ? `calc(${place.bottom}px + env(safe-area-inset-bottom))` : undefined, left: place.left, width: place.width }}
-            className={`z-[65] overflow-hidden border shadow-2xl ${exit.leaving ? "menu-out" : place.sheet ? "menu-down" : "menu-down"} ${place.sheet ? "rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
-              t.dark ? (place.sheet ? "border-white/10 bg-[#0f0f16]/85" : "border-white/10 bg-[#101016]") : place.sheet ? "border-gray-200 bg-white/90" : "border-gray-200 bg-white"
-            }`}
-          >
-          {place.sheet && (
-            <div className="px-4 pb-2 pt-2">
-              <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`}>Show mail for</p>
-            </div>
-          )}
-          {mine.length > 1 && (
-            <button type="button" role="menuitemradio" aria-checked={!current} onClick={() => { onChoose(""); setOpen(false); }} className={`${row} ${!current ? t.text : t.soft}`}>
-              {place.sheet ? bubble("", "h-9 w-9 text-[14px]") : null}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">All mailboxes</span>
-                {place.sheet && <span className={`block truncate text-[12px] ${t.muted}`}>Everything, in one list</span>}
-              </span>
-              <span className={`inline-flex h-4 w-4 items-center justify-center ${!current ? t.accent : "opacity-0"}`}>
-                <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />
-              </span>
-            </button>
-          )}
-          {mine.map((m) => {
-            const on = mine.length > 1 ? current?.toLowerCase() === m.toLowerCase() : false;
-            const extra = m !== address;
-            return (
-              <div key={m} className={`${row} ${on ? t.text : t.soft}`} role="none">
-                {place.sheet ? bubble(m, "h-9 w-9 text-[14px]") : null}
-                {mine.length > 1 ? (
-                  <button type="button" role="menuitemradio" aria-checked={on} onClick={() => { onChoose(m.toLowerCase()); setOpen(false); }} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-left">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{place.sheet ? localPart(m) : m}</span>
-                      {place.sheet && <span className={`block truncate text-[12px] ${t.muted}`}>{m}</span>}
-                    </span>
-                    <span className={`inline-flex h-4 w-4 items-center justify-center ${on ? t.accent : "opacity-0"}`}>
-                      <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />
-                    </span>
-                  </button>
-                ) : (
-                  <span className="min-w-0 flex-1 truncate">{m}</span>
-                )}
-                {copyBtn(m)}
-                {extra && canAdd && (
-                  <button type="button" onClick={() => void remove(m)} aria-label={`Remove ${m}`} title="Remove address" className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-[40px] max-sm:w-[40px] ${t.dark ? "text-gray-600 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}>
-                    <Icon name="x" className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {canAdd && (
-            <div className={`mt-1 border-t px-3 pb-2 pt-2 ${t.line}`}>
-              {!adding ? (
-                <TextButton onClick={() => { setAdding(true); setError(null); }} className="text-[12.5px]">
-                  <Icon name="plus" className="h-3 w-3" strokeWidth={2} />
-                  Add address
-                </TextButton>
-              ) : (
-                <form
-                  className="flex flex-wrap items-center gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void add();
-                  }}
-                >
-                  <label className={`flex h-8 min-w-0 flex-1 items-center rounded-lg border pl-2.5 pr-2 text-[12.5px] max-sm:h-10 ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}>
-                    <span className="sr-only">New address</span>
-                    <input
-                      autoFocus
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder="accounting"
-                      spellCheck={false}
-                      autoCapitalize="none"
-                      autoComplete="off"
-                      style={{ outline: "none" }}
-                      className={`w-full min-w-0 bg-transparent text-right placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
-                    />
-                    <span className={`shrink-0 ${t.muted}`}>@{domain}</span>
-                  </label>
-                  <Button kind="primary" type="submit" disabled={busy || !value.trim()}>
-                    {busy ? "Adding…" : "Add"}
-                  </Button>
-                </form>
+      {exit.shown &&
+        place &&
+        createPortal(
+          <>
+            {place.sheet && (
+              <div className={`fixed inset-0 z-[64] bg-black/45 backdrop-blur-[2px] ${exit.leaving ? "backdrop-out" : "backdrop-in"}`} onClick={() => setOpen(false)} aria-hidden="true" />
+            )}
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-label="Mailbox"
+              style={{
+                position: "fixed",
+                top: place.top,
+                bottom: place.bottom !== undefined ? `calc(${place.bottom}px + env(safe-area-inset-bottom))` : undefined,
+                left: place.left,
+                width: place.width,
+              }}
+              className={`z-[65] overflow-hidden border shadow-2xl ${exit.leaving ? "menu-out" : place.sheet ? "menu-down" : "menu-down"} ${place.sheet ? "rounded-3xl py-2 mail-glass-top" : "rounded-xl py-1"} ${
+                t.dark ? (place.sheet ? "border-white/10 bg-[#0f0f16]/85" : "border-white/10 bg-[#101016]") : place.sheet ? "border-gray-200 bg-white/90" : "border-gray-200 bg-white"
+              }`}
+            >
+              {place.sheet && (
+                <div className="px-4 pb-2 pt-2">
+                  <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`}>Show mail for</p>
+                </div>
               )}
-              {error && <p className={`mt-1.5 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+              {mine.length > 1 && (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={!current}
+                  onClick={() => {
+                    onChoose("");
+                    setOpen(false);
+                  }}
+                  className={`${row} ${!current ? t.text : t.soft}`}
+                >
+                  {place.sheet ? bubble("", "h-9 w-9 text-[14px]") : null}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">All mailboxes</span>
+                    {place.sheet && <span className={`block truncate text-[12px] ${t.muted}`}>Everything, in one list</span>}
+                  </span>
+                  <span className={`inline-flex h-4 w-4 items-center justify-center ${!current ? t.accent : "opacity-0"}`}>
+                    <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />
+                  </span>
+                </button>
+              )}
+              {mine.map((m) => {
+                const on = mine.length > 1 ? current?.toLowerCase() === m.toLowerCase() : false;
+                const extra = m !== address;
+                return (
+                  <div key={m} className={`${row} ${on ? t.text : t.soft}`} role="none">
+                    {place.sheet ? bubble(m, "h-9 w-9 text-[14px]") : null}
+                    {mine.length > 1 ? (
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={on}
+                        onClick={() => {
+                          onChoose(m.toLowerCase());
+                          setOpen(false);
+                        }}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-left"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{place.sheet ? localPart(m) : m}</span>
+                          {place.sheet && <span className={`block truncate text-[12px] ${t.muted}`}>{m}</span>}
+                        </span>
+                        <span className={`inline-flex h-4 w-4 items-center justify-center ${on ? t.accent : "opacity-0"}`}>
+                          <Icon name="check" className="h-4 w-4" strokeWidth={2.5} />
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate">{m}</span>
+                    )}
+                    {copyBtn(m)}
+                    {extra && canAdd && (
+                      <button
+                        type="button"
+                        onClick={() => void remove(m)}
+                        aria-label={`Remove ${m}`}
+                        title="Remove address"
+                        className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md max-sm:h-[40px] max-sm:w-[40px] ${t.dark ? "text-gray-600 hover:bg-white/[0.08] hover:text-white" : "text-gray-400 hover:bg-gray-200 hover:text-gray-900"}`}
+                      >
+                        <Icon name="x" className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {canAdd && (
+                <div className={`mt-1 border-t px-3 pb-2 pt-2 ${t.line}`}>
+                  {!adding ? (
+                    <TextButton
+                      onClick={() => {
+                        setAdding(true);
+                        setError(null);
+                      }}
+                      className="text-[12.5px]"
+                    >
+                      <Icon name="plus" className="h-3 w-3" strokeWidth={2} />
+                      Add address
+                    </TextButton>
+                  ) : (
+                    <form
+                      className="flex flex-wrap items-center gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void add();
+                      }}
+                    >
+                      <label
+                        className={`flex h-8 min-w-0 flex-1 items-center rounded-lg border pl-2.5 pr-2 text-[12.5px] max-sm:h-10 ${t.dark ? "border-white/10 bg-white/[0.03] focus-within:border-white/25" : "border-gray-200 bg-white focus-within:border-gray-400"}`}
+                      >
+                        <span className="sr-only">New address</span>
+                        <input
+                          autoFocus
+                          value={value}
+                          onChange={(e) => setValue(e.target.value)}
+                          placeholder="accounting"
+                          spellCheck={false}
+                          autoCapitalize="none"
+                          autoComplete="off"
+                          style={{ outline: "none" }}
+                          className={`w-full min-w-0 bg-transparent text-right placeholder:text-gray-500 max-sm:text-[16px] ${t.text}`}
+                        />
+                        <span className={`shrink-0 ${t.muted}`}>@{domain}</span>
+                      </label>
+                      <Button kind="primary" type="submit" disabled={busy || !value.trim()}>
+                        {busy ? "Adding…" : "Add"}
+                      </Button>
+                    </form>
+                  )}
+                  {error && <p className={`mt-1.5 text-[12px] ${t.dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+                </div>
+              )}
             </div>
-          )}
-          </div>
-        </>,
-        document.body
-      )}
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

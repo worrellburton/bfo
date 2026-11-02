@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { patchFor, statesToRead } from "../lib/state-records";
 
-const rec = (over = {}) => ({ mode: "live" as const, agent: "Northwest Registered Agent LLC", agentAddress: "4539 N 22nd St, Ste N, Phoenix, AZ 85016", registrationNumber: "L123", checkedAt: 1, ...over });
+const rec = (over = {}) => ({
+  mode: "live" as const,
+  agent: "Northwest Registered Agent LLC",
+  agentAddress: "4539 N 22nd St, Ste N, Phoenix, AZ 85016",
+  registrationNumber: "L123",
+  checkedAt: 1,
+  ...over,
+});
 
 describe("reading every state record", () => {
   it("reads the home state, then each state it's registered in as foreign", () => {
@@ -14,7 +21,11 @@ describe("reading every state record", () => {
   });
 
   it("fills only blanks, and never copies the Secretary of State in as agent", () => {
-    expect(patchFor({ name: "X", fileNumber: "" }, "AZ", true, rec(), true)).toMatchObject({ fileNumber: "L123", registeredAgent: "Northwest Registered Agent LLC", registeredAgentAddress: "4539 N 22nd St, Ste N, Phoenix, AZ 85016" });
+    expect(patchFor({ name: "X", fileNumber: "" }, "AZ", true, rec(), true)).toMatchObject({
+      fileNumber: "L123",
+      registeredAgent: "Northwest Registered Agent LLC",
+      registeredAgentAddress: "4539 N 22nd St, Ste N, Phoenix, AZ 85016",
+    });
     const kept = patchFor({ name: "X", fileNumber: "F1", registeredAgent: "Someone Else", registeredAgentAddress: "" }, "AZ", true, rec(), true);
     expect(Object.keys(kept)).toEqual(["stateRecord"]);
     expect(Object.keys(patchFor({ name: "X", fileNumber: "F1" }, "DE", true, rec({ agent: "DELAWARE SECRETARY OF STATE" }), true))).toEqual(["stateRecord"]);
@@ -26,7 +37,10 @@ describe("reading every state record", () => {
 describe("matching a registry entry", () => {
   it("finds an entity whose name on record leaves off its ending or carries a note", async () => {
     const { pickRegistryMatch, searchName } = await import("../lib/registry");
-    const results = [{ name: "BREEZEWOOD, LLC", registration_jurisdiction: "US-AZ" }, { name: "BREEZEWOOD HOLDINGS LLC", registration_jurisdiction: "US-AZ" }];
+    const results = [
+      { name: "BREEZEWOOD, LLC", registration_jurisdiction: "US-AZ" },
+      { name: "BREEZEWOOD HOLDINGS LLC", registration_jurisdiction: "US-AZ" },
+    ];
     expect(searchName("Breezewood (100%)")).toBe("Breezewood");
     expect(pickRegistryMatch(results, "Breezewood (100%)", "US-AZ")?.name).toBe("BREEZEWOOD, LLC");
     expect(pickRegistryMatch([{ name: "BREEZEWOOD LLC", registration_jurisdiction: "US-NV" }], "Breezewood", "US-AZ")).toBeNull();

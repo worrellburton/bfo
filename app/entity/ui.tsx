@@ -106,12 +106,28 @@ export function Button({
 }
 
 /** A square icon-only button. `label` is its accessible name and tooltip. */
-export function IconButton({ icon, label, tone = "ghost", className = "", iconClassName = "h-3.5 w-3.5", ...rest }: { icon: IconName; label: string; tone?: "ghost" | "danger"; /** The icon's size, when the button is bigger than usual (a phone's toolbar). */ iconClassName?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function IconButton({
+  icon,
+  label,
+  tone = "ghost",
+  className = "",
+  iconClassName = "h-3.5 w-3.5",
+  ...rest
+}: {
+  icon: IconName;
+  label: string;
+  tone?: "ghost" | "danger";
+  /** The icon's size, when the button is bigger than usual (a phone's toolbar). */ iconClassName?: string;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { dark } = useTone();
   const t =
     tone === "danger"
-      ? dark ? "text-gray-500 hover:bg-red-500/10 hover:text-red-400" : "text-gray-400 hover:bg-red-50 hover:text-red-600"
-      : dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900";
+      ? dark
+        ? "text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+        : "text-gray-400 hover:bg-red-50 hover:text-red-600"
+      : dark
+        ? "text-gray-500 hover:bg-white/[0.06] hover:text-white"
+        : "text-gray-400 hover:bg-gray-100 hover:text-gray-900";
   return (
     <button
       type="button"
@@ -212,7 +228,11 @@ export function Info({ children, label }: { children: ReactNode; label?: string 
   return (
     <>
       <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} label={label} />
-      {open && <span className="block w-full basis-full"><InfoText open>{children}</InfoText></span>}
+      {open && (
+        <span className="block w-full basis-full">
+          <InfoText open>{children}</InfoText>
+        </span>
+      )}
     </>
   );
 }
@@ -367,9 +387,7 @@ export function Field({ label, children, wide = false, hint, className = "" }: {
 }
 
 function inputClass(dark: boolean, extra = "") {
-  const t = dark
-    ? "border-white/10 bg-white/[0.03] text-white focus:border-[#818cf8]/60"
-    : "border-gray-200 bg-white text-gray-900 focus:border-[#4f46e5]/50";
+  const t = dark ? "border-white/10 bg-white/[0.03] text-white focus:border-[#818cf8]/60" : "border-gray-200 bg-white text-gray-900 focus:border-[#4f46e5]/50";
   return `h-8 w-full rounded-lg border px-2.5 text-[13px] placeholder:text-gray-500 transition-colors focus:outline-none max-sm:h-[44px] max-sm:text-[16px] ${t} ${extra}`;
 }
 

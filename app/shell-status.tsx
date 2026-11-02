@@ -19,14 +19,7 @@ export function RouteProgress() {
     return () => clearTimeout(t);
   }, [busy]);
   if (!visible) return null;
-  return (
-    <div
-      role="progressbar"
-      aria-label="Loading page"
-      className="route-progress pointer-events-none fixed inset-x-0 top-0 z-[100] h-[2px]"
-      style={{ marginTop: "env(safe-area-inset-top)" }}
-    />
-  );
+  return <div role="progressbar" aria-label="Loading page" className="route-progress pointer-events-none fixed inset-x-0 top-0 z-[100] h-[2px]" style={{ marginTop: "env(safe-area-inset-top)" }} />;
 }
 
 /** Says so when the device drops offline, and briefly when it's back. */
@@ -56,12 +49,7 @@ export function OfflineBanner({ isDark }: { isDark: boolean }) {
   }, [back]);
   if (online && !back) return null;
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 z-[95] flex justify-center px-4"
-      style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-    >
+    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 z-[95] flex justify-center px-4" style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
       <div
         className={`toast-in flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] shadow-lg backdrop-blur-xl ${
           isDark ? "border-white/10 bg-black/80 text-gray-200" : "border-gray-200 bg-white/90 text-gray-700"

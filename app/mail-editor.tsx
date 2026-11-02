@@ -136,8 +136,12 @@ function ListGlyph({ numbered = false }: { numbered?: boolean }) {
     <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
       {numbered ? (
         <>
-          <text x="0.5" y="5.5" fontSize="5" fill="currentColor" stroke="none">1</text>
-          <text x="0.5" y="12.5" fontSize="5" fill="currentColor" stroke="none">2</text>
+          <text x="0.5" y="5.5" fontSize="5" fill="currentColor" stroke="none">
+            1
+          </text>
+          <text x="0.5" y="12.5" fontSize="5" fill="currentColor" stroke="none">
+            2
+          </text>
         </>
       ) : (
         <>

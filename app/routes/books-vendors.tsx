@@ -127,18 +127,12 @@ export default function BooksVendors() {
   const rowBorder = isDark ? "border-white/5" : "border-gray-100";
   const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
   const drawerBg = isDark ? "bg-white/[0.015]" : "bg-gray-50/70";
-  const field = `px-4 h-[40px] sm:h-9 rounded-full text-sm border ${
-    isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-  }`;
+  const field = `px-4 h-[40px] sm:h-9 rounded-full text-sm border ${isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`;
   const num = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
   const faint = isDark ? "text-gray-700" : "text-gray-300";
 
   const years = [0, 1].map((d) => String(new Date().getFullYear() - d));
-  const entityTagIcon = (name: string) => (
-    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${entityTagClass(name, isDark)}`}>
-      {entityTag(name)}
-    </span>
-  );
+  const entityTagIcon = (name: string) => <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${entityTagClass(name, isDark)}`}>{entityTag(name)}</span>;
 
   return (
     <div className="w-full">
@@ -164,27 +158,17 @@ export default function BooksVendors() {
           size="md"
           label="Entity"
           onChange={setEntity}
-          options={[
-            { value: "all", label: "All entities" },
-            ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) })),
-          ]}
+          options={[{ value: "all", label: "All entities" }, ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) }))]}
         />
-        <Menu
-          value={year}
-          isDark={isDark}
-          size="md"
-          label="Year"
-          onChange={setYear}
-          options={years.map((y) => ({ value: y, label: y }))}
-        />
-        {!loading && !error && <span className={`text-xs ml-auto ${subtle}`}>{shown.length} vendor{shown.length === 1 ? "" : "s"}</span>}
+        <Menu value={year} isDark={isDark} size="md" label="Year" onChange={setYear} options={years.map((y) => ({ value: y, label: y }))} />
+        {!loading && !error && (
+          <span className={`text-xs ml-auto ${subtle}`}>
+            {shown.length} vendor{shown.length === 1 ? "" : "s"}
+          </span>
+        )}
       </div>
 
-      {error && (
-        <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {error}
-        </div>
-      )}
+      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
 
       {/* Empty: a plain card — inside the 1050px table the message sat off-screen on phones. */}
       {!loading && !error && shown.length === 0 ? (
@@ -192,155 +176,147 @@ export default function BooksVendors() {
           {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
         </div>
       ) : (
-      <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
-        <table className="text-sm min-w-[1050px] w-full">
-          <thead className={`sticky top-0 z-10 ${stickyBg}`}>
-            <tr className={`text-xs ${subtle} border-b ${border}`}>
-              <th className={`px-3 py-3 text-left font-medium sticky left-0 ${stickyBg}`}>Vendor</th>
-              {MONTHS.map((m) => (
-                <th key={m} className="px-2.5 py-3 text-right font-medium">{m}</th>
-              ))}
-              <th className="px-2.5 py-3 text-right font-medium">Total</th>
-              <th className="px-2.5 py-3 text-right font-medium">In</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={15} className="px-4 py-4">
-                  <div className="space-y-2.5">
-                    {Array.from({ length: 6 }, (_, i) => (
-                      <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 3) * 8}%` }} />
-                    ))}
-                  </div>
-                </td>
+        <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
+          <table className="text-sm min-w-[1050px] w-full">
+            <thead className={`sticky top-0 z-10 ${stickyBg}`}>
+              <tr className={`text-xs ${subtle} border-b ${border}`}>
+                <th className={`px-3 py-3 text-left font-medium sticky left-0 ${stickyBg}`}>Vendor</th>
+                {MONTHS.map((m) => (
+                  <th key={m} className="px-2.5 py-3 text-right font-medium">
+                    {m}
+                  </th>
+                ))}
+                <th className="px-2.5 py-3 text-right font-medium">Total</th>
+                <th className="px-2.5 py-3 text-right font-medium">In</th>
               </tr>
-            ) : shown.length === 0 ? (
-              error ? null : <tr>
-                <td colSpan={15} className={`px-4 py-8 text-center ${subtle}`}>
-                  {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
-                </td>
-              </tr>
-            ) : (
-              <>
-                {shown.map((v) => {
-                  const isOpen = openVendor === v.vendor;
-                  const txns = vendorTxns[v.vendor];
-                  return (
-                    <Fragment key={v.vendor}>
-                      <tr className={`border-t ${rowBorder} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
-                        <td
-                          className={`px-3 py-2 sticky left-0 max-w-[260px] ${stickyBg}`}
-                          title={v.entities.length ? `${v.count} transactions · ${v.entities.join(", ")}` : `${v.count} transactions`}
-                        >
-                          <span className="flex items-center gap-1.5 max-w-full">
-                            <button
-                              onClick={() => void toggleVendor(v.vendor)}
-                              aria-expanded={isOpen}
-                              aria-label={`Show ${v.vendor} transactions inline`}
-                              className="cursor-pointer shrink-0 w-[32px] h-[40px] -my-[12px] -ml-2 sm:w-6 sm:h-6 sm:my-0 sm:-ml-1 flex items-center justify-center rounded-md"
-                            >
-                              <svg
-                                className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`}
-                                fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                              </svg>
-                            </button>
-                            <Link
-                              to={`/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`}
-                              className="font-medium truncate hover:underline py-[13px] -my-[13px] sm:py-0 sm:my-0"
-                            >
-                              {v.vendor}
-                            </Link>
-                          </span>
-                        </td>
-                        {v.monthly.map((m, i) => (
-                          <td key={i} className={`${num} ${m === 0 ? faint : ""}`}>{money(m)}</td>
-                        ))}
-                        <td className={`${num} font-semibold`}>{money(v.spent)}</td>
-                        <td className={`${num} ${v.received ? "text-emerald-500" : faint}`}>
-                          {v.received ? `+${money(v.received)}` : "—"}
-                        </td>
-                      </tr>
-                      {isOpen && (
-                        <tr>
-                          <td colSpan={15} className={`px-3 pb-4 pt-1 ${drawerBg}`}>
-                            {txnLoading === v.vendor && !txns ? (
-                              <p className={`text-sm py-3 ${subtle}`}>Loading transactions…</p>
-                            ) : txns && txns.length > 0 ? (
-                              <div className={`rounded-lg border overflow-x-auto ${border} ${stickyBg}`}>
-                                <table className="w-full text-sm min-w-[720px]">
-                                  <thead>
-                                    <tr className={`text-xs ${subtle} border-b ${border}`}>
-                                      <th className="px-3 py-2 text-left font-medium">Date</th>
-                                      <th className="px-3 py-2 text-left font-medium">Description</th>
-                                      <th className="px-3 py-2 text-left font-medium">Account</th>
-                                      <th className="px-3 py-2 text-left font-medium">Entity</th>
-                                      <th className="px-3 py-2 text-right font-medium">Amount</th>
-                                      <th className="px-3 py-2 text-right font-medium">Balance</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {(() => {
-                                      let bal = 0;
-                                      const asc = [...txns].sort(
-                                        (a, b) => a.date.localeCompare(b.date) || a.transaction_id.localeCompare(b.transaction_id)
-                                      );
-                                      return asc.map((t) => {
-                                        bal += t.amount; // outflow positive = money paid to the vendor
-                                        const inflow = t.amount < 0;
-                                        return (
-                                          <tr key={t.transaction_id} className={`border-t ${rowBorder}`}>
-                                            <td className={`px-3 py-2 whitespace-nowrap ${subtle}`} title={t.date}>{shortDate(t.date)}</td>
-                                            <td className="px-3 py-2 max-w-[320px]" title={t.name ?? undefined}>
-                                              <span className="truncate block max-w-full">{t.name || "—"}</span>
-                                            </td>
-                                            <td className={`px-3 py-2 whitespace-nowrap ${subtle}`}>
-                                              {t.book_category || pretty(t.plaid_category)}
-                                            </td>
-                                            <td className="px-3 py-2 whitespace-nowrap">
-                                              {t.entity_name ? (
-                                                <EntityTag name={t.entity_name} isDark={isDark} />
-                                              ) : (
-                                                <span className={`text-xs ${subtle}`}>—</span>
-                                              )}
-                                            </td>
-                                            <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${inflow ? "text-emerald-500" : ""}`}>
-                                              {inflow ? `+${fmtMoney(-t.amount, t.currency ?? "USD")}` : fmtMoney(t.amount, t.currency ?? "USD")}
-                                            </td>
-                                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">
-                                              {fmtMoney(bal, t.currency ?? "USD")}
-                                            </td>
-                                          </tr>
-                                        );
-                                      });
-                                    })()}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ) : (
-                              <p className={`text-sm py-3 ${subtle}`}>No transactions found for this vendor.</p>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-                <tr className={`border-t font-semibold ${border}`}>
-                  <td className={`px-3 py-2 sticky left-0 ${stickyBg}`}>Total</td>
-                  {totals.monthly.map((m, i) => (
-                    <td key={i} className={num}>{money(m)}</td>
-                  ))}
-                  <td className={num}>{money(totals.spent)}</td>
-                  <td className={num} />
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={15} className="px-4 py-4">
+                    <div className="space-y-2.5">
+                      {Array.from({ length: 6 }, (_, i) => (
+                        <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 3) * 8}%` }} />
+                      ))}
+                    </div>
+                  </td>
                 </tr>
-              </>
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : shown.length === 0 ? (
+                error ? null : (
+                  <tr>
+                    <td colSpan={15} className={`px-4 py-8 text-center ${subtle}`}>
+                      {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
+                    </td>
+                  </tr>
+                )
+              ) : (
+                <>
+                  {shown.map((v) => {
+                    const isOpen = openVendor === v.vendor;
+                    const txns = vendorTxns[v.vendor];
+                    return (
+                      <Fragment key={v.vendor}>
+                        <tr className={`border-t ${rowBorder} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
+                          <td
+                            className={`px-3 py-2 sticky left-0 max-w-[260px] ${stickyBg}`}
+                            title={v.entities.length ? `${v.count} transactions · ${v.entities.join(", ")}` : `${v.count} transactions`}
+                          >
+                            <span className="flex items-center gap-1.5 max-w-full">
+                              <button
+                                onClick={() => void toggleVendor(v.vendor)}
+                                aria-expanded={isOpen}
+                                aria-label={`Show ${v.vendor} transactions inline`}
+                                className="cursor-pointer shrink-0 w-[32px] h-[40px] -my-[12px] -ml-2 sm:w-6 sm:h-6 sm:my-0 sm:-ml-1 flex items-center justify-center rounded-md"
+                              >
+                                <svg className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                                </svg>
+                              </button>
+                              <Link to={`/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`} className="font-medium truncate hover:underline py-[13px] -my-[13px] sm:py-0 sm:my-0">
+                                {v.vendor}
+                              </Link>
+                            </span>
+                          </td>
+                          {v.monthly.map((m, i) => (
+                            <td key={i} className={`${num} ${m === 0 ? faint : ""}`}>
+                              {money(m)}
+                            </td>
+                          ))}
+                          <td className={`${num} font-semibold`}>{money(v.spent)}</td>
+                          <td className={`${num} ${v.received ? "text-emerald-500" : faint}`}>{v.received ? `+${money(v.received)}` : "—"}</td>
+                        </tr>
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={15} className={`px-3 pb-4 pt-1 ${drawerBg}`}>
+                              {txnLoading === v.vendor && !txns ? (
+                                <p className={`text-sm py-3 ${subtle}`}>Loading transactions…</p>
+                              ) : txns && txns.length > 0 ? (
+                                <div className={`rounded-lg border overflow-x-auto ${border} ${stickyBg}`}>
+                                  <table className="w-full text-sm min-w-[720px]">
+                                    <thead>
+                                      <tr className={`text-xs ${subtle} border-b ${border}`}>
+                                        <th className="px-3 py-2 text-left font-medium">Date</th>
+                                        <th className="px-3 py-2 text-left font-medium">Description</th>
+                                        <th className="px-3 py-2 text-left font-medium">Account</th>
+                                        <th className="px-3 py-2 text-left font-medium">Entity</th>
+                                        <th className="px-3 py-2 text-right font-medium">Amount</th>
+                                        <th className="px-3 py-2 text-right font-medium">Balance</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(() => {
+                                        let bal = 0;
+                                        const asc = [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.transaction_id.localeCompare(b.transaction_id));
+                                        return asc.map((t) => {
+                                          bal += t.amount; // outflow positive = money paid to the vendor
+                                          const inflow = t.amount < 0;
+                                          return (
+                                            <tr key={t.transaction_id} className={`border-t ${rowBorder}`}>
+                                              <td className={`px-3 py-2 whitespace-nowrap ${subtle}`} title={t.date}>
+                                                {shortDate(t.date)}
+                                              </td>
+                                              <td className="px-3 py-2 max-w-[320px]" title={t.name ?? undefined}>
+                                                <span className="truncate block max-w-full">{t.name || "—"}</span>
+                                              </td>
+                                              <td className={`px-3 py-2 whitespace-nowrap ${subtle}`}>{t.book_category || pretty(t.plaid_category)}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">
+                                                {t.entity_name ? <EntityTag name={t.entity_name} isDark={isDark} /> : <span className={`text-xs ${subtle}`}>—</span>}
+                                              </td>
+                                              <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${inflow ? "text-emerald-500" : ""}`}>
+                                                {inflow ? `+${fmtMoney(-t.amount, t.currency ?? "USD")}` : fmtMoney(t.amount, t.currency ?? "USD")}
+                                              </td>
+                                              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtMoney(bal, t.currency ?? "USD")}</td>
+                                            </tr>
+                                          );
+                                        });
+                                      })()}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className={`text-sm py-3 ${subtle}`}>No transactions found for this vendor.</p>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  <tr className={`border-t font-semibold ${border}`}>
+                    <td className={`px-3 py-2 sticky left-0 ${stickyBg}`}>Total</td>
+                    {totals.monthly.map((m, i) => (
+                      <td key={i} className={num}>
+                        {money(m)}
+                      </td>
+                    ))}
+                    <td className={num}>{money(totals.spent)}</td>
+                    <td className={num} />
+                  </tr>
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

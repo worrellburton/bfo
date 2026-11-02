@@ -80,5 +80,7 @@ export function Logo3D({
     ...(spin ? { "auto-rotate": "", "rotation-per-second": "28deg", "auto-rotate-delay": "0" } : {}),
     ...(interactive ? { "camera-controls": "", "disable-zoom": "", "disable-pan": "", "interaction-prompt": "none" } : {}),
   };
-  return <model-viewer src={src} poster={poster ?? undefined} alt={alt} class={className} style={{ background: "transparent", "--poster-color": "transparent", ...style } as CSSProperties} {...attrs} />;
+  return (
+    <model-viewer src={src} poster={poster ?? undefined} alt={alt} class={className} style={{ background: "transparent", "--poster-color": "transparent", ...style } as CSSProperties} {...attrs} />
+  );
 }

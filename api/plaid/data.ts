@@ -46,25 +46,16 @@ async function getAccountStates(): Promise<Map<string, AccountState>> {
   return new Map(rows.map((row) => [row.account_id, row]));
 }
 
-async function saveAccountState(
-  accountId: string,
-  itemId: string,
-  balance: number | null,
-  prior: AccountState | undefined,
-  rotate: boolean,
-  now: Date
-) {
+async function saveAccountState(accountId: string, itemId: string, balance: number | null, prior: AccountState | undefined, rotate: boolean, now: Date) {
   const row = {
     account_id: accountId,
     item_id: itemId,
     balance,
     seen_at: now.toISOString(),
-    prev_balance: rotate ? prior?.balance ?? null : prior?.prev_balance ?? null,
-    prev_seen_at: rotate ? prior?.seen_at ?? null : prior?.prev_seen_at ?? null,
+    prev_balance: rotate ? (prior?.balance ?? null) : (prior?.prev_balance ?? null),
+    prev_seen_at: rotate ? (prior?.seen_at ?? null) : (prior?.prev_seen_at ?? null),
   };
-  await sb("plaid_account_state", { method: "POST", body: row, prefer: "resolution=merge-duplicates" }).catch((err) =>
-    console.error("plaid: couldn't save account state", err)
-  );
+  await sb("plaid_account_state", { method: "POST", body: row, prefer: "resolution=merge-duplicates" }).catch((err) => console.error("plaid: couldn't save account state", err));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -140,8 +131,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Rotate the snapshot once a visit has gone cold, so "since last
             // login" doesn't collapse to zero on a page refresh.
             const stale = !prior || now.getTime() - new Date(prior.seen_at).getTime() > ROTATE_AFTER_MS;
-            const baseline = stale ? prior?.balance ?? null : prior?.prev_balance ?? null;
-            const baselineAt = stale ? prior?.seen_at ?? null : prior?.prev_seen_at ?? null;
+            const baseline = stale ? (prior?.balance ?? null) : (prior?.prev_balance ?? null);
+            const baselineAt = stale ? (prior?.seen_at ?? null) : (prior?.prev_seen_at ?? null);
 
             accounts.push({
               ...base,
@@ -186,9 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         credit: shown.filter((a) => a.type === "credit").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
         updated_at: now.toISOString(),
       };
-      await sb("treasury_daily", { method: "POST", body: totals, prefer: "resolution=merge-duplicates" }).catch((err) =>
-        console.error("plaid: couldn't record daily totals", err)
-      );
+      await sb("treasury_daily", { method: "POST", body: totals, prefer: "resolution=merge-duplicates" }).catch((err) => console.error("plaid: couldn't record daily totals", err));
 
       return res.json({ connections, accounts });
     }
@@ -200,9 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!target) return res.status(404).json({ error: "not_connected" });
 
       const now = new Date();
-      const start =
-        (req.query.start_date as string) ||
-        new Date(now.getTime() - 180 * 86_400_000).toISOString().split("T")[0];
+      const start = (req.query.start_date as string) || new Date(now.getTime() - 180 * 86_400_000).toISOString().split("T")[0];
       const end = (req.query.end_date as string) || now.toISOString().split("T")[0];
       const accountId = req.query.account_id as string | undefined;
 
@@ -264,16 +251,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // A bank connection is only asked for holdings when it actually carries
       // an investment account — calling the investments product on a plain
       // bank errors (and can enrol the item in a billed product).
-      const BROKERAGE = /vanguard|fidelity|schwab|e\*?trade|robinhood|merrill|morgan stanley|wealthfront|betterment|interactive brokers|ameritrade|edward jones|ubs|goldman|webull|m1 finance|public\.com|raymond james|ameriprise|lpl/i;
+      const BROKERAGE =
+        /vanguard|fidelity|schwab|e\*?trade|robinhood|merrill|morgan stanley|wealthfront|betterment|interactive brokers|ameritrade|edward jones|ubs|goldman|webull|m1 finance|public\.com|raymond james|ameriprise|lpl/i;
       // Plaid codes that just mean "no investments here" — not worth a warning.
-      const NOT_APPLICABLE = new Set([
-        "PRODUCTS_NOT_SUPPORTED",
-        "NO_INVESTMENT_ACCOUNTS",
-        "NO_INVESTMENT_AUTH_ACCOUNTS",
-        "INVALID_PRODUCT",
-        "PRODUCT_NOT_ENABLED",
-        "NO_ACCOUNTS",
-      ]);
+      const NOT_APPLICABLE = new Set(["PRODUCTS_NOT_SUPPORTED", "NO_INVESTMENT_ACCOUNTS", "NO_INVESTMENT_AUTH_ACCOUNTS", "INVALID_PRODUCT", "PRODUCT_NOT_ENABLED", "NO_ACCOUNTS"]);
       const isMoneyMarket = (ticker?: string | null, name?: string | null) =>
         ["VMFXX", "VMRXX", "VUSXX", "VMSXX", "VCTXX", "VYFXX", "SPAXX", "FDRXX", "SWVXX", "SNVXX"].includes((ticker ?? "").toUpperCase()) ||
         /money market|cash reserves|federal money|treasury money|settlement fund/i.test(name ?? "");
@@ -373,7 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           return { base, holdings: holdingsData, txns, txError };
-        })
+        }),
       );
 
       const accounts: any[] = [];
@@ -491,7 +472,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const firstRecorded = recordedHistory.find((h) => h.invested > 0)?.day ?? "9999-12-31";
       const rebuiltBefore = rebuilt.filter((r) => r.day < firstRecorded).map((r) => ({ day: r.day, invested: Number(r.value) }));
       // Recorded zeros before the first real day would repeat days the rebuilt series already covers.
-      if (rebuiltBefore.length) recordedHistory.splice(0, recordedHistory.findIndex((h) => h.day >= firstRecorded));
+      if (rebuiltBefore.length)
+        recordedHistory.splice(
+          0,
+          recordedHistory.findIndex((h) => h.day >= firstRecorded),
+        );
 
       return res.json({
         asOf: now.toISOString(),
@@ -513,9 +498,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         activity: {
           buys90: sumType("buy"),
           sells90: sumType("sell"),
-          recent: recent
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .slice(0, 60),
+          recent: recent.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60),
         },
       });
     }

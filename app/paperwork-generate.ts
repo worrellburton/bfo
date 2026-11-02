@@ -15,7 +15,11 @@ import { entityType, stateCode, stateName, taxClassOf, type PaperworkInput } fro
  * those arrive from Palm.
  */
 
-export type Rec = PaperworkInput & { ownerId?: string; members?: { name: string; percent: number | null; role: string | null }[]; profile?: { purpose?: string | null; management?: string | null; managers?: string[] } | null };
+export type Rec = PaperworkInput & {
+  ownerId?: string;
+  members?: { name: string; percent: number | null; role: string | null }[];
+  profile?: { purpose?: string | null; management?: string | null; managers?: string[] } | null;
+};
 
 // ── Form W-9 ─────────────────────────────────────────────────────────────
 
@@ -96,7 +100,14 @@ export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined): W9
       if (!cls) notes.push(`${cur.name}'s tax classification isn't on record: tick the line 3a box by hand.`);
       const ein = digits(cur.ein);
       if (ein.length !== 9) notes.push(`${cur.name}'s EIN isn't on record: it goes in Part I.`);
-      return { name: (cur.name ?? "").trim(), business: (entity.name ?? "").trim(), ...(cls ?? { box: 0, llcLetter: "" }), ...base, tin: ein.length === 9 ? { kind: "ein", digits: ein } : null, notes };
+      return {
+        name: (cur.name ?? "").trim(),
+        business: (entity.name ?? "").trim(),
+        ...(cls ?? { box: 0, llcLetter: "" }),
+        ...base,
+        tin: ein.length === 9 ? { kind: "ein", digits: ein } : null,
+        notes,
+      };
     }
     seen.add(cur.ownerId);
     cur = lookup(cur.ownerId);
@@ -224,7 +235,9 @@ export function operatingAgreement(i: OAInput): OADoc {
           `${i.members[0]?.name ?? "The Member holding the largest Percentage Interest"} (or a designated individual acting for it) shall serve as the "partnership representative" under Section 6223 of the Internal Revenue Code until replaced by ${majority}.`,
         ]
       : i.taxClass === "S Corporation" || i.taxClass === "C Corporation"
-        ? [`The Company has elected, or shall elect, to be classified as an association taxable as a corporation${i.taxClass === "S Corporation" ? " and to be treated as an S corporation" : ""} for federal income tax purposes, and ${memberWord} shall take no action inconsistent with that election.`]
+        ? [
+            `The Company has elected, or shall elect, to be classified as an association taxable as a corporation${i.taxClass === "S Corporation" ? " and to be treated as an S corporation" : ""} for federal income tax purposes, and ${memberWord} shall take no action inconsistent with that election.`,
+          ]
         : [
             `So long as the Company has a single Member, it is intended to be disregarded as an entity separate from its owner for federal and applicable state income tax purposes, and all items of income, gain, loss, deduction and credit shall be reported by ${sole}.`,
           ];
@@ -232,34 +245,34 @@ export function operatingAgreement(i: OAInput): OADoc {
   const sections = [
     s(
       "Formation",
-      `The Company was formed as a limited liability company under ${act} (the "Act") by the filing of its ${i.state === "DE" ? "certificate of formation" : "articles of organization"} with the ${i.state === "DE" ? "Delaware Secretary of State" : `${st} Secretary of State`}. The rights and obligations of ${memberWord} and the administration of the Company are governed by this Agreement and the Act. Where this Agreement and a provision of the Act that may be varied by agreement differ, this Agreement controls.`
+      `The Company was formed as a limited liability company under ${act} (the "Act") by the filing of its ${i.state === "DE" ? "certificate of formation" : "articles of organization"} with the ${i.state === "DE" ? "Delaware Secretary of State" : `${st} Secretary of State`}. The rights and obligations of ${memberWord} and the administration of the Company are governed by this Agreement and the Act. Where this Agreement and a provision of the Act that may be varied by agreement differ, this Agreement controls.`,
     ),
-    s("Name", `The name of the Company is ${i.name}. The Company may conduct business under that name or any other name ${managers ? "the Managers determine" : single ? "the Member determines" : "the Members determine"}, after any filing the law requires.`),
     s(
-      "Purpose and Powers",
-      `${purposeSentence(i.purpose)} The Company has every power the Act grants that is necessary or convenient to that purpose.`
+      "Name",
+      `The name of the Company is ${i.name}. The Company may conduct business under that name or any other name ${managers ? "the Managers determine" : single ? "the Member determines" : "the Members determine"}, after any filing the law requires.`,
     ),
+    s("Purpose and Powers", `${purposeSentence(i.purpose)} The Company has every power the Act grants that is necessary or convenient to that purpose.`),
     s(
       "Offices and Registered Agent",
-      `The principal office of the Company is ${i.address || "at such place as " + (single ? "the Member" : "the Members") + " designate"}, or another place ${managers ? "the Managers" : single ? "the Member" : "the Members"} may designate. The Company's registered agent in ${st} is ${i.registeredAgent || "the agent named in its filing with the Secretary of State"}, or any successor appointed in accordance with the Act.`
+      `The principal office of the Company is ${i.address || "at such place as " + (single ? "the Member" : "the Members") + " designate"}, or another place ${managers ? "the Managers" : single ? "the Member" : "the Members"} may designate. The Company's registered agent in ${st} is ${i.registeredAgent || "the agent named in its filing with the Secretary of State"}, or any successor appointed in accordance with the Act.`,
     ),
     s("Term", "The Company began on the date its formation filing became effective and shall continue until dissolved under this Agreement or the Act."),
     s(
       single ? "Member and Percentage Interest" : "Members and Percentage Interests",
       single
         ? `${sole} is the sole Member of the Company and holds one hundred percent (100%) of the limited liability company interests in the Company (its "Percentage Interest"), as shown on Exhibit A.`
-        : `The Members of the Company, and each Member's percentage of the limited liability company interests in the Company (its "Percentage Interest"), are shown on Exhibit A, which ${managers ? "the Managers" : "the Members"} shall update to reflect any admission, transfer or change permitted by this Agreement.`
+        : `The Members of the Company, and each Member's percentage of the limited liability company interests in the Company (its "Percentage Interest"), are shown on Exhibit A, which ${managers ? "the Managers" : "the Members"} shall update to reflect any admission, transfer or change permitted by this Agreement.`,
     ),
     s(
       "Capital Contributions",
-      `${single ? "The Member has" : "Each Member has"} made, or shall make, the initial capital contribution reflected in the Company's records. No Member is required to make any additional capital contribution or loan to the Company${single ? "" : ", and no Member shall be paid interest on its contributions"}. A Member may make additional contributions ${single ? "at any time" : `only with the consent of ${majority}`}.`
+      `${single ? "The Member has" : "Each Member has"} made, or shall make, the initial capital contribution reflected in the Company's records. No Member is required to make any additional capital contribution or loan to the Company${single ? "" : ", and no Member shall be paid interest on its contributions"}. A Member may make additional contributions ${single ? "at any time" : `only with the consent of ${majority}`}.`,
     ),
     s(
       "Distributions",
       single
         ? `Distributions shall be made to the Member at the times and in the amounts the ${managers ? "Managers determine" : "Member determines"}.`
         : `Distributions shall be made to the Members in proportion to their Percentage Interests, at the times and in the amounts ${managers ? "the Managers determine" : `${majority} determine`}.`,
-      "No distribution shall be made if, after giving it effect, the Company could not pay its debts as they become due in the ordinary course of business or its liabilities would exceed its assets, or if the distribution would otherwise violate the Act."
+      "No distribution shall be made if, after giving it effect, the Company could not pay its debts as they become due in the ordinary course of business or its liabilities would exceed its assets, or if the distribution would otherwise violate the Act.",
     ),
     s("Tax Classification and Allocations", ...tax),
     s(
@@ -268,33 +281,33 @@ export function operatingAgreement(i: OAInput): OADoc {
         ? `The Company is manager-managed. Its business and affairs shall be managed by ${i.managers.length === 1 ? `its Manager, ${i.managers[0]}` : `its Managers, ${i.managers.join(", ")}`}, who shall have full authority to act for and bind the Company, except that the consent of ${majority} is required to sell all or substantially all of the Company's assets, merge or convert the Company, amend this Agreement, admit a Member or dissolve the Company. A Manager may be removed or replaced, and additional Managers appointed, by ${majority}. ${i.managers.length > 1 ? "Where there is more than one Manager, decisions shall be made by a majority of them, and each Manager may sign documents for the Company within the authority so given." : ""}`.trim()
         : single
           ? "The Company is member-managed. The Member has full and exclusive authority to manage the business and affairs of the Company and to act for and bind it, and may sign any document on its behalf. The Member may appoint officers and agents with such titles and authority as the Member delegates in writing."
-          : `The Company is member-managed. Its business and affairs shall be managed by the Members, acting by the consent of ${majority}, except that the unanimous consent of the Members is required to sell all or substantially all of the Company's assets, merge or convert the Company, amend this Agreement, admit a Member or dissolve the Company. The Members may appoint officers and agents with such titles and authority as they delegate in writing.`
+          : `The Company is member-managed. Its business and affairs shall be managed by the Members, acting by the consent of ${majority}, except that the unanimous consent of the Members is required to sell all or substantially all of the Company's assets, merge or convert the Company, amend this Agreement, admit a Member or dissolve the Company. The Members may appoint officers and agents with such titles and authority as they delegate in writing.`,
     ),
     s(
       "Limited Liability",
-      `Except as the Act otherwise provides, the debts, obligations and liabilities of the Company are solely those of the Company, and no Member${managers ? " or Manager" : ""} is obligated for any of them solely by reason of being a Member${managers ? " or Manager" : ""}. The failure of the Company to observe formalities relating to the exercise of its powers or the management of its business is not a ground for imposing personal liability on any Member${managers ? " or Manager" : ""}.`
+      `Except as the Act otherwise provides, the debts, obligations and liabilities of the Company are solely those of the Company, and no Member${managers ? " or Manager" : ""} is obligated for any of them solely by reason of being a Member${managers ? " or Manager" : ""}. The failure of the Company to observe formalities relating to the exercise of its powers or the management of its business is not a ground for imposing personal liability on any Member${managers ? " or Manager" : ""}.`,
     ),
     s(
       "Exculpation and Indemnification",
-      `To the fullest extent the Act permits, no Member${managers ? ", Manager" : ""} or officer shall be liable to the Company or any Member for any act or omission in good faith on behalf of the Company, except for fraud, willful misconduct, a knowing violation of law or a breach of this Agreement. The Company shall indemnify and hold harmless each such person against losses, claims and expenses (including reasonable attorneys' fees) arising from the Company's business, and may advance expenses, on the same terms and to the same extent.`
+      `To the fullest extent the Act permits, no Member${managers ? ", Manager" : ""} or officer shall be liable to the Company or any Member for any act or omission in good faith on behalf of the Company, except for fraud, willful misconduct, a knowing violation of law or a breach of this Agreement. The Company shall indemnify and hold harmless each such person against losses, claims and expenses (including reasonable attorneys' fees) arising from the Company's business, and may advance expenses, on the same terms and to the same extent.`,
     ),
     s(
       "Transfers and Admission of Members",
       single
         ? "The Member may transfer all or any part of its interest in the Company. A transferee of the Member's entire interest shall be admitted as a Member, and additional Members may be admitted, upon the written consent of the Member and the transferee's agreement to be bound by this Agreement."
-        : "No Member may sell, assign, pledge or otherwise transfer all or any part of its interest in the Company without the written consent of the other Members. A transferee shall be admitted as a Member only upon that consent and its written agreement to be bound by this Agreement; until then it holds only the right to receive the distributions to which its transferor would have been entitled. Any transfer in violation of this Section is void."
+        : "No Member may sell, assign, pledge or otherwise transfer all or any part of its interest in the Company without the written consent of the other Members. A transferee shall be admitted as a Member only upon that consent and its written agreement to be bound by this Agreement; until then it holds only the right to receive the distributions to which its transferor would have been entitled. Any transfer in violation of this Section is void.",
     ),
     s(
       "Books, Records and Accounts",
-      `The Company shall keep complete and accurate books and records of its business at its principal office, on the cash or accrual method its accountants recommend, on a fiscal year ending December 31. The Company's funds shall be kept in its own accounts and shall not be commingled with the funds of any Member.${RECORDS_RULE[i.state] ?? ""}`
+      `The Company shall keep complete and accurate books and records of its business at its principal office, on the cash or accrual method its accountants recommend, on a fiscal year ending December 31. The Company's funds shall be kept in its own accounts and shall not be commingled with the funds of any Member.${RECORDS_RULE[i.state] ?? ""}`,
     ),
     s(
       "Dissolution",
-      `The Company shall be dissolved upon (a) the written election of ${single ? "the Member" : "all of the Members"}, (b) the entry of a decree of judicial dissolution under the Act, or (c) any other event that requires dissolution under the Act${single ? ", except that the death, incapacity or bankruptcy of the Member shall not dissolve the Company if the Member's successor in interest agrees in writing, within ninety days, to continue it" : ""}. On dissolution, the Company's affairs shall be wound up, its debts paid or provided for, and the remaining assets distributed ${single ? "to the Member" : "to the Members in accordance with their positive capital account balances, then in proportion to their Percentage Interests"}.`
+      `The Company shall be dissolved upon (a) the written election of ${single ? "the Member" : "all of the Members"}, (b) the entry of a decree of judicial dissolution under the Act, or (c) any other event that requires dissolution under the Act${single ? ", except that the death, incapacity or bankruptcy of the Member shall not dissolve the Company if the Member's successor in interest agrees in writing, within ninety days, to continue it" : ""}. On dissolution, the Company's affairs shall be wound up, its debts paid or provided for, and the remaining assets distributed ${single ? "to the Member" : "to the Members in accordance with their positive capital account balances, then in proportion to their Percentage Interests"}.`,
     ),
     s(
       "General Provisions",
-      `This Agreement shall be governed by the laws of the State of ${st}, without regard to its conflict-of-laws rules. It is the entire agreement of ${memberWord} regarding its subject and may be amended only in a writing signed by ${single ? "the Member" : "all of the Members"}. If any provision is held invalid, the remainder shall continue in effect. This Agreement may be signed in counterparts and by electronic signature, each of which is an original and all of which together are one instrument. It binds and benefits ${memberWord} and their permitted successors and assigns; no creditor of the Company or of any Member may enforce any of its provisions.`
+      `This Agreement shall be governed by the laws of the State of ${st}, without regard to its conflict-of-laws rules. It is the entire agreement of ${memberWord} regarding its subject and may be amended only in a writing signed by ${single ? "the Member" : "all of the Members"}. If any provision is held invalid, the remainder shall continue in effect. This Agreement may be signed in counterparts and by electronic signature, each of which is an original and all of which together are one instrument. It binds and benefits ${memberWord} and their permitted successors and assigns; no creditor of the Company or of any Member may enforce any of its provisions.`,
     ),
   ];
 
@@ -457,7 +470,7 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
   y += 34;
   para(
     `IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this ${d.title} as of the date first written above. This Agreement may be signed in counterparts and by electronic signature, each of which is an original and all of which together are one instrument.`,
-    { align: "justify", gap: 22 }
+    { align: "justify", gap: 22 },
   );
 
   const isEntity = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|trust|lp|l\.p\.|ltd\.?|company|partners(hip)?)\b/i.test(name);
@@ -579,7 +592,7 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
       font("normal", 8.5, MUTED);
       const marks = d.signers.filter((sg) => sg.capacity !== "Manager").length;
       const boxW = 34;
-      let x = W / 2 - ((marks * (boxW + 8)) + 40) / 2;
+      let x = W / 2 - (marks * (boxW + 8) + 40) / 2;
       pdf.text("Initials", x, H - 40);
       x += 34;
       stroke([150, 150, 150], 0.5);
@@ -640,7 +653,11 @@ export function stateAddressStep(state: string | undefined | null, type: string 
       url: "https://corp.delaware.gov/",
       linkLabel: "Delaware Division of Corporations",
     };
-  return { needed: true, agency: st ? `${stateName(st)} Secretary of State` : "The state", how: "Update the address on file with the state the entity was formed in, and anywhere it's registered to do business." };
+  return {
+    needed: true,
+    agency: st ? `${stateName(st)} Secretary of State` : "The state",
+    how: "Update the address on file with the state the entity was formed in, and anywhere it's registered to do business.",
+  };
 }
 
 /** Where Form 8822-B is mailed: by the state of the old address (Rev. December 2019). */

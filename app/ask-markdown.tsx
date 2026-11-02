@@ -8,7 +8,13 @@ import { Link } from "react-router";
  * routes; anything else opens in a new tab. No HTML is ever interpreted.
  */
 
-type Block = { kind: "p"; text: string } | { kind: "h"; level: number; text: string } | { kind: "ul"; items: string[] } | { kind: "ol"; items: string[] } | { kind: "table"; rows: string[][] } | { kind: "code"; text: string };
+type Block =
+  | { kind: "p"; text: string }
+  | { kind: "h"; level: number; text: string }
+  | { kind: "ul"; items: string[] }
+  | { kind: "ol"; items: string[] }
+  | { kind: "table"; rows: string[][] }
+  | { kind: "code"; text: string };
 
 export function parseBlocks(md: string): Block[] {
   const lines = md.replace(/\r\n?/g, "\n").split("\n");
@@ -70,7 +76,13 @@ export function parseBlocks(md: string): Block[] {
     if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
       flushPara(para);
       const rows: string[][] = [];
-      const cells = (l: string) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      const cells = (l: string) =>
+        l
+          .trim()
+          .replace(/^\|/, "")
+          .replace(/\|$/, "")
+          .split("|")
+          .map((c) => c.trim());
       rows.push(cells(line));
       i += 2;
       while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(cells(lines[i++]));
@@ -94,12 +106,27 @@ function Inline({ text }: { text: string }) {
         if (!part) return null;
         if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
         if ((part.startsWith("*") && part.endsWith("*")) || (part.startsWith("_") && part.endsWith("_"))) return <em key={i}>{part.slice(1, -1)}</em>;
-        if (part.startsWith("`") && part.endsWith("`")) return <code key={i} className="rounded bg-black/[0.06] px-1 py-px font-mono text-[0.92em] dark:bg-white/10">{part.slice(1, -1)}</code>;
+        if (part.startsWith("`") && part.endsWith("`"))
+          return (
+            <code key={i} className="rounded bg-black/[0.06] px-1 py-px font-mono text-[0.92em] dark:bg-white/10">
+              {part.slice(1, -1)}
+            </code>
+          );
         const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part);
         if (link) {
           const [, label, href] = link;
-          if (href.startsWith("/")) return <Link key={i} to={href} className="ask-link">{label}</Link>;
-          if (/^https?:\/\//i.test(href)) return <a key={i} href={href} target="_blank" rel="noreferrer" className="ask-link">{label}</a>;
+          if (href.startsWith("/"))
+            return (
+              <Link key={i} to={href} className="ask-link">
+                {label}
+              </Link>
+            );
+          if (/^https?:\/\//i.test(href))
+            return (
+              <a key={i} href={href} target="_blank" rel="noreferrer" className="ask-link">
+                {label}
+              </a>
+            );
           return <Fragment key={i}>{label}</Fragment>;
         }
         return <Fragment key={i}>{part}</Fragment>;

@@ -142,7 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!file) return null;
       const ct = (d.contentType || file.contentType).toLowerCase().split(";")[0];
       return { doc: d, buf: file.buf, ct };
-    })
+    }),
   );
   const content: Anthropic.Messages.ContentBlockParam[] = [];
   const read: string[] = [];
@@ -186,10 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       // Server-side fallback on a safety decline (not yet in this SDK's types).
       message = await client.messages
-        .stream(
-          { ...params, ...({ fallbacks: "default" } as Record<string, unknown>) },
-          { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } }
-        )
+        .stream({ ...params, ...({ fallbacks: "default" } as Record<string, unknown>) }, { headers: { "anthropic-beta": "server-side-fallback-2026-07-01" } })
         .finalMessage();
     } catch (err) {
       // If the fallback option itself is refused, run the plain request.

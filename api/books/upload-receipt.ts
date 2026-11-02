@@ -25,7 +25,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
 
   const txnId = String(req.body?.transaction_id ?? "").trim();
-  const filename = String(req.body?.filename ?? "file").trim().slice(0, 120) || "file";
+  const filename =
+    String(req.body?.filename ?? "file")
+      .trim()
+      .slice(0, 120) || "file";
   const contentType = String(req.body?.content_type ?? "application/octet-stream").slice(0, 100);
   const base64 = String(req.body?.data_base64 ?? "");
   if (!txnId) return res.status(400).json({ error: "missing_transaction_id" });

@@ -2,18 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useSearchParams } from "react-router";
 import { authFetch, getUser } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
-import {
-  assessAll,
-  PILLARS,
-  summarize,
-  treeLevels,
-  type Assessment,
-  type EntityInput,
-  type Fix,
-  type PillarKey,
-  type PillarStatus,
-  type Tier,
-} from "../compliance-map";
+import { assessAll, PILLARS, summarize, treeLevels, type Assessment, type EntityInput, type Fix, type PillarKey, type PillarStatus, type Tier } from "../compliance-map";
 import { dollars, PALM_PRICES, priceSuffix, STATE_RECORD_CENTS, stateRecordCents } from "../../lib/palm-pricing";
 import { effectiveRecord, lookupStateRecord, palmCall, PalmUnavailable, type PalmMode } from "../palm";
 import { PalmCostCard, PriceTag } from "../palm-usage";
@@ -86,16 +75,7 @@ function PillarRing({ a, size, isDark, stroke, label = true }: { a: Assessment; 
         );
       })}
       {label && (
-        <text
-          x="50%"
-          y="50%"
-          dominantBaseline="central"
-          textAnchor="middle"
-          fontSize={size * 0.3}
-          fontWeight={600}
-          fill={isDark ? "#fff" : "#111827"}
-          style={{ fontVariantNumeric: "tabular-nums" }}
-        >
+        <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fontSize={size * 0.3} fontWeight={600} fill={isDark ? "#fff" : "#111827"} style={{ fontVariantNumeric: "tabular-nums" }}>
           {a.score}
         </text>
       )}
@@ -231,10 +211,7 @@ export default function EntityCompliance() {
         setNotes((n) => ({ ...n, [id]: st && st !== "active" ? { tone: "bad", text: `Read just now: the state lists it as ${st}.` } : { tone: "ok", text: "Read from the state just now." } }));
         return "ok";
       }
-      const text =
-        found.kind === "choices"
-          ? found.message ?? `${found.results.length} registry entries could be this one. Pick the right one on its Compliance tab.`
-          : found.message;
+      const text = found.kind === "choices" ? (found.message ?? `${found.results.length} registry entries could be this one. Pick the right one on its Compliance tab.`) : found.message;
       setNotes((n) => ({ ...n, [id]: { tone: "warn", text } }));
       return "warn";
     } catch (err) {
@@ -278,12 +255,17 @@ export default function EntityCompliance() {
       for (const x of (j.results ?? []) as { id: string; state: string; outcome: string; detail?: string }[]) {
         const prev = said[x.id];
         const line =
-          x.outcome === "read" ? { tone: "ok" as const, text: `${x.state}: read just now${x.detail ? ` (${x.detail})` : ""}.` }
-          : x.outcome === "not_found" ? { tone: "warn" as const, text: `${x.state}: no registry entry matched the name. Add its file number under Edit.` }
-          : x.outcome === "ambiguous" ? { tone: "warn" as const, text: `${x.state}: more than one registry entry matched. Pick the right one on its Compliance tab.` }
-          : x.outcome === "error" ? { tone: "bad" as const, text: `${x.state}: ${x.detail ?? "couldn't reach Palm"}` }
-          : x.outcome === "later" ? { tone: "warn" as const, text: `${x.state}: not read this time (ran out of time). Check again to read the rest.` }
-          : null;
+          x.outcome === "read"
+            ? { tone: "ok" as const, text: `${x.state}: read just now${x.detail ? ` (${x.detail})` : ""}.` }
+            : x.outcome === "not_found"
+              ? { tone: "warn" as const, text: `${x.state}: no registry entry matched the name. Add its file number under Edit.` }
+              : x.outcome === "ambiguous"
+                ? { tone: "warn" as const, text: `${x.state}: more than one registry entry matched. Pick the right one on its Compliance tab.` }
+                : x.outcome === "error"
+                  ? { tone: "bad" as const, text: `${x.state}: ${x.detail ?? "couldn't reach Palm"}` }
+                  : x.outcome === "later"
+                    ? { tone: "warn" as const, text: `${x.state}: not read this time (ran out of time). Check again to read the rest.` }
+                    : null;
         if (!line) continue;
         said[x.id] = prev ? { tone: prev.tone === "bad" || line.tone === "bad" ? "bad" : prev.tone === "warn" || line.tone === "warn" ? "warn" : "ok", text: `${prev.text} ${line.text}` } : line;
       }
@@ -296,7 +278,7 @@ export default function EntityCompliance() {
     }
   }
 
-  const sel = selected ? byId.get(selected) ?? null : null;
+  const sel = selected ? (byId.get(selected) ?? null) : null;
   const t2 = isDark ? "text-gray-400" : "text-gray-500/100";
   const t3 = isDark ? "text-gray-500" : "text-gray-400/100";
   const card = `rounded-2xl border ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`;
@@ -310,8 +292,7 @@ export default function EntityCompliance() {
           <p className={`text-[11px] font-medium uppercase tracking-[0.18em] ${t3}`}>Tools</p>
           <h1 className="mt-1 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">Entity compliance</h1>
           <p className={`mt-1 text-[12.5px] ${t2}`}>
-            Every entity read against the state through Palm, its agent, its paperwork and what's due.{" "}
-            <PalmBadge mode={palm.mode} loaded={palm.loaded} isDark={isDark} />
+            Every entity read against the state through Palm, its agent, its paperwork and what's due. <PalmBadge mode={palm.mode} loaded={palm.loaded} isDark={isDark} />
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -333,7 +314,11 @@ export default function EntityCompliance() {
               ) : (
                 <>
                   <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                    />
                   </svg>
                   Check {staleOrUnread} with the state
                   {palm.mode === "live" && <PriceTag cents={staleOrUnread * STATE_RECORD_CENTS} isDark={!isDark} what="reading these records (about)" className="ml-0.5" />}
@@ -350,7 +335,11 @@ export default function EntityCompliance() {
         <div className={`mt-6 h-[300px] animate-pulse ${card}`} />
       ) : !list.length ? (
         <div className={`mt-6 p-10 text-center text-[13px] ${card} ${t2}`}>
-          No entities yet. Add them on <Link to="/assets" className="underline">Entities</Link>.
+          No entities yet. Add them on{" "}
+          <Link to="/assets" className="underline">
+            Entities
+          </Link>
+          .
         </div>
       ) : (
         <>
@@ -367,7 +356,14 @@ export default function EntityCompliance() {
               <Tile label="Compliant" n={sum.good} s="good" active={filter === "good"} onClick={() => setFilter(filter === "good" ? "all" : "good")} isDark={isDark} />
               <Tile label="Needs attention" n={sum.attention} s="warn" active={filter === "attention"} onClick={() => setFilter(filter === "attention" ? "all" : "attention")} isDark={isDark} />
               <Tile label="At risk" n={sum.risk} s="bad" active={filter === "risk"} onClick={() => setFilter(filter === "risk" ? "all" : "risk")} isDark={isDark} />
-              <Tile label="Not checked with the state" n={sum.unverified} s="missing" active={filter === "unverified"} onClick={() => setFilter(filter === "unverified" ? "all" : "unverified")} isDark={isDark} />
+              <Tile
+                label="Not checked with the state"
+                n={sum.unverified}
+                s="missing"
+                active={filter === "unverified"}
+                onClick={() => setFilter(filter === "unverified" ? "all" : "unverified")}
+                isDark={isDark}
+              />
             </div>
             <div className="min-w-0">
               <div className="mb-2 flex items-baseline justify-between">
@@ -399,10 +395,7 @@ export default function EntityCompliance() {
                               className="h-full transition-[width] duration-700"
                               style={{
                                 width: `${(p.counts[s] / Math.max(1, applies)) * 100}%`,
-                                background:
-                                  s === "missing"
-                                    ? `repeating-linear-gradient(135deg, ${col(s, isDark)} 0 3px, transparent 3px 6px)`
-                                    : col(s, isDark),
+                                background: s === "missing" ? `repeating-linear-gradient(135deg, ${col(s, isDark)} 0 3px, transparent 3px 6px)` : col(s, isDark),
                               }}
                             />
                           ) : null,
@@ -455,7 +448,9 @@ export default function EntityCompliance() {
                 aria-label="Find an entity"
                 type="search"
                 className={`h-9 w-full rounded-full border px-4 text-[16px] outline-none sm:text-[12.5px] ${
-                  isDark ? "border-white/10 bg-white/[0.03] text-white placeholder:text-gray-600 focus:border-white/25" : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-400"
+                  isDark
+                    ? "border-white/10 bg-white/[0.03] text-white placeholder:text-gray-600 focus:border-white/25"
+                    : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-gray-400"
                 }`}
               />
             </div>
@@ -479,7 +474,7 @@ export default function EntityCompliance() {
           note={notes[sel.id]}
           onCheck={() => void checkOne(sel.id)}
           price={priceSuffix(palm.mode, stateRecordCents(!!assets?.[sel.id]?.fileNumber))}
-          owner={sel.ownerId ? byId.get(sel.ownerId) ?? null : null}
+          owner={sel.ownerId ? (byId.get(sel.ownerId) ?? null) : null}
           owned={list.filter((x) => x.ownerId === sel.id)}
           onSelect={setSelected}
         />
@@ -627,9 +622,7 @@ function EntityCard({
         <span className="line-clamp-2 text-[12.5px] font-semibold leading-snug">{a.name}</span>
         <span className={`mt-0.5 flex items-center gap-1.5 text-[10.5px] ${isDark ? "text-gray-500" : "text-gray-500/100"}`}>
           {[a.state, a.type].filter(Boolean).join(" · ")}
-          {a.unverified && (
-            <span className={`rounded px-1 py-px text-[9.5px] font-medium ${isDark ? "bg-white/[0.07] text-gray-400" : "bg-black/[0.05] text-gray-500"}`}>Not checked</span>
-          )}
+          {a.unverified && <span className={`rounded px-1 py-px text-[9.5px] font-medium ${isDark ? "bg-white/[0.07] text-gray-400" : "bg-black/[0.05] text-gray-500"}`}>Not checked</span>}
         </span>
         <span className="mt-1 flex items-center gap-1.5 text-[11px]" style={{ color: col(s, isDark) }}>
           <StatusDot s={s} isDark={isDark} size={6} />
@@ -744,8 +737,16 @@ function MapView({
   return (
     <section className={`relative mt-4 overflow-hidden ${card}`}>
       <div className="cmp-map-bg pointer-events-none absolute inset-0" aria-hidden />
-      <div className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-16 transition-opacity ${more.left ? "opacity-100" : "opacity-0"}`} style={{ background: `linear-gradient(90deg, ${isDark ? "#07080b" : "#ffffff"}, transparent)` }} aria-hidden />
-      <div className={`pointer-events-none absolute inset-y-0 right-0 z-10 w-16 transition-opacity ${more.right ? "opacity-100" : "opacity-0"}`} style={{ background: `linear-gradient(270deg, ${isDark ? "#07080b" : "#ffffff"}, transparent)` }} aria-hidden />
+      <div
+        className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-16 transition-opacity ${more.left ? "opacity-100" : "opacity-0"}`}
+        style={{ background: `linear-gradient(90deg, ${isDark ? "#07080b" : "#ffffff"}, transparent)` }}
+        aria-hidden
+      />
+      <div
+        className={`pointer-events-none absolute inset-y-0 right-0 z-10 w-16 transition-opacity ${more.right ? "opacity-100" : "opacity-0"}`}
+        style={{ background: `linear-gradient(270deg, ${isDark ? "#07080b" : "#ffffff"}, transparent)` }}
+        aria-hidden
+      />
       <div ref={scroller} className="relative overflow-x-auto overscroll-x-contain">
         <div ref={canvas} className="relative flex min-w-max gap-[76px] p-6 sm:p-8">
           <svg className="pointer-events-none absolute left-0 top-0" width={box.w} height={box.h} aria-hidden>
@@ -767,9 +768,7 @@ function MapView({
           </svg>
           {levels.map((column, i) => (
             <div key={i} className="relative flex flex-col">
-              <p className={`mb-4 pl-1 text-[10px] font-medium uppercase tracking-[0.16em] ${isDark ? "text-gray-600" : "text-gray-400/100"}`}>
-                {i === 0 ? "Owners" : `Tier ${i + 1}`}
-              </p>
+              <p className={`mb-4 pl-1 text-[10px] font-medium uppercase tracking-[0.16em] ${isDark ? "text-gray-600" : "text-gray-400/100"}`}>{i === 0 ? "Owners" : `Tier ${i + 1}`}</p>
               <div className="flex flex-1 flex-col justify-center gap-3">
                 {column.map((a) => (
                   <EntityCard key={a.id} a={a} dim={!matches(a)} selected={selected === a.id} onSelect={onSelect} isDark={isDark} checking={checking.has(a.id)} />
@@ -1013,10 +1012,16 @@ function Detail({
             <p
               className={`relative mt-4 rounded-lg px-3 py-2 text-[12px] ${
                 note.tone === "ok"
-                  ? isDark ? "bg-emerald-400/10 text-emerald-200" : "bg-emerald-50 text-emerald-800"
+                  ? isDark
+                    ? "bg-emerald-400/10 text-emerald-200"
+                    : "bg-emerald-50 text-emerald-800"
                   : note.tone === "warn"
-                    ? isDark ? "bg-amber-400/10 text-amber-200" : "bg-amber-50 text-amber-800"
-                    : isDark ? "bg-rose-400/10 text-rose-200" : "bg-rose-50 text-rose-800"
+                    ? isDark
+                      ? "bg-amber-400/10 text-amber-200"
+                      : "bg-amber-50 text-amber-800"
+                    : isDark
+                      ? "bg-rose-400/10 text-rose-200"
+                      : "bg-rose-50 text-rose-800"
               }`}
             >
               {note.text}

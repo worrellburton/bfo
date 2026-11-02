@@ -3,20 +3,7 @@ import { canWrite, cronAuth, currentUser, fail, guard, handleError, sb } from ".
 import { recordCronRun } from "../../lib/cron.js";
 import { fetchAll } from "../../lib/db-pages.js";
 import { getPlaidClient } from "../../lib/plaid.js";
-import {
-  dayList,
-  fetchCloses,
-  isCashLike,
-  pickMode,
-  PLAID_HISTORY_DAYS,
-  rebuild,
-  type Closes,
-  type HPoint,
-  type HPosition,
-  type HSecurity,
-  type HTx,
-  type Mode,
-} from "../../lib/invest-history.js";
+import { dayList, fetchCloses, isCashLike, pickMode, PLAID_HISTORY_DAYS, rebuild, type Closes, type HPoint, type HPosition, type HSecurity, type HTx, type Mode } from "../../lib/invest-history.js";
 
 /**
  * Rebuilds the Investments chart's past (lib/invest-history.ts) into
@@ -107,13 +94,11 @@ async function build() {
       const code = (err as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
       // A plain bank has no investments: not worth naming.
       if (!code || !/NO_INVESTMENT|PRODUCTS_NOT_SUPPORTED|NO_ACCOUNTS|INVALID_PRODUCT|PRODUCT_NOT_ENABLED/.test(code))
-        skipped.push(`${label} (${code === "ADDITIONAL_CONSENT_REQUIRED" ? "holdings not shared with BFO yet" : code ?? "holdings unavailable"})`);
+        skipped.push(`${label} (${code === "ADDITIONAL_CONSENT_REQUIRED" ? "holdings not shared with BFO yet" : (code ?? "holdings unavailable")})`);
       continue;
     }
     const accounts = new Set(
-      holdings.accounts
-        .filter((a) => !hidden.has(a.account_id) && (a.type === "investment" || holdings.holdings.some((h) => h.account_id === a.account_id)))
-        .map((a) => a.account_id)
+      holdings.accounts.filter((a) => !hidden.has(a.account_id) && (a.type === "investment" || holdings.holdings.some((h) => h.account_id === a.account_id))).map((a) => a.account_id),
     );
     if (!accounts.size) continue;
     const addSecurity = (s: (typeof holdings.securities)[number]) => {
@@ -137,9 +122,7 @@ async function build() {
     try {
       let offset = 0;
       for (let page = 0; page < 40; page++) {
-        const r = (
-          await client.investmentsTransactionsGet({ access_token: item.access_token, start_date: start, end_date: today, options: { count: 500, offset } })
-        ).data;
+        const r = (await client.investmentsTransactionsGet({ access_token: item.access_token, start_date: start, end_date: today, options: { count: 500, offset } })).data;
         r.securities.forEach(addSecurity);
         for (const t of r.investment_transactions) {
           if (!accounts.has(t.account_id)) continue;
@@ -180,7 +163,7 @@ async function build() {
       } catch (err) {
         console.error("invest-history: no closes for", t, err instanceof Error ? err.message : err);
       }
-    })
+    }),
   );
 
   // Without any prices the past would be today's prices on old share counts: a flat, made-up line. Stop instead.

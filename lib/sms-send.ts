@@ -26,7 +26,11 @@ export { smsSegments, toE164 } from "./sms-compose.js";
 
 /** A text that didn't go, with the reason in one plain sentence for the person sending it. */
 export class SmsRefused extends Error {
-  constructor(readonly code: string, message: string, readonly httpStatus = 422) {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly httpStatus = 422,
+  ) {
     super(message);
   }
 }
@@ -96,7 +100,7 @@ export function failureSentence(err: SmsError, status?: string | null): string |
 
 const FINAL = new Set(["delivered", "undelivered", "failed", "rejected", "expired"]);
 const RANK: Record<string, number> = { scheduled: 0, accepted: 1, sent: 2 };
-const rank = (s: string | null | undefined) => (s && FINAL.has(s) ? 3 : RANK[s ?? ""] ?? 0);
+const rank = (s: string | null | undefined) => (s && FINAL.has(s) ? 3 : (RANK[s ?? ""] ?? 0));
 export const isFailed = (s: string | null | undefined) => !!s && FINAL.has(s) && s !== "delivered";
 
 /**

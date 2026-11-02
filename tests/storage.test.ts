@@ -6,7 +6,10 @@ let answer: () => Response;
 beforeEach(() => {
   process.env.SUPABASE_URL = "https://sb.test";
   process.env.SUPABASE_SERVICE_KEY = "k";
-  vi.stubGlobal("fetch", vi.fn(async () => answer()));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => answer()),
+  );
 });
 afterEach(() => vi.unstubAllGlobals());
 

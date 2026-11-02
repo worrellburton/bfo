@@ -181,7 +181,9 @@ export function officeDate(d: Date = new Date()): string {
 }
 
 function officeDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso));
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(
+    new Date(iso),
+  );
 }
 
 // ── Stamping ──────────────────────────────────────────────────────────────
@@ -405,21 +407,27 @@ export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "creat
   const from = row.brand || row.created_by_name || "Burton Family Office";
   const subject = remind ? `Reminder: ${row.title} is waiting for your signature` : `${from} sent you ${row.title} to sign`;
   const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\nReview and sign it here:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
-  const html = shell(`
+  const html = shell(
+    `
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(from)} ${remind ? "is still waiting for your signature on" : "sent you"}<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
         <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">You're signing as ${esc(party.name)}, ${esc(party.role)}.</div>
         ${button(link, "Review and sign")}
-        <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`, row.brand);
+        <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`,
+    row.brand,
+  );
   return { subject, text, html };
 }
 
 export function signedCopyEmail(row: Pick<SignatureRequestRow, "title" | "brand">, party: Party, link: string) {
   const subject = `${row.title}: signed by everyone`;
   const text = `${row.title} has been signed by every party. Your copy, with the signature certificate, is here:\n${link}\n`;
-  const html = shell(`
+  const html = shell(
+    `
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">Signed by everyone<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
         <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">Your copy for ${esc(party.name)}, with the signature certificate.</div>
-        ${button(link, "Download the signed copy")}`, row.brand);
+        ${button(link, "Download the signed copy")}`,
+    row.brand,
+  );
   return { subject, text, html };
 }
 

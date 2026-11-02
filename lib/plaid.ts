@@ -14,6 +14,6 @@ export function getPlaidClient(): PlaidApi {
           "PLAID-SECRET": process.env.PLAID_SECRET!,
         },
       },
-    })
+    }),
   );
 }

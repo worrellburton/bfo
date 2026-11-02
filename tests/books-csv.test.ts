@@ -16,10 +16,7 @@ describe("planCsvImport", () => {
   });
 
   it("keeps a genuine same-day repeat when only one is stored", () => {
-    const plan = planCsvImport(
-      [row("2026-01-02", 25), row("2026-01-02", 25)],
-      [{ date: "2026-01-02", amount: 25 }]
-    );
+    const plan = planCsvImport([row("2026-01-02", 25), row("2026-01-02", 25)], [{ date: "2026-01-02", amount: 25 }]);
     expect(plan.skipped).toBe(1);
     expect(plan.rows).toHaveLength(1);
   });
@@ -41,10 +38,7 @@ describe("planCsvImport", () => {
   });
 
   it("matches amounts to the cent, signs included", () => {
-    const plan = planCsvImport(
-      [row("2026-01-02", 25.004), row("2026-01-02", -25)],
-      [{ date: "2026-01-02", amount: 25 }]
-    );
+    const plan = planCsvImport([row("2026-01-02", 25.004), row("2026-01-02", -25)], [{ date: "2026-01-02", amount: 25 }]);
     expect(plan.skipped).toBe(1);
     expect(plan.rows.map((r) => r.amount)).toEqual([-25]);
   });

@@ -35,7 +35,8 @@ type Props = {
   onType: () => void;
 };
 
-const globeMode = (s: VoiceStatus): GlobeMode => (s === "listening" ? "listening" : s === "transcribing" || s === "thinking" || s === "connecting" ? "thinking" : s === "speaking" ? "speaking" : "idle");
+const globeMode = (s: VoiceStatus): GlobeMode =>
+  s === "listening" ? "listening" : s === "transcribing" || s === "thinking" || s === "connecting" ? "thinking" : s === "speaking" ? "speaking" : "idle";
 
 export function VoiceStage({ status, tools, caption, messages, micAvailable, error, firstName, level, progress, onHoldStart, onHoldEnd, onHush, onType }: Props) {
   const holding = useRef(false);
@@ -93,19 +94,19 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
       ? "Listening"
       : status === "connecting"
         ? "Connecting"
-      : status === "transcribing"
-        ? "Writing down what you said"
-        : status === "thinking"
-          ? tools.length
-            ? tools[tools.length - 1]
-            : "Thinking"
-          : status === "speaking"
-            ? "Speaking"
-            : messages.length
-              ? "Hold to ask something else"
-              : micAvailable
-                ? "Hold the button and ask"
-                : "This browser has no microphone";
+        : status === "transcribing"
+          ? "Writing down what you said"
+          : status === "thinking"
+            ? tools.length
+              ? tools[tools.length - 1]
+              : "Thinking"
+            : status === "speaking"
+              ? "Speaking"
+              : messages.length
+                ? "Hold to ask something else"
+                : micAvailable
+                  ? "Hold the button and ask"
+                  : "This browser has no microphone";
 
   const ivory = "text-[#f4ede0]";
 
@@ -119,7 +120,11 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
       {/* The stage */}
       <section className="relative flex min-h-0 flex-col items-center">
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-          <button type="button" onClick={onType} className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-1.5 rounded-full border border-[#f4ede0]/15 px-3.5 hover:border-[#f4ede0]/35">
+          <button
+            type="button"
+            onClick={onType}
+            className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-1.5 rounded-full border border-[#f4ede0]/15 px-3.5 hover:border-[#f4ede0]/35"
+          >
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h10" />
             </svg>
@@ -133,7 +138,9 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
           </div>
 
           <p className={`auth-eyebrow mt-12 flex items-center gap-2 ${busy || status === "speaking" || status === "listening" ? "text-[#f4ede0]/70" : ""}`}>
-            {(busy || status === "listening" || status === "speaking") && <span className={`h-1.5 w-1.5 rounded-full ${status === "listening" ? "bg-red-400 ask-pulse" : status === "speaking" ? "bg-[#f4ede0] ask-pulse" : "bg-[#818cf8] ask-pulse"}`} />}
+            {(busy || status === "listening" || status === "speaking") && (
+              <span className={`h-1.5 w-1.5 rounded-full ${status === "listening" ? "bg-red-400 ask-pulse" : status === "speaking" ? "bg-[#f4ede0] ask-pulse" : "bg-[#818cf8] ask-pulse"}`} />
+            )}
             {statusLine}
           </p>
 
@@ -166,7 +173,11 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
         {/* Hold to talk */}
         <div className="relative flex w-full flex-col items-center gap-3 pb-6 pt-2">
           {status === "speaking" ? (
-            <button type="button" onClick={onHush} className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-2 rounded-full border border-[#f4ede0]/15 px-4 hover:border-[#f4ede0]/35">
+            <button
+              type="button"
+              onClick={onHush}
+              className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-2 rounded-full border border-[#f4ede0]/15 px-4 hover:border-[#f4ede0]/35"
+            >
               <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
               Stop
             </button>
@@ -195,7 +206,9 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
             }}
             onContextMenu={(e) => e.preventDefault()}
             className={`voice-hold grid h-[84px] w-[84px] cursor-pointer select-none place-items-center rounded-full border transition-transform disabled:cursor-default disabled:opacity-40 ${
-              status === "listening" ? "voice-hold-on scale-110 border-red-400/60 bg-red-500/90 text-white" : "border-[#f4ede0]/25 bg-[#f4ede0]/[0.06] text-[#f4ede0] hover:bg-[#f4ede0]/[0.12] active:scale-95"
+              status === "listening"
+                ? "voice-hold-on scale-110 border-red-400/60 bg-red-500/90 text-white"
+                : "border-[#f4ede0]/25 bg-[#f4ede0]/[0.06] text-[#f4ede0] hover:bg-[#f4ede0]/[0.12] active:scale-95"
             }`}
             style={{ touchAction: "none", WebkitUserSelect: "none" }}
           >
@@ -203,7 +216,11 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-current border-t-transparent" />
             ) : (
               <svg className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+                />
               </svg>
             )}
           </button>

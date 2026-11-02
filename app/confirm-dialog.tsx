@@ -90,9 +90,7 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
   const muted = dark ? "text-gray-400" : "text-gray-600";
   const btn = "inline-flex h-10 max-sm:h-[46px] items-center justify-center rounded-full px-5 text-[14px] font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40";
   const cancelCls = dark ? "border border-white/15 text-gray-200 hover:bg-white/10" : "border border-gray-200 text-gray-700 hover:bg-gray-100";
-  const okCls = danger
-    ? "bg-red-500 text-white hover:bg-red-600"
-    : dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700";
+  const okCls = danger ? "bg-red-500 text-white hover:bg-red-600" : dark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700";
 
   return (
     <div className={`fixed inset-0 z-[120] flex items-end justify-center p-3 sm:items-center sm:p-6 ${closing ? "opacity-0 transition-opacity duration-100" : ""}`}>
@@ -112,7 +110,9 @@ function Dialog({ opts, onDone }: { opts: ConfirmOptions; onDone: (ok: boolean) 
             </svg>
           </div>
         )}
-        <h2 id="bfo-dialog-title" className="text-[16px] font-semibold leading-snug">{opts.title}</h2>
+        <h2 id="bfo-dialog-title" className="text-[16px] font-semibold leading-snug">
+          {opts.title}
+        </h2>
         {opts.message && <div className={`mt-2 text-[14px] leading-relaxed ${muted}`}>{opts.message}</div>}
         {opts.details && opts.details.length > 0 && (
           <ul className={`mt-3 space-y-1.5 text-[13px] ${muted}`}>
@@ -174,7 +174,7 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
           returnFocus?.focus?.();
           resolve(ok);
         }}
-      />
+      />,
     );
   });
 }

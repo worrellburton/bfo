@@ -121,7 +121,11 @@ export default function Notes() {
           >
             Add Note
           </button>
-          {error && <p role="alert" className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+          {error && (
+            <p role="alert" className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
+              {error}
+            </p>
+          )}
         </form>
       )}
 
@@ -146,9 +150,7 @@ export default function Notes() {
                 )}
               </div>
               {note.body && <p className={`${isDark ? "text-gray-400" : "text-gray-600"} text-sm mt-1 whitespace-pre-wrap break-words`}>{note.body}</p>}
-              <small className={`text-xs mt-2 block ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-                {new Date(note.createdAt).toLocaleDateString()}
-              </small>
+              <small className={`text-xs mt-2 block ${isDark ? "text-gray-500" : "text-gray-500"}`}>{new Date(note.createdAt).toLocaleDateString()}</small>
             </div>
           ))}
         </div>

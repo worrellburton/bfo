@@ -41,8 +41,7 @@ export function counterpartyText(name: string | null, merchant: string | null): 
 }
 
 // The family's entities, as they appear inside bank descriptions.
-const ENTITY_NAMES =
-  /sundown investments|fdj hesperia|ledger louise|breezewood|palomino|persons lodge|swisshelm|ledger burton|wadr law/i;
+const ENTITY_NAMES = /sundown investments|fdj hesperia|ledger louise|breezewood|palomino|persons lodge|swisshelm|ledger burton|wadr law/i;
 
 const MOVEMENT = /^(TRANSFER_IN|TRANSFER_OUT|INCOME|LOAN_DISBURSEMENTS|LOAN_PAYMENTS)$/;
 
@@ -132,22 +131,14 @@ type Db = (path: string, init?: RequestInit) => Promise<Response>;
  * or read twice. Returns the count patched; a failed patch is logged, not
  * counted.
  */
-export async function patchMatching(
-  db: Db,
-  needle: string,
-  baseFilter: string,
-  patch: Record<string, unknown>
-): Promise<number> {
+export async function patchMatching(db: Db, needle: string, baseFilter: string, patch: Record<string, unknown>): Promise<number> {
   const n = needle.trim().toLowerCase();
   if (n.length < 2) return 0;
 
   // `, ( ) *` are PostgREST structure in an or=() filter: widened to wildcards (the JS check below is exact).
   const safe = encodeURIComponent(n.replace(/[,()*]/g, "*").replace(/([\\%_])/g, "\\$1"));
   const path =
-    `book_transactions?select=transaction_id,name,merchant_name` +
-    `&or=(name.ilike.*${safe}*,merchant_name.ilike.*${safe}*)` +
-    (baseFilter ? `&${baseFilter}` : "") +
-    `&order=transaction_id.asc`;
+    `book_transactions?select=transaction_id,name,merchant_name` + `&or=(name.ilike.*${safe}*,merchant_name.ilike.*${safe}*)` + (baseFilter ? `&${baseFilter}` : "") + `&order=transaction_id.asc`;
   const rows = await fetchAll<{ transaction_id: string; name: string | null; merchant_name: string | null }>(path, db);
   const ids = rows.filter((t) => `${t.merchant_name ?? ""} ${t.name ?? ""}`.toLowerCase().includes(n)).map((t) => t.transaction_id);
 
@@ -165,11 +156,7 @@ export async function patchMatching(
   return done;
 }
 
-export function categorize(
-  name: string | null,
-  merchant: string | null,
-  plaidCategory: string | null
-): { category: string | null; type: RuleType | null } {
+export function categorize(name: string | null, merchant: string | null, plaidCategory: string | null): { category: string | null; type: RuleType | null } {
   const text = `${merchant ?? ""} ${name ?? ""}`.trim();
   const counterparty = counterpartyText(name, merchant);
   const plaid = plaidCategory ?? "";
@@ -207,12 +194,7 @@ export function typeForCategory(category: string | null | undefined): RuleType |
  * category column while the built-in rule still set the type, so a payroll
  * run booked to Salaries & Wages could arrive flagged as a roll-up.
  */
-export function classify(
-  name: string | null,
-  merchant: string | null,
-  plaidCategory: string | null,
-  taughtCategory: string | null
-): { category: string | null; type: RuleType | null } {
+export function classify(name: string | null, merchant: string | null, plaidCategory: string | null, taughtCategory: string | null): { category: string | null; type: RuleType | null } {
   const rule = categorize(name, merchant, plaidCategory);
   if (!taughtCategory) return rule;
   return { category: taughtCategory, type: typeForCategory(taughtCategory) ?? rule.type };

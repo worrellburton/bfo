@@ -33,7 +33,14 @@ export function OverviewTab() {
         <ClosingCard />
         <Standing />
         <Formation />
-        {page.editing ? <EditForm /> : <><Addresses /><Details /></>}
+        {page.editing ? (
+          <EditForm />
+        ) : (
+          <>
+            <Addresses />
+            <Details />
+          </>
+        )}
         {view.isTrust && !page.editing && <AddressChange />}
       </div>
       <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
@@ -90,81 +97,85 @@ function AddressChange({ embedded = false }: { embedded?: boolean }) {
 
   const moved = `Moved from ${asset.previousAddress}${asset.addressChangedAt ? ` on ${fmtDate(asset.addressChangedAt)}` : ""}. These still have the old one.`;
   const rows = (
-      <Rows className={embedded ? `border-t ${t.line}` : ""}>
-        {embedded && (
-          <div className="px-5 pb-1 pt-3">
-            <div className={`flex items-center gap-2 text-[12.5px] font-medium ${t.text}`}>
-              Address change
-              <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums ${t.dark ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-800"}`}>{remaining}</span>
-            </div>
-            <p className={`mt-0.5 text-[12px] ${t.muted}`}>{moved}</p>
-          </div>
-        )}
-        <Row
-          label={step.agency}
-          info={step.how}
-          actions={
-            step.needed && !stateMatches ? (
-              <div className="flex items-center gap-3">
-                {step.url && <TextLink href={step.url}>{step.linkLabel ?? "Open"}</TextLink>}
-                <TextButton onClick={() => void page.checkStateRecord()} disabled={!!page.palmBusy}>
-                  {page.palmBusy === "record" ? "Checking…" : `Check state record${priceSuffix(page.palmMode, stateRecordCents(!!asset.fileNumber))}`}
-                </TextButton>
-                {markBtn("state", !!done.state)}
-              </div>
-            ) : undefined
-          }
-        >
-          {!step.needed ? (
-            <Dot tone="good">Nothing to file</Dot>
-          ) : stateMatches ? (
-            <Dot tone="good">The state has the new address</Dot>
-          ) : done.state ? (
-            doneMark(done.state)
-          ) : rec?.address ? (
-            <span>
-              <Dot tone="warn">The state still has the old address</Dot>
-              <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{rec.address}</span>
+    <Rows className={embedded ? `border-t ${t.line}` : ""}>
+      {embedded && (
+        <div className="px-5 pb-1 pt-3">
+          <div className={`flex items-center gap-2 text-[12.5px] font-medium ${t.text}`}>
+            Address change
+            <span
+              className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums ${t.dark ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-800"}`}
+            >
+              {remaining}
             </span>
-          ) : (
-            <Dot tone="warn">To file</Dot>
-          )}
-        </Row>
+          </div>
+          <p className={`mt-0.5 text-[12px] ${t.muted}`}>{moved}</p>
+        </div>
+      )}
+      <Row
+        label={step.agency}
+        info={step.how}
+        actions={
+          step.needed && !stateMatches ? (
+            <div className="flex items-center gap-3">
+              {step.url && <TextLink href={step.url}>{step.linkLabel ?? "Open"}</TextLink>}
+              <TextButton onClick={() => void page.checkStateRecord()} disabled={!!page.palmBusy}>
+                {page.palmBusy === "record" ? "Checking…" : `Check state record${priceSuffix(page.palmMode, stateRecordCents(!!asset.fileNumber))}`}
+              </TextButton>
+              {markBtn("state", !!done.state)}
+            </div>
+          ) : undefined
+        }
+      >
+        {!step.needed ? (
+          <Dot tone="good">Nothing to file</Dot>
+        ) : stateMatches ? (
+          <Dot tone="good">The state has the new address</Dot>
+        ) : done.state ? (
+          doneMark(done.state)
+        ) : rec?.address ? (
+          <span>
+            <Dot tone="warn">The state still has the old address</Dot>
+            <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{rec.address}</span>
+          </span>
+        ) : (
+          <Dot tone="warn">To file</Dot>
+        )}
+      </Row>
+      <Row
+        label="IRS · Form 8822-B"
+        info={irsNeeded ? `Sign it, then mail it to ${irs.mailTo}. The IRS takes 4–6 weeks to process it.` : irs.notes[0]}
+        actions={
+          irsNeeded ? (
+            <div className="flex items-center gap-3">
+              {!done.irs && (
+                <TextButton onClick={() => void run("8822", page.generate8822B)} disabled={busy === "8822"}>
+                  {busy === "8822" ? "Filling in…" : "Fill in 8822-B"}
+                </TextButton>
+              )}
+              {markBtn("irs", !!done.irs)}
+            </div>
+          ) : undefined
+        }
+      >
+        {!irsNeeded ? <Dot tone="muted">No EIN of its own</Dot> : done.irs ? doneMark(done.irs) : <Dot tone="warn">To mail</Dot>}
+      </Row>
+      {w9Old && (
         <Row
-          label="IRS · Form 8822-B"
-          info={irsNeeded ? `Sign it, then mail it to ${irs.mailTo}. The IRS takes 4–6 weeks to process it.` : irs.notes[0]}
+          label="W-9"
+          info="The W-9 on file has the old address. A new one goes on file; the old one stays in Documents."
           actions={
-            irsNeeded ? (
-              <div className="flex items-center gap-3">
-                {!done.irs && (
-                  <TextButton onClick={() => void run("8822", page.generate8822B)} disabled={busy === "8822"}>
-                    {busy === "8822" ? "Filling in…" : "Fill in 8822-B"}
-                  </TextButton>
-                )}
-                {markBtn("irs", !!done.irs)}
-              </div>
-            ) : undefined
+            <TextButton onClick={() => void run("w9", () => page.generateW9(true))} disabled={busy === "w9"}>
+              {busy === "w9" ? "Filling in…" : "Fill in a new W-9"}
+            </TextButton>
           }
         >
-          {!irsNeeded ? <Dot tone="muted">No EIN of its own</Dot> : done.irs ? doneMark(done.irs) : <Dot tone="warn">To mail</Dot>}
+          <Dot tone="warn">Old address</Dot>
         </Row>
-        {w9Old && (
-          <Row
-            label="W-9"
-            info="The W-9 on file has the old address. A new one goes on file; the old one stays in Documents."
-            actions={
-              <TextButton onClick={() => void run("w9", () => page.generateW9(true))} disabled={busy === "w9"}>
-                {busy === "w9" ? "Filling in…" : "Fill in a new W-9"}
-              </TextButton>
-            }
-          >
-            <Dot tone="warn">Old address</Dot>
-          </Row>
-        )}
-        <Row label="Banks, Palm, insurers" info="Anyone who mails it statements or notices: update the address in each." actions={markBtn("banks", banksDone)}>
-          {banksDone ? doneMark(done.banks!) : <Dot tone="warn">To update</Dot>}
-        </Row>
-      </Rows>
+      )}
+      <Row label="Banks, Palm, insurers" info="Anyone who mails it statements or notices: update the address in each." actions={markBtn("banks", banksDone)}>
+        {banksDone ? doneMark(done.banks!) : <Dot tone="warn">To update</Dot>}
+      </Row>
+    </Rows>
   );
   if (embedded) return rows;
   return (
@@ -176,7 +187,8 @@ function AddressChange({ embedded = false }: { embedded?: boolean }) {
 
 // ── Small pieces ─────────────────────────────────────────────────────────
 
-const linkClass = "relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap text-[12px] font-medium hover:underline max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-['']";
+const linkClass =
+  "relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap text-[12px] font-medium hover:underline max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-['']";
 
 /** TextButton's look, for navigation: an in-app route (`to`) or a new tab (`href`). */
 function TextLink({ children, ...where }: { children: ReactNode } & ({ to: string } | { href: string })) {
@@ -207,7 +219,11 @@ function Formation() {
   if (!f) return null;
   const done = f.status === "completed";
   const canceled = f.status === "canceled";
-  const steps = FILING_STATUSES.map((s) => ({ key: s, label: FILING_LABEL[s], reached: !canceled && FILING_STATUSES.indexOf(s) <= FILING_STATUSES.indexOf(f.status as (typeof FILING_STATUSES)[number]) }));
+  const steps = FILING_STATUSES.map((s) => ({
+    key: s,
+    label: FILING_LABEL[s],
+    reached: !canceled && FILING_STATUSES.indexOf(s) <= FILING_STATUSES.indexOf(f.status as (typeof FILING_STATUSES)[number]),
+  }));
   const stateName = US_STATES.find(([abbr]) => `US-${abbr}` === f.jurisdiction)?.[1] ?? f.jurisdiction;
   // Once formed, the filing's story is one line; Palm's questions (on the EIN, say) still show.
   if (done)
@@ -236,7 +252,9 @@ function Formation() {
         <ol className="flex flex-wrap gap-x-4 gap-y-2 px-4 py-3">
           {steps.map((s, i) => (
             <li key={s.key} className={`flex items-center gap-1.5 text-[12px] ${s.reached ? t.text : t.faint}`}>
-              <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${s.reached ? (t.dark ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-700") : t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}>
+              <span
+                className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${s.reached ? (t.dark ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-700") : t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}
+              >
                 {s.reached && (done || s.key !== f.status) ? <Icon name="check" className="h-2.5 w-2.5" strokeWidth={2.5} /> : i + 1}
               </span>
               {s.label}
@@ -275,7 +293,6 @@ function Details() {
     <Section title="Details">
       {/* Free text (addresses, notes with links, file names) wraps instead of running off the card. */}
       <Rows className="[overflow-wrap:anywhere]">
-
         {view.isTrust ? (
           <>
             {/* Trustees, grantors and beneficiaries live on the People tab. */}
@@ -416,8 +433,8 @@ function Addresses() {
       info={
         <>
           The <b>principal office</b> is where the business is: the address the state lists publicly. The <b>mailing address</b> is where its mail goes, when that's somewhere else. The{" "}
-          <b>registered agent</b> accepts lawsuits and official notices for it: one in every state it's registered in, at a street address in that state (never a PO box or mailbox),
-          open during business hours. A company formed in one state and run from another needs an agent in both.
+          <b>registered agent</b> accepts lawsuits and official notices for it: one in every state it's registered in, at a street address in that state (never a PO box or mailbox), open during
+          business hours. A company formed in one state and run from another needs an agent in both.
         </>
       }
       actions={
@@ -434,25 +451,28 @@ function Addresses() {
           </Row>
         ) : (
           <>
-        <Row label="Principal office">
-          {a.principal.value ?? <AddValue field="address" />}
-          {checks(a.principal.checks)}
-        </Row>
-        <Row label="Mailing address">
-          {a.mailing.value ? (
-            <>
-              {a.mailing.same ? <span className={t.soft}>Same as the principal office</span> : a.mailing.value}
-              {sameAddressText(a.mailing.value, STABLE_ADDRESS) && (
-                <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
-                  The Stable mailbox: each piece is scanned into <Link to="/mailbox" className={t.accent}>Mailbox</Link>
-                </span>
+            <Row label="Principal office">
+              {a.principal.value ?? <AddValue field="address" />}
+              {checks(a.principal.checks)}
+            </Row>
+            <Row label="Mailing address">
+              {a.mailing.value ? (
+                <>
+                  {a.mailing.same ? <span className={t.soft}>Same as the principal office</span> : a.mailing.value}
+                  {sameAddressText(a.mailing.value, STABLE_ADDRESS) && (
+                    <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
+                      The Stable mailbox: each piece is scanned into{" "}
+                      <Link to="/mailbox" className={t.accent}>
+                        Mailbox
+                      </Link>
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className={t.faint}>None on record: mail goes to the principal office once there is one.</span>
               )}
-            </>
-          ) : (
-            <span className={t.faint}>None on record: mail goes to the principal office once there is one.</span>
-          )}
-          {checks(a.mailing.checks)}
-        </Row>
+              {checks(a.mailing.checks)}
+            </Row>
           </>
         )}
         {a.agents.map((g) => (
@@ -467,7 +487,9 @@ function Addresses() {
             info={g.home && source ? source : !g.home && g.record ? `${g.stateLabel}'s record read through Palm, ${fmtStamp(g.record.checkedAt)}.` : undefined}
             actions={
               g.home ? (
-                forming && g.palm ? undefined : <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
+                forming && g.palm ? undefined : (
+                  <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
+                )
               ) : g.ask ? undefined : page.palmStatus?.configured ? (
                 <TextButton onClick={() => void check(g.state)} disabled={page.foreignBusy === g.state}>
                   {page.foreignBusy === g.state ? "Checking…" : `${g.record ? `Re-check ${g.state}` : `Check ${g.state} record`}${priceSuffix(page.palmMode, stateRecordCents(!!g.fileNumber))}`}
@@ -485,16 +507,16 @@ function Addresses() {
               <span className={t.faint}>None on record</span>
             )}
             {g.address && <span className={`mt-0.5 block text-[12.5px] ${t.soft}`}>{g.address}</span>}
-            {g.fileNumber && <span className={`mt-0.5 block text-[12px] ${t.muted}`}>File number <span className="font-mono tabular-nums">{g.fileNumber}</span></span>}
+            {g.fileNumber && (
+              <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
+                File number <span className="font-mono tabular-nums">{g.fileNumber}</span>
+              </span>
+            )}
             {checks(g.checks)}
             {g.ask && (
               <span className="mt-2 flex flex-wrap gap-2">
-                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/confirmed`]: true, [`foreign/${g.state}/notNeeded`]: null })}>
-                  It does business in {g.stateLabel}
-                </Button>
-                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/notNeeded`]: true, [`foreign/${g.state}/confirmed`]: null })}>
-                  Only its mail goes there
-                </Button>
+                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/confirmed`]: true, [`foreign/${g.state}/notNeeded`]: null })}>It does business in {g.stateLabel}</Button>
+                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/notNeeded`]: true, [`foreign/${g.state}/confirmed`]: null })}>Only its mail goes there</Button>
               </span>
             )}
             {errors[g.state] && <span className={`mt-1 block text-[12px] ${toneText("bad", t.dark)}`}>{errors[g.state]}</span>}
@@ -502,9 +524,7 @@ function Addresses() {
         ))}
         {a.notNeeded.length > 0 && (
           <Row label="Not registered in">
-            <span className={t.soft}>
-              {a.notNeeded.map((c) => stateName(c)).join(", ")}: its address is there, but it doesn't do business there.
-            </span>{" "}
+            <span className={t.soft}>{a.notNeeded.map((c) => stateName(c)).join(", ")}: its address is there, but it doesn't do business there.</span>{" "}
             <TextButton onClick={() => void page.patchAsset(Object.fromEntries(a.notNeeded.map((c) => [`foreign/${c}/notNeeded`, null])))}>Undo</TextButton>
           </Row>
         )}
@@ -545,9 +565,7 @@ function Mail() {
     let live = true;
     // The page's opening read when it just came in (its mail count and unread mail are one reading); Palm itself otherwise.
     const part = seed(`${assetId}:${mode}`);
-    (part ? fromBundle(part) : palmCall<{ events: InboxEvent[] }>("inbox", { assetId, mode, unread: true }))
-      .then((r) => live && setUnread(r.events.filter((e) => e.document_id)))
-      .catch(() => {});
+    (part ? fromBundle(part) : palmCall<{ events: InboxEvent[] }>("inbox", { assetId, mode, unread: true })).then((r) => live && setUnread(r.events.filter((e) => e.document_id))).catch(() => {});
     return () => {
       live = false;
     };
@@ -726,7 +744,9 @@ function EditForm() {
     setError(""); // an old save error doesn't apply to new edits
     page.setForm((f) => ({ ...f, [k]: v }));
   };
-  const text = (k: "name" | "state" | "ein" | "registeredAgent" | "registeredAgentAddress" | "address" | "mailingAddress" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink") => ({
+  const text = (
+    k: "name" | "state" | "ein" | "registeredAgent" | "registeredAgentAddress" | "address" | "mailingAddress" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink",
+  ) => ({
     id: `edit-${k}`,
     value: form[k] || "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
@@ -793,9 +813,7 @@ function EditForm() {
                   onClick={() => set("type", type)}
                   aria-pressed={form.type === type}
                   className={`h-[22px] cursor-pointer rounded-md text-[12px] font-medium transition-colors max-sm:h-[40px] ${
-                    form.type === type
-                      ? t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white"
-                      : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
+                    form.type === type ? (t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
                   }`}
                 >
                   {type}
@@ -863,10 +881,7 @@ function EditForm() {
                 );
               })}
               <Field label="Registered in another state too?" hint="Doing business elsewhere (an office, staff, operating property) means registering there, with an agent there.">
-                <Select
-                  value=""
-                  onChange={(e) => e.target.value && set("foreign", { ...(form.foreign ?? {}), [e.target.value]: {} })}
-                >
+                <Select value="" onChange={(e) => e.target.value && set("foreign", { ...(form.foreign ?? {}), [e.target.value]: {} })}>
                   <option value="">Add a state…</option>
                   {US_STATES.filter(([code]) => code !== stateCode(form.state) && !foreignStates(form).includes(code)).map(([code, name]) => (
                     <option key={code} value={code}>
@@ -1066,7 +1081,6 @@ function List({ items }: { items: string[] }) {
 }
 
 // ── To do (completeness) ─────────────────────────────────────────────────
-
 
 function ToDo() {
   const { view, asset, goToTab } = useEntity();

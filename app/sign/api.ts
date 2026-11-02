@@ -8,7 +8,19 @@ export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
 
 export type SignField = { id: string; party: PartyKey; type: FieldType; page: number; x: number; y: number; w: number; h: number };
-export type Party = { key: PartyKey; role: string; name: string; email: string; status: PartyStatus; sentAt?: string; viewedAt?: string; signedAt?: string; declinedAt?: string; declinedReason?: string; signedAs?: string };
+export type Party = {
+  key: PartyKey;
+  role: string;
+  name: string;
+  email: string;
+  status: PartyStatus;
+  sentAt?: string;
+  viewedAt?: string;
+  signedAt?: string;
+  declinedAt?: string;
+  declinedReason?: string;
+  signedAs?: string;
+};
 export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string };
 
 export type SignatureRequest = {

@@ -203,11 +203,13 @@ describe("report=statements", () => {
 
 describe("report=tax1099", () => {
   it("totals payments to service vendors at or above the $600 threshold", async () => {
-    routes.unshift(rows([
-      ...ledger,
-      txn({ transaction_id: "c1", amount: 599, book_category: "6150 Contract Services", merchant_name: "Small Fry" }),
-      txn({ transaction_id: "c2", amount: 1200, book_category: "6150 Contract Services", merchant_name: "Builder", type_override: "transfer" }),
-    ]));
+    routes.unshift(
+      rows([
+        ...ledger,
+        txn({ transaction_id: "c1", amount: 599, book_category: "6150 Contract Services", merchant_name: "Small Fry" }),
+        txn({ transaction_id: "c2", amount: 1200, book_category: "6150 Contract Services", merchant_name: "Builder", type_override: "transfer" }),
+      ]),
+    );
     const r = await get({ report: "tax1099", year: "2026" });
     expect(r.json).toEqual({
       year: 2026,
@@ -224,11 +226,13 @@ describe("report=tax1099", () => {
   });
 
   it("applies the threshold per paying entity", async () => {
-    routes.unshift(rows([
-      txn({ transaction_id: "p1", amount: 400, book_category: "6150 Contract Services", merchant_name: "Painter" }),
-      txn({ transaction_id: "p2", amount: 400, book_category: "6150 Contract Services", merchant_name: "painter ", account_id: "acc-b1" }),
-      txn({ transaction_id: "p3", amount: 300, book_category: "6150 Contract Services", merchant_name: "Painter", account_id: "acc-b1" }),
-    ]));
+    routes.unshift(
+      rows([
+        txn({ transaction_id: "p1", amount: 400, book_category: "6150 Contract Services", merchant_name: "Painter" }),
+        txn({ transaction_id: "p2", amount: 400, book_category: "6150 Contract Services", merchant_name: "painter ", account_id: "acc-b1" }),
+        txn({ transaction_id: "p3", amount: 300, book_category: "6150 Contract Services", merchant_name: "Painter", account_id: "acc-b1" }),
+      ]),
+    );
     const r = await get({ report: "tax1099", year: "2026" });
     expect(r.json.vendors).toEqual([{ vendor: "painter", entity: "Beta Trust", paid: 700, count: 2, account: "6150 Contract Services" }]);
   });
@@ -257,18 +261,27 @@ describe("report=vendors", () => {
 
 describe("report=review", () => {
   it("counts the queue and finds cross-source duplicates and outliers", async () => {
-    routes.unshift(rows([
-      txn({ transaction_id: "a", amount: 10, book_category: null }),
-      txn({ transaction_id: "b", amount: 10, item_id: "item-2" }),
-      txn({ transaction_id: "c", amount: 10 }),
-      txn({ transaction_id: "d", amount: 9999, book_category: "6900 Other Operating Expenses" }),
-      txn({ transaction_id: "e", amount: 5000, txn_type: "transfer", book_category: "9100 Transfers" }),
-    ]));
+    routes.unshift(
+      rows([
+        txn({ transaction_id: "a", amount: 10, book_category: null }),
+        txn({ transaction_id: "b", amount: 10, item_id: "item-2" }),
+        txn({ transaction_id: "c", amount: 10 }),
+        txn({ transaction_id: "d", amount: 9999, book_category: "6900 Other Operating Expenses" }),
+        txn({ transaction_id: "e", amount: 5000, txn_type: "transfer", book_category: "9100 Transfers" }),
+      ]),
+    );
     const r = await get({ report: "review" });
     expect(r.json.counts).toEqual({ uncategorized: 1, low_confidence: 1, duplicate_groups: 1 });
     expect(r.json.uncategorized[0]).toEqual({
-      transaction_id: "a", date: "2026-03-04", name: "ACME", merchant_name: "Acme", amount: 10,
-      book_category: null, entity_name: "Alpha LLC", account_id: "acc-a1", item_id: "item-1",
+      transaction_id: "a",
+      date: "2026-03-04",
+      name: "ACME",
+      merchant_name: "Acme",
+      amount: 10,
+      book_category: null,
+      entity_name: "Alpha LLC",
+      account_id: "acc-a1",
+      item_id: "item-1",
     });
     expect(r.json.duplicates[0]).toMatchObject({ count: 3, cross_source: true, amount: 10 });
     expect(r.json.outliers.map((t: any) => t.transaction_id)).toEqual(["d", "a", "b", "c"]);
@@ -278,7 +291,7 @@ describe("report=review", () => {
 describe("report=recurring", () => {
   it("detects a monthly stream and projects the next date", async () => {
     const monthly = ["2026-01-05", "2026-02-05", "2026-03-06", "2026-04-05"].map((date, i) =>
-      txn({ transaction_id: `m${i}`, date, amount: 49.99, merchant_name: "Netflix", book_category: "6450 Dues & Subscriptions" })
+      txn({ transaction_id: `m${i}`, date, amount: 49.99, merchant_name: "Netflix", book_category: "6450 Dues & Subscriptions" }),
     );
     const noise = ["2026-01-01", "2026-01-03", "2026-02-20"].map((date, i) => txn({ transaction_id: `n${i}`, date, merchant_name: "Random" }));
     routes.unshift(rows([...monthly, ...noise]));
@@ -304,16 +317,22 @@ describe("report=recurring", () => {
 describe("report=reconciliation", () => {
   it("ties each visible bank balance to the ledger's net", async () => {
     routes.unshift(
-      [/^GET book_transactions\?select=account_id,amount/, () => [
-        { account_id: "acc-a1", amount: 100 },
-        { account_id: "acc-a1", amount: -350.5 },
-        { account_id: "acc-hid", amount: 1 },
-      ]],
-      [/^GET plaid_account_state/, () => [
-        { account_id: "acc-a1", balance: "250.5" },
-        { account_id: "acc-b1", balance: 10 },
-        { account_id: "acc-hid", balance: 99 },
-      ]],
+      [
+        /^GET book_transactions\?select=account_id,amount/,
+        () => [
+          { account_id: "acc-a1", amount: 100 },
+          { account_id: "acc-a1", amount: -350.5 },
+          { account_id: "acc-hid", amount: 1 },
+        ],
+      ],
+      [
+        /^GET plaid_account_state/,
+        () => [
+          { account_id: "acc-a1", balance: "250.5" },
+          { account_id: "acc-b1", balance: 10 },
+          { account_id: "acc-hid", balance: 99 },
+        ],
+      ],
     );
     const r = await get({ report: "reconciliation" });
     expect(r.json.accounts).toEqual([
@@ -327,11 +346,66 @@ describe("report=reconciliation", () => {
 
 describe("report=balance-sheet", () => {
   const identities = [
-    { account_id: "acc-a1", institution_name: "Chase", mask: "1234", subtype: "checking", account_name: "Ops", nickname: null, entity_id: ENT_A, entity_name: "Alpha LLC", hidden: false, archived_at: null },
-    { account_id: "acc-a2", institution_name: "Schwab", mask: null, subtype: "brokerage", account_name: null, nickname: "Nest egg", entity_id: ENT_A, entity_name: null, hidden: false, archived_at: null },
-    { account_id: "acc-b1", institution_name: "Amex", mask: "9", subtype: "credit card", account_name: null, nickname: null, entity_id: ENT_B, entity_name: "Beta Trust", hidden: false, archived_at: null },
-    { account_id: "acc-hid", institution_name: null, mask: null, subtype: "checking", account_name: null, nickname: null, entity_id: ENT_B, entity_name: "Beta Trust", hidden: true, archived_at: null },
-    { account_id: "acc-zero", institution_name: null, mask: null, subtype: "checking", account_name: null, nickname: null, entity_id: ENT_A, entity_name: "Alpha LLC", hidden: false, archived_at: null },
+    {
+      account_id: "acc-a1",
+      institution_name: "Chase",
+      mask: "1234",
+      subtype: "checking",
+      account_name: "Ops",
+      nickname: null,
+      entity_id: ENT_A,
+      entity_name: "Alpha LLC",
+      hidden: false,
+      archived_at: null,
+    },
+    {
+      account_id: "acc-a2",
+      institution_name: "Schwab",
+      mask: null,
+      subtype: "brokerage",
+      account_name: null,
+      nickname: "Nest egg",
+      entity_id: ENT_A,
+      entity_name: null,
+      hidden: false,
+      archived_at: null,
+    },
+    {
+      account_id: "acc-b1",
+      institution_name: "Amex",
+      mask: "9",
+      subtype: "credit card",
+      account_name: null,
+      nickname: null,
+      entity_id: ENT_B,
+      entity_name: "Beta Trust",
+      hidden: false,
+      archived_at: null,
+    },
+    {
+      account_id: "acc-hid",
+      institution_name: null,
+      mask: null,
+      subtype: "checking",
+      account_name: null,
+      nickname: null,
+      entity_id: ENT_B,
+      entity_name: "Beta Trust",
+      hidden: true,
+      archived_at: null,
+    },
+    {
+      account_id: "acc-zero",
+      institution_name: null,
+      mask: null,
+      subtype: "checking",
+      account_name: null,
+      nickname: null,
+      entity_id: ENT_A,
+      entity_name: "Alpha LLC",
+      hidden: false,
+      archived_at: null,
+    },
   ];
   const states = [
     { account_id: "acc-a1", balance: 1000, seen_at: "2026-10-26T01:00:00Z" },
@@ -386,8 +460,21 @@ describe("report=loans", () => {
 describe("report=rules", () => {
   it("counts how many rows each rule touches", async () => {
     routes.unshift(
-      [/^GET book_rules/, () => [{ id: "r1", match: "acme", book_category: "6100 Professional Fees" }, { id: "r2", match: "zzz" }]],
-      [/^GET book_transactions/, () => [{ merchant_name: "ACME Inc", name: "x" }, { merchant_name: null, name: "pay acme" }, { merchant_name: "Other", name: null }]],
+      [
+        /^GET book_rules/,
+        () => [
+          { id: "r1", match: "acme", book_category: "6100 Professional Fees" },
+          { id: "r2", match: "zzz" },
+        ],
+      ],
+      [
+        /^GET book_transactions/,
+        () => [
+          { merchant_name: "ACME Inc", name: "x" },
+          { merchant_name: null, name: "pay acme" },
+          { merchant_name: "Other", name: null },
+        ],
+      ],
     );
     const r = await get({ report: "rules" });
     expect(r.json.rules).toEqual([

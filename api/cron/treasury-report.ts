@@ -1,14 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { computeLoans, type Loan } from "../../lib/books-loans.js";
-import {
-  anticipateInflows,
-  renderInflowsCard,
-  renderInflowsText,
-  type Anticipated,
-  type InflowRow,
-  type InflowStream,
-  type PlannedInflow,
-} from "../../lib/books-inflows.js";
+import { anticipateInflows, renderInflowsCard, renderInflowsText, type Anticipated, type InflowRow, type InflowStream, type PlannedInflow } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { cronAuth, currentUser, formatPhone, handleError, isEmailOnly, isPartner, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
@@ -85,8 +77,7 @@ const money = (n: number | null | undefined, currency = "USD") =>
         minimumFractionDigits: Math.abs(n) >= 1000 ? 0 : 2,
       }).format(n);
 
-const signed = (n: number, currency = "USD") =>
-  `${n >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Math.abs(n))}`;
+const signed = (n: number, currency = "USD") => `${n >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Math.abs(n))}`;
 
 /** Plaid's brand hex → "r, g, b", with an indigo fallback. */
 function tint(hex: string | null): string {
@@ -101,9 +92,7 @@ function tint(hex: string | null): string {
 /** The date of the most recent delivered report, for the "since" line. */
 async function lastDeliveryDate(): Promise<string | null> {
   try {
-    const rows = await sb<Array<{ sent_at: string }>>(
-      "report_deliveries?report=eq.treasury&select=sent_at&order=sent_at.desc&limit=1"
-    );
+    const rows = await sb<Array<{ sent_at: string }>>("report_deliveries?report=eq.treasury&select=sent_at&order=sent_at.desc&limit=1");
     if (!rows?.[0]) return null;
     return new Date(rows[0].sent_at).toLocaleDateString("en-US", {
       month: "short",
@@ -118,9 +107,7 @@ async function lastDeliveryDate(): Promise<string | null> {
 
 async function loadHistory(): Promise<DailyTotal[]> {
   try {
-    const rows = await sb<DailyTotal[]>(
-      "treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=365"
-    );
+    const rows = await sb<DailyTotal[]>("treasury_daily?select=day,cash,invested,credit&order=day.desc&limit=365");
     return (rows ?? []).reverse();
   } catch (err) {
     console.error("treasury-report: couldn't read the daily history", err);
@@ -162,9 +149,7 @@ function nextMonthEnd(now: Date): string {
 async function moneyMarketEarnings(now: Date, adj: InflowAdjustment, hidden: Set<string>): Promise<InflowStream | null> {
   try {
     const wanted = (adj.institution ?? "Vanguard").toLowerCase();
-    const items = await sb<Array<{ item_id: string; access_token: string; institution_name: string }>>(
-      "plaid_items?select=item_id,access_token,institution_name"
-    );
+    const items = await sb<Array<{ item_id: string; access_token: string; institution_name: string }>>("plaid_items?select=item_id,access_token,institution_name");
     const item = (items ?? []).find((i) => (i.institution_name ?? "").toLowerCase().includes(wanted));
     if (!item) return null;
     const client = getPlaidClient();
@@ -203,7 +188,10 @@ async function moneyMarketEarnings(now: Date, adj: InflowAdjustment, hidden: Set
       byMonth.set(month, (byMonth.get(month) ?? 0) + Math.abs(t.amount));
       if (!lastDate || t.date > lastDate) lastDate = t.date;
     }
-    const complete = [...byMonth.entries()].filter(([m]) => m < end.slice(0, 7)).sort().slice(-3);
+    const complete = [...byMonth.entries()]
+      .filter(([m]) => m < end.slice(0, 7))
+      .sort()
+      .slice(-3);
     if (complete.length) {
       const monthly = Math.round(complete.reduce((s, [, v]) => s + v, 0) / complete.length);
       return {
@@ -221,9 +209,7 @@ async function moneyMarketEarnings(now: Date, adj: InflowAdjustment, hidden: Set
     if (!(apy > 0)) return null;
     const hold = await client.investmentsHoldingsGet({ access_token: item.access_token });
     const held = new Map(hold.data.securities.map((s) => [s.security_id, s]));
-    const value = hold.data.holdings
-      .filter((h) => !hidden.has(h.account_id) && isMoneyMarket(held.get(h.security_id)))
-      .reduce((s, h) => s + (h.institution_value ?? 0), 0);
+    const value = hold.data.holdings.filter((h) => !hidden.has(h.account_id) && isMoneyMarket(held.get(h.security_id))).reduce((s, h) => s + (h.institution_value ?? 0), 0);
     if (value <= 0) return null;
     const monthly = Math.round((value * apy) / 12);
     return { ...base, monthly, typical: monthly, count: 0, note: `${(apy * 100).toFixed(2)}% on ${money(value)}` };
@@ -243,22 +229,18 @@ async function moneyMarketEarnings(now: Date, adj: InflowAdjustment, hidden: Set
 async function loadAnticipatedInflows(now: Date): Promise<Anticipated | null> {
   try {
     const since = new Date(now.getTime() - 548 * 86400000).toISOString().slice(0, 10);
-    const prefs = await sb<Array<{ account_id: string; entity_name: string | null; hidden: boolean | null }>>(
-      "plaid_account_prefs?select=account_id,entity_name,hidden&archived_at=is.null"
-    );
+    const prefs = await sb<Array<{ account_id: string; entity_name: string | null; hidden: boolean | null }>>("plaid_account_prefs?select=account_id,entity_name,hidden&archived_at=is.null");
     const hidden = new Set((prefs ?? []).filter((p) => p.hidden).map((p) => p.account_id));
     const entityOf = new Map((prefs ?? []).map((p) => [p.account_id, p.entity_name ?? null]));
     const [rows, adjustments] = await Promise.all([
       // 18 months of inflows can run past PostgREST's 1,000-row page, so page it.
       fetchAll<InflowRow & { account_id: string }>(
         `book_transactions?select=date,amount,merchant_name,name,book_category,entity_name,type_override,txn_type,intercompany,loan_id,account_id` +
-          `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc,transaction_id.asc`
+          `&pending=eq.false&amount=lt.0&date=gte.${since}&order=date.asc,transaction_id.asc`,
       ),
       sb<InflowAdjustment[]>("books_expected_inflows?select=*&active=eq.true&order=created_at.asc").catch(() => [] as InflowAdjustment[]),
     ]);
-    const visible = (rows ?? [])
-      .filter((r) => !hidden.has(r.account_id))
-      .map((r) => ({ ...r, entity_name: entityOf.get(r.account_id) ?? r.entity_name ?? null }));
+    const visible = (rows ?? []).filter((r) => !hidden.has(r.account_id)).map((r) => ({ ...r, entity_name: entityOf.get(r.account_id) ?? r.entity_name ?? null }));
 
     const adj = adjustments ?? [];
     const planned: PlannedInflow[] = adj
@@ -272,9 +254,7 @@ async function loadAnticipatedInflows(now: Date): Promise<Anticipated | null> {
         note: a.note,
       }));
     const exclude = adj.filter((a) => a.kind === "exclude").map((a) => a.name);
-    const computed = (
-      await Promise.all(adj.filter((a) => a.kind === "yield").map((a) => moneyMarketEarnings(now, a, hidden)))
-    ).filter((s): s is InflowStream => !!s);
+    const computed = (await Promise.all(adj.filter((a) => a.kind === "yield").map((a) => moneyMarketEarnings(now, a, hidden)))).filter((s): s is InflowStream => !!s);
 
     return anticipateInflows(visible, now, { planned, exclude, computed });
   } catch (err) {
@@ -468,17 +448,9 @@ function subjectLine(movement: number, sample: boolean, now: Date, withTime = fa
   return `${sample ? "[Sample] " : ""}BFO Treasury — ${day}${time}${arrow}`;
 }
 
-
 // ── Plain-text body ───────────────────────────────────────────────────
 
-function renderText(
-  s: Shaped,
-  movement: number,
-  now: Date,
-  activity: Array<{ account: Account; txns: Txn[] }> = [],
-  loans: Loan[] = [],
-  inflows: Anticipated | null = null
-): string {
+function renderText(s: Shaped, movement: number, now: Date, activity: Array<{ account: Account; txns: Txn[] }> = [], loans: Loan[] = [], inflows: Anticipated | null = null): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
     const detail = accountDetail(a);
@@ -570,8 +542,7 @@ function allocationBar(s: Shaped, loansTotal = 0): string {
   const cashPct = Math.round((s.cash / base) * 100);
   const loanPct = loansTotal > 0 ? Math.round((loansTotal / base) * 100) : 0;
   const investPct = 100 - cashPct - loanPct;
-  const seg = (pct: number, color: string) =>
-    pct <= 0 ? "" : `<div style="display:inline-block;height:8px;width:${Math.max(pct, 1)}%;background:${color};">&nbsp;</div>`;
+  const seg = (pct: number, color: string) => (pct <= 0 ? "" : `<div style="display:inline-block;height:8px;width:${Math.max(pct, 1)}%;background:${color};">&nbsp;</div>`);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
     <tr><td>
       <div style="height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.06);font-size:0;line-height:0;">
@@ -591,10 +562,7 @@ function allocationBar(s: Shaped, loansTotal = 0): string {
 /** Call out the account that moved the most since the last report. */
 function biggestMover(s: Shaped): string {
   const all = [...s.cashAccounts, ...s.investAccounts, ...s.creditAccounts];
-  const top = all.reduce<Account | null>(
-    (best, a) => (Math.abs(a.change ?? 0) > Math.abs(best?.change ?? 0) ? a : best),
-    null
-  );
+  const top = all.reduce<Account | null>((best, a) => (Math.abs(a.change ?? 0) > Math.abs(best?.change ?? 0) ? a : best), null);
   if (!top || !top.change) return "";
   const rgb = tint(top.institution_color);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
@@ -641,7 +609,7 @@ function renderHtml(
     preparedFor?: string | null;
     loans?: Loan[];
     inflows?: Anticipated | null;
-  } = {}
+  } = {},
 ): string {
   const statCard = (label: string, value: string, spark = "", accent = "#fff", move: number | null = null) => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -674,9 +642,7 @@ function renderHtml(
       ? ` <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:#fbbf24;vertical-align:middle;" title="Connection needs attention"></span>`
       : "";
     const swing = "";
-    const delta = a.change
-      ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>`
-      : "";
+    const delta = a.change ? `<div style="font-size:12px;margin-top:1px;color:${a.change > 0 ? "#34d399" : "#fb7185"};">${signed(a.change, a.currency ?? "USD")}</div>` : "";
     return `<tr>
       <td style="padding:10px 0 0;font-size:13px;font-weight:500;">
         <a href="${APP_URL}/treasury/${a.account_id}" style="color:rgba(255,255,255,0.88);text-decoration:none;">${accountName(a)}</a>${stale}${swing}
@@ -703,12 +669,7 @@ function renderHtml(
           <span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.10);" title="${n} zero-balance account${n === 1 ? "" : "s"}">+${n}</span>
         </td></tr>`;
 
-  const section = (
-    title: string,
-    list: Account[],
-    subtotal: string,
-    opts: { zeros?: number; liability?: boolean } = {}
-  ) => {
+  const section = (title: string, list: Account[], subtotal: string, opts: { zeros?: number; liability?: boolean } = {}) => {
     if (list.length === 0 && !opts.zeros) return "";
     const sectionMax = Math.max(...list.map((a) => Math.abs(a.balance_current ?? 0)), 0);
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -753,7 +714,8 @@ function renderHtml(
   // amount-free as well; the numbers wait until the email is opened.
   const preheader = "Your balances, movement and recent activity are inside.";
 
-  return `<!doctype html><html lang="en"><head>
+  return (
+    `<!doctype html><html lang="en"><head>
   <title>BFO Treasury report</title>
   <meta name="color-scheme" content="dark" />
   <meta name="supported-color-schemes" content="dark" />
@@ -789,13 +751,28 @@ function renderHtml(
           </div>`;
         })()}
         <div style="margin-top:8px;"></div>
-        ${statCard("Cash", money(s.cash), sparkline(history, (d) => Number(d.cash), "#38bdf8"), "#fff", s.cashMove)}
-        ${statCard("Investments", money(s.invested), sparkline(history, (d) => Number(d.invested), "#34d399"), "#fff", s.investMove)}
+        ${statCard(
+          "Cash",
+          money(s.cash),
+          sparkline(history, (d) => Number(d.cash), "#38bdf8"),
+          "#fff",
+          s.cashMove,
+        )}
+        ${statCard(
+          "Investments",
+          money(s.invested),
+          sparkline(history, (d) => Number(d.invested), "#34d399"),
+          "#fff",
+          s.investMove,
+        )}
         ${(() => {
           const owed = (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0);
           return Math.abs(owed) < 0.005 ? "" : statCard("Loans receivable", money(owed), "", "#fbbf24");
         })()}
-        ${allocationBar(s, (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0))}
+        ${allocationBar(
+          s,
+          (extras.loans ?? []).reduce((sum, l) => sum + l.outstanding, 0),
+        )}
         ${bankStrip([...s.cashAccounts, ...s.investAccounts])}
         ${(() => {
           const closes = monthlyCloses(history);
@@ -805,7 +782,7 @@ function renderHtml(
               (c) => `<td align="center" style="padding:6px 4px;">
                 <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">${c.label}</div>
                 <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.8);margin-top:2px;">${money(c.total)}</div>
-              </td>`
+              </td>`,
             )
             .join("");
           return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;"><tr><td style="padding:6px 8px;">
@@ -818,23 +795,17 @@ function renderHtml(
         ${alertBanner}
         ${empty}
         ${section("Cash", s.cashAccounts, money(s.cash), { zeros: s.zeroCounts.cash })}
-        ${section(
-          isMarketClosed(now) ? "Investments · Friday's close" : "Investments",
-          s.investAccounts,
-          money(s.invested),
-          { zeros: s.zeroCounts.invest }
-        )}
+        ${section(isMarketClosed(now) ? "Investments · Friday's close" : "Investments", s.investAccounts, money(s.invested), { zeros: s.zeroCounts.invest })}
         ${extras.inflows ? renderInflowsCard(extras.inflows, (n) => money(n), APP_URL) : ""}
         ${(() => {
           const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
           if (!loans.length) return "";
           const owed = loans.reduce((sum, l) => sum + l.outstanding, 0);
           const rows = loans
-            .map(
-              (l, i) => {
-                const lent = l.starting_balance + l.advanced;
-                const repaidPct = lent > 0 ? Math.min(100, Math.round((l.repaid / lent) * 100)) : 0;
-                return `<tr>
+            .map((l, i) => {
+              const lent = l.starting_balance + l.advanced;
+              const repaidPct = lent > 0 ? Math.min(100, Math.round((l.repaid / lent) * 100)) : 0;
+              return `<tr>
                 <td style="padding:9px 0 ${i === loans.length - 1 ? "2px" : "0"};${i ? "border-top:1px solid rgba(255,255,255,0.07);" : ""}font-size:13px;color:rgba(255,255,255,0.85);">
                   ${l.name}
                   <div style="margin-top:5px;max-width:220px;height:3px;border-radius:999px;background:rgba(251,191,36,0.25);font-size:0;line-height:0;">
@@ -858,8 +829,7 @@ function renderHtml(
                   </tr>`;
                 })
                 .join("")}`;
-              }
-            )
+            })
             .join("");
           return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
             style="margin-top:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;">
@@ -899,9 +869,10 @@ function renderHtml(
     </table>
   </td></tr></table>
 </body></html>`
-    // Gmail clips messages past ~102KB; collapsing template whitespace keeps
-    // this report far under it as sections accumulate.
-    .replace(/\n\s*/g, "");
+      // Gmail clips messages past ~102KB; collapsing template whitespace keeps
+      // this report far under it as sections accumulate.
+      .replace(/\n\s*/g, "")
+  );
 }
 
 /** One retry on a transient Bird 5xx; validation errors fail straight out. */
@@ -918,22 +889,13 @@ async function sendEmailWithRetry(...args: Parameters<typeof sendEmail>): Promis
 
 // ── Handler ───────────────────────────────────────────────────────────
 
-async function fetchRecentTxns(
-  origin: string,
-  headers: Record<string, string>,
-  account: Account | undefined
-): Promise<{ account: Account; txns: Txn[] } | null> {
+async function fetchRecentTxns(origin: string, headers: Record<string, string>, account: Account | undefined): Promise<{ account: Account; txns: Txn[] } | null> {
   if (!account) return null;
   try {
-    const res = await fetch(
-      `${origin}/api/plaid/data?report=bank-transactions&item_id=${account.item_id}&account_id=${account.account_id}`,
-      { headers }
-    );
+    const res = await fetch(`${origin}/api/plaid/data?report=bank-transactions&item_id=${account.item_id}&account_id=${account.account_id}`, { headers });
     if (!res.ok) return null;
     const data = (await res.json()) as { transactions?: Txn[] };
-    const txns = (data.transactions ?? [])
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, ACTIVITY_COUNT);
+    const txns = (data.transactions ?? []).sort((a, b) => b.date.localeCompare(a.date)).slice(0, ACTIVITY_COUNT);
     return txns.length ? { account, txns } : null;
   } catch (err) {
     console.error(`treasury-report: couldn't read activity for ${account.account_id}`, err);
@@ -942,22 +904,13 @@ async function fetchRecentTxns(
 }
 
 /** One activity card per spotlight mask, in the configured order. */
-async function fetchRecentActivity(
-  origin: string,
-  headers: Record<string, string>,
-  accounts: Account[]
-): Promise<Array<{ account: Account; txns: Txn[] }>> {
-  const picked = ACTIVITY_MASKS
-    .map((mask) => accounts.find((a) => a.mask === mask))
-    .filter((a): a is Account => !!a);
+async function fetchRecentActivity(origin: string, headers: Record<string, string>, accounts: Account[]): Promise<Array<{ account: Account; txns: Txn[] }>> {
+  const picked = ACTIVITY_MASKS.map((mask) => accounts.find((a) => a.mask === mask)).filter((a): a is Account => !!a);
   const results = await Promise.all(picked.map((a) => fetchRecentTxns(origin, headers, a)));
   return results.filter((r): r is { account: Account; txns: Txn[] } => !!r);
 }
 
-async function fetchTreasury(
-  origin: string,
-  headers: Record<string, string>
-): Promise<{ accounts: Account[]; connections: Connection[] }> {
+async function fetchTreasury(origin: string, headers: Record<string, string>): Promise<{ accounts: Account[]; connections: Connection[] }> {
   const res = await fetch(`${origin}/api/plaid/data?report=treasury`, { headers });
   if (!res.ok) throw new Error(`treasury fetch failed (${res.status})`);
   const data = (await res.json()) as { accounts: Account[]; connections: Connection[] };
@@ -1012,12 +965,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       let recipients = [me.email];
       if (broadcast) {
-        const rows = await sb<Array<{ notification_prefs: Prefs }>>(
-          `app_users?id=eq.${me.id}&select=notification_prefs&limit=1`
-        );
-        const extra = (rows?.[0]?.notification_prefs?.treasuryReport?.recipients ?? [])
-          .map((e) => String(e).trim().toLowerCase())
-          .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
+        const rows = await sb<Array<{ notification_prefs: Prefs }>>(`app_users?id=eq.${me.id}&select=notification_prefs&limit=1`);
+        const extra = (rows?.[0]?.notification_prefs?.treasuryReport?.recipients ?? []).map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
         recipients = [...new Set([me.email, ...extra])];
       }
 
@@ -1032,14 +981,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             loans,
             inflows,
             lastReportDate,
-            footerNote: broadcast
-              ? `Sent manually by ${me.name ?? me.email}`
-              : "This was a sample — it doesn't affect your schedule",
+            footerNote: broadcast ? `Sent manually by ${me.name ?? me.email}` : "This was a sample — it doesn't affect your schedule",
             preparedFor: me.name ?? me.email,
           }),
           { "List-Unsubscribe": `<${APP_URL}/notifications>` },
           undefined,
-          { replyTo: me.email }
+          { replyTo: me.email },
         );
       }
       return res.status(200).json({ sent: true, to: recipients.join(", "), count: recipients.length, loans: loans.length });
@@ -1061,20 +1008,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return recordCronRun("treasury-report", (run) => scheduled(res, run, { secret, origin, now, loadLoans }));
 }
 
-async function scheduled(
-  res: VercelResponse,
-  run: CronRun,
-  ctx: { secret: string | undefined; origin: string; now: Date; loadLoans: () => Promise<Loan[]> }
-) {
+async function scheduled(res: VercelResponse, run: CronRun, ctx: { secret: string | undefined; origin: string; now: Date; loadLoans: () => Promise<Loan[]> }) {
   const { secret, origin, now, loadLoans } = ctx;
   try {
     // Only staff see Treasury: "email only" members and partners (who see just
     // their own entities) never get the office-wide report, whatever their
     // stored prefs say (a role changed to partner keeps its old schedule).
     const users = (
-      await sb<Array<AppUser & { notification_prefs: Prefs }>>(
-        "app_users?status=eq.approved&role=in.(owner,admin,member,viewer)&select=id,name,email,phone,role,status,notification_prefs"
-      )
+      await sb<Array<AppUser & { notification_prefs: Prefs }>>("app_users?status=eq.approved&role=in.(owner,admin,member,viewer)&select=id,name,email,phone,role,status,notification_prefs")
     ).filter((u) => !isPartner(u) && !isEmailOnly(u));
     let due = users.filter((u) => isDue(u.notification_prefs ?? {}, now));
     if (due.length === 0) {
@@ -1095,9 +1036,7 @@ async function scheduled(
     // is already recorded today.
     try {
       const today = now.toISOString().slice(0, 10);
-      const delivered = await sb<Array<{ user_id: string; sent_at: string }>>(
-        `report_deliveries?report=eq.treasury&sent_at=gte.${today}T00:00:00Z&select=user_id,sent_at`
-      );
+      const delivered = await sb<Array<{ user_id: string; sent_at: string }>>(`report_deliveries?report=eq.treasury&sent_at=gte.${today}T00:00:00Z&select=user_id,sent_at`);
       const done = new Set((delivered ?? []).map((d) => d.user_id));
       due = due.filter((u) => !done.has(u.id));
       if (due.length === 0) return res.status(200).json({ sent: 0, alreadyDelivered: done.size });
@@ -1127,7 +1066,7 @@ async function scheduled(
             `<!doctype html><html lang="en"><body style="margin:0;background:#000;padding:28px 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="100%" style="max-width:500px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0"><tr><td style="padding:26px 24px;"><div style="font-size:24px;font-weight:700;color:#fff;">BFO</div><div style="margin-top:3px;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Treasury report</div><div style="margin-top:20px;padding:12px 14px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:12px;font-size:13px;color:#fbbf24;">We couldn't refresh balances for today's report. We'll try again on the next scheduled run.</div><div style="margin-top:16px;text-align:center;"><a href="${APP_URL}/treasury" style="display:inline-block;background:#fff;color:#000;font-size:13px;font-weight:600;text-decoration:none;padding:10px 22px;border-radius:10px;">Open Treasury</a></div></td></tr></table></td></tr></table></body></html>`,
             undefined,
             undefined,
-            { idempotencyKey: `treasury-failure/${user.id}/${now.toISOString().slice(0, 10)}` }
+            { idempotencyKey: `treasury-failure/${user.id}/${now.toISOString().slice(0, 10)}` },
           );
           notices++;
         } catch (e) {
@@ -1150,9 +1089,7 @@ async function scheduled(
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
     for (const user of due) {
       try {
-        const extra = (user.notification_prefs?.treasuryReport?.recipients ?? [])
-          .map((e) => String(e).trim().toLowerCase())
-          .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
+        const extra = (user.notification_prefs?.treasuryReport?.recipients ?? []).map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
         const recipients = [...new Set([user.email, ...extra].filter(Boolean))] as string[];
         if (recipients.length === 0) throw new Error("no email on file");
         const nextLabel = nextReportLabel(user.notification_prefs ?? {}, now);
@@ -1173,7 +1110,7 @@ async function scheduled(
           {
             idempotencyKey: `treasury-report/${user.id}/${now.toISOString().slice(0, 10)}`,
             replyTo: user.email ?? undefined,
-          }
+          },
         );
         await sb("report_deliveries", {
           method: "POST",

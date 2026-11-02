@@ -32,7 +32,7 @@ const changed = () => window.dispatchEvent(new Event("bfo-texts-changed"));
 const newKey = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const FAILED = new Set(["undelivered", "failed", "rejected", "expired"]);
 /** Who the conversation is with: the sender of a text in, the recipient of one out. */
-const counterpart = (x: Text) => (x.direction === "out" ? x.to ?? "" : x.from);
+const counterpart = (x: Text) => (x.direction === "out" ? (x.to ?? "") : x.from);
 
 /** True while the viewport matches `query`. */
 function useMedia(query: string): boolean {
@@ -173,7 +173,7 @@ export default function PhonePage() {
 
   const typed = composing ? toE164(toDraft, number) : null;
   // A new text to a number already in the list goes on in that conversation.
-  const current = composing ? (typed?.ok ? convos.find((c) => c.key === numberKey(typed.e164)) ?? null : null) : convos.find((c) => c.key === open) ?? null;
+  const current = composing ? (typed?.ok ? (convos.find((c) => c.key === numberKey(typed.e164)) ?? null) : null) : (convos.find((c) => c.key === open) ?? null);
 
   // iPad and desktop show a conversation beside the list: the newest, until one is picked.
   useEffect(() => {
@@ -318,7 +318,9 @@ export default function PhonePage() {
       </section>
 
       {/* Clear of the Ask button in the corner when scrolled to the end. */}
-      <section className={`overflow-hidden rounded-2xl border md:mb-[56px] md:grid md:max-h-[780px] md:min-h-[400px] md:grow md:basis-0 md:grid-cols-[230px_1fr] lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] ${t.surface}`}>
+      <section
+        className={`overflow-hidden rounded-2xl border md:mb-[56px] md:grid md:max-h-[780px] md:min-h-[400px] md:grow md:basis-0 md:grid-cols-[230px_1fr] lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] ${t.surface}`}
+      >
         <div className={`flex min-h-0 min-w-0 flex-col md:border-r ${t.line}`}>
           <header className={`flex min-h-[52px] shrink-0 items-center justify-between gap-3 border-b px-5 py-2 ${t.line}`}>
             <h2 className={`text-[13.5px] font-semibold ${t.text}`}>Texts</h2>
@@ -376,11 +378,7 @@ export default function PhonePage() {
           )}
         </div>
         {/* iPad and desktop: the conversation beside the list. */}
-        {wide && (
-          <div className="flex min-h-0 min-w-0 flex-col">
-            {thread || <p className={`m-auto px-6 text-center text-[12.5px] ${t.muted}`}>Pick a conversation, or start a new text.</p>}
-          </div>
-        )}
+        {wide && <div className="flex min-h-0 min-w-0 flex-col">{thread || <p className={`m-auto px-6 text-center text-[12.5px] ${t.muted}`}>Pick a conversation, or start a new text.</p>}</div>}
       </section>
 
       {/* Phones: the conversation full screen over the list. Portalled: <main> is its own stacking context, under the mobile header. */}
@@ -402,7 +400,7 @@ export default function PhonePage() {
           >
             {thread}
           </div>,
-          document.body
+          document.body,
         )}
     </div>
   );
@@ -512,7 +510,9 @@ function Thread({ convo, composing, toDraft, setToDraft, typed, wide, now, copie
         aria-label={composing ? "Earlier texts with this number" : `Texts with ${formatPhone(number)}`}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 outline-none sm:px-5"
       >
-        {composing && !convo && <p className={`mt-6 text-center text-[12.5px] ${t.muted}`}>{typed?.ok ? `No texts with ${formatPhone(typed.e164)} yet.` : "Type a number to text from BFO's number."}</p>}
+        {composing && !convo && (
+          <p className={`mt-6 text-center text-[12.5px] ${t.muted}`}>{typed?.ok ? `No texts with ${formatPhone(typed.e164)} yet.` : "Type a number to text from BFO's number."}</p>
+        )}
         <ol className="space-y-1.5">
           {items.map((it, i) => {
             const prev = items[i - 1];
@@ -543,7 +543,7 @@ function Thread({ convo, composing, toDraft, setToDraft, typed, wide, now, copie
                       <TextButton onClick={() => onRetry(p)}>Retry</TextButton>
                     </span>
                   )}
-                </li>
+                </li>,
               );
             }
             const x = it.x;
@@ -563,7 +563,7 @@ function Thread({ convo, composing, toDraft, setToDraft, typed, wide, now, copie
                   </div>
                 )}
                 {out && <span className={`mt-0.5 max-w-[85%] px-1 text-right text-[11.5px] ${failed ? (t.dark ? "text-red-300" : "text-red-700") : t.muted}`}>{statusLine(x)}</span>}
-              </li>
+              </li>,
             );
           })}
         </ol>

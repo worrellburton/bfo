@@ -24,7 +24,14 @@ describe("extractCode", () => {
 describe("smsRow", () => {
   const event = { type: "sms.received", timestamp: "2026-10-24T15:00:00Z", data: { sms_id: "sms_01abc", from: "+14805551234", to: "+18445192725", text: "Your code is 239104" } };
   it("reads Bird's sms.received", () => {
-    expect(smsRow(event, "msg_1")).toMatchObject({ id: "sms_01abc", from_number: "+14805551234", to_number: "+18445192725", body: "Your code is 239104", code: "239104", received_at: "2026-10-24T15:00:00.000Z" });
+    expect(smsRow(event, "msg_1")).toMatchObject({
+      id: "sms_01abc",
+      from_number: "+14805551234",
+      to_number: "+18445192725",
+      body: "Your code is 239104",
+      code: "239104",
+      received_at: "2026-10-24T15:00:00.000Z",
+    });
   });
   it("takes the other field names Bird has used, and the delivery id as a fallback", () => {
     const r = smsRow({ type: "sms.received", data: { originator: { phone_number: "12345" }, recipient: "+18445192725", body: { text: "hi" } } }, "msg_2");
@@ -57,7 +64,16 @@ function call(body: string, id = "msg_9") {
   const headers = { "webhook-id": id, "webhook-timestamp": ts, "webhook-signature": `v1,${webhookSignature(SECRET, id, ts, body)}` };
   const req = Object.assign(Readable.from([Buffer.from(body)]), { method: "POST", headers });
   const out: { status: number; json?: any } = { status: 0 };
-  const res: any = { status(c: number) { out.status = c; return res; }, json(j: unknown) { out.json = j; return res; } };
+  const res: any = {
+    status(c: number) {
+      out.status = c;
+      return res;
+    },
+    json(j: unknown) {
+      out.json = j;
+      return res;
+    },
+  };
   return Promise.resolve(handler(req as any, res)).then(() => out);
 }
 
@@ -80,10 +96,26 @@ describe("/api/mail-webhook texts", () => {
     const body = JSON.stringify({
       type: "sms.received",
       timestamp: "2026-10-30T16:02:11Z",
-      data: { sms_id: "sms_01krdgeqcxet5s7t44vh8rt9mg", workspace_id: "ws_01krdgeqcxet5s7t44vh8rt9mg", to: "+18445192725", from: "+14805551234", text: "Chase: 71920453 is your one-time code.", segments: { count: 1, encoding: "gsm7" }, carrier: "Verizon", mcc_mnc: "311480", country_code: "US" },
+      data: {
+        sms_id: "sms_01krdgeqcxet5s7t44vh8rt9mg",
+        workspace_id: "ws_01krdgeqcxet5s7t44vh8rt9mg",
+        to: "+18445192725",
+        from: "+14805551234",
+        text: "Chase: 71920453 is your one-time code.",
+        segments: { count: 1, encoding: "gsm7" },
+        carrier: "Verizon",
+        mcc_mnc: "311480",
+        country_code: "US",
+      },
     });
     expect((await call(body)).status).toBe(200);
-    expect(sbMock.mock.calls[0][1].body).toMatchObject({ id: "sms_01krdgeqcxet5s7t44vh8rt9mg", from_number: "+14805551234", to_number: "+18445192725", code: "71920453", received_at: "2026-10-30T16:02:11.000Z" });
+    expect(sbMock.mock.calls[0][1].body).toMatchObject({
+      id: "sms_01krdgeqcxet5s7t44vh8rt9mg",
+      from_number: "+14805551234",
+      to_number: "+18445192725",
+      code: "71920453",
+      received_at: "2026-10-30T16:02:11.000Z",
+    });
   });
   it("accepts Bird's signed webhook test, which has no message, without keeping anything", async () => {
     expect((await call(JSON.stringify({ type: "sms.received" }))).json).toEqual({ ok: true, test: true });

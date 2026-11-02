@@ -16,7 +16,24 @@ import { blankDraft, type Draft } from "./drafts";
  * scrolls). Larger screens: the title, the addresses, search and the view
  * switch on one line.
  */
-export function MailHeader({ openId, me, address, noAddress, aliases, box, chooseBox, scrolled, count, toggleMailTheme, setFaces, q, search, view, chooseView, setDraft }: {
+export function MailHeader({
+  openId,
+  me,
+  address,
+  noAddress,
+  aliases,
+  box,
+  chooseBox,
+  scrolled,
+  count,
+  toggleMailTheme,
+  setFaces,
+  q,
+  search,
+  view,
+  chooseView,
+  setDraft,
+}: {
   openId: string | null;
   me: User | null;
   address: string;
@@ -54,7 +71,10 @@ export function MailHeader({ openId, me, address, noAddress, aliases, box, choos
         </div>
       )}
       {!openId && address && !noAddress && (
-        <div className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/[0.92]" : "border-gray-200 bg-white/[0.92]"}` : "px-5 py-0"}`} style={{ top: "env(safe-area-inset-top)" }}>
+        <div
+          className={`sticky z-20 -mx-4 px-5 transition-[padding,background-color] duration-300 md:hidden ${scrolled ? `mail-glass-top border-b py-2 ${t.dark ? "border-white/[0.08] bg-[#0b0b10]/[0.92]" : "border-gray-200 bg-white/[0.92]"}` : "px-5 py-0"}`}
+          style={{ top: "env(safe-area-inset-top)" }}
+        >
           <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} big compact={scrolled} unread={count?.unread ?? 0} />
         </div>
       )}
@@ -68,14 +88,18 @@ export function MailHeader({ openId, me, address, noAddress, aliases, box, choos
             <h1 className={`text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px] ${t.text}`}>Mail</h1>
             {noAddress ? (
               <p className={`mt-1 text-[12.5px] ${t.muted}`}>No address yet</p>
-            ) : address && (
-              <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} />
+            ) : (
+              address && <MailboxPicker address={address} aliases={aliases} box={box} onChoose={chooseBox} canAdd={isAdmin(me)} />
             )}
           </div>
         </div>
         <SearchField value={q} onSearch={search} className="mx-6 hidden min-w-0 max-w-[460px] flex-1 self-center md:flex" />
         <div className="flex shrink-0 items-center gap-2">
-          <ThemeButton dark={t.dark} onToggle={toggleMailTheme} className={`h-8 w-8 md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} />
+          <ThemeButton
+            dark={t.dark}
+            onToggle={toggleMailTheme}
+            className={`h-8 w-8 md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+          />
           <Segmented
             label="View"
             value={view}
@@ -87,7 +111,15 @@ export function MailHeader({ openId, me, address, noAddress, aliases, box, choos
               { key: "columns", label: "Columns", icon: <Glyph name="columns" className="h-3.5 w-3.5" /> },
             ]}
           />
-          <Button kind="primary" size="md" icon="edit" disabled={noAddress} title={noAddress ? "Ask an admin for an address" : undefined} onClick={() => setDraft(blankDraft(box || undefined))} className="max-sm:hidden md:pointer-coarse:h-[40px]">
+          <Button
+            kind="primary"
+            size="md"
+            icon="edit"
+            disabled={noAddress}
+            title={noAddress ? "Ask an admin for an address" : undefined}
+            onClick={() => setDraft(blankDraft(box || undefined))}
+            className="max-sm:hidden md:pointer-coarse:h-[40px]"
+          >
             New
           </Button>
         </div>

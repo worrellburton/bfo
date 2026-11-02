@@ -66,7 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return fail(res, 400, "bad_view");
     }
     if (req.method !== "POST") return fail(res, 405, "method_not_allowed");
-    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body ?? {}) as Record<string, unknown>;
+    const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as Record<string, unknown>;
     switch (String(body.action ?? "")) {
       case "send":
         return send(res, me, body);
@@ -78,7 +78,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       case "rename": {
         const id = String(body.chatId ?? "");
-        const title = String(body.title ?? "").trim().slice(0, 80);
+        const title = String(body.title ?? "")
+          .trim()
+          .slice(0, 80);
         if (!(await ownChat(me.id, id))) return fail(res, 404, "not_found");
         if (!title) return fail(res, 400, "bad_title");
         await sb(`chats?id=eq.${id}`, { method: "PATCH", body: { title } });
@@ -103,7 +105,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       case "log": {
         const role = body.role === "assistant" ? "assistant" : body.role === "user" ? "user" : null;
-        const text = String(body.text ?? "").trim().slice(0, MESSAGE_MAX);
+        const text = String(body.text ?? "")
+          .trim()
+          .slice(0, MESSAGE_MAX);
         if (!role || !text) return fail(res, 400, "bad_turn");
         let chat: ChatRow | null = body.chatId ? await ownChat(me.id, String(body.chatId)) : null;
         if (!chat) {
@@ -147,7 +151,9 @@ async function ownChat(userId: string, id: string): Promise<ChatRow | null> {
 }
 
 async function send(res: VercelResponse, me: NonNullable<Awaited<ReturnType<typeof currentUser>>>, body: Record<string, unknown>) {
-  const message = String(body.message ?? "").trim().slice(0, MESSAGE_MAX);
+  const message = String(body.message ?? "")
+    .trim()
+    .slice(0, MESSAGE_MAX);
   if (!message) return fail(res, 400, "empty", "Ask something first.");
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return fail(res, 503, "not_configured", "Ask BFO isn't set up (ANTHROPIC_API_KEY).");
@@ -221,7 +227,10 @@ async function send(res: VercelResponse, me: NonNullable<Awaited<ReturnType<type
     console.error("ask:", err);
     const text = err instanceof Anthropic.APIError ? `The assistant couldn't answer (${err.status}).` : "Something went wrong while answering.";
     emit({ type: "error", message: text });
-    if (answer.trim()) await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: { text: answer.trim() } }, prefer: "return=minimal" }).catch((e) => console.error("ask: couldn't save the partial answer", e));
+    if (answer.trim())
+      await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: { text: answer.trim() } }, prefer: "return=minimal" }).catch((e) =>
+        console.error("ask: couldn't save the partial answer", e),
+      );
   }
   res.end();
 }

@@ -4,14 +4,29 @@ import { businessDifferences } from "../lib/palm";
 import { membersFromState, peoplePatch, toStateRecord } from "../lib/registry";
 import { stateReadCost } from "../lib/state-reads";
 
-const palmService = { provider: "palm" as const, status: "active" as const, jurisdiction: "US-NV", started_at: "2026-10-01T00:00:00Z", ended_at: null, name: "Palm Registered Agent", address: { street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" } };
+const palmService = {
+  provider: "palm" as const,
+  status: "active" as const,
+  jurisdiction: "US-NV",
+  started_at: "2026-10-01T00:00:00Z",
+  ended_at: null,
+  name: "Palm Registered Agent",
+  address: { street_line_1: "1 Main St", city: "Reno", region: "NV", postal_code: "89501", country: "US" },
+};
 
 describe("the agent, as Palm reports it", () => {
   it("keeps the whole service, and makes Palm the agent on record when it becomes active (live)", () => {
     const p = raPatch({ registeredAgent: "Northwest", palm: { live: { ra: { status: "pending" } } } }, palmService, "live", 5);
     expect(p["palm/live/ra"]).toEqual({
-      status: "active", name: "Palm Registered Agent", address: "1 Main St, Reno, NV 89501", provider: "palm", jurisdiction: "US-NV",
-      startedAt: "2026-10-01T00:00:00Z", endedAt: null, rejectionReason: null, checkedAt: 5,
+      status: "active",
+      name: "Palm Registered Agent",
+      address: "1 Main St, Reno, NV 89501",
+      provider: "palm",
+      jurisdiction: "US-NV",
+      startedAt: "2026-10-01T00:00:00Z",
+      endedAt: null,
+      rejectionReason: null,
+      checkedAt: 5,
     });
     expect(p).toMatchObject({ registeredAgent: "Palm Registered Agent", registeredAgentSource: "Palm, active since 2026-10-01", registeredAgentAddress: "1 Main St, Reno, NV 89501" });
   });
@@ -23,7 +38,11 @@ describe("the agent, as Palm reports it", () => {
   });
 
   it("flags the agent to confirm when Palm stops serving", () => {
-    const p = raPatch({ registeredAgentSource: "Palm, active since 2026-01-01", palm: { live: { ra: { status: "active" } } } }, { ...palmService, status: "terminated", ended_at: "2026-10-20T00:00:00Z" }, "live");
+    const p = raPatch(
+      { registeredAgentSource: "Palm, active since 2026-01-01", palm: { live: { ra: { status: "active" } } } },
+      { ...palmService, status: "terminated", ended_at: "2026-10-20T00:00:00Z" },
+      "live",
+    );
     expect(p.registeredAgentSource).toBe("Palm stopped serving 2026-10-20 — confirm the current agent");
   });
 });
@@ -95,7 +114,13 @@ describe("what a sync costs", () => {
   const entity = { name: "Ledger Louise, LLC", type: "LLC", state: "Nevada", fileNumber: "E1", foreign: { AZ: {}, CA: { notNeeded: true } } };
 
   it("prices each state: the record alone with a file number, a search first without", () => {
-    expect(stateReadCost(entity, "live")).toEqual({ states: [{ code: "NV", home: true, cents: 129 }, { code: "AZ", home: false, cents: 204 }], cents: 333 });
+    expect(stateReadCost(entity, "live")).toEqual({
+      states: [
+        { code: "NV", home: true, cents: 129 },
+        { code: "AZ", home: false, cents: 204 },
+      ],
+      cents: 333,
+    });
   });
 
   it("leaves out records read in the last day when asked (Sync all keeps them)", () => {

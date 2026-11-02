@@ -108,11 +108,7 @@ export const WITH_FORMATION = new Set(["ein", "formationDate", "registeredAgent"
  * A "due" one more than 30 days past its date is stale (the next event
  * replaces it); an overdue one stays until Palm says otherwise.
  */
-export function palmFilingDeadlines(
-  filings: Asset["palmFilings"],
-  mode: PalmMode | null,
-  now = Date.now(),
-): { deadlines: Obligation[]; overdue: number } {
+export function palmFilingDeadlines(filings: Asset["palmFilings"], mode: PalmMode | null, now = Date.now()): { deadlines: Obligation[]; overdue: number } {
   const out: Obligation[] = [];
   let overdue = 0;
   for (const [key, f] of Object.entries(filings ?? {})) {

@@ -1,15 +1,6 @@
 import type { VercelRequest } from "@vercel/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  canWrite,
-  currentUser,
-  isEmailOnly,
-  normalizeIdentifier,
-  normalizePhone,
-  safeEqual,
-  secretMatches,
-  type AppUser,
-} from "../lib/auth";
+import { canWrite, currentUser, isEmailOnly, normalizeIdentifier, normalizePhone, safeEqual, secretMatches, type AppUser } from "../lib/auth";
 import { MAIL_DOMAIN, addressCandidates, ensureMailAddress, onOurDomain, parseMailAddress } from "../lib/mail-address";
 import usersHandler from "../api/auth/users";
 
@@ -95,11 +86,7 @@ describe("currentUser", () => {
 
   function serve(user: AppUser) {
     fetchMock.mockImplementation(async (url: string) => {
-      const body = url.includes("/app_sessions?")
-        ? [{ user_id: user.id, expires_at: new Date(Date.now() + 86_400_000).toISOString() }]
-        : url.includes("/app_users?")
-          ? [user]
-          : null;
+      const body = url.includes("/app_sessions?") ? [{ user_id: user.id, expires_at: new Date(Date.now() + 86_400_000).toISOString() }] : url.includes("/app_users?") ? [user] : null;
       return new Response(JSON.stringify(body), { status: body ? 200 : 404 });
     });
   }
