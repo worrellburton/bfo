@@ -40,7 +40,7 @@
     "@capacitor/cli": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
     "@eslint/js": "^9.39.4",
-    "@react-router/dev": "7.18.5",
+    "@react-router/dev": "8.5.1",
     "@react-router/serve": "7.18.5",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22",
