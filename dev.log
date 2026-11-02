@@ -47,3 +47,6 @@
 7:14:13 PM [vite] (client) hmr update /app/sign/game/index.tsx
 7:14:13 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
 7:14:13 PM [vite] (ssr) hmr update /app/app.css
+7:23:43 PM [vite] (client) page reload /home/user/bfo/api/game-assets.ts
+7:23:43 PM [vite] (client) page reload api/game-assets.ts
+7:23:43 PM [vite] (ssr) hmr update /app/app.css

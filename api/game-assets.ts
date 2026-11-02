@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, fail, guard, handleError, isAdmin } from "../lib/auth.js";
+import { currentUser, fail, guard, handleError, isAdmin, secretMatches } from "../lib/auth.js";
 import { ProviderError } from "../lib/brand.js";
 import { AssetError, checkProp, cleanLines, configured, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
 
@@ -9,14 +9,19 @@ import { AssetError, checkProp, cleanLines, configured, makeSounds, PROPS, readA
  * bucket. The game reads them without an account (a signer has none).
  *
  *   GET  /api/game-assets            → { voice, sounds, models }  anyone: what the game should use over its static manifest
- *   GET  /api/game-assets?studio=1   → owner/admin: everything, plus which keys the server has (booleans)
- *   POST { action }                  → owner/admin:
+ *   GET  /api/game-assets?studio=1   → the studio: everything, plus which keys the server has (booleans)
+ *   POST { action }                  → the studio:
  *     judy        { lines: [{ id, text }], redo? }  voices a few of Judy's lines per call → { assets, remaining }; call until remaining is 0
  *     sounds      { redo? }                         a few sound effects per call → { assets, remaining }
  *     prop        { name }                          OpenAI draws it, Meshy starts the model → { assets }
  *     prop-status { name }                          Meshy's progress; on success the GLB lands in the bucket → { assets }
  *
- * Env: ELEVENLABS_API_KEY, OPENAI_API_KEY, MESHY_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY.
+ * The studio is for a signed-in owner or admin, or a caller presenting
+ * Bearer $GAME_JOB_TOKEN: a token minted for a Claude session so it can make
+ * and remake the assets from outside, with the provider keys staying here.
+ * Without that env var the token path is off.
+ *
+ * Env: ELEVENLABS_API_KEY, OPENAI_API_KEY, MESHY_API_KEY, GAME_JOB_TOKEN (optional), SUPABASE_URL, SUPABASE_SERVICE_KEY.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "POST"])) return;
@@ -26,9 +31,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=600");
       return res.status(200).json({ voice, sounds, models });
     }
-    const me = await currentUser(req);
-    if (!me) return fail(res, 401, "unauthorized");
-    if (!isAdmin(me)) return fail(res, 403, "forbidden");
+    // The job token first (it isn't a session, so currentUser would refuse it); then a signed-in owner or admin.
+    const token = process.env.GAME_JOB_TOKEN;
+    const byToken = !!token && secretMatches(req.headers.authorization, `Bearer ${token}`);
+    if (!byToken) {
+      const me = await currentUser(req);
+      if (!me) return fail(res, 401, "unauthorized");
+      if (!isAdmin(me)) return fail(res, 403, "forbidden");
+    }
 
     if (req.method === "GET") return res.status(200).json({ assets: await readAssets(), configured: configured(), props: Object.keys(PROPS) });
 
