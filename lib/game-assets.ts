@@ -60,14 +60,15 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
 
 /** The props: what OpenAI draws, which Meshy then turns into a model. */
 export const PROPS: Record<string, string> = {
-  seat: "A single plush red velvet movie theater seat with a folding cushion, dark wooden armrests and a gold seat-number plate.",
-  plant: "A tall potted palm plant in a terracotta pot.",
-  popcorn: "A classic red and gold movie theater popcorn cart with a glass case full of popcorn and a striped roof.",
+  seat: "A single plush red velvet movie theater seat with a folding cushion, dark wooden armrests and a small brass seat-number plate.",
+  plant: "A tall potted areca palm in a terracotta pot.",
+  popcorn: "A classic red and gold movie theater popcorn cart with a glass case full of popcorn and a striped canopy.",
+  judy: "A friendly woman in her late sixties, gray hair in a neat bun, reading glasses on a beaded chain, a lavender cardigan over a white blouse, standing upright with her hands folded in front of her, full body from head to feet, smiling slightly.",
 };
 
 const PROP_STYLE =
-  "Rendered as a single clean 3D object in a chunky, blocky, Minecraft-like low-poly voxel style with flat colours and crisp edges, " +
-  "seen from a three-quarter front view, centered, filling most of the frame, on a plain pure white background, soft even lighting, no shadows on the ground, no text, no people, nothing else in the picture.";
+  "Photorealistic, like a product photograph for a 3D scan: a single subject, centered, seen from a three-quarter front view, filling most of the frame, " +
+  "evenly lit from the front with soft studio light, no harsh shadows, on a plain pure white background, no text, no watermark, nothing else in the picture.";
 
 export const propPrompt = (name: string, what = PROPS[name]) => `${what} ${PROP_STYLE}`;
 

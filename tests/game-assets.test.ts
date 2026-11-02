@@ -116,7 +116,8 @@ describe("pure parts", () => {
     expect(cleanLines("nope")).toEqual([]);
   });
   it("styles every prop the same way", () => {
-    expect(propPrompt("seat")).toMatch(/velvet.*Minecraft-like/);
+    expect(propPrompt("seat")).toMatch(/velvet.*Photorealistic/);
+    expect(propPrompt("judy")).toMatch(/cardigan.*Photorealistic/);
   });
 });
 

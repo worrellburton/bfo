@@ -21,7 +21,7 @@ Everything in this folder is served as-is at the same path (`/game/...`).
   in `judy.json`. `npm run game:judy` makes them with ElevenLabs
   (scripts/game-judy.mjs); without them she is subtitles only. Edit her
   words in `judy.json` and run the script again with `-- --all`.
-- `models`: GLB props by name (`seat`, `plant`, `popcorn`).
+- `models`: GLB props by name (`seat`, `plant`, `popcorn`, `judy`).
   A named prop replaces the blocky placeholder the game draws for it.
   `npm run game:props` makes them with OpenAI and Meshy (scripts/game-props.mjs).
 
