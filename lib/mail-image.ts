@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigError } from "./auth.js";
 
 /**
  * Remote pictures in mail, served through BFO instead of straight from the
@@ -9,7 +10,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * sender's tracking pixel sees BFO's server, never the reader's address.
  */
 
-const secret = () => process.env.MAIL_IMAGE_SECRET || process.env.AUTH_SECRET || process.env.SUPABASE_SERVICE_KEY || "";
+/** The signing key. With none set, links are refused rather than signed with an empty key anyone could forge. */
+const secret = () => {
+  const s = process.env.MAIL_IMAGE_SECRET?.trim() || process.env.AUTH_SECRET?.trim();
+  if (!s) throw new ConfigError("MAIL_IMAGE_SECRET (or AUTH_SECRET) is not set.");
+  return s;
+};
 
 const IMAGE_PATH = "/api/mail-image";
 

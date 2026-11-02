@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { reqLog } from "./log.js";
+import { BadRequest } from "./validate.js";
 
 /** "partner": an owner or member of an entity, invited to see only the entities they're on (entity_access). */
 export type Role = "owner" | "admin" | "member" | "viewer" | "email" | "partner";
@@ -151,7 +153,9 @@ export function normalizeIdentifier(raw: string): Identifier | null {
 // ── One-time codes ────────────────────────────────────────────────────
 
 export function hashCode(phone: string, code: string): string {
-  const pepper = process.env.AUTH_SECRET ?? "";
+  // The pepper keeps a copy of login_codes from being brute-forced offline; without it the hash is refused, not weakened.
+  const pepper = process.env.AUTH_SECRET?.trim();
+  if (!pepper) throw new ConfigError("AUTH_SECRET is not set.");
   return createHash("sha256").update(`${pepper}:${phone}:${code}`).digest("hex");
 }
 
@@ -194,9 +198,13 @@ function configuredWorkspace(): string | null {
   return raw || null;
 }
 
+/** Bird never answers slower than this; a hung call would otherwise hold a sign-in for the function's whole limit. */
+const BIRD_TIMEOUT_MS = 20_000;
+
 async function birdFetch(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${BIRD_API}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(BIRD_TIMEOUT_MS),
     headers: {
       ...(init.headers ?? {}),
       Authorization: `AccessKey ${birdKey()}`,
@@ -423,6 +431,26 @@ export function bearerToken(req: VercelRequest): string | null {
   return match ? match[1].trim() : null;
 }
 
+/** What the sessions table keeps of a bearer token: its SHA-256, so the table alone can't sign anyone in. */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** The PostgREST condition that finds a session by its token: by hash, or by the plaintext column for a row not yet hashed. */
+export function sessionFilter(token: string): string {
+  const hash = hashToken(token);
+  return `or=(token_hash.eq.${hash},and(token_hash.is.null,token.eq.${encodeURIComponent(token)}))`;
+}
+
+/** Drop sessions past their expiry (a demoted or removed user's are dropped on the spot by api/auth/users.ts). Returns how many. */
+export async function pruneSessions(): Promise<number> {
+  const gone = await sb<Array<{ user_id: string }>>(`app_sessions?expires_at=lt.${encodeURIComponent(new Date().toISOString())}&select=user_id`, {
+    method: "DELETE",
+    prefer: "return=representation",
+  });
+  return Array.isArray(gone) ? gone.length : 0;
+}
+
 /**
  * Resolve the caller's session token to a user, or null if it's dead.
  *
@@ -434,10 +462,12 @@ export async function currentUser(req: VercelRequest, opts: { allowEmailOnly?: b
   const token = bearerToken(req);
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return null;
 
-  const sessions = await sb<Array<{ user_id: string; expires_at: string }>>(`app_sessions?token=eq.${encodeURIComponent(token)}&select=user_id,expires_at&limit=1`);
+  const sessions = await sb<Array<{ user_id: string; expires_at: string; token_hash: string | null }>>(`app_sessions?${sessionFilter(token)}&select=user_id,expires_at,token_hash&limit=1`);
   const session = sessions?.[0];
   if (!session) return null;
   if (new Date(session.expires_at).getTime() < Date.now()) return null;
+  // A row from before sessions were hashed: give it its hash now, so the plaintext column can go.
+  if (!session.token_hash) void sb(`app_sessions?token=eq.${encodeURIComponent(token)}`, { method: "PATCH", body: { token_hash: hashToken(token) }, prefer: "return=minimal" }).catch(() => {});
 
   const users = await sb<AppUser[]>(`app_users?id=eq.${session.user_id}&select=*&limit=1`);
   const user = users?.[0];
@@ -551,13 +581,21 @@ export function guard(req: VercelRequest, res: VercelResponse, methods: string[]
   return true;
 }
 
-export function handleError(res: VercelResponse, err: unknown) {
+/**
+ * The one place a thrown error becomes an answer: a refused partner is 403,
+ * a bad body (lib/validate.ts) 400, a missing setting 503, anything else
+ * 500 with a plain line. The detail (often raw Supabase or provider text:
+ * table names, columns, constraint names) stays in the server log, keyed by
+ * the request id when `req` is given, so a user's "something went wrong"
+ * can be found.
+ */
+export function handleError(res: VercelResponse, err: unknown, req?: VercelRequest) {
   if (err instanceof PartnerRefused) return fail(res, 403, "forbidden", err.message);
+  if (err instanceof BadRequest) return fail(res, 400, err.code, err.message);
   if (err instanceof ConfigError) {
+    reqLog(req, "http").error("not configured", { error: err });
     return fail(res, 503, "not_configured", err.message);
   }
-  // The detail (often raw Supabase or provider text: table names, columns,
-  // constraint names) stays in the server log; the client gets a plain line.
-  console.error(err);
+  reqLog(req, "http").error("request failed", { error: err, path: req?.url?.split("?")[0], method: req?.method });
   return fail(res, 500, "server_error", "Something went wrong. Try again.");
 }

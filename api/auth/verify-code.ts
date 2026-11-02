@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { MAX_CODE_ATTEMPTS, SESSION_TTL_MS, fail, guard, handleError, hashCode, normalizeIdentifier, publicUser, safeEqual, sb, verifyCheck, type AppUser } from "../../lib/auth.js";
+import { randomUUID } from "node:crypto";
+import { MAX_CODE_ATTEMPTS, SESSION_TTL_MS, fail, guard, handleError, hashCode, hashToken, normalizeIdentifier, publicUser, safeEqual, sb, verifyCheck, type AppUser } from "../../lib/auth.js";
 
 type CodeRow = {
   id: string;
@@ -99,23 +100,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ verified: true, status: user.status, token: null });
     }
 
-    const sessions = await sb<Array<{ token: string; expires_at: string }>>("app_sessions", {
+    // The token goes to the browser once; the table keeps only its hash (lib/auth.ts hashToken).
+    const token = randomUUID();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+    await sb("app_sessions", {
       method: "POST",
-      prefer: "return=representation",
-      body: [
-        {
-          user_id: user.id,
-          expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
-        },
-      ],
+      prefer: "return=minimal",
+      body: [{ user_id: user.id, expires_at: expiresAt, token_hash: hashToken(token) }],
     });
-    const session = sessions?.[0];
 
     return res.status(200).json({
       verified: true,
       status: user.status,
-      token: session.token,
-      expiresAt: session.expires_at,
+      token,
+      expiresAt,
       user: publicUser({ ...user, last_login_at: now }),
     });
   } catch (err) {

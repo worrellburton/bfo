@@ -43,7 +43,7 @@ Optional ones are marked. Never commit values.
 | --- | --- |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | The Supabase project and its service-role key. Every read and write goes through them. |
 | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` | Only for `npm run migrate` (never on Vercel): a personal access token and the project ref. |
-| `AUTH_SECRET` | optional. Pepper for hashed codes; also the fallback signing key for mail image links. |
+| `AUTH_SECRET` | Pepper for hashed sign-in codes; also the fallback signing key for mail image links. Sign-in is refused without it. |
 | `SIGNIN_COUNTRY_CODES` | optional. Comma list of country codes that may receive sign-in texts (default `+1`; `*` = any). |
 | `SIGNIN_HOURLY_CAP` | optional. Sign-in codes sent to everyone per hour (default 60). |
 | `BIRD_ACCESS_KEY` | Bird API key (`bk_<region>_…`). Sends codes, email, reads inbound mail. |
@@ -53,7 +53,7 @@ Optional ones are marked. Never commit values.
 | `BIRD_EMAIL_FROM`, `BIRD_EMAIL_REPLY_TO` | optional. Sender for system email (default `BFO <reports@burtonfamilyoffice.com>`). |
 | `BIRD_WEBHOOK_SECRET` | optional. Signing secret of the Bird webhook at `/api/mail-webhook` (events `email.received`, `sms.received`, and `sms.sent`, `sms.delivered`, `sms.undelivered`, `sms.failed`, `sms.rejected`, `sms.expired` for sent texts' status). Without it, mail arrives by polling only, and texts not at all. |
 | `MAIL_DOMAIN` | optional. The mail domain (default `burtonfamilyoffice.com`). |
-| `MAIL_IMAGE_SECRET` | optional. Signs proxied image URLs in mail (falls back to `AUTH_SECRET`, then the service key). |
+| `MAIL_IMAGE_SECRET` | Signs proxied image URLs in mail (falls back to `AUTH_SECRET`; with neither, images in mail aren't proxied). |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Plaid credentials; `PLAID_ENV` names a key of the SDK's `PlaidEnvironments` (`sandbox` by default, `production` live). |
 | `PLAID_REDIRECT_URI` | optional. Needed for OAuth banks in production; must match the Plaid dashboard. |
 | `MERCURY_API_TOKEN` | optional. Mercury's own API, for history older than Plaid serves. |

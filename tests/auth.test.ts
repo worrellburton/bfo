@@ -86,7 +86,7 @@ describe("currentUser", () => {
 
   function serve(user: AppUser) {
     fetchMock.mockImplementation(async (url: string) => {
-      const body = url.includes("/app_sessions?") ? [{ user_id: user.id, expires_at: new Date(Date.now() + 86_400_000).toISOString() }] : url.includes("/app_users?") ? [user] : null;
+      const body = url.includes("/app_sessions?") ? [{ user_id: user.id, expires_at: new Date(Date.now() + 86_400_000).toISOString(), token_hash: "h" }] : url.includes("/app_users?") ? [user] : null;
       return new Response(JSON.stringify(body), { status: body ? 200 : 404 });
     });
   }
@@ -195,7 +195,7 @@ describe("mail addresses and user changes", () => {
     const body = init.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method, path, body });
     let out: unknown = [];
-    if (path.startsWith("app_sessions?token=")) out = [{ user_id: ADMIN_ID, expires_at: new Date(Date.now() + 86_400_000).toISOString() }];
+    if (path.startsWith("app_sessions?or=")) out = [{ user_id: ADMIN_ID, expires_at: new Date(Date.now() + 86_400_000).toISOString(), token_hash: "h" }];
     else if (path.startsWith(`app_users?id=eq.${ADMIN_ID}`)) out = [admin];
     else if (method === "POST" && path === "app_users") out = [(target = { ...base, ...body[0] })];
     else if (method === "PATCH" && path === `app_users?id=eq.${TID}&mail_address=is.null`) {

@@ -43,6 +43,8 @@ export default defineConfig({
   // change drops under it (`npm run test:coverage`). Raise it as tests land.
   test: {
     exclude: ["**/node_modules/**", "**/build/**", "**/.claude/**", "**/ios/**", "**/native/**"],
+    // Settings the server code refuses to run without; tests never see real values.
+    env: { AUTH_SECRET: "test-pepper", MAIL_IMAGE_SECRET: "test-image-secret" },
     coverage: {
       provider: "v8",
       include: ["lib/**/*.ts", "api/**/*.ts"],
