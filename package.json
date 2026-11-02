@@ -15,6 +15,7 @@
     "migrate": "node scripts/migrate.mjs",
     "game:sounds": "node scripts/game-sounds.mjs",
     "game:props": "node scripts/game-props.mjs",
+    "game:judy": "node scripts/game-judy.mjs",
     "audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {

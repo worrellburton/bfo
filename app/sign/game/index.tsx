@@ -5,12 +5,12 @@
 // three.js load only here, through import(), so the plain signing page never
 // carries them.
 import { useEffect, useRef, useState } from "react";
-import type { Hud, Manifest, SigningGame } from "./engine";
+import type { Hud, JudyScript, Manifest, SigningGame } from "./engine";
 
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
 
-const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0 };
+const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, dialogue: null, ticket: false };
 
 /** True on a computer with a mouse: the game needs pointer lock and a keyboard. */
 export function canPlayHere(): boolean {
@@ -62,16 +62,19 @@ export function GameGate({
     let cancelled = false;
     const el = frame.current;
     (async () => {
-      const [{ SigningGame, EMPTY_MANIFEST }, manifest] = await Promise.all([
+      const [{ SigningGame, EMPTY_MANIFEST }, manifest, judy] = await Promise.all([
         import("./engine"),
         fetch("/game/manifest.json")
           .then((r): Promise<Partial<Manifest>> => (r.ok ? r.json() : Promise.resolve({})))
           .catch((): Partial<Manifest> => ({})),
+        fetch("/game/judy.json")
+          .then((r): Promise<JudyScript | null> => (r.ok ? r.json() : Promise.resolve(null)))
+          .catch((): JudyScript | null => null),
       ]);
       if (cancelled) return;
-      const m: Manifest = { ...EMPTY_MANIFEST, ...manifest, sounds: { ...(manifest.sounds ?? {}) }, models: { ...(manifest.models ?? {}) } };
+      const m: Manifest = { ...EMPTY_MANIFEST, ...manifest, sounds: { ...(manifest.sounds ?? {}) }, models: { ...(manifest.models ?? {}) }, voice: { ...(manifest.voice ?? {}) } };
       try {
-        game.current = new SigningGame(el, { signerName, title, manifest: m, onHud: setHud, onDone });
+        game.current = new SigningGame(el, { signerName, title, manifest: m, judy: judy && judy.rounds ? judy : null, onHud: setHud, onDone });
         setLoading("ready");
       } catch (err) {
         console.error("signing game:", err);
@@ -127,6 +130,45 @@ export function GameGate({
         <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80 ring-2 ring-black/40" />
       )}
 
+      {/* The ticket, once Judy hands it over. */}
+      {hud.ticket && hud.phase !== "intro" && (
+        <div
+          aria-label="Your ticket"
+          className="pointer-events-none absolute right-4 top-14 z-20 rotate-3 rounded-md border border-dashed border-amber-200/70 bg-[#f4ede0] px-3 py-1.5 text-[11px] leading-tight text-[#2e0f14] shadow-lg"
+        >
+          <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-[#8c2a2f]">Admit one</span>
+          <span className="block font-[var(--font-brand)] text-[13px]">Anything Is Possible</span>
+          <span className="block text-[10px] text-[#2e0f14]/70">Row 6, aisle · {signerName}</span>
+        </div>
+      )}
+
+      {/* Talking to Judy: her subtitles, then Sam's replies. */}
+      {hud.dialogue && hud.phase === "talk" && (
+        <div className="absolute bottom-0 left-0 right-0 z-30 flex justify-center p-4 pb-6">
+          <div className="w-full max-w-[760px]">
+            <div role="status" aria-live="polite" className="rounded-2xl border border-white/10 bg-black/75 px-5 py-4 text-center backdrop-blur">
+              <span className={`block text-[10.5px] font-semibold uppercase tracking-[0.2em] ${hud.dialogue.speaker === "You" ? "text-white/50" : "text-amber-300"}`}>{hud.dialogue.speaker}</span>
+              <span className="mt-1 block text-[17px] leading-snug text-white">{hud.dialogue.text}</span>
+            </div>
+            {hud.dialogue.options && (
+              <div className="mt-2 grid gap-1.5">
+                {hud.dialogue.options.map((o, i) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => game.current?.choose(i)}
+                    className="flex min-h-[44px] items-center gap-3 rounded-xl border border-white/10 bg-[#0b0b0f]/90 px-4 py-2 text-left text-[14px] text-white/90 backdrop-blur transition-colors hover:border-amber-300/60 hover:bg-white/[0.06]"
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/20 text-[11px] text-white/60">{i + 1}</span>
+                    {o}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* What to do next. */}
       {hud.prompt && hud.phase !== "intro" && (
         <p
@@ -144,7 +186,8 @@ export function GameGate({
             <p className="auth-eyebrow text-[11px] uppercase tracking-[0.28em] text-amber-300/80">{brand || "Burton Family Office"} presents</p>
             <h1 className="mt-3 font-[var(--font-brand)] text-[34px] leading-none">Anything Is Possible</h1>
             <p className="mt-3 text-[13.5px] leading-relaxed text-white/65">
-              Hello, {signerName}. Before you sign <span className="text-white">{title}</span>, cross the hall of blocks, find your seat and watch the film. The door opens when it's over.
+              Hello, {signerName}. Before you sign <span className="text-white">{title}</span>, cross the floating blocks to the theater, get your ticket from Judy, find your seat and watch the film.
+              When it's over, a staircase climbs to the contract.
             </p>
             <dl className="mx-auto mt-5 grid max-w-[360px] grid-cols-2 gap-x-6 gap-y-1.5 text-left text-[12.5px] text-white/70">
               <dt className="text-white/45">Move</dt>
@@ -197,8 +240,8 @@ export function GameGate({
         </div>
       )}
 
-      {/* The way out, for a browser where it never gets going. */}
-      {escape && hud.phase !== "done" && (
+      {/* The way out, for a browser where it never gets going. Not while Judy is talking: you sit through Judy. */}
+      {escape && hud.phase !== "done" && hud.phase !== "talk" && (
         <button type="button" onClick={onSkip} className="absolute bottom-3 right-4 z-30 rounded-full px-3 py-1.5 text-[12px] text-white/45 hover:bg-white/10 hover:text-white">
           Having trouble? Sign the normal way
         </button>

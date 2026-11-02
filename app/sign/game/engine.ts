@@ -22,12 +22,23 @@ export type Manifest = {
   music: string | null;
   sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall", string | null>>;
   models: Partial<Record<"seat" | "plant" | "popcorn", string>>;
+  /** Judy's voiced lines by line id (public/game/judy.json), from scripts/game-judy.mjs. */
+  voice: Partial<Record<string, string>>;
 };
 
-export const EMPTY_MANIFEST: Manifest = { movie: null, youtube: "LnVy5ZEcbH0", music: null, sounds: {}, models: {} };
+/** Judy's script (public/game/judy.json): a greeting, rounds of three replies each with her answer, and the ticket. */
+export type JudyLine = { id: string; text: string };
+export type JudyScript = {
+  name: string;
+  greeting: JudyLine;
+  rounds: Array<{ options: Array<{ sam: string; judy: JudyLine }>; core: JudyLine }>;
+  final: JudyLine;
+};
+
+export const EMPTY_MANIFEST: Manifest = { movie: null, youtube: "LnVy5ZEcbH0", music: null, sounds: {}, models: {}, voice: {} };
 
 /** Where the signer is in the story. */
-export type Phase = "intro" | "outside" | "lobby" | "theater" | "seated" | "movie" | "ended" | "exit" | "done";
+export type Phase = "intro" | "outside" | "talk" | "lobby" | "theater" | "seated" | "movie" | "ended" | "exit" | "done";
 
 export type Hud = {
   phase: Phase;
@@ -39,12 +50,18 @@ export type Hud = {
   needsClick: boolean;
   /** 0..1 black over everything (the fade into the signing page). */
   dark: number;
+  /** Talking to Judy at the booth: who's speaking, the subtitle, and the replies on offer. */
+  dialogue: { speaker: string; text: string; options: string[] | null } | null;
+  /** The ticket Judy handed over. */
+  ticket: boolean;
 };
 
 export type GameOptions = {
   signerName: string;
   title: string;
   manifest: Manifest;
+  /** Judy's lines; without them the booth just hands over the ticket. */
+  judy: JudyScript | null;
   onHud: (hud: Hud) => void;
   /** The desk was reached: show the signing page. */
   onDone: () => void;
@@ -86,6 +103,8 @@ const HEAVEN = (() => {
   const a = STEP_ANGLE(STAIR.steps);
   return { x: STAIR.cx + (STAIR.r + 7.5) * Math.cos(a), y: top.y + 0.4, z: STAIR.cz + (STAIR.r + 7.5) * Math.sin(a), size: 12 };
 })();
+/** The ticket booth on the plaza, beside the red carpet, its window facing the arriving signer. */
+const BOOTH = { x: -4.4, z: BLDG.z1 + 8.5, w: 2.6, d: 1.8, h: 2.9 };
 const SPAWN = new THREE.Vector3(0, 0, 4.5);
 /**
  * The floating blocks from the start island to the theater island, one every
@@ -134,7 +153,17 @@ export class SigningGame {
 
   // The story
   private phase: Phase = "intro";
-  private hud: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0 };
+  private hud: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, dialogue: null, ticket: false };
+  // Judy at the booth: which round we're in and the timers that pace her subtitles.
+  private talking: { round: number } | null = null;
+  private talkTimers: Array<ReturnType<typeof setTimeout>> = [];
+  private talkAudio: HTMLAudioElement | null = null;
+  private frontDoors: Array<{ group: THREE.Group; side: -1 | 1 }> = [];
+  private frontDoorSolid: Box | null = null;
+  private frontOpen = 0;
+  private frontOpenAt = 0;
+  private doorOpenAt = 0;
+  private judyHead: THREE.Object3D | null = null;
   private hintUntil = 0;
   private tween: { from: THREE.Vector3; to: THREE.Vector3; qFrom: THREE.Quaternion; qTo: THREE.Quaternion; start: number; dur: number; then?: () => void } | null = null;
   private doorOpen = 0; // 0 closed .. 1 open
@@ -369,18 +398,23 @@ export class SigningGame {
       s.add(b);
     }
     this.sign([`RESERVED SEATING FOR ${this.opts.signerName.toUpperCase()}`], 0, doorTop + 0.9, BLDG.z1 + 0.17, 7, 0.7, 0, "#2e0f14", "#f4ede0");
-    // The front doors stand open.
+    // The front doors: shut until Judy hands over a ticket, then they swing inward.
     for (const side of [-1, 1] as const) {
       const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, doorTop - 0.05, doorHalf), new THREE.MeshLambertMaterial({ map: wood }));
       const grp = new THREE.Group();
       grp.position.set(side * doorHalf, (doorTop - 0.05) / 2, BLDG.z1 - 0.15);
       panel.position.set(0, 0, -doorHalf / 2);
       grp.add(panel);
-      grp.rotation.y = side * 0.4;
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), gold);
+      knob.position.set(-side * 0.08, 0, -doorHalf + 0.2);
+      grp.add(knob);
+      grp.rotation.y = (side * Math.PI) / 2;
       s.add(grp);
-      const b = new THREE.Box3().setFromObject(grp);
-      this.solids.push({ min: b.min, max: b.max });
+      this.frontDoors.push({ group: grp, side });
     }
+    this.frontDoorSolid = { min: new THREE.Vector3(-doorHalf, 0, BLDG.z1 - 0.3), max: new THREE.Vector3(doorHalf, doorTop, BLDG.z1 + 0.1) };
+    this.solids.push(this.frontDoorSolid);
+    this.booth(gold);
 
     // ── The lobby ──
     this.slab(0, -0.5, (LOBBY.z0 + LOBBY.z1) / 2, bw * 2, 1, LOBBY.z1 - LOBBY.z0, lobbyCarpet);
@@ -671,6 +705,81 @@ export class SigningGame {
 
   private contract!: THREE.Mesh;
 
+  /** The ticket booth, with Judy in it: a blocky older lady in a lavender cardigan, glasses, and a gray bun. */
+  private booth(gold: THREE.Material) {
+    const s = this.scene;
+    const { x, z, w, d, h } = BOOTH;
+    const paint = new THREE.MeshLambertMaterial({ map: pixelTexture(0x8c2a2f, 12) });
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), paint);
+    counter.position.set(x, 0.55, z);
+    counter.castShadow = true;
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.5), new THREE.MeshLambertMaterial({ color: 0x14141a }));
+    roof.position.set(x, h, z);
+    roof.castShadow = true;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(w, h - 1.1, 0.1), paint);
+    back.position.set(x, 1.1 + (h - 1.1) / 2, z - d / 2 + 0.05);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.3, h - 1.3), new THREE.MeshBasicMaterial({ color: 0xbfe0ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide }));
+    glass.position.set(x, 1.1 + (h - 1.3) / 2, z + d / 2);
+    s.add(counter, roof, back, glass);
+    for (const px of [-w / 2 + 0.1, w / 2 - 0.1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, h - 1.1, 0.16), new THREE.MeshLambertMaterial({ color: 0x14141a }));
+      post.position.set(x + px, 1.1 + (h - 1.1) / 2, z + d / 2 - 0.08);
+      s.add(post);
+    }
+    this.sign(["TICKETS"], x, h + 0.55, z + d / 2 + 0.1, 2.2, 0.6, 0, "#14141a", "#ffd166");
+    this.sign(["JUDY"], x + 0.7, 1.0, z + d / 2 + 0.01, 0.7, 0.18, 0, "#f4ede0", "#14141a");
+    const slot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.2), gold);
+    slot.position.set(x - 0.4, 1.11, z + d / 2 - 0.15);
+    s.add(slot);
+    this.solids.push({ min: new THREE.Vector3(x - w / 2 - 0.2, 0, z - d / 2 - 0.25), max: new THREE.Vector3(x + w / 2 + 0.2, h + 0.3, z + d / 2 + 0.1) });
+
+    // Judy.
+    const judy = new THREE.Group();
+    const cardigan = new THREE.MeshLambertMaterial({ map: pixelTexture(0x9b7bb8, 10) });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.75, 0.42), cardigan);
+    body.position.set(0, 1.45, 0);
+    const skin = new THREE.MeshLambertMaterial({ color: 0xe8c4a8 });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.46), skin);
+    head.position.set(0, 2.07, 0);
+    const hair = new THREE.MeshLambertMaterial({ map: pixelTexture(0xc9c4bd, 14) });
+    const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.5), hair);
+    hairTop.position.set(0, 2.36, -0.02);
+    const bun = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), hair);
+    bun.position.set(0, 2.42, -0.3);
+    const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.1), hair);
+    hairBack.position.set(0, 2.14, -0.24);
+    const dark = new THREE.MeshLambertMaterial({ color: 0x1a1a1f });
+    for (const ex of [-0.1, 0.1]) {
+      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.02), dark);
+      eye.position.set(ex, 2.1, 0.24);
+      const lens = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.02), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 }));
+      lens.position.set(ex, 2.1, 0.26);
+      const rim = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.02), gold);
+      rim.position.set(ex, 2.17, 0.26);
+      judy.add(eye, lens, rim);
+    }
+    const chain = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.02), gold);
+    chain.position.set(0.2, 2.0, 0.2);
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.02), new THREE.MeshLambertMaterial({ color: 0xa04050 }));
+    mouth.position.set(0, 1.95, 0.24);
+    const brooch = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.03), gold);
+    brooch.position.set(-0.22, 1.7, 0.22);
+    for (const ax of [-0.45, 0.45]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.6, 0.18), cardigan);
+      arm.position.set(ax, 1.4, 0.08);
+      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.16), skin);
+      hand.position.set(ax, 1.08, 0.12);
+      judy.add(arm, hand);
+    }
+    judy.add(body, head, hairTop, bun, hairBack, chain, mouth, brooch);
+    judy.position.set(x - 0.2, 0, z - 0.25);
+    s.add(judy);
+    this.judyHead = head;
+    const lamp = new THREE.PointLight(0xffe2b8, 6, 5, 2);
+    lamp.position.set(x, h - 0.3, z + 0.3);
+    s.add(lamp);
+  }
+
   private popcorn(x: number, y: number, z: number) {
     const cart = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.8), new THREE.MeshLambertMaterial({ color: 0xb01030 }));
     cart.position.set(x, y + 0.45, z);
@@ -914,6 +1023,7 @@ export class SigningGame {
   private movieEnded() {
     if (this.phase !== "movie") return;
     this.setPhase("ended");
+    this.doorOpenAt = performance.now();
     this.play("door");
     this.exitSign.emissiveIntensity = 2.2;
     this.setHud({ prompt: "The film is over. The door by the screen is open: click to stand up.", needsClick: false });
@@ -932,6 +1042,7 @@ export class SigningGame {
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === "KeyE" || e.code === "Enter") this.interact();
+      if (this.phase === "talk" && /^(Digit|Numpad)[1-3]$/.test(e.code)) this.choose(Number(e.code.slice(-1)) - 1);
       if (["Space", "ArrowUp", "ArrowDown"].includes(e.code) && this.walking()) e.preventDefault();
     });
     on(window, "keyup", (e: KeyboardEvent) => this.keys.delete(e.code));
@@ -987,9 +1098,129 @@ export class SigningGame {
   }
 
   private interact() {
-    if (this.phase === "theater" && this.nearReservedSeat()) this.sit();
+    if (this.phase === "outside" && !this.hud.ticket && this.nearBooth()) this.startTalk();
+    else if (this.phase === "theater" && this.nearReservedSeat()) this.sit();
     else if (this.phase === "exit" && this.nearContract()) this.finish();
     else if (this.phase === "ended") this.standUp();
+  }
+
+  private nearBooth() {
+    return Math.hypot(this.pos.x - BOOTH.x, this.pos.z - (BOOTH.z + BOOTH.d / 2)) < 3.0 && Math.abs(this.pos.y) < 1.5;
+  }
+
+  // ── Judy ────────────────────────────────────────────────────────────────
+
+  /** Walks up to the booth: the mouse is freed for the replies, the music drops, and Judy says hello. */
+  private startTalk() {
+    this.setPhase("talk");
+    if (this.locked) document.exitPointerLock();
+    this.keys.clear();
+    if (this.music) this.music.volume = 0.18;
+    this.setHud({ prompt: "" });
+    // Turn to face her.
+    const eye = this.camera.position.clone();
+    const look = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(BOOTH.x - 0.2, 2.05, BOOTH.z - 0.25), new THREE.Vector3(0, 1, 0));
+    this.tween = { from: eye, to: eye.clone(), qFrom: this.camera.quaternion.clone(), qTo: new THREE.Quaternion().setFromRotationMatrix(look), start: performance.now(), dur: 600 };
+    const judy = this.opts.judy;
+    if (!judy) {
+      this.say([{ id: "final", text: "Here's a ticket. Row six, on the aisle." }], () => this.giveTicket());
+      return;
+    }
+    this.talking = { round: 0 };
+    this.say([judy.greeting], () => this.offer());
+  }
+
+  /** The three things Sam can say in this round. */
+  private offer() {
+    const judy = this.opts.judy;
+    const t = this.talking;
+    if (!judy || !t) return;
+    const round = judy.rounds[t.round];
+    this.setHud({ dialogue: { speaker: judy.name, text: this.hud.dialogue?.text ?? "", options: round.options.map((o) => o.sam) } });
+  }
+
+  /** Sam's reply (clicked or keys 1–3): shown for a moment, then Judy's answer and her ramble. */
+  choose(i: number) {
+    const judy = this.opts.judy;
+    const t = this.talking;
+    if (this.phase !== "talk" || !judy || !t || !this.hud.dialogue?.options) return;
+    const round = judy.rounds[t.round];
+    const opt = round.options[i];
+    if (!opt) return;
+    this.setHud({ dialogue: { speaker: "You", text: opt.sam, options: null } });
+    const after = () => {
+      const lines = [opt.judy, round.core];
+      const last = t.round >= judy.rounds.length - 1;
+      this.say(lines, () => {
+        if (last) this.say([judy.final], () => this.giveTicket());
+        else {
+          t.round++;
+          this.offer();
+        }
+      });
+    };
+    this.talkTimers.push(setTimeout(after, 1700));
+  }
+
+  /**
+   * Judy speaks: each line's clip plays if it was voiced, and its words are
+   * shown a sentence or two at a time, paced to the clip (or to a reading
+   * speed without one). `then` runs when the last line is done.
+   */
+  private say(lines: JudyLine[], then: () => void) {
+    const judy = this.opts.judy;
+    const speaker = judy?.name ?? "Judy";
+    const next = (k: number) => {
+      if (k >= lines.length) return then();
+      const line = lines[k];
+      const chunks = subtitleChunks(line.text);
+      const words = chunks.map((c) => c.split(/\s+/).length);
+      const total = words.reduce((a, b) => a + b, 0);
+      const schedule = (seconds: number) => {
+        let at = 0;
+        chunks.forEach((text, i) => {
+          this.talkTimers.push(setTimeout(() => this.setHud({ dialogue: { speaker, text, options: null } }), at * 1000));
+          at += (seconds * words[i]) / total;
+        });
+        this.talkTimers.push(setTimeout(() => next(k + 1), seconds * 1000 + 350));
+      };
+      const url = this.opts.manifest.voice[line.id];
+      if (!url) return schedule(total * 0.42 + 0.4);
+      const a = new Audio(url);
+      a.preload = "auto";
+      this.talkAudio = a;
+      let started = false;
+      const start = () => {
+        if (started) return;
+        started = true;
+        const seconds = Number.isFinite(a.duration) && a.duration > 0 ? a.duration : total * 0.42 + 0.4;
+        schedule(seconds);
+      };
+      a.addEventListener("loadedmetadata", () => {
+        a.play().then(start, () => start());
+      });
+      a.addEventListener("error", () => start());
+      // A clip that never loads shouldn't hold the line.
+      this.talkTimers.push(setTimeout(start, 4000));
+      a.load();
+    };
+    next(0);
+  }
+
+  private giveTicket() {
+    this.play("sign");
+    this.talking = null;
+    // Carry the facing from the conversation into the walk.
+    const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
+    this.yaw = e.y;
+    this.pitch = e.x;
+    this.frontOpenAt = performance.now();
+    this.play("door");
+    this.setHud({ ticket: true, dialogue: null });
+    this.setPhase("outside");
+    if (this.music) this.music.volume = 0.55;
+    this.hint("You've got your ticket. The doors are opening.", 5000);
+    this.lockPointer();
   }
 
   private nearReservedSeat() {
@@ -1144,7 +1375,7 @@ export class SigningGame {
       }
       if (p.z < ISLAND.z1 - 0.5 && p.y > -1 && this.checkpoint.z > ISLAND.z1) {
         this.checkpoint.set(0, 0, ISLAND.z1 - 3);
-        this.hint("You made it. The doors are open: in you go.", 6000);
+        this.hint("You made it. Get your ticket at the booth.", 6000);
       }
       if (p.z < BLDG.z1 - 0.4 && Math.abs(p.x) < 2 && p.y > -1) {
         this.setPhase("lobby");
@@ -1174,7 +1405,8 @@ export class SigningGame {
       this.hint("Back to the foot of the stairs. Keep to the middle of the steps.", 4000);
     }
     let prompt = this.hud.prompt;
-    if (this.phase === "theater") prompt = this.nearReservedSeat() ? "Press E to take your seat" : now < this.hintUntil ? this.hud.prompt : "";
+    if (this.phase === "outside" && !this.hud.ticket && this.nearBooth()) prompt = "Press E to talk to Judy";
+    else if (this.phase === "theater") prompt = this.nearReservedSeat() ? "Press E to take your seat" : now < this.hintUntil ? this.hud.prompt : "";
     else if (this.phase === "exit") prompt = this.nearContract() ? "Press E to sign" : now < this.hintUntil ? this.hud.prompt : "";
     else if ((this.phase === "outside" || this.phase === "lobby") && now >= this.hintUntil) prompt = "";
     if (prompt !== this.hud.prompt) this.setHud({ prompt });
@@ -1207,9 +1439,24 @@ export class SigningGame {
       c.position.x += dt * (0.4 + (i % 3) * 0.25);
       if (c.position.x > 110) c.position.x = -110;
     }
+    if (this.judyHead) this.judyHead.rotation.y = this.phase === "talk" ? 0.12 * Math.sin(now / 420) : 0.3 * Math.sin(now / 2600);
+    if (this.hud.ticket && this.frontOpen < 1) {
+      // On the clock: the doors take about a second whatever the frame rate.
+      this.frontOpen = Math.min(1, (now - this.frontOpenAt) / 1200);
+      for (const { group, side } of this.frontDoors) group.rotation.y = side * ((Math.PI / 2) * (1 - this.frontOpen) + 0.4 * this.frontOpen);
+      if (this.frontOpen >= 1 && this.frontDoorSolid) {
+        const i = this.solids.indexOf(this.frontDoorSolid);
+        if (i >= 0) this.solids.splice(i, 1);
+        this.frontDoorSolid = null;
+        for (const { group } of this.frontDoors) {
+          const b = new THREE.Box3().setFromObject(group);
+          this.solids.push({ min: b.min, max: b.max });
+        }
+      }
+    }
     if (this.phase === "ended" || this.phase === "exit" || this.phase === "done") {
       if (this.doorOpen < 1) {
-        this.doorOpen = Math.min(1, this.doorOpen + dt / 1.2);
+        this.doorOpen = Math.min(1, (now - this.doorOpenAt) / 1200);
         this.doorGroup.rotation.y = this.doorOpen * 1.8;
         if (this.doorOpen >= 1 && this.doorSolid) {
           const i = this.solids.indexOf(this.doorSolid);
@@ -1260,6 +1507,8 @@ export class SigningGame {
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    for (const t of this.talkTimers) clearTimeout(t);
+    this.talkAudio?.pause();
     if (this.musicFade !== null) cancelAnimationFrame(this.musicFade);
     for (const d of this.disposers) d();
     this.music?.pause();
@@ -1281,6 +1530,36 @@ export class SigningGame {
     this.renderer.domElement.remove();
     this.css?.domElement.remove();
   }
+}
+
+// ── Subtitles ─────────────────────────────────────────────────────────────
+
+/** A line split at sentence ends into pieces of a dozen or so words, as subtitles go. */
+export function subtitleChunks(text: string): string[] {
+  const sentences = text
+    .match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g)
+    ?.map((x) => x.trim())
+    .filter(Boolean) ?? [text];
+  const out: string[] = [];
+  let cur = "";
+  for (const sentence of sentences) {
+    const joined = cur ? `${cur} ${sentence}` : sentence;
+    if (cur && joined.split(/\s+/).length > 14) {
+      out.push(cur);
+      cur = sentence;
+    } else cur = joined;
+    // A long sentence is split at commas so a subtitle never runs past two lines.
+    while (cur.split(/\s+/).length > 22) {
+      const words = cur.split(/\s+/);
+      let cut = -1;
+      for (let i = 8; i < Math.min(words.length - 4, 16); i++) if (/[,;:]$/.test(words[i])) cut = i;
+      if (cut < 0) cut = 13;
+      out.push(words.slice(0, cut + 1).join(" "));
+      cur = words.slice(cut + 1).join(" ");
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 // ── Acoustics ─────────────────────────────────────────────────────────────

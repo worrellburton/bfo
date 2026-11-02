@@ -1,0 +1,46 @@
+{
+  "name": "Judy",
+  "greeting": {
+    "id": "greeting",
+    "text": "Oh. Hey, Sam. Hi, I'm Judy. Welcome to the movie theater. I say that to everyone, it's not because I forgot you. I would never forget you. You were under me for, what, three years? And the spreadsheet. Don't think I don't remember the spreadsheet."
+  },
+  "rounds": [
+    {
+      "options": [
+        { "sam": "Hi Judy. I'd like to purchase a ticket.", "judy": { "id": "r1a", "text": "A ticket. Of course. That's what we do here, that's the whole business." } },
+        { "sam": "Judy! Wow. Okay. One ticket, please.", "judy": { "id": "r1b", "text": "Don't 'wow' me, Sam, I'm not that old. One ticket. Fine." } },
+        { "sam": "I finished the spreadsheet, actually. Can I get a ticket?", "judy": { "id": "r1c", "text": "You did not finish the spreadsheet. But all right. A ticket." } }
+      ],
+      "core": {
+        "id": "r1",
+        "text": "So the way it works now, and this is new, is I've got the little machine. You tap it, it prints, I tear along the dotted line, except the dotted line is more of a suggestion since they changed paper vendors. The old vendor was a family business, lovely people, the daughter went to dental school. The new vendor is just a website. You can't call a website, Sam. I tried. I was on hold with a website for forty minutes, and the music was that song, you know the one, from the commercial with the dog. Anyway, that's the machine. It's over here. I'll get to it."
+      }
+    },
+    {
+      "options": [
+        { "sam": "Great. So, the ticket?", "judy": { "id": "r2a", "text": "I'm getting to it. You always rushed, Sam, that was in your review." } },
+        { "sam": "I'm so sorry about the website. Could I get a ticket?", "judy": { "id": "r2b", "text": "Thank you, that's kind. Nobody says sorry anymore. Except in China." } },
+        { "sam": "The dog commercial, yes. Is the ticket in the machine?", "judy": { "id": "r2c", "text": "The ticket is in the machine, yes. The machine was made in China, actually, it says so on the bottom." } }
+      ],
+      "core": {
+        "id": "r2",
+        "text": "Which, I went to China. Last spring. With Carol, from accounts payable, you remember Carol, she had the ferns. Beijing, then Xi'an, then a boat. We saw the Wall. It's long. People say that, and then you see it, and you think, no, it's really long, they weren't exaggerating. Our guide was a young man named Kevin, which I don't think was his real name, and he said, Judy, you walk faster than anyone in this group, and I said, Kevin, I ran a department. And the dumplings. Sam. They don't do popcorn there the way we do, which I told the manager at the restaurant, and he was very gracious about it, considering. Carol got altitude sickness on a bus, which I didn't know you could do."
+      }
+    },
+    {
+      "options": [
+        { "sam": "That sounds amazing. One ticket, when you get a chance.", "judy": { "id": "r3a", "text": "It was amazing. You should go. Not now, you have a movie." } },
+        { "sam": "Carol's ferns. Right. Ticket?", "judy": { "id": "r3b", "text": "The ferns died while she was away. She blamed me. I was in China with her, Sam." } },
+        { "sam": "Kevin sounds great. I would also love a ticket, like Kevin would want.", "judy": { "id": "r3c", "text": "Kevin would not want that. Kevin wanted everyone back on the bus by four." } }
+      ],
+      "core": {
+        "id": "r3",
+        "text": "Anyway. The thing about the Wall is you can't see the end of it from where you're standing. You just have to go. That's not a question. I'm just telling you that. Beijing is nine hours ahead or thirteen behind, depending on how you want to feel about it."
+      }
+    }
+  ],
+  "final": {
+    "id": "final",
+    "text": "All right. Here's a ticket. Row six, on the aisle, it has your name on it. And Sam. The spreadsheet."
+  }
+}

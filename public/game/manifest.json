@@ -10,5 +10,6 @@
     "land": null,
     "fall": null
   },
-  "models": {}
+  "models": {},
+  "voice": {}
 }
