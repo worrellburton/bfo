@@ -192,6 +192,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
             sentBy: brand ? null : view.sentBy,
             role: view.you.role,
             signPages: [...new Set(view.fields.filter((f) => f.party === view.you.key && f.type === "signature").map((f) => f.page))].sort((a, b) => a - b),
+            downloadUrl,
           }}
           preview={!!preview}
           onDone={() => setPlayed(true)}

@@ -33,3 +33,18 @@
 8:52:48 PM [vite] (client) hmr update /app/routes/sign.tsx
 8:52:48 PM [vite] (client) hmr update /app/app.css, /app/routes/sign.tsx
 8:52:48 PM [vite] (ssr) hmr update /app/app.css
+8:55:09 PM [vite] (client) hmr update /app/sign/game/index.tsx
+8:55:09 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+8:55:09 PM [vite] (ssr) hmr update /app/app.css
+8:55:09 PM [vite] (client) hmr update /app/routes/sign.tsx
+8:55:09 PM [vite] (client) hmr update /app/app.css, /app/routes/sign.tsx
+8:55:09 PM [vite] (ssr) hmr update /app/app.css
+8:55:09 PM [vite] (client) hmr update /app/sign/game/index.tsx
+8:55:09 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+8:55:09 PM [vite] (ssr) hmr update /app/app.css
+8:56:16 PM [vite] (client) hmr update /app/sign/game/index.tsx
+8:56:16 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+8:56:16 PM [vite] (ssr) hmr update /app/app.css
+8:56:16 PM [vite] (client) hmr update /app/sign/game/studio.tsx
+8:56:16 PM [vite] (client) hmr update /app/app.css, /app/sign/game/studio.tsx
+8:56:16 PM [vite] (ssr) hmr update /app/app.css
