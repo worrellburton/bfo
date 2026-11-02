@@ -40,27 +40,27 @@
           "sam": "Great. So, the ticket?",
           "judy": {
             "id": "r2a",
-            "text": "I'm getting to it. You always rushed, Sam. That was in your review. I wrote your review. I used to write reviews."
+            "text": "I'm getting to it. Patience, Sam. I've got all day. That's the thing about this job. I've got all day."
           }
         },
         {
           "sam": "I'm so sorry about the website. Could I get a ticket?",
           "judy": {
             "id": "r2b",
-            "text": "Thank you, that's kind. Don't be kind, it makes it worse. Nobody says sorry anymore. Except in China."
+            "text": "Thank you, that's kind. Don't be kind, Sam, it makes it worse. I can take rude. Rude I had for thirty years."
           }
         },
         {
           "sam": "The manager who is nineteen, yes. Is the ticket in the machine?",
           "judy": {
             "id": "r2c",
-            "text": "The ticket is in the machine, yes. Tyler. His name is Tyler. The machine was made in China, actually, it says so on the bottom."
+            "text": "The ticket is in the machine, yes. Tyler. His name is Tyler. He calls me young lady. I had a parking spot by the time I was his age."
           }
         }
       ],
       "core": {
         "id": "r2",
-        "text": "Which, I went to China. Last spring. With Carol, from accounts payable, you remember Carol, she had the ferns by the printer. That's where the money went, if you're wondering why I'm here. It was worth it, I'm not apologizing. Beijing, then Xi'an, then a boat. We saw the Wall. It's long. People say that, and then you see it, and you think, no, it's really long, they weren't exaggerating. Our guide was a young man named Kevin, which I don't think was his real name, and he said, Judy, you walk faster than anyone in this group, and I said, Kevin, I ran a department. Sam was in it. I didn't tell Kevin about the theater. Carol got altitude sickness on a bus, which I didn't know you could do."
+        "text": "So here's what happened, since you're going to ask. I retired. Everybody clapped, there was a cake, the cake had my name spelled wrong. And then it's Tuesday, and then it's every Tuesday, and I'm watching a man on television sell knives. So I went to China. By myself. Spent the retirement on it, more or less, which is how I came to be in a glass box with a lanyard. I'm not apologizing for China. The Wall is long, Sam. People say that and they're right. But I came back and the house was very quiet, and this place had a sign in the window, and I thought, Judy, you ran a department of eleven people, you can tear a ticket. Turns out the machine has opinions."
       }
     },
     {
@@ -73,23 +73,23 @@
           }
         },
         {
-          "sam": "Carol's ferns. Right. Ticket?",
+          "sam": "I'm sorry about the cake. Ticket?",
           "judy": {
             "id": "r3b",
-            "text": "The ferns died while she was away. She blamed me. I was in China with her, Sam. Carol, by the way, is a vice president now. I sell tickets. You'd have watered them."
+            "text": "J, U, D, I. With an I. Thirty-one years. Tyler spelled it right on my name tag, I'll give him that. It's the one thing in here that's right."
           }
         },
         {
-          "sam": "Kevin sounds great. I would also love a ticket, like Kevin would want.",
+          "sam": "The machine has opinions. Does it have my ticket?",
           "judy": {
             "id": "r3c",
-            "text": "Kevin would not want that. Kevin wanted everyone back on the bus by four. He reminded me of you, before the spreadsheet. He'd be mortified to see me in this box."
+            "text": "It has your ticket. It has everyone's ticket. It doesn't know who I was. That's the nice thing about it, actually. Don't tell it."
           }
         }
       ],
       "core": {
         "id": "r3",
-        "text": "Anyway. The thing about the Wall is you can't see the end of it from where you're standing. You just have to go. That's not a question. I'm just telling you that. And this, the booth, the lanyard, Tyler, this is not the end of the wall either. Beijing is nine hours ahead or thirteen behind, depending on how you want to feel about it."
+        "text": "Anyway. The thing about the Wall is you can't see the end of it from where you're standing. You just have to go. That's not a question. I'm just telling you that. And this, the booth, the lanyard, Tyler, this is not the end of the wall either. I've got time, Sam. That's the one thing this job gives you."
       }
     }
   ],
