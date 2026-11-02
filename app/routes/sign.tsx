@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 import { FIELD_LABEL, type SignField, type SignMode } from "../sign/api";
 import { GameGate } from "../sign/game";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
@@ -216,21 +216,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
               </>
             )}
           </div>
-          {preview ? (
-            <div className="flex items-center gap-2 text-[12px]">
-              <span className="rounded-full border border-amber-300/50 bg-amber-300/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200">Preview</span>
-              {view?.mode === "game" && (
-                <button type="button" onClick={() => setPlayed(false)} className="h-[32px] rounded-full border border-white/15 px-3 text-white/80 hover:bg-white/10">
-                  Play again
-                </button>
-              )}
-              <Link to="/tools/signatures" className="h-[32px] rounded-full border border-white/15 px-3 leading-[30px] text-white/80 hover:bg-white/10">
-                Exit preview
-              </Link>
-            </div>
-          ) : (
-            view?.sentBy && !brand && <p className="text-right text-[12px] text-white/50">Sent by {view.sentBy}</p>
-          )}
+          {view?.sentBy && !brand && <p className="text-right text-[12px] text-white/50">Sent by {view.sentBy}</p>}
         </header>
 
         {error && !view && (
