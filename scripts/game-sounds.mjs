@@ -27,6 +27,7 @@ const EFFECTS = {
   land: { text: "A soft thud of a character landing on a wooden block in a video game, light and quick", seconds: 0.7 },
   fall: { text: "A quick descending whoosh of falling into a dark pit in a video game, ending in a low soft puff", seconds: 1.8 },
   step: { text: "A single soft footstep on short grass, close up, quick and quiet", seconds: 0.5 },
+  cheer: { text: "A short burst of celebration: a small crowd cheering and clapping with a bright triumphant brass fanfare and a champagne cork pop, joyful, over in a moment", seconds: 3 },
 };
 
 const key = process.env.ELEVENLABS_API_KEY?.trim();

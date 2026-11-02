@@ -21,7 +21,7 @@ export type Manifest = {
   movie: string | null;
   youtube: string | null;
   music: string | null;
-  sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall" | "step", string | null>>;
+  sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall" | "step" | "cheer", string | null>>;
   models: Partial<Record<"seat" | "plant" | "popcorn" | "judy", string>>;
   /** Judy's voiced lines by line id (public/game/judy.json), from scripts/game-judy.mjs. */
   voice: Partial<Record<string, string>>;
@@ -209,6 +209,8 @@ export class SigningGame {
   private doorOpenAt = 0;
   private judyHead: THREE.Object3D | null = null;
   private hintUntil = 0;
+  /** The cheer at the top of the stairs plays once. */
+  private cheered = false;
   private tween: { from: THREE.Vector3; to: THREE.Vector3; qFrom: THREE.Quaternion; qTo: THREE.Quaternion; start: number; dur: number; then?: () => void } | null = null;
   private doorOpen = 0; // 0 closed .. 1 open
   private doorSolid: Box | null = null;
@@ -1808,8 +1810,14 @@ export class SigningGame {
     let prompt = this.hud.prompt;
     if (this.phase === "outside" && !this.hud.ticket && this.nearBooth()) prompt = "Press E to talk to Judy";
     else if (this.phase === "theater") prompt = this.nearReservedSeat() ? "Press E to take your seat" : now < this.hintUntil ? this.hud.prompt : "";
-    else if (this.phase === "exit") prompt = this.nearContract() ? "Press E to sign" : now < this.hintUntil ? this.hud.prompt : "";
-    else if ((this.phase === "outside" || this.phase === "lobby") && now >= this.hintUntil) prompt = "";
+    else if (this.phase === "exit") {
+      const there = this.nearContract();
+      if (there && !this.cheered) {
+        this.cheered = true;
+        this.play("cheer", 0.9);
+      }
+      prompt = there ? "Press E to sign" : now < this.hintUntil ? this.hud.prompt : "";
+    } else if ((this.phase === "outside" || this.phase === "lobby") && now >= this.hintUntil) prompt = "";
     if (prompt !== this.hud.prompt) this.setHud({ prompt });
   }
 

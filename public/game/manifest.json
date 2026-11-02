@@ -9,7 +9,8 @@
     "jump": null,
     "land": null,
     "fall": null,
-    "step": null
+    "step": null,
+    "cheer": null
   },
   "models": {},
   "voice": {}

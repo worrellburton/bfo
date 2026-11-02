@@ -175,12 +175,12 @@ describe("api/game-assets", () => {
 
   it("makes the sound effects in batches", async () => {
     const r1 = await call("POST", { action: "sounds" });
-    expect(r1.body.remaining).toBe(4);
+    expect(r1.body.remaining).toBe(5);
     const r2 = await call("POST", { action: "sounds" });
-    expect(r2.body.remaining).toBe(1);
+    expect(r2.body.remaining).toBe(2);
     const r3 = await call("POST", { action: "sounds" });
     expect(r3.body.remaining).toBe(0);
-    expect(Object.keys(r3.body.assets.sounds).sort()).toEqual(["door", "fall", "jump", "land", "sign", "sit", "step"]);
+    expect(Object.keys(r3.body.assets.sounds).sort()).toEqual(["cheer", "door", "fall", "jump", "land", "sign", "sit", "step"]);
   });
 
   it("says plainly when a key is missing", async () => {
