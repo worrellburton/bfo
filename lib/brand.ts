@@ -233,7 +233,8 @@ export async function startModel(imageUrl: string, opts: ModelOptions = {}): Pro
       target_formats: opts.formats ?? ["glb", "usdz"],
       origin_at: "center",
       alpha_thumbnail: true,
-      ...(opts.polycount ? { target_polycount: opts.polycount } : {}),
+      // Meshy only honours the budget when it remeshes, which its latest model doesn't do by default.
+      ...(opts.polycount ? { should_remesh: true, topology: "triangle", target_polycount: opts.polycount } : {}),
     },
   });
   if (!r?.result) throw new ProviderError("meshy", 502, "Meshy didn't start the task.");
