@@ -951,6 +951,25 @@ export class SigningGame {
     }
   }
 
+  /** The song comes back for the climb: from the top, rising over a few seconds. */
+  private fadeInMusic() {
+    const a = this.music;
+    if (!a) return;
+    if (this.musicFade !== null) cancelAnimationFrame(this.musicFade);
+    this.musicFade = null;
+    a.currentTime = 0;
+    a.volume = 0;
+    void a.play().catch(() => {});
+    const t0 = performance.now();
+    const step = () => {
+      const k = Math.min(1, (performance.now() - t0) / 3000);
+      a.volume = 0.55 * k;
+      if (k < 1) this.musicFade = requestAnimationFrame(step);
+      else this.musicFade = null;
+    };
+    this.musicFade = requestAnimationFrame(step);
+  }
+
   private fadeOutMusic() {
     const a = this.music;
     if (!a || this.musicFade !== null) return;
@@ -1254,6 +1273,7 @@ export class SigningGame {
     this.setPhase("exit");
     this.setHud({ prompt: "" });
     this.hint("Through the open door by the screen: a staircase climbs into the sky. The contract is at the top.", 8000);
+    this.fadeInMusic();
     this.lockPointer();
   }
 
