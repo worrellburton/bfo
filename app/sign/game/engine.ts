@@ -8,9 +8,10 @@
 // where a staircase spirals up into the sky. The contract waits on a cloud at
 // the top; reaching it hands over to the signing page.
 //
-// Blocky, Minecraft-like: everything is boxes with 16-pixel noise textures.
-// Any prop named in /game/manifest.json ("models") is loaded as a GLB and
-// takes the placeholder's place, so Meshy-made props are purely additive.
+// The look leans realistic: generated high-resolution textures (grass, stone,
+// wood, brick, velvet), soft sun shadows, filmic tone mapping, a sky dome and
+// rounded clouds. Any prop named in /game/manifest.json ("models") is loaded
+// as a GLB and takes the placeholder's place, Judy included.
 // index.tsx wraps this in React and draws the HUD from `onHud`.
 import * as THREE from "three";
 import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRenderer.js";
@@ -21,7 +22,7 @@ export type Manifest = {
   youtube: string | null;
   music: string | null;
   sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall", string | null>>;
-  models: Partial<Record<"seat" | "plant" | "popcorn", string>>;
+  models: Partial<Record<"seat" | "plant" | "popcorn" | "judy", string>>;
   /** Judy's voiced lines by line id (public/game/judy.json), from scripts/game-judy.mjs. */
   voice: Partial<Record<string, string>>;
 };
@@ -72,8 +73,8 @@ type Box = { min: THREE.Vector3; max: THREE.Vector3 };
 // ── Layout (meters; y up; the start island is at the origin, the theater far down -z) ──
 /** The island you wake on: its top is y = 0. */
 const START = { half: 7 };
-/** The theater's island: far enough that the blocks take about half a minute at a walk. */
-const ISLAND = { x0: -30, x1: 30, z1: -126, z0: -126 - 74 };
+/** The theater's island: far enough that the blocks take about twenty seconds at a walk. */
+const ISLAND = { x0: -30, x1: 30, z1: -90, z0: -90 - 74 };
 /** The building: interior width, front doors at z1, screen wall at z0. */
 const BLDG = { halfW: 13, z1: ISLAND.z1 - 14, z0: ISLAND.z1 - 66, height: 11 };
 const LOBBY = { z0: BLDG.z1 - 12, z1: BLDG.z1, height: 5 };
@@ -108,26 +109,30 @@ const BOOTH = { x: -4.4, z: BLDG.z1 + 8.5, w: 2.6, d: 1.8, h: 2.9 };
 const SPAWN = new THREE.Vector3(0, 0, 4.5);
 /**
  * The floating blocks from the start island to the theater island, one every
- * 2.8 m: a wandering line that rises and falls, with a resting island every so
- * often (reaching one is a checkpoint). About 30 seconds at a walk, nonstop.
+ * 2.6 m: a wandering line that rises and falls gently, with a resting island
+ * every so often (reaching one is a checkpoint). Every gap clears at a walk:
+ * no running jumps needed. Some blocks move (see MOVERS).
  */
 const BLOCKS: Array<[x: number, top: number, z: number, size: number]> = (() => {
   const out: Array<[number, number, number, number]> = [];
-  const n = Math.floor((-9.5 - (ISLAND.z1 + 3)) / 2.8);
+  const n = Math.floor((-9.5 - (ISLAND.z1 + 3)) / 2.6);
   for (let i = 0; i <= n; i++) {
-    const z = -9.5 - i * 2.8;
-    const rest = i > 0 && i % 11 === 0 && i < n - 2;
-    const top = Math.round((1.6 + 1.5 * Math.sin(i * 0.42) + 0.35 * Math.sin(i * 1.3)) * 10) / 10;
-    const x = rest ? 0 : Math.round(2.4 * Math.sin(i * 0.75) * 10) / 10;
-    out.push([x, Math.max(0.1, top), z, rest ? 6 : 1.8 + (i % 3) * 0.2]);
+    const z = -9.5 - i * 2.6;
+    const rest = i > 0 && i % 10 === 0 && i < n - 2;
+    const top = Math.round((1.4 + 1.2 * Math.sin(i * 0.42) + 0.25 * Math.sin(i * 1.3)) * 10) / 10;
+    const x = rest ? 0 : Math.round(1.7 * Math.sin(i * 0.75) * 10) / 10;
+    out.push([x, Math.max(0.1, top), z, rest ? 6 : 1.9 + (i % 3) * 0.2]);
   }
   return out;
 })();
 const RESTS = BLOCKS.filter((b) => b[3] >= 6);
+/** Which blocks move, and how: a slide side to side or a slow rise and fall. */
+const MOVERS = (i: number, size: number): { axis: "x" | "y"; amp: number; period: number } | null =>
+  size >= 6 || i < 2 || i % 4 !== 3 ? null : i % 8 === 3 ? { axis: "x", amp: 1.6, period: 5200 } : { axis: "y", amp: 0.7, period: 4200 };
 /** Below this you've fallen off the world. */
 const ABYSS = -18;
 
-const PLAYER = { radius: 0.3, height: 1.7, eye: 1.6, speed: 4, jump: 7.2, gravity: 20, step: 0.45 };
+const PLAYER = { radius: 0.3, height: 1.7, eye: 1.6, speed: 4, jump: 7.6, gravity: 20, step: 0.45 };
 
 export class SigningGame {
   private readonly scene = new THREE.Scene();
@@ -146,6 +151,8 @@ export class SigningGame {
   private grounded = false;
   private yaw = 0; // facing -z
   private pitch = 0;
+  /** While sat or talking: the direction the scene put you in, which looking around stays near. */
+  private lookBase: { yaw: number; pitch: number } | null = null;
   private readonly keys = new Set<string>();
   private dragging = false;
   private locked = false;
@@ -172,11 +179,15 @@ export class SigningGame {
   private exitSign!: THREE.MeshStandardMaterial;
   private houseLights: THREE.PointLight[] = [];
   private hemi!: THREE.HemisphereLight;
+  private ambient!: THREE.AmbientLight;
   private screenLight!: THREE.PointLight;
   private seatLight!: THREE.PointLight;
   private label!: THREE.Sprite;
   private marqueeBulbs: THREE.MeshStandardMaterial[] = [];
   private clouds: THREE.Object3D[] = [];
+  /** Blocks that move, with the box the player stands on; the player rides along. */
+  private movers: Array<{ mesh: THREE.Mesh; box: Box; base: THREE.Vector3; axis: "x" | "y"; amp: number; period: number; phase: number }> = [];
+  private birds: Array<{ group: THREE.Group; wings: THREE.Mesh[]; cx: number; cz: number; r: number; y: number; speed: number; phase: number }> = [];
   private dim = 0; // 0 house lights up .. 1 movie dark
 
   // Media
@@ -194,13 +205,15 @@ export class SigningGame {
     private readonly opts: GameOptions,
   ) {
     const useCss = !opts.manifest.movie && !!opts.manifest.youtube;
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 420);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 900);
     this.camera.rotation.order = "YXZ";
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: useCss, powerPreference: "high-performance" });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: useCss, powerPreference: "high-performance" });
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.setClearColor(0x000000, useCss ? 0 : 1);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     Object.assign(this.renderer.domElement.style, { position: "absolute", inset: "0", width: "100%", height: "100%", zIndex: "1", display: "block" });
     if (useCss) {
       this.css = new CSS3DRenderer();
@@ -254,30 +267,35 @@ export class SigningGame {
   private build() {
     const s = this.scene;
     if (!this.css) {
-      s.background = new THREE.Color(0x7fb7ea);
-      s.fog = new THREE.Fog(0xb9d9f2, 120, 380);
+      s.fog = new THREE.Fog(0xc9dff2, 120, 380);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false }));
+      dome.position.set(0, 0, -60);
+      s.add(dome);
     }
 
-    const grass = pixelTexture(0x4f9a3c, 24);
-    const dirt = pixelTexture(0x6b4a2b, 18);
-    const rock = pixelTexture(0x6e6e72, 12);
-    const carpet = pixelTexture(0x5a1420, 18);
-    const lobbyCarpet = pixelTexture(0x2b1b3d, 14);
-    const wall = pixelTexture(0x2a2a30, 8);
-    const facade = pixelTexture(0x8c2a2f, 14);
-    const ceilingTex = pixelTexture(0x1a1a1f, 6);
-    const wood = pixelTexture(0x6b4a2b, 16);
-    const velvet = pixelTexture(0x7a1020, 14);
+    const grass = pixelTexture(0x4f8a34, 22, "grass");
+    const dirt = pixelTexture(0x5e452a, 16, "stone");
+    const rock = pixelTexture(0x6a6a6e, 14, "stone");
+    const carpet = pixelTexture(0x5a1420, 14, "fabric");
+    const lobbyCarpet = pixelTexture(0x2b1b3d, 12, "fabric");
+    const wall = pixelTexture(0x3d3a44, 6, "plaster");
+    const facade = pixelTexture(0x8c2a2f, 12, "brick");
+    const ceilingTex = pixelTexture(0x3a3a42, 6, "plaster");
+    const wood = pixelTexture(0x6b4a2b, 14, "wood");
+    const velvet = pixelTexture(0x7a1020, 10, "fabric");
     const gold = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35, emissive: 0x3a2a05 });
 
     // Sky light and the sun; the sun casts the building's shadow so the inside stays dark.
     this.hemi = new THREE.HemisphereLight(0xcfe6ff, 0x3a5a2a, 0.75);
     s.add(this.hemi);
+    // A little light from everywhere, so ceilings and the undersides of things aren't black.
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.3);
+    s.add(this.ambient);
     const sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
     sun.position.set(60, 110, -30);
     sun.target.position.set(0, 0, (ISLAND.z0 + 10) / 2);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.camera.near = 10;
     sun.shadow.camera.far = 320;
     sun.shadow.camera.left = -45;
@@ -286,11 +304,12 @@ export class SigningGame {
     sun.shadow.camera.bottom = -115;
     sun.shadow.bias = -0.0006;
     s.add(sun, sun.target);
-    const sunDisc = new THREE.Mesh(new THREE.BoxGeometry(14, 14, 14), new THREE.MeshBasicMaterial({ color: 0xfff4cc, fog: false }));
+    const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(9, 24, 16), new THREE.MeshBasicMaterial({ color: 0xfff6d8, fog: false }));
     sunDisc.position.set(220, 260, -140);
     s.add(sunDisc);
     // A sea of cloud far below, and clouds drifting by.
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshLambertMaterial({ color: 0xf2f6fb }));
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshStandardMaterial({ map: pixelTexture(0xf0f4f9, 10, "cloud"), roughness: 1 }));
+    (sea.material as THREE.MeshStandardMaterial).map!.repeat.set(24, 24);
     sea.rotation.x = -Math.PI / 2;
     sea.position.y = -34;
     s.add(sea);
@@ -299,9 +318,11 @@ export class SigningGame {
     for (let i = 0; i < 22; i++) {
       const c = new THREE.Group();
       const n = 2 + Math.floor(rnd() * 3);
-      for (let j = 0; j < n; j++) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(4 + rnd() * 6, 1.5 + rnd() * 1.5, 3 + rnd() * 4), new THREE.MeshBasicMaterial({ color: j === 0 ? 0xffffff : 0xf1f5fa }));
-        m.position.set((rnd() - 0.5) * 8, (rnd() - 0.5) * 1.2, (rnd() - 0.5) * 5);
+      const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0xe6eef7, emissiveIntensity: 0.55, transparent: true, opacity: 0.94 });
+      for (let j = 0; j < n + 2; j++) {
+        const m = new THREE.Mesh(new THREE.SphereGeometry(2.2 + rnd() * 2.8, 18, 12), cloudMat);
+        m.position.set((rnd() - 0.5) * 9, (rnd() - 0.5) * 1.4, (rnd() - 0.5) * 5);
+        m.scale.y = 0.55 + rnd() * 0.2;
         c.add(m);
       }
       const side = rnd() < 0.5 ? -1 : 1;
@@ -317,17 +338,35 @@ export class SigningGame {
 
     // ── The blocks ──
     const blockTop = pixelTexture(0x3f8a3a, 22);
-    for (const [x, top, z, size] of BLOCKS) {
+    const moverTop = pixelTexture(0x8ab4e8, 22);
+    BLOCKS.forEach(([x, top, z, size], i) => {
       const h = size > 4 ? 2.2 : 0.8;
+      const mover = MOVERS(i, size);
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(size, h, size),
-        [dirt, dirt, blockTop, dirt, dirt, dirt].map((t) => new THREE.MeshLambertMaterial({ map: t })),
+        [dirt, dirt, mover ? moverTop : blockTop, dirt, dirt, dirt].map((t) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 })),
       );
       m.position.set(x, top - h / 2, z);
       m.castShadow = true;
       m.receiveShadow = true;
       s.add(m);
-      this.solids.push({ min: new THREE.Vector3(x - size / 2, top - h, z - size / 2), max: new THREE.Vector3(x + size / 2, top, z + size / 2) });
+      const box = { min: new THREE.Vector3(x - size / 2, top - h, z - size / 2), max: new THREE.Vector3(x + size / 2, top, z + size / 2) };
+      this.solids.push(box);
+      if (mover) this.movers.push({ mesh: m, box, base: m.position.clone(), ...mover, phase: i * 1.7 });
+    });
+    // Birds wheeling over the sky between the islands.
+    for (let i = 0; i < 7; i++) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.22), new THREE.MeshStandardMaterial({ color: 0x23232a, roughness: 0.9 }));
+      const wings = [-1, 1].map((side) => {
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.7), new THREE.MeshStandardMaterial({ color: 0x33333c, roughness: 0.9 }));
+        w.position.set(0, 0.05, side * 0.4);
+        g.add(w);
+        return w;
+      });
+      g.add(body);
+      s.add(g);
+      this.birds.push({ group: g, wings, cx: (i % 2 ? 1 : -1) * (8 + i * 2), cz: -12 - i * 11, r: 6 + (i % 3) * 3, y: 7 + (i % 4) * 2.5, speed: 0.35 + (i % 3) * 0.12, phase: i * 0.9 });
     }
     RESTS.forEach(([x, top, z], i) => this.signpost(x + 2.2, top, z + 1.2, [i === RESTS.length - 1 ? "NEARLY THERE" : `REST ${i + 1} OF ${RESTS.length}`, "Fall and you start from here."]));
 
@@ -341,14 +380,15 @@ export class SigningGame {
     g(ISLAND.x0, ISLAND.x1, ISLAND.z0, BLDG.z0 - 0.3); // behind the building
     const underTex = rock.clone();
     underTex.repeat.set(60, 10);
-    const under = new THREE.Mesh(new THREE.BoxGeometry(ISLAND.x1 - ISLAND.x0, 10, ISLAND.z1 - ISLAND.z0), new THREE.MeshLambertMaterial({ map: underTex }));
+    const under = new THREE.Mesh(new THREE.BoxGeometry(ISLAND.x1 - ISLAND.x0, 10, ISLAND.z1 - ISLAND.z0), new THREE.MeshStandardMaterial({ map: underTex, roughness: 1 }));
     under.position.set(0, -10, (ISLAND.z0 + ISLAND.z1) / 2);
     s.add(under);
-    const under2 = new THREE.Mesh(new THREE.BoxGeometry(36, 8, 46), new THREE.MeshLambertMaterial({ map: rock }));
-    under2.position.set(2, -18, (ISLAND.z0 + ISLAND.z1) / 2 + 3);
+    const under2 = new THREE.Mesh(new THREE.CylinderGeometry(24, 9, 14, 22), new THREE.MeshStandardMaterial({ map: rock, roughness: 1 }));
+    under2.scale.z = 1.5;
+    under2.position.set(2, -21, (ISLAND.z0 + ISLAND.z1) / 2 + 3);
     s.add(under2);
     // The red carpet up to the doors.
-    const red = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.04, ISLAND.z1 - BLDG.z1 - 2), new THREE.MeshLambertMaterial({ map: carpet }));
+    const red = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.04, ISLAND.z1 - BLDG.z1 - 2), new THREE.MeshStandardMaterial({ map: carpet, roughness: 0.95 }));
     red.position.set(0, 0.02, (ISLAND.z1 + BLDG.z1) / 2 - 1);
     red.receiveShadow = true;
     s.add(red);
@@ -356,7 +396,7 @@ export class SigningGame {
     this.plant(-5, 0, BLDG.z1 + 2.5, wood);
     this.plant(5, 0, BLDG.z1 + 2.5, wood);
     for (const x of [-9, 9]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 4, 0.25), new THREE.MeshLambertMaterial({ color: 0x1a1a1f }));
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 4, 0.25), new THREE.MeshStandardMaterial({ color: 0x1a1a1f, roughness: 0.9 }));
       post.position.set(x, 2, BLDG.z1 + 6);
       post.castShadow = true;
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffd27a, emissiveIntensity: 1.2 }));
@@ -383,7 +423,7 @@ export class SigningGame {
     this.wall(0, byc, BLDG.z0 - 0.15, bw * 2 + 0.6, bh, 0.3, facade, true);
     this.slab(0, BLDG.height + 0.15, (BLDG.z0 + BLDG.z1) / 2, bw * 2 + 0.6, 0.3, BLDG.z1 - BLDG.z0 + 0.6, rock, true);
     // The marquee over the doors, with its bulbs.
-    const marquee = new THREE.Mesh(new THREE.BoxGeometry(18, 3.2, 1.2), new THREE.MeshLambertMaterial({ color: 0x14141a }));
+    const marquee = new THREE.Mesh(new THREE.BoxGeometry(18, 3.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 }));
     marquee.position.set(0, doorTop + 3.4, BLDG.z1 + 0.75);
     marquee.castShadow = true;
     s.add(marquee);
@@ -400,7 +440,7 @@ export class SigningGame {
     this.sign([`RESERVED SEATING FOR ${this.opts.signerName.toUpperCase()}`], 0, doorTop + 0.9, BLDG.z1 + 0.17, 7, 0.7, 0, "#2e0f14", "#f4ede0");
     // The front doors: shut until Judy hands over a ticket, then they swing inward.
     for (const side of [-1, 1] as const) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, doorTop - 0.05, doorHalf), new THREE.MeshLambertMaterial({ map: wood }));
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, doorTop - 0.05, doorHalf), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
       const grp = new THREE.Group();
       grp.position.set(side * doorHalf, (doorTop - 0.05) / 2, BLDG.z1 - 0.15);
       panel.position.set(0, 0, -doorHalf / 2);
@@ -417,11 +457,23 @@ export class SigningGame {
     this.booth(gold);
 
     // ── The lobby ──
+    // Plaster inside the brick: the lobby's and the auditorium's side walls, and the inside of the front wall.
+    const wallY = (BLDG.height + FRONT_FLOOR) / 2;
+    const lining = pixelTexture(0x6b5b48, 7, "plaster");
+    const dark = pixelTexture(0x3b3540, 6, "plaster");
+    this.panel(-bw + 0.04, LOBBY.height / 2, (LOBBY.z0 + LOBBY.z1) / 2, 0.08, LOBBY.height, LOBBY.z1 - LOBBY.z0, lining);
+    this.panel(bw - 0.04, LOBBY.height / 2, (LOBBY.z0 + LOBBY.z1) / 2, 0.08, LOBBY.height, LOBBY.z1 - LOBBY.z0, lining);
+    this.panel(-(bw + doorHalf) / 2, LOBBY.height / 2, BLDG.z1 - 0.19, bw - doorHalf, LOBBY.height, 0.08, lining);
+    this.panel((bw + doorHalf) / 2, LOBBY.height / 2, BLDG.z1 - 0.19, bw - doorHalf, LOBBY.height, 0.08, lining);
+    this.panel(-bw + 0.04, wallY, (BLDG.z0 + LOBBY.z0) / 2, 0.08, BLDG.height - FRONT_FLOOR, LOBBY.z0 - BLDG.z0, dark);
+    this.panel(bw - 0.04, wallY, (BLDG.z0 + DOOR.z1) / 2, 0.08, BLDG.height - FRONT_FLOOR, DOOR.z1 - BLDG.z0 - 1.8, dark);
+    this.panel(bw - 0.04, wallY, (DOOR.z1 + LOBBY.z0) / 2, 0.08, BLDG.height - FRONT_FLOOR, LOBBY.z0 - DOOR.z1, dark);
+    this.panel(0, wallY, BLDG.z0 + 0.04, bw * 2, BLDG.height - FRONT_FLOOR, 0.08, dark);
     this.slab(0, -0.5, (LOBBY.z0 + LOBBY.z1) / 2, bw * 2, 1, LOBBY.z1 - LOBBY.z0, lobbyCarpet);
     this.slab(0, LOBBY.height + 0.15, (LOBBY.z0 + LOBBY.z1) / 2, bw * 2, 0.3, LOBBY.z1 - LOBBY.z0, ceilingTex);
     for (const z of [LOBBY.z1 - 3, LOBBY.z1 - 9]) {
-      const l = new THREE.PointLight(0xffd9a8, 70, 0, 2);
-      l.position.set(0, LOBBY.height - 0.4, z);
+      const l = new THREE.PointLight(0xffd9a8, 160, 0, 2);
+      l.position.set(0, LOBBY.height - 1.2, z);
       s.add(l);
     }
     // The wall into the auditorium, with its doorway.
@@ -439,7 +491,6 @@ export class SigningGame {
     this.velvetRope(0, 0, LOBBY.z1 - 2.5);
 
     // ── The auditorium ──
-    const wallY = (BLDG.height + FRONT_FLOOR) / 2;
     this.slab(0, BLDG.height - 0.15, (BLDG.z0 + LOBBY.z0) / 2, bw * 2, 0.3, LOBBY.z0 - BLDG.z0, ceilingTex);
     // Floors: the entrance, a step down per row, then the flat in front of the screen.
     const entranceZ0 = ROW_Z(0) + 1.1;
@@ -457,11 +508,11 @@ export class SigningGame {
       }
     this.seats(velvet, gold);
     // Screen, frame and curtains.
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(SCREEN.w + 1, SCREEN.h + 1, 0.2), new THREE.MeshLambertMaterial({ color: 0x0c0c10 }));
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(SCREEN.w + 1, SCREEN.h + 1, 0.2), new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.9 }));
     frame.position.set(0, SCREEN.y, SCREEN.z - 0.15);
     s.add(frame);
     for (const side of [-1, 1]) {
-      const curtain = new THREE.Mesh(new THREE.BoxGeometry(1.6, BLDG.height - FRONT_FLOOR - 0.4, 0.7), new THREE.MeshLambertMaterial({ map: velvet }));
+      const curtain = new THREE.Mesh(new THREE.BoxGeometry(1.6, BLDG.height - FRONT_FLOOR - 0.4, 0.7), new THREE.MeshStandardMaterial({ map: velvet, roughness: 0.95 }));
       curtain.position.set(side * (SCREEN.w / 2 + 1.5), wallY, SCREEN.z + 0.3);
       s.add(curtain);
     }
@@ -474,8 +525,8 @@ export class SigningGame {
     s.add(this.screenLight);
     for (const z of [-88, -97, -106, -115])
       for (const x of [-6, 6]) {
-        const l = new THREE.PointLight(0xffe2b8, 45, 0, 2);
-        l.position.set(x, BLDG.height - 0.5, z);
+        const l = new THREE.PointLight(0xffe2b8, 120, 0, 2);
+        l.position.set(x, BLDG.height - 2, z);
         s.add(l);
         this.houseLights.push(l);
         const fixture = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.6), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffe2b8, emissiveIntensity: 0.8 }));
@@ -485,7 +536,7 @@ export class SigningGame {
     // The exit door beside the screen, hinged at its far-from-screen jamb and swinging into the signing room.
     this.doorGroup = new THREE.Group();
     this.doorGroup.position.set(DOOR.x, FRONT_FLOOR, DOOR.z0);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, DOOR.h, DOOR.z1 - DOOR.z0 - 0.04), new THREE.MeshLambertMaterial({ map: wood }));
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, DOOR.h, DOOR.z1 - DOOR.z0 - 0.04), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
     door.position.set(0, DOOR.h / 2, (DOOR.z1 - DOOR.z0) / 2);
     this.doorGroup.add(door);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), gold);
@@ -509,7 +560,7 @@ export class SigningGame {
       const p = STEP_POS(i);
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(STAIR.size, 0.4, STAIR.size),
-        [stepSide, stepSide, stepTex, stepSide, stepSide, stepSide].map((t) => new THREE.MeshLambertMaterial({ map: t })),
+        [stepSide, stepSide, stepTex, stepSide, stepSide, stepSide].map((t) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 })),
       );
       m.position.set(p.x, p.y - 0.2, p.z);
       m.rotation.y = -STEP_ANGLE(i);
@@ -593,18 +644,19 @@ export class SigningGame {
     dirtTex.repeat.set(w, 3);
     const grassTex = grass.clone();
     grassTex.repeat.set(w, d);
-    const dirtMat = new THREE.MeshLambertMaterial({ map: dirtTex });
-    const grassMat = new THREE.MeshLambertMaterial({ map: grassTex });
+    const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.95 });
+    const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95 });
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, 3, d), [dirtMat, dirtMat, grassMat, dirtMat, dirtMat, dirtMat]);
     m.position.set(x, top - 1.5, z);
     m.castShadow = true;
     m.receiveShadow = true;
     this.scene.add(m);
     this.solids.push({ min: new THREE.Vector3(x - w / 2, top - 3, z - d / 2), max: new THREE.Vector3(x + w / 2, top, z + d / 2) });
-    const r1 = new THREE.Mesh(new THREE.BoxGeometry(w * 0.8, 3, d * 0.8), new THREE.MeshLambertMaterial({ map: rock }));
+    const rockMat = new THREE.MeshStandardMaterial({ map: rock, roughness: 1 });
+    const r1 = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.48, w * 0.3, 4, 18), rockMat);
     r1.position.set(x + 0.4, top - 4.5, z - 0.3);
-    const r2 = new THREE.Mesh(new THREE.BoxGeometry(w * 0.45, 3, d * 0.45), new THREE.MeshLambertMaterial({ map: rock }));
-    r2.position.set(x - 0.6, top - 7.5, z + 0.4);
+    const r2 = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.28, w * 0.1, 3.5, 14), rockMat);
+    r2.position.set(x - 0.6, top - 7.8, z + 0.4);
     this.scene.add(r1, r2);
   }
 
@@ -612,7 +664,7 @@ export class SigningGame {
     const t = tex.clone();
     t.repeat.set(w, d);
     t.needsUpdate = true;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ map: t }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
     m.position.set(x, y, z);
     m.receiveShadow = true;
     m.castShadow = shadow;
@@ -620,11 +672,22 @@ export class SigningGame {
     this.solids.push({ min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2) });
   }
 
+  /** A surface with no collision of its own: the lining inside an outer wall. */
+  private panel(x: number, y: number, z: number, w: number, h: number, d: number, tex: THREE.Texture) {
+    const t = tex.clone();
+    t.repeat.set(Math.max(w, d), h);
+    t.needsUpdate = true;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
+    m.position.set(x, y, z);
+    m.receiveShadow = true;
+    this.scene.add(m);
+  }
+
   private wall(x: number, y: number, z: number, w: number, h: number, d: number, tex: THREE.Texture, shadow = false) {
     const t = tex.clone();
     t.repeat.set(Math.max(w, d), h);
     t.needsUpdate = true;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ map: t }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
     m.position.set(x, y, z);
     m.receiveShadow = true;
     m.castShadow = shadow;
@@ -642,20 +705,20 @@ export class SigningGame {
   }
 
   private signpost(x: number, y: number, z: number, lines: string[]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 0.12), new THREE.MeshLambertMaterial({ color: 0x4a3018 }));
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 0.12), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 }));
     post.position.set(x, y + 0.8, z);
     post.castShadow = true;
     this.scene.add(post);
     this.sign(lines, x, y + 1.75, z + 0.07, 1.8, 0.7, 0, "#17120c", "#f4ede0");
-    const back = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.8, 0.1), new THREE.MeshLambertMaterial({ color: 0x4a3018 }));
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.8, 0.1), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 }));
     back.position.set(x, y + 1.75, z);
     this.scene.add(back);
   }
 
   private seats(velvet: THREE.Texture, gold: THREE.Material) {
     const count = ROWS * SEATS_PER_SIDE * 2 - 1;
-    const base = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 0.45, 0.9), new THREE.MeshLambertMaterial({ map: velvet }), count);
-    const back = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 1.1, 0.15), new THREE.MeshLambertMaterial({ map: velvet }), count);
+    const base = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 0.45, 0.9), new THREE.MeshStandardMaterial({ map: velvet, roughness: 0.95 }), count);
+    const back = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 1.1, 0.15), new THREE.MeshStandardMaterial({ map: velvet, roughness: 0.95 }), count);
     const m = new THREE.Matrix4();
     let i = 0;
     for (let r = 0; r < ROWS; r++)
@@ -698,6 +761,7 @@ export class SigningGame {
   private readonly plantPlaceholders: THREE.Object3D[] = [];
   private readonly popcornPlaceholders: THREE.Object3D[] = [];
   private readonly plantSpots: Array<{ x: number; y: number; z: number }> = [];
+  private readonly judyPlaceholders: THREE.Object3D[] = [];
 
   private reservedSeat() {
     return { x: SEAT_X(RESERVED.side, RESERVED.k), y: ROW_FLOOR(RESERVED.row), z: ROW_Z(RESERVED.row) };
@@ -709,11 +773,11 @@ export class SigningGame {
   private booth(gold: THREE.Material) {
     const s = this.scene;
     const { x, z, w, d, h } = BOOTH;
-    const paint = new THREE.MeshLambertMaterial({ map: pixelTexture(0x8c2a2f, 12) });
+    const paint = new THREE.MeshStandardMaterial({ map: pixelTexture(0x8c2a2f, 12), roughness: 0.95 });
     const counter = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), paint);
     counter.position.set(x, 0.55, z);
     counter.castShadow = true;
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.5), new THREE.MeshLambertMaterial({ color: 0x14141a }));
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.5), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 }));
     roof.position.set(x, h, z);
     roof.castShadow = true;
     const back = new THREE.Mesh(new THREE.BoxGeometry(w, h - 1.1, 0.1), paint);
@@ -722,7 +786,7 @@ export class SigningGame {
     glass.position.set(x, 1.1 + (h - 1.3) / 2, z + d / 2);
     s.add(counter, roof, back, glass);
     for (const px of [-w / 2 + 0.1, w / 2 - 0.1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, h - 1.1, 0.16), new THREE.MeshLambertMaterial({ color: 0x14141a }));
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, h - 1.1, 0.16), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 }));
       post.position.set(x + px, 1.1 + (h - 1.1) / 2, z + d / 2 - 0.08);
       s.add(post);
     }
@@ -735,20 +799,20 @@ export class SigningGame {
 
     // Judy.
     const judy = new THREE.Group();
-    const cardigan = new THREE.MeshLambertMaterial({ map: pixelTexture(0x9b7bb8, 10) });
+    const cardigan = new THREE.MeshStandardMaterial({ map: pixelTexture(0x9b7bb8, 10), roughness: 0.95 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.75, 0.42), cardigan);
     body.position.set(0, 1.45, 0);
-    const skin = new THREE.MeshLambertMaterial({ color: 0xe8c4a8 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0xe8c4a8, roughness: 0.9 });
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.46), skin);
     head.position.set(0, 2.07, 0);
-    const hair = new THREE.MeshLambertMaterial({ map: pixelTexture(0xc9c4bd, 14) });
+    const hair = new THREE.MeshStandardMaterial({ map: pixelTexture(0xc9c4bd, 14), roughness: 0.95 });
     const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.5), hair);
     hairTop.position.set(0, 2.36, -0.02);
     const bun = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), hair);
     bun.position.set(0, 2.42, -0.3);
     const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.1), hair);
     hairBack.position.set(0, 2.14, -0.24);
-    const dark = new THREE.MeshLambertMaterial({ color: 0x1a1a1f });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1a1a1f, roughness: 0.9 });
     for (const ex of [-0.1, 0.1]) {
       const eye = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.02), dark);
       eye.position.set(ex, 2.1, 0.24);
@@ -760,7 +824,7 @@ export class SigningGame {
     }
     const chain = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.02), gold);
     chain.position.set(0.2, 2.0, 0.2);
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.02), new THREE.MeshLambertMaterial({ color: 0xa04050 }));
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.02), new THREE.MeshStandardMaterial({ color: 0xa04050, roughness: 0.9 }));
     mouth.position.set(0, 1.95, 0.24);
     const brooch = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.03), gold);
     brooch.position.set(-0.22, 1.7, 0.22);
@@ -775,19 +839,20 @@ export class SigningGame {
     judy.position.set(x - 0.2, 0, z - 0.25);
     s.add(judy);
     this.judyHead = head;
+    this.judyPlaceholders.push(judy);
     const lamp = new THREE.PointLight(0xffe2b8, 6, 5, 2);
     lamp.position.set(x, h - 0.3, z + 0.3);
     s.add(lamp);
   }
 
   private popcorn(x: number, y: number, z: number) {
-    const cart = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.8), new THREE.MeshLambertMaterial({ color: 0xb01030 }));
+    const cart = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.8), new THREE.MeshStandardMaterial({ color: 0xb01030, roughness: 0.9 }));
     cart.position.set(x, y + 0.45, z);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.7), new THREE.MeshLambertMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.6 }));
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.7), new THREE.MeshStandardMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.6, roughness: 0.9 }));
     glass.position.set(x, y + 1.3, z);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.9), new THREE.MeshLambertMaterial({ map: pixelTexture(0xd42040, 24) }));
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.9), new THREE.MeshStandardMaterial({ map: pixelTexture(0xd42040, 24), roughness: 0.95 }));
     roof.position.set(x, y + 1.76, z);
-    const kernels = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.6), new THREE.MeshLambertMaterial({ map: pixelTexture(0xfff0c0, 30) }));
+    const kernels = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.6), new THREE.MeshStandardMaterial({ map: pixelTexture(0xfff0c0, 30), roughness: 0.95 }));
     kernels.position.set(x, y + 1.15, z);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.3), new THREE.MeshBasicMaterial({ map: textTexture(["POPCORN"], 220, 60, "#fff2b0", "#b01030") }));
     sign.position.set(x, y + 0.75, z + 0.41);
@@ -797,24 +862,24 @@ export class SigningGame {
   }
 
   private counter(x: number, y: number, z: number, wood: THREE.Texture) {
-    const top = new THREE.Mesh(new THREE.BoxGeometry(5, 1.1, 1.2), new THREE.MeshLambertMaterial({ map: wood }));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(5, 1.1, 1.2), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
     top.position.set(x, y + 0.55, z);
     this.scene.add(top);
     this.solids.push({ min: new THREE.Vector3(x - 2.5, y, z - 0.6), max: new THREE.Vector3(x + 2.5, y + 1.1, z + 0.6) });
     this.sign(["CONCESSIONS"], x, y + 0.6, z + 0.61, 3, 0.4, 0, "#fff2b0", "#b01030");
     for (let i = 0; i < 4; i++) {
-      const cup = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xb01030 : 0xf4ede0 }));
+      const cup = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xb01030 : 0xf4ede0, roughness: 0.9 }));
       cup.position.set(x - 1.6 + i * 1.0, y + 1.3, z);
       this.scene.add(cup);
     }
   }
 
   private plant(x: number, y: number, z: number, wood: THREE.Texture) {
-    const pot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), new THREE.MeshLambertMaterial({ map: wood }));
+    const pot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
     pot.position.set(x, y + 0.25, z);
-    const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), new THREE.MeshLambertMaterial({ color: 0x4a3018 }));
+    const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 }));
     trunk.position.set(x, y + 1.0, z);
-    const leaves = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), new THREE.MeshLambertMaterial({ map: pixelTexture(0x2f7a2a, 28) }));
+    const leaves = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), new THREE.MeshStandardMaterial({ map: pixelTexture(0x2f7a2a, 28), roughness: 0.95 }));
     leaves.position.set(x, y + 1.75, z);
     leaves.castShadow = true;
     this.scene.add(pot, trunk, leaves);
@@ -833,7 +898,7 @@ export class SigningGame {
       this.scene.add(post, foot);
     }
     for (const px of [-5.3, 5.3]) {
-      const rope = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.06), new THREE.MeshLambertMaterial({ color: 0x8a1020 }));
+      const rope = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.06), new THREE.MeshStandardMaterial({ color: 0x8a1020, roughness: 0.9 }));
       rope.position.set(x + px * 0.8, y + 0.85, z);
       this.scene.add(rope);
     }
@@ -872,6 +937,8 @@ export class SigningGame {
     if (models.seat) put(models.seat, this.seatSpots, { w: 1.0, h: 1.1, d: 0.95 }, this.seatPlaceholders);
     if (models.plant) put(models.plant, this.plantSpots, { w: 1.0, h: 2.1, d: 1.0 }, this.plantPlaceholders);
     if (models.popcorn) put(models.popcorn, [{ x: -6, y: 0, z: LOBBY.z1 - 4 }], { w: 1.3, h: 1.9, d: 0.9 }, this.popcornPlaceholders);
+    // Judy stands behind her counter, facing the window; the counter hides her from the waist down.
+    if (models.judy) put(models.judy, [{ x: BOOTH.x - 0.2, y: 0.25, z: BOOTH.z - 0.25 }], { w: 1.0, h: 1.75, d: 0.8 }, this.judyPlaceholders);
   }
 
   // ── Media: the music, the film, the sounds ──────────────────────────────
@@ -1072,9 +1139,16 @@ export class SigningGame {
       if (this.locked) this.setHud({ paused: false });
     });
     on(el, "mousemove", (e: MouseEvent) => {
-      if (!this.walking() || !(this.locked || this.dragging)) return;
-      this.yaw -= e.movementX * 0.0022;
-      this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - e.movementY * 0.0022));
+      if (!(this.locked || this.dragging)) return;
+      if (this.walking()) {
+        this.yaw -= e.movementX * 0.0022;
+        this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - e.movementY * 0.0022));
+      } else if (this.looking() && this.lookBase && !this.tween) {
+        // Looking around from a seat or a window: so far each way, no further.
+        const b = this.lookBase;
+        this.yaw = Math.max(b.yaw - 1.1, Math.min(b.yaw + 1.1, this.yaw - e.movementX * 0.0022));
+        this.pitch = Math.max(Math.max(-1.4, b.pitch - 0.6), Math.min(Math.min(1.4, b.pitch + 0.6), this.pitch - e.movementY * 0.0022));
+      }
     });
     on(el, "mousedown", (e: MouseEvent) => {
       if (e.button !== 0) return;
@@ -1083,7 +1157,7 @@ export class SigningGame {
       if (this.walking()) {
         this.dragging = true;
         if (!this.locked) this.lockPointer();
-      }
+      } else if (this.looking()) this.dragging = true;
     });
     on(window, "mouseup", () => (this.dragging = false));
     on(el, "contextmenu", (e: Event) => e.preventDefault());
@@ -1091,6 +1165,19 @@ export class SigningGame {
 
   private walking() {
     return this.phase === "outside" || this.phase === "lobby" || this.phase === "theater" || this.phase === "exit";
+  }
+
+  /** Sat down or at Judy's window: no walking, but the view can turn a little either way. */
+  private looking() {
+    return this.phase === "talk" || this.phase === "seated" || this.phase === "movie" || this.phase === "ended";
+  }
+
+  /** Takes the camera's current direction as the one to look around from. */
+  private settleLook() {
+    const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
+    this.yaw = e.y;
+    this.pitch = e.x;
+    this.lookBase = { yaw: e.y, pitch: e.x };
   }
 
   private lockPointer() {
@@ -1108,7 +1195,7 @@ export class SigningGame {
     this.setPhase("outside");
     this.lockPointer();
     void this.music?.play().catch(() => {});
-    this.hint("The theater is on the island ahead. Jump the blocks to get there: W A S D to move, mouse to look, space to jump.", 8000);
+    this.hint("The theater is on the island ahead. Jump the blocks to get there: W A S D to move, mouse to look, space to jump. The blue ones move.", 8000);
   }
 
   /** The HUD's "click to continue" after Escape. */
@@ -1139,7 +1226,15 @@ export class SigningGame {
     // Turn to face her.
     const eye = this.camera.position.clone();
     const look = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(BOOTH.x - 0.2, 2.05, BOOTH.z - 0.25), new THREE.Vector3(0, 1, 0));
-    this.tween = { from: eye, to: eye.clone(), qFrom: this.camera.quaternion.clone(), qTo: new THREE.Quaternion().setFromRotationMatrix(look), start: performance.now(), dur: 600 };
+    this.tween = {
+      from: eye,
+      to: eye.clone(),
+      qFrom: this.camera.quaternion.clone(),
+      qTo: new THREE.Quaternion().setFromRotationMatrix(look),
+      start: performance.now(),
+      dur: 600,
+      then: () => this.settleLook(),
+    };
     const judy = this.opts.judy;
     if (!judy) {
       this.say([{ id: "final", text: "Here's a ticket. Row six, on the aisle." }], () => this.giveTicket());
@@ -1229,6 +1324,7 @@ export class SigningGame {
   private giveTicket() {
     this.play("sign");
     this.talking = null;
+    this.lookBase = null;
     // Carry the facing from the conversation into the walk.
     const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
     this.yaw = e.y;
@@ -1259,12 +1355,24 @@ export class SigningGame {
     const to = new THREE.Vector3(s.x, s.y + 1.2, s.z + 0.1);
     const look = new THREE.Matrix4().lookAt(to, new THREE.Vector3(0, SCREEN.y, SCREEN.z), new THREE.Vector3(0, 1, 0));
     const qTo = new THREE.Quaternion().setFromRotationMatrix(look);
-    this.tween = { from: this.camera.position.clone(), to, qFrom: this.camera.quaternion.clone(), qTo, start: performance.now(), dur: 1100, then: () => this.startMovie() };
+    this.tween = {
+      from: this.camera.position.clone(),
+      to,
+      qFrom: this.camera.quaternion.clone(),
+      qTo,
+      start: performance.now(),
+      dur: 1100,
+      then: () => {
+        this.settleLook();
+        this.startMovie();
+      },
+    };
     this.setHud({ prompt: "" });
   }
 
   private standUp() {
     if (this.phase !== "ended") return;
+    this.lookBase = null;
     const s = this.reservedSeat();
     this.pos.set(0.5, s.y, s.z);
     this.vy = 0;
@@ -1293,6 +1401,7 @@ export class SigningGame {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     if (this.walking() && !this.hud.paused) this.move(dt);
+    else if (this.looking() && !this.tween && this.lookBase) this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.story(now);
     this.lights(dt);
     this.animate(now, dt);
@@ -1408,7 +1517,7 @@ export class SigningGame {
         this.yaw = 0;
         this.pitch = 0;
         this.falls++;
-        this.hint(this.falls < 3 ? "Back to the island. Take a run-up and jump a touch earlier." : "Back to the island. Hold Shift to run: a longer jump.", 4000);
+        this.hint(this.falls < 3 ? "Back to the island. Walk to the edge and jump a touch earlier." : "Back to the island. Wait for a moving block to come to you.", 4000);
       }
     } else if (this.phase === "lobby" && p.z < LOBBY.z0 - 0.4) {
       this.setPhase("theater");
@@ -1441,8 +1550,9 @@ export class SigningGame {
     const movie = this.phase === "seated" || this.phase === "movie";
     const target = movie ? 1 : this.phase === "ended" ? 0.6 : 0;
     this.dim += (target - this.dim) * Math.min(1, dt * 1.8);
-    for (const l of this.houseLights) l.intensity = 45 * (1 - this.dim) + 3 * this.dim;
+    for (const l of this.houseLights) l.intensity = 120 * (1 - this.dim) + 6 * this.dim;
     this.hemi.intensity = 0.75 * (1 - this.dim) + 0.08 * this.dim;
+    this.ambient.intensity = 0.3 * (1 - this.dim) + 0.03 * this.dim;
     this.screenLight.intensity = this.phase === "movie" ? 110 : this.phase === "ended" ? 40 : 0;
     this.seatLight.intensity = this.phase === "theater" ? 10 + 4 * Math.sin(performance.now() / 300) : 0;
     this.label.visible = this.phase === "lobby" || this.phase === "theater";
@@ -1458,6 +1568,37 @@ export class SigningGame {
       const c = this.clouds[i];
       c.position.x += dt * (0.4 + (i % 3) * 0.25);
       if (c.position.x > 110) c.position.x = -110;
+    }
+    // Moving blocks carry whoever is standing on them.
+    for (const mv of this.movers) {
+      const off = mv.amp * Math.sin((now / mv.period) * Math.PI * 2 + mv.phase);
+      const next = mv.base.clone();
+      next[mv.axis] += off;
+      const d = next.clone().sub(mv.mesh.position);
+      if (!d.lengthSq()) continue;
+      const p = this.pos;
+      const riding =
+        this.grounded &&
+        Math.abs(p.y - mv.box.max.y) < 0.08 &&
+        p.x + PLAYER.radius > mv.box.min.x &&
+        p.x - PLAYER.radius < mv.box.max.x &&
+        p.z + PLAYER.radius > mv.box.min.z &&
+        p.z - PLAYER.radius < mv.box.max.z;
+      mv.mesh.position.copy(next);
+      mv.box.min.add(d);
+      mv.box.max.add(d);
+      if (riding && this.walking()) {
+        p.add(d);
+        this.camera.position.set(p.x, p.y + PLAYER.eye, p.z);
+      }
+    }
+    for (const b of this.birds) {
+      const a = (now / 1000) * b.speed + b.phase;
+      b.group.position.set(b.cx + b.r * Math.cos(a), b.y + 0.4 * Math.sin(a * 3), b.cz + b.r * Math.sin(a));
+      b.group.rotation.y = -a;
+      const flap = Math.sin(now / 90 + b.phase) * 0.6;
+      b.wings[0].rotation.x = flap;
+      b.wings[1].rotation.x = -flap;
     }
     if (this.judyHead) this.judyHead.rotation.y = this.phase === "talk" ? 0.12 * Math.sin(now / 420) : 0.3 * Math.sin(now / 2600);
     if (this.hud.ticket && this.frontOpen < 1) {
@@ -1608,8 +1749,15 @@ function impulseResponse(ctx: AudioContext, seconds: number): AudioBuffer {
 
 // ── Textures ──────────────────────────────────────────────────────────────
 
-/** A 16×16 tile of one colour with per-pixel noise, repeated with no smoothing: the blocky look. */
-function pixelTexture(base: number, variance: number, size = 16): THREE.Texture {
+type TextureKind = "plain" | "grass" | "stone" | "wood" | "brick" | "fabric" | "plaster" | "cloud";
+
+/**
+ * A 256×256 tile of a material, drawn from layered noise and repeated with
+ * smooth filtering: grass with blades, stone with cracks, wood with grain and
+ * plank lines, brick with mortar, fabric with a weave, plaster, cloud.
+ */
+function pixelTexture(base: number, variance: number, kind: TextureKind = "plain"): THREE.Texture {
+  const size = 256;
   const c = document.createElement("canvas");
   c.width = size;
   c.height = size;
@@ -1617,22 +1765,128 @@ function pixelTexture(base: number, variance: number, size = 16): THREE.Texture 
   const r0 = (base >> 16) & 255;
   const g0 = (base >> 8) & 255;
   const b0 = base & 255;
-  let seed = base * 7919 + variance;
+  let seed = (base * 7919 + variance * 131 + kind.length) & 0x7fffffff;
   const rnd = () => {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
   };
+  // Layered value noise: smooth, tileable.
+  const octave = (cells: number) => {
+    const g: number[] = [];
+    for (let i = 0; i < cells * cells; i++) g.push(rnd());
+    return (x: number, y: number) => {
+      const fx = (x / size) * cells;
+      const fy = (y / size) * cells;
+      const x0 = Math.floor(fx) % cells;
+      const y0 = Math.floor(fy) % cells;
+      const x1 = (x0 + 1) % cells;
+      const y1 = (y0 + 1) % cells;
+      const tx = smooth(fx - Math.floor(fx));
+      const ty = smooth(fy - Math.floor(fy));
+      const a = g[y0 * cells + x0] * (1 - tx) + g[y0 * cells + x1] * tx;
+      const b = g[y1 * cells + x0] * (1 - tx) + g[y1 * cells + x1] * tx;
+      return a * (1 - ty) + b * ty;
+    };
+  };
+  const o1 = octave(4);
+  const o2 = octave(8);
+  const o3 = octave(16);
+  const o4 = octave(32);
+  const noise = (x: number, y: number) => (o1(x, y) * 0.45 + o2(x, y) * 0.3 + o3(x, y) * 0.15 + o4(x, y) * 0.1) * 2 - 1;
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
   for (let y = 0; y < size; y++)
     for (let x = 0; x < size; x++) {
-      const n = (rnd() - 0.5) * 2 * variance;
-      ctx.fillStyle = `rgb(${clamp(r0 + n)},${clamp(g0 + n)},${clamp(b0 + n)})`;
-      ctx.fillRect(x, y, 1, 1);
+      let n = noise(x, y) * variance;
+      let r = r0;
+      let g = g0;
+      let b = b0;
+      if (kind === "wood") {
+        // Grain along y, wavering with the noise, and a dark seam every 64 px.
+        const grain = Math.sin((x / size) * Math.PI * 14 + noise(x, y) * 3) * 0.5 + 0.5;
+        n = n * 0.5 + (grain - 0.5) * variance * 1.4;
+        if (x % 64 < 2) n -= 40;
+      } else if (kind === "brick") {
+        const row = Math.floor(y / 32);
+        const bx = (x + (row % 2 ? 24 : 0)) % 48;
+        if (y % 32 < 3 || bx < 3) {
+          r = g = b = 150;
+          n = noise(x, y) * 8;
+        } else n = n * 0.8 + (row % 3) * 4;
+      } else if (kind === "fabric") {
+        n = n * 0.6 + ((x + y) % 4 < 2 ? 4 : -4) + (x % 8 < 1 ? -3 : 0);
+      } else if (kind === "plaster") {
+        n = n * 0.7;
+      } else if (kind === "cloud") {
+        n = Math.max(n, 0) * 0.8;
+      } else if (kind === "stone") {
+        n = n * 0.9 + (o4(x, y) > 0.86 ? -30 : 0);
+      }
+      const i = (y * size + x) * 4;
+      d[i] = clamp(r + n);
+      d[i + 1] = clamp(g + n);
+      d[i + 2] = clamp(b + n);
+      d[i + 3] = 255;
     }
+  ctx.putImageData(img, 0, 0);
+  if (kind === "grass") {
+    // Blades: short strokes a shade darker and lighter.
+    for (let i = 0; i < 2600; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const dark = rnd() < 0.55;
+      ctx.strokeStyle = dark ? `rgba(${r0 - 40},${g0 - 30},${b0 - 20},0.55)` : `rgba(${r0 + 40},${g0 + 45},${b0 + 20},0.45)`;
+      ctx.lineWidth = 1 + rnd();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (rnd() - 0.5) * 3, y - 3 - rnd() * 6);
+      ctx.stroke();
+    }
+  }
+  if (kind === "stone") {
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 14; i++) {
+      ctx.beginPath();
+      let x = rnd() * size;
+      let y = rnd() * size;
+      ctx.moveTo(x, y);
+      for (let k = 0; k < 6; k++) {
+        x += (rnd() - 0.5) * 30;
+        y += (rnd() - 0.5) * 30;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
   const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = 8;
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+const smooth = (t: number) => t * t * (3 - 2 * t);
+
+/** The sky: deep blue overhead down to a pale, warm horizon. */
+function skyTexture(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 4;
+  c.height = 512;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, "#2f6fc4");
+  g.addColorStop(0.42, "#6fa9e6");
+  g.addColorStop(0.55, "#b9d7f0");
+  g.addColorStop(0.62, "#e8eef5");
+  g.addColorStop(1, "#dfe6ee");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 4, 512);
+  const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }

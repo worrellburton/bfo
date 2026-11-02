@@ -5,6 +5,12 @@
  * there is kept in brand_settings under "game-assets" and handed to the game
  * by api/game-assets.ts, where it wins over public/game/manifest.json.
  *
+ * The cron (api/cron/game-assets.ts) fills in whatever is missing every few
+ * minutes and works through a request list kept in brand_settings under
+ * "game-assets-requests": redo Judy (with a particular voice), redo a sound,
+ * redo a prop (with a different prompt). Anyone with the database can queue
+ * those; the cron clears them as it goes.
+ *
  * Pure parts (the lists, the voice choice, the merge) are here for tests;
  * the calls to ElevenLabs, OpenAI and Meshy are thin and marked.
  *
@@ -16,6 +22,17 @@ import { BRAND_BUCKET, copyIn, generateImage, getTask, mergeTask, publicUrl, rea
 import { storageUpload } from "./storage.js";
 
 export const SETTING = "game-assets";
+export const REQUESTS = "game-assets-requests";
+
+/** Work queued for the cron: what to make again, and how. */
+export type Requests = {
+  /** Record Judy again: every line, or just these ids; with this ElevenLabs voice id, or the library's pick. */
+  judy?: { redo?: boolean; voiceId?: string | null; lineIds?: string[] };
+  /** Make these effects again (every one when `names` is empty), with a different description if given. */
+  sounds?: { redo?: boolean; names?: string[]; text?: Record<string, string> };
+  /** Draw and model these props again, with a different description if given. */
+  props?: Record<string, { redo?: boolean; prompt?: string }>;
+};
 
 /** What's been made so far: each map is name → public URL. */
 export type GameAssets = {
@@ -43,16 +60,17 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
 
 /** The props: what OpenAI draws, which Meshy then turns into a model. */
 export const PROPS: Record<string, string> = {
-  seat: "A single plush red velvet movie theater seat with a folding cushion, dark wooden armrests and a gold seat-number plate.",
-  plant: "A tall potted palm plant in a terracotta pot.",
-  popcorn: "A classic red and gold movie theater popcorn cart with a glass case full of popcorn and a striped roof.",
+  seat: "A single plush red velvet movie theater seat with a folding cushion, dark wooden armrests and a small brass seat-number plate.",
+  plant: "A tall potted areca palm in a terracotta pot.",
+  popcorn: "A classic red and gold movie theater popcorn cart with a glass case full of popcorn and a striped canopy.",
+  judy: "A friendly woman in her late sixties, gray hair in a neat bun, reading glasses on a beaded chain, a lavender cardigan over a white blouse, standing upright with her hands folded in front of her, full body from head to feet, smiling slightly.",
 };
 
 const PROP_STYLE =
-  "Rendered as a single clean 3D object in a chunky, blocky, Minecraft-like low-poly voxel style with flat colours and crisp edges, " +
-  "seen from a three-quarter front view, centered, filling most of the frame, on a plain pure white background, soft even lighting, no shadows on the ground, no text, no people, nothing else in the picture.";
+  "Photorealistic, like a product photograph for a 3D scan: a single subject, centered, seen from a three-quarter front view, filling most of the frame, " +
+  "evenly lit from the front with soft studio light, no harsh shadows, on a plain pure white background, no text, no watermark, nothing else in the picture.";
 
-export const propPrompt = (name: string) => `${PROPS[name]} ${PROP_STYLE}`;
+export const propPrompt = (name: string, what = PROPS[name]) => `${what} ${PROP_STYLE}`;
 
 export type Voice = { voice_id: string; name: string; labels?: Record<string, string | undefined> };
 
@@ -101,6 +119,15 @@ export async function readAssets(): Promise<GameAssets> {
 
 export async function writeAssets(assets: GameAssets): Promise<void> {
   await writeSetting(SETTING, { ...assets, updatedAt: Date.now() });
+}
+
+export async function readRequests(): Promise<Requests> {
+  const got = (await readSettings([REQUESTS]))[REQUESTS];
+  return got && typeof got === "object" ? (got as Requests) : {};
+}
+
+export async function writeRequests(r: Requests | null): Promise<void> {
+  await writeSetting(REQUESTS, r && Object.keys(r).length ? r : null);
 }
 
 /** Which keys the server has (booleans only: never the values). */
@@ -167,8 +194,14 @@ export async function soundEffect(text: string, seconds: number): Promise<Uint8A
 // ── The work, a few items per call (a function has minutes, not hours) ───
 
 /** Voices the next `batch` of Judy's lines that aren't done yet; returns what's left. */
-export async function voiceJudy(lines: Array<{ id: string; text: string }>, redo: boolean, batch = 4): Promise<{ assets: GameAssets; remaining: number }> {
+export async function voiceJudy(lines: Array<{ id: string; text: string }>, redo: boolean, batch = 4, voiceId?: string | null): Promise<{ assets: GameAssets; remaining: number }> {
   const assets = await readAssets();
+  if (voiceId && assets.judyVoice?.id !== voiceId) {
+    const voices = await listVoices();
+    const v = voices.find((x) => x.voice_id === voiceId);
+    assets.judyVoice = { id: voiceId, name: v?.name ?? voiceId };
+    assets.voice = {};
+  }
   if (!assets.judyVoice) {
     assets.judyVoice = pickJudyVoice(await listVoices());
     if (!assets.judyVoice) throw new AssetError("elevenlabs", 502, "The ElevenLabs account has no voices.");
@@ -185,11 +218,11 @@ export async function voiceJudy(lines: Array<{ id: string; text: string }>, redo
 }
 
 /** Makes the next `batch` of sound effects that aren't done yet; returns what's left. */
-export async function makeSounds(redo: boolean, batch = 3): Promise<{ assets: GameAssets; remaining: number }> {
+export async function makeSounds(redo: boolean, batch = 3, text: Record<string, string> = {}): Promise<{ assets: GameAssets; remaining: number }> {
   const assets = await readAssets();
   const todo = Object.entries(EFFECTS).filter(([name]) => redo || !assets.sounds[name]);
   for (const [name, effect] of todo.slice(0, batch)) {
-    const bytes = await soundEffect(effect.text, effect.seconds);
+    const bytes = await soundEffect(text[name] || effect.text, effect.seconds);
     const path = `game/sounds/${name}-${Date.now().toString(36)}.mp3`;
     await storageUpload(path, bytes, "audio/mpeg", BRAND_BUCKET);
     assets.sounds[name] = publicUrl(path);
@@ -199,10 +232,10 @@ export async function makeSounds(redo: boolean, batch = 3): Promise<{ assets: Ga
 }
 
 /** Draws a prop with OpenAI and hands the picture to Meshy; the model arrives through checkProp. */
-export async function startProp(name: string): Promise<GameAssets> {
+export async function startProp(name: string, what?: string): Promise<GameAssets> {
   if (!PROPS[name]) throw new AssetError("meshy", 400, `No such prop: ${name}`);
   const assets = await readAssets();
-  const { png } = await generateImage(propPrompt(name));
+  const { png } = await generateImage(propPrompt(name, what?.trim() || PROPS[name]));
   const imagePath = `game/models/${name}-${Date.now().toString(36)}.png`;
   await storageUpload(imagePath, png, "image/png", BRAND_BUCKET);
   const imageUrl = publicUrl(imagePath);
@@ -229,3 +262,124 @@ export async function checkProp(name: string): Promise<GameAssets> {
   await writeAssets(assets);
   return assets;
 }
+
+// ── The cron: fill in what's missing, and do what was asked ──────────────
+
+export type FillSummary = { voiced: number; sounds: number; props: Record<string, string>; skipped: string[]; errors: string[]; done: boolean };
+
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/**
+ * One run of the cron, within `deadline`: works the request list first
+ * (redo this, with that voice or prompt), then fills in anything missing.
+ * Judy's lines come from the site's own judy.json. Each provider error is
+ * noted and the rest carries on; the request list is cleared as it's done.
+ */
+export async function fillMissing(opts: { deadline: number; judyUrl: string }): Promise<FillSummary> {
+  const cfg = configured();
+  const out: FillSummary = { voiced: 0, sounds: 0, props: {}, skipped: [], errors: [], done: false };
+  const time = () => Date.now() < opts.deadline;
+  const requests = await readRequests();
+
+  // Judy.
+  if (!cfg.elevenlabs) out.skipped.push("judy and sounds: ELEVENLABS_API_KEY isn't set");
+  else {
+    try {
+      const r = await fetch(opts.judyUrl);
+      const judy = r.ok ? ((await r.json()) as JudyLike) : null;
+      const lines = judy ? [judy.greeting, ...judy.rounds.flatMap((x) => [...x.options.map((o) => o.judy), x.core]), judy.final] : [];
+      if (!lines.length) out.errors.push(`judy.json couldn't be read from ${opts.judyUrl}`);
+      else {
+        const ask = requests.judy;
+        if (ask?.redo || ask?.voiceId || ask?.lineIds?.length) {
+          const assets = await readAssets();
+          if (ask.voiceId || ask.redo) assets.voice = {};
+          else for (const id of ask.lineIds ?? []) delete assets.voice[id];
+          await writeAssets(assets);
+        }
+        let remaining = 1;
+        let first = true;
+        while (remaining > 0 && time()) {
+          const r2 = await voiceJudy(lines, false, 4, first ? ask?.voiceId : undefined);
+          first = false;
+          remaining = r2.remaining;
+          out.voiced = Object.keys(r2.assets.voice).length;
+        }
+        if (ask) {
+          delete requests.judy;
+          await writeRequests(requests);
+        }
+      }
+    } catch (err) {
+      out.errors.push(`judy: ${message(err)}`);
+    }
+    // Sounds.
+    try {
+      const ask = requests.sounds;
+      if (ask?.redo || ask?.names?.length) {
+        const assets = await readAssets();
+        const names = ask.names?.length ? ask.names : Object.keys(EFFECTS);
+        for (const n of names) delete assets.sounds[n];
+        await writeAssets(assets);
+      }
+      let remaining = 1;
+      while (remaining > 0 && time()) {
+        const r2 = await makeSounds(false, 3, ask?.text ?? {});
+        remaining = r2.remaining;
+        out.sounds = Object.keys(r2.assets.sounds).length;
+      }
+      if (ask) {
+        delete requests.sounds;
+        await writeRequests(requests);
+      }
+    } catch (err) {
+      out.errors.push(`sounds: ${message(err)}`);
+    }
+  }
+
+  // Props: check the ones Meshy is building; start one that isn't, per run.
+  if (!cfg.openai || !cfg.meshy) out.skipped.push(`props: ${!cfg.openai ? "OPENAI_API_KEY" : "MESHY_API_KEY"} isn't set`);
+  else {
+    let started = false;
+    for (const name of Object.keys(PROPS)) {
+      const ask = requests.props?.[name];
+      try {
+        let assets = await readAssets();
+        const state = assets.props[name];
+        const building = state && (state.status === "PENDING" || state.status === "IN_PROGRESS");
+        if (building) {
+          assets = await checkProp(name);
+          out.props[name] = `${assets.props[name].status} ${assets.props[name].progress}%`;
+          continue;
+        }
+        const wanted = ask?.redo || ask?.prompt;
+        if ((wanted || !assets.models[name]) && !started && time()) {
+          if (state?.status === "FAILED" && !wanted) {
+            out.props[name] = `failed earlier: ${state.error ?? "Meshy couldn't build it"}; queue a redo to try again`;
+            continue;
+          }
+          await startProp(name, ask?.prompt);
+          started = true;
+          out.props[name] = "started";
+          if (ask && requests.props) {
+            delete requests.props[name];
+            if (!Object.keys(requests.props).length) delete requests.props;
+            await writeRequests(requests);
+          }
+        } else out.props[name] = assets.models[name] ? "done" : "waiting";
+      } catch (err) {
+        out.errors.push(`${name}: ${message(err)}`);
+      }
+    }
+  }
+
+  const final = await readAssets();
+  out.done = Object.keys(final.sounds).length >= Object.keys(EFFECTS).length && Object.keys(PROPS).every((p) => !!final.models[p]) && out.voiced > 0;
+  return out;
+}
+
+type JudyLike = {
+  greeting: { id: string; text: string };
+  rounds: Array<{ options: Array<{ judy: { id: string; text: string } }>; core: { id: string; text: string } }>;
+  final: { id: string; text: string };
+};

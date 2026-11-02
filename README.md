@@ -67,6 +67,7 @@ Optional ones are marked. Never commit values.
 | `OPENAI_API_KEY` | Voice (transcription, speech, Realtime) and the logo reference sheet. |
 | `MESHY_API_KEY` | optional. Image-to-3D for the logo studio and the signing game's props (the game studio, or `npm run game:props`). |
 | `ELEVENLABS_API_KEY` | optional. Judy's voice and the sound effects for the signing game (the game studio, or `npm run game:judy` and `game:sounds`). |
+| `GAME_JOB_TOKEN` | optional. A token minted for a Claude session so it can run the game studio (`api/game-assets.ts`) from outside with the keys staying on Vercel; delete it to revoke. |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8` | Apple push key for the iPhone app. `APNS_BUNDLE_ID` optional (default `com.burtonfamilyoffice.app`). |
 | `SITE_URL` | optional. Site origin used in emails (default `https://www.burtonfamilyoffice.com`). |
 
@@ -84,7 +85,10 @@ signing game" (`/sign/preview`), which runs the whole thing on a sample
 document and signs nothing; its "Game studio" panel makes Judy's voice, the
 sound effects and the props on the server (`api/game-assets.ts`, with the
 keys Vercel holds) and stores them in the public brand bucket, where they
-win over the static manifest.
+win over the static manifest. A cron (`api/cron/game-assets.ts`, every five
+minutes) fills in whatever is missing on its own and works a request list in
+`brand_settings` ("game-assets-requests") for redoing Judy with another
+voice, a sound, or a prop with a new prompt.
 
 ## Check, test, build
 

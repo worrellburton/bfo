@@ -25,6 +25,8 @@ type View = {
   pages: Array<{ w: number; h: number }>;
   pdfKey: string | null;
   pdfUrl: string | null;
+  /** The same PDF as a download, named after the document. */
+  downloadUrl?: string | null;
   sentBy: string | null;
 };
 
@@ -62,6 +64,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
   const [frameRef, width] = useFitWidth(760);
   // The PDF on screen. A new link replaces it only for a newer version (a signature was stamped), so polling doesn't redraw it.
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const shownKey = useRef<string | null>(null);
   const frameEl = useRef<HTMLDivElement | null>(null);
 
@@ -82,10 +85,12 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
           pages: sample.pages,
           pdfKey: "preview",
           pdfUrl: sample.url,
+          downloadUrl: sample.url,
           sentBy: "Burton Family Office",
         });
         setName(preview.name);
         setPdfUrl(sample.url);
+        setDownloadUrl(sample.url);
         shownKey.current = "preview";
         return;
       }
@@ -100,6 +105,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
       if (first) setName(body.you.name);
       if (body.pdfUrl) {
         setPdfUrl(body.pdfUrl);
+        setDownloadUrl(body.downloadUrl ?? body.pdfUrl);
         shownKey.current = body.pdfKey;
       }
     },
@@ -232,8 +238,20 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
             </p>
 
             {view.completed && pdfUrl && (
-              <a href={pdfUrl} className="mt-4 inline-flex h-[44px] items-center rounded-xl bg-white px-4 text-[13.5px] font-semibold text-black">
+              <a href={downloadUrl ?? pdfUrl} className="mt-4 inline-flex h-[44px] items-center rounded-xl bg-white px-4 text-[13.5px] font-semibold text-black">
                 Download the signed copy
+              </a>
+            )}
+            {!view.completed && downloadUrl && (
+              <a
+                href={downloadUrl}
+                download={`${view.title.replace(/[^\w .&-]+/g, " ").trim() || "Document"}.pdf`}
+                className="mt-4 inline-flex h-[44px] items-center gap-2 rounded-xl border border-white/15 px-4 text-[13.5px] font-medium text-white/85 hover:bg-white/10"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" />
+                </svg>
+                Download as PDF
               </a>
             )}
             {signedNow && !view.completed && (
