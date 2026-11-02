@@ -56,6 +56,7 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
   jump: { text: "A short, light, cartoon video game jump hop sound, soft and bouncy, like a blocky character leaping", seconds: 0.8 },
   land: { text: "A soft thud of a character landing on a wooden block in a video game, light and quick", seconds: 0.7 },
   fall: { text: "A quick descending whoosh of falling into a dark pit in a video game, ending in a low soft puff", seconds: 1.8 },
+  step: { text: "A single soft footstep on short grass, close up, quick and quiet", seconds: 0.5 },
 };
 
 /** The props: what OpenAI draws, which Meshy then turns into a model. */
@@ -71,6 +72,9 @@ const PROP_STYLE =
   "evenly lit from the front with soft studio light, no harsh shadows, on a plain pure white background, no text, no watermark, nothing else in the picture.";
 
 export const propPrompt = (name: string, what = PROPS[name]) => `${what} ${PROP_STYLE}`;
+
+/** Triangle budgets: the seat is drawn 168 times, so it has to be light. */
+export const POLYCOUNT: Record<string, number> = { seat: 6000, judy: 16000, plant: 10000, popcorn: 10000 };
 
 export type Voice = { voice_id: string; name: string; labels?: Record<string, string | undefined> };
 
@@ -175,6 +179,28 @@ export async function listVoices(): Promise<Voice[]> {
   return j.voices ?? [];
 }
 
+/**
+ * An older woman's voice from ElevenLabs's shared library, added to the
+ * account so Judy can use it: the most-used English one labelled old and
+ * female. Returns what was added, or null when the search finds nothing.
+ */
+export async function adoptOlderVoice(): Promise<{ id: string; name: string } | null> {
+  const r = await elevenLabs("/shared-voices?page_size=30&gender=female&age=old&language=en&sort=cloned_by_count&sort_direction=desc");
+  const j = (await r.json()) as { voices?: Array<{ public_owner_id: string; voice_id: string; name: string; cloned_by_count?: number; free_users_allowed?: boolean }> };
+  const pick = (j.voices ?? []).find((v) => v.free_users_allowed !== false) ?? j.voices?.[0];
+  if (!pick) return null;
+  const name = `Judy (${pick.name})`;
+  try {
+    const added = await elevenLabs(`/voices/add/${encodeURIComponent(pick.public_owner_id)}/${encodeURIComponent(pick.voice_id)}`, { method: "POST", body: { new_name: name } });
+    const a = (await added.json()) as { voice_id?: string };
+    return { id: a.voice_id ?? pick.voice_id, name };
+  } catch (err) {
+    // Already in the library under its own id: use it as is.
+    if (err instanceof AssetError && /already|exists/i.test(err.message)) return { id: pick.voice_id, name };
+    throw err;
+  }
+}
+
 /** One line in Judy's voice, as MP3 bytes. */
 export async function speak(voiceId: string, text: string): Promise<Uint8Array> {
   const r = await elevenLabs(`/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
@@ -240,7 +266,7 @@ export async function startProp(name: string, what?: string): Promise<GameAssets
   await storageUpload(imagePath, png, "image/png", BRAND_BUCKET);
   const imageUrl = publicUrl(imagePath);
   // Light enough to download in a game: 1k textures, a polygon budget, GLB only.
-  const taskId = await startModel(imageUrl, { texture: "1k", pbr: false, formats: ["glb"], polycount: 20000 });
+  const taskId = await startModel(imageUrl, { texture: "1k", pbr: false, formats: ["glb"], polycount: POLYCOUNT[name] ?? 12000 });
   assets.props[name] = { taskId, status: "PENDING", progress: 0, createdAt: Date.now(), updatedAt: Date.now(), imageUrl };
   await writeAssets(assets);
   return assets;
@@ -293,7 +319,7 @@ export async function fillMissing(opts: { deadline: number; judyUrl: string }): 
     try {
       const r = await fetch(opts.judyUrl);
       const judy = r.ok ? ((await r.json()) as JudyLike) : null;
-      const lines = judy ? [judy.greeting, ...judy.rounds.flatMap((x) => [...x.options.map((o) => o.judy), x.core]), judy.final] : [];
+      const lines = judy ? [judy.greeting, ...judy.rounds.flatMap((x) => [...x.options.map((o) => o.judy), x.core]), judy.final, ...Object.values(judy.extras ?? {})] : [];
       if (!lines.length) out.errors.push(`judy.json couldn't be read from ${opts.judyUrl}`);
       else {
         const ask = requests.judy;
@@ -388,4 +414,6 @@ type JudyLike = {
   greeting: { id: string; text: string };
   rounds: Array<{ options: Array<{ judy: { id: string; text: string } }>; core: { id: string; text: string } }>;
   final: { id: string; text: string };
+  /** Lines said elsewhere (over the PA during the film). */
+  extras?: Record<string, { id: string; text: string }>;
 };

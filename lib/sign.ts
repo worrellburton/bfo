@@ -445,6 +445,18 @@ export function signedCopyEmail(row: Pick<SignatureRequestRow, "title" | "brand"
   return { subject, text, html };
 }
 
+/** The office's email when a party signs: who, what, and whether that completes it. */
+export function signedNoticeEmail(row: Pick<SignatureRequestRow, "id" | "title">, signer: string, completed: boolean) {
+  const subject = completed ? `Signed by everyone: ${row.title}` : `${signer} signed ${row.title}`;
+  const link = `${SITE}/tools/signatures/${row.id}`;
+  const text = `${signer} signed ${row.title}.${completed ? " Everyone has signed; the signed copy is ready." : " Waiting on the other party."}\n\n${link}\n`;
+  const html = shell(`
+        <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(signer)} signed<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">${completed ? "Everyone has signed. The signed copy, with its certificate, is ready." : "Waiting on the other party."}</div>
+        ${button(link, "Open the request")}`);
+  return { subject, text, html };
+}
+
 export function signLink(token: string): string {
   return `${SITE}/sign/${token}`;
 }

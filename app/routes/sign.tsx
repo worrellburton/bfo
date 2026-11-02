@@ -177,7 +177,27 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
   if (view && inGame) {
     return (
       <div className="min-h-dvh bg-black text-white">
-        <GameGate signerName={view.you.name} title={view.title} brand={brand} preview={!!preview} onDone={() => setPlayed(true)} onSkip={() => setPlayed(true)} />
+        <GameGate
+          signerName={view.you.name}
+          title={view.title}
+          brand={brand}
+          document={{
+            fileName: `${
+              view.title
+                .replace(/[^\w .&-]+/g, " ")
+                .replace(/\s+/g, " ")
+                .trim() || "Document"
+            }.pdf`,
+            pages: view.pages.length,
+            sentBy: brand ? null : view.sentBy,
+            role: view.you.role,
+            signPages: [...new Set(view.fields.filter((f) => f.party === view.you.key && f.type === "signature").map((f) => f.page))].sort((a, b) => a - b),
+            downloadUrl,
+          }}
+          preview={!!preview}
+          onDone={() => setPlayed(true)}
+          onSkip={() => setPlayed(true)}
+        />
       </div>
     );
   }

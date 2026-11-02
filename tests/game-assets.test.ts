@@ -67,6 +67,9 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string, init?: { method?: string }) => {
       fetchLog.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.includes("/v1/shared-voices"))
+        return new Response(JSON.stringify({ voices: [{ public_owner_id: "own1", voice_id: "shared1", name: "Dorothy", cloned_by_count: 900, free_users_allowed: true }] }), { status: 200 });
+      if (url.includes("/v1/voices/add/")) return new Response(JSON.stringify({ voice_id: "added1" }), { status: 200 });
       if (url.endsWith("/v1/voices"))
         return new Response(
           JSON.stringify({
@@ -152,6 +155,13 @@ describe("api/game-assets", () => {
     expect(uploads.size).toBe(6);
   });
 
+  it("adopts an older woman's voice from the shared library", async () => {
+    const r = await call("POST", { action: "older-voice" });
+    expect(r.statusCode).toBe(200);
+    expect(r.body.voice).toEqual({ id: "added1", name: "Judy (Dorothy)" });
+    expect(fetchLog.some((l) => l.includes("/v1/voices/add/own1/shared1"))).toBe(true);
+  });
+
   it("lists the library and records Judy again in a chosen voice", async () => {
     const v = await call("POST", { action: "voices" });
     expect(v.statusCode).toBe(200);
@@ -165,10 +175,12 @@ describe("api/game-assets", () => {
 
   it("makes the sound effects in batches", async () => {
     const r1 = await call("POST", { action: "sounds" });
-    expect(r1.body.remaining).toBe(3);
+    expect(r1.body.remaining).toBe(4);
     const r2 = await call("POST", { action: "sounds" });
-    expect(r2.body.remaining).toBe(0);
-    expect(Object.keys(r2.body.assets.sounds).sort()).toEqual(["door", "fall", "jump", "land", "sign", "sit"]);
+    expect(r2.body.remaining).toBe(1);
+    const r3 = await call("POST", { action: "sounds" });
+    expect(r3.body.remaining).toBe(0);
+    expect(Object.keys(r3.body.assets.sounds).sort()).toEqual(["door", "fall", "jump", "land", "sign", "sit", "step"]);
   });
 
   it("says plainly when a key is missing", async () => {
@@ -227,7 +239,7 @@ describe("api/cron/game-assets", () => {
     const r = await cronCall("Bearer s3cret");
     expect(r.statusCode).toBe(200);
     expect(r.body.voiced).toBe(4);
-    expect(r.body.sounds).toBe(6);
+    expect(r.body.sounds).toBe(7);
     expect(r.body.skipped.join(" ")).toMatch(/OPENAI_API_KEY/);
     expect(r.body.errors).toEqual([]);
     // Nothing more to do: the next run makes nothing.

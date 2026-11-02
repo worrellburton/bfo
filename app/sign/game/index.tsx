@@ -7,10 +7,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { Hud, JudyScript, Manifest, SigningGame } from "./engine";
 
+/** The film's name, as on the marquee (kept here too so the HUD doesn't load the engine for it). */
+const FILM_TITLE = "Sam Signs the Operating Agreement";
+
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
 
-const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, dialogue: null, ticket: false };
+/** How long the controls stay on screen once the game starts. */
+const CONTROLS_FOR_MS = 18_000;
+const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, objective: "", dialogue: null, ticket: false };
 
 /** True on a computer with a mouse: the game needs pointer lock and a keyboard. */
 export function canPlayHere(): boolean {
@@ -32,6 +37,7 @@ export function GameGate({
   signerName,
   title,
   brand,
+  document,
   preview,
   onDone,
   onSkip,
@@ -39,6 +45,8 @@ export function GameGate({
   signerName: string;
   title: string;
   brand: string | null;
+  /** The document itself, for the title screen: its file name, length, who sent it, and where the signature goes. */
+  document?: { fileName: string; pages: number; sentBy: string | null; role: string; signPages: number[]; downloadUrl?: string | null };
   /** The office looking at it: a way out at the top instead of a signature at the end. */
   preview?: boolean;
   onDone: () => void;
@@ -50,6 +58,13 @@ export function GameGate({
   const [hud, setHud] = useState<Hud>(IDLE);
   const [loading, setLoading] = useState<"loading" | "ready" | "failed">("loading");
   const [escape, setEscape] = useState(false);
+  // The controls show for the first stretch of the walk, then get out of the way.
+  const [controls, setControls] = useState(true);
+  useEffect(() => {
+    if (hud.phase !== "outside") return;
+    const t = setTimeout(() => setControls(false), CONTROLS_FOR_MS);
+    return () => clearTimeout(t);
+  }, [hud.phase]);
 
   useEffect(() => {
     if (!playable) return;
@@ -100,18 +115,7 @@ export function GameGate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playable, signerName, title]);
 
-  if (!playable) {
-    return (
-      <div className="mx-auto mt-16 max-w-[520px] text-center">
-        <p className="auth-eyebrow text-[11px] uppercase tracking-[0.28em] text-amber-300/80">Anything Is Possible</p>
-        <h1 className="mt-3 text-[24px] font-semibold leading-tight">You'll need a computer for this one</h1>
-        <p className="mt-3 text-[14px] leading-relaxed text-white/65">
-          {brand || "Burton Family Office"} sent <span className="text-white">{title}</span> with a short game in front of it, played with a keyboard and a mouse. Open the link from your email on a
-          laptop or desktop to play it and sign.
-        </p>
-      </div>
-    );
-  }
+  if (!playable) return <PhoneScreen title={title} brand={brand} document={document} preview={preview} onSkip={onSkip} />;
 
   const walking = hud.phase === "outside" || hud.phase === "lobby" || hud.phase === "theater" || hud.phase === "exit";
 
@@ -136,6 +140,40 @@ export function GameGate({
         )}
       </div>
 
+      {/* The next goal, small at the top. */}
+      {hud.objective && walking && !hud.paused && (
+        <p className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-200/90 backdrop-blur">
+          {hud.objective}
+        </p>
+      )}
+
+      {/* The controls, at the start of the game: on the island, until the signer has had a look at them. */}
+      {controls && hud.phase === "outside" && !hud.paused && (
+        <div
+          className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 backdrop-blur"
+          style={{ animation: "reply-in 0.5s ease-out both" }}
+        >
+          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">How to get there</p>
+          <p className="mt-1 text-[13px] text-white/75">
+            {signerName}, the contract is past the theater on the far island. Cross the blocks, get your ticket from Judy, take the seat with your name on it, and climb the stairs after the film.
+          </p>
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
+            <dt className="text-white/40">Move</dt>
+            <dd>W A S D or arrows</dd>
+            <dt className="text-white/40">Look</dt>
+            <dd>Mouse</dd>
+            <dt className="text-white/40">Jump</dt>
+            <dd>Space</dd>
+            <dt className="text-white/40">Sit, sign</dt>
+            <dd>E</dd>
+            <dt className="text-white/40">Free the mouse</dt>
+            <dd>Esc</dd>
+            <dt className="text-white/40">Seated</dt>
+            <dd>Drag to look around</dd>
+          </dl>
+        </div>
+      )}
+
       {/* Crosshair while walking. */}
       {walking && !hud.paused && (
         <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80 ring-2 ring-black/40" />
@@ -146,19 +184,29 @@ export function GameGate({
         <div
           aria-label="Your ticket"
           className="pointer-events-none absolute right-4 top-14 z-20 rotate-3 rounded-md border border-dashed border-amber-200/70 bg-[#f4ede0] px-3 py-1.5 text-[11px] leading-tight text-[#2e0f14] shadow-lg"
+          style={{ animation: "ticket-in 600ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both" }}
         >
           <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-[#8c2a2f]">Admit one</span>
-          <span className="block font-[var(--font-brand)] text-[13px]">Anything Is Possible</span>
+          <span className="block font-[var(--font-brand)] text-[13px]">{FILM_TITLE}</span>
           <span className="block text-[10px] text-[#2e0f14]/70">Row 6, aisle · {signerName}</span>
         </div>
       )}
 
       {/* Talking to Judy: her subtitles, then Sam's replies. */}
-      {hud.dialogue && hud.phase === "talk" && (
+      {hud.dialogue && (hud.phase === "talk" || hud.phase === "movie") && (
         <div className="absolute bottom-0 left-0 right-0 z-30 flex justify-center p-4 pb-6">
           <div className="w-full max-w-[760px]">
             <div role="status" aria-live="polite" className="rounded-2xl border border-white/10 bg-black/75 px-5 py-4 text-center backdrop-blur">
-              <span className={`block text-[10.5px] font-semibold uppercase tracking-[0.2em] ${hud.dialogue.speaker === "You" ? "text-white/50" : "text-amber-300"}`}>{hud.dialogue.speaker}</span>
+              <span className={`flex items-center justify-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.2em] ${hud.dialogue.speaker === "You" ? "text-white/50" : "text-amber-300"}`}>
+                {hud.dialogue.speaker}
+                {!hud.dialogue.options && hud.dialogue.speaker !== "You" && (
+                  <span aria-hidden className="flex items-end gap-[2px]">
+                    {[0, 1, 2, 3].map((i) => (
+                      <span key={i} className="block w-[3px] rounded-sm bg-amber-300" style={{ height: 8, animation: `speaking 700ms ease-in-out ${i * 120}ms infinite alternate` }} />
+                    ))}
+                  </span>
+                )}
+              </span>
               <span className="mt-1 block text-[17px] leading-snug text-white">{hud.dialogue.text}</span>
               {!hud.dialogue.options && hud.dialogue.speaker !== "You" && <span className="mt-2 block text-[10.5px] text-white/35">Space skips to the end of this line</span>}
             </div>
@@ -168,6 +216,7 @@ export function GameGate({
                   <button
                     key={o}
                     type="button"
+                    style={{ animation: `reply-in 320ms ease-out ${i * 90}ms both` }}
                     onClick={() => game.current?.choose(i)}
                     className="flex min-h-[44px] items-center gap-3 rounded-xl border border-white/10 bg-[#0b0b0f]/90 px-4 py-2 text-left text-[14px] text-white/90 backdrop-blur transition-colors hover:border-amber-300/60 hover:bg-white/[0.06]"
                   >
@@ -191,42 +240,42 @@ export function GameGate({
         </p>
       )}
 
-      {/* The title screen: what they're here to sign, full screen, Start at the bottom. */}
+      {/* The title screen: the document to sign, full screen, Start at the bottom. */}
       {hud.phase === "intro" && (
         <div className="absolute inset-0 z-30 flex flex-col bg-[#07070a]/92 backdrop-blur-sm">
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <p className="auth-eyebrow text-[11px] uppercase tracking-[0.32em] text-amber-300/80">{brand || "Burton Family Office"}</p>
-            <p className="mt-6 text-[13px] uppercase tracking-[0.22em] text-white/50">You're here to sign</p>
-            <h1 className="mt-3 max-w-[900px] font-[var(--font-brand)] text-[40px] leading-[1.05] text-white sm:text-[56px]">{title}</h1>
-            <p className="mt-6 max-w-[640px] text-[15px] leading-relaxed text-white/65">
-              Hello, {signerName}. The contract is waiting on the other side of a short film: cross the floating blocks to the theater, get your ticket from Judy, take the seat with your name on it,
-              and when the film ends, climb the stairs to the contract.
+            <p className="auth-eyebrow text-[11px] uppercase tracking-[0.32em] text-amber-300/80" style={rise(0)}>
+              {brand || "Burton Family Office"}
             </p>
-            <dl className="mt-8 grid grid-cols-2 gap-x-10 gap-y-1.5 text-left text-[12.5px] text-white/70 sm:grid-cols-3">
-              <dt className="text-white/40">Move</dt>
-              <dd>W A S D or arrows</dd>
-              <dt className="text-white/40">Look</dt>
-              <dd>Mouse</dd>
-              <dt className="text-white/40">Jump</dt>
-              <dd>Space</dd>
-              <dt className="text-white/40">Sit, sign</dt>
-              <dd>E</dd>
-              <dt className="text-white/40">Free the mouse</dt>
-              <dd>Esc</dd>
-              <dt className="text-white/40">Seated</dt>
-              <dd>Drag to look around</dd>
-            </dl>
+            <p className="mt-6 text-[13px] uppercase tracking-[0.22em] text-white/50" style={rise(1)}>
+              A document is waiting for your signature
+            </p>
+            <h1 className="mt-3 max-w-[900px] font-[var(--font-brand)] text-[40px] leading-[1.05] text-white sm:text-[56px]" style={rise(2)}>
+              {title}
+            </h1>
+            {document && (
+              <div className="mt-6 flex w-full max-w-[560px] items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left" style={rise(3)}>
+                <span className="flex h-14 w-11 shrink-0 items-center justify-center rounded-md bg-[#f4ede0] text-[10px] font-bold uppercase tracking-wider text-[#8c2a2f] shadow">PDF</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-medium text-white">{document.fileName}</span>
+                  <span className="mt-0.5 block text-[12.5px] text-white/55">
+                    {document.pages} page{document.pages === 1 ? "" : "s"}
+                    {document.sentBy ? ` · sent by ${document.sentBy}` : ""} · you sign as {document.role}
+                  </span>
+                  {document.signPages.length > 0 && <span className="mt-0.5 block text-[12.5px] text-amber-200/90">Your signature goes on page {document.signPages.join(", ")}</span>}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex flex-col items-center gap-3 px-6 pb-10 pt-4">
+          <div className="flex flex-col items-center gap-3 px-6 pb-10 pt-4" style={rise(4)}>
             <button
               type="button"
               disabled={loading !== "ready"}
               onClick={() => game.current?.begin()}
               className="h-[56px] min-w-[260px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-50"
             >
-              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start"}
+              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start signing"}
             </button>
-            <p className="text-[11.5px] text-white/35">Anything Is Possible · a short film, then your signature</p>
             {loading === "failed" && (
               <p className="text-[12.5px] text-white/60">
                 Your browser couldn't run it.{" "}
@@ -263,8 +312,105 @@ export function GameGate({
         </button>
       )}
 
+      <style>{`
+        @keyframes ticket-in { from { transform: translate(120px, -40px) rotate(25deg); opacity: 0; } to { transform: translate(0, 0) rotate(3deg); opacity: 1; } }
+        @keyframes reply-in { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes speaking { from { height: 3px; } to { height: 11px; } }
+        @keyframes rise-in { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      `}</style>
+
       {/* The fade into the signing page. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-50 bg-black transition-opacity duration-300" style={{ opacity: hud.dark }} />
+    </div>
+  );
+}
+
+/** Staggered entrance for the title screen's rows. */
+const rise = (i: number): React.CSSProperties => ({ animation: `rise-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${120 + i * 110}ms both` });
+
+/**
+ * What a phone or tablet gets instead of the game: the document by name,
+ * the little animated island scene, and the way to come back on a computer
+ * (copy the link, read the PDF now).
+ */
+function PhoneScreen({
+  title,
+  brand,
+  document,
+  preview,
+  onSkip,
+}: {
+  title: string;
+  brand: string | null;
+  document?: { fileName: string; pages: number; sentBy: string | null; role: string; signPages: number[]; downloadUrl?: string | null };
+  preview?: boolean;
+  onSkip: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      /* the address bar still has it */
+    }
+  };
+  const fileName = document?.fileName ?? `${title}.pdf`;
+  return (
+    <div className="min-h-dvh bg-[#07070a] text-white">
+      <style>{`
+        @keyframes rise-in { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes float-y { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+        @keyframes drift { from { transform: translateX(-30px); } to { transform: translateX(30px); } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+        @keyframes beam { from { opacity: 0.25; } to { opacity: 0.6; } }
+      `}</style>
+      <div className="mx-auto max-w-[520px] px-5 pb-12 pt-6">
+        <p className="auth-eyebrow text-center text-[10.5px] uppercase tracking-[0.3em] text-amber-300/80" style={rise(0)}>
+          {brand || "Burton Family Office"}
+        </p>
+
+        {/* The document, first. */}
+        <div className="mt-5 flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4" style={rise(1)}>
+          <span className="flex h-16 w-12 shrink-0 items-center justify-center rounded-md bg-[#f4ede0] text-[10px] font-bold uppercase tracking-wider text-[#8c2a2f] shadow-lg">PDF</span>
+          <span className="min-w-0">
+            <span className="block text-[11px] uppercase tracking-[0.18em] text-white/45">Waiting for your signature</span>
+            <span className="mt-1 block break-words text-[17px] font-semibold leading-snug text-white">{fileName}</span>
+            {document && (
+              <span className="mt-1 block text-[12.5px] text-white/55">
+                {document.pages} page{document.pages === 1 ? "" : "s"}
+                {document.sentBy ? ` · from ${document.sentBy}` : ""} · you sign as {document.role}
+                {document.signPages.length > 0 ? ` · signature on page ${document.signPages.join(", ")}` : ""}
+              </span>
+            )}
+          </span>
+        </div>
+
+        <h1 className="mt-8 text-[26px] font-semibold leading-tight" style={rise(2)}>
+          You need a computer to sign this
+        </h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-white/65" style={rise(3)}>
+          Open this same link on a laptop or desktop and the signing starts there.
+        </p>
+
+        <div className="mt-6 grid gap-2" style={rise(5)}>
+          <button type="button" onClick={copy} className="flex h-[48px] items-center justify-center gap-2 rounded-xl bg-white text-[14px] font-semibold text-black">
+            {copied ? "Link copied" : "Copy the link for your computer"}
+          </button>
+          {document?.downloadUrl && (
+            <a href={document.downloadUrl} className="flex h-[48px] items-center justify-center rounded-xl border border-white/15 text-[14px] font-medium text-white/85">
+              Read {fileName} now
+            </a>
+          )}
+          {preview && (
+            <button type="button" onClick={onSkip} className="flex h-[44px] items-center justify-center text-[13px] text-white/50">
+              Skip to the signing page (preview)
+            </button>
+          )}
+        </div>
+        <p className="mt-8 text-center text-[11px] text-white/30">{brand ? "Signed electronically" : "Signed through BFO · burtonfamilyoffice.com"}</p>
+      </div>
     </div>
   );
 }

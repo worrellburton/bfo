@@ -56,7 +56,7 @@ export function GameStudio({ onChanged }: { onChanged: () => void }) {
   const voiceJudy = (redo: boolean) =>
     run("judy", async () => {
       const judy = (await fetch("/game/judy.json").then((r) => r.json())) as JudyScript;
-      const lines = [judy.greeting, ...judy.rounds.flatMap((r) => [...r.options.map((o) => o.judy), r.core]), judy.final];
+      const lines = [judy.greeting, ...judy.rounds.flatMap((r) => [...r.options.map((o) => o.judy), r.core]), judy.final, ...Object.values(judy.extras ?? {})];
       let remaining = lines.length;
       let first = true;
       while (remaining > 0) {
@@ -110,7 +110,7 @@ export function GameStudio({ onChanged }: { onChanged: () => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed left-4 top-14 z-[60] h-[32px] rounded-full border border-white/15 bg-black/70 px-3 text-[12px] text-white/80 backdrop-blur hover:bg-white/10"
+        className="fixed left-4 top-14 z-[60] h-[32px] rounded-full border border-white/15 bg-black/70 px-3 text-[12px] text-white/80 backdrop-blur hover:bg-white/10 max-sm:bottom-4 max-sm:top-auto"
       >
         Game studio
       </button>
@@ -123,7 +123,7 @@ export function GameStudio({ onChanged }: { onChanged: () => void }) {
   const btn = "h-[32px] shrink-0 rounded-full border border-white/15 px-3 text-[12px] text-white/90 hover:bg-white/10 disabled:opacity-40";
 
   return (
-    <div className="fixed left-4 top-14 z-[60] w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl border border-white/10 bg-[#0b0b0f]/95 p-4 text-[13px] text-white shadow-2xl backdrop-blur">
+    <div className="fixed left-4 top-14 z-[60] w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl max-sm:bottom-4 max-sm:top-auto border border-white/10 bg-[#0b0b0f]/95 p-4 text-[13px] text-white shadow-2xl backdrop-blur">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300">Game studio</p>
         <button type="button" onClick={() => setOpen(false)} className="text-[12px] text-white/50 hover:text-white">
