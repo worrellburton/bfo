@@ -212,18 +212,28 @@ async function meshy<T>(path: string, init: { method?: string; body?: unknown } 
 }
 
 /** Start turning the picture into a textured model. Returns Meshy's task id. */
-export async function startModel(imageUrl: string): Promise<string> {
+export type ModelOptions = {
+  /** Texture size: the logo gets 2k; a game prop 1k, to keep the file small. */
+  texture?: "1k" | "2k" | "4k";
+  pbr?: boolean;
+  formats?: Array<"glb" | "usdz">;
+  /** A triangle budget; left out, Meshy picks. */
+  polycount?: number;
+};
+
+export async function startModel(imageUrl: string, opts: ModelOptions = {}): Promise<string> {
   const r = await meshy<{ result: string }>("/image-to-3d", {
     method: "POST",
     body: {
       image_url: imageUrl,
       ai_model: "latest",
       should_texture: true,
-      enable_pbr: true,
-      texture_resolution: "2k",
-      target_formats: ["glb", "usdz"],
+      enable_pbr: opts.pbr ?? true,
+      texture_resolution: opts.texture ?? "2k",
+      target_formats: opts.formats ?? ["glb", "usdz"],
       origin_at: "center",
       alpha_thumbnail: true,
+      ...(opts.polycount ? { target_polycount: opts.polycount } : {}),
     },
   });
   if (!r?.result) throw new ProviderError("meshy", 502, "Meshy didn't start the task.");

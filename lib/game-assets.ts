@@ -239,7 +239,8 @@ export async function startProp(name: string, what?: string): Promise<GameAssets
   const imagePath = `game/models/${name}-${Date.now().toString(36)}.png`;
   await storageUpload(imagePath, png, "image/png", BRAND_BUCKET);
   const imageUrl = publicUrl(imagePath);
-  const taskId = await startModel(imageUrl);
+  // Light enough to download in a game: 1k textures, a polygon budget, GLB only.
+  const taskId = await startModel(imageUrl, { texture: "1k", pbr: false, formats: ["glb"], polycount: 20000 });
   assets.props[name] = { taskId, status: "PENDING", progress: 0, createdAt: Date.now(), updatedAt: Date.now(), imageUrl };
   await writeAssets(assets);
   return assets;
@@ -254,9 +255,14 @@ export async function checkProp(name: string): Promise<GameAssets> {
   const task = await getTask(prev.taskId);
   let state: ModelState & { imageUrl?: string } = { ...mergeTask(prev, task), imageUrl: prev.imageUrl };
   if (task.status === "SUCCEEDED" && task.model_urls?.glb) {
-    const glbUrl = await copyIn(task.model_urls.glb, `game/models/${name}-${Date.now().toString(36)}.glb`, "model/gltf-binary");
-    state = { ...state, glbUrl };
-    assets.models[name] = glbUrl;
+    try {
+      const glbUrl = await copyIn(task.model_urls.glb, `game/models/${name}-${Date.now().toString(36)}.glb`, "model/gltf-binary");
+      state = { ...state, glbUrl };
+      assets.models[name] = glbUrl;
+    } catch (err) {
+      // A model the bucket won't take (too big) is marked failed rather than fetched again every run; a queued redo makes a lighter one.
+      state = { ...state, status: "FAILED", error: `couldn't store the model: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
   assets.props[name] = state;
   await writeAssets(assets);
