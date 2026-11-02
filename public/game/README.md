@@ -11,7 +11,7 @@ Everything in this folder is served as-is at the same path (`/game/...`).
   (the exit door opening), `sit`, `sign` (the pen), `jump`, `land`, `fall`
   (into the pit). `npm run game:sounds` makes them with ElevenLabs
   (scripts/game-sounds.mjs).
-- `models`: GLB props by name (`seat`, `desk`, `lamp`, `plant`, `popcorn`).
+- `models`: GLB props by name (`seat`, `plant`, `popcorn`).
   A named prop replaces the blocky placeholder the game draws for it.
   `npm run game:props` makes them with OpenAI and Meshy (scripts/game-props.mjs).
 

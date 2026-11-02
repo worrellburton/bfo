@@ -26,8 +26,6 @@ const STYLE =
 
 const PROPS = {
   seat: "A single plush red velvet movie theater seat with a folding cushion, dark wooden armrests and a gold seat-number plate.",
-  desk: "A handsome dark walnut writing desk with a leather inlay top, two small drawers and brass handles.",
-  lamp: "A small green banker's desk lamp with a brass stand and a pull chain.",
   plant: "A tall potted palm plant in a terracotta pot.",
   popcorn: "A classic red and gold movie theater popcorn cart with a glass case full of popcorn and a striped roof.",
 };
