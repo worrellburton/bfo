@@ -129,7 +129,8 @@ const SPAWN = new THREE.Vector3(0, 0, 4.5);
  */
 const BLOCKS: Array<[x: number, top: number, z: number, size: number]> = (() => {
   const out: Array<[number, number, number, number]> = [];
-  const n = Math.floor((-9.5 - (ISLAND.z1 + 3)) / 2.6);
+  // Up to a stride short of the island: the last hop is like the others, no sprint needed.
+  const n = Math.floor((-9.5 - (ISLAND.z1 + 1.2)) / 2.6);
   for (let i = 0; i <= n; i++) {
     const z = -9.5 - i * 2.6;
     const rest = i > 0 && i % 10 === 0 && i < n - 2;
