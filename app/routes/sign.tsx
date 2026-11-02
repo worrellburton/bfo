@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router";
-import { FIELD_LABEL, type SignField } from "../sign/api";
+import { Link, useParams } from "react-router";
+import { FIELD_LABEL, type SignField, type SignMode } from "../sign/api";
+import { GameGate } from "../sign/game";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
+import { PREVIEW_TITLE, samplePdf } from "../sign/preview";
 import { SignaturePad } from "../sign/signature-pad";
 import { usePoll } from "../sign/use-poll";
 
@@ -13,6 +15,8 @@ type View = {
   title: string;
   /** Sent under this name instead of BFO's. */
   brand: string | null;
+  /** The plain page, or the Anything Is Possible game in front of it (app/sign/game). */
+  mode?: SignMode;
   status: string;
   completed: boolean;
   you: { key: "a" | "b"; role: string; name: string; email: string; status: string };
@@ -24,15 +28,28 @@ type View = {
   sentBy: string | null;
 };
 
+/** The office looking at the page on a sample document: nothing is fetched or saved. */
+type Preview = { name: string; email: string };
+
+export default function SignRoute() {
+  const { token = "" } = useParams();
+  return <SignPage token={token} />;
+}
+
 /**
  * The signer's page (/sign/<token>): the document with their places marked,
  * their name, their signature, and one button. No account; the token in the
  * link, sent to their email, is who they are. Once they sign, the document
  * shows their signature, and it keeps up as the other party signs.
+ *
+ * A request sent in game mode puts the Anything Is Possible game in front of
+ * all this (app/sign/game): the page appears once the game's desk is reached.
+ * Every visit starts the game over until they sign.
  */
-export default function SignPage() {
-  const { token = "" } = useParams();
+export function SignPage({ token, preview }: { token: string; preview?: Preview }) {
   const [view, setView] = useState<View | null>(null);
+  // The game has been played through (or skipped) this visit.
+  const [played, setPlayed] = useState(false);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [png, setPng] = useState<string | null>(null);
@@ -50,6 +67,28 @@ export default function SignPage() {
 
   const load = useCallback(
     async (first = false) => {
+      if (preview) {
+        if (!first) return;
+        const sample = await samplePdf(preview.name);
+        setView({
+          title: PREVIEW_TITLE,
+          brand: null,
+          mode: "game",
+          status: "sent",
+          completed: false,
+          you: { key: "a", role: "Signer", name: preview.name, email: preview.email, status: "viewed" },
+          parties: [{ key: "a", role: "Signer", name: preview.name, status: "viewed" }],
+          fields: sample.fields,
+          pages: sample.pages,
+          pdfKey: "preview",
+          pdfUrl: sample.url,
+          sentBy: "Burton Family Office",
+        });
+        setName(preview.name);
+        setPdfUrl(sample.url);
+        shownKey.current = "preview";
+        return;
+      }
       const have = shownKey.current ? `&have=${encodeURIComponent(shownKey.current)}` : "";
       const res = await fetch(`/api/sign?token=${encodeURIComponent(token)}${have}`);
       const body = (await res.json().catch(() => ({}))) as View & { message?: string };
@@ -64,7 +103,7 @@ export default function SignPage() {
         shownKey.current = body.pdfKey;
       }
     },
-    [token],
+    [token, preview],
   );
 
   useEffect(() => {
@@ -73,7 +112,7 @@ export default function SignPage() {
   }, [load]);
 
   // Until everyone has signed, the document follows along.
-  const waiting = !!view && (view.status === "sent" || view.status === "partial");
+  const waiting = !!view && !preview && (view.status === "sent" || view.status === "partial");
   usePoll(() => load(), 8000, waiting);
 
   useEffect(() => {
@@ -84,6 +123,7 @@ export default function SignPage() {
   }, [confirming, busy]);
 
   async function post(action: "sign" | "decline") {
+    if (preview) return;
     setBusy(true);
     setError("");
     try {
@@ -125,6 +165,16 @@ export default function SignPage() {
   const canSign = !!view && !signedNow && !closed && !done;
   const others = view?.parties.filter((p) => p.key !== view.you.key) ?? [];
   const brand = view?.brand ?? null;
+  // Game mode: the theater comes first, every visit, until they sign.
+  const inGame = !!view && view.mode === "game" && canSign && !played;
+
+  if (view && inGame) {
+    return (
+      <div className="min-h-dvh bg-black text-white">
+        <GameGate signerName={view.you.name} title={view.title} brand={brand} preview={!!preview} onDone={() => setPlayed(true)} onSkip={() => setPlayed(true)} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh bg-black text-white">
@@ -140,7 +190,21 @@ export default function SignPage() {
               </>
             )}
           </div>
-          {view?.sentBy && !brand && <p className="text-right text-[12px] text-white/50">Sent by {view.sentBy}</p>}
+          {preview ? (
+            <div className="flex items-center gap-2 text-[12px]">
+              <span className="rounded-full border border-amber-300/50 bg-amber-300/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200">Preview</span>
+              {view?.mode === "game" && (
+                <button type="button" onClick={() => setPlayed(false)} className="h-[32px] rounded-full border border-white/15 px-3 text-white/80 hover:bg-white/10">
+                  Play again
+                </button>
+              )}
+              <Link to="/tools/signatures" className="h-[32px] rounded-full border border-white/15 px-3 leading-[30px] text-white/80 hover:bg-white/10">
+                Exit preview
+              </Link>
+            </div>
+          ) : (
+            view?.sentBy && !brand && <p className="text-right text-[12px] text-white/50">Sent by {view.sentBy}</p>
+          )}
         </header>
 
         {error && !view && (
@@ -242,13 +306,15 @@ export default function SignPage() {
                 <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
-                    disabled={busy || !png || !name.trim()}
+                    disabled={busy || !png || !name.trim() || !!preview}
                     onClick={() => setConfirming(true)}
                     className="h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-40"
                   >
                     Sign
                   </button>
-                  {!declining ? (
+                  {preview ? (
+                    <span className="text-[13px] text-white/50">This is a preview: nothing is signed or saved.</span>
+                  ) : !declining ? (
                     <button type="button" onClick={() => setDeclining(true)} className="inline-flex min-h-[44px] items-center px-2 text-[13px] text-white/50 hover:text-white">
                       I'd rather not sign
                     </button>

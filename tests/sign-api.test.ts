@@ -146,6 +146,7 @@ beforeEach(async () => {
     completed_at: null,
     copy_sent_at: null,
     brand: null,
+    mode: "normal",
     version: 0,
   };
 });

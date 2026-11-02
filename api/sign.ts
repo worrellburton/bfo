@@ -8,6 +8,7 @@ import { storageDownload, storageRemove, storageSignedUrl, storageUpload } from 
 import {
   appendCertificate,
   cleanField,
+  cleanMode,
   cleanParty,
   deriveStatus,
   hashToken,
@@ -42,10 +43,11 @@ import {
  *          GET ?id=<uuid>[&have=<pdfKey>] → { request, pdfKey, pdfUrl }  one, with a short-lived link to its
  *                     latest PDF (null when `have` already names that version: a page polling for progress)
  *          POST { action, … }:
- *            create     { title, assetId?, contractId?, parties?, brand? } → { request }  (brand: send under that name, never BFO's)
+ *            create     { title, assetId?, contractId?, parties?, brand?, mode? } → { request }  (brand: send under that name, never BFO's;
+ *                       mode: "normal" or "game", the Anything Is Possible theater in front of the signing page)
  *            upload-url { id } → { signedUrl, token, path }  a one-time PUT to a fresh path (it can't overwrite)
  *            attach     { id, path }  reads that upload (page sizes) and makes it the document → { request }
- *            update     { id, title?, fields?, parties? } → { request }  (fields and parties while nobody has signed)
+ *            update     { id, title?, fields?, parties?, mode? } → { request }  (fields and parties while nobody has signed; mode while a draft)
  *            send       { id } → { request }  emails each party their link
  *            remind     { id, party? } → { request }  re-sends the link to those who haven't signed
  *            send-copy  { id } → { request }  emails every party a link to the signed copy
@@ -53,7 +55,7 @@ import {
  *            delete     { id } → { ok }
  *            download   { id } → { url }  the signed copy (or the latest PDF)
  *
- * Signer — GET ?token=<token>[&have=<pdfKey>] → { title, brand, you, parties, fields, pdfKey, pdfUrl, status, completed }  (marks viewed)
+ * Signer — GET ?token=<token>[&have=<pdfKey>] → { title, brand, mode, you, parties, fields, pdfKey, pdfUrl, status, completed }  (marks viewed)
  *          POST { action: "sign", token, name, signature (PNG data URL), consent: true } → { ok, completed }
  *          POST { action: "decline", token, reason? } → { ok }
  *
@@ -202,6 +204,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const assetId = typeof body.assetId === "string" && /^[\w-]{1,80}$/.test(body.assetId) ? body.assetId : null;
       const contractId = typeof body.contractId === "string" && /^[\w-]{1,80}$/.test(body.contractId) ? body.contractId : null;
       const brand = typeof body.brand === "string" && body.brand.trim() ? body.brand.trim().slice(0, 120) : null;
+      const mode = cleanMode(body.mode);
       const parties = partiesFrom(body.parties, []);
       const [row] = await sb<SignatureRequestRow[]>("signature_requests", {
         method: "POST",
@@ -212,6 +215,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           asset_id: assetId,
           contract_id: contractId,
           brand,
+          mode,
           created_by: me.id,
           created_by_name: me.name,
           parties,
@@ -276,6 +280,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (Array.isArray(body.parties)) {
             if (locked) throw new Refuse(409, "locked", "Parties can't change once someone has signed.");
             changes.parties = partiesFrom(body.parties, r.parties);
+          }
+          // The mode shapes the email that goes out, so it's settled before Send.
+          if (typeof body.mode === "string" && cleanMode(body.mode) !== (r.mode ?? "normal")) {
+            if (r.status !== "draft") throw new Refuse(409, "already_sent", "How they sign can't change once it has been sent.");
+            changes.mode = cleanMode(body.mode);
           }
           return changes;
         });
@@ -420,6 +429,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     const same = typeof req.query.have === "string" && req.query.have === key;
     return res.status(200).json({
       brand: current.brand,
+      mode: current.mode ?? "normal",
       pdfKey: key,
       title: current.title,
       status: current.status,

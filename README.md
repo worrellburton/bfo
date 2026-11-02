@@ -65,9 +65,23 @@ Optional ones are marked. Never commit values.
 | `STABLE_WEBHOOK_TOKEN` | Shared token in the Stable webhook URL (`/api/stable-webhook?token=…`). |
 | `ANTHROPIC_API_KEY` | Ask BFO, document classification, profile and verification, document renaming. |
 | `OPENAI_API_KEY` | Voice (transcription, speech, Realtime) and the logo reference sheet. |
-| `MESHY_API_KEY` | optional. Image-to-3D for the logo studio. |
+| `MESHY_API_KEY` | optional. Image-to-3D for the logo studio and the signing game's props (`npm run game:props`). |
+| `ELEVENLABS_API_KEY` | optional. Sound effects for the signing game (`npm run game:sounds`); never needed at runtime. |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8` | Apple push key for the iPhone app. `APNS_BUNDLE_ID` optional (default `com.burtonfamilyoffice.app`). |
 | `SITE_URL` | optional. Site origin used in emails (default `https://www.burtonfamilyoffice.com`). |
+
+## The signing game
+
+A signature request can go out in "Anything Is Possible" mode (Tools ›
+Signatures › How they sign). The signer's link then opens a first-person game
+in front of the signing page: a floating island, a chain of blocks to the
+theater on the next island, the seat with their name on it, the film, and the
+door to the room with the contract. The game is `app/sign/game` (three.js,
+loaded only on that page); its movie, music, sound effects and optional GLB
+props live in `public/game` and are named in `public/game/manifest.json`
+(see `public/game/README.md`). Robert's account menu has "Preview the
+signing game" (`/sign/preview`), which runs the whole thing on a sample
+document and signs nothing.
 
 ## Check, test, build
 

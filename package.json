@@ -13,6 +13,9 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "node e2e/run.cjs",
     "migrate": "node scripts/migrate.mjs",
+    "game:sounds": "node scripts/game-sounds.mjs",
+    "game:props": "node scripts/game-props.mjs",
+    "game:judy": "node scripts/game-judy.mjs",
     "audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
@@ -26,7 +29,9 @@
     "@capgo/capacitor-native-biometric": "^8.9.1",
     "@react-router/node": "7.18.5",
     "@supabase/supabase-js": "^2.102.1",
+    "@types/three": "^0.170.0",
     "dompurify": "^3.4.17",
+    "isbot": "^5",
     "jspdf": "^4.2.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
@@ -34,7 +39,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "7.18.5",
-    "isbot": "^5"
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",

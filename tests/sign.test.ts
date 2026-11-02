@@ -5,11 +5,13 @@ import {
   certificateFooter,
   certificateLines,
   cleanField,
+  cleanMode,
   cleanParty,
   deriveStatus,
   fieldRect,
   fitInside,
   fontSafe,
+  GAME_NOTE,
   hashToken,
   isUploadPath,
   newToken,
@@ -59,6 +61,7 @@ const row = (over: Partial<SignatureRequestRow> = {}): SignatureRequestRow => ({
   completed_at: null,
   copy_sent_at: null,
   brand: null,
+  mode: "normal",
   version: 0,
   ...over,
 });
@@ -103,6 +106,12 @@ describe("sendBlocker", () => {
 });
 
 describe("cleaning", () => {
+  it("reads a mode, falling back to the plain page", () => {
+    expect(cleanMode("game")).toBe("game");
+    expect(cleanMode("normal")).toBe("normal");
+    expect(cleanMode("arcade")).toBe("normal");
+    expect(cleanMode(undefined)).toBe("normal");
+  });
   it("keeps a field on the page and inside sane sizes", () => {
     expect(cleanField({ id: "f", party: "a", type: "signature", page: 1, x: 0.9, y: 0.95, w: 0.3, h: 0.1 }, 1)).toEqual({
       id: "f",
@@ -178,6 +187,14 @@ describe("emails", () => {
     expect(m.text).toContain("https://www.burtonfamilyoffice.com/sign/abc");
     expect(m.html).toContain("Ada Client");
     expect(signRequestEmail({ title: "MSA", created_by_name: null, brand: null }, party("b"), "x", true).subject).toMatch(/^Reminder/);
+  });
+  it("tells a game-mode signer to open it on a computer", () => {
+    const m = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: null, mode: "game" }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");
+    expect(m.text).toContain(GAME_NOTE);
+    expect(m.html).toContain("Play and sign");
+    const plain = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: null, mode: "normal" }, party("b"), "x");
+    expect(plain.html).not.toContain(GAME_NOTE);
+    expect(plain.html).toContain("Review and sign");
   });
   it("never mentions BFO when sent under an entity's own name", () => {
     const m = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: "Ledger Louise, LLC" }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");

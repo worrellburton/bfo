@@ -1,7 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { createPortal } from "react-dom";
+import { authFetch, isAdmin } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
-import { blankTab, FIELD_LABEL, isOpen, newField, PARTY_LABEL, signApi, when, type FieldType, type Party, type PartyKey, type SignField, type SignatureRequest } from "../sign/api";
+import { InviteDialog } from "../entity/people";
+import {
+  blankTab,
+  FIELD_LABEL,
+  isOpen,
+  MODE_LABEL,
+  newField,
+  PARTY_LABEL,
+  signApi,
+  when,
+  type FieldType,
+  type Party,
+  type PartyKey,
+  type SignField,
+  type SignatureRequest,
+  type SignMode,
+} from "../sign/api";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
 import { usePoll } from "../sign/use-poll";
 import { useTheme } from "../theme";
@@ -30,6 +48,28 @@ export default function SignatureDetail() {
   const [placing, setPlacing] = useState<{ party: PartyKey; type: FieldType } | null>(null);
   const [frameRef, width] = useFitWidth(880);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A party being invited to BFO as a user of the request's entity (app/entity/people.tsx).
+  const [inviting, setInviting] = useState<Party | null>(null);
+  const [entityName, setEntityName] = useState<string | null>(null);
+  const [invited, setInvited] = useState<Set<string>>(new Set());
+  const assetId = req?.asset_id ?? null;
+
+  // The entity's name and who already has it, for "Invite to BFO" on each party.
+  useEffect(() => {
+    if (!assetId || !isAdmin()) return;
+    let live = true;
+    authFetch(`/api/tree?path=assets&ids=${encodeURIComponent(assetId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => live && setEntityName((j?.rows?.[0]?.data as { name?: string } | undefined)?.name ?? null))
+      .catch(() => {});
+    authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => live && setInvited(new Set(((j?.people ?? []) as Array<{ email: string | null }>).map((p) => (p.email ?? "").toLowerCase()).filter(Boolean))))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [assetId]);
 
   const t2 = isDark ? "text-gray-400" : "text-gray-600";
   const t3 = isDark ? "text-gray-500" : "text-gray-400";
@@ -67,7 +107,9 @@ export default function SignatureDetail() {
     setReq(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      signApi.act("update", { id: next.id, title: next.title, fields: next.fields, parties: next.parties }).catch((err) => setError(err instanceof Error ? err.message : "Couldn't save."));
+      signApi
+        .act("update", { id: next.id, title: next.title, fields: next.fields, parties: next.parties, mode: next.mode ?? "normal" })
+        .catch((err) => setError(err instanceof Error ? err.message : "Couldn't save."));
     }, 500);
   }
 
@@ -98,7 +140,7 @@ export default function SignatureDetail() {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
-        await signApi.act("update", { id: req.id, title: req.title, fields: req.fields, parties: req.parties });
+        await signApi.act("update", { id: req.id, title: req.title, fields: req.fields, parties: req.parties, mode: req.mode ?? "normal" });
       }
       if (tab) {
         tab.go(await signApi.download(req.id));
@@ -169,6 +211,7 @@ export default function SignatureDetail() {
           {req && (
             <p className={`mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] ${t2}`}>
               <StatusChip status={req.status} isDark={isDark} />
+              {req.mode === "game" && !editable && <span className={isDark ? "text-amber-300" : "text-amber-700"}>{MODE_LABEL.game}</span>}
               {req.sent_at && <span>Sent {when(req.sent_at)}</span>}
               {req.completed_at && <span>Signed {when(req.completed_at)}</span>}
               {req.copy_sent_at && <span>Copy sent {when(req.copy_sent_at)}</span>}
@@ -267,8 +310,41 @@ export default function SignatureDetail() {
           )}
         </div>
 
-        {/* Parties and fields */}
+        {/* How they sign, the parties and their fields */}
         <aside className="space-y-4">
+          {req && editable && (
+            <section className={`${card} p-4`}>
+              <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>How they sign</p>
+              <div className="mt-3 space-y-2" role="radiogroup" aria-label="How they sign">
+                {(
+                  [
+                    { mode: "normal", blurb: "They open the link, read the document, and sign." },
+                    { mode: "game", blurb: "They walk into a theater, watch the clip, and the door to the signing room opens when it ends. Computer only." },
+                  ] as Array<{ mode: SignMode; blurb: string }>
+                ).map(({ mode, blurb }) => {
+                  const on = (req.mode ?? "normal") === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => queueSave({ ...req, mode })}
+                      className={`block w-full rounded-xl border p-3 text-left transition-colors ${
+                        on ? (isDark ? "border-white/40 bg-white/[0.06]" : "border-gray-900 bg-gray-50") : isDark ? "border-white/10 hover:border-white/25" : "border-gray-200 hover:border-gray-400"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 text-[13px] font-medium">
+                        <span aria-hidden className={`h-2 w-2 rounded-full ${on ? (isDark ? "bg-white" : "bg-gray-900") : isDark ? "bg-white/20" : "bg-gray-300"}`} />
+                        {MODE_LABEL[mode]}
+                      </span>
+                      <span className={`mt-1 block text-[11.5px] leading-snug ${t2}`}>{blurb}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           {parties.map((p) => {
             const tone = partyTone(p.key);
             const mine = (req?.fields ?? []).filter((f) => f.party === p.key);
@@ -333,6 +409,16 @@ export default function SignatureDetail() {
                     </p>
                     {p.signedAs && p.signedAs !== p.name && <p className={`text-[12px] ${t3}`}>Signed as {p.signedAs}</p>}
                     {p.declinedReason && <p className="mt-1 text-[12px] text-red-400">Declined: {p.declinedReason}</p>}
+                    {assetId &&
+                      isAdmin() &&
+                      p.email &&
+                      (invited.has(p.email.toLowerCase()) ? (
+                        <p className={`mt-2 text-[12px] ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>Can sign in to BFO and see {entityName ?? "the entity"}.</p>
+                      ) : (
+                        <Small isDark={isDark} className="mt-2" disabled={!!busy} onClick={() => setInviting(p)}>
+                          Invite to BFO
+                        </Small>
+                      ))}
                     {(req?.status === "sent" || req?.status === "partial") && p.status !== "signed" && (
                       <Small
                         isDark={isDark}
@@ -373,6 +459,20 @@ export default function SignatureDetail() {
           )}
         </aside>
       </div>
+
+      {inviting &&
+        assetId &&
+        createPortal(
+          <InviteDialog
+            entity={entityName ?? req?.title ?? "the entity"}
+            memberName={inviting.name || inviting.role}
+            assetId={assetId}
+            initial={{ name: inviting.name, email: inviting.email }}
+            onClose={() => setInviting(null)}
+            onDone={(people) => setInvited(new Set(people.map((p) => (p.email ?? "").toLowerCase()).filter(Boolean)))}
+          />,
+          document.body,
+        )}
     </div>
   );
 }

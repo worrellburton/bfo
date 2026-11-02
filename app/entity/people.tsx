@@ -13,7 +13,7 @@ import { Button, Empty, Icon, IconButton, Input, Section, Select, TextButton, us
  * phone and find this one's documents, operating agreement included.
  */
 
-type Person = {
+export type Person = {
   userId: string;
   memberName: string | null;
   name: string | null;
@@ -483,12 +483,31 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
   );
 }
 
-function InviteDialog({ entity, memberName, assetId, onClose, onDone }: { entity: string; memberName: string; assetId: string; onClose: () => void; onDone: (people: Person[]) => void }) {
+/**
+ * Invites one person to BFO as a partner of the entity: finds or creates
+ * their account, gives them the entity, texts (and emails) them to sign in.
+ * `initial` prefills what's already known (a signature request's party).
+ */
+export function InviteDialog({
+  entity,
+  memberName,
+  assetId,
+  initial,
+  onClose,
+  onDone,
+}: {
+  entity: string;
+  memberName: string;
+  assetId: string;
+  initial?: { name?: string; email?: string };
+  onClose: () => void;
+  onDone: (people: Person[]) => void;
+}) {
   const t = useTone();
   const company = isCompany(memberName);
-  const [name, setName] = useState(company ? "" : memberName);
+  const [name, setName] = useState(initial?.name ?? (company ? "" : memberName));
   const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initial?.email ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState<{ sms: boolean; email: boolean } | null>(null);
@@ -585,5 +604,90 @@ function InviteDialog({ entity, memberName, assetId, onClose, onDone }: { entity
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Overview's Users card: who can sign in and see this entity, and a way to
+ * invite one more. The full picture (owners, shares, trust roles) is on Owners.
+ */
+export function UsersCard() {
+  const { page, asset, goToTab } = useEntity();
+  const t = useTone();
+  const admin = isAdmin() && !isPartner();
+  const [people, setPeople] = useState<Person[] | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const assetId = page.id ?? "";
+
+  useEffect(() => {
+    if (!admin || !assetId) return;
+    let live = true;
+    authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
+      .then((r) => (r.ok ? r.json() : { people: [] }))
+      .then((j) => live && setPeople(j.people ?? []))
+      .catch(() => live && setPeople([]));
+    return () => {
+      live = false;
+    };
+  }, [admin, assetId]);
+
+  if (!admin || !assetId) return null;
+  const list = people ?? [];
+  const day = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  return (
+    <Section
+      title="Users"
+      count={list.length || undefined}
+      info="Who can sign in to BFO and see this entity: its documents, operating agreement and owners, and nothing else."
+      actions={
+        <>
+          {list.length > 0 && <TextButton onClick={() => goToTab("people")}>Manage</TextButton>}
+          <Button icon="mail" onClick={() => setInviting(true)}>
+            Invite
+          </Button>
+        </>
+      }
+    >
+      {people === null ? (
+        <p className={`px-4 py-3 text-[12.5px] ${t.muted}`}>Loading…</p>
+      ) : list.length === 0 ? (
+        <Empty>Nobody outside the office can see this entity yet. Invite an owner or a signer and they'll sign in with their phone.</Empty>
+      ) : (
+        <ul className="divide-y divide-white/5">
+          {list.map((p) => {
+            const signedIn = !!p.lastLoginAt && new Date(p.lastLoginAt) >= new Date(p.invitedAt);
+            return (
+              <li key={p.userId} className="flex items-center gap-3 px-4 py-2.5">
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold text-black"
+                  style={{ background: COLORS[(p.name ?? "").length % COLORS.length] }}
+                >
+                  {initials(p.name || p.memberName || "?")}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium">{p.name || p.memberName}</span>
+                  <span className={`block truncate text-[11.5px] ${t.muted}`}>{p.email || p.phone}</span>
+                </span>
+                <span className={`shrink-0 text-[11.5px] ${t.faint}`}>{signedIn ? `Signed in ${day(p.lastLoginAt!)}` : `Invited ${day(p.invitedAt)}`}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {inviting &&
+        createPortal(
+          <InviteDialog
+            entity={asset.name ?? "this entity"}
+            memberName=""
+            assetId={assetId}
+            onClose={() => setInviting(false)}
+            onDone={(next) => {
+              setPeople(next);
+            }}
+          />,
+          document.body,
+        )}
+    </Section>
   );
 }

@@ -34,6 +34,7 @@ import { useInstall } from "../pwa";
 import { AppearancePanel } from "../appearance-panel";
 import { AppLock, useAppLockSetting } from "../app-lock";
 import { enablePush, forgetPushDevice, usePush, usePushState } from "../push";
+import { canPreviewGame } from "../sign/preview";
 
 const iconCls = "w-4 h-4 shrink-0";
 
@@ -927,6 +928,18 @@ export default function AppLayout() {
                   <span className="inline-flex [&>svg]:h-4 [&>svg]:w-4">{usersIcon}</span>
                   <span className="flex-1">Users</span>
                   {pending > 0 && <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">{pending}</span>}
+                </button>
+              )}
+
+              {/* The signing game as a signer sees it, on a sample document (app/sign/preview.ts). */}
+              {canPreviewGame(user) && (
+                <button onClick={() => go("/sign/preview")} className={menuItemCls} role="menuitem">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v7a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 14.5v-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 9.25v3.5l3-1.75-3-1.75zM8 20h8" />
+                  </svg>
+                  <span className="flex-1">Preview the signing game</span>
+                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>sample document</span>
                 </button>
               )}
 

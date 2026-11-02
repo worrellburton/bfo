@@ -1,0 +1,15 @@
+{
+  "movie": "/game/movie.mp4",
+  "youtube": "LnVy5ZEcbH0",
+  "music": "/game/lobby.mp3",
+  "sounds": {
+    "door": null,
+    "sit": null,
+    "sign": null,
+    "jump": null,
+    "land": null,
+    "fall": null
+  },
+  "models": {},
+  "voice": {}
+}
