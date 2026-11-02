@@ -32,6 +32,7 @@ export function GameGate({
   signerName,
   title,
   brand,
+  document,
   preview,
   onDone,
   onSkip,
@@ -39,6 +40,8 @@ export function GameGate({
   signerName: string;
   title: string;
   brand: string | null;
+  /** The document itself, for the title screen: its file name, length, who sent it, and where the signature goes. */
+  document?: { fileName: string; pages: number; sentBy: string | null; role: string; signPages: number[] };
   /** The office looking at it: a way out at the top instead of a signature at the end. */
   preview?: boolean;
   onDone: () => void;
@@ -209,16 +212,29 @@ export function GameGate({
         </p>
       )}
 
-      {/* The title screen: what they're here to sign, full screen, Start at the bottom. */}
+      {/* The title screen: the document to sign, full screen, Start at the bottom. */}
       {hud.phase === "intro" && (
         <div className="absolute inset-0 z-30 flex flex-col bg-[#07070a]/92 backdrop-blur-sm">
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
             <p className="auth-eyebrow text-[11px] uppercase tracking-[0.32em] text-amber-300/80">{brand || "Burton Family Office"}</p>
-            <p className="mt-6 text-[13px] uppercase tracking-[0.22em] text-white/50">You're here to sign</p>
+            <p className="mt-6 text-[13px] uppercase tracking-[0.22em] text-white/50">A document is waiting for your signature</p>
             <h1 className="mt-3 max-w-[900px] font-[var(--font-brand)] text-[40px] leading-[1.05] text-white sm:text-[56px]">{title}</h1>
+            {document && (
+              <div className="mt-6 flex w-full max-w-[560px] items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left">
+                <span className="flex h-14 w-11 shrink-0 items-center justify-center rounded-md bg-[#f4ede0] text-[10px] font-bold uppercase tracking-wider text-[#8c2a2f] shadow">PDF</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-medium text-white">{document.fileName}</span>
+                  <span className="mt-0.5 block text-[12.5px] text-white/55">
+                    {document.pages} page{document.pages === 1 ? "" : "s"}
+                    {document.sentBy ? ` · sent by ${document.sentBy}` : ""} · you sign as {document.role}
+                  </span>
+                  {document.signPages.length > 0 && <span className="mt-0.5 block text-[12.5px] text-amber-200/90">Your signature goes on page {document.signPages.join(", ")}</span>}
+                </span>
+              </div>
+            )}
             <p className="mt-6 max-w-[640px] text-[15px] leading-relaxed text-white/65">
-              Hello, {signerName}. The contract is waiting on the other side of a short film: cross the floating blocks to the theater, get your ticket from Judy, take the seat with your name on it,
-              and when the film ends, climb the stairs to the contract.
+              Hello, {signerName}. To get to it, cross the floating blocks to the theater, collect your ticket from Judy, take the seat with your name on it, watch the film, and climb the stairs to
+              the contract. Then you sign.
             </p>
             <dl className="mt-8 grid grid-cols-2 gap-x-10 gap-y-1.5 text-left text-[12.5px] text-white/70 sm:grid-cols-3">
               <dt className="text-white/40">Move</dt>
@@ -242,7 +258,7 @@ export function GameGate({
               onClick={() => game.current?.begin()}
               className="h-[56px] min-w-[260px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-50"
             >
-              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start"}
+              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : `Start, then sign ${document ? document.fileName : title}`}
             </button>
             <p className="text-[11.5px] text-white/35">Anything Is Possible · a short film, then your signature</p>
             {loading === "failed" && (

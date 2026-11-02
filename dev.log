@@ -21,3 +21,15 @@
   ➜  Network: use --host to expose
 8:51:35 PM [vite] (client) hmr update /app/app.css
 8:51:35 PM [vite] (ssr) hmr update /app/app.css
+8:52:47 PM [vite] (client) hmr update /app/sign/game/index.tsx
+8:52:47 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+8:52:47 PM [vite] (ssr) hmr update /app/app.css
+8:52:47 PM [vite] (client) hmr update /app/routes/sign.tsx
+8:52:47 PM [vite] (client) hmr update /app/app.css, /app/routes/sign.tsx
+8:52:47 PM [vite] (ssr) hmr update /app/app.css
+8:52:48 PM [vite] (client) hmr update /app/sign/game/index.tsx
+8:52:48 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+8:52:48 PM [vite] (ssr) hmr update /app/app.css
+8:52:48 PM [vite] (client) hmr update /app/routes/sign.tsx
+8:52:48 PM [vite] (client) hmr update /app/app.css, /app/routes/sign.tsx
+8:52:48 PM [vite] (ssr) hmr update /app/app.css
