@@ -51,6 +51,8 @@ export type Hud = {
   needsClick: boolean;
   /** 0..1 black over everything (the fade into the signing page). */
   dark: number;
+  /** Frames a second, over the last half second (the preview shows it). */
+  fps: number;
   /** Talking to Judy at the booth: who's speaking, the subtitle, and the replies on offer. */
   dialogue: { speaker: string; text: string; options: string[] | null } | null;
   /** The ticket Judy handed over. */
@@ -69,6 +71,10 @@ export type GameOptions = {
 };
 
 type Box = { min: THREE.Vector3; max: THREE.Vector3 };
+
+/** The material for walls, floors and props: lit per pixel but far cheaper than a physical material, which only the gold and the models need. */
+const surface = (map: THREE.Texture, extra: { color?: number; transparent?: boolean; opacity?: number } = {}) => new THREE.MeshPhongMaterial({ map, shininess: 6, specular: 0x141414, ...extra });
+const flat = (color: number, extra: { transparent?: boolean; opacity?: number } = {}) => new THREE.MeshPhongMaterial({ color, shininess: 6, specular: 0x141414, ...extra });
 
 // ── Layout (meters; y up; the start island is at the origin, the theater far down -z) ──
 /** The island you wake on: its top is y = 0. */
@@ -160,7 +166,12 @@ export class SigningGame {
 
   // The story
   private phase: Phase = "intro";
-  private hud: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, dialogue: null, ticket: false };
+  private hud: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, dialogue: null, ticket: false };
+  // Frame pacing: frames and time since the last fps reading, and the render scale the scaler settled on.
+  private frames = 0;
+  private frameTime = 0;
+  private fpsAt = 0;
+  private scale = 1;
   // Judy at the booth: which round we're in and the timers that pace her subtitles.
   private talking: { round: number } | null = null;
   private talkTimers: Array<ReturnType<typeof setTimeout>> = [];
@@ -212,10 +223,13 @@ export class SigningGame {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: useCss, powerPreference: "high-performance" });
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
     this.renderer.setClearColor(0x000000, useCss ? 0 : 1);
+    // Shadows are drawn once (the world stands still; what moves casts none) rather than every frame.
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     Object.assign(this.renderer.domElement.style, { position: "absolute", inset: "0", width: "100%", height: "100%", zIndex: "1", display: "block" });
     if (useCss) {
       this.css = new CSS3DRenderer();
@@ -297,7 +311,7 @@ export class SigningGame {
     sun.position.set(60, 110, -30);
     sun.target.position.set(0, 0, (ISLAND.z0 + 10) / 2);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 10;
     sun.shadow.camera.far = 320;
     sun.shadow.camera.left = -45;
@@ -310,8 +324,8 @@ export class SigningGame {
     sunDisc.position.set(220, 260, -140);
     s.add(sunDisc);
     // A sea of cloud far below, and clouds drifting by.
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshStandardMaterial({ map: pixelTexture(0xf0f4f9, 10, "cloud"), roughness: 1 }));
-    (sea.material as THREE.MeshStandardMaterial).map!.repeat.set(24, 24);
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), surface(pixelTexture(0xf0f4f9, 10, "cloud")));
+    (sea.material as THREE.MeshPhongMaterial).map!.repeat.set(24, 24);
     sea.rotation.x = -Math.PI / 2;
     sea.position.y = -34;
     s.add(sea);
@@ -320,7 +334,7 @@ export class SigningGame {
     for (let i = 0; i < 22; i++) {
       const c = new THREE.Group();
       const n = 2 + Math.floor(rnd() * 3);
-      const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0xe6eef7, emissiveIntensity: 0.55, transparent: true, opacity: 0.94 });
+      const cloudMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 2, emissive: 0xe6eef7, emissiveIntensity: 0.55, transparent: true, opacity: 0.94 });
       for (let j = 0; j < n + 2; j++) {
         const m = new THREE.Mesh(new THREE.SphereGeometry(2.2 + rnd() * 2.8, 18, 12), cloudMat);
         m.position.set((rnd() - 0.5) * 9, (rnd() - 0.5) * 1.4, (rnd() - 0.5) * 5);
@@ -346,10 +360,10 @@ export class SigningGame {
       const mover = MOVERS(i, size);
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(size, h, size),
-        [dirt, dirt, mover ? moverTop : blockTop, dirt, dirt, dirt].map((t) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 })),
+        [dirt, dirt, mover ? moverTop : blockTop, dirt, dirt, dirt].map((t) => surface(t)),
       );
       m.position.set(x, top - h / 2, z);
-      m.castShadow = true;
+      m.castShadow = !mover;
       m.receiveShadow = true;
       s.add(m);
       const box = { min: new THREE.Vector3(x - size / 2, top - h, z - size / 2), max: new THREE.Vector3(x + size / 2, top, z + size / 2) };
@@ -359,9 +373,9 @@ export class SigningGame {
     // Birds wheeling over the sky between the islands.
     for (let i = 0; i < 7; i++) {
       const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.22), new THREE.MeshStandardMaterial({ color: 0x23232a, roughness: 0.9 }));
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.22), flat(0x23232a));
       const wings = [-1, 1].map((side) => {
-        const w = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.7), new THREE.MeshStandardMaterial({ color: 0x33333c, roughness: 0.9 }));
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.7), flat(0x33333c));
         w.position.set(0, 0.05, side * 0.4);
         g.add(w);
         return w;
@@ -382,15 +396,15 @@ export class SigningGame {
     g(ISLAND.x0, ISLAND.x1, ISLAND.z0, BLDG.z0 - 0.3); // behind the building
     const underTex = rock.clone();
     underTex.repeat.set(60, 10);
-    const under = new THREE.Mesh(new THREE.BoxGeometry(ISLAND.x1 - ISLAND.x0, 10, ISLAND.z1 - ISLAND.z0), new THREE.MeshStandardMaterial({ map: underTex, roughness: 1 }));
+    const under = new THREE.Mesh(new THREE.BoxGeometry(ISLAND.x1 - ISLAND.x0, 10, ISLAND.z1 - ISLAND.z0), surface(underTex));
     under.position.set(0, -10, (ISLAND.z0 + ISLAND.z1) / 2);
     s.add(under);
-    const under2 = new THREE.Mesh(new THREE.CylinderGeometry(24, 9, 14, 22), new THREE.MeshStandardMaterial({ map: rock, roughness: 1 }));
+    const under2 = new THREE.Mesh(new THREE.CylinderGeometry(24, 9, 14, 22), surface(rock));
     under2.scale.z = 1.5;
     under2.position.set(2, -21, (ISLAND.z0 + ISLAND.z1) / 2 + 3);
     s.add(under2);
     // The red carpet up to the doors.
-    const red = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.04, ISLAND.z1 - BLDG.z1 - 2), new THREE.MeshStandardMaterial({ map: carpet, roughness: 0.95 }));
+    const red = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.04, ISLAND.z1 - BLDG.z1 - 2), surface(carpet));
     red.position.set(0, 0.02, (ISLAND.z1 + BLDG.z1) / 2 - 1);
     red.receiveShadow = true;
     s.add(red);
@@ -398,7 +412,7 @@ export class SigningGame {
     this.plant(-5, 0, BLDG.z1 + 2.5, wood);
     this.plant(5, 0, BLDG.z1 + 2.5, wood);
     for (const x of [-9, 9]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 4, 0.25), new THREE.MeshStandardMaterial({ color: 0x1a1a1f, roughness: 0.9 }));
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 4, 0.25), flat(0x1a1a1f));
       post.position.set(x, 2, BLDG.z1 + 6);
       post.castShadow = true;
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffd27a, emissiveIntensity: 1.2 }));
@@ -425,7 +439,7 @@ export class SigningGame {
     this.wall(0, byc, BLDG.z0 - 0.15, bw * 2 + 0.6, bh, 0.3, facade, true);
     this.slab(0, BLDG.height + 0.15, (BLDG.z0 + BLDG.z1) / 2, bw * 2 + 0.6, 0.3, BLDG.z1 - BLDG.z0 + 0.6, rock, true);
     // The marquee over the doors, with its bulbs.
-    const marquee = new THREE.Mesh(new THREE.BoxGeometry(18, 3.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 }));
+    const marquee = new THREE.Mesh(new THREE.BoxGeometry(18, 3.2, 1.2), flat(0x14141a));
     marquee.position.set(0, doorTop + 3.4, BLDG.z1 + 0.75);
     marquee.castShadow = true;
     s.add(marquee);
@@ -442,7 +456,7 @@ export class SigningGame {
     this.sign([`RESERVED SEATING FOR ${this.opts.signerName.toUpperCase()}`], 0, doorTop + 0.9, BLDG.z1 + 0.17, 7, 0.7, 0, "#2e0f14", "#f4ede0");
     // The front doors: shut until Judy hands over a ticket, then they swing inward.
     for (const side of [-1, 1] as const) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, doorTop - 0.05, doorHalf), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, doorTop - 0.05, doorHalf), surface(wood));
       const grp = new THREE.Group();
       grp.position.set(side * doorHalf, (doorTop - 0.05) / 2, BLDG.z1 - 0.15);
       panel.position.set(0, 0, -doorHalf / 2);
@@ -510,11 +524,11 @@ export class SigningGame {
       }
     this.seats(velvet, gold);
     // Screen, frame and curtains.
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(SCREEN.w + 1, SCREEN.h + 1, 0.2), new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.9 }));
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(SCREEN.w + 1, SCREEN.h + 1, 0.2), flat(0x0c0c10));
     frame.position.set(0, SCREEN.y, SCREEN.z - 0.15);
     s.add(frame);
     for (const side of [-1, 1]) {
-      const curtain = new THREE.Mesh(new THREE.BoxGeometry(1.6, BLDG.height - FRONT_FLOOR - 0.4, 0.7), new THREE.MeshStandardMaterial({ map: velvet, roughness: 0.95 }));
+      const curtain = new THREE.Mesh(new THREE.BoxGeometry(1.6, BLDG.height - FRONT_FLOOR - 0.4, 0.7), surface(velvet));
       curtain.position.set(side * (SCREEN.w / 2 + 1.5), wallY, SCREEN.z + 0.3);
       s.add(curtain);
     }
@@ -525,9 +539,9 @@ export class SigningGame {
     this.screenLight = new THREE.PointLight(0xcfe3ff, 0, 0, 2);
     this.screenLight.position.set(0, SCREEN.y, SCREEN.z + 5);
     s.add(this.screenLight);
-    for (const z of [-88, -97, -106, -115])
+    for (const z of [LOBBY.z0 - 7, LOBBY.z0 - 22])
       for (const x of [-6, 6]) {
-        const l = new THREE.PointLight(0xffe2b8, 120, 0, 2);
+        const l = new THREE.PointLight(0xffe2b8, 160, 60, 2);
         l.position.set(x, BLDG.height - 2, z);
         s.add(l);
         this.houseLights.push(l);
@@ -538,7 +552,7 @@ export class SigningGame {
     // The exit door beside the screen, hinged at its far-from-screen jamb and swinging into the signing room.
     this.doorGroup = new THREE.Group();
     this.doorGroup.position.set(DOOR.x, FRONT_FLOOR, DOOR.z0);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, DOOR.h, DOOR.z1 - DOOR.z0 - 0.04), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, DOOR.h, DOOR.z1 - DOOR.z0 - 0.04), surface(wood));
     door.position.set(0, DOOR.h / 2, (DOOR.z1 - DOOR.z0) / 2);
     this.doorGroup.add(door);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), gold);
@@ -562,7 +576,7 @@ export class SigningGame {
       const p = STEP_POS(i);
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(STAIR.size, 0.4, STAIR.size),
-        [stepSide, stepSide, stepTex, stepSide, stepSide, stepSide].map((t) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 })),
+        [stepSide, stepSide, stepTex, stepSide, stepSide, stepSide].map((t) => surface(t)),
       );
       m.position.set(p.x, p.y - 0.2, p.z);
       m.rotation.y = -STEP_ANGLE(i);
@@ -572,7 +586,7 @@ export class SigningGame {
       // Collision boxes are axis-aligned; a turned step gets a box that covers it.
       const half = (STAIR.size / 2) * 1.2;
       this.solids.push({ min: new THREE.Vector3(p.x - half, p.y - 0.4, p.z - half), max: new THREE.Vector3(p.x + half, p.y, p.z + half) });
-      if (i % 8 === 4) {
+      if (i % 16 === 8) {
         const lamp = new THREE.PointLight(0xffe8b0, 6, 9, 2);
         lamp.position.set(p.x, p.y + 1.6, p.z);
         s.add(lamp);
@@ -646,15 +660,15 @@ export class SigningGame {
     dirtTex.repeat.set(w, 3);
     const grassTex = grass.clone();
     grassTex.repeat.set(w, d);
-    const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.95 });
-    const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95 });
+    const dirtMat = surface(dirtTex);
+    const grassMat = surface(grassTex);
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, 3, d), [dirtMat, dirtMat, grassMat, dirtMat, dirtMat, dirtMat]);
     m.position.set(x, top - 1.5, z);
     m.castShadow = true;
     m.receiveShadow = true;
     this.scene.add(m);
     this.solids.push({ min: new THREE.Vector3(x - w / 2, top - 3, z - d / 2), max: new THREE.Vector3(x + w / 2, top, z + d / 2) });
-    const rockMat = new THREE.MeshStandardMaterial({ map: rock, roughness: 1 });
+    const rockMat = surface(rock);
     const r1 = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.48, w * 0.3, 4, 18), rockMat);
     r1.position.set(x + 0.4, top - 4.5, z - 0.3);
     const r2 = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.28, w * 0.1, 3.5, 14), rockMat);
@@ -666,7 +680,7 @@ export class SigningGame {
     const t = tex.clone();
     t.repeat.set(w, d);
     t.needsUpdate = true;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), surface(t));
     m.position.set(x, y, z);
     m.receiveShadow = true;
     m.castShadow = shadow;
@@ -679,7 +693,7 @@ export class SigningGame {
     const t = tex.clone();
     t.repeat.set(Math.max(w, d), h);
     t.needsUpdate = true;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), surface(t));
     m.position.set(x, y, z);
     m.receiveShadow = true;
     this.scene.add(m);
@@ -689,7 +703,7 @@ export class SigningGame {
     const t = tex.clone();
     t.repeat.set(Math.max(w, d), h);
     t.needsUpdate = true;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), surface(t));
     m.position.set(x, y, z);
     m.receiveShadow = true;
     m.castShadow = shadow;
@@ -707,20 +721,20 @@ export class SigningGame {
   }
 
   private signpost(x: number, y: number, z: number, lines: string[]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 0.12), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 }));
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 0.12), flat(0x4a3018));
     post.position.set(x, y + 0.8, z);
     post.castShadow = true;
     this.scene.add(post);
     this.sign(lines, x, y + 1.75, z + 0.07, 1.8, 0.7, 0, "#17120c", "#f4ede0");
-    const back = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.8, 0.1), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 }));
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.8, 0.1), flat(0x4a3018));
     back.position.set(x, y + 1.75, z);
     this.scene.add(back);
   }
 
   private seats(velvet: THREE.Texture, gold: THREE.Material) {
     const count = ROWS * SEATS_PER_SIDE * 2 - 1;
-    const base = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 0.45, 0.9), new THREE.MeshStandardMaterial({ map: velvet, roughness: 0.95 }), count);
-    const back = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 1.1, 0.15), new THREE.MeshStandardMaterial({ map: velvet, roughness: 0.95 }), count);
+    const base = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 0.45, 0.9), surface(velvet), count);
+    const back = new THREE.InstancedMesh(new THREE.BoxGeometry(1.0, 1.1, 0.15), surface(velvet), count);
     const m = new THREE.Matrix4();
     let i = 0;
     for (let r = 0; r < ROWS; r++)
@@ -775,11 +789,11 @@ export class SigningGame {
   private booth(gold: THREE.Material) {
     const s = this.scene;
     const { x, z, w, d, h } = BOOTH;
-    const paint = new THREE.MeshStandardMaterial({ map: pixelTexture(0x8c2a2f, 12), roughness: 0.95 });
+    const paint = surface(pixelTexture(0x8c2a2f, 12));
     const counter = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), paint);
     counter.position.set(x, 0.55, z);
     counter.castShadow = true;
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.5), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 }));
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.5), flat(0x14141a));
     roof.position.set(x, h, z);
     roof.castShadow = true;
     const back = new THREE.Mesh(new THREE.BoxGeometry(w, h - 1.1, 0.1), paint);
@@ -788,7 +802,7 @@ export class SigningGame {
     glass.position.set(x, 1.1 + (h - 1.3) / 2, z + d / 2);
     s.add(counter, roof, back, glass);
     for (const px of [-w / 2 + 0.1, w / 2 - 0.1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, h - 1.1, 0.16), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.9 }));
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, h - 1.1, 0.16), flat(0x14141a));
       post.position.set(x + px, 1.1 + (h - 1.1) / 2, z + d / 2 - 0.08);
       s.add(post);
     }
@@ -801,20 +815,20 @@ export class SigningGame {
 
     // Judy.
     const judy = new THREE.Group();
-    const cardigan = new THREE.MeshStandardMaterial({ map: pixelTexture(0x9b7bb8, 10), roughness: 0.95 });
+    const cardigan = surface(pixelTexture(0x9b7bb8, 10));
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.75, 0.42), cardigan);
     body.position.set(0, 1.45, 0);
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe8c4a8, roughness: 0.9 });
+    const skin = flat(0xe8c4a8);
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.46), skin);
     head.position.set(0, 2.07, 0);
-    const hair = new THREE.MeshStandardMaterial({ map: pixelTexture(0xc9c4bd, 14), roughness: 0.95 });
+    const hair = surface(pixelTexture(0xc9c4bd, 14));
     const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.5), hair);
     hairTop.position.set(0, 2.36, -0.02);
     const bun = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), hair);
     bun.position.set(0, 2.42, -0.3);
     const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.1), hair);
     hairBack.position.set(0, 2.14, -0.24);
-    const dark = new THREE.MeshStandardMaterial({ color: 0x1a1a1f, roughness: 0.9 });
+    const dark = flat(0x1a1a1f);
     for (const ex of [-0.1, 0.1]) {
       const eye = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.02), dark);
       eye.position.set(ex, 2.1, 0.24);
@@ -826,7 +840,7 @@ export class SigningGame {
     }
     const chain = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.02), gold);
     chain.position.set(0.2, 2.0, 0.2);
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.02), new THREE.MeshStandardMaterial({ color: 0xa04050, roughness: 0.9 }));
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.02), flat(0xa04050));
     mouth.position.set(0, 1.95, 0.24);
     const brooch = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.03), gold);
     brooch.position.set(-0.22, 1.7, 0.22);
@@ -848,13 +862,13 @@ export class SigningGame {
   }
 
   private popcorn(x: number, y: number, z: number) {
-    const cart = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.8), new THREE.MeshStandardMaterial({ color: 0xb01030, roughness: 0.9 }));
+    const cart = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.8), flat(0xb01030));
     cart.position.set(x, y + 0.45, z);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.7), new THREE.MeshStandardMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.6, roughness: 0.9 }));
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.7), flat(0xfff2b0, { transparent: true, opacity: 0.6 }));
     glass.position.set(x, y + 1.3, z);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.9), new THREE.MeshStandardMaterial({ map: pixelTexture(0xd42040, 24), roughness: 0.95 }));
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.9), surface(pixelTexture(0xd42040, 24)));
     roof.position.set(x, y + 1.76, z);
-    const kernels = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.6), new THREE.MeshStandardMaterial({ map: pixelTexture(0xfff0c0, 30), roughness: 0.95 }));
+    const kernels = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.6), surface(pixelTexture(0xfff0c0, 30)));
     kernels.position.set(x, y + 1.15, z);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.3), new THREE.MeshBasicMaterial({ map: textTexture(["POPCORN"], 220, 60, "#fff2b0", "#b01030") }));
     sign.position.set(x, y + 0.75, z + 0.41);
@@ -864,24 +878,24 @@ export class SigningGame {
   }
 
   private counter(x: number, y: number, z: number, wood: THREE.Texture) {
-    const top = new THREE.Mesh(new THREE.BoxGeometry(5, 1.1, 1.2), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(5, 1.1, 1.2), surface(wood));
     top.position.set(x, y + 0.55, z);
     this.scene.add(top);
     this.solids.push({ min: new THREE.Vector3(x - 2.5, y, z - 0.6), max: new THREE.Vector3(x + 2.5, y + 1.1, z + 0.6) });
     this.sign(["CONCESSIONS"], x, y + 0.6, z + 0.61, 3, 0.4, 0, "#fff2b0", "#b01030");
     for (let i = 0; i < 4; i++) {
-      const cup = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xb01030 : 0xf4ede0, roughness: 0.9 }));
+      const cup = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), flat(i % 2 ? 0xb01030 : 0xf4ede0));
       cup.position.set(x - 1.6 + i * 1.0, y + 1.3, z);
       this.scene.add(cup);
     }
   }
 
   private plant(x: number, y: number, z: number, wood: THREE.Texture) {
-    const pot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 }));
+    const pot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), surface(wood));
     pot.position.set(x, y + 0.25, z);
-    const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 }));
+    const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), flat(0x4a3018));
     trunk.position.set(x, y + 1.0, z);
-    const leaves = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), new THREE.MeshStandardMaterial({ map: pixelTexture(0x2f7a2a, 28), roughness: 0.95 }));
+    const leaves = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), surface(pixelTexture(0x2f7a2a, 28)));
     leaves.position.set(x, y + 1.75, z);
     leaves.castShadow = true;
     this.scene.add(pot, trunk, leaves);
@@ -900,13 +914,13 @@ export class SigningGame {
       this.scene.add(post, foot);
     }
     for (const px of [-5.3, 5.3]) {
-      const rope = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.06), new THREE.MeshStandardMaterial({ color: 0x8a1020, roughness: 0.9 }));
+      const rope = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.06), flat(0x8a1020));
       rope.position.set(x + px * 0.8, y + 0.85, z);
       this.scene.add(rope);
     }
   }
 
-  /** Props from the manifest take their placeholders' place. */
+  /** Props from the manifest take their placeholders' place. Many copies (the seats) become instanced meshes: one draw call each. */
   private models() {
     const models = this.opts.manifest.models;
     const loader = new GLTFLoader();
@@ -915,6 +929,7 @@ export class SigningGame {
         url,
         (gltf) => {
           const src = gltf.scene;
+          src.updateMatrixWorld(true);
           const box = new THREE.Box3().setFromObject(src);
           const dims = new THREE.Vector3();
           box.getSize(dims);
@@ -922,13 +937,34 @@ export class SigningGame {
           const center = new THREE.Vector3();
           box.getCenter(center);
           for (const p of placeholders) p.visible = false;
-          for (const spot of spots) {
-            const inst = spots.length > 1 ? src.clone() : src;
-            inst.scale.setScalar(scale);
-            inst.rotation.y = rotY;
-            inst.position.set(spot.x - center.x * scale, spot.y - box.min.y * scale, spot.z - center.z * scale);
-            this.scene.add(inst);
+          // Where each copy's origin goes, after the model is scaled to fit and set on its spot.
+          const place = (spot: { x: number; y: number; z: number }) =>
+            new THREE.Matrix4().compose(
+              new THREE.Vector3(spot.x - center.x * scale, spot.y - box.min.y * scale, spot.z - center.z * scale),
+              new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY),
+              new THREE.Vector3(scale, scale, scale),
+            );
+          if (spots.length === 1) {
+            src.applyMatrix4(place(spots[0]));
+            src.traverse((o) => {
+              if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).receiveShadow = true;
+            });
+            this.scene.add(src);
+          } else {
+            const placements = spots.map(place);
+            src.traverse((o) => {
+              const mesh = o as THREE.Mesh;
+              if (!mesh.isMesh) return;
+              const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, placements.length);
+              const local = mesh.matrixWorld.clone();
+              const m = new THREE.Matrix4();
+              placements.forEach((pm, i) => inst.setMatrixAt(i, m.multiplyMatrices(pm, local)));
+              inst.instanceMatrix.needsUpdate = true;
+              inst.receiveShadow = true;
+              this.scene.add(inst);
+            });
           }
+          this.renderer.shadowMap.needsUpdate = true;
         },
         undefined,
         () => {
@@ -1427,8 +1463,10 @@ export class SigningGame {
 
   private readonly frame = (now: number) => {
     this.raf = requestAnimationFrame(this.frame);
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const raw = (now - this.last) / 1000;
+    const dt = Math.min(0.05, raw);
     this.last = now;
+    this.pace(now, raw);
     if (this.walking() && !this.hud.paused) this.move(dt);
     else if (this.looking() && !this.tween && this.lookBase) this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.story(now);
@@ -1437,6 +1475,31 @@ export class SigningGame {
     this.renderer.render(this.scene, this.camera);
     this.css?.render(this.scene, this.camera);
   };
+
+  /**
+   * Keeps the frame time low: every half second the fps is read, and when
+   * frames are taking longer than about 8 ms the picture is drawn at a lower
+   * resolution (down to 60%), stepping back up when there's headroom.
+   */
+  private pace(now: number, raw: number) {
+    this.frames++;
+    this.frameTime += raw;
+    if (now - this.fpsAt < 500) return;
+    const fps = this.frames / ((now - this.fpsAt) / 1000);
+    const avg = this.frameTime / this.frames;
+    this.frames = 0;
+    this.frameTime = 0;
+    this.fpsAt = now;
+    let scale = this.scale;
+    if (avg > 0.0095 && scale > 0.6) scale = Math.max(0.6, scale - 0.1);
+    else if (avg < 0.006 && scale < 1) scale = Math.min(1, scale + 0.05);
+    if (scale !== this.scale) {
+      this.scale = scale;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1) * scale);
+      this.resize();
+    }
+    if (Math.round(fps) !== this.hud.fps) this.setHud({ fps: Math.round(fps) });
+  }
 
   private move(dt: number) {
     const k = this.keys;
@@ -1579,7 +1642,7 @@ export class SigningGame {
     const movie = this.phase === "seated" || this.phase === "movie";
     const target = movie ? 1 : this.phase === "ended" ? 0.6 : 0;
     this.dim += (target - this.dim) * Math.min(1, dt * 1.8);
-    for (const l of this.houseLights) l.intensity = 120 * (1 - this.dim) + 6 * this.dim;
+    for (const l of this.houseLights) l.intensity = 160 * (1 - this.dim) + 8 * this.dim;
     this.hemi.intensity = 0.75 * (1 - this.dim) + 0.08 * this.dim;
     this.ambient.intensity = 0.3 * (1 - this.dim) + 0.03 * this.dim;
     this.screenLight.intensity = this.phase === "movie" ? 110 : this.phase === "ended" ? 40 : 0;
