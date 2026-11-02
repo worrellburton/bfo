@@ -25,6 +25,8 @@ export type PartyKey = "a" | "b";
 type FieldType = "signature" | "initials" | "name" | "date";
 export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
+/** How the parties sign: the plain page, or the "Anything Is Possible" game in front of it (app/sign/game). */
+export type SignMode = "normal" | "game";
 
 /** Where a signer's mark goes: fractions of the page, y measured from the top. */
 export type SignField = { id: string; party: PartyKey; type: FieldType; page: number; x: number; y: number; w: number; h: number };
@@ -71,6 +73,8 @@ export type SignatureRequestRow = {
   copy_sent_at: string | null;
   /** Who it comes from when it must not mention BFO (an MSA with "Entity name only"); null is BFO. */
   brand: string | null;
+  /** The plain signing page, or the game in front of it. Rows from before the column read as normal. */
+  mode: SignMode;
   /** Bumped on every write; writes name the version they read so none overwrites another. */
   version: number;
 };
@@ -159,6 +163,11 @@ export function cleanField(raw: unknown, pageCount: number): SignField | null {
   if ([x, y, w, h].some((n) => Number.isNaN(n))) return null;
   const id = typeof f.id === "string" && /^[\w-]{1,40}$/.test(f.id) ? f.id : randomBytes(6).toString("hex");
   return { id, party, type, page, x, y, w, h };
+}
+
+/** A mode as sent by the office; anything unknown is the plain page. */
+export function cleanMode(raw: unknown): SignMode {
+  return raw === "game" ? "game" : "normal";
 }
 
 export function cleanParty(raw: unknown, key: PartyKey, prior?: Party): Party | null {
@@ -403,15 +412,20 @@ function shell(inner: string, brand: string | null = null): string {
 const button = (href: string, label: string) =>
   `<a href="${href}" style="display:inline-block;margin-top:26px;padding:12px 26px;border-radius:12px;background:#ffffff;color:#000;font-size:14px;font-weight:600;text-decoration:none;">${esc(label)}</a>`;
 
-export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name" | "brand">, party: Party, link: string, remind = false) {
+/** The line that warns a game-mode signer to open the link on a computer. */
+export const GAME_NOTE = "This one is a little different: open the link on a computer. You'll walk into a theater, watch a short film, and sign on the other side of the door.";
+
+export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name" | "brand"> & { mode?: SignMode }, party: Party, link: string, remind = false) {
   const from = row.brand || row.created_by_name || "Burton Family Office";
+  const game = row.mode === "game";
   const subject = remind ? `Reminder: ${row.title} is waiting for your signature` : `${from} sent you ${row.title} to sign`;
-  const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\nReview and sign it here:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
+  const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\n${game ? `${GAME_NOTE}\n\n` : ""}${game ? "Play and sign here" : "Review and sign it here"}:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
   const html = shell(
     `
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(from)} ${remind ? "is still waiting for your signature on" : "sent you"}<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
         <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">You're signing as ${esc(party.name)}, ${esc(party.role)}.</div>
-        ${button(link, "Review and sign")}
+        ${game ? `<div style="margin-top:14px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.65);">${esc(GAME_NOTE)}</div>` : ""}
+        ${button(link, game ? "Play and sign" : "Review and sign")}
         <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`,
     row.brand,
   );

@@ -6,6 +6,8 @@ export type PartyKey = "a" | "b";
 export type FieldType = "signature" | "initials" | "name" | "date";
 export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
+/** How the parties sign: the plain page, or the Anything Is Possible game in front of it (app/sign/game). */
+export type SignMode = "normal" | "game";
 
 export type SignField = { id: string; party: PartyKey; type: FieldType; page: number; x: number; y: number; w: number; h: number };
 export type Party = {
@@ -45,6 +47,8 @@ export type SignatureRequest = {
   copy_sent_at: string | null;
   /** Sent under this name instead of BFO's (an MSA with "Entity name only"). */
   brand: string | null;
+  /** The plain page or the game; rows from before the column come back without it. */
+  mode?: SignMode;
 };
 
 class SignError extends Error {
@@ -119,6 +123,8 @@ export const PARTY_LABEL: Record<PartyStatus, string> = {
 };
 
 export const FIELD_LABEL: Record<FieldType, string> = { signature: "Signature", initials: "Initials", name: "Name", date: "Date" };
+
+export const MODE_LABEL: Record<SignMode, string> = { normal: "Normal e-signature", game: "Anything Is Possible game" };
 
 /** A fresh field of a type for a party, sized for the type. */
 export function newField(party: PartyKey, type: FieldType, page: number, at?: { x: number; y: number }): SignField {

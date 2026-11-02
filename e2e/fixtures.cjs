@@ -98,6 +98,8 @@ function mock(url, method, body) {
       sent_at: new Date(now).toISOString(),
       completed_at: null,
       copy_sent_at: null,
+      brand: null,
+      mode: "normal",
     };
     if (u.includes("id=")) return [200, { request, pdfUrl: null }];
     if (action) return [200, { request, url: "about:blank", ok: true }];

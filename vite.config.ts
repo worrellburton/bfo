@@ -18,6 +18,8 @@ const VENDOR_CHUNKS: Array<[name: string, packages: string[]]> = [
   ["dompurify", ["dompurify"]],
   // Draws PDF pages for the signature field editor and the signer's page (app/sign/pdf-pages.tsx).
   ["pdfjs", ["pdfjs-dist"]],
+  // The signing game's 3D theater (app/sign/game), reached only through import() when a request is sent in game mode.
+  ["three", ["three"]],
 ];
 
 function vendorChunk(id: string): string | undefined {

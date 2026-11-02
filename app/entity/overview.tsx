@@ -20,6 +20,7 @@ import { ClosingCard } from "./closing";
 import { addressChangeRemaining, Standing } from "./standing";
 import { WITH_FORMATION } from "./derive";
 import { useEntity, usePalmSeed } from "./context";
+import { UsersCard } from "./people";
 import { BY_HAND, einLooksRight, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
 import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
 
@@ -46,6 +47,7 @@ export function OverviewTab() {
       <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <Mail />
         <ToDo />
+        <UsersCard />
       </div>
       <div className="min-w-0 lg:col-start-1 lg:row-start-2">
         <About />
