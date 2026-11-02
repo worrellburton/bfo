@@ -10,7 +10,7 @@ import type { Hud, JudyScript, Manifest, SigningGame } from "./engine";
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
 
-const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, dialogue: null, ticket: false };
+const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, dialogue: null, ticket: false };
 
 /** True on a computer with a mouse: the game needs pointer lock and a keyboard. */
 export function canPlayHere(): boolean {
@@ -127,6 +127,7 @@ export function GameGate({
         </div>
         {preview && (
           <div className="pointer-events-auto flex items-center gap-2">
+            {hud.phase !== "intro" && <span className="tabular-nums text-[11px] text-white/45">{hud.fps} fps</span>}
             <span className="rounded-full border border-amber-300/50 bg-amber-300/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200">Preview</span>
             <button type="button" onClick={onSkip} className="h-[32px] rounded-full border border-white/15 px-3 text-[12px] text-white/80 hover:bg-white/10">
               Skip to the signing page
