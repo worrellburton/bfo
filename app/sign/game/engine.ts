@@ -98,7 +98,8 @@ const ROW_FLOOR = (r: number) => -ROW_STEP * r;
 const FRONT_FLOOR = ROW_FLOOR(ROWS - 1);
 const SEATS_PER_SIDE = 7;
 const SEAT_X = (side: -1 | 1, k: number) => side * (1.6 + 1.1 * k);
-const RESERVED = { row: 5, side: 1 as const, k: 0 };
+/** The signer's seat: second row from the front, on the aisle. */
+const RESERVED = { row: ROWS - 2, side: 1 as const, k: 0 };
 const SCREEN = { w: 20, h: 11.25, z: BLDG.z0 + 0.2, y: FRONT_FLOOR + 1.2 + 11.25 / 2 };
 const DOOR = { x: BLDG.halfW, z0: BLDG.z0 + 2.8, z1: BLDG.z0 + 4.2, h: 2.4 };
 /** The sunken courtyard outside the exit door, where the staircase begins. */

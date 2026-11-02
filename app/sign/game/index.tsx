@@ -13,6 +13,8 @@ const FILM_TITLE = "Sam Signs the Operating Agreement";
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
 
+/** How long the controls stay on screen once the game starts. */
+const CONTROLS_FOR_MS = 18_000;
 const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, objective: "", dialogue: null, ticket: false };
 
 /** True on a computer with a mouse: the game needs pointer lock and a keyboard. */
@@ -56,6 +58,13 @@ export function GameGate({
   const [hud, setHud] = useState<Hud>(IDLE);
   const [loading, setLoading] = useState<"loading" | "ready" | "failed">("loading");
   const [escape, setEscape] = useState(false);
+  // The controls show for the first stretch of the walk, then get out of the way.
+  const [controls, setControls] = useState(true);
+  useEffect(() => {
+    if (hud.phase !== "outside") return;
+    const t = setTimeout(() => setControls(false), CONTROLS_FOR_MS);
+    return () => clearTimeout(t);
+  }, [hud.phase]);
 
   useEffect(() => {
     if (!playable) return;
@@ -136,6 +145,33 @@ export function GameGate({
         <p className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-200/90 backdrop-blur">
           {hud.objective}
         </p>
+      )}
+
+      {/* The controls, at the start of the game: on the island, until the signer has had a look at them. */}
+      {controls && hud.phase === "outside" && !hud.paused && (
+        <div
+          className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 backdrop-blur"
+          style={{ animation: "reply-in 0.5s ease-out both" }}
+        >
+          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">How to get there</p>
+          <p className="mt-1 text-[13px] text-white/75">
+            {signerName}, the contract is past the theater on the far island. Cross the blocks, get your ticket from Judy, take the seat with your name on it, and climb the stairs after the film.
+          </p>
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
+            <dt className="text-white/40">Move</dt>
+            <dd>W A S D or arrows</dd>
+            <dt className="text-white/40">Look</dt>
+            <dd>Mouse</dd>
+            <dt className="text-white/40">Jump</dt>
+            <dd>Space</dd>
+            <dt className="text-white/40">Sit, sign</dt>
+            <dd>E</dd>
+            <dt className="text-white/40">Free the mouse</dt>
+            <dd>Esc</dd>
+            <dt className="text-white/40">Seated</dt>
+            <dd>Drag to look around</dd>
+          </dl>
+        </div>
       )}
 
       {/* Crosshair while walking. */}
@@ -230,35 +266,16 @@ export function GameGate({
                 </span>
               </div>
             )}
-            <p className="mt-6 max-w-[640px] text-[15px] leading-relaxed text-white/65" style={rise(4)}>
-              Hello, {signerName}. To get to it, cross the floating blocks to the theater, collect your ticket from Judy, take the seat with your name on it, watch the film, and climb the stairs to
-              the contract. Then you sign.
-            </p>
-            <dl className="mt-8 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-left text-[12.5px] text-white/70 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-8" style={rise(5)}>
-              <dt className="text-white/40">Move</dt>
-              <dd>W A S D or arrows</dd>
-              <dt className="text-white/40">Look</dt>
-              <dd>Mouse</dd>
-              <dt className="text-white/40">Jump</dt>
-              <dd>Space</dd>
-              <dt className="text-white/40">Sit, sign</dt>
-              <dd>E</dd>
-              <dt className="text-white/40">Free the mouse</dt>
-              <dd>Esc</dd>
-              <dt className="text-white/40">Seated</dt>
-              <dd>Drag to look around</dd>
-            </dl>
           </div>
-          <div className="flex flex-col items-center gap-3 px-6 pb-10 pt-4" style={rise(6)}>
+          <div className="flex flex-col items-center gap-3 px-6 pb-10 pt-4" style={rise(4)}>
             <button
               type="button"
               disabled={loading !== "ready"}
               onClick={() => game.current?.begin()}
               className="h-[56px] min-w-[260px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-50"
             >
-              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : `Start, then sign ${document ? document.fileName : title}`}
+              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start signing"}
             </button>
-            <p className="text-[11.5px] text-white/35">Anything Is Possible · a short film, then your signature</p>
             {loading === "failed" && (
               <p className="text-[12.5px] text-white/60">
                 Your browser couldn't run it.{" "}
