@@ -239,7 +239,7 @@ describe("api/cron/game-assets", () => {
     const r = await cronCall("Bearer s3cret");
     expect(r.statusCode).toBe(200);
     expect(r.body.voiced).toBe(4);
-    expect(r.body.sounds).toBe(7);
+    expect(r.body.sounds).toBe(8);
     expect(r.body.skipped.join(" ")).toMatch(/OPENAI_API_KEY/);
     expect(r.body.errors).toEqual([]);
     // Nothing more to do: the next run makes nothing.
