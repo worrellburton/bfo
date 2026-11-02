@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, fail, guard, handleError, isAdmin, secretMatches } from "../lib/auth.js";
 import { ProviderError } from "../lib/brand.js";
-import { AssetError, checkProp, cleanLines, configured, listVoices, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
+import { adoptOlderVoice, AssetError, checkProp, cleanLines, configured, listVoices, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
 
 /**
  * The signing game's generated assets (lib/game-assets.ts): made here, on
@@ -12,6 +12,7 @@ import { AssetError, checkProp, cleanLines, configured, listVoices, makeSounds, 
  *   GET  /api/game-assets?studio=1   → the studio: everything, plus which keys the server has (booleans)
  *   POST { action }                  → the studio:
  *     voices                                        the ElevenLabs library: [{ id, name, labels }], to choose Judy's
+ *     older-voice                                   finds an older woman's voice in ElevenLabs's shared library and adds it → { voice }
  *     judy        { lines: [{ id, text }], redo?, voiceId? }  voices a few of Judy's lines per call → { assets, remaining }; call until
  *                                                   remaining is 0; a voiceId switches Judy's voice and starts her over
  *     sounds      { redo? }                         a few sound effects per call → { assets, remaining }
@@ -48,6 +49,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const action = String(body.action ?? "");
     const redo = body.redo === true;
     switch (action) {
+      case "older-voice": {
+        const voice = await adoptOlderVoice();
+        if (!voice) return fail(res, 404, "no_voice", "ElevenLabs's shared library had no older woman's voice to add.");
+        return res.status(200).json({ voice });
+      }
       case "voices": {
         const voices = await listVoices();
         return res.status(200).json({ voices: voices.map((v) => ({ id: v.voice_id, name: v.name, labels: v.labels ?? {} })) });

@@ -67,6 +67,9 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string, init?: { method?: string }) => {
       fetchLog.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.includes("/v1/shared-voices"))
+        return new Response(JSON.stringify({ voices: [{ public_owner_id: "own1", voice_id: "shared1", name: "Dorothy", cloned_by_count: 900, free_users_allowed: true }] }), { status: 200 });
+      if (url.includes("/v1/voices/add/")) return new Response(JSON.stringify({ voice_id: "added1" }), { status: 200 });
       if (url.endsWith("/v1/voices"))
         return new Response(
           JSON.stringify({
@@ -150,6 +153,13 @@ describe("api/game-assets", () => {
     expect(fetchLog.filter((l) => l.endsWith("/v1/voices"))).toHaveLength(1);
     expect(fetchLog.filter((l) => l.includes("/text-to-speech/f2"))).toHaveLength(6);
     expect(uploads.size).toBe(6);
+  });
+
+  it("adopts an older woman's voice from the shared library", async () => {
+    const r = await call("POST", { action: "older-voice" });
+    expect(r.statusCode).toBe(200);
+    expect(r.body.voice).toEqual({ id: "added1", name: "Judy (Dorothy)" });
+    expect(fetchLog.some((l) => l.includes("/v1/voices/add/own1/shared1"))).toBe(true);
   });
 
   it("lists the library and records Judy again in a chosen voice", async () => {

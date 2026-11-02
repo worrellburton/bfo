@@ -831,6 +831,10 @@ export class SigningGame {
   }
   private readonly seatSpots: Array<{ x: number; y: number; z: number }> = [];
   private readonly seatPlaceholders: THREE.Object3D[] = [];
+  /** The instanced Meshy seats, set aside if the machine can't keep up. */
+  private readonly seatModels: THREE.Object3D[] = [];
+  private slowReadings = 0;
+  private lowQuality = false;
   private readonly plantPlaceholders: THREE.Object3D[] = [];
   private readonly popcornPlaceholders: THREE.Object3D[] = [];
   private readonly plantSpots: Array<{ x: number; y: number; z: number }> = [];
@@ -1026,6 +1030,7 @@ export class SigningGame {
               inst.instanceMatrix.needsUpdate = true;
               inst.receiveShadow = true;
               this.scene.add(inst);
+              if (placeholders === this.seatPlaceholders) this.seatModels.push(inst);
             });
           }
           this.renderer.shadowMap.needsUpdate = true;
@@ -1036,7 +1041,8 @@ export class SigningGame {
         },
       );
     };
-    if (models.seat) put(models.seat, this.seatSpots, { w: 1.0, h: 1.1, d: 0.95 }, this.seatPlaceholders);
+    // Meshy models face the camera of their picture (+z); the seats must face the screen (-z).
+    if (models.seat) put(models.seat, this.seatSpots, { w: 1.0, h: 1.1, d: 0.95 }, this.seatPlaceholders, Math.PI);
     if (models.plant) put(models.plant, this.plantSpots, { w: 1.0, h: 2.1, d: 1.0 }, this.plantPlaceholders);
     if (models.popcorn) put(models.popcorn, [{ x: -6, y: 0, z: LOBBY.z1 - 4 }], { w: 1.3, h: 1.9, d: 0.9 }, this.popcornPlaceholders);
     // Judy stands behind her counter, facing the window; the counter hides her from the waist down.
@@ -1594,12 +1600,35 @@ export class SigningGame {
     let scale = this.scale;
     if (avg > 0.0095 && scale > 0.6) scale = Math.max(0.6, scale - 0.1);
     else if (avg < 0.006 && scale < 1) scale = Math.min(1, scale + 0.05);
+    // Still slow at the lowest resolution: the heavy seats go, and so do the shadows.
+    if (!this.lowQuality && scale <= 0.6 && avg > 0.012) {
+      if (++this.slowReadings >= 3) this.dropQuality();
+    } else this.slowReadings = 0;
     if (scale !== this.scale) {
       this.scale = scale;
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1) * scale);
       this.resize();
     }
     if (Math.round(fps) !== this.hud.fps) this.setHud({ fps: Math.round(fps) });
+  }
+
+  /** Simple seats, no shadows, fewer lights: what a slow machine gets so the game still runs well. */
+  private dropQuality() {
+    this.lowQuality = true;
+    for (const m of this.seatModels) m.visible = false;
+    for (const p of this.seatPlaceholders) p.visible = true;
+    this.renderer.shadowMap.enabled = false;
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) {
+        m.castShadow = false;
+        m.receiveShadow = false;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) if (mat) mat.needsUpdate = true;
+      }
+    });
+    this.houseLights.slice(2).forEach((l) => (l.intensity = 0));
+    this.clouds.forEach((c, i) => (c.visible = i % 2 === 0));
   }
 
   private move(dt: number) {
@@ -1787,7 +1816,7 @@ export class SigningGame {
     const movie = this.phase === "seated" || this.phase === "movie";
     const target = movie ? 1 : this.phase === "ended" ? 0.6 : 0;
     this.dim += (target - this.dim) * Math.min(1, dt * 1.8);
-    for (const l of this.houseLights) l.intensity = 160 * (1 - this.dim) + 8 * this.dim;
+    this.houseLights.forEach((l, i) => (l.intensity = this.lowQuality && i >= 2 ? 0 : 160 * (1 - this.dim) + 8 * this.dim));
     this.hemi.intensity = 0.75 * (1 - this.dim) + 0.08 * this.dim;
     this.ambient.intensity = 0.3 * (1 - this.dim) + 0.03 * this.dim;
     this.screenLight.intensity = this.phase === "movie" ? 95 + 18 * Math.sin(performance.now() / 310) + 9 * Math.sin(performance.now() / 97) : this.phase === "ended" ? 40 : 0;
