@@ -532,8 +532,8 @@ export class SigningGame {
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       const ray = new THREE.Mesh(
-        new THREE.BoxGeometry(0.25, 9, 0.25),
-        new THREE.MeshBasicMaterial({ color: 0xfff1c0, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
+        new THREE.BoxGeometry(0.14, 9, 0.14),
+        new THREE.MeshBasicMaterial({ color: 0xfff1c0, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
       ray.position.set(HEAVEN.x + 1.6 * Math.cos(a), HEAVEN.y + 5, HEAVEN.z + 1.6 * Math.sin(a));
       ray.rotation.z = 0.25 * Math.cos(a);
