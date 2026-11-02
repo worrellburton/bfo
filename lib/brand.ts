@@ -213,8 +213,8 @@ async function meshy<T>(path: string, init: { method?: string; body?: unknown } 
 
 /** Start turning the picture into a textured model. Returns Meshy's task id. */
 export type ModelOptions = {
-  /** Texture size: the logo gets 2k; a game prop 1k, to keep the file small. */
-  texture?: "1k" | "2k" | "4k";
+  /** Texture size: Meshy accepts 2k, 4k or 8k; the logo and game props get 2k, to keep files small. */
+  texture?: "2k" | "4k" | "8k";
   pbr?: boolean;
   formats?: Array<"glb" | "usdz">;
   /** A triangle budget; left out, Meshy picks. */

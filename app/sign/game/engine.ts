@@ -1386,7 +1386,7 @@ export class SigningGame {
     };
     const judy = this.opts.judy;
     if (!judy) {
-      this.say([{ id: "final", text: "Here's a ticket. Row six, on the aisle." }], () => this.giveTicket());
+      this.say([{ id: "final", text: "Here's a ticket. Second row, on the aisle." }], () => this.giveTicket());
       return;
     }
     this.talking = { round: 0 };

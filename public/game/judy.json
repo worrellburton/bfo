@@ -2,7 +2,7 @@
   "name": "Judy",
   "greeting": {
     "id": "greeting",
-    "text": "Oh. Hey, Sam. Hi, I'm Judy. Welcome to the movie theater. I say that to everyone, it's not because I forgot you. We worked together, what, three years? You sat two desks down from me. I was technically your manager, but I like to think we were a team. And the spreadsheet. Don't think I don't remember the spreadsheet."
+    "text": "Oh. Sam. Hi. It's Judy. From the office. Yes, I work here now. Don't make the face."
   },
   "rounds": [
     {
@@ -11,27 +11,27 @@
           "sam": "Hi Judy. Good to see you. I'd like to purchase a ticket.",
           "judy": {
             "id": "r1a",
-            "text": "Good to see you too. A ticket. Of course. That's what we do here, that's the whole business. It's simpler than what we used to do."
+            "text": "Good to see you too. A ticket. Yes. That's what I do now. I sell the tickets. It's a transition period, Sam, people have those."
           }
         },
         {
           "sam": "Judy! From the office! Wow. One ticket, please.",
           "judy": {
             "id": "r1b",
-            "text": "Don't 'wow' me, Sam, I'm not that old. You left, I retired, and now I sell tickets. One ticket. Fine."
+            "text": "Don't 'wow' me. I know how it looks. I ran a department, and now I'm in a glass box with a lanyard. It's very temporary. One ticket. Fine."
           }
         },
         {
           "sam": "I finished the spreadsheet, actually. Can I get a ticket?",
           "judy": {
             "id": "r1c",
-            "text": "You did not finish the spreadsheet. I checked after you left. But all right. A ticket."
+            "text": "You did not finish the spreadsheet. I checked after you left. And please don't tell anyone from the office you saw me here. A ticket."
           }
         }
       ],
       "core": {
         "id": "r1",
-        "text": "So the way it works now, and this is new, is I've got the little machine. You tap it, it prints, I tear along the dotted line, except the dotted line is more of a suggestion since they changed paper vendors. The old vendor was a family business, lovely people, the daughter went to dental school. The new vendor is just a website. You can't call a website, Sam. I tried. I was on hold with a website for forty minutes, and the music was that song, you know the one, from the commercial with the dog. You'd remember it, it played in the break room. Anyway, that's the machine. It's over here. I'll get to it."
+        "text": "So the way it works now, and I'm only explaining this because you're staring, is I've got the little machine. You tap it, it prints, I tear along the dotted line, except the dotted line is more of a suggestion since they changed paper vendors. The old vendor was a family business, lovely people, the daughter went to dental school. The new vendor is just a website. You can't call a website, Sam. I tried. I was on hold with a website for forty minutes, and my manager, who is nineteen, came over and asked if I needed help. With a phone. I managed a budget of four million dollars. Anyway. That's the machine. It's over here. I'll get to it."
       }
     },
     {
@@ -40,27 +40,27 @@
           "sam": "Great. So, the ticket?",
           "judy": {
             "id": "r2a",
-            "text": "I'm getting to it. You always rushed, Sam. That was in your review. I wrote your review."
+            "text": "I'm getting to it. You always rushed, Sam. That was in your review. I wrote your review. I used to write reviews."
           }
         },
         {
           "sam": "I'm so sorry about the website. Could I get a ticket?",
           "judy": {
             "id": "r2b",
-            "text": "Thank you, that's kind. You were always kind. Nobody says sorry anymore. Except in China."
+            "text": "Thank you, that's kind. Don't be kind, it makes it worse. Nobody says sorry anymore. Except in China."
           }
         },
         {
-          "sam": "The dog commercial, yes. Is the ticket in the machine?",
+          "sam": "The manager who is nineteen, yes. Is the ticket in the machine?",
           "judy": {
             "id": "r2c",
-            "text": "The ticket is in the machine, yes. The machine was made in China, actually, it says so on the bottom."
+            "text": "The ticket is in the machine, yes. Tyler. His name is Tyler. The machine was made in China, actually, it says so on the bottom."
           }
         }
       ],
       "core": {
         "id": "r2",
-        "text": "Which, I went to China. Last spring. With Carol, from accounts payable, you remember Carol, she had the ferns by the printer. Beijing, then Xi'an, then a boat. We saw the Wall. It's long. People say that, and then you see it, and you think, no, it's really long, they weren't exaggerating. Our guide was a young man named Kevin, which I don't think was his real name, and he said, Judy, you walk faster than anyone in this group, and I said, Kevin, I ran a department. Sam was in it. And the dumplings. Sam. They don't do popcorn there the way we do, which I told the manager at the restaurant, and he was very gracious about it, considering. Carol got altitude sickness on a bus, which I didn't know you could do."
+        "text": "Which, I went to China. Last spring. With Carol, from accounts payable, you remember Carol, she had the ferns by the printer. That's where the money went, if you're wondering why I'm here. It was worth it, I'm not apologizing. Beijing, then Xi'an, then a boat. We saw the Wall. It's long. People say that, and then you see it, and you think, no, it's really long, they weren't exaggerating. Our guide was a young man named Kevin, which I don't think was his real name, and he said, Judy, you walk faster than anyone in this group, and I said, Kevin, I ran a department. Sam was in it. I didn't tell Kevin about the theater. Carol got altitude sickness on a bus, which I didn't know you could do."
       }
     },
     {
@@ -69,38 +69,38 @@
           "sam": "That sounds amazing. One ticket, when you get a chance.",
           "judy": {
             "id": "r3a",
-            "text": "It was amazing. You should go. Not now, you have a movie. And you never used your vacation days, I had to sign off on all of that."
+            "text": "It was amazing. You should go. Not now, you have a movie. And you never used your vacation days, I had to sign off on all of that. I had sign-off, Sam. I had a stamp."
           }
         },
         {
           "sam": "Carol's ferns. Right. Ticket?",
           "judy": {
             "id": "r3b",
-            "text": "The ferns died while she was away. She blamed me. I was in China with her, Sam. You'd have watered them."
+            "text": "The ferns died while she was away. She blamed me. I was in China with her, Sam. Carol, by the way, is a vice president now. I sell tickets. You'd have watered them."
           }
         },
         {
           "sam": "Kevin sounds great. I would also love a ticket, like Kevin would want.",
           "judy": {
             "id": "r3c",
-            "text": "Kevin would not want that. Kevin wanted everyone back on the bus by four. You'd have liked Kevin. He reminded me of you, before the spreadsheet."
+            "text": "Kevin would not want that. Kevin wanted everyone back on the bus by four. He reminded me of you, before the spreadsheet. He'd be mortified to see me in this box."
           }
         }
       ],
       "core": {
         "id": "r3",
-        "text": "Anyway. The thing about the Wall is you can't see the end of it from where you're standing. You just have to go. That's not a question. I'm just telling you that. Beijing is nine hours ahead or thirteen behind, depending on how you want to feel about it."
+        "text": "Anyway. The thing about the Wall is you can't see the end of it from where you're standing. You just have to go. That's not a question. I'm just telling you that. And this, the booth, the lanyard, Tyler, this is not the end of the wall either. Beijing is nine hours ahead or thirteen behind, depending on how you want to feel about it."
       }
     }
   ],
   "final": {
     "id": "final",
-    "text": "All right. Here's a ticket. Row six, on the aisle, it has your name on it. It's good to see you, Sam. Really. And Sam. The spreadsheet."
+    "text": "All right. Here's a ticket. Second row, on the aisle, it has your name on it. It's good to see you, Sam. Really. Don't tell anyone. And Sam. The spreadsheet."
   },
   "extras": {
     "pa": {
       "id": "pa",
-      "text": "Sam, if you can hear this, the popcorn is not complimentary. Enjoy the film."
+      "text": "Sam, if you can hear this, the popcorn is not complimentary. Tyler made me say that. Enjoy the film."
     }
   }
 }
