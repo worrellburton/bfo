@@ -175,12 +175,12 @@ describe("api/game-assets", () => {
 
   it("makes the sound effects in batches", async () => {
     const r1 = await call("POST", { action: "sounds" });
-    expect(r1.body.remaining).toBe(4);
+    expect(r1.body.remaining).toBe(5);
     const r2 = await call("POST", { action: "sounds" });
-    expect(r2.body.remaining).toBe(1);
+    expect(r2.body.remaining).toBe(2);
     const r3 = await call("POST", { action: "sounds" });
     expect(r3.body.remaining).toBe(0);
-    expect(Object.keys(r3.body.assets.sounds).sort()).toEqual(["door", "fall", "jump", "land", "sign", "sit", "step"]);
+    expect(Object.keys(r3.body.assets.sounds).sort()).toEqual(["cheer", "door", "fall", "jump", "land", "sign", "sit", "step"]);
   });
 
   it("says plainly when a key is missing", async () => {
@@ -239,7 +239,7 @@ describe("api/cron/game-assets", () => {
     const r = await cronCall("Bearer s3cret");
     expect(r.statusCode).toBe(200);
     expect(r.body.voiced).toBe(4);
-    expect(r.body.sounds).toBe(7);
+    expect(r.body.sounds).toBe(8);
     expect(r.body.skipped.join(" ")).toMatch(/OPENAI_API_KEY/);
     expect(r.body.errors).toEqual([]);
     // Nothing more to do: the next run makes nothing.
