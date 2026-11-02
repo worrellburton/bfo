@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, fail, guard, handleError, isAdmin, secretMatches } from "../lib/auth.js";
 import { ProviderError } from "../lib/brand.js";
-import { AssetError, checkProp, cleanLines, configured, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
+import { AssetError, checkProp, cleanLines, configured, listVoices, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
 
 /**
  * The signing game's generated assets (lib/game-assets.ts): made here, on
@@ -11,7 +11,9 @@ import { AssetError, checkProp, cleanLines, configured, makeSounds, PROPS, readA
  *   GET  /api/game-assets            → { voice, sounds, models }  anyone: what the game should use over its static manifest
  *   GET  /api/game-assets?studio=1   → the studio: everything, plus which keys the server has (booleans)
  *   POST { action }                  → the studio:
- *     judy        { lines: [{ id, text }], redo? }  voices a few of Judy's lines per call → { assets, remaining }; call until remaining is 0
+ *     voices                                        the ElevenLabs library: [{ id, name, labels }], to choose Judy's
+ *     judy        { lines: [{ id, text }], redo?, voiceId? }  voices a few of Judy's lines per call → { assets, remaining }; call until
+ *                                                   remaining is 0; a voiceId switches Judy's voice and starts her over
  *     sounds      { redo? }                         a few sound effects per call → { assets, remaining }
  *     prop        { name }                          OpenAI draws it, Meshy starts the model → { assets }
  *     prop-status { name }                          Meshy's progress; on success the GLB lands in the bucket → { assets }
@@ -46,10 +48,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const action = String(body.action ?? "");
     const redo = body.redo === true;
     switch (action) {
+      case "voices": {
+        const voices = await listVoices();
+        return res.status(200).json({ voices: voices.map((v) => ({ id: v.voice_id, name: v.name, labels: v.labels ?? {} })) });
+      }
       case "judy": {
         const lines = cleanLines(body.lines);
         if (!lines.length) return fail(res, 400, "no_lines", "Send Judy's lines.");
-        return res.status(200).json(await voiceJudy(lines, redo));
+        const voiceId = typeof body.voiceId === "string" && /^[\w-]{1,64}$/.test(body.voiceId) ? body.voiceId : undefined;
+        return res.status(200).json(await voiceJudy(lines, redo, 4, voiceId));
       }
       case "sounds":
         return res.status(200).json(await makeSounds(redo));

@@ -152,6 +152,17 @@ describe("api/game-assets", () => {
     expect(uploads.size).toBe(6);
   });
 
+  it("lists the library and records Judy again in a chosen voice", async () => {
+    const v = await call("POST", { action: "voices" });
+    expect(v.statusCode).toBe(200);
+    expect(v.body.voices.map((x: { name: string }) => x.name)).toEqual(["Brian", "Alice", "Grace"]);
+    const lines = [{ id: "l0", text: "Hello" }];
+    await call("POST", { action: "judy", lines });
+    const r = await call("POST", { action: "judy", lines, voiceId: "f1" });
+    expect(r.body.assets.judyVoice).toEqual({ id: "f1", name: "Alice" });
+    expect(fetchLog.filter((l) => l.includes("/text-to-speech/f1"))).toHaveLength(1);
+  });
+
   it("makes the sound effects in batches", async () => {
     const r1 = await call("POST", { action: "sounds" });
     expect(r1.body.remaining).toBe(3);
