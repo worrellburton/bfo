@@ -60,3 +60,14 @@
 7:25:50 PM [vite] (ssr) hmr update /app/app.css
 7:27:37 PM [vite] (client) hmr update /app/app.css
 7:27:37 PM [vite] (ssr) hmr update /app/app.css
+7:31:28 PM [vite] (client) hmr update /app/sign/game/index.tsx
+7:31:28 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+7:31:28 PM [vite] (ssr) hmr update /app/app.css
+7:31:28 PM [vite] (client) hmr update /app/sign/game/index.tsx
+7:31:28 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
+7:31:28 PM [vite] (ssr) hmr update /app/app.css
+7:34:05 PM [vite] (client) page reload /home/user/bfo/api/game-assets.ts
+7:34:05 PM [vite] (client) page reload api/game-assets.ts
+7:34:05 PM [vite] (ssr) hmr update /app/app.css
+7:34:05 PM [vite] (client) hmr update /app/app.css
+7:34:05 PM [vite] (ssr) hmr update /app/app.css
