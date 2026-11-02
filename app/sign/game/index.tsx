@@ -10,7 +10,7 @@ import type { Hud, JudyScript, Manifest, SigningGame } from "./engine";
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
 
-const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, dialogue: null, ticket: false };
+const IDLE: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, objective: "", dialogue: null, ticket: false };
 
 /** True on a computer with a mouse: the game needs pointer lock and a keyboard. */
 export function canPlayHere(): boolean {
@@ -136,6 +136,13 @@ export function GameGate({
         )}
       </div>
 
+      {/* The next goal, small at the top. */}
+      {hud.objective && walking && !hud.paused && (
+        <p className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-200/90 backdrop-blur">
+          {hud.objective}
+        </p>
+      )}
+
       {/* Crosshair while walking. */}
       {walking && !hud.paused && (
         <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80 ring-2 ring-black/40" />
@@ -146,6 +153,7 @@ export function GameGate({
         <div
           aria-label="Your ticket"
           className="pointer-events-none absolute right-4 top-14 z-20 rotate-3 rounded-md border border-dashed border-amber-200/70 bg-[#f4ede0] px-3 py-1.5 text-[11px] leading-tight text-[#2e0f14] shadow-lg"
+          style={{ animation: "ticket-in 600ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both" }}
         >
           <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-[#8c2a2f]">Admit one</span>
           <span className="block font-[var(--font-brand)] text-[13px]">Anything Is Possible</span>
@@ -158,7 +166,16 @@ export function GameGate({
         <div className="absolute bottom-0 left-0 right-0 z-30 flex justify-center p-4 pb-6">
           <div className="w-full max-w-[760px]">
             <div role="status" aria-live="polite" className="rounded-2xl border border-white/10 bg-black/75 px-5 py-4 text-center backdrop-blur">
-              <span className={`block text-[10.5px] font-semibold uppercase tracking-[0.2em] ${hud.dialogue.speaker === "You" ? "text-white/50" : "text-amber-300"}`}>{hud.dialogue.speaker}</span>
+              <span className={`flex items-center justify-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.2em] ${hud.dialogue.speaker === "You" ? "text-white/50" : "text-amber-300"}`}>
+                {hud.dialogue.speaker}
+                {!hud.dialogue.options && hud.dialogue.speaker !== "You" && (
+                  <span aria-hidden className="flex items-end gap-[2px]">
+                    {[0, 1, 2, 3].map((i) => (
+                      <span key={i} className="block w-[3px] rounded-sm bg-amber-300" style={{ height: 8, animation: `speaking 700ms ease-in-out ${i * 120}ms infinite alternate` }} />
+                    ))}
+                  </span>
+                )}
+              </span>
               <span className="mt-1 block text-[17px] leading-snug text-white">{hud.dialogue.text}</span>
               {!hud.dialogue.options && hud.dialogue.speaker !== "You" && <span className="mt-2 block text-[10.5px] text-white/35">Space skips to the end of this line</span>}
             </div>
@@ -168,6 +185,7 @@ export function GameGate({
                   <button
                     key={o}
                     type="button"
+                    style={{ animation: `reply-in 320ms ease-out ${i * 90}ms both` }}
                     onClick={() => game.current?.choose(i)}
                     className="flex min-h-[44px] items-center gap-3 rounded-xl border border-white/10 bg-[#0b0b0f]/90 px-4 py-2 text-left text-[14px] text-white/90 backdrop-blur transition-colors hover:border-amber-300/60 hover:bg-white/[0.06]"
                   >
@@ -262,6 +280,12 @@ export function GameGate({
           Having trouble? Sign the normal way
         </button>
       )}
+
+      <style>{`
+        @keyframes ticket-in { from { transform: translate(120px, -40px) rotate(25deg); opacity: 0; } to { transform: translate(0, 0) rotate(3deg); opacity: 1; } }
+        @keyframes reply-in { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes speaking { from { height: 3px; } to { height: 11px; } }
+      `}</style>
 
       {/* The fade into the signing page. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-50 bg-black transition-opacity duration-300" style={{ opacity: hud.dark }} />

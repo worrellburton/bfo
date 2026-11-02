@@ -56,6 +56,7 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
   jump: { text: "A short, light, cartoon video game jump hop sound, soft and bouncy, like a blocky character leaping", seconds: 0.8 },
   land: { text: "A soft thud of a character landing on a wooden block in a video game, light and quick", seconds: 0.7 },
   fall: { text: "A quick descending whoosh of falling into a dark pit in a video game, ending in a low soft puff", seconds: 1.8 },
+  step: { text: "A single soft footstep on short grass, close up, quick and quiet", seconds: 0.5 },
 };
 
 /** The props: what OpenAI draws, which Meshy then turns into a model. */

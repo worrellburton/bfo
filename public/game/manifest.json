@@ -8,7 +8,8 @@
     "sign": null,
     "jump": null,
     "land": null,
-    "fall": null
+    "fall": null,
+    "step": null
   },
   "models": {},
   "voice": {}

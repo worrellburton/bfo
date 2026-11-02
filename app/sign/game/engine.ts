@@ -21,7 +21,7 @@ export type Manifest = {
   movie: string | null;
   youtube: string | null;
   music: string | null;
-  sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall", string | null>>;
+  sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall" | "step", string | null>>;
   models: Partial<Record<"seat" | "plant" | "popcorn" | "judy", string>>;
   /** Judy's voiced lines by line id (public/game/judy.json), from scripts/game-judy.mjs. */
   voice: Partial<Record<string, string>>;
@@ -53,6 +53,8 @@ export type Hud = {
   dark: number;
   /** Frames a second, over the last half second (the preview shows it). */
   fps: number;
+  /** What to head for next, shown small at the top; "" between objectives. */
+  objective: string;
   /** Talking to Judy at the booth: who's speaking, the subtitle, and the replies on offer. */
   dialogue: { speaker: string; text: string; options: string[] | null } | null;
   /** The ticket Judy handed over. */
@@ -166,7 +168,23 @@ export class SigningGame {
 
   // The story
   private phase: Phase = "intro";
-  private hud: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, dialogue: null, ticket: false };
+  private hud: Hud = { phase: "intro", prompt: "", paused: false, needsClick: false, dark: 0, fps: 0, objective: "", dialogue: null, ticket: false };
+  // Movement feel: a forgiving jump (coyote time, a buffered press, a shorter hop on an early release), a smoothed eye, a bob, a dip on landing.
+  private lastGrounded = 0;
+  private jumpPressedAt = -1;
+  private eyeY = SPAWN.y + PLAYER.eye;
+  private bob = 0;
+  private landDip = 0;
+  private stepClock = 0;
+  private stepSide = 0;
+  private moving = false;
+  private readonly dust: Array<{ sprite: THREE.Sprite; v: THREE.Vector3; life: number }> = [];
+  private dustMat!: THREE.SpriteMaterial;
+  // The objective beacon: a shaft of light over the next goal, hidden once you're close.
+  private beacon!: THREE.Mesh;
+  private judyFigure: THREE.Object3D | null = null;
+  private projector!: THREE.Mesh;
+  private motes!: THREE.Points;
   // Frame pacing: frames and time since the last fps reading, and the render scale the scaler settled on.
   private frames = 0;
   private frameTime = 0;
@@ -255,6 +273,7 @@ export class SigningGame {
   teleport(x: number, y: number, z: number, yaw = 0) {
     if (!import.meta.env.DEV) return;
     this.pos.set(x, y, z);
+    this.eyeY = y + PLAYER.eye;
     this.vy = 0;
     this.yaw = yaw;
     this.pitch = 0;
@@ -651,6 +670,39 @@ export class SigningGame {
     }
     this.sign(["ANYTHING IS POSSIBLE", this.opts.title.toUpperCase().slice(0, 30), "SIGN HERE"], HEAVEN.x, HEAVEN.y + 2.6, HEAVEN.z - 2.9, 4.4, 1.3, 0, "#17120c", "#ffd166");
 
+    // Landing dust, the objective beacon, and the projector's beam with its dust motes.
+    this.dustMat = new THREE.SpriteMaterial({ color: 0xf2e9d8, transparent: true, opacity: 0.55, depthWrite: false });
+    this.beacon = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.5, 40, 12, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.beacon.visible = false;
+    s.add(this.beacon);
+    const beamLen = SCREEN.z - (LOBBY.z0 - 1.5);
+    this.projector = new THREE.Mesh(
+      new THREE.CylinderGeometry(SCREEN.w * 0.55, 0.3, Math.abs(beamLen), 24, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xdfe9ff, transparent: true, opacity: 0.045, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.projector.rotation.x = Math.PI / 2;
+    this.projector.position.set(0, BLDG.height - 2.2 - (BLDG.height - 2.2 - SCREEN.y) / 2, (LOBBY.z0 - 1.5 + SCREEN.z) / 2);
+    this.projector.rotation.z = 0;
+    this.projector.visible = false;
+    s.add(this.projector);
+    const moteCount = 160;
+    const motePos = new Float32Array(moteCount * 3);
+    for (let i = 0; i < moteCount; i++) {
+      const t = Math.random();
+      const spread = 0.3 + t * SCREEN.w * 0.5;
+      motePos[i * 3] = (Math.random() - 0.5) * spread;
+      motePos[i * 3 + 1] = BLDG.height - 2.2 - t * (BLDG.height - 2.2 - SCREEN.y) + (Math.random() - 0.5) * spread * 0.5;
+      motePos[i * 3 + 2] = LOBBY.z0 - 1.5 + t * beamLen;
+    }
+    const moteGeo = new THREE.BufferGeometry();
+    moteGeo.setAttribute("position", new THREE.BufferAttribute(motePos, 3));
+    this.motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.motes.visible = false;
+    s.add(this.motes);
+
     this.models();
   }
 
@@ -856,6 +908,7 @@ export class SigningGame {
     s.add(judy);
     this.judyHead = head;
     this.judyPlaceholders.push(judy);
+    this.judyFigure = judy;
     const lamp = new THREE.PointLight(0xffe2b8, 6, 5, 2);
     lamp.position.set(x, h - 0.3, z + 0.3);
     s.add(lamp);
@@ -949,7 +1002,13 @@ export class SigningGame {
             src.traverse((o) => {
               if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).receiveShadow = true;
             });
-            this.scene.add(src);
+            // A single model sits in a group at its spot, so it can turn (Judy faces whoever comes to the window).
+            const group = new THREE.Group();
+            group.position.set(spots[0].x, spots[0].y, spots[0].z);
+            src.position.sub(group.position);
+            group.add(src);
+            this.scene.add(group);
+            if (placeholders === this.judyPlaceholders) this.judyFigure = group;
           } else {
             const placements = spots.map(place);
             src.traverse((o) => {
@@ -1045,10 +1104,11 @@ export class SigningGame {
     }
   }
 
-  private play(key: string) {
+  private play(key: string, volume = 0.8) {
     const a = this.sounds[key];
     if (!a) return;
     try {
+      a.volume = volume;
       a.currentTime = 0;
       void a.play().catch(() => {});
     } catch {
@@ -1172,8 +1232,13 @@ export class SigningGame {
         this.talkSkip?.();
       }
       if (["Space", "ArrowUp", "ArrowDown"].includes(e.code) && this.walking()) e.preventDefault();
+      if (e.code === "Space" && this.walking()) this.jumpPressedAt = performance.now();
     });
-    on(window, "keyup", (e: KeyboardEvent) => this.keys.delete(e.code));
+    on(window, "keyup", (e: KeyboardEvent) => {
+      this.keys.delete(e.code);
+      // Let go early and the jump is a hop.
+      if (e.code === "Space" && this.vy > 3.2) this.vy = 3.2;
+    });
     on(window, "blur", () => this.keys.clear());
     on(document, "pointerlockchange", () => {
       this.locked = document.pointerLockElement === el;
@@ -1440,6 +1505,7 @@ export class SigningGame {
     this.lookBase = null;
     const s = this.reservedSeat();
     this.pos.set(0.5, s.y, s.z);
+    this.eyeY = s.y + PLAYER.eye;
     this.vy = 0;
     this.yaw = -0.9; // facing the screen, turned a little toward the door
     this.pitch = 0;
@@ -1512,9 +1578,15 @@ export class SigningGame {
     // The camera looks down -z at yaw 0; forward and strafe follow the yaw.
     const dx = ((-sin * f + cos * r) / len) * speed * dt;
     const dz = ((-cos * f - sin * r) / len) * speed * dt;
-    if (k.has("Space") && this.grounded) {
+    const now = performance.now();
+    // A press up to 150 ms before landing still jumps; up to 120 ms after walking off an edge still jumps.
+    const wantsJump = this.jumpPressedAt >= 0 && now - this.jumpPressedAt < 150;
+    const canJump = this.grounded || (now - this.lastGrounded < 120 && this.vy <= 0.5);
+    if (wantsJump && canJump) {
       this.vy = PLAYER.jump;
       this.grounded = false;
+      this.jumpPressedAt = -1;
+      this.lastGrounded = 0;
       this.play("jump");
     }
     this.vy -= PLAYER.gravity * dt;
@@ -1523,13 +1595,47 @@ export class SigningGame {
     this.pos.y += this.vy * dt;
     const hitY = this.resolve(1, this.vy);
     if (hitY < 0) {
-      if (!this.grounded && this.vy < -6) this.play("land");
+      if (!this.grounded && this.vy < -6) {
+        this.play("land");
+        this.landDip = Math.min(0.22, -this.vy * 0.014);
+        this.puff();
+      }
       this.grounded = true;
+      this.lastGrounded = now;
       this.vy = 0;
     } else if (hitY > 0) this.vy = 0;
     else this.grounded = false;
-    this.camera.position.set(this.pos.x, this.pos.y + PLAYER.eye, this.pos.z);
+    // Footsteps and a gentle bob while walking on the ground.
+    this.moving = (f !== 0 || r !== 0) && this.grounded;
+    if (this.moving) {
+      this.bob += dt * 9.5;
+      this.stepClock += dt;
+      if (this.stepClock > 0.42) {
+        this.stepClock = 0;
+        this.stepSide ^= 1;
+        this.play("step", this.stepSide ? 0.5 : 0.36);
+      }
+    } else this.stepClock = 0.3;
+    this.landDip = Math.max(0, this.landDip - dt * 0.9);
+    // The eye follows the feet with a little give, so a step up a riser doesn't jolt.
+    const eyeTarget = this.pos.y + PLAYER.eye;
+    this.eyeY += (eyeTarget - this.eyeY) * Math.min(1, dt * (this.grounded ? 14 : 40));
+    if (Math.abs(eyeTarget - this.eyeY) > 0.6) this.eyeY = eyeTarget;
+    const bob = this.moving ? Math.sin(this.bob) * 0.028 : 0;
+    this.camera.position.set(this.pos.x, this.eyeY + bob - this.landDip, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
+  }
+
+  /** A little dust where the feet landed. */
+  private puff() {
+    for (let i = 0; i < 10; i++) {
+      const sprite = new THREE.Sprite(this.dustMat.clone());
+      const a = (i / 10) * Math.PI * 2;
+      sprite.position.set(this.pos.x, this.pos.y + 0.05, this.pos.z);
+      sprite.scale.setScalar(0.18);
+      this.scene.add(sprite);
+      this.dust.push({ sprite, v: new THREE.Vector3(Math.cos(a) * 1.6, 0.9 + Math.random() * 0.6, Math.sin(a) * 1.6), life: 0.55 });
+    }
   }
 
   /** Moves along a horizontal axis, stepping up low ledges (the rows' risers). */
@@ -1608,6 +1714,8 @@ export class SigningGame {
         this.vy = 0;
         this.yaw = 0;
         this.pitch = 0;
+        this.eyeY = p.y + PLAYER.eye;
+        this.setHud({ dark: 1 });
         this.falls++;
         this.hint(this.falls < 3 ? "Back to the island. Walk to the edge and jump a touch earlier." : "Back to the island. Wait for a moving block to come to you.", 4000);
       }
@@ -1622,6 +1730,8 @@ export class SigningGame {
       this.vy = 0;
       this.yaw = -Math.PI / 2;
       this.pitch = 0;
+      this.eyeY = p.y + PLAYER.eye;
+      this.setHud({ dark: 1 });
       this.falls++;
       this.hint("Back to the foot of the stairs. Keep to the middle of the steps.", 4000);
     }
@@ -1645,7 +1755,7 @@ export class SigningGame {
     for (const l of this.houseLights) l.intensity = 160 * (1 - this.dim) + 8 * this.dim;
     this.hemi.intensity = 0.75 * (1 - this.dim) + 0.08 * this.dim;
     this.ambient.intensity = 0.3 * (1 - this.dim) + 0.03 * this.dim;
-    this.screenLight.intensity = this.phase === "movie" ? 110 : this.phase === "ended" ? 40 : 0;
+    this.screenLight.intensity = this.phase === "movie" ? 95 + 18 * Math.sin(performance.now() / 310) + 9 * Math.sin(performance.now() / 97) : this.phase === "ended" ? 40 : 0;
     this.seatLight.intensity = this.phase === "theater" ? 10 + 4 * Math.sin(performance.now() / 300) : 0;
     this.label.visible = this.phase === "lobby" || this.phase === "theater";
   }
@@ -1731,6 +1841,71 @@ export class SigningGame {
       }
     }
     if (this.phase === "done") this.setHud({ dark: Math.min(1, this.hud.dark + dt / 0.8) });
+    else if (this.hud.dark > 0 && this.walking()) this.setHud({ dark: Math.max(0, this.hud.dark - dt / 0.7) });
+    // Landing dust drifts out and fades.
+    for (let i = this.dust.length - 1; i >= 0; i--) {
+      const d = this.dust[i];
+      d.life -= dt;
+      d.v.y -= dt * 2.5;
+      d.sprite.position.addScaledVector(d.v, dt);
+      d.sprite.scale.setScalar(0.18 + (0.55 - d.life) * 0.5);
+      (d.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, d.life) * 1.0;
+      if (d.life <= 0) {
+        this.scene.remove(d.sprite);
+        (d.sprite.material as THREE.SpriteMaterial).dispose();
+        this.dust.splice(i, 1);
+      }
+    }
+    // The beacon over the next goal, and the line that names it.
+    const goal = this.objective();
+    if (goal) {
+      const far = Math.hypot(this.pos.x - goal.x, this.pos.z - goal.z);
+      this.beacon.visible = far > 7;
+      this.beacon.position.set(goal.x, goal.y + 20, goal.z);
+      (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.1 + 0.05 * Math.sin(now / 400);
+      if (this.hud.objective !== goal.label) this.setHud({ objective: goal.label });
+    } else {
+      this.beacon.visible = false;
+      if (this.hud.objective) this.setHud({ objective: "" });
+    }
+    // Judy turns to whoever is near her window.
+    if (this.judyFigure) {
+      const dx = this.pos.x - this.judyFigure.position.x;
+      const dz = this.pos.z - this.judyFigure.position.z;
+      const near = Math.hypot(dx, dz) < 7 && dz > 0;
+      const target = near ? Math.atan2(dx, dz) : 0;
+      this.judyFigure.rotation.y += (target - this.judyFigure.rotation.y) * Math.min(1, dt * 4);
+    }
+    // The projector's beam while the film runs, its light breathing with the picture.
+    const showing = this.phase === "movie" || this.phase === "ended";
+    this.projector.visible = showing;
+    this.motes.visible = showing;
+    if (showing) {
+      this.motes.rotation.z = Math.sin(now / 9000) * 0.02;
+      this.motes.position.y = Math.sin(now / 2600) * 0.15;
+      (this.projector.material as THREE.MeshBasicMaterial).opacity = 0.04 + 0.012 * Math.sin(now / 230) + 0.008 * Math.sin(now / 71);
+    }
+  }
+
+  /** Where to go next, for the beacon and the line at the top. */
+  private objective(): { x: number; y: number; z: number; label: string } | null {
+    switch (this.phase) {
+      case "outside":
+        if (this.pos.z > ISLAND.z1 + 2) return { x: 0, y: 0, z: ISLAND.z1 - 4, label: "Cross the blocks to the theater" };
+        return this.hud.ticket ? { x: 0, y: 0, z: BLDG.z1 + 1, label: "Through the front doors" } : { x: BOOTH.x, y: 0, z: BOOTH.z + 1, label: "Get your ticket from Judy" };
+      case "lobby":
+        return { x: 0, y: 0, z: LOBBY.z0 + 1, label: "Into the auditorium" };
+      case "theater": {
+        const s = this.reservedSeat();
+        return { x: s.x, y: s.y, z: s.z, label: "Find the seat with your name on it" };
+      }
+      case "exit":
+        return this.pos.x < BLDG.halfW + 0.5
+          ? { x: DOOR.x + 1, y: FRONT_FLOOR, z: (DOOR.z0 + DOOR.z1) / 2, label: "Through the door by the screen" }
+          : { x: HEAVEN.x, y: HEAVEN.y, z: HEAVEN.z, label: "Climb the stairs to the contract" };
+      default:
+        return null;
+    }
   }
 
   // ── HUD and lifecycle ───────────────────────────────────────────────────
