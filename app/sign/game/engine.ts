@@ -205,6 +205,10 @@ export class SigningGame {
   private frontDoors: Array<{ group: THREE.Group; side: -1 | 1 }> = [];
   private frontDoorSolid: Box | null = null;
   private frontOpen = 0;
+  /** The ticket in the signer's hand, from Judy's window to the front doors. */
+  private ticketHand: THREE.Group | null = null;
+  /** When the ticket was held up at the doors; 0 until then. */
+  private presentedAt = 0;
   private frontOpenAt = 0;
   private doorOpenAt = 0;
   private judyHead: THREE.Object3D | null = null;
@@ -711,6 +715,7 @@ export class SigningGame {
     this.motes.visible = false;
     s.add(this.motes);
 
+    this.ticketInHand();
     this.models();
   }
 
@@ -1231,16 +1236,36 @@ export class SigningGame {
       const speaker = `${this.opts.judy?.name ?? "Judy"}, over the speakers`;
       const url = this.opts.manifest.voice[line.id];
       const chunks = subtitleChunks(line.text);
+      // The film waits while she talks, and carries on once her voice and the subtitles are both done.
+      let waiting = url ? 2 : 1;
+      const resume = () => {
+        if (--waiting > 0 || this.phase !== "movie") return;
+        void this.video?.play().catch(() => {});
+        this.yt?.player?.playVideo();
+      };
       const show = (i: number) => {
         if (this.phase !== "movie") return;
-        if (i >= chunks.length) return this.setHud({ dialogue: null });
+        if (i >= chunks.length) {
+          this.setHud({ dialogue: null });
+          return resume();
+        }
         this.setHud({ dialogue: { speaker, text: chunks[i], options: null } });
         this.talkTimers.push(setTimeout(() => show(i + 1), 2600));
       };
+      this.video?.pause();
+      this.yt?.player?.pauseVideo?.();
       if (url) {
         const a = new Audio(url);
         a.volume = 0.9;
-        void a.play().catch(() => {});
+        let done = false;
+        const end = () => {
+          if (done) return;
+          done = true;
+          resume();
+        };
+        a.onended = end;
+        a.onerror = end;
+        void a.play().catch(end);
       }
       show(0);
     }, 12000);
@@ -1506,13 +1531,52 @@ export class SigningGame {
     const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
     this.yaw = e.y;
     this.pitch = e.x;
-    this.frontOpenAt = performance.now();
-    this.play("door");
     this.setHud({ ticket: true, dialogue: null });
+    if (this.ticketHand) this.ticketHand.visible = true;
     this.setPhase("outside");
     if (this.music) this.music.volume = 0.55;
-    this.hint("You've got your ticket. The doors are opening.", 5000);
+    this.hint("You've got your ticket. Show it at the front doors.", 5000);
     this.lockPointer();
+  }
+
+  /** A ticket held low and to the right, like a weapon in a shooter; it rises to the doors when they're reached. */
+  private ticketInHand() {
+    this.scene.add(this.camera);
+    const g = new THREE.Group();
+    const card = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.072), new THREE.MeshBasicMaterial({ map: ticketTexture(FILM_TITLE, this.opts.signerName), side: THREE.DoubleSide, toneMapped: false }));
+    g.add(card);
+    g.visible = false;
+    this.camera.add(g);
+    this.ticketHand = g;
+  }
+
+  private static readonly TICKET_HELD = { pos: new THREE.Vector3(0.19, -0.135, -0.42), rot: new THREE.Euler(-0.35, -0.55, 0.3) };
+  private static readonly TICKET_SHOWN = { pos: new THREE.Vector3(0.02, -0.05, -0.3), rot: new THREE.Euler(-0.12, 0.05, 0.04) };
+
+  private handTicket(now: number) {
+    const g = this.ticketHand;
+    if (!g || !g.visible) return;
+    // At the doors with the ticket: hold it up, and the doors open for it.
+    if (!this.presentedAt && this.phase === "outside" && Math.abs(this.pos.x) < 2.1 && this.pos.z > BLDG.z1 && this.pos.z < BLDG.z1 + 2.4 && this.pos.y > -1) {
+      this.presentedAt = now;
+      this.hint("Ticket, please.", 2500);
+    }
+    const t = this.presentedAt ? Math.min(1, (now - this.presentedAt) / 800) : 0;
+    const e = t * t * (3 - 2 * t);
+    const H = SigningGame.TICKET_HELD;
+    const S = SigningGame.TICKET_SHOWN;
+    const walkBob = this.moving && !this.presentedAt ? Math.sin(this.bob) : 0;
+    g.position.copy(H.pos).lerp(S.pos, e);
+    g.position.x += 0.006 * walkBob;
+    g.position.y += 0.004 * Math.sin(this.bob * 2) * (walkBob ? 1 : 0);
+    g.rotation.set(H.rot.x + (S.rot.x - H.rot.x) * e, H.rot.y + (S.rot.y - H.rot.y) * e, H.rot.z + (S.rot.z - H.rot.z) * e);
+    if (this.presentedAt && t >= 1 && !this.frontOpenAt) {
+      this.frontOpenAt = now;
+      this.play("door");
+      this.hint("In you go.", 3000);
+    }
+    // Taken at the door: once the doors are moving, the hand is empty.
+    if (this.presentedAt && now - this.presentedAt > 1700) g.visible = false;
   }
 
   private nearReservedSeat() {
@@ -1881,7 +1945,8 @@ export class SigningGame {
       b.wings[1].rotation.x = -flap;
     }
     if (this.judyHead) this.judyHead.rotation.y = this.phase === "talk" ? 0.12 * Math.sin(now / 420) : 0.3 * Math.sin(now / 2600);
-    if (this.hud.ticket && this.frontOpen < 1) {
+    this.handTicket(now);
+    if (this.hud.ticket && this.frontOpenAt > 0 && this.frontOpen < 1) {
       // On the clock: the doors take about a second whatever the frame rate.
       this.frontOpen = Math.min(1, (now - this.frontOpenAt) / 1200);
       for (const { group, side } of this.frontDoors) group.rotation.y = side * ((Math.PI / 2) * (1 - this.frontOpen) + 0.4 * this.frontOpen);
@@ -1970,7 +2035,8 @@ export class SigningGame {
     switch (this.phase) {
       case "outside":
         if (this.pos.z > ISLAND.z1 + 2) return { x: 0, y: 0, z: ISLAND.z1 - 4, label: "Cross the blocks to the theater" };
-        return this.hud.ticket ? { x: 0, y: 0, z: BLDG.z1 + 1, label: "Through the front doors" } : { x: BOOTH.x, y: 0, z: BOOTH.z + 1, label: "Get your ticket from Judy" };
+        if (!this.hud.ticket) return { x: BOOTH.x, y: 0, z: BOOTH.z + 1, label: "Get your ticket from Judy" };
+        return this.presentedAt ? { x: 0, y: 0, z: BLDG.z1 + 1, label: "Through the front doors" } : { x: 0, y: 0, z: BLDG.z1 + 1.2, label: "Show your ticket at the doors" };
       case "lobby":
         return { x: 0, y: 0, z: LOBBY.z0 + 1, label: "Into the auditorium" };
       case "theater": {
@@ -2261,6 +2327,39 @@ function textTexture(lines: string[], w: number, h: number, bg: string, fg: stri
   return t;
 }
 
+/** The ticket: cream card, red dashed border, the film and the name. */
+function ticketTexture(title: string, name: string): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 230;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#f4ede0";
+  roundRect(ctx, 0, 0, 512, 230, 18);
+  ctx.fill();
+  ctx.strokeStyle = "#8c2a2f";
+  ctx.lineWidth = 5;
+  ctx.setLineDash([14, 10]);
+  roundRect(ctx, 14, 14, 484, 202, 12);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8c2a2f";
+  ctx.font = "700 26px Inter, system-ui, sans-serif";
+  ctx.fillText("ADMIT ONE", 256, 62);
+  ctx.fillStyle = "#2e0f14";
+  ctx.font = '700 36px "Playfair Display", Georgia, serif';
+  ctx.fillText(title, 256, 118, 450);
+  ctx.font = "500 24px Inter, system-ui, sans-serif";
+  ctx.fillStyle = "rgba(46,15,20,0.75)";
+  ctx.fillText(`Row 2, aisle  ·  ${name}`, 256, 170, 450);
+  ctx.fillStyle = "#8c2a2f";
+  ctx.font = "600 16px Inter, system-ui, sans-serif";
+  ctx.fillText("ANYTHING IS POSSIBLE", 256, 202);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function labelTexture(name: string): THREE.Texture {
   const c = document.createElement("canvas");
   c.width = 640;
@@ -2305,7 +2404,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 // ── YouTube (only when no movie file is in the manifest) ──────────────────
 
-type YTPlayer = { playVideo(): void; destroy?(): void };
+type YTPlayer = { playVideo(): void; pauseVideo?(): void; destroy?(): void };
 type YTApi = { Player: new (el: HTMLIFrameElement, opts: { events: { onStateChange: (e: { data: number }) => void } }) => YTPlayer };
 
 let ytLoading: Promise<YTApi> | null = null;

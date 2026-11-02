@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import type { Hud, JudyScript, Manifest, SigningGame } from "./engine";
 
 /** The film's name, as on the marquee (kept here too so the HUD doesn't load the engine for it). */
-const FILM_TITLE = "Sam Signs the Operating Agreement";
 
 /** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
 const ESCAPE_AFTER_MS = 60_000;
@@ -180,18 +179,6 @@ export function GameGate({
       )}
 
       {/* The ticket, once Judy hands it over. */}
-      {hud.ticket && hud.phase !== "intro" && (
-        <div
-          aria-label="Your ticket"
-          className="pointer-events-none absolute right-4 top-14 z-20 rotate-3 rounded-md border border-dashed border-amber-200/70 bg-[#f4ede0] px-3 py-1.5 text-[11px] leading-tight text-[#2e0f14] shadow-lg"
-          style={{ animation: "ticket-in 600ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both" }}
-        >
-          <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-[#8c2a2f]">Admit one</span>
-          <span className="block font-[var(--font-brand)] text-[13px]">{FILM_TITLE}</span>
-          <span className="block text-[10px] text-[#2e0f14]/70">Row 6, aisle · {signerName}</span>
-        </div>
-      )}
-
       {/* Talking to Judy: her subtitles, then Sam's replies. */}
       {hud.dialogue && (hud.phase === "talk" || hud.phase === "movie") && (
         <div className="absolute bottom-0 left-0 right-0 z-30 flex justify-center p-4 pb-6">
@@ -313,7 +300,6 @@ export function GameGate({
       )}
 
       <style>{`
-        @keyframes ticket-in { from { transform: translate(120px, -40px) rotate(25deg); opacity: 0; } to { transform: translate(0, 0) rotate(3deg); opacity: 1; } }
         @keyframes reply-in { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes speaking { from { height: 3px; } to { height: 11px; } }
         @keyframes rise-in { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
