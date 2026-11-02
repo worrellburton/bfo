@@ -169,7 +169,7 @@ export function GameGate({
             <dt className="text-white/40">Free the mouse</dt>
             <dd>Esc</dd>
             <dt className="text-white/40">Seated</dt>
-            <dd>Drag to look around</dd>
+            <dd>Move the mouse to look around</dd>
           </dl>
         </div>
       )}

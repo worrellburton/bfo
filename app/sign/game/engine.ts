@@ -1289,7 +1289,8 @@ export class SigningGame {
       if (this.locked) this.setHud({ paused: false });
     });
     on(el, "mousemove", (e: MouseEvent) => {
-      if (!(this.locked || this.dragging)) return;
+      // Walking needs the pointer locked (or a drag); from a seat or Judy's window the view just follows the mouse.
+      if (!(this.locked || this.dragging || this.looking())) return;
       if (this.walking()) {
         this.yaw -= e.movementX * 0.0022;
         this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - e.movementY * 0.0022));
