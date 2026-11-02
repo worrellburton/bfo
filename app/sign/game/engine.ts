@@ -835,6 +835,7 @@ export class SigningGame {
   /** The instanced Meshy seats, set aside if the machine can't keep up. */
   private readonly seatModels: THREE.Object3D[] = [];
   private slowReadings = 0;
+  private beganAt = 0;
   private lowQuality = false;
   private readonly plantPlaceholders: THREE.Object3D[] = [];
   private readonly popcornPlaceholders: THREE.Object3D[] = [];
@@ -1341,6 +1342,7 @@ export class SigningGame {
   /** The HUD's "click to begin": starts the walk and the music. */
   begin() {
     if (this.phase !== "intro") return;
+    this.beganAt = performance.now();
     this.setPhase("outside");
     this.lockPointer();
     void this.music?.play().catch(() => {});
@@ -1602,7 +1604,9 @@ export class SigningGame {
     if (avg > 0.0095 && scale > 0.6) scale = Math.max(0.6, scale - 0.1);
     else if (avg < 0.006 && scale < 1) scale = Math.min(1, scale + 0.05);
     // Still slow at the lowest resolution: the heavy seats go, and so do the shadows.
-    if (!this.lowQuality && scale <= 0.6 && avg > 0.012) {
+    // Only once the signer has been playing a while: the first seconds after the build are slow for everyone (shaders compiling).
+    const playing = this.phase !== "intro" && this.beganAt > 0 && performance.now() - this.beganAt > 6000;
+    if (playing && !this.lowQuality && scale <= 0.6 && avg > 0.012) {
       if (++this.slowReadings >= 3) this.dropQuality();
     } else this.slowReadings = 0;
     if (scale !== this.scale) {
