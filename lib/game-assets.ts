@@ -125,6 +125,18 @@ export async function writeAssets(assets: GameAssets): Promise<void> {
   await writeSetting(SETTING, { ...assets, updatedAt: Date.now() });
 }
 
+/**
+ * Changes one part of the record: re-reads it right before writing, so a
+ * slow job (a minute drawing a picture) never puts back stale copies of
+ * everything else that changed meanwhile. Returns the record as written.
+ */
+export async function patchAssets(change: (a: GameAssets) => void): Promise<GameAssets> {
+  const fresh = await readAssets();
+  change(fresh);
+  await writeAssets(fresh);
+  return fresh;
+}
+
 export async function readRequests(): Promise<Requests> {
   const got = (await readSettings([REQUESTS]))[REQUESTS];
   return got && typeof got === "object" ? (got as Requests) : {};
@@ -221,38 +233,44 @@ export async function soundEffect(text: string, seconds: number): Promise<Uint8A
 
 /** Voices the next `batch` of Judy's lines that aren't done yet; returns what's left. */
 export async function voiceJudy(lines: Array<{ id: string; text: string }>, redo: boolean, batch = 4, voiceId?: string | null): Promise<{ assets: GameAssets; remaining: number }> {
-  const assets = await readAssets();
+  let assets = await readAssets();
   if (voiceId && assets.judyVoice?.id !== voiceId) {
     const voices = await listVoices();
     const v = voices.find((x) => x.voice_id === voiceId);
-    assets.judyVoice = { id: voiceId, name: v?.name ?? voiceId };
-    assets.voice = {};
+    const judyVoice = { id: voiceId, name: v?.name ?? voiceId };
+    assets = await patchAssets((a) => {
+      a.judyVoice = judyVoice;
+      a.voice = {};
+    });
   }
   if (!assets.judyVoice) {
-    assets.judyVoice = pickJudyVoice(await listVoices());
-    if (!assets.judyVoice) throw new AssetError("elevenlabs", 502, "The ElevenLabs account has no voices.");
+    const judyVoice = pickJudyVoice(await listVoices());
+    if (!judyVoice) throw new AssetError("elevenlabs", 502, "The ElevenLabs account has no voices.");
+    assets = await patchAssets((a) => (a.judyVoice = judyVoice));
   }
+  const voice = assets.judyVoice;
+  if (!voice) throw new AssetError("elevenlabs", 502, "Judy has no voice.");
   const todo = lines.filter((l) => redo || !assets.voice[l.id]);
   for (const line of todo.slice(0, batch)) {
-    const bytes = await speak(assets.judyVoice.id, line.text);
+    const bytes = await speak(voice.id, line.text);
     const path = `game/voice/judy-${line.id}-${Date.now().toString(36)}.mp3`;
     await storageUpload(path, bytes, "audio/mpeg", BRAND_BUCKET);
-    assets.voice[line.id] = publicUrl(path);
-    await writeAssets(assets);
+    const url = publicUrl(path);
+    assets = await patchAssets((a) => (a.voice[line.id] = url));
   }
   return { assets, remaining: Math.max(0, todo.length - batch) };
 }
 
 /** Makes the next `batch` of sound effects that aren't done yet; returns what's left. */
 export async function makeSounds(redo: boolean, batch = 3, text: Record<string, string> = {}): Promise<{ assets: GameAssets; remaining: number }> {
-  const assets = await readAssets();
+  let assets = await readAssets();
   const todo = Object.entries(EFFECTS).filter(([name]) => redo || !assets.sounds[name]);
   for (const [name, effect] of todo.slice(0, batch)) {
     const bytes = await soundEffect(text[name] || effect.text, effect.seconds);
     const path = `game/sounds/${name}-${Date.now().toString(36)}.mp3`;
     await storageUpload(path, bytes, "audio/mpeg", BRAND_BUCKET);
-    assets.sounds[name] = publicUrl(path);
-    await writeAssets(assets);
+    const url = publicUrl(path);
+    assets = await patchAssets((a) => (a.sounds[name] = url));
   }
   return { assets, remaining: Math.max(0, todo.length - batch) };
 }
@@ -260,16 +278,13 @@ export async function makeSounds(redo: boolean, batch = 3, text: Record<string, 
 /** Draws a prop with OpenAI and hands the picture to Meshy; the model arrives through checkProp. */
 export async function startProp(name: string, what?: string): Promise<GameAssets> {
   if (!PROPS[name]) throw new AssetError("meshy", 400, `No such prop: ${name}`);
-  const assets = await readAssets();
   const { png } = await generateImage(propPrompt(name, what?.trim() || PROPS[name]));
   const imagePath = `game/models/${name}-${Date.now().toString(36)}.png`;
   await storageUpload(imagePath, png, "image/png", BRAND_BUCKET);
   const imageUrl = publicUrl(imagePath);
   // Light enough to download in a game: 2k textures (the smallest Meshy takes), a polygon budget, GLB only.
   const taskId = await startModel(imageUrl, { texture: "2k", pbr: false, formats: ["glb"], polycount: POLYCOUNT[name] ?? 12000 });
-  assets.props[name] = { taskId, status: "PENDING", progress: 0, createdAt: Date.now(), updatedAt: Date.now(), imageUrl };
-  await writeAssets(assets);
-  return assets;
+  return patchAssets((a) => (a.props[name] = { taskId, status: "PENDING", progress: 0, createdAt: Date.now(), updatedAt: Date.now(), imageUrl }));
 }
 
 /** Asks Meshy how a prop is doing; once it's done the GLB is copied into the bucket and the game uses it. */
@@ -280,19 +295,21 @@ export async function checkProp(name: string): Promise<GameAssets> {
   if (prev.status === "SUCCEEDED" || prev.status === "FAILED" || prev.status === "CANCELED") return assets;
   const task = await getTask(prev.taskId);
   let state: ModelState & { imageUrl?: string } = { ...mergeTask(prev, task), imageUrl: prev.imageUrl };
+  let glbUrl: string | undefined;
   if (task.status === "SUCCEEDED" && task.model_urls?.glb) {
     try {
-      const glbUrl = await copyIn(task.model_urls.glb, `game/models/${name}-${Date.now().toString(36)}.glb`, "model/gltf-binary");
+      glbUrl = await copyIn(task.model_urls.glb, `game/models/${name}-${Date.now().toString(36)}.glb`, "model/gltf-binary");
       state = { ...state, glbUrl };
-      assets.models[name] = glbUrl;
     } catch (err) {
       // A model the bucket won't take (too big) is marked failed rather than fetched again every run; a queued redo makes a lighter one.
       state = { ...state, status: "FAILED", error: `couldn't store the model: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
-  assets.props[name] = state;
-  await writeAssets(assets);
-  return assets;
+  const done = state;
+  return patchAssets((a) => {
+    a.props[name] = done;
+    if (glbUrl) a.models[name] = glbUrl;
+  });
 }
 
 // ── The cron: fill in what's missing, and do what was asked ──────────────
@@ -324,10 +341,10 @@ export async function fillMissing(opts: { deadline: number; judyUrl: string }): 
       else {
         const ask = requests.judy;
         if (ask?.redo || ask?.voiceId || ask?.lineIds?.length) {
-          const assets = await readAssets();
-          if (ask.voiceId || ask.redo) assets.voice = {};
-          else for (const id of ask.lineIds ?? []) delete assets.voice[id];
-          await writeAssets(assets);
+          await patchAssets((a) => {
+            if (ask.voiceId || ask.redo) a.voice = {};
+            else for (const id of ask.lineIds ?? []) delete a.voice[id];
+          });
         }
         let remaining = 1;
         let first = true;
@@ -349,10 +366,10 @@ export async function fillMissing(opts: { deadline: number; judyUrl: string }): 
     try {
       const ask = requests.sounds;
       if (ask?.redo || ask?.names?.length) {
-        const assets = await readAssets();
         const names = ask.names?.length ? ask.names : Object.keys(EFFECTS);
-        for (const n of names) delete assets.sounds[n];
-        await writeAssets(assets);
+        await patchAssets((a) => {
+          for (const n of names) delete a.sounds[n];
+        });
       }
       let remaining = 1;
       while (remaining > 0 && time()) {
