@@ -1,0 +1,39 @@
+# After a merge to main, waits for Vercel to put that commit into production
+# and then checks the site answers: /api/health reports the new commit and
+# `ok`, and the pages that must never be blank load. Fails loudly (a red
+# run on main) when production didn't pick up the commit within 15 minutes
+# or is unhealthy, so a bad deploy is noticed without anyone watching Vercel.
+name: Production check
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for production to serve this commit
+        run: |
+          want="${GITHUB_SHA:0:12}"
+          for i in $(seq 1 90); do
+            body=$(curl -sS --max-time 20 https://www.burtonfamilyoffice.com/api/health || true)
+            have=$(printf '%s' "$body" | sed -n 's/.*"version":"\([0-9a-f]*\)".*/\1/p')
+            if [ "$have" = "$want" ]; then
+              echo "Production is on $want."
+              printf '%s' "$body" | grep -q '"ok":true' && exit 0
+              echo "Production is on the new commit but unhealthy: $body"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Production never reached $want (last seen: ${have:-none})."
+          exit 1
+      - name: Pages load
+        run: |
+          for p in / /login /manifest.webmanifest /sw.js; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "https://www.burtonfamilyoffice.com$p")
+            echo "$p → $code"
+            [ "$code" = "200" ] || exit 1
+          done

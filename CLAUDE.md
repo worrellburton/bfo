@@ -11,7 +11,10 @@ Docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`,
 - `npm run dev` — SPA only at :5173; `/api/*` needs `vercel dev`.
 - `npm run typecheck` — `react-router typegen` then `tsc`.
 - `npm test` — Vitest; tests are pure or mock `sb()`, never the network.
+  `npm run test:coverage` fails under the floor in `vite.config.ts`.
+- `npm run lint`, `npm run format` — ESLint and Prettier; CI checks both.
 - `npm run build` — `build/client`, what Vercel serves.
+- `npm run migrate` — apply pending `supabase/migrations` (`-- --check` lists them).
 - Deploy: push to `main`. iOS build: GitHub Action "iOS → TestFlight".
 
 ## Conventions
@@ -30,8 +33,9 @@ Docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`,
 - Tailwind v4; root font is 11.9px, so rem sizes are 85% of usual. Exact
   sizes (44px tap targets) are written in px: `h-[44px]`.
 - Avoid `any` where a type is easy. `strict` is on.
-- Migrations are SQL files in `supabase/migrations/`, applied by hand in the
-  Supabase SQL editor or MCP; say "Applied to the project" in the commit.
+- Migrations are SQL files in `supabase/migrations/`, applied with
+  `npm run migrate` (or the Supabase MCP, then recorded in
+  `schema_migrations`); say "Applied to the project" in the commit.
 
 ## Never
 
