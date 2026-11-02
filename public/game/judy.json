@@ -60,7 +60,7 @@
       ],
       "core": {
         "id": "r2",
-        "text": "Which, I went to China. Last spring. With Carol, from accounts payable, you remember Carol, she had the ferns by the printer. That's where the money went, if you're wondering why I'm here. It was worth it, I'm not apologizing. Beijing, then Xi'an, then a boat. We saw the Wall. It's long. People say that, and then you see it, and you think, no, it's really long, they weren't exaggerating. Our guide was a young man named Kevin, which I don't think was his real name, and he said, Judy, you walk faster than anyone in this group, and I said, Kevin, I ran a department. Sam was in it. I didn't tell Kevin about the theater. Carol got altitude sickness on a bus, which I didn't know you could do."
+        "text": "Which, I went to China. Last spring. By myself, which people made a thing of. That's where the money went, if you're wondering why I'm here. It was worth it, I'm not apologizing. Beijing, then Xi'an, then a boat. We saw the Wall. It's long. People say that, and then you see it, and you think, no, it's really long, they weren't exaggerating. Our guide was a young man named Kevin, which I don't think was his real name, and he said, Judy, you walk faster than anyone in this group, and I said, Kevin, I ran a department. Sam was in it. I didn't tell Kevin about the theater. I got altitude sickness on a bus, which I didn't know you could do."
       }
     },
     {
@@ -73,10 +73,10 @@
           }
         },
         {
-          "sam": "Carol's ferns. Right. Ticket?",
+          "sam": "Altitude sickness on a bus. Right. Ticket?",
           "judy": {
             "id": "r3b",
-            "text": "The ferns died while she was away. She blamed me. I was in China with her, Sam. Carol, by the way, is a vice president now. I sell tickets. You'd have watered them."
+            "text": "On a bus, Sam. Kevin had to pull over. The whole group watched. It was still more dignified than this booth. You'd have brought me a water."
           }
         },
         {
