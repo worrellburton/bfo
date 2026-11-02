@@ -55,7 +55,7 @@ import {
  *            delete     { id } → { ok }
  *            download   { id } → { url }  the signed copy (or the latest PDF)
  *
- * Signer — GET ?token=<token>[&have=<pdfKey>] → { title, brand, mode, you, parties, fields, pdfKey, pdfUrl, status, completed }  (marks viewed)
+ * Signer — GET ?token=<token>[&have=<pdfKey>] → { title, brand, mode, you, parties, fields, pdfKey, pdfUrl, downloadUrl, status, completed }  (marks viewed)
  *          POST { action: "sign", token, name, signature (PNG data URL), consent: true } → { ok, completed }
  *          POST { action: "decline", token, reason? } → { ok }
  *
@@ -439,6 +439,8 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
       fields: current.fields,
       pages: current.pages,
       pdfUrl: same ? null : await latestPdfUrl(current, completed ? fileName(current) : undefined),
+      // The same PDF as a download, named after the document.
+      downloadUrl: same ? null : await latestPdfUrl(current, fileName(current)),
       sentBy: current.created_by_name,
     });
   }

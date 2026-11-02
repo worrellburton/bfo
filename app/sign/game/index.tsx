@@ -212,6 +212,8 @@ export function GameGate({
               <dd>E</dd>
               <dt className="text-white/45">Free the mouse</dt>
               <dd>Esc</dd>
+              <dt className="text-white/45">Seated</dt>
+              <dd>Drag to look around</dd>
             </dl>
             <button
               type="button"

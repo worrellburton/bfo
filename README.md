@@ -84,7 +84,10 @@ signing game" (`/sign/preview`), which runs the whole thing on a sample
 document and signs nothing; its "Game studio" panel makes Judy's voice, the
 sound effects and the props on the server (`api/game-assets.ts`, with the
 keys Vercel holds) and stores them in the public brand bucket, where they
-win over the static manifest.
+win over the static manifest. A cron (`api/cron/game-assets.ts`, every five
+minutes) fills in whatever is missing on its own and works a request list in
+`brand_settings` ("game-assets-requests") for redoing Judy with another
+voice, a sound, or a prop with a new prompt.
 
 ## Check, test, build
 

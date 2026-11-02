@@ -25,7 +25,10 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
         return keys.filter((k) => settings.has(k)).map((k) => ({ key: k, value: settings.get(k) }));
       }
       if (init.method === "POST") for (const row of init.body) settings.set(row.key, row.value);
-      if (init.method === "DELETE") settings.clear();
+      if (init.method === "DELETE") {
+        const m = /key=eq\.([^&]+)/.exec(decodeURIComponent(path));
+        if (m) settings.delete(m[1]);
+      }
       return [];
     },
   };
@@ -35,6 +38,7 @@ vi.mock("../lib/storage.js", () => ({
 }));
 
 const { default: handler } = await import("../api/game-assets");
+const { default: cron } = await import("../api/cron/game-assets");
 
 function call(method: "GET" | "POST", body: Record<string, unknown> = {}, query: Record<string, string> = {}, auth = true) {
   const res: any = { statusCode: 200, body: null as any, headers: {} as Record<string, string> };
@@ -70,6 +74,15 @@ beforeEach(() => {
           { status: 200 },
         );
       if (url.includes("/text-to-speech/") || url.endsWith("/sound-generation")) return new Response(mp3, { status: 200, headers: { "Content-Type": "audio/mpeg" } });
+      if (url.endsWith("/game/judy.json"))
+        return new Response(
+          JSON.stringify({
+            greeting: { id: "greeting", text: "Oh. Hey, Sam." },
+            rounds: [{ options: [{ judy: { id: "r1a", text: "A ticket." } }], core: { id: "r1", text: "So the machine." } }],
+            final: { id: "final", text: "Here's a ticket." },
+          }),
+          { status: 200 },
+        );
       return new Response("nope", { status: 404 });
     }),
   );
@@ -153,5 +166,56 @@ describe("api/game-assets", () => {
     expect(r.statusCode).toBe(401);
     const r2 = await call("POST", { action: "prop", name: "throne" });
     expect(r2.statusCode).toBe(400);
+  });
+});
+
+describe("api/cron/game-assets", () => {
+  function cronCall(auth: string | undefined) {
+    const res: any = { statusCode: 200, body: null as any, headers: {} as Record<string, string> };
+    res.status = (c: number) => ((res.statusCode = c), res);
+    res.json = (b: unknown) => ((res.body = b), res);
+    res.setHeader = (k: string, v: string) => ((res.headers[k] = v), res);
+    res.end = () => res;
+    return cron({ method: "GET", query: {}, headers: auth ? { authorization: auth } : {} } as any, res).then(() => res);
+  }
+
+  it("only the cron, with the secret", async () => {
+    process.env.CRON_SECRET = "s3cret";
+    expect((await cronCall(undefined)).statusCode).toBe(401);
+    expect((await cronCall("Bearer wrong")).statusCode).toBe(401);
+    delete process.env.CRON_SECRET;
+    expect((await cronCall("Bearer s3cret")).statusCode).toBe(503);
+  });
+
+  it("fills in Judy and the sounds, and says what it skipped", async () => {
+    process.env.CRON_SECRET = "s3cret";
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.MESHY_API_KEY;
+    const r = await cronCall("Bearer s3cret");
+    expect(r.statusCode).toBe(200);
+    expect(r.body.voiced).toBe(4);
+    expect(r.body.sounds).toBe(6);
+    expect(r.body.skipped.join(" ")).toMatch(/OPENAI_API_KEY/);
+    expect(r.body.errors).toEqual([]);
+    // Nothing more to do: the next run makes nothing.
+    const before = fetchLog.length;
+    const r2 = await cronCall("Bearer s3cret");
+    expect(r2.body.voiced).toBe(4);
+    expect(fetchLog.slice(before).filter((l) => l.includes("text-to-speech") || l.includes("sound-generation"))).toHaveLength(0);
+  });
+
+  it("works the request list: Judy again with a chosen voice, one sound again", async () => {
+    process.env.CRON_SECRET = "s3cret";
+    await cronCall("Bearer s3cret");
+    settings.set("game-assets-requests", { judy: { voiceId: "f1" }, sounds: { names: ["door"], text: { door: "A squeaky door" } } });
+    const before = fetchLog.length;
+    const r = await cronCall("Bearer s3cret");
+    expect(r.body.voiced).toBe(4);
+    expect(r.body.assets === undefined).toBe(true);
+    const made = fetchLog.slice(before);
+    expect(made.filter((l) => l.includes("/text-to-speech/f1"))).toHaveLength(4);
+    expect(made.filter((l) => l.includes("sound-generation"))).toHaveLength(1);
+    expect((settings.get("game-assets") as any).judyVoice).toEqual({ id: "f1", name: "Alice" });
+    expect(settings.has("game-assets-requests")).toBe(false);
   });
 });

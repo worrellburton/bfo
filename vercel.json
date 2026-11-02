@@ -19,6 +19,10 @@
       "memory": 512,
       "maxDuration": 300
     },
+    "api/cron/game-assets.ts": {
+      "memory": 512,
+      "maxDuration": 300
+    },
     "api/cron/state-records.ts": {
       "memory": 256,
       "maxDuration": 300
@@ -68,6 +72,10 @@
     {
       "path": "/api/plaid/history",
       "schedule": "17 13 * * 1"
+    },
+    {
+      "path": "/api/cron/game-assets",
+      "schedule": "*/5 * * * *"
     }
   ],
   "redirects": [

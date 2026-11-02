@@ -146,6 +146,8 @@ export class SigningGame {
   private grounded = false;
   private yaw = 0; // facing -z
   private pitch = 0;
+  /** While sat or talking: the direction the scene put you in, which looking around stays near. */
+  private lookBase: { yaw: number; pitch: number } | null = null;
   private readonly keys = new Set<string>();
   private dragging = false;
   private locked = false;
@@ -1072,9 +1074,16 @@ export class SigningGame {
       if (this.locked) this.setHud({ paused: false });
     });
     on(el, "mousemove", (e: MouseEvent) => {
-      if (!this.walking() || !(this.locked || this.dragging)) return;
-      this.yaw -= e.movementX * 0.0022;
-      this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - e.movementY * 0.0022));
+      if (!(this.locked || this.dragging)) return;
+      if (this.walking()) {
+        this.yaw -= e.movementX * 0.0022;
+        this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - e.movementY * 0.0022));
+      } else if (this.looking() && this.lookBase && !this.tween) {
+        // Looking around from a seat or a window: so far each way, no further.
+        const b = this.lookBase;
+        this.yaw = Math.max(b.yaw - 1.1, Math.min(b.yaw + 1.1, this.yaw - e.movementX * 0.0022));
+        this.pitch = Math.max(Math.max(-1.4, b.pitch - 0.6), Math.min(Math.min(1.4, b.pitch + 0.6), this.pitch - e.movementY * 0.0022));
+      }
     });
     on(el, "mousedown", (e: MouseEvent) => {
       if (e.button !== 0) return;
@@ -1083,7 +1092,7 @@ export class SigningGame {
       if (this.walking()) {
         this.dragging = true;
         if (!this.locked) this.lockPointer();
-      }
+      } else if (this.looking()) this.dragging = true;
     });
     on(window, "mouseup", () => (this.dragging = false));
     on(el, "contextmenu", (e: Event) => e.preventDefault());
@@ -1091,6 +1100,19 @@ export class SigningGame {
 
   private walking() {
     return this.phase === "outside" || this.phase === "lobby" || this.phase === "theater" || this.phase === "exit";
+  }
+
+  /** Sat down or at Judy's window: no walking, but the view can turn a little either way. */
+  private looking() {
+    return this.phase === "talk" || this.phase === "seated" || this.phase === "movie" || this.phase === "ended";
+  }
+
+  /** Takes the camera's current direction as the one to look around from. */
+  private settleLook() {
+    const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
+    this.yaw = e.y;
+    this.pitch = e.x;
+    this.lookBase = { yaw: e.y, pitch: e.x };
   }
 
   private lockPointer() {
@@ -1139,7 +1161,15 @@ export class SigningGame {
     // Turn to face her.
     const eye = this.camera.position.clone();
     const look = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(BOOTH.x - 0.2, 2.05, BOOTH.z - 0.25), new THREE.Vector3(0, 1, 0));
-    this.tween = { from: eye, to: eye.clone(), qFrom: this.camera.quaternion.clone(), qTo: new THREE.Quaternion().setFromRotationMatrix(look), start: performance.now(), dur: 600 };
+    this.tween = {
+      from: eye,
+      to: eye.clone(),
+      qFrom: this.camera.quaternion.clone(),
+      qTo: new THREE.Quaternion().setFromRotationMatrix(look),
+      start: performance.now(),
+      dur: 600,
+      then: () => this.settleLook(),
+    };
     const judy = this.opts.judy;
     if (!judy) {
       this.say([{ id: "final", text: "Here's a ticket. Row six, on the aisle." }], () => this.giveTicket());
@@ -1229,6 +1259,7 @@ export class SigningGame {
   private giveTicket() {
     this.play("sign");
     this.talking = null;
+    this.lookBase = null;
     // Carry the facing from the conversation into the walk.
     const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
     this.yaw = e.y;
@@ -1259,12 +1290,24 @@ export class SigningGame {
     const to = new THREE.Vector3(s.x, s.y + 1.2, s.z + 0.1);
     const look = new THREE.Matrix4().lookAt(to, new THREE.Vector3(0, SCREEN.y, SCREEN.z), new THREE.Vector3(0, 1, 0));
     const qTo = new THREE.Quaternion().setFromRotationMatrix(look);
-    this.tween = { from: this.camera.position.clone(), to, qFrom: this.camera.quaternion.clone(), qTo, start: performance.now(), dur: 1100, then: () => this.startMovie() };
+    this.tween = {
+      from: this.camera.position.clone(),
+      to,
+      qFrom: this.camera.quaternion.clone(),
+      qTo,
+      start: performance.now(),
+      dur: 1100,
+      then: () => {
+        this.settleLook();
+        this.startMovie();
+      },
+    };
     this.setHud({ prompt: "" });
   }
 
   private standUp() {
     if (this.phase !== "ended") return;
+    this.lookBase = null;
     const s = this.reservedSeat();
     this.pos.set(0.5, s.y, s.z);
     this.vy = 0;
@@ -1293,6 +1336,7 @@ export class SigningGame {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     if (this.walking() && !this.hud.paused) this.move(dt);
+    else if (this.looking() && !this.tween && this.lookBase) this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.story(now);
     this.lights(dt);
     this.animate(now, dt);
