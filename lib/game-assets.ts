@@ -265,8 +265,8 @@ export async function startProp(name: string, what?: string): Promise<GameAssets
   const imagePath = `game/models/${name}-${Date.now().toString(36)}.png`;
   await storageUpload(imagePath, png, "image/png", BRAND_BUCKET);
   const imageUrl = publicUrl(imagePath);
-  // Light enough to download in a game: 1k textures, a polygon budget, GLB only.
-  const taskId = await startModel(imageUrl, { texture: "1k", pbr: false, formats: ["glb"], polycount: POLYCOUNT[name] ?? 12000 });
+  // Light enough to download in a game: 2k textures (the smallest Meshy takes), a polygon budget, GLB only.
+  const taskId = await startModel(imageUrl, { texture: "2k", pbr: false, formats: ["glb"], polycount: POLYCOUNT[name] ?? 12000 });
   assets.props[name] = { taskId, status: "PENDING", progress: 0, createdAt: Date.now(), updatedAt: Date.now(), imageUrl };
   await writeAssets(assets);
   return assets;
