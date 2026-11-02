@@ -19,15 +19,5 @@
      -> https://reactrouter.com/v7/upgrading/future#futurev8_trailingslashawaredatarequests
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-8:10:09 PM [vite] (client) hmr update /app/sign/game/index.tsx
-8:10:09 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
-8:10:09 PM [vite] (ssr) hmr update /app/app.css
-8:10:09 PM [vite] (client) hmr update /app/sign/game/index.tsx
-8:10:09 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
-8:10:09 PM [vite] (ssr) hmr update /app/app.css
-8:10:10 PM [vite] (client) hmr update /app/sign/game/index.tsx
-8:10:10 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
-8:10:10 PM [vite] (ssr) hmr update /app/app.css
-8:10:54 PM [vite] (client) hmr update /app/sign/game/index.tsx
-8:10:54 PM [vite] (client) hmr update /app/app.css, /app/sign/game/index.tsx
-8:10:54 PM [vite] (ssr) hmr update /app/app.css
+8:51:35 PM [vite] (client) hmr update /app/app.css
+8:51:35 PM [vite] (ssr) hmr update /app/app.css
