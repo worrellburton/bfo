@@ -159,6 +159,7 @@ export function GameGate({
             <div role="status" aria-live="polite" className="rounded-2xl border border-white/10 bg-black/75 px-5 py-4 text-center backdrop-blur">
               <span className={`block text-[10.5px] font-semibold uppercase tracking-[0.2em] ${hud.dialogue.speaker === "You" ? "text-white/50" : "text-amber-300"}`}>{hud.dialogue.speaker}</span>
               <span className="mt-1 block text-[17px] leading-snug text-white">{hud.dialogue.text}</span>
+              {!hud.dialogue.options && hud.dialogue.speaker !== "You" && <span className="mt-2 block text-[10.5px] text-white/35">Space skips to the end of this line</span>}
             </div>
             {hud.dialogue.options && (
               <div className="mt-2 grid gap-1.5">

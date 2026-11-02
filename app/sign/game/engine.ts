@@ -165,6 +165,8 @@ export class SigningGame {
   private talking: { round: number } | null = null;
   private talkTimers: Array<ReturnType<typeof setTimeout>> = [];
   private talkAudio: HTMLAudioElement | null = null;
+  /** Skips the rest of the line Judy is on (Space); null when she's waiting for a reply. */
+  private talkSkip: (() => void) | null = null;
   private frontDoors: Array<{ group: THREE.Group; side: -1 | 1 }> = [];
   private frontDoorSolid: Box | null = null;
   private frontOpen = 0;
@@ -1129,6 +1131,10 @@ export class SigningGame {
       this.keys.add(e.code);
       if (e.code === "KeyE" || e.code === "Enter") this.interact();
       if (this.phase === "talk" && /^(Digit|Numpad)[1-3]$/.test(e.code)) this.choose(Number(e.code.slice(-1)) - 1);
+      if (this.phase === "talk" && e.code === "Space") {
+        e.preventDefault();
+        this.talkSkip?.();
+      }
       if (["Space", "ArrowUp", "ArrowDown"].includes(e.code) && this.walking()) e.preventDefault();
     });
     on(window, "keyup", (e: KeyboardEvent) => this.keys.delete(e.code));
@@ -1285,19 +1291,41 @@ export class SigningGame {
     const judy = this.opts.judy;
     const speaker = judy?.name ?? "Judy";
     const next = (k: number) => {
+      this.talkSkip = null;
       if (k >= lines.length) return then();
       const line = lines[k];
       const chunks = subtitleChunks(line.text);
       const words = chunks.map((c) => c.split(/\s+/).length);
       const total = words.reduce((a, b) => a + b, 0);
+      // The timers pacing this line, so Space can drop them and move on.
+      const mine: Array<ReturnType<typeof setTimeout>> = [];
+      const later = (fn: () => void, ms: number) => {
+        const t = setTimeout(fn, ms);
+        mine.push(t);
+        this.talkTimers.push(t);
+      };
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        for (const t of mine) clearTimeout(t);
+        if (this.talkAudio) {
+          this.talkAudio.pause();
+          this.talkAudio = null;
+        }
+        next(k + 1);
+      };
       const schedule = (seconds: number) => {
         let at = 0;
         chunks.forEach((text, i) => {
-          this.talkTimers.push(setTimeout(() => this.setHud({ dialogue: { speaker, text, options: null } }), at * 1000));
+          later(() => this.setHud({ dialogue: { speaker, text, options: null } }), at * 1000);
           at += (seconds * words[i]) / total;
         });
-        this.talkTimers.push(setTimeout(() => next(k + 1), seconds * 1000 + 350));
+        later(finish, seconds * 1000 + 350);
       };
+      // Space skips the rest of this line, once it has had a moment on screen.
+      this.talkSkip = null;
+      later(() => (this.talkSkip = finish), 900);
       const url = this.opts.manifest.voice[line.id];
       if (!url) return schedule(total * 0.42 + 0.4);
       const a = new Audio(url);
@@ -1315,7 +1343,7 @@ export class SigningGame {
       });
       a.addEventListener("error", () => start());
       // A clip that never loads shouldn't hold the line.
-      this.talkTimers.push(setTimeout(start, 4000));
+      later(start, 4000);
       a.load();
     };
     next(0);
@@ -1324,6 +1352,7 @@ export class SigningGame {
   private giveTicket() {
     this.play("sign");
     this.talking = null;
+    this.talkSkip = null;
     this.lookBase = null;
     // Carry the facing from the conversation into the walk.
     const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
