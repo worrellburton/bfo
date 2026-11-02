@@ -15,6 +15,10 @@
       "memory": 1024,
       "maxDuration": 300
     },
+    "api/game-assets.ts": {
+      "memory": 512,
+      "maxDuration": 300
+    },
     "api/cron/state-records.ts": {
       "memory": 256,
       "maxDuration": 300

@@ -65,8 +65,8 @@ Optional ones are marked. Never commit values.
 | `STABLE_WEBHOOK_TOKEN` | Shared token in the Stable webhook URL (`/api/stable-webhook?token=…`). |
 | `ANTHROPIC_API_KEY` | Ask BFO, document classification, profile and verification, document renaming. |
 | `OPENAI_API_KEY` | Voice (transcription, speech, Realtime) and the logo reference sheet. |
-| `MESHY_API_KEY` | optional. Image-to-3D for the logo studio and the signing game's props (`npm run game:props`). |
-| `ELEVENLABS_API_KEY` | optional. Sound effects for the signing game (`npm run game:sounds`); never needed at runtime. |
+| `MESHY_API_KEY` | optional. Image-to-3D for the logo studio and the signing game's props (the game studio, or `npm run game:props`). |
+| `ELEVENLABS_API_KEY` | optional. Judy's voice and the sound effects for the signing game (the game studio, or `npm run game:judy` and `game:sounds`). |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8` | Apple push key for the iPhone app. `APNS_BUNDLE_ID` optional (default `com.burtonfamilyoffice.app`). |
 | `SITE_URL` | optional. Site origin used in emails (default `https://www.burtonfamilyoffice.com`). |
 
@@ -81,7 +81,10 @@ loaded only on that page); its movie, music, sound effects and optional GLB
 props live in `public/game` and are named in `public/game/manifest.json`
 (see `public/game/README.md`). Robert's account menu has "Preview the
 signing game" (`/sign/preview`), which runs the whole thing on a sample
-document and signs nothing.
+document and signs nothing; its "Game studio" panel makes Judy's voice, the
+sound effects and the props on the server (`api/game-assets.ts`, with the
+keys Vercel holds) and stores them in the public brand bucket, where they
+win over the static manifest.
 
 ## Check, test, build
 
