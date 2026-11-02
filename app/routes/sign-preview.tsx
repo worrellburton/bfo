@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Navigate } from "react-router";
 import { getUser } from "../auth";
+import { GameStudio } from "../sign/game/studio";
 import { canPreviewGame } from "../sign/preview";
 import { SignPage } from "./sign";
 
@@ -10,10 +12,19 @@ export function meta() {
 /**
  * The whole game-mode sequence as a signer sees it, on a sample document,
  * for the one account whose menu offers it (app/sign/preview.ts). The final
- * Sign button is disabled: nothing is saved.
+ * Sign button is disabled: nothing is saved. The game studio sits on top:
+ * it makes Judy's voice, the effects and the props on the server, and the
+ * page restarts the game so they're heard and seen.
  */
 export default function SignPreview() {
   const user = getUser();
+  // Bumped when the studio made something: a fresh SignPage starts the game over with it.
+  const [run, setRun] = useState(0);
   if (!canPreviewGame(user)) return <Navigate to="/home" replace />;
-  return <SignPage token="" preview={{ name: user?.name?.trim() || "Robert Burton", email: user?.email ?? "" }} />;
+  return (
+    <>
+      <SignPage key={run} token="" preview={{ name: user?.name?.trim() || "Robert Burton", email: user?.email ?? "" }} />
+      <GameStudio onChanged={() => setRun((n) => n + 1)} />
+    </>
+  );
 }

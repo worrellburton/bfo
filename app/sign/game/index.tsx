@@ -62,7 +62,7 @@ export function GameGate({
     let cancelled = false;
     const el = frame.current;
     (async () => {
-      const [{ SigningGame, EMPTY_MANIFEST }, manifest, judy] = await Promise.all([
+      const [{ SigningGame, EMPTY_MANIFEST }, manifest, judy, made] = await Promise.all([
         import("./engine"),
         fetch("/game/manifest.json")
           .then((r): Promise<Partial<Manifest>> => (r.ok ? r.json() : Promise.resolve({})))
@@ -70,9 +70,19 @@ export function GameGate({
         fetch("/game/judy.json")
           .then((r): Promise<JudyScript | null> => (r.ok ? r.json() : Promise.resolve(null)))
           .catch((): JudyScript | null => null),
+        // What the game studio made on the server (api/game-assets.ts) wins over the static manifest.
+        fetch("/api/game-assets")
+          .then((r): Promise<Partial<Pick<Manifest, "voice" | "sounds" | "models">>> => (r.ok ? r.json() : Promise.resolve({})))
+          .catch((): Partial<Pick<Manifest, "voice" | "sounds" | "models">> => ({})),
       ]);
       if (cancelled) return;
-      const m: Manifest = { ...EMPTY_MANIFEST, ...manifest, sounds: { ...(manifest.sounds ?? {}) }, models: { ...(manifest.models ?? {}) }, voice: { ...(manifest.voice ?? {}) } };
+      const m: Manifest = {
+        ...EMPTY_MANIFEST,
+        ...manifest,
+        sounds: { ...(manifest.sounds ?? {}), ...(made.sounds ?? {}) },
+        models: { ...(manifest.models ?? {}), ...(made.models ?? {}) },
+        voice: { ...(manifest.voice ?? {}), ...(made.voice ?? {}) },
+      };
       try {
         game.current = new SigningGame(el, { signerName, title, manifest: m, judy: judy && judy.rounds ? judy : null, onHud: setHud, onDone });
         setLoading("ready");

@@ -1,5 +1,11 @@
 # The signing game's assets
 
+The easy way to make the generated ones (Judy's voice, the sound effects,
+the props) is the "Game studio" panel on /sign/preview: it runs on the
+server with the keys Vercel holds and stores the files in the public brand
+bucket, which the game uses over anything named here. The scripts below do
+the same from a machine that has the keys, writing into this folder.
+
 Everything in this folder is served as-is at the same path (`/game/...`).
 `manifest.json` tells the game (app/sign/game) what's here:
 

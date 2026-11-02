@@ -73,6 +73,7 @@ function mock(url, method, body) {
   }
   if (u.startsWith("/api/ask")) return method === "POST" ? null : [200, { chats: [], chat: {}, messages: [] }];
   if (u.startsWith("/api/brand")) return [200, { logo: null }];
+  if (u.startsWith("/api/game-assets")) return [200, { voice: {}, sounds: {}, models: {} }];
   if (u.startsWith("/api/sign")) {
     const action = body && body.action;
     const request = {

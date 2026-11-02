@@ -1,0 +1,157 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanLines, mergeManifest, pickJudyVoice, propPrompt } from "../lib/game-assets";
+
+/**
+ * The game studio (api/game-assets.ts, lib/game-assets.ts): the pure parts,
+ * then the endpoint against a fake setting store, a fake bucket and fake
+ * providers (fetch is stubbed; no network).
+ */
+
+const settings = new Map<string, unknown>();
+const uploads = new Map<string, number>();
+
+vi.mock("../lib/auth.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/auth")>();
+  return {
+    ...actual,
+    currentUser: vi.fn(async (req: { headers?: Record<string, string> }) =>
+      req.headers?.authorization ? { id: "u1", name: "Robert", email: "r@x.com", phone: null, role: "owner", status: "approved" } : null,
+    ),
+    sb: async (path: string, init: { method?: string; body?: any } = {}) => {
+      if (!path.startsWith("brand_settings")) return [];
+      if ((init.method ?? "GET") === "GET") {
+        const m = /key=in\.\((.*)\)/.exec(decodeURIComponent(path));
+        const keys = m ? m[1].split(",").map((k) => k.replace(/"/g, "")) : [];
+        return keys.filter((k) => settings.has(k)).map((k) => ({ key: k, value: settings.get(k) }));
+      }
+      if (init.method === "POST") for (const row of init.body) settings.set(row.key, row.value);
+      if (init.method === "DELETE") settings.clear();
+      return [];
+    },
+  };
+});
+vi.mock("../lib/storage.js", () => ({
+  storageUpload: async (p: string, bytes: Uint8Array) => (uploads.set(p, bytes.length), p),
+}));
+
+const { default: handler } = await import("../api/game-assets");
+
+function call(method: "GET" | "POST", body: Record<string, unknown> = {}, query: Record<string, string> = {}, auth = true) {
+  const res: any = { statusCode: 200, body: null as any, headers: {} as Record<string, string> };
+  res.status = (c: number) => ((res.statusCode = c), res);
+  res.json = (b: unknown) => ((res.body = b), res);
+  res.setHeader = (k: string, v: string) => ((res.headers[k] = v), res);
+  res.end = () => res;
+  return handler({ method, body, query, headers: auth ? { authorization: "Bearer x" } : {} } as any, res).then(() => res);
+}
+
+const mp3 = new Uint8Array(2000);
+let fetchLog: string[] = [];
+
+beforeEach(() => {
+  settings.clear();
+  uploads.clear();
+  fetchLog = [];
+  process.env.ELEVENLABS_API_KEY = "test";
+  process.env.SUPABASE_URL = "https://proj.supabase.co";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: { method?: string }) => {
+      fetchLog.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.endsWith("/v1/voices"))
+        return new Response(
+          JSON.stringify({
+            voices: [
+              { voice_id: "m1", name: "Brian", labels: { gender: "male", age: "old" } },
+              { voice_id: "f1", name: "Alice", labels: { gender: "female", age: "young" } },
+              { voice_id: "f2", name: "Grace", labels: { gender: "female", age: "old", description: "warm" } },
+            ],
+          }),
+          { status: 200 },
+        );
+      if (url.includes("/text-to-speech/") || url.endsWith("/sound-generation")) return new Response(mp3, { status: 200, headers: { "Content-Type": "audio/mpeg" } });
+      return new Response("nope", { status: 404 });
+    }),
+  );
+});
+
+describe("pure parts", () => {
+  it("picks the oldest-sounding woman for Judy", () => {
+    expect(
+      pickJudyVoice([
+        { voice_id: "a", name: "Brian", labels: { gender: "male", age: "old" } },
+        { voice_id: "b", name: "Alice", labels: { gender: "female", age: "young" } },
+        { voice_id: "c", name: "Grace", labels: { gender: "female", age: "middle_aged" } },
+        { voice_id: "d", name: "Dorothy", labels: { gender: "female", age: "old" } },
+      ]),
+    ).toEqual({ id: "d", name: "Dorothy" });
+    expect(pickJudyVoice([{ voice_id: "only", name: "Only" }])).toEqual({ id: "only", name: "Only" });
+    expect(pickJudyVoice([])).toBeNull();
+  });
+  it("lets what was made win over the static manifest", () => {
+    const m = mergeManifest(
+      { movie: "/x.mp4", voice: { r1: "/static.mp3" }, sounds: { door: null }, models: {} },
+      { voice: { r1: "https://b/r1.mp3" }, sounds: { door: "https://b/door.mp3" }, models: { seat: "https://b/seat.glb" } },
+    );
+    expect(m.movie).toBe("/x.mp4");
+    expect(m.voice.r1).toBe("https://b/r1.mp3");
+    expect(m.sounds.door).toBe("https://b/door.mp3");
+    expect(m.models.seat).toBe("https://b/seat.glb");
+  });
+  it("keeps only well-formed lines", () => {
+    expect(cleanLines([{ id: "r1", text: " hi " }, { id: "bad id!", text: "x" }, { id: "r2", text: "" }, "junk"])).toEqual([{ id: "r1", text: "hi" }]);
+    expect(cleanLines("nope")).toEqual([]);
+  });
+  it("styles every prop the same way", () => {
+    expect(propPrompt("seat")).toMatch(/velvet.*Minecraft-like/);
+  });
+});
+
+describe("api/game-assets", () => {
+  it("tells anyone what's there, and nothing else", async () => {
+    settings.set("game-assets", { voice: { r1: "https://b/r1.mp3" }, sounds: {}, models: {}, judyVoice: { id: "f2", name: "Grace" }, props: {} });
+    const r = await call("GET", {}, {}, false);
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toEqual({ voice: { r1: "https://b/r1.mp3" }, sounds: {}, models: {} });
+    expect(r.headers["Cache-Control"]).toMatch(/s-maxage/);
+  });
+
+  it("voices Judy a few lines at a time with an older woman's voice", async () => {
+    const lines = Array.from({ length: 6 }, (_, i) => ({ id: `l${i}`, text: `Line ${i}` }));
+    const r1 = await call("POST", { action: "judy", lines });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.body.remaining).toBe(2);
+    expect(r1.body.assets.judyVoice).toEqual({ id: "f2", name: "Grace" });
+    expect(Object.keys(r1.body.assets.voice)).toHaveLength(4);
+    expect(r1.body.assets.voice.l0).toMatch(/^https:\/\/proj\.supabase\.co\/storage\/v1\/object\/public\/brand\/game\/voice\/judy-l0-/);
+    const r2 = await call("POST", { action: "judy", lines });
+    expect(r2.body.remaining).toBe(0);
+    expect(Object.keys(r2.body.assets.voice)).toHaveLength(6);
+    // The voice was chosen once, and every clip went through ElevenLabs.
+    expect(fetchLog.filter((l) => l.endsWith("/v1/voices"))).toHaveLength(1);
+    expect(fetchLog.filter((l) => l.includes("/text-to-speech/f2"))).toHaveLength(6);
+    expect(uploads.size).toBe(6);
+  });
+
+  it("makes the sound effects in batches", async () => {
+    const r1 = await call("POST", { action: "sounds" });
+    expect(r1.body.remaining).toBe(3);
+    const r2 = await call("POST", { action: "sounds" });
+    expect(r2.body.remaining).toBe(0);
+    expect(Object.keys(r2.body.assets.sounds).sort()).toEqual(["door", "fall", "jump", "land", "sign", "sit"]);
+  });
+
+  it("says plainly when a key is missing", async () => {
+    delete process.env.ELEVENLABS_API_KEY;
+    const r = await call("POST", { action: "sounds" });
+    expect(r.statusCode).toBe(503);
+    expect(r.body.error).toBe("elevenlabs_failed");
+  });
+
+  it("refuses the studio to anyone not signed in as staff", async () => {
+    const r = await call("GET", {}, { studio: "1" }, false);
+    expect(r.statusCode).toBe(401);
+    const r2 = await call("POST", { action: "prop", name: "throne" });
+    expect(r2.statusCode).toBe(400);
+  });
+});
