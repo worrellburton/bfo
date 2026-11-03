@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { authFetch, isAdmin } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
 import { InviteDialog } from "../entity/people";
+import { isGameEntity } from "../../lib/game-entity";
 import {
   blankTab,
   FIELD_LABEL,
@@ -54,18 +55,20 @@ export default function SignatureDetail() {
   const [invited, setInvited] = useState<Set<string>>(new Set());
   const assetId = req?.asset_id ?? null;
 
-  // The entity's name and who already has it, for "Invite to BFO" on each party.
+  // The entity's name (it decides whether the game is offered, and names the entity in "Invite to BFO"),
+  // and for admins who already has it.
   useEffect(() => {
-    if (!assetId || !isAdmin()) return;
+    if (!assetId) return;
     let live = true;
     authFetch(`/api/tree?path=assets&ids=${encodeURIComponent(assetId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => live && setEntityName((j?.rows?.[0]?.data as { name?: string } | undefined)?.name ?? null))
       .catch(() => {});
-    authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => live && setInvited(new Set(((j?.people ?? []) as Array<{ email: string | null }>).map((p) => (p.email ?? "").toLowerCase()).filter(Boolean))))
-      .catch(() => {});
+    if (isAdmin())
+      authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => live && setInvited(new Set(((j?.people ?? []) as Array<{ email: string | null }>).map((p) => (p.email ?? "").toLowerCase()).filter(Boolean))))
+        .catch(() => {});
     return () => {
       live = false;
     };
@@ -97,6 +100,8 @@ export default function SignatureDetail() {
   usePoll(load, 8000, isOpen(req?.status));
 
   const editable = req?.status === "draft";
+  // The game is only for TallulahMD LLC's requests (lib/game-entity); other entities see no choice.
+  const gameOk = isGameEntity(entityName);
   const parties = useMemo<Party[]>(() => {
     const got = req?.parties ?? [];
     return (["a", "b"] as PartyKey[]).map((key, i) => got.find((p) => p.key === key) ?? { key, role: i === 0 ? "Party A" : "Party B", name: "", email: "", status: "pending" });
@@ -310,9 +315,9 @@ export default function SignatureDetail() {
           )}
         </div>
 
-        {/* How they sign, the parties and their fields */}
+        {/* How they sign (only TallulahMD LLC's requests may go out as the game), the parties and their fields */}
         <aside className="space-y-4">
-          {req && editable && (
+          {req && editable && (gameOk || req.mode === "game") && (
             <section className={`${card} p-4`}>
               <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>How they sign</p>
               <div className="mt-3 space-y-2" role="radiogroup" aria-label="How they sign">

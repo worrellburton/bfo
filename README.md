@@ -74,7 +74,9 @@ Optional ones are marked. Never commit values.
 ## The signing game
 
 A signature request can go out in "Anything Is Possible" mode (Tools ›
-Signatures › How they sign). The signer's link then opens a first-person game
+Signatures › How they sign), but only one of TallulahMD LLC's: no other
+entity's request offers the choice, and the server refuses it
+(`lib/game-entity.ts`). The signer's link then opens a first-person game
 in front of the signing page: a floating island, a chain of blocks to the
 theater on the next island, the seat with their name on it, the film, and the
 door to the room with the contract. The game is `app/sign/game` (three.js,
