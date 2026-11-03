@@ -25,7 +25,7 @@ import type { BackdropProps } from "./types";
  * focal plane, as through a long lens) into a half-float target, which is an
  * exposure: it keeps a running average of the last 0.15 s of frames, so the
  * thousandth-of-a-level contributions of a young bead, a defocused mote or a
- * fading one all count and the grain of a single frame settles. A second
+ * fading one all count and no frame flickers against the last. A second
  * pass puts that density through a knee that can never reach 85% of white
  * and colours it by how much ink is there: deep gold in the thinnest haze,
  * gold, champagne, ivory only at the heart. Inside the mark's box the ink is
@@ -58,8 +58,10 @@ const WARM_DT = 0.05;
 const DIST = 6;
 /**
  * The exposure, in seconds: the accumulated ink is a running average of the frames of the last 0.15 s (a 1/7 s
- * shutter). Nothing in the ink moves more than 1.5 px in that time, so there is no trail, but the sand of one
- * frame's random motes settles into a surface.
+ * shutter). Nothing in the ink moves more than 3 px in that time (the bead's first second), so there is no trail;
+ * what it smooths is the frame-to-frame flicker of sprites crossing pixel edges, not the grain of the motes
+ * themselves, which move too slowly to average out and which the thin skin, the empty body and the defocus of the
+ * volumes keep down instead.
  */
 const EXPOSURE = 0.15;
 /**
