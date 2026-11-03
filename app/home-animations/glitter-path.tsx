@@ -24,15 +24,15 @@ import type { BackdropProps } from "./types";
  * a sheen that only shimmers and never twinkles, and the path converges to a
  * thin line where the glints stop.
  *
- * The same facets are drawn twice: a glow pass adds each facet's light up to
- * a tenth of white, on a lobe twice as wide as the glints' (the ripples a
- * sprite is too coarse to carry spread its highlight), so the crowded path is
- * a continuous glow; and a glint pass lays the brightest facets' excess over
- * it as a maximum rather than a sum, so three glints landing on one pixel are
- * one glint and nothing ever reaches white. Each facet is an instanced quad
- * the size of its ellipse, so a dash costs only the pixels it covers. Facets
- * that are dark, edge-on or hidden behind a crest cost nothing: the shader
- * culls them.
+ * The same facets are drawn twice: a glow pass adds each facet's share of
+ * its pixel's fill, capped at an eighth of white, on a lobe twice as wide as
+ * the glints' (the ripples a sprite is too coarse to carry spread its
+ * highlight) and drawn soft, so the crowded path is a continuous glow; and a
+ * glint pass lays the brightest facets' excess over it as a maximum rather
+ * than a sum, so three glints landing on one pixel are one glint and nothing
+ * ever reaches white. Each facet is an instanced quad the size of its
+ * ellipse, so a dash costs only the pixels it covers. Facets that are dark,
+ * edge-on or hidden behind a crest cost nothing: the shader culls them.
  *
  * The sea is seeded once, on a jittered grid (one facet per cell, placed at
  * random within it, so no two ever pile on one pixel and no row shows) over a
@@ -75,12 +75,15 @@ const LOBE = 120;
 const FOCUS = 33;
 const COC = 60;
 /**
- * A facet's light up to GLOW is added (the glow); what it has beyond, up to CAP, is laid over as a maximum (the glint).
- * On the jittered grid at most three or four facets overlap a pixel, so the deepest glow stack plus one glint stays
- * well under white (measured: the frame peaks near a half).
+ * A pixel's fill, the light its facets add, is capped at FILL (each facet's share of it is FILL over how many facets
+ * share the pixel); what a facet has beyond its share, up to CAP, is laid over as a maximum (the glint). The fill is
+ * drawn soft (its sprite one and a half times taller than the glint's), so a pixel sums many small shares and the
+ * deepest stack is under twice the cap: measured, the frame peaks near a half.
  */
-const GLOW = 0.1;
+const FILL = 0.13;
 const CAP = 0.36;
+/** The fill's sprite is this much taller than the glint's, its alpha divided by the same, so it spreads, not brightens. */
+const SOFT = 1.5;
 /** A sprite with less alpha than this in a pass is not drawn in it. */
 const CULL = 0.0015;
 /** The clock is pre-rolled; the reduced-motion still is this frame too. */
@@ -131,8 +134,9 @@ const VERT = /* glsl */ `
   const float D0 = ${D0.toFixed(3)};
   const float DSPAN = ${DSPAN.toFixed(3)};
   const float FAR = ${FAR.toFixed(1)};
-  const float GLOW = ${GLOW.toFixed(2)};
+  const float FILL = ${FILL.toFixed(2)};
   const float CAP = ${CAP.toFixed(2)};
+  const float SOFT = ${SOFT.toFixed(2)};
   const float CULL = ${CULL.toFixed(4)};
   const vec3 IVORY = vec3(0.957, 0.929, 0.878);
   const vec3 CHAMPAGNE = vec3(0.914, 0.843, 0.659);
@@ -219,16 +223,17 @@ const VERT = /* glsl */ `
     // The air takes some with distance; the field's far end fades out over its last seventy metres.
     float fade = exp(-d / 380.0) * (1.0 - smoothstep(FAR - 70.0, FAR, d));
     vec4 clip = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-    // No single glint passes CAP. Inside the mark's box (60% wide, 35% tall, its edge softened over a few percent of
-    // the frame just outside it) the cap is 0.04 and the added share 0.02: the far sheen, whose facets are dimmer
-    // than that anyway, passes untouched, and the mid water's glints, which crowd several to a pixel under the box's
-    // lower edge, can no longer stack past a sixth of white. The share follows the facet's area as seen (to one and a
-    // half): a flank seen foreshortened has its facets crowded on screen and each dimmed by the same ratio, so the
-    // fill is the same on every flank; a share fixed per facet would let the crowded flanks pile up past it.
+    // No single glint passes CAP. Inside the mark's box (60% wide, 35% tall, its sides softened over a few percent of
+    // the frame and its lower edge over twelve, so no edge shows where the path crosses it) the glint cap is 0.04 and
+    // the fill cap 0.10: the far sheen passes all but untouched, and the mid water's glints under the box's lower
+    // edge stay faint. A facet's share of the fill is the pixel's cap over how many facets share the pixel, so the
+    // fill is the water's radiance, capped the same at every distance: the pool is not held below the mid water by a
+    // cap per facet. The share follows the facet's area as seen (to one and a half): a flank seen foreshortened has
+    // its facets crowded on screen and each dimmed by the same ratio, so the fill is the same on every flank.
     vec2 e = abs(clip.xy / clip.w);
-    float inBox = (1.0 - smoothstep(0.60, 0.66, e.x)) * (1.0 - smoothstep(0.35, 0.39, e.y));
+    float inBox = (1.0 - smoothstep(0.60, 0.66, e.x)) * (1.0 - smoothstep(0.35, 0.47, e.y));
     float cap = mix(CAP, 0.04, inBox);
-    float share = mix(GLOW, 0.02, inBox) * min(area, 1.5);
+    float share = mix(FILL, 0.10, inBox) / max(1.0, cover) * min(area, 1.5);
     float base = uAlpha * area * amp * fade / max(0.5, cover);
     float aG = min(cap, base * Ig);
     float aK = min(cap, base * I / growX);
@@ -236,7 +241,7 @@ const VERT = /* glsl */ `
     // the glow as a maximum.
     bool glowPass = uPass < 0.5;
     float a = glowPass ? aG : aK;
-    vAlpha = glowPass ? min(aG, share) : max(aK - share, 0.0);
+    vAlpha = glowPass ? min(aG, share) / SOFT : max(aK - share, 0.0);
     // Colour by the lobe, as the design says: deep gold at 0.05, gold at 0.3, champagne at 0.7, and ivory only at the
     // lobe's own maximum (1.12: a mirror-exact facet), since ivory over the ink is grey unless it is the brightest
     // thing in the frame. Guarded by the light the facet actually puts on the screen: a far or soft facet is dim, and
@@ -249,11 +254,12 @@ const VERT = /* glsl */ `
     // so that what lands on the screen, light plus ink, lies on the ramp (exactly for a glint of 0.15 or more, in part
     // for a dimmer one), and never below black.
     vColor = max(col + (0.024 * col - INK) / max(a, 0.15), 0.0);
-    // The quad: five sigma across the glow's ellipse, six across a glint's (its edge then under a third of a percent
-    // of white), grown sideways in the glint pass only. Corners are offset in clip space by CSS px, whatever the
-    // pixel ratio. A facet with nothing to draw in this pass is put outside the clip volume and costs no fragments.
+    // The quad: five sigma across the fill's ellipse (which is SOFT times taller), six across a glint's (its edge then
+    // under a third of a percent of white), grown sideways in the glint pass only. Corners are offset in clip space
+    // by CSS px, whatever the pixel ratio. A facet with nothing to draw in this pass is put outside the clip volume
+    // and costs no fragments.
     float ext = glowPass ? 5.0 : 6.0;
-    vec2 size = ext * vec2(sigma * sqrt(sx) * (glowPass ? 1.0 : growX), sigma / sqrt(sx));
+    vec2 size = ext * vec2(sigma * sqrt(sx) * (glowPass ? 1.0 : growX), sigma / sqrt(sx) * (glowPass ? SOFT : 1.0));
     vQ = position.xy;
     vExt2 = 0.5 * ext * ext;
     clip.xy += position.xy * size * (2.0 / uViewport) * clip.w;
@@ -341,8 +347,8 @@ export default function GlitterPath({ still }: BackdropProps) {
         uEye: { value: new THREE.Vector3(0, EYE, 0) },
         uViewport: { value: new THREE.Vector2(1, 1) },
         uCover: { value: 0 },
-        // The path's light: a pixel in the pool sums to about a tenth of white where every facet is lit, the far
-        // sheen to a tenth where the path meets the horizon; a single glint peaks at CAP.
+        // The path's light: the water's radiance before the fill cap, about a quarter of white at the mirror point, a
+        // tenth where the path meets the horizon; a single glint peaks at CAP.
         uAlpha: { value: 0.7 },
       };
       const glowMat = new THREE.ShaderMaterial({
