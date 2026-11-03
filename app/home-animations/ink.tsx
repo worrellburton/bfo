@@ -64,15 +64,16 @@ const DIST = 6;
 const EXPOSURE = 0.15;
 /**
  * Drop points as viewport fractions; desktop beads alternate sides, phones drop on the centreline. The drops sit at
- * 70% of the height (the brief said 62%): the bead is a bright point for its first seconds, and here it is already
+ * 71% of the height (the brief said 62%): the bead is a bright point for its first seconds, and here it is already
  * under the mark's box (whose bottom edge is at 67.5%); the heart, the frame's brightest point, then sinks further,
- * and the bloom's fall and sink are paced so its body stays above the bottom edge until it has dissolved.
+ * the crown of the skin stays at the box's edge, and the bloom's fall and sink are paced so its body stays above
+ * the bottom edge until it has dissolved.
  */
 const DROPS = [
-  [0.38, 0.7],
-  [0.62, 0.7],
+  [0.38, 0.71],
+  [0.62, 0.71],
 ];
-const PHONE_DROP = [0.5, 0.7];
+const PHONE_DROP = [0.5, 0.71];
 /** The knee: ink of accumulated luminance l shows as KNEE l / (KNEE + l), so with the water added the peak stays under 85%. */
 const KNEE = 0.82;
 /** The alpha law is tuned on this frame: a 1440 x 900 desktop with 65,536 motes; other sizes and counts are scaled to it. */
@@ -218,10 +219,11 @@ const SIM = /* glsl */ `
       gl_FragColor = vec4(st.xyz, -1.0);
       return;
     }
-    // The bead keeps falling as it opens: 0.21% of the height a second at first, gone by a minute, so the bloom
-    // hangs 3% of the height below its point of entry. Its centre is where every particle of this period's bead
+    // The bead keeps falling as it opens: 0.375% of the height a second at first, gone by a minute, so the bloom
+    // hangs 4.5% of the height below its point of entry, and its heart, the brightest thing in the frame, is
+    // clear of the mark's box by the time it is bright. Its centre is where every particle of this period's bead
     // expands from, and where the ones still waiting their turn appear.
-    vec3 centre = vec3(0.0, -0.03 * (1.0 - exp(-tb / 14.0)), 0.0);
+    vec3 centre = vec3(0.0, -0.045 * (1.0 - exp(-tb / 12.0)), 0.0);
     if (st.w < 0.0) {
       // Its turn: it appears on a 0.5%-of-the-width sphere at the bead's centre (its outer fifth, not its volume:
       // the spread in radius would be the skin's thickness).
@@ -243,10 +245,11 @@ const SIM = /* glsl */ `
     // same in height terms vertically, so the bloom opens as an ellipse the shape of the frame.
     float rad = (0.0009 + 0.0111 * exp(-a / 14.0)) * s;
     vec3 v = (qc / len) * rad * vec3(uStretch, 1.0, 1.0);
-    // A mushroom, not a ball: the expansion is slower toward the crown of the bloom than its underside (0.55 at
-    // the top), easing over the whole sphere, so the cap is flat above and round below, no row of ink piles up
-    // into a lid, and the heart, which opens the same way, keeps its top under the mark's box.
-    v.y *= mix(1.0, 0.55, smoothstep(-0.7, 0.7, qc.y / len));
+    // A mushroom, not a ball: the expansion is slower toward the crown of the bloom than its underside (0.6 at
+    // the top, 0.82 below, 1.0 sideways), easing over the whole sphere, so the cap is flat above and round below,
+    // no row of ink piles up into a lid, the heart, which opens the same way, keeps its top under the mark's box,
+    // and the bloom's foot stays above the bottom of the frame.
+    v.y *= mix(0.82, 0.6, smoothstep(-0.7, 0.7, qc.y / len));
     // Curl noise folds the bloom: 0.35% of the width a second at first, a third of that by a minute (the lobes keep
     // folding into the second minute). The dense core is heavy and feels a fifth of it, the skin all of it, so it
     // is the skin that folds and the core that sinks.
@@ -255,7 +258,7 @@ const SIM = /* glsl */ `
     // The fall of the bead, then the sink: 0.04% of the height a second for good (the brief said 0.08: the bloom
     // opens below its drop, and at that pace its body ran off the bottom of the frame), and three quarters as much
     // again for the core, which drops through its bloom.
-    v.y -= 0.00214 * exp(-tb / 14.0) + 0.0004 + 0.0003 * smoothstep(0.6, 0.85, rank);
+    v.y -= 0.00375 * exp(-tb / 12.0) + 0.0004 + 0.0003 * smoothstep(0.6, 0.85, rank);
     // The age stored is the clock's, not the sum of steps: in half floats a sum drifts.
     gl_FragColor = vec4(q + v * uDt, age);
   }
@@ -297,22 +300,22 @@ const VERT = /* glsl */ `
     // Energy only decays: a mote's light rises over its first four seconds as the bead opens (the bead goes from a
     // tenth of its peak to its peak over about ten seconds, never under one), then only the thinning of the bloom
     // dims the picture, until the fade over the last fifteen seconds of a life. The 0.07 puts the bead's heart
-    // near 50% of white and the limb of the skin at 28 s near 30%. The heart carries half as much light again per
-    // mote as the skin, which packs its ink into a line.
+    // near 50% of white and the limb of the skin at 28 s near 30%. The heart carries seven tenths more light per
+    // mote than the skin, which packs its ink into a line.
     float fade = smoothstep(sd.x - 15.0, sd.x, age);
     float a = 0.07 * pow(1.0 - exp(-age / 4.0), 2.0) * uGain * uWeight;
-    a *= mix(0.8, 1.2, smoothstep(0.55, 0.75, rank));
+    a *= mix(0.7, 1.2, smoothstep(0.55, 0.75, rank));
     a *= 1.0 - fade;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     // The mark's box, 60% wide and 35% tall: ink inside it is shaded to half, so only thin tendrils pass behind the
-    // letters. The shade lifts over a wide band around the box's edge (0.75 to 1.3 of its half-size, about 85 px
+    // letters. The shade lifts over a wide band around the box's edge (0.8 to 1.35 of its half-size, about 85 px
     // on a 900 px frame), too gradual to draw an edge across the ink.
     vec2 ndc = gl_Position.xy / gl_Position.w;
     vec2 e = vec2(abs(ndc.x) / 0.6, abs(ndc.y) / 0.35);
     e *= e;
     e *= e;
-    float outside = smoothstep(0.75, 1.3, pow(e.x + e.y, 0.25));
+    float outside = smoothstep(0.8, 1.35, pow(e.x + e.y, 0.25));
     a *= mix(0.5, 1.0, outside);
     // A 4 px mote at the focal plane (the brief said 2 px: at this bloom's size, 65,536 sharper motes read as
     // sand, not fluid). The lens is long and its focus a slab 0.012 units deep: beyond it a mote spreads into a
