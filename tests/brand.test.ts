@@ -181,6 +181,20 @@ describe("/api/brand", () => {
     expect(settings.logo).toBeUndefined();
   });
 
+  it("tells anyone which home-page backdrop the front door shows, and lets an admin choose it", async () => {
+    state.role = null;
+    expect((await call("GET")).json.homeAnimation).toBeNull();
+    settings["home-animation"] = "tide";
+    expect((await call("GET")).json.homeAnimation).toBe("tide");
+    expect((await call("POST", { action: "home-animation", id: "silk" })).status).toBe(401);
+    state.role = "owner";
+    expect((await call("POST", { action: "home-animation", id: "../x" })).status).toBe(400);
+    expect((await call("POST", { action: "home-animation", id: "silk" })).json.homeAnimation).toBe("silk");
+    expect(settings["home-animation"]).toBe("silk");
+    expect((await call("POST", { action: "home-animation", id: null })).json.homeAnimation).toBeNull();
+    expect(settings["home-animation"]).toBeUndefined();
+  });
+
   it("puts a drawn lockup on the site as type in its font, no model needed", async () => {
     expect((await call("POST", { action: "use", styleId: "inscription" })).status).toBe(409);
     settings.sheet = { styles: { inscription: { imageUrl: "https://sb.test/i.png", imagePath: "logo/inscription/1.png", prompt: "", model: "gpt-image-2", createdAt: 1 } }, generatedAt: 1 };

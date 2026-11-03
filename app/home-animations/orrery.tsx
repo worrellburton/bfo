@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type * as T from "three";
+import type { BackdropProps } from "./types";
 
 /**
  * The orrery: a family's holdings as a system. One small point of light at
@@ -74,7 +75,7 @@ const FRAG = /* glsl */ `
   }
 `;
 
-export function Orrery({ still }: { still: boolean }) {
+export default function Orrery({ still }: BackdropProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {

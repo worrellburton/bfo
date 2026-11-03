@@ -23,7 +23,8 @@ import { storageUpload } from "../lib/storage.js";
 /**
  * The BFO logo (lib/brand.ts).
  *
- *   GET  /api/brand                → { logo }: the 3D logo in use, for anyone (the landing page is public)
+ *   GET  /api/brand                → { logo, homeAnimation }: the logo in use and which home-page backdrop
+ *                                    (app/home-animations) the front door shows, for anyone (the page is public)
  *   GET  /api/brand?studio=1       → owner/admin: the style sheet, each style's model, what's configured
  *   POST /api/brand { action }     → owner/admin:
  *     generate     { styleId, tweak? }  OpenAI draws that style (≈30–60 s); replaces the sheet's entry
@@ -31,6 +32,7 @@ import { storageUpload } from "../lib/storage.js";
  *     model-status { styleId }          Meshy's progress; on success the GLB is copied into the bucket
  *     use          { styleId | null, as? }  the site shows this style: as "lockup" (default) its
  *                                         type in the paired font, as "3d" its model; null: back to the wordmark
+ *     home-animation { id | null }      the front door shows this backdrop (an id from app/home-animations); null: the default
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -38,9 +40,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "GET") {
     const studio = req.query.studio === "1";
     if (!studio) {
-      const { logo = null } = await readSettings(["logo"]);
+      const { logo = null, "home-animation": homeAnimation = null } = await readSettings(["logo", "home-animation"]);
       res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=600");
-      return res.status(200).json({ logo });
+      return res.status(200).json({ logo, homeAnimation: typeof homeAnimation === "string" ? homeAnimation : null });
     }
     // currentUser throws PartnerRefused for a partner; handleError answers 403.
     let user: AppUser | null;
@@ -127,6 +129,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ model: state });
       }
 
+      case "home-animation": {
+        const id = body.id === null || body.id === undefined || body.id === "" ? null : String(body.id);
+        if (id !== null && !/^[a-z][a-z0-9-]{1,30}$/.test(id)) return res.status(400).json({ error: "bad_id" });
+        await writeSetting("home-animation", id);
+        return res.status(200).json({ homeAnimation: id });
+      }
       case "use": {
         if (body.styleId === null || body.styleId === undefined || body.styleId === "") {
           await writeSetting("logo", null);
