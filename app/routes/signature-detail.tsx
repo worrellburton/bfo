@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { authFetch, isAdmin } from "../auth";
 import { confirmDialog } from "../confirm-dialog";
 import { InviteDialog } from "../entity/people";
-import { isGameEntity } from "../../lib/game-entity";
 import {
   blankTab,
   FIELD_LABEL,
@@ -53,22 +52,25 @@ export default function SignatureDetail() {
   const [inviting, setInviting] = useState<Party | null>(null);
   const [entityName, setEntityName] = useState<string | null>(null);
   const [invited, setInvited] = useState<Set<string>>(new Set());
+  /** The server's word on whether this draft may go out as the game: only TallulahMD LLC's (lib/game-entity). */
+  const [gameOk, setGameOk] = useState(false);
   const assetId = req?.asset_id ?? null;
 
-  // The entity's name (it decides whether the game is offered, and names the entity in "Invite to BFO"),
-  // and for admins who already has it.
+  // The entity's name and who already has it, for "Invite to BFO" on each party.
   useEffect(() => {
-    if (!assetId) return;
+    // Another request: nothing of the last one's entity sticks to it.
+    setEntityName(null);
+    setInvited(new Set());
+    if (!assetId || !isAdmin()) return;
     let live = true;
     authFetch(`/api/tree?path=assets&ids=${encodeURIComponent(assetId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => live && setEntityName((j?.rows?.[0]?.data as { name?: string } | undefined)?.name ?? null))
       .catch(() => {});
-    if (isAdmin())
-      authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((j) => live && setInvited(new Set(((j?.people ?? []) as Array<{ email: string | null }>).map((p) => (p.email ?? "").toLowerCase()).filter(Boolean))))
-        .catch(() => {});
+    authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => live && setInvited(new Set(((j?.people ?? []) as Array<{ email: string | null }>).map((p) => (p.email ?? "").toLowerCase()).filter(Boolean))))
+      .catch(() => {});
     return () => {
       live = false;
     };
@@ -84,6 +86,7 @@ export default function SignatureDetail() {
     try {
       const r = await signApi.get(id, shownKey.current);
       setReq(r.request);
+      setGameOk(!!r.gameAllowed);
       // Only a new version replaces the pages on screen (each signature stamps a new one).
       if (r.pdfUrl) {
         setPdfUrl(r.pdfUrl);
@@ -100,8 +103,6 @@ export default function SignatureDetail() {
   usePoll(load, 8000, isOpen(req?.status));
 
   const editable = req?.status === "draft";
-  // The game is only for TallulahMD LLC's requests (lib/game-entity); other entities see no choice.
-  const gameOk = isGameEntity(entityName);
   const parties = useMemo<Party[]>(() => {
     const got = req?.parties ?? [];
     return (["a", "b"] as PartyKey[]).map((key, i) => got.find((p) => p.key === key) ?? { key, role: i === 0 ? "Party A" : "Party B", name: "", email: "", status: "pending" });

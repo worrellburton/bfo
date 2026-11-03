@@ -7,11 +7,16 @@ describe("the one entity that may send the game", () => {
     expect(isGameEntity("Tallulah MD, LLC")).toBe(true);
     expect(isGameEntity("  tallulahmd llc ")).toBe(true);
     expect(isGameEntity("TALLULAH M.D. LLC")).toBe(true);
+    expect(isGameEntity("Tallulah MD")).toBe(true);
   });
 
   it("is no other entity, and not a missing name", () => {
     expect(isGameEntity("Ledger Louise, LLC")).toBe(false);
     expect(isGameEntity("Tallulah Holdings, LLC")).toBe(false);
+    // A look-alike that contains the name is another entity.
+    expect(isGameEntity("TallulahMD Holdings LLC")).toBe(false);
+    expect(isGameEntity("TallulahMD II LLC")).toBe(false);
+    expect(isGameEntity("Tallulah M. Davis Trust")).toBe(false);
     expect(isGameEntity("")).toBe(false);
     expect(isGameEntity(null)).toBe(false);
     expect(isGameEntity(undefined)).toBe(false);

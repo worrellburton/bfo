@@ -11,12 +11,16 @@
 
 export const GAME_ENTITY = "TallulahMD LLC";
 
-/** True for TallulahMD LLC however it's spaced, cased or punctuated ("Tallulah MD, LLC"). */
+/**
+ * True for TallulahMD LLC however it's spaced, cased or punctuated ("Tallulah
+ * MD, LLC", "Tallulah MD"), and for nothing else: a look-alike such as
+ * "TallulahMD Holdings LLC" is another entity.
+ */
 export function isGameEntity(name: string | null | undefined): boolean {
-  return String(name ?? "")
+  const letters = String(name ?? "")
     .toLowerCase()
-    .replace(/[^a-z]/g, "")
-    .includes("tallulahmd");
+    .replace(/[^a-z]/g, "");
+  return letters === "tallulahmdllc" || letters === "tallulahmd";
 }
 
 /** The refusal when a request for any other entity, or for none, is set to the game. */

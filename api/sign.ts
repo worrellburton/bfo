@@ -44,8 +44,9 @@ import {
  * in the link is their proof).
  *
  * Office — GET → { requests }  every request, newest first (no token hashes)
- *          GET ?id=<uuid>[&have=<pdfKey>] → { request, pdfKey, pdfUrl }  one, with a short-lived link to its
- *                     latest PDF (null when `have` already names that version: a page polling for progress)
+ *          GET ?id=<uuid>[&have=<pdfKey>] → { request, pdfKey, pdfUrl, gameAllowed }  one, with a short-lived link to its
+ *                     latest PDF (null when `have` already names that version: a page polling for progress);
+ *                     gameAllowed: a draft that may go out as the game (TallulahMD LLC's, lib/game-entity)
  *          POST { action, … }:
  *            create     { title, assetId?, contractId?, parties?, brand?, mode? } → { request }  (brand: send under that name, never BFO's;
  *                       mode: "normal" or "game", the Anything Is Possible theater in front of the signing page; the game is only for
@@ -116,6 +117,16 @@ async function gameAllowed(row: Pick<SignatureRequestRow, "asset_id">): Promise<
   const data = (await readRows("assets", [row.asset_id]))[0]?.data;
   const name = data && typeof data === "object" && !Array.isArray(data) ? data.name : undefined;
   return typeof name === "string" && isGameEntity(name);
+}
+
+/** gameAllowed for a page someone is looking at: an unreadable tree means the plain page (logged), not an error. */
+async function gameAllowedOrPlain(row: Pick<SignatureRequestRow, "asset_id">): Promise<boolean> {
+  try {
+    return await gameAllowed(row);
+  } catch (err) {
+    console.error("sign: couldn't read the request's entity, so the plain page", err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 /** Writes `changes` if the row is still at the version it was read at. Null when someone else wrote first. */
@@ -226,7 +237,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // A page polling for progress passes the key it already shows; an unchanged PDF isn't re-linked.
         const key = pdfKey(row);
         const same = typeof req.query.have === "string" && req.query.have === key;
-        return res.status(200).json({ request: toView(row), pdfKey: key, pdfUrl: same ? null : await latestPdfUrl(row) });
+        return res.status(200).json({
+          request: toView(row),
+          pdfKey: key,
+          pdfUrl: same ? null : await latestPdfUrl(row),
+          // Whether "How they sign" may offer the game: only a draft, and only TallulahMD LLC's.
+          gameAllowed: row.status === "draft" && (await gameAllowedOrPlain(row)),
+        });
       }
       const rows = await sb<SignatureRequestRow[]>("signature_requests?select=*&order=created_at.desc&limit=200");
       return res.status(200).json({ requests: (rows ?? []).map(toView) });
@@ -364,10 +381,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           return { parties };
         });
+        // A game-mode row of any other entity (from before the rule) is reminded about the plain page its signer gets.
+        const mailRow = saved.mode === "game" && !(await gameAllowed(saved)) ? { ...saved, mode: "normal" as const } : saved;
         const next = await sendAll(
           me,
           saved,
-          links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link, true) })),
+          links.map(([party, link]) => ({ party, ...signRequestEmail(mailRow, party, link, true) })),
           "reminded",
         );
         return res.status(200).json({ request: toView(next) });
@@ -463,7 +482,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     return res.status(200).json({
       brand: current.brand,
       // The game is only for TallulahMD LLC's signers; anyone else gets the plain page whatever the row says.
-      mode: current.mode === "game" && (await gameAllowed(current)) ? "game" : "normal",
+      mode: current.mode === "game" && (await gameAllowedOrPlain(current)) ? "game" : "normal",
       pdfKey: key,
       title: current.title,
       status: current.status,

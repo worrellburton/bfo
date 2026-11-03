@@ -13,6 +13,8 @@ let row: SignatureRequestRow;
 const token = "c".repeat(32);
 /** The entities the tree answers with, by id. */
 const assets: Record<string, string> = { tallulah: "TallulahMD LLC", other: "Ledger Louise, LLC" };
+/** When true, reading the tree fails, as it would in an outage. */
+let treeDown = false;
 
 vi.mock("../lib/auth.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/auth")>();
@@ -22,6 +24,7 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
     currentUser: vi.fn(async () => ({ id: "u1", name: "Robert", email: "r@x.com", phone: null, role: "owner", status: "approved" })),
     sb: async (path: string, init: { method?: string; body?: any } = {}) => {
       if (path.startsWith("tree_nodes")) {
+        if (treeDown) throw new Error("supabase 503: unavailable");
         const wanted = decodeURIComponent(path);
         return Object.entries(assets)
           .filter(([id]) => wanted.includes(`"${id}"`))
@@ -64,6 +67,7 @@ function call(method: "GET" | "POST", body: Record<string, unknown> = {}, query:
 }
 
 beforeEach(() => {
+  treeDown = false;
   row = {
     id: "11111111-1111-4111-8111-111111111111",
     title: "MSA",
@@ -157,6 +161,47 @@ describe("signing mode", () => {
     const r2 = await call("GET", {}, { token });
     expect(r2.statusCode).toBe(200);
     expect(r2.body.mode).toBe("normal");
+  });
+
+  it("tells the office page whether a draft may go out as the game", async () => {
+    const r = await call("GET", {}, { id: row.id });
+    expect(r.statusCode).toBe(200);
+    expect(r.body.gameAllowed).toBe(true);
+    row.asset_id = "other";
+    expect((await call("GET", {}, { id: row.id })).body.gameAllowed).toBe(false);
+    // Once sent, how they sign is settled: nothing to choose.
+    row.asset_id = "tallulah";
+    row.status = "sent";
+    expect((await call("GET", {}, { id: row.id })).body.gameAllowed).toBe(false);
+  });
+
+  it("reminds another entity's game-mode signer about the plain page, not the theater", async () => {
+    const { sendEmail } = await import("../lib/auth.js");
+    row.asset_id = "other";
+    row.mode = "game";
+    row.status = "sent";
+    row.parties[0] = { ...row.parties[0], status: "sent", tokenHash: hashToken(token) };
+    const r = await call("POST", { action: "remind", id: row.id });
+    expect(r.statusCode).toBe(200);
+    const sent = vi.mocked(sendEmail).mock.calls.at(-1)!;
+    expect(String(sent[2])).not.toMatch(/open the link on a computer/);
+    expect(String(sent[3])).toContain("Review and sign");
+    expect(String(sent[3])).not.toContain("Play and sign");
+  });
+
+  it("gives the signer the plain page, not an error, when the entity can't be read", async () => {
+    row.mode = "game";
+    row.status = "sent";
+    row.parties[0] = { ...row.parties[0], status: "sent", tokenHash: hashToken(token) };
+    treeDown = true;
+    const r = await call("GET", {}, { token });
+    expect(r.statusCode).toBe(200);
+    expect(r.body.mode).toBe("normal");
+    // The office page, too, is answered rather than failed.
+    row.status = "draft";
+    const r2 = await call("GET", {}, { id: row.id });
+    expect(r2.statusCode).toBe(200);
+    expect(r2.body.gameAllowed).toBe(false);
   });
 
   it("sends the game email when the mode is game", async () => {
