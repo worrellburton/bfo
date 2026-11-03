@@ -154,7 +154,8 @@ export function GameGate({
         >
           <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">How to get there</p>
           <p className="mt-1 text-[13px] text-white/75">
-            {signerName}, the contract is past the theater on the far island. Cross the blocks, get your ticket from Judy, take the seat with your name on it, and climb the stairs after the film.
+            {signerName}, the contract is past the theater on the far island. Cross the blocks, pick up your ticket at the booth, take the seat with your name on it, and climb the stairs after the
+            film.
           </p>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
             <dt className="text-white/40">Move</dt>
