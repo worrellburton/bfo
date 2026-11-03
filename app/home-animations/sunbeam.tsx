@@ -7,18 +7,22 @@ import type { BackdropProps } from "./types";
  * you ever see is the dust it touches. Nothing is drawn but the motes: a
  * slab of light runs from the top-left of the frame to the bottom-centre,
  * Gaussian across, cut into three panes by two mullion shadows, dim beside
- * the mark and brightest in the lower third. Twenty thousand motes, few
- * enough that each one resolves: most seeded in the shaft itself (the dust
- * you can see is the dust in the light), the rest in the dark room. Each
+ * the mark and brightest in the lower quarter. Twenty-six thousand motes, few
+ * enough that each one resolves where the lens is sharp: most seeded in the
+ * shaft itself (the dust you can see is the dust in the light), the rest in
+ * the dark room. Each
  * rises in the warm air and wanders on one shared, frozen flow field, so
  * neighbours move together; nine in ten are specks that shine steadily, one
  * in ten is a flake that turns and catches the sun for a second or two every
  * ten seconds or so, never dimmer than a speck. The light is gold, champagne
- * at the core, ivory only in a flake's glint. A lens: the axis lies nearly
- * in the focal plane, so the whole shaft is resolvable motes, the pool at
- * the bottom sharpest. Everything is analytic in one vertex shader, one
- * draw call. The camera leans a degree toward the pointer. Reduced motion
- * draws one frame at t = 37 s.
+ * at the core, ivory only in a flake's glint. A lens, focused on the far end
+ * of the shaft: where the sun enters at the top the dust is sharp specks; the
+ * shaft comes toward you as it falls, and in the pool each mote is a soft
+ * disc a few pixels wide that keeps its light, so the pool glows where the
+ * top only sparkles. Over the mark the lens stays sharp, so no disc ever
+ * crosses the letters. Everything is analytic in one vertex shader, one draw
+ * call. The camera leans a degree toward the pointer. Reduced motion draws
+ * one frame at t = 37 s.
  */
 
 const IVORY = [0.957, 0.929, 0.878];
@@ -81,13 +85,13 @@ const VERT = /* glsl */ `
   uniform float uRiseOut;  // and in the dark
   uniform float uRiseAxis; // the beam's dust, up the shaft
   uniform float uEnergy;   // a mote's in-focus brightness at full sun
-  uniform float uPeak;     // the brightest any mote may draw
   uniform vec3 uB0;        // a point on the beam's axis
   uniform vec3 uBhat;      // the axis, unit, pointing down the beam
   uniform vec3 uU;         // across the beam, unit, in the screen plane
   uniform vec3 uV;         // through the beam, unit, in depth
   uniform vec2 uSigma;     // Gaussian widths across and through
   uniform vec4 uGaps;      // the two mullion shadows: centres, half width, penumbra
+  uniform vec4 uMark;      // the lockup's footprint in NDC: sharp inside |x| < .x, |y| < .z; soft beyond .y, .w
   varying vec3 vColor;
   varying float vAlpha;
   varying float vRim;
@@ -139,17 +143,16 @@ const VERT = /* glsl */ `
     float w = beamWeight(p, lat);
     float g1 = 1.0 - smoothstep(uGaps.z, uGaps.z + uGaps.w, abs(lat - uGaps.x));
     float g2 = 1.0 - smoothstep(uGaps.z, uGaps.z + uGaps.w, abs(lat - uGaps.y));
-    float pane = (1.0 - 0.9 * g1) * (1.0 - 0.9 * g2);
+    float pane = (1.0 - 0.93 * g1) * (1.0 - 0.93 * g2);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     vec4 clip = projectionMatrix * mv;
-    float ndcY = clip.y / clip.w;
-    // Three tenths of the light beside and above the mark (a mote draws at most 0.3 × uPeak
-    // there, so even two that coincide stay under a quarter of white), full in the lower fifth:
-    // the one pool of light. Half the motes go dark as they rise out of the pool (a 25 s fade at
-    // the rise's pace): the dust is thickest near the floor, the far end of the shaft (denser on
-    // screen) never out-reads the pool, and coincidences beside the mark are rarer still.
-    float lower = 1.0 - smoothstep(-0.56, -0.36, ndcY);
-    float gain = (0.3 + 0.7 * lower) * (1.0 - (1.0 - lower) * step(fract(aRnd.y * 3.0), 0.5));
+    vec2 ndc = clip.xy / clip.w;
+    // The sun by rows: full in the pool (the lower quarter of the frame), half above the mark's
+    // rows, and a fifth across them (a speck there draws at most 0.3 × 0.2 of white, so even
+    // four that coincide on one pixel stay under a quarter), with ramps 6 to 8% of the height
+    // tall between. The waist at the mark's rows is the page's own pocket, so it reads as shadow.
+    float lower = 1.0 - smoothstep(-0.52, -0.36, ndc.y);
+    float gain = mix(mix(0.2, 0.5, smoothstep(0.32, 0.44, ndc.y)), 1.0, lower);
     // Nine in ten motes are specks that shine steadily; one in ten is a flake that turns in the
     // air and catches the sun for a second or two each cycle, over a second to rise, and never
     // dims below a speck.
@@ -158,25 +161,34 @@ const VERT = /* glsl */ `
     float flaky = smoothstep(0.88, 0.92, aRnd.x);
     float flash = mix(0.5, 0.5 + 0.5 * f, flaky);
     float sun = w * pane * uBeam * flash;
-    // The body of the light is gold, champagne at the core, deep gold in the fringe; ivory only
-    // where a flake glints (ivory at a small alpha over ink reads grey; gold stays gold).
+    // The body of the light is gold, deep gold in the fringe, champagne only where the light adds
+    // up (the pool's core); ivory only where a flake glints. Over this bluish ink a pale colour at
+    // a speck's alpha reads grey, so the shaft's specks stay gold and only the pool goes pale.
     vec3 col = mix(DEEP_GOLD, GOLD, smoothstep(0.0, 0.3, w));
-    col = mix(col, CHAMPAGNE, smoothstep(0.5, 1.0, w));
+    col = mix(col, CHAMPAGNE, smoothstep(0.5, 1.0, w) * lower);
     col = mix(col, IVORY, flaky * smoothstep(0.7, 1.0, f));
-    // The lens: a mote off the focal plane spreads into a disc and keeps its energy; a mote is
-    // below the lens's resolution, so its sharp image is the same 2 to 3.6 px at any depth,
-    // and the light it sends back falls off gently with its distance.
+    // The lens, focused on the far end of the shaft: a mote in front of the focal plane spreads
+    // into a disc (uK px per unit of 1/z) and keeps its light, so the pool, nearest the eye, is
+    // soft discs that overlap into a glow, and the top is sharp specks. Over the mark the lens
+    // stays sharp: a disc drifting onto the letters shrinks to a speck over a few percent of the
+    // width (five seconds or more at these speeds), so nothing soft ever crosses them.
     float zc = -mv.z;
     float c = abs(1.0 / zc - 1.0 / FOCUS);
-    float base = 2.0 + 1.6 * aRnd.x;
-    float size = min(base + c * uK, uCap);
+    float base = 2.2 + 1.6 * aRnd.x;
+    float overMark = (1.0 - smoothstep(uMark.x, uMark.y, abs(ndc.x))) * (1.0 - smoothstep(uMark.z, uMark.w, abs(ndc.y)));
+    float size = min(base + c * uK * (1.0 - overMark), uCap);
     float ratio = size / base;
     float r2 = ratio * ratio;
     float reach = clamp(FOCUS / zc, 0.5, 1.3);
-    // A speck in direct sun is far brighter than white in focus; the lens clips it at the peak,
-    // and the room's gain (dim beside the mark) comes after the clip. Unlit dust keeps 4%.
-    float lit = min((sun * uEnergy * reach) / r2, uPeak) * gain;
-    float alpha = max(lit, 0.04 / r2);
+    // A speck in direct sun is far brighter than white in focus; the lens clips it. The clip falls
+    // with the disc's size (0.30 for a speck, 0.072 from a disc 2.2 times its width on), so where
+    // a dozen soft discs overlap in the pool they still sum under 85% of white, and the stacks of
+    // half-soft discs beside the mark stay under a quarter; a sharp speck's core is a pixel, so
+    // coincidences there are rare. The room's gain comes after the clip.
+    float cap = mix(0.30, 0.072, smoothstep(1.2, 2.2, ratio));
+    float lit = gain * min((sun * uEnergy * reach) / r2, cap);
+    // Unlit dust keeps 2%: felt as texture, never seen as grey.
+    float alpha = max(lit, 0.02 / r2);
     if (alpha < 0.003) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
@@ -184,8 +196,9 @@ const VERT = /* glsl */ `
     }
     vColor = col;
     vAlpha = alpha;
-    // A speck is soft to its centre; a lens disc is flat with a soft rim.
-    vRim = mix(0.35, 0.65, smoothstep(4.0, 18.0, size));
+    // A speck is a small flat disc with a soft edge (flat, so it carries the most light its peak
+    // allows); a lens disc is flatter still, with a soft rim.
+    vRim = mix(0.5, 0.65, smoothstep(4.0, 18.0, size));
     gl_PointSize = max(size * uPixel, 1.0);
     gl_Position = clip;
   }
@@ -239,13 +252,13 @@ export default function Sunbeam({ still }: BackdropProps) {
       const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 40);
       const pivot = new THREE.Vector3(0, 0, -FOCUS);
 
-      // ── The dust: 14,000 motes seeded in the shaft (along, across and through it, in sigmas),
-      // five pixels apart on the axis in the pool so each resolves, half that above it; 6,000 in
-      // the room as frame fractions at a depth, so every screen is full. 4,200 and 1,800 on
-      // phones. ──
+      // ── The dust: 20,000 motes seeded in the shaft (along, across and through it, in sigmas),
+      // four or five pixels apart on the axis, so each resolves where the lens is sharp and three
+      // or four overlap where it is soft; 6,000 in the room as frame fractions at a depth, so every
+      // screen is full. 6,000 and 1,800 on phones. ──
       let w = window.innerWidth;
       let h = window.innerHeight;
-      const inBeam = phone ? 4200 : 14000;
+      const inBeam = phone ? 6000 : 20000;
       const count = inBeam + (phone ? 1800 : 6000);
       const pos = new Float32Array(count * 4);
       const rnd = new Float32Array(count * 3);
@@ -290,6 +303,7 @@ export default function Sunbeam({ still }: BackdropProps) {
       const uV = new THREE.Vector3();
       const uSigma = new THREE.Vector2();
       const uGaps = new THREE.Vector4();
+      const uMark = new THREE.Vector4();
       const mat = new THREE.ShaderMaterial({
         vertexShader: VERT,
         fragmentShader: FRAG,
@@ -303,32 +317,39 @@ export default function Sunbeam({ still }: BackdropProps) {
           uPixel: { value: renderer.getPixelRatio() },
           uBeam: { value: 1 },
           uLen: { value: 7.5 },
-          uK: { value: 30 },
+          // The lens: 190 px per unit of 1/z, so the pool's axis (z -4.6) draws as 12 to 13.5 px
+          // discs, the slab's near face 16 to 18 px, its far face 6 to 9 px, and the top (z -6.15,
+          // a hair beyond focus) 3 to 4.6 px specks; nothing larger than 60 px (36 on phones).
+          uK: { value: 190 },
           uCap: { value: phone ? 36 : 60 },
           // Rise: 0.004 frame heights a second in the sun, 0.0015 in the dark (the frame is 5.1 units tall at focus).
           uRiseIn: { value: 0.004 * 2 * 2.55 },
           uRiseOut: { value: 0.0015 * 2 * 2.55 },
           uRiseAxis: { value: 0.004 * 2 * 2.55 },
-          // A speck in the pool reaches the peak over most of the lit width; a flake's glint clips there too.
-          uEnergy: { value: 1.4 },
-          uPeak: { value: 0.3 },
+          // A speck in the shaft is well past the clip over most of the lit width (so every speck in
+          // the body of the light is the same steady brightness, as in a photograph, and the lit
+          // band is 1.8 sigma each side of the axis: 0.27 to 0.47 W at mid-height), and the pool's
+          // soft discs reach their own clip to 1.3 sigma, so the pool is a glow, not a sprinkle.
+          uEnergy: { value: 4.5 },
           uB0: { value: uB0 },
           uBhat: { value: uBhat },
           uU: { value: uU },
           uV: { value: uV },
           uSigma: { value: uSigma },
           uGaps: { value: uGaps },
+          uMark: { value: uMark },
         },
       });
       scene.add(new THREE.Points(geo, mat));
 
       // ── The beam: where it crosses the frame, as fractions of the width, at its own depth. The
-      // axis lies nearly in the focal plane (z -7.4 at the top to -5.8 at the pool), so the far
-      // end is resolvable motes a pixel softer than the pool, not a haze. ──
+      // eye is focused on the far end: the axis enters at the focal plane (z -6.15 at the top) and
+      // comes toward the eye as it falls (z -4.6 at the pool), so the top is sharp specks and the
+      // pool is soft discs. ──
       const top = new THREE.Vector3();
       const bottom = new THREE.Vector3();
-      const Z_TOP = 7.4;
-      const Z_BOTTOM = 5.8;
+      const Z_TOP = 6.15;
+      const Z_BOTTOM = 4.6;
       const beam = (t: number) => {
         const aspect = w / h;
         // Landscape enters at 0.22 W and leaves at 0.52 W; portrait 0.12 W to 0.55 W.
@@ -346,17 +367,20 @@ export default function Sunbeam({ still }: BackdropProps) {
         uU.set(uBhat.y, -uBhat.x, 0).normalize();
         uV.crossVectors(uBhat, uU);
         uB0.addVectors(top, bottom).multiplyScalar(0.5);
-        // About a fifth of the frame wide at mid-height on any screen (the seeds' Gaussian narrows
-        // the lit band to about 1.2 sigma each side); 0.45 through, so the slab is 1.2 units deep.
+        // Sigma 5.5% of the frame's width at mid-height (the lit band, to 1.8 sigma, is a fifth of
+        // the frame wide there: the spec's 0.27 to 0.47 W), never under 0.2 units, so a phone's
+        // narrow frame still holds a shaft; 0.45 through, so the slab is 1.2 units deep.
         const wu = 2 * TAN_HALF * ((Z_TOP + Z_BOTTOM) / 2) * aspect;
-        const across = Math.min(0.9, Math.max(0.2, 0.075 * wu));
+        const across = Math.min(0.9, Math.max(0.2, 0.055 * wu));
         uSigma.set(across, 0.45);
         // The dust of the beam rises up the shaft at the spec's vertical rate.
         mat.uniforms.uRiseAxis.value = mat.uniforms.uRiseIn.value / Math.max(0.5, -uBhat.y);
-        // Two mullion shadows, 2.5% of the width each, cut the lit width (1.4 sigma each side, so
-        // all three panes sit in the light) into panes of 3 : 5 : 4.
-        const gap = 0.025 * wu;
+        // Two mullion shadows, 3% of the frame's width each (never under 18% of the lit width, so
+        // on a phone, where the pool's soft discs are a larger share of the frame, the lanes still
+        // survive them), cut the lit width (1.4 sigma each side, so all three panes sit in the
+        // light) into panes of 3 : 5 : 4.
         const half = 1.4 * across;
+        const gap = Math.max(0.03 * wu, 0.18 * 2 * half);
         const part = (2 * half - 2 * gap) / 12;
         const c1 = half - 3 * part - gap / 2;
         uGaps.set(c1, c1 - gap - 5 * part, gap / 2, gap * 0.25);
@@ -372,6 +396,15 @@ export default function Sunbeam({ still }: BackdropProps) {
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+        // The lockup's footprint, after its CSS (app.css ".door-mark .brand-lockup-mark": font-size
+        // clamp(6rem, min(27vw, 34vh), 14rem) on an 11.9 px root; the lockup is about 2.06 em wide
+        // and 1.25 em tall): the lens stays sharp over it with 1% of the frame to spare, softening
+        // over the next 6%, so on a phone, where the letters span half the width, nothing soft
+        // crosses them either.
+        const em = Math.min(166.6, Math.max(71.4, Math.min(0.27 * w, 0.34 * h)));
+        const mx = (2.06 * em) / w;
+        const my = (1.25 * em) / h;
+        uMark.set(mx + 0.01, mx + 0.07, my + 0.01, my + 0.07);
       };
       let tx = 0;
       let ty = 0;
@@ -380,8 +413,8 @@ export default function Sunbeam({ still }: BackdropProps) {
       const YAW = (1.5 * Math.PI) / 180;
       const PITCH = (1.0 * Math.PI) / 180;
       const place = (t: number, dt: number) => {
-        // Eased over about two seconds, whatever the frame rate.
-        const e = 1 - Math.exp(-dt / 0.7);
+        // Eased with a one-second time constant (settled in about three), whatever the frame rate.
+        const e = 1 - Math.exp(-dt / 1.0);
         lx += (tx - lx) * e;
         ly += (ty - ly) * e;
         const yaw = lx * YAW;

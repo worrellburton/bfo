@@ -6,22 +6,28 @@ import type { BackdropProps } from "./types";
 /**
  * Ink in water: black water through a long lens, and nothing drawn but the
  * ink. A bead of gold ink appears low in the frame, beside the mark, and
- * opens over a minute and a half: a bloom that folds into lobes, tendrils
- * and filaments as it thins and sinks, until it is the water again. Ten
- * seconds of empty water, then the next bead, on the other side.
+ * opens over a minute and a half: a bloom that mushrooms below its point of
+ * entry and folds into lobes, tendrils and filaments as it thins and sinks,
+ * until it is the water again. Ten seconds of empty water, then the next
+ * bead, on the other side.
  *
  * The ink is 65,536 particles (16,384 on phones) whose positions and ages
  * live in a float texture, stepped on the GPU each frame (three's
  * GPUComputationRenderer, one ping-pong variable). The velocity is analytic:
- * a radial push from the drop point that decays with age, three octaves of
- * curl noise that fold the bloom, and a slow sink. The first-emitted
- * particles are the fast outer tendrils (gold); the last-emitted stay near
- * the centre as the dense ivory core, which sinks a little faster than its
- * bloom. A single Points draw reads the texture: additive 4 px Gaussian
- * sprites, spreading into dimmer circles of confusion away from the focal
- * plane as through a long lens, whose alpha rises as the ink spreads (dense
- * ink is dim per particle) and fades over the last twenty seconds of a life.
- * Inside the mark's box the ink is shaded to 0.4, so only thinned tendrils
+ * a radial push from the drop point that decays with age and is held back
+ * upward (a sinking drop opens below itself, with a thin stem above), three
+ * octaves of curl noise that fold the bloom, and a slow sink. The
+ * first-emitted particles settle at the rim, the last at the heart, which
+ * sinks a little faster than its bloom.
+ *
+ * Light is density. One Points draw accumulates every particle's 4 px
+ * Gaussian sprite (spreading into dimmer circles of confusion away from the
+ * focal plane, as through a long lens) into a half-float target, so the
+ * thousandth-of-a-level contributions of a young bead, a defocused mote or a
+ * fading one all count; a second pass puts that density through a knee that
+ * can never reach 85% of white and colours it by how much ink is there:
+ * deep gold in the thinnest haze, gold, champagne, ivory only at the heart.
+ * Inside the mark's box the ink is shaded to half, so only thinned tendrils
  * pass behind the letters.
  *
  * The clock is pre-rolled 22 s at load, so the first frame is a bloom; the
@@ -32,11 +38,14 @@ import type { BackdropProps } from "./types";
  */
 
 const DEG = Math.PI / 180;
-/** One bead per period: six seconds of emission, lives of 60 to 95 s, then empty water until the next drop. */
-const PERIOD = 104;
+/**
+ * One bead per period: six seconds of emission, lives of 78 to 96 s (the brief said 60 to 95: the bloom is a thin
+ * haze by 85 s and this keeps it readable to about 90), then ten seconds of empty water until the next drop.
+ */
+const PERIOD = 100;
 const EMIT = 6;
-const LIFE_MIN = 60;
-const LIFE_MAX = 95;
+const LIFE_MIN = 78;
+const LIFE_MAX = 96;
 /** The clock at the first frame, and the frame the reduced-motion still shows. */
 const START = 22;
 const STILL = 28;
@@ -45,27 +54,31 @@ const WARM_DT = 0.05;
 /** The camera's distance; the lens is set so the frame is one unit tall at the ink. */
 const DIST = 6;
 /**
- * Drop points as viewport fractions; desktop beads alternate sides, phones drop on the centreline. The desktop
- * drops sit at 68% of the height (the brief said 62%) so the core, the frame's brightest point, stays below the
- * mark's box as it sinks.
+ * Drop points as viewport fractions; desktop beads alternate sides, phones drop on the centreline. The drops sit at
+ * 70% of the height (the brief said 62%): the bead is a bright point for its first seconds, and here it is already
+ * under the mark's box (whose bottom edge is at 67.5%); the heart, the frame's brightest point, then sinks further.
  */
 const DROPS = [
-  [0.38, 0.68],
-  [0.62, 0.68],
+  [0.38, 0.7],
+  [0.62, 0.7],
 ];
-const PHONE_DROP = [0.5, 0.66];
+const PHONE_DROP = [0.5, 0.7];
+/** The knee: ink of accumulated luminance l shows as KNEE l / (KNEE + l), so with the water added the peak stays under 85%. */
+const KNEE = 0.82;
+/** The alpha law is tuned on this frame: a 1440 x 900 desktop with 65,536 motes; other sizes and counts are scaled to it. */
+const REF = { count: 65536, stretch: 1.6, height: 900 };
 /**
  * How far out a particle settles relative to the bloom's edge, by emission order: the 3D density of the bloom is
- * 5 in a core out to half the radius, 1 in the body and 2 in a thin shell at the edge, with soft steps, so the
- * projected ink has a heart four times its mean, a thinner body, and a rim that draws the lobes the curl folds;
- * never a point that whites out.
+ * 4 in a core out to half the radius, 1 in the body and 3.5 in a thin shell at the edge, with soft steps, so the
+ * projected ink has a heart three times its mean, a thinner body, and a bright thin rim that the curl folds into
+ * lobes; never a point that whites out.
  */
 const density = (s: number) => {
   const soft = (a: number, b: number, x: number) => {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
   };
-  return 1 + 4 * (1 - soft(0.4, 0.6, s)) + soft(0.78, 0.92, s);
+  return 1 + 3 * (1 - soft(0.4, 0.6, s)) + 2.5 * soft(0.84, 0.95, s);
 };
 const radiusByRank = () => {
   const n = 1024;
@@ -150,11 +163,13 @@ const NOISE = /* glsl */ `
     vec4 c = snoiseGrad(p + vec3(-12.3, 44.1, -8.8));
     return vec3(c.y - b.z, a.z - c.x, b.x - a.y);
   }
-  // Three octaves, the second strong so the bloom crinkles rather than staying round; unit RMS (the curl of one
-  // octave measures 3.77), with the rare spike held to three times that.
+  // Three octaves, the base one light and the second and third strong: the base octave (18% of the width) is nearly
+  // uniform across a bloom and only shears it; the 9% and 4.5% octaves are what crinkle its rim into cauliflower
+  // folds. Unit RMS (the curl of one octave measures 3.77, and the weights' norm is 1.08), with the rare spike held
+  // to three times that.
   vec3 curlField(vec3 p, float f) {
-    vec3 c = curlAt(p * f) * 0.75 + curlAt(p * f * 2.0 + 7.3) * 0.55 + curlAt(p * f * 4.0 - 3.1) * 0.35;
-    c *= 1.0 / 3.77;
+    vec3 c = curlAt(p * f) * 0.4 + curlAt(p * f * 2.0 + 7.3) * 0.8 + curlAt(p * f * 4.0 - 3.1) * 0.6;
+    c *= 1.0 / 4.07;
     return c * min(1.0, 3.0 / max(length(c), 1e-6));
   }
   vec3 hash33(vec3 p) {
@@ -188,13 +203,18 @@ const SIM = /* glsl */ `
       gl_FragColor = vec4(st.xyz, -1.0);
       return;
     }
+    // The bead keeps falling as it opens: 0.32% of the height a second at first, gone by a minute, so the bloom
+    // hangs 4.5% of the height below its point of entry. Its centre is where every particle of this period's bead
+    // expands from, and where the ones still waiting their turn appear.
+    float tb = mod(tNew, uPeriod);
+    vec3 centre = vec3(0.0, -0.0448 * (1.0 - exp(-tb / 14.0)), 0.0);
     if (st.w < 0.0) {
-      // Its turn: it appears in a 0.5%-of-the-width sphere at the drop point.
+      // Its turn: it appears in a 0.5%-of-the-width sphere at the bead's centre.
       vec3 h = hash33(vec3(uv * 977.0, uDrift.x * 53.0 + 1.0));
       float z = h.x * 2.0 - 1.0;
       float ph = h.y * 6.2831853;
       float rxy = sqrt(max(0.0, 1.0 - z * z));
-      gl_FragColor = vec4(vec3(rxy * cos(ph), rxy * sin(ph), z) * (0.005 * uStretch * pow(h.z, 0.3333)), age);
+      gl_FragColor = vec4(centre + vec3(rxy * cos(ph), rxy * sin(ph), z) * (0.005 * uStretch * pow(h.z, 0.3333)), age);
       return;
     }
     vec3 q = st.xyz;
@@ -202,35 +222,43 @@ const SIM = /* glsl */ `
     float rank = sd.z;
     // How far out this particle settles: the first-emitted make the shell, the last the core (radiusByRank).
     float s = sd.w;
-    float len = max(length(q), 1e-5);
+    vec3 qc = q - centre;
+    float len = max(length(qc), 1e-5);
     // Radial: 1.2% of the width a second at first, decaying over 14 s to a floor of 0.15%; the same in height terms
     // vertically, so the bloom opens as an ellipse the shape of the frame.
     float rad = (0.0015 + 0.0105 * exp(-a / 14.0)) * s;
-    vec3 v = (q / len) * rad * vec3(uStretch, 1.0, 1.0);
-    // Curl noise folds the bloom: 0.35% of the width a second at first, 0.08% by a minute. The dense core is
-    // heavy and feels a third of it, so it is the shell that folds and the core that sinks.
-    float amp = 0.0035 * uStretch * exp(-a / 40.0) * (0.3 + 0.7 * s);
+    vec3 v = (qc / len) * rad * vec3(uStretch, 1.0, 1.0);
+    // A mushroom, not a ball: the expansion is a little slower toward the crown of the bloom than its underside
+    // (0.65 at the top), easing over the whole sphere, so the cap is flatter above and rounder below and no row
+    // of ink piles up into a lid.
+    v.y *= mix(1.0, 0.65, smoothstep(-0.7, 0.7, qc.y / len));
+    // Curl noise folds the bloom: 0.35% of the width a second at first, a third of that by a minute (the lobes keep
+    // folding into the second minute). The dense core is heavy and feels a fifth of it, the rim all of it, so it is
+    // the rim that folds and the core that sinks.
+    float amp = 0.0035 * uStretch * exp(-a / 55.0) * (0.2 + 0.8 * s * s);
     v += amp * curlField(q + uDrift, uFreq);
-    // The sink: 0.08% of the height a second, and half as much again for the core, which drops through its bloom.
-    v.y -= 0.0008 + 0.0004 * smoothstep(0.5, 0.85, rank);
+    // The fall of the bead, then the sink: 0.08% of the height a second for good, and half as much again for the
+    // core, which drops through its bloom.
+    v.y -= 0.0032 * exp(-tb / 14.0) + 0.0008 + 0.0004 * smoothstep(0.5, 0.85, rank);
     gl_FragColor = vec4(q + v * uDt, a + uDt);
   }
 `;
 
+/**
+ * The Points draw: every live particle's sprite accumulates (light, light x rank) into the half-float target; the
+ * composite pass turns that density into colour.
+ */
 const VERT = /* glsl */ `
   uniform sampler2D texState;
   uniform sampler2D texSeed;
   uniform float uT; // the clock of the state, wrapped to two periods
   uniform float uPeriod;
-  uniform float uPixel; // device px per CSS px
+  uniform float uPixel; // accumulation px per CSS px
+  uniform float uGain; // scales the light so the picture is the same at any frame size or particle count
   uniform vec3 uDrop[2]; // the drop points of even and odd periods
   varying vec3 vColor;
   varying float vAlpha;
   varying float vSharp;
-  const vec3 IVORY = vec3(0.957, 0.929, 0.878);
-  const vec3 CHAMPAGNE = vec3(0.914, 0.843, 0.659);
-  const vec3 GOLD = vec3(0.847, 0.710, 0.416);
-  const vec3 DEEP = vec3(0.655, 0.486, 0.196);
   void main() {
     vec4 st = texture2D(texState, position.xy);
     float age = st.w;
@@ -247,46 +275,44 @@ const VERT = /* glsl */ `
     // Which period this particle was dropped in says which side it is on.
     float cycle = floor((uT - age - sd.y + 3.0) / uPeriod);
     vec3 p = (mod(cycle, 2.0) < 0.5 ? uDrop[0] : uDrop[1]) + st.xyz;
-    // Light by emission order: gold tendrils first out, a champagne body, the ivory core last; deep gold as it dissolves.
     float rank = sd.z;
-    // At these luminances ivory reads grey over the near-black water, so it is kept for the heart of the core and
-    // the rest of the core is champagne.
-    vec3 c = mix(GOLD, CHAMPAGNE, smoothstep(0.35, 0.7, rank));
-    c = mix(c, IVORY, smoothstep(0.82, 0.97, rank));
-    float fade = smoothstep(sd.x - 20.0, sd.x, age);
-    c = mix(c, DEEP, fade * 0.85);
-    // Dense young ink is dim per particle; the alpha rises as the bloom spreads, so the picture never goes white
-    // even where the curl folds the ink three deep, then fades over the last twenty seconds. The core carries a
-    // little more light than the tendrils.
-    float a = 0.1 * pow(1.0 - exp(-age / 18.0), 2.5) + 0.0005;
+    // Energy only decays: a mote's light rises over its first four seconds as the bead opens (the bead goes from a
+    // tenth of its peak to its peak over about six seconds, never under one), then only the thinning of the bloom
+    // dims the picture, until the fade over the last fifteen seconds of a life. The 0.08 puts the bead's heart
+    // near 60% of white and the heart of the bloom at 28 s near 45%. The core carries a little more light than the
+    // rim.
+    float fade = smoothstep(sd.x - 15.0, sd.x, age);
+    float a = 0.08 * pow(1.0 - exp(-age / 4.0), 2.0) * uGain;
     a *= mix(0.75, 1.2, smoothstep(0.3, 0.9, rank));
     a *= 1.0 - fade;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
-    // The mark's box, 60% wide and 35% tall: ink inside it is shaded to 0.4 (the brief said half; a fold of the
-    // shell at the box's edge reached a quarter of white at half), so only thin tendrils pass behind the letters.
-    // The shade lifts over a band just outside the box (0.95 to 1.2 of its half-height, about 40 px), so the core
-    // sinking below the box is in the clear.
+    // The mark's box, 60% wide and 35% tall: ink inside it is shaded to half, so only thin tendrils pass behind the
+    // letters. The shade lifts over a wide band around the box's edge (0.75 to 1.3 of its half-size, about 85 px
+    // on a 900 px frame), too gradual to draw an edge across the ink.
     vec2 ndc = gl_Position.xy / gl_Position.w;
     vec2 e = vec2(abs(ndc.x) / 0.6, abs(ndc.y) / 0.35);
     e *= e;
     e *= e;
-    float outside = smoothstep(0.95, 1.2, pow(e.x + e.y, 0.25));
-    a *= mix(0.4, 1.0, outside);
+    float outside = smoothstep(0.75, 1.3, pow(e.x + e.y, 0.25));
+    a *= mix(0.5, 1.0, outside);
     // A 4 px mote at the focal plane (the brief said 2 px: at this bloom's size, 65,536 sharper motes read as
-    // sand, not fluid). Beyond a slab 0.04 units deep at the focal plane a mote spreads into a circle of
-    // confusion (40 px per unit of depth, capped at 10 px, and never over the mark), as through a long lens: the
-    // limb of the bloom and the folds near the focal plane stay firm, the front and back of the ball soften into
-    // haze over the heart. Each is a Gaussian spot (sigma 0.35 S + 0.05 CSS px, the sprite reaching 2.5 sigma)
-    // whose light falls with its area, so the picture keeps its brightness however the spots grow.
-    float S = 4.0 + min(10.0, max(0.0, abs(p.z) - 0.02) * 40.0) * outside;
-    float sigma = 0.35 * S + 0.05;
-    float sprite = 5.0 * sigma;
+    // sand, not fluid). The lens is long and its focus shallow: beyond a slab a hundredth of a unit deep a mote
+    // spreads into a circle of confusion (80 px per unit of depth, capped at 6.5 px, and never over the mark), so
+    // only the limb of the bloom and the folds at the focal plane stay firm and the rest is the haze they sit in.
+    // Each is a Gaussian spot (sigma 0.4 S + 0.1 CSS px, so a focused mote is 4 px across at half its peak; the
+    // sprite reaches 2.5 sigma, 2.1 for the largest, which overlap by the dozen) whose light falls with its area,
+    // so the picture keeps its brightness however the spots grow.
+    float S = 4.0 + min(6.5, max(0.0, abs(p.z) - 0.005) * 80.0) * outside;
+    float sigma = 0.4 * S + 0.1;
+    float sprite = mix(5.0, 4.2, smoothstep(5.0, 10.5, S)) * sigma;
     a *= 0.5625 / (sigma * sigma);
     vSharp = sprite * sprite / (8.0 * sigma * sigma);
     gl_PointSize = sprite * uPixel;
     vAlpha = a;
-    vColor = c;
+    // Red accumulates the light, green the light weighted by rank, so the composite knows how much ink is at a
+    // pixel and whether it is rim or heart.
+    vColor = vec3(1.0, rank, 0.0);
   }
 `;
 const FRAG = /* glsl */ `
@@ -298,6 +324,43 @@ const FRAG = /* glsl */ `
     float a = exp(-vSharp * dot(q, q) * 4.0);
     // Additive blending multiplies by the alpha channel (SRC_ALPHA, ONE), so the colour goes out straight.
     gl_FragColor = vec4(vColor, a * vAlpha);
+  }
+`;
+
+/** The composite: one triangle over the frame, reading the accumulated ink. */
+const COMP_VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = position.xy * 0.5 + 0.5;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+const COMP_FRAG = /* glsl */ `
+  uniform sampler2D tInk;
+  uniform float uKnee;
+  varying vec2 vUv;
+  const vec3 WATER = vec3(5.0, 6.0, 11.0) / 255.0;
+  const vec3 IVORY = vec3(0.957, 0.929, 0.878);
+  const vec3 CHAMPAGNE = vec3(0.914, 0.843, 0.659);
+  const vec3 GOLD = vec3(0.847, 0.710, 0.416);
+  const vec3 DEEP = vec3(0.655, 0.486, 0.196);
+  float lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+  // The brand's warm stops by how much ink there is: deep gold in the thinnest haze (to 6% of white), gold at 20%,
+  // champagne at 45%, ivory from 75%: what real ink does, thin veils dark and warm, the dense heart pale.
+  vec3 ramp(float u) {
+    vec3 c = mix(DEEP, GOLD, clamp((u - 0.06) / 0.14, 0.0, 1.0));
+    c = mix(c, CHAMPAGNE, clamp((u - 0.2) / 0.25, 0.0, 1.0));
+    return mix(c, IVORY, clamp((u - 0.45) / 0.3, 0.0, 1.0));
+  }
+  void main() {
+    vec2 ink = texture2D(tInk, vUv).rg;
+    float l = ink.x;
+    // The knee: more ink always shows as more light, but never past uKnee of white.
+    float k = uKnee * l / (uKnee + l);
+    // Which of the ink here is heart and which is rim tints the ramp by a tenth either way.
+    float rank = ink.y / max(l, 1e-6);
+    vec3 c = ramp(k * (0.9 + 0.2 * rank));
+    gl_FragColor = vec4(WATER + c * (k / lum(c)), 1.0);
   }
 `;
 
@@ -330,7 +393,9 @@ export default function Ink({ still }: BackdropProps) {
       const phone = window.matchMedia("(max-width: 640px), (pointer: coarse)").matches;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, phone ? 1.5 : 2));
       renderer.setClearColor(0x05060b, 1);
-      // The state lives in a float texture; where float render targets are missing, half floats and coarser steps.
+      renderer.clear();
+      // The state and the accumulated ink live in float textures; where float render targets are missing, half
+      // floats and coarser steps for the state (the ink is always accumulated in half floats).
       const fullFloat = renderer.extensions.has("EXT_color_buffer_float");
       if (!fullFloat && !renderer.extensions.has("EXT_color_buffer_half_float")) {
         renderer.dispose();
@@ -382,7 +447,7 @@ export default function Ink({ still }: BackdropProps) {
         return;
       }
 
-      // ── One Points draw: each vertex is the texel it reads ──
+      // ── One Points draw into the accumulation target: each vertex is the texel it reads ──
       const refs = new Float32Array(count * 2);
       for (let y = 0; y < N; y++) {
         for (let x = 0; x < N; x++) {
@@ -395,6 +460,10 @@ export default function Ink({ still }: BackdropProps) {
       geo.setAttribute("position", new THREE.BufferAttribute(refs, 2));
       // The positions live in the texture, so the geometry's bounds are nominal (the renderer's sort wants them).
       geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1);
+      // The ink is accumulated at CSS resolution (one accumulation px per CSS px, fewer where the pixel ratio is
+      // under one): a 4 px Gaussian mote is well sampled there, the composite's bilinear upsample is invisible on
+      // a soft fluid, and at 2x it is a quarter of the blended fragments, which are what this backdrop costs.
+      const accPx = Math.min(1, renderer.getPixelRatio());
       const mat = new THREE.ShaderMaterial({
         vertexShader: VERT,
         fragmentShader: FRAG,
@@ -407,7 +476,8 @@ export default function Ink({ still }: BackdropProps) {
           texSeed: { value: seedTex },
           uT: { value: 0 },
           uPeriod: { value: PERIOD },
-          uPixel: { value: renderer.getPixelRatio() },
+          uPixel: { value: accPx },
+          uGain: { value: 1 },
           uDrop: { value: [new THREE.Vector3(), new THREE.Vector3()] },
         },
       });
@@ -416,14 +486,73 @@ export default function Ink({ still }: BackdropProps) {
       points.frustumCulled = false;
       scene.add(points);
 
+      // ── The accumulation target and the composite that reads it ──
+      const acc = new THREE.WebGLRenderTarget(1, 1, {
+        type: THREE.HalfFloatType,
+        format: THREE.RGBAFormat,
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        depthBuffer: false,
+        stencilBuffer: false,
+        generateMipmaps: false,
+      });
+      const compGeo = new THREE.BufferGeometry();
+      compGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 3, -1, -1, 3]), 2));
+      compGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 4);
+      const compMat = new THREE.ShaderMaterial({
+        vertexShader: COMP_VERT,
+        fragmentShader: COMP_FRAG,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.NoBlending,
+        uniforms: { tInk: { value: acc.texture }, uKnee: { value: KNEE } },
+      });
+      const compScene = new THREE.Scene();
+      const comp = new THREE.Mesh(compGeo, compMat);
+      comp.frustumCulled = false;
+      compScene.add(comp);
+      // Nothing is cleared but the accumulation target: the composite covers every pixel of the frame.
+      renderer.autoClear = false;
+      const gl = renderer.getContext();
+      const disposeAll = () => {
+        gpu.dispose();
+        seedTex.dispose();
+        geo.dispose();
+        mat.dispose();
+        acc.dispose();
+        compGeo.dispose();
+        compMat.dispose();
+        renderer.dispose();
+      };
+      // A half-float target that cannot be drawn into (the extension is there but the format is not renderable)
+      // would leave the water empty: check it once, and fall back to the flat canvas.
+      renderer.setRenderTarget(acc);
+      const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      renderer.setRenderTarget(null);
+      if (!complete) {
+        disposeAll();
+        setFailed(true);
+        return;
+      }
+      const draw = () => {
+        renderer.setRenderTarget(acc);
+        renderer.setClearColor(0x000000, 0);
+        renderer.clear(true, false, false);
+        renderer.render(scene, camera);
+        renderer.setRenderTarget(null);
+        renderer.render(compScene, camera);
+      };
+
       // ── The clock: the simulation steps in fixed strides during the warm-up, then with the frames ──
       let simT = 0;
       const drift = su.uDrift.value as T.Vector3;
       const step = (dt: number) => {
         su.uT.value = simT % (2 * PERIOD);
         su.uDt.value = dt;
-        // The field drifts 0.02 units a second along a fixed line, so no two blooms fold alike.
-        drift.set(0.6, -0.5, 0.62).multiplyScalar(simT * 0.02);
+        // The field drifts 0.004 units a second along a fixed line (the brief said 0.02: that is faster than the ink
+        // itself moves, so a fold lasted three seconds and the rim diffused; at this pace the lobes persist and
+        // grow), and it has moved a bloom's width by the next bead on the same side, so no two blooms fold alike.
+        drift.set(0.6, -0.5, 0.62).multiplyScalar(simT * 0.004);
         gpu.compute();
         simT += dt;
         pu.uT.value = simT % (2 * PERIOD);
@@ -432,7 +561,6 @@ export default function Ink({ still }: BackdropProps) {
       // The warm-up runs in slices of about 30 ms, a frame at a time, and nothing is drawn until the bloom is old
       // enough: a few black frames on a laptop, and never a stalled page on a slow GPU.
       let warmLeft = Math.round((still ? STILL : START) / WARM_DT);
-      const gl = renderer.getContext();
       const warm = () => {
         const t0 = performance.now();
         while (warmLeft > 0 && performance.now() - t0 < 30) {
@@ -452,6 +580,7 @@ export default function Ink({ still }: BackdropProps) {
         w = window.innerWidth;
         h = window.innerHeight;
         renderer.setSize(w, h, false);
+        acc.setSize(Math.max(1, Math.round(w * accPx)), Math.max(1, Math.round(h * accPx)));
         const aspect = w / h;
         camera.aspect = aspect;
         camera.updateProjectionMatrix();
@@ -461,6 +590,12 @@ export default function Ink({ still }: BackdropProps) {
         su.uStretch.value = stretch;
         // The curl field's base octave spans 18% of that width.
         su.uFreq.value = 1 / (0.18 * stretch);
+        // The light per pixel goes as the particle count over the bloom's area in pixels (stretch x height squared):
+        // held to the reference frame's, so a phone's 16k motes and a big display's wide bloom draw the same ink.
+        // A phone's narrow bloom is stirred less by the curl (which scales with the stretch), so its heart would
+        // peak brighter than the desktop's; it gets 0.85 of the light.
+        const gain = ((REF.count / count) * (stretch * h * h)) / (REF.stretch * REF.height * REF.height);
+        pu.uGain.value = Math.min(8, Math.max(0.5, gain)) * (phone ? 0.85 : 1);
         // Drop points are viewport fractions, so the ink keeps its place in the frame through a resize.
         const drops = phone ? [PHONE_DROP, PHONE_DROP] : DROPS;
         (pu.uDrop.value as T.Vector3[]).forEach((v, i) => v.set((drops[i][0] - 0.5) * aspect, 0.5 - drops[i][1], 0));
@@ -478,10 +613,9 @@ export default function Ink({ still }: BackdropProps) {
         const pitch = -ly * 1.5 * DEG;
         camera.position.set(Math.sin(yaw) * Math.cos(pitch) * DIST, Math.sin(pitch) * DIST, Math.cos(yaw) * Math.cos(pitch) * DIST);
         camera.lookAt(0, 0, 0);
-        renderer.render(scene, camera);
+        draw();
       };
       size();
-      renderer.clear();
       let raf = 0;
       if (still) {
         // One frame at 28 s, drawn once the warm-up has reached it; no loop.
@@ -498,11 +632,7 @@ export default function Ink({ still }: BackdropProps) {
         cleanup = () => {
           cancelAnimationFrame(raf);
           window.removeEventListener("resize", onResize);
-          gpu.dispose();
-          seedTex.dispose();
-          geo.dispose();
-          mat.dispose();
-          renderer.dispose();
+          disposeAll();
         };
         return;
       }
@@ -552,11 +682,7 @@ export default function Ink({ still }: BackdropProps) {
         window.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerleave", onLeave);
         document.removeEventListener("visibilitychange", onVisible);
-        gpu.dispose();
-        seedTex.dispose();
-        geo.dispose();
-        mat.dispose();
-        renderer.dispose();
+        disposeAll();
       };
     })();
     return () => {
