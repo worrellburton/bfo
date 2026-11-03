@@ -3855,16 +3855,31 @@ html:not(.light) .ask-table td {
    (.door-ready); reduced motion (.door-still) shows it already in.
    ────────────────────────────────────────────────────────────────────── */
 .door {
-  position: relative;
-  min-height: 100dvh;
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
   background: #05060b;
   color: #f4ede0;
   overflow: hidden;
+  touch-action: none;
 }
 .door-sky {
   position: fixed;
   inset: 0;
   display: block;
+  width: 100%;
+  height: 100%;
+}
+/* No WebGL: a deep blue that the grain and vignette still work on. */
+.door-sky-flat {
+  background: radial-gradient(80% 70% at 50% 45%, #141a3a, #05060b 75%);
+}
+/* Locked to the screen while the front door is up: no scrolling, no rubber-banding. */
+html.door-lock,
+body.door-lock {
+  overflow: hidden;
+  height: 100%;
+  overscroll-behavior: none;
 }
 .door-grain {
   position: fixed;
@@ -3901,7 +3916,7 @@ html:not(.light) .ask-table td {
 }
 .door-center {
   position: relative;
-  min-height: 100dvh;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3915,18 +3930,18 @@ html:not(.light) .ask-table td {
 .door-ready .door-mark {
   opacity: 1;
 }
-/* A soft light behind the letters. */
+/* A soft dark pocket behind the letters, so they read over the rings, with a little light at its heart. */
 .door-mark::before {
   content: "";
   position: absolute;
   left: 50%;
-  top: 55%;
-  width: 120%;
-  height: 80%;
+  top: 52%;
+  width: 150%;
+  height: 130%;
   transform: translate(-50%, -50%);
   border-radius: 9999px;
-  background: radial-gradient(ellipse at center, rgba(244, 237, 224, 0.12), rgba(233, 215, 168, 0.04) 45%, transparent 70%);
-  filter: blur(28px);
+  background: radial-gradient(ellipse at center, rgba(5, 6, 11, 0.82), rgba(5, 6, 11, 0.6) 40%, rgba(5, 6, 11, 0) 72%);
+  filter: blur(22px);
   pointer-events: none;
 }
 .door-mark .brand-lockup-hero {
