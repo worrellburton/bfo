@@ -239,7 +239,6 @@ export class SigningGame {
   private pen: THREE.Mesh | null = null;
   private penHand: THREE.Group | null = null;
   private penTakenAt = 0;
-  private signedAt = 0;
   private clouds: THREE.Object3D[] = [];
   /** Blocks that move, with the box the player stands on; the player rides along. */
   private movers: Array<{ mesh: THREE.Mesh; box: Box; base: THREE.Vector3; axis: "x" | "y"; amp: number; period: number; phase: number }> = [];
@@ -1501,6 +1500,7 @@ export class SigningGame {
     on(el, "mousedown", (e: MouseEvent) => {
       if (e.button !== 0) return;
       if (this.phase === "ended") return this.standUp();
+      if (this.phase === "exit" && this.nearContract()) return this.finish();
       if (this.phase === "movie" && this.hud.needsClick) return this.startMovie();
       if (this.walking()) {
         this.dragging = true;
@@ -1858,36 +1858,14 @@ export class SigningGame {
     const H = SigningGame.PEN_HELD;
     g.position.copy(F.pos).lerp(H.pos, e);
     g.rotation.set(F.rot.x + (H.rot.x - F.rot.x) * e, F.rot.y + (H.rot.y - F.rot.y) * e, F.rot.z + (H.rot.z - F.rot.z) * e);
-    if (this.signedAt) {
-      const k = (now - this.signedAt) / 1000;
-      if (k < 1.1) {
-        g.position.x += 0.03 * Math.sin(k * 26);
-        g.position.y -= 0.02 * Math.abs(Math.sin(k * 9));
-      } else g.visible = false;
-    }
   }
 
+  /** At the contract: straight to the signing page. Nothing is signed yet, so no sound, no sign, no ceremony. */
   private finish() {
     this.setPhase("done");
-    this.play("sign");
-    this.signedAt = performance.now();
-    const first = this.opts.signerName.trim().split(/\s+/)[0] || "Sam";
-    this.setMarquee(["SIGNED", first.toUpperCase()]);
     if (this.locked) document.exitPointerLock();
     this.setHud({ prompt: "" });
-    // A moment with the pen, then a glide back to the top step for a look down at the marquee, then the signed page.
-    const look = setTimeout(() => {
-      if (!this.roofSign) return;
-      const top = STEP_POS(STAIR.steps - 1);
-      const to = new THREE.Vector3(top.x, top.y + PLAYER.eye, top.z);
-      const qTo = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(to, this.roofSign.position, new THREE.Vector3(0, 1, 0)));
-      this.tween = { from: this.camera.position.clone(), to, qFrom: this.camera.quaternion.clone(), qTo, start: performance.now(), dur: 1600 };
-    }, 1100);
-    const t = setTimeout(() => this.opts.onDone(), 4200);
-    this.disposers.push(() => {
-      clearTimeout(look);
-      clearTimeout(t);
-    });
+    this.opts.onDone();
   }
 
   // ── Each frame ──────────────────────────────────────────────────────────
@@ -2134,7 +2112,7 @@ export class SigningGame {
         this.cheered = true;
         this.play("cheer", 0.9);
       }
-      prompt = there ? "Press E to sign" : now < this.hintUntil ? this.hud.prompt : "";
+      prompt = there ? "Press E or click to open the contract" : now < this.hintUntil ? this.hud.prompt : "";
     } else if ((this.phase === "outside" || this.phase === "lobby") && now >= this.hintUntil) prompt = "";
     if (prompt !== this.hud.prompt) this.setHud({ prompt });
   }
@@ -2244,7 +2222,7 @@ export class SigningGame {
         t.then?.();
       }
     }
-    if (this.phase === "done" && now - this.signedAt > 3300) this.setHud({ dark: Math.min(1, this.hud.dark + dt / 0.8) });
+    if (this.phase === "done") this.setHud({ dark: 1 });
     else if (this.hud.dark > 0 && this.walking()) this.setHud({ dark: Math.max(0, this.hud.dark - dt / 0.7) });
     // Landing dust drifts out and fades.
     for (let i = this.dust.length - 1; i >= 0; i--) {
