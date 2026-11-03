@@ -85,6 +85,7 @@ const VERT = /* glsl */ `
   uniform vec4 uFold[4]; // wavenumber, depth at the top, depth at the hem, phase (drifting)
   uniform vec4 uFoldFM[4]; // spacing modulation: depth (radians), wavenumber, phase; and the second harmonic's weight
   uniform float uWander; // the crests' wander, as a fraction of the frame width per frame height, scaled to the folds' width
+  uniform float uShift; // where the folds sit across the sheet, in frame heights: slid on phones so the composition holds
   uniform vec3 uBulge[3]; // the breaths in flight: height, depth, sigma
   uniform float uSway; // the hem's sideways offset
   uniform float uSoft; // the motes' softness: the base of their Gaussian sigma, CSS px
@@ -113,7 +114,7 @@ const VERT = /* glsl */ `
       // or the same as its neighbour: a wander that grows toward the hem, a slow swell along each, a slow swell
       // across the sheet, and the spacing modulated across the sheet.
       float k = F.x * (1.0 - 0.12 * hem);
-      float x = p.x + (0.016 + 0.031 * hem) * uWander * sin(p.y * (2.2 + fi * 1.3) + F.w * 2.3 + fi);
+      float x = p.x + uShift + (0.016 + 0.031 * hem) * uWander * sin(p.y * (2.2 + fi * 1.3) + F.w * 2.3 + fi);
       float A = mix(F.y, F.z, hem) * (0.8 + 0.2 * sin(p.y * (4.0 + fi * 2.1) + fi * 2.0)) * (0.75 + 0.25 * sin(p.x * (2.0 + fi * 1.1) + fi * 1.3));
       float th = k * x + F.w + M.x * sin(M.y * x + M.z);
       z += A * (sin(th) + M.w * sin(2.0 * th));
@@ -266,6 +267,7 @@ export default function Silk({ still }: BackdropProps) {
           uFold: { value: uFold },
           uFoldFM: { value: uFoldFM },
           uWander: { value: 1 },
+          uShift: { value: 0 },
           uBulge: { value: uBulge },
           uSway: { value: 0 },
           uSoft: { value: 1.0 },
@@ -288,10 +290,12 @@ export default function Silk({ still }: BackdropProps) {
         camera.updateProjectionMatrix();
         mat.uniforms.uAspect.value = aspect;
         // The sheet is always 1.3 frames wide, and the folds keep their count per frame width (two thirds on phones,
-        // so their crests wander half as much again, as the folds are wider).
+        // so their crests wander half as much again, as the folds are wider, and the pattern is slid 0.45 widths so
+        // its deepest lit flank still hangs inside the right edge).
         uSheet.set(SHEET_W * aspect, SHEET_H);
         const perWidth = (TAU * (phone ? 2 / 3 : 1)) / aspect;
         mat.uniforms.uWander.value = aspect * (phone ? 1.5 : 1);
+        mat.uniforms.uShift.value = phone ? 0.45 * aspect : 0;
         FOLDS.forEach((F, i) => {
           uFold[i].x = F.n * perWidth;
           uFold[i].y = F.top * DEPTH;
