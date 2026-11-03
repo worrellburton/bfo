@@ -74,6 +74,8 @@ export const signApi = {
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),
   download: (id: string) => call<{ url: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "download", id }) }).then((r) => r.url),
   remove: (id: string) => call<{ ok: true }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "delete", id }) }),
+  /** Makes a PDF already in an entity's documents the request's document (the server copies it). */
+  attachStored: (id: string, path: string) => signApi.act("attach-stored", { id, path }),
   /** Puts the PDF where the request expects it and reads its pages. */
   async attach(id: string, file: Blob): Promise<SignatureRequest> {
     // A fresh path each time; the server only accepts paths it handed out for this request.

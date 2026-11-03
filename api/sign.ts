@@ -5,6 +5,7 @@ import { canWrite, currentUser, fail, guard, handleError, sb, sendEmail, type Ap
 import { clientIp } from "./auth/request-code.js";
 import { notifyAdmins } from "../lib/push.js";
 import { storageDownload, storageRemove, storageSignedUrl, storageUpload } from "../lib/storage.js";
+import { DOCUMENTS_BUCKET, isDocumentPath } from "../lib/document-path.js";
 import {
   appendCertificate,
   cleanField,
@@ -48,6 +49,7 @@ import {
  *                       mode: "normal" or "game", the Anything Is Possible theater in front of the signing page)
  *            upload-url { id } → { signedUrl, token, path }  a one-time PUT to a fresh path (it can't overwrite)
  *            attach     { id, path }  reads that upload (page sizes) and makes it the document → { request }
+ *            attach-stored { id, path }  a PDF already in an entity's documents (lib/document-path), copied under the request → { request }
  *            update     { id, title?, fields?, parties?, mode? } → { request }  (fields and parties while nobody has signed; mode while a draft)
  *            send       { id } → { request }  emails each party their link
  *            remind     { id, party? } → { request }  re-sends the link to those who haven't signed
@@ -171,6 +173,28 @@ async function sendAll(me: AppUser, row: SignatureRequestRow, mails: Array<{ par
   return next;
 }
 
+/** Reads the PDF's pages and makes it the request's document; fields placed before the file (a contract's known signature block) are kept if they fit. */
+async function attachPdf(me: AppUser, fresh: () => Promise<SignatureRequestRow | null>, path: string, bytes: Uint8Array): Promise<SignatureRequestRow> {
+  if (bytes.byteLength > MAX_PDF_BYTES) throw new Refuse(413, "too_big", "PDFs up to 25 MB.");
+  let pages: Array<{ w: number; h: number }>;
+  try {
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    // Pages as a viewer shows them (turned, cropped): that's where fields are placed.
+    pages = doc.getPages().map((p) => {
+      const s = shownSize(pageFrame(p));
+      return { w: Math.round(s.w * 100) / 100, h: Math.round(s.h * 100) / 100 };
+    });
+  } catch {
+    throw new Refuse(400, "not_a_pdf", "That file isn't a PDF we can read.");
+  }
+  if (!pages.length) throw new Refuse(400, "not_a_pdf", "That PDF has no pages.");
+  return update(fresh, (r) => {
+    if (r.status !== "draft") throw new Refuse(409, "already_sent", "The document can't change once it has been sent.");
+    const fields = r.fields.map((f) => cleanField(f, pages.length)).filter((f): f is NonNullable<typeof f> => !!f);
+    return { original_path: path, current_path: path, pages, fields, events: [...r.events, event("attached", { by: me.id, note: `${pages.length} page${pages.length === 1 ? "" : "s"}` })] };
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "POST"])) return;
   try {
@@ -248,26 +272,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!isUploadPath(row.id, path)) return fail(res, 400, "bad_path");
         const bytes = await storageDownload(path, SIGN_BUCKET);
         if (!bytes) return fail(res, 400, "no_file", "The PDF didn't arrive. Try the upload again.");
+        return res.status(200).json({ request: toView(await attachPdf(me, fresh, path, bytes)) });
+      }
+      case "attach-stored": {
+        // A file already in an entity's documents: copied under the request, so the record's own copy never changes.
+        const from = String(body.path ?? "");
+        if (!isDocumentPath(from)) return fail(res, 400, "bad_path");
+        if (row.status !== "draft") return fail(res, 409, "already_sent", "The document can't change once it has been sent.");
+        const bytes = await storageDownload(from, DOCUMENTS_BUCKET);
+        if (!bytes) return fail(res, 404, "no_file", "That file isn't in storage.");
         if (bytes.byteLength > MAX_PDF_BYTES) return fail(res, 413, "too_big", "PDFs up to 25 MB.");
-        let pages: Array<{ w: number; h: number }>;
-        try {
-          const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
-          // Pages as a viewer shows them (turned, cropped): that's where fields are placed.
-          pages = doc.getPages().map((p) => {
-            const s = shownSize(pageFrame(p));
-            return { w: Math.round(s.w * 100) / 100, h: Math.round(s.h * 100) / 100 };
-          });
-        } catch {
-          return fail(res, 400, "not_a_pdf", "That file isn't a PDF we can read.");
-        }
-        if (!pages.length) return fail(res, 400, "not_a_pdf", "That PDF has no pages.");
-        const next = await update(fresh, (r) => {
-          if (r.status !== "draft") throw new Refuse(409, "already_sent", "The document can't change once it has been sent.");
-          // Fields placed before the file (a contract's known signature block) are kept if they fit.
-          const fields = r.fields.map((f) => cleanField(f, pages.length)).filter((f): f is NonNullable<typeof f> => !!f);
-          return { original_path: path, current_path: path, pages, fields, events: [...r.events, event("attached", { by: me.id, note: `${pages.length} page${pages.length === 1 ? "" : "s"}` })] };
-        });
-        return res.status(200).json({ request: toView(next) });
+        const path = versionPath(row.id, "upload");
+        await storageUpload(path, bytes, "application/pdf", SIGN_BUCKET);
+        return res.status(200).json({ request: toView(await attachPdf(me, fresh, path, bytes)) });
       }
       case "update": {
         const next = await update(fresh, (r) => {

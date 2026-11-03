@@ -102,6 +102,10 @@ function Filings() {
   );
 }
 
+/** Only a PDF can be sent for signature. */
+const isPdf = (f: { fileName?: string; name?: string; contentType?: string }) => f.contentType === "application/pdf" || /\.pdf$/i.test(f.fileName ?? f.name ?? "");
+const SEND_TITLE = "Send for signature: a private link by email, signed in BFO, the signed copy back here";
+
 /** One paperwork slot: the file on record, or its need level and an upload. Empty slots take a dropped file. */
 function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const { page, asset } = useEntity();
@@ -185,6 +189,16 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   ) : file ? (
     <div className={`-my-1 flex shrink-0 items-center ${slot.uploading ? "" : REVEAL}`}>
       <IconLink file={file} icon="external" label="View" ariaLabel={`View ${title}`} />
+      {isPdf(file) && (
+        <IconButton
+          icon="pen"
+          label="Send for signature"
+          aria-label={`Send ${title} for signature`}
+          title={SEND_TITLE}
+          disabled={slot.uploading}
+          onClick={() => void page.handleSendForSignature(file, (file.fileName || title).replace(/\.pdf$/i, ""))}
+        />
+      )}
       {generate && (
         <IconButton
           icon="sparkle"
@@ -466,6 +480,15 @@ function DocRow({ doc }: { doc: AssetDoc }) {
             className={renaming ? "motion-safe:animate-pulse" : ""}
             onClick={() => void page.handleRenameDoc(doc)}
           />
+          {isPdf(doc) && storagePathOf(doc) && (
+            <IconButton
+              icon="pen"
+              label="Send for signature"
+              aria-label={`Send ${doc.name} for signature`}
+              title={SEND_TITLE}
+              onClick={() => void page.handleSendForSignature(doc, doc.name.replace(/\.pdf$/i, ""))}
+            />
+          )}
           <IconButton
             icon={copied ? "check" : "copy"}
             label={copied ? "Copied" : storagePathOf(doc) ? `Copy ${SIGNED_LINK_MINUTES}-minute link` : "Copy URL"}
