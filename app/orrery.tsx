@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type * as T from "three";
 
 /**
- * The orrery: a family's holdings as a system. One quiet light at the
- * centre; seven rings around it, each a different tilt and colour, each a
+ * The orrery: a family's holdings as a system. One small point of light at
+ * the centre; seven rings around it, each a different tilt, ivory at the centre deepening to gold at the edge, each a
  * band of thousands of motes in orbit (the inner rings faster, as orbits
  * are); on every ring a few bright bodies trailing light; a thin gold line
  * for each orbit; dust far out. Everything moves on the GPU: a vertex
@@ -18,13 +18,13 @@ import type * as T from "three";
  */
 
 const RINGS = [
-  { radius: 1.7, width: 0.22, tilt: 0.1, roll: 0.0, color: [0.45, 0.52, 1.0], bodies: 1 },
-  { radius: 2.5, width: 0.28, tilt: -0.14, roll: 0.3, color: [0.6, 0.45, 1.0], bodies: 2 },
-  { radius: 3.4, width: 0.34, tilt: 0.18, roll: -0.5, color: [0.42, 0.85, 0.95], bodies: 1 },
-  { radius: 4.4, width: 0.42, tilt: -0.08, roll: 1.1, color: [0.55, 0.6, 1.0], bodies: 2 },
+  { radius: 1.7, width: 0.22, tilt: 0.1, roll: 0.0, color: [1.0, 0.97, 0.9], bodies: 1 },
+  { radius: 2.5, width: 0.28, tilt: -0.14, roll: 0.3, color: [0.98, 0.93, 0.8], bodies: 2 },
+  { radius: 3.4, width: 0.34, tilt: 0.18, roll: -0.5, color: [0.95, 0.88, 0.68], bodies: 1 },
+  { radius: 4.4, width: 0.42, tilt: -0.08, roll: 1.1, color: [0.9, 0.8, 0.56], bodies: 2 },
   { radius: 5.5, width: 0.5, tilt: 0.22, roll: -1.4, color: [0.85, 0.72, 0.42], bodies: 1 },
-  { radius: 6.7, width: 0.58, tilt: -0.2, roll: 0.8, color: [0.35, 0.78, 0.8], bodies: 2 },
-  { radius: 8.1, width: 0.7, tilt: 0.12, roll: -0.2, color: [0.95, 0.88, 0.7], bodies: 1 },
+  { radius: 6.7, width: 0.58, tilt: -0.2, roll: 0.8, color: [0.78, 0.64, 0.36], bodies: 2 },
+  { radius: 8.1, width: 0.7, tilt: 0.12, roll: -0.2, color: [0.7, 0.56, 0.3], bodies: 1 },
 ];
 /** Angular speed by radius, as orbits go: inner fast, outer slow. */
 const speedOf = (r: number) => 0.42 / Math.pow(r / RINGS[0].radius, 1.35);
@@ -55,7 +55,7 @@ const VERT = /* glsl */ `
     float cr = cos(R.w), sr = sin(R.w);
     p = vec3(p.x * cr - p.z * sr, p.y, p.x * sr + p.z * cr);
     float tw = 0.65 + 0.35 * sin(uTime * (1.2 + seed * 2.5) + seed * 50.0);
-    vColor = uColor[i];
+    vColor = mix(uColor[i], vec3(1.0, 0.86, 0.5), glow * 0.7);
     vAlpha = tw * mix(0.85, 1.7, glow);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     float size = mix(1.9 + seed * 2.3, 12.0, glow) * uPixel;
@@ -189,7 +189,7 @@ export function Orrery({ still }: { still: boolean }) {
         scene.add(new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color: 0xd8b56a, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })));
       });
 
-      // ── The light at the centre: a soft sprite, and a smaller brighter heart ──
+      // ── The light at the centre ──
       const glowTex = (() => {
         const c = document.createElement("canvas");
         c.width = c.height = 256;
@@ -205,11 +205,9 @@ export function Orrery({ still }: { still: boolean }) {
         t.colorSpace = THREE.SRGBColorSpace;
         return t;
       })();
-      const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85 }));
-      sun.scale.setScalar(3.6);
-      scene.add(sun);
-      const heart = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 1 }));
-      heart.scale.setScalar(0.9);
+      // Just a small, sharp point of light at the centre: a focus for the rings, not a sun.
+      const heart = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.9 }));
+      heart.scale.setScalar(0.32);
       scene.add(heart);
 
       // ── Dust far out ──
@@ -225,7 +223,7 @@ export function Orrery({ still }: { still: boolean }) {
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.BufferAttribute(pts, 3));
         scene.add(
-          new THREE.Points(g, new THREE.PointsMaterial({ color: 0xc9d2ff, size: 0.05, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true })),
+          new THREE.Points(g, new THREE.PointsMaterial({ color: 0xf4ede0, size: 0.05, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true })),
         );
       }
 
@@ -254,7 +252,7 @@ export function Orrery({ still }: { still: boolean }) {
         // The system sits a little below the mark: its light shows under the letters, not through them.
         camera.lookAt(0, 1.9, 0);
         mat.uniforms.uTime.value = t;
-        heart.material.opacity = 0.85 + 0.15 * Math.sin(t * 1.7);
+        heart.material.opacity = 0.75 + 0.2 * Math.sin(t * 1.7);
         renderer.render(scene, camera);
       };
       size();

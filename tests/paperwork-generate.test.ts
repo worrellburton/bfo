@@ -9,6 +9,7 @@ import {
   oaProblems,
   operatingAgreement,
   operatingAgreementPdf,
+  operatingAgreementPdfWithBoxes,
   PALM_SLOT,
   stateAddressStep,
   w9Data,
@@ -123,6 +124,35 @@ describe("operating agreement", () => {
       lookup,
     );
     expect(oaProblems(uneven)).toEqual(["The members' shares add up to 80%, not 100%."]);
+  });
+
+  it("records where the execution page's boxes are, and prints who signs for a company", async () => {
+    const lookup2 = (id: string) => (id === "louise" ? assets.louise : undefined);
+    const two = oaInput(
+      {
+        ...assets.tallulah,
+        members: [
+          { name: "Ledger Louise, LLC", percent: 60, role: "Member" },
+          { name: "Sameh Elguizaoui", percent: 40, role: "Member" },
+        ],
+      },
+      lookup2,
+    );
+    const doc = operatingAgreement(two);
+    const { blob, boxes } = await operatingAgreementPdfWithBoxes(doc, "TallulahMD LLC", { "ledger louise, llc": { name: "Robert W. Burton", title: "Manager" } });
+    expect(blob.size).toBeGreaterThan(5000);
+    // The company (party a) signs through a named manager: signature and date only. The person (party b): signature and date, name printed.
+    expect(boxes.map((b) => `${b.party}:${b.type}`)).toEqual(["a:signature", "a:date", "b:signature", "b:date"]);
+    for (const b of boxes) {
+      expect(b.page).toBeGreaterThan(1);
+      expect(b.x).toBeGreaterThan(0);
+      expect(b.x + b.w).toBeLessThan(1);
+      expect(b.y).toBeGreaterThan(0);
+      expect(b.y + b.h).toBeLessThan(1);
+    }
+    // Nobody named for the company: its printed name is a box too.
+    const unnamed = await operatingAgreementPdfWithBoxes(doc, "TallulahMD LLC");
+    expect(unnamed.boxes.map((b) => `${b.party}:${b.type}`)).toEqual(["a:signature", "a:date", "a:name", "b:signature", "b:date"]);
   });
 
   it("lays it out as a PDF", async () => {

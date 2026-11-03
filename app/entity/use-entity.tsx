@@ -7,7 +7,20 @@ import { palmDocKey } from "../../lib/palm-docs";
 import { dollars, STATE_RECORD_CENTS } from "../../lib/palm-pricing";
 import { stateReadCost } from "../../lib/state-reads";
 import { formingNow } from "../entity-addresses";
-import { canDraftAgreement, f8822bData, fill8822B, fillW9, oaInput, oaProblems, operatingAgreement, operatingAgreementPdf, PALM_SLOT, w9Data, type Rec } from "../paperwork-generate";
+import {
+  canDraftAgreement,
+  f8822bData,
+  fill8822B,
+  fillW9,
+  oaInput,
+  oaProblems,
+  operatingAgreement,
+  operatingAgreementPdfWithBoxes,
+  PALM_SLOT,
+  w9Data,
+  type Rec,
+  type SignsFor,
+} from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
 import { authFetch, getUser, isPartner } from "../auth";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
@@ -69,6 +82,7 @@ import {
   type FileKind,
   type Classified,
   tidyEin,
+  isLedgerLouiseName,
 } from "./model";
 
 /**
@@ -86,6 +100,9 @@ type PalmSyncState = { running: boolean; step: string; lines: PalmSyncLine[]; ce
 const fromStateRecord = (source?: string | null) => /^State record\b/.test(source ?? "");
 
 /** Owners, admins and members change the record; viewers and partners only read it. */
+/** Who signs for Ledger Louise, LLC, as the contract page has it. */
+const LEDGER_LOUISE_SIGNER = { name: "Robert W. Burton", title: "Manager" };
+
 const canChangeRecord = () => ["owner", "admin", "member"].includes(getUser()?.role ?? "");
 
 function cleanForeign(f: Asset["foreign"]): Asset["foreign"] | null {
@@ -1820,17 +1837,35 @@ export function useEntityPage() {
   }
 
   /** A stored PDF goes out for signature: a request under this entity, the members as the parties, then its page to place the fields and send. */
-  async function handleSendForSignature(file: StoredFileRef, title: string) {
+  /**
+   * A stored PDF goes out for signature: a request under this entity, then its page to place the fields and send.
+   * The drafted operating agreement brings its own: the signers as the parties (the family's company through its
+   * manager, with his email), and the signature, date and name boxes already placed where the draft drew them.
+   */
+  async function handleSendForSignature(file: StoredFileRef & { docId?: string }, title: string) {
     const path = storagePathOf(file);
     if (!path) {
       await alertDialog("Only files stored in BFO can be sent for signature.");
       return;
     }
     try {
-      const members = (asset?.members ?? []).filter((m) => m.name?.trim()).slice(0, 2);
-      const parties = members.length ? members.map((m) => ({ role: m.role?.trim() || "Member", name: m.name.trim() })) : [{ role: "Party A" }, { role: "Party B" }];
+      const drawn = asset?.operatingAgreementSign;
+      const known = drawn && file.docId && drawn.docId === file.docId ? drawn : null;
+      let parties: Array<{ role: string; name?: string; email?: string }>;
+      if (known) {
+        parties = known.signers
+          .slice(0, 2)
+          .map((sg) => (sg.by ? { role: `${sg.by.title}, ${sg.name}`, name: sg.by.name, email: isLedgerLouiseName(sg.name) ? (getUser()?.email ?? "") : "" } : { role: sg.capacity, name: sg.name }));
+      } else {
+        const members = (asset?.members ?? []).filter((m) => m.name?.trim()).slice(0, 2);
+        parties = members.length ? members.map((m) => ({ role: m.role?.trim() || "Member", name: m.name.trim() })) : [{ role: "Party A" }, { role: "Party B" }];
+      }
       const created = await signApi.act("create", { title: title.trim() || "Document", assetId: id, parties });
       await signApi.attachStored(created.id, path);
+      if (known?.boxes.length) {
+        const fields = known.boxes.map((b, i) => ({ id: `${b.party}-${b.type}-${i}`, party: b.party, type: b.type, page: b.page, x: b.x, y: b.y, w: b.w, h: b.h }));
+        await signApi.act("update", { id: created.id, fields });
+      }
       navigate(`/tools/signatures/${created.id}`);
     } catch (err) {
       await alertDialog("Couldn't send it for signature", err instanceof Error ? err.message : undefined);
@@ -1881,7 +1916,8 @@ export function useEntityPage() {
   // ── Paperwork BFO writes ────────────────────────────────────────────────
 
   /** Put a generated PDF in Documents and file it in its slot (`replace`: in place of what's there, which stays in Documents). */
-  async function fileGenerated(kind: FileKind, blob: Blob, name: string, replace = false) {
+  /** Saves a generated PDF into Documents and files it in the slot; returns the document's id, or null if it couldn't be saved. */
+  async function fileGenerated(kind: FileKind, blob: Blob, name: string, replace = false): Promise<string | null> {
     setSlot(kind, { error: null, uploading: true, progress: 0 });
     try {
       const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), (pct) => setSlot(kind, { progress: pct }));
@@ -1890,8 +1926,10 @@ export function useEntityPage() {
           [kind]: { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: "application/pdf", uploadedAt: Date.now(), storagePath: "", docId: doc.id } satisfies UploadedFile,
         });
       else await fileDocument(kind, doc);
+      return doc.id;
     } catch (err) {
       setSlot(kind, { error: err instanceof Error ? err.message : "Couldn't save it." });
+      return null;
     } finally {
       setSlot(kind, { uploading: false, progress: 0 });
     }
@@ -1954,9 +1992,21 @@ export function useEntityPage() {
     });
     if (!ok) return;
     try {
-      const blob = await operatingAgreementPdf(operatingAgreement(input), current.name);
-      await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`, replace);
-      if (!current.operatingAgreementDate) await patchAsset({ operatingAgreementDate: input.effective });
+      const doc = operatingAgreement(input);
+      // The family's own company signs through its manager: his name and title go on its block.
+      const signsFor: SignsFor = {};
+      for (const sg of doc.signers) if (isLedgerLouiseName(sg.name)) signsFor[sg.name.trim().toLowerCase()] = LEDGER_LOUISE_SIGNER;
+      const { blob, boxes } = await operatingAgreementPdfWithBoxes(doc, current.name, signsFor);
+      const docId = await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`, replace);
+      const patch: Record<string, unknown> = {};
+      if (docId)
+        patch.operatingAgreementSign = {
+          docId,
+          boxes,
+          signers: doc.signers.map((sg) => ({ name: sg.name, capacity: sg.capacity, ...(signsFor[sg.name.trim().toLowerCase()] ? { by: signsFor[sg.name.trim().toLowerCase()] } : {}) })),
+        };
+      if (!current.operatingAgreementDate) patch.operatingAgreementDate = input.effective;
+      if (Object.keys(patch).length) await patchAsset(patch);
     } catch (err) {
       setSlot("operatingAgreement", { error: err instanceof Error ? err.message : "Couldn't draft the agreement." });
     }

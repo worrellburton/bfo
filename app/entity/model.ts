@@ -72,6 +72,12 @@ export interface Asset {
   articles?: UploadedFile;
   einLetter?: UploadedFile;
   operatingAgreement?: UploadedFile;
+  /** Where the drafted agreement's signature boxes are (app/paperwork-generate.ts), for the file with this docId. */
+  operatingAgreementSign?: {
+    docId: string;
+    boxes: Array<{ party: "a" | "b"; type: "signature" | "name" | "date"; page: number; x: number; y: number; w: number; h: number }>;
+    signers: Array<{ name: string; capacity: string; by?: { name: string; title: string } }>;
+  };
   trustAgreement?: UploadedFile;
   trustCertificate?: UploadedFile;
   trustSchedule?: UploadedFile;
@@ -265,6 +271,12 @@ export function fmtStamp(ms?: number): string {
 }
 
 // Short file-kind label for the document list tile.
+/** The family's own company, which signs through its manager. */
+export const isLedgerLouiseName = (name: string | null | undefined) =>
+  String(name ?? "")
+    .toLowerCase()
+    .includes("ledger louise");
+
 export function docKind(doc: { contentType?: string; storagePath?: string }): string {
   const ct = (doc.contentType || "").toLowerCase();
   if (!ct) return doc.storagePath ? "FILE" : "LINK";

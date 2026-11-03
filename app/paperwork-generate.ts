@@ -188,6 +188,11 @@ type OADoc = {
   signers: { name: string; capacity: string; share?: string }[];
 };
 
+/** One box on the execution page, as a fraction of its page (x, y from the top-left), for an e-signature field. */
+export type OASignBox = { party: "a" | "b"; type: "signature" | "name" | "date"; page: number; x: number; y: number; w: number; h: number };
+/** Who signs for a signer that's a company (keyed by the signer's name, lower-cased): printed on its block, so only the signature and date are left to fill. */
+export type SignsFor = Record<string, { name: string; title: string }>;
+
 const longDate = (iso: string) => {
   const d = new Date(`${iso}T12:00:00Z`);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -359,7 +364,18 @@ export function oaInput(entity: Rec & { name: string }, lookup: (id: string) => 
 }
 
 /** The agreement as a PDF: Letter, serif, numbered sections, Exhibit A and a signature page. */
-export async function operatingAgreementPdf(d: OADoc, entityName: string): Promise<Blob> {
+export async function operatingAgreementPdf(d: OADoc, entityName: string, signsFor: SignsFor = {}): Promise<Blob> {
+  return (await operatingAgreementPdfWithBoxes(d, entityName, signsFor)).blob;
+}
+
+/**
+ * The PDF, and where its execution page's boxes are: a signature and a date
+ * for each of the first two signers (the signing page has two parties),
+ * and a printed-name box for a company signer nobody is named for. Those
+ * become the request's fields when the draft is sent for signature.
+ */
+export async function operatingAgreementPdfWithBoxes(d: OADoc, entityName: string, signsFor: SignsFor = {}): Promise<{ blob: Blob; boxes: OASignBox[] }> {
+  const boxes: OASignBox[] = [];
   const { jsPDF } = await import("jspdf");
   const pdf = new jsPDF({ unit: "pt", format: "letter" });
   const W = pdf.internal.pageSize.getWidth();
@@ -485,12 +501,21 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
     caps(caption, x, yy + 11, 7, MUTED, "left", "normal");
   };
   const SIGN_ROOM = 54; // the space above a signature line: enough for a pen or an e-signature stamp
-  const blockH = (name: string) => 40 + SIGN_ROOM + (isEntity(name) ? 46 + 46 : 46) + 10;
-  const block = (sg: { name: string; capacity: string; share?: string }, top: number) => {
+  const blockH = (name: string) => 40 + SIGN_ROOM + (isEntity(name) ? 46 + 46 : 46 + 24) + 10;
+  const GOLD: [number, number, number] = [216, 181, 106];
+  const whoSigns = (name: string) => signsFor[name.trim().toLowerCase()] ?? null;
+  /** Remembers a box for the e-signature, as fractions of the page; only the first two signers get them. */
+  const box = (party: number, type: OASignBox["type"], bx: number, byTop: number, bw: number, bh: number) => {
+    if (party > 1) return;
+    boxes.push({ party: party === 0 ? "a" : "b", type, page: pdf.getNumberOfPages(), x: bx / W, y: byTop / H, w: bw / W, h: bh / H });
+  };
+  const block = (sg: { name: string; capacity: string; share?: string }, top: number, party: number) => {
     const x = M + 18;
     const inner = width - 18;
     const h = blockH(sg.name);
-    // A navy mark down the left, like the section rule, so each signer is its own unit.
+    // A quiet panel with a navy mark down the left, so each signer is its own unit.
+    pdf.setFillColor(248, 249, 251);
+    pdf.rect(M, top, width, h - 10, "F");
     pdf.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
     pdf.rect(M, top, 2.5, h - 10, "F");
     let yy = top + 12;
@@ -500,33 +525,53 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
     pdf.text(String(pdf.splitTextToSize(sg.name, inner)[0]), x, yy);
     yy += 10 + SIGN_ROOM;
     const third = (inner - 32) / 3;
+    const sigW = inner * 0.62;
+    const dateX = x + sigW + 16;
+    const dateW = inner - sigW - 16;
+    // A small gold mark where the pen goes.
+    pdf.setFillColor(GOLD[0], GOLD[1], GOLD[2]);
     if (isEntity(sg.name)) {
-      // A company signs through someone: By, then who they are.
+      // A company signs through someone: By, then who they are. When we know who, their name and title are printed.
+      const by = whoSigns(sg.name);
       font("normal", 11, INK);
       pdf.text("By:", x, yy - 5);
-      field(x + 26, yy, inner * 0.62 - 26, "Authorized signature");
-      field(x + inner * 0.62 + 16, yy, inner - inner * 0.62 - 16, "Date");
+      pdf.rect(x + 26, yy - 4, 4, 4, "F");
+      field(x + 26, yy, sigW - 26, "Authorized signature");
+      box(party, "signature", x + 26, yy - SIGN_ROOM + 10, sigW - 26, SIGN_ROOM - 8);
+      field(dateX, yy, dateW, "Date");
+      box(party, "date", dateX, yy - 20, dateW, 18);
       yy += 46;
-      field(x, yy, third * 2 + 16, "Printed name");
-      field(x + third * 2 + 32, yy, third, "Title");
+      field(x, yy, third * 2 + 16, "Printed name", by?.name);
+      if (!by) box(party, "name", x, yy - 20, third * 2 + 16, 18);
+      field(x + third * 2 + 32, yy, third, "Title", by?.title);
     } else {
-      field(x, yy, inner * 0.62, "Signature");
-      field(x + inner * 0.62 + 16, yy, inner - inner * 0.62 - 16, "Date");
+      pdf.rect(x, yy - 4, 4, 4, "F");
+      field(x, yy, sigW, "Signature");
+      box(party, "signature", x, yy - SIGN_ROOM + 10, sigW, SIGN_ROOM - 8);
+      field(dateX, yy, dateW, "Date");
+      box(party, "date", dateX, yy - 20, dateW, 18);
       yy += 46;
       field(x, yy, third * 2 + 16, "Printed name", sg.name);
     }
     return h;
   };
-  for (const sg of d.signers) {
+  d.signers.forEach((sg, party) => {
     const h = blockH(sg.name);
     if (y + h > BOTTOM) {
       newPage(false);
       sigPages.add(pdf.getNumberOfPages());
       y = TOP + 10;
     }
-    block(sg, y);
+    block(sg, y, party);
     y += h + 14;
-  }
+  });
+  // How it's signed.
+  room(40);
+  y += 4;
+  para(
+    "Signed electronically through BFO. Under the U.S. Electronic Signatures in Global and National Commerce Act and the Uniform Electronic Transactions Act, an electronic signature has the same effect as one in ink. A signing certificate, with each signer's name, email, time and address, follows the signed copy.",
+    { size: 8.5, style: "italic", gap: 0, align: "justify" },
+  );
 
   // ── Exhibit A ──
   newPage(false);
@@ -603,7 +648,7 @@ export async function operatingAgreementPdf(d: OADoc, entityName: string): Promi
     }
   }
   color(INK);
-  return pdf.output("blob");
+  return { blob: pdf.output("blob"), boxes };
 }
 
 /** Palm's document types → the paperwork slot each one fills (lib/palm-docs.ts, shared with the server). */
