@@ -79,8 +79,8 @@ const KNEE = 0.82;
 const REF = { count: 65536, stretch: 1.6, height: 900 };
 /**
  * How far out a particle settles relative to the bloom's edge, by emission order: the 3D density of the bloom is
- * 4 in a core out to half the radius, 0.15 in the body and 5 in a thin skin at the edge (3% of the radius, with
- * soft steps): 36% of the ink is the heart, 57% the skin, 7% the water between. Ink in water is sheets around
+ * 3.5 in a core out to half the radius, 0.15 in the body and 5 in a thin skin at the edge (3% of the radius, with
+ * soft steps): a third of the ink is the heart, 60% the skin, 7% the water between. Ink in water is sheets around
  * clear water, and the sheet is what the eye reads: its limb (seen edge-on, a chord through the skin forty times
  * its thickness) projects as a line several times brighter than the faint glow of its front and back, and the
  * folds the curl crumples into it as sheets and tendrils. A body of 0.7 would fill the interior to within a
@@ -91,7 +91,7 @@ const density = (s: number) => {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
   };
-  return 0.15 + 3.85 * (1 - soft(0.4, 0.6, s)) + 4.85 * soft(0.955, 0.98, s);
+  return 0.15 + 3.35 * (1 - soft(0.4, 0.6, s)) + 4.85 * soft(0.955, 0.98, s);
 };
 const radiusByRank = () => {
   const n = 1024;
@@ -218,10 +218,10 @@ const SIM = /* glsl */ `
       gl_FragColor = vec4(st.xyz, -1.0);
       return;
     }
-    // The bead keeps falling as it opens: 0.25% of the height a second at first, gone by a minute, so the bloom
-    // hangs 3.5% of the height below its point of entry. Its centre is where every particle of this period's bead
+    // The bead keeps falling as it opens: 0.21% of the height a second at first, gone by a minute, so the bloom
+    // hangs 3% of the height below its point of entry. Its centre is where every particle of this period's bead
     // expands from, and where the ones still waiting their turn appear.
-    vec3 centre = vec3(0.0, -0.035 * (1.0 - exp(-tb / 14.0)), 0.0);
+    vec3 centre = vec3(0.0, -0.03 * (1.0 - exp(-tb / 14.0)), 0.0);
     if (st.w < 0.0) {
       // Its turn: it appears on a 0.5%-of-the-width sphere at the bead's centre (its outer fifth, not its volume:
       // the spread in radius would be the skin's thickness).
@@ -243,18 +243,19 @@ const SIM = /* glsl */ `
     // same in height terms vertically, so the bloom opens as an ellipse the shape of the frame.
     float rad = (0.0009 + 0.0111 * exp(-a / 14.0)) * s;
     vec3 v = (qc / len) * rad * vec3(uStretch, 1.0, 1.0);
-    // A mushroom, not a ball: the expansion is a little slower toward the crown of the bloom than its underside
-    // (0.65 at the top), easing over the whole sphere, so the cap is flatter above and rounder below and no row
-    // of ink piles up into a lid.
-    v.y *= mix(1.0, 0.65, smoothstep(-0.7, 0.7, qc.y / len));
+    // A mushroom, not a ball: the expansion is slower toward the crown of the bloom than its underside (0.55 at
+    // the top), easing over the whole sphere, so the cap is flat above and round below, no row of ink piles up
+    // into a lid, and the heart, which opens the same way, keeps its top under the mark's box.
+    v.y *= mix(1.0, 0.55, smoothstep(-0.7, 0.7, qc.y / len));
     // Curl noise folds the bloom: 0.35% of the width a second at first, a third of that by a minute (the lobes keep
     // folding into the second minute). The dense core is heavy and feels a fifth of it, the skin all of it, so it
     // is the skin that folds and the core that sinks.
     float amp = 0.0035 * uStretch * exp(-a / 55.0) * (0.2 + 0.8 * s * s);
     v += amp * curlField(q + uDrift, uFreq);
-    // The fall of the bead, then the sink: 0.05% of the height a second for good, and more than half as much again
-    // for the core, which drops through its bloom.
-    v.y -= 0.0025 * exp(-tb / 14.0) + 0.0005 + 0.0003 * smoothstep(0.6, 0.85, rank);
+    // The fall of the bead, then the sink: 0.04% of the height a second for good (the brief said 0.08: the bloom
+    // opens below its drop, and at that pace its body ran off the bottom of the frame), and three quarters as much
+    // again for the core, which drops through its bloom.
+    v.y -= 0.00214 * exp(-tb / 14.0) + 0.0004 + 0.0003 * smoothstep(0.6, 0.85, rank);
     // The age stored is the clock's, not the sum of steps: in half floats a sum drifts.
     gl_FragColor = vec4(q + v * uDt, age);
   }
@@ -296,11 +297,11 @@ const VERT = /* glsl */ `
     // Energy only decays: a mote's light rises over its first four seconds as the bead opens (the bead goes from a
     // tenth of its peak to its peak over about ten seconds, never under one), then only the thinning of the bloom
     // dims the picture, until the fade over the last fifteen seconds of a life. The 0.07 puts the bead's heart
-    // near 55% of white and the limb of the skin at 28 s near 40%. The heart carries twice the light per mote of
-    // the skin, which packs its ink into a line.
+    // near 50% of white and the limb of the skin at 28 s near 30%. The heart carries half as much light again per
+    // mote as the skin, which packs its ink into a line.
     float fade = smoothstep(sd.x - 15.0, sd.x, age);
     float a = 0.07 * pow(1.0 - exp(-age / 4.0), 2.0) * uGain * uWeight;
-    a *= mix(0.6, 1.2, smoothstep(0.55, 0.75, rank));
+    a *= mix(0.8, 1.2, smoothstep(0.55, 0.75, rank));
     a *= 1.0 - fade;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
@@ -314,13 +315,13 @@ const VERT = /* glsl */ `
     float outside = smoothstep(0.75, 1.3, pow(e.x + e.y, 0.25));
     a *= mix(0.5, 1.0, outside);
     // A 4 px mote at the focal plane (the brief said 2 px: at this bloom's size, 65,536 sharper motes read as
-    // sand, not fluid). The lens is long and its focus a slab 0.03 units deep: beyond it a mote spreads into a
-    // circle of confusion (60 px per unit of depth, capped at 4.5 px, and never over the mark), so the limb of the
-    // skin and the folds at the focal plane stay firm and the front and back of the bloom are the haze they sit
-    // in. Each is a Gaussian spot (sigma 0.4 S + 0.1 CSS px, so a focused mote is 4 px across at half its peak;
-    // the sprite reaches 2.5 sigma, 2.2 for the largest, 15 px) whose light falls with its area, so the picture
-    // keeps its brightness however the spots grow.
-    float S = 4.0 + min(4.5, max(0.0, abs(p.z) - 0.03) * 60.0) * outside;
+    // sand, not fluid). The lens is long and its focus a slab 0.012 units deep: beyond it a mote spreads into a
+    // circle of confusion (80 px per unit of depth, capped at 6 px, and never over the mark), so the limb of the
+    // skin and the folds at the focal plane stay firm, and the heart and the front and back of the skin, which
+    // are volumes, are smooth. Each is a Gaussian spot (sigma 0.4 S + 0.1 CSS px, so a focused mote is 4 px
+    // across at half its peak; the sprite reaches 2.5 sigma, 2.2 for the largest, 17 px) whose light falls with
+    // its area, so the picture keeps its brightness however the spots grow.
+    float S = 4.0 + min(6.0, max(0.0, abs(p.z) - 0.012) * 80.0) * outside;
     float sigma = 0.4 * S + 0.1;
     float sprite = mix(5.0, 4.2, smoothstep(5.0, 10.5, S)) * sigma;
     a *= 0.5625 / (sigma * sigma);
