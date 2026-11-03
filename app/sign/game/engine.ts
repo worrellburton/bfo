@@ -252,6 +252,8 @@ export class SigningGame {
   private video: HTMLVideoElement | null = null;
   private videoTexture: THREE.VideoTexture | null = null;
   private audio: AudioContext | null = null;
+  /** The theater's PA: Judy's announcement goes through a horn and the room. */
+  private pa: AudioContext | null = null;
   private yt: { player: YTPlayer | null; iframe: HTMLIFrameElement } | null = null;
   private screenMaterial!: THREE.MeshBasicMaterial;
   private readonly sounds: Partial<Record<string, HTMLAudioElement>> = {};
@@ -1374,8 +1376,11 @@ export class SigningGame {
       this.video?.pause();
       this.yt?.player?.pauseVideo?.();
       if (url) {
-        const a = new Audio(url);
+        const a = new Audio();
+        a.crossOrigin = "anonymous";
+        a.src = url;
         a.volume = 0.9;
+        this.throughSpeaker(a);
         let done = false;
         const end = () => {
           if (done) return;
@@ -1391,6 +1396,51 @@ export class SigningGame {
     this.disposers.push(() => {
       if (this.paTimer) clearTimeout(this.paTimer);
     });
+  }
+
+  /**
+   * Plays a voice line as the theater's PA would: thin and a little hard
+   * through the horn (the lows and highs gone, a push in the middle, a
+   * touch of drive), then the room's echo on top. Without Web Audio, or if
+   * the file can't be routed, the line plays plain.
+   */
+  private throughSpeaker(a: HTMLAudioElement) {
+    try {
+      if (!this.pa) {
+        const ctx = new AudioContext();
+        this.pa = ctx;
+        this.disposers.push(() => void ctx.close().catch(() => {}));
+      }
+      const ctx = this.pa;
+      const src = ctx.createMediaElementSource(a);
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 350;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 3600;
+      lp.Q.value = 1.1;
+      const horn = ctx.createBiquadFilter();
+      horn.type = "peaking";
+      horn.frequency.value = 1900;
+      horn.Q.value = 1.4;
+      horn.gain.value = 6;
+      const drive = ctx.createWaveShaper();
+      drive.curve = softClip(1.8);
+      drive.oversample = "2x";
+      const dry = ctx.createGain();
+      dry.gain.value = 0.55;
+      const echo = ctx.createConvolver();
+      echo.buffer = impulseResponse(ctx, 2.8);
+      const wet = ctx.createGain();
+      wet.gain.value = 0.75;
+      src.connect(hp).connect(lp).connect(horn).connect(drive);
+      drive.connect(dry).connect(ctx.destination);
+      drive.connect(echo).connect(wet).connect(ctx.destination);
+      void ctx.resume().catch(() => {});
+    } catch {
+      /* the line plays as it is */
+    }
   }
 
   private movieEnded() {
@@ -2348,6 +2398,18 @@ export function subtitleChunks(text: string): string[] {
 // ── Acoustics ─────────────────────────────────────────────────────────────
 
 /** A big room's echo: a few early reflections, then a noisy tail fading over `seconds`. */
+/** A gentle saturation curve for the WaveShaper: louder parts flatten a little, like a small speaker pushed. */
+function softClip(k: number): Float32Array<ArrayBuffer> {
+  const n = 1024;
+  const c = new Float32Array(n);
+  const top = Math.tanh(k);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    c[i] = Math.tanh(k * x) / top;
+  }
+  return c;
+}
+
 function impulseResponse(ctx: AudioContext, seconds: number): AudioBuffer {
   const rate = ctx.sampleRate;
   const len = Math.floor(rate * seconds);

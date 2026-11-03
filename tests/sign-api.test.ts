@@ -26,6 +26,8 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
   return {
     ...actual,
     sendEmail: vi.fn(async () => {}),
+    // The office side: a signed-in owner.
+    currentUser: async () => ({ id: "u1", name: "Robert", role: "owner", status: "approved", email: "r@x.com" }),
     sb: async (path: string, init: { method?: string; body?: any } = {}) => {
       const method = init.method ?? "GET";
       if (!path.startsWith("signature_requests")) return [];
@@ -190,5 +192,31 @@ describe("signing", () => {
     const view: any = { statusCode: 200, setHeader: () => view, status: (c: number) => ((view.statusCode = c), view), json: (b: unknown) => ((view.body = b), view), end: () => view };
     await Promise.all([call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }), handler({ method: "GET", query: { token: tokenB }, headers: {} } as any, view)]);
     expect(row.parties[0].status).toBe("signed");
+  });
+});
+
+describe("the office attaches a stored document", () => {
+  it("copies a PDF from an entity's documents under the request and reads its pages", async () => {
+    row = { ...row, status: "draft", original_path: null, current_path: null, pages: [], fields: [], parties: [] };
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    doc.addPage([612, 792]);
+    files.set("assets/a1/Operating Agreement - TallulahMD LLC.pdf", await doc.save());
+    const r = await call({ action: "attach-stored", id: row.id, path: "assets/a1/Operating Agreement - TallulahMD LLC.pdf" });
+    expect(r.statusCode).toBe(200);
+    expect(r.body.request.pages).toHaveLength(2);
+    expect(r.body.request.original_path).toMatch(new RegExp(`^signatures/${row.id}/upload-`));
+    // The record's own copy is untouched; the request has its own.
+    expect(files.has("assets/a1/Operating Agreement - TallulahMD LLC.pdf")).toBe(true);
+    expect(files.has(r.body.request.original_path)).toBe(true);
+  });
+
+  it("refuses a path outside the entity documents, and a request already sent", async () => {
+    row = { ...row, status: "draft" };
+    expect((await call({ action: "attach-stored", id: row.id, path: "../signatures/x/original.pdf" })).statusCode).toBe(400);
+    expect((await call({ action: "attach-stored", id: row.id, path: "signatures/x/original.pdf" })).statusCode).toBe(400);
+    row = { ...row, status: "sent" };
+    files.set("assets/a1/x.pdf", files.get("signatures/x/original.pdf")!);
+    expect((await call({ action: "attach-stored", id: row.id, path: "assets/a1/x.pdf" })).statusCode).toBe(409);
   });
 });

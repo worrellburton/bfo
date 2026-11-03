@@ -12,7 +12,8 @@ import { useNavigate, useParams } from "react-router";
 import { authFetch, getUser, isPartner } from "../auth";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
-import { copyStoredFileLink, openStoredFile } from "../stored-file";
+import { copyStoredFileLink, openStoredFile, storagePathOf, type StoredFileRef } from "../stored-file";
+import { signApi } from "../sign/api";
 import {
   DOC_LABEL,
   docKindOf,
@@ -1818,6 +1819,24 @@ export function useEntityPage() {
     setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
   }
 
+  /** A stored PDF goes out for signature: a request under this entity, the members as the parties, then its page to place the fields and send. */
+  async function handleSendForSignature(file: StoredFileRef, title: string) {
+    const path = storagePathOf(file);
+    if (!path) {
+      await alertDialog("Only files stored in BFO can be sent for signature.");
+      return;
+    }
+    try {
+      const members = (asset?.members ?? []).filter((m) => m.name?.trim()).slice(0, 2);
+      const parties = members.length ? members.map((m) => ({ role: m.role?.trim() || "Member", name: m.name.trim() })) : [{ role: "Party A" }, { role: "Party B" }];
+      const created = await signApi.act("create", { title: title.trim() || "Document", assetId: id, parties });
+      await signApi.attachStored(created.id, path);
+      navigate(`/tools/signatures/${created.id}`);
+    } catch (err) {
+      await alertDialog("Couldn't send it for signature", err instanceof Error ? err.message : undefined);
+    }
+  }
+
   async function handleRenameDoc(doc: AssetDoc) {
     setRenamingDocId(doc.id);
     try {
@@ -2690,6 +2709,7 @@ export function useEntityPage() {
     handleUploadDocs,
     handleCopyDocUrl,
     handleRenameDoc,
+    handleSendForSignature,
     formatBytes,
     handleUploadFile,
     generateW9,
