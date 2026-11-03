@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type CSSProperties } from "react";
 import type { BrandFont, Finish } from "./brand";
 
 /**
@@ -32,6 +32,7 @@ export function BrandLockup({
   size,
   name = true,
   className = "",
+  letters = false,
 }: {
   font: BrandFont;
   finish?: Finish;
@@ -39,6 +40,8 @@ export function BrandLockup({
   size: "hero" | "compact" | "mark";
   name?: boolean;
   className?: string;
+  /** Each letter of the mark in its own span (.brand-letter, --i), so the landing page can bring them in one by one. */
+  letters?: boolean;
 }) {
   useBrandFont(font);
   const family = { fontFamily: `"${font.family}", Georgia, serif`, fontWeight: font.weight };
@@ -50,7 +53,13 @@ export function BrandLockup({
         </span>
       )}
       <span className="brand-lockup-mark" aria-hidden>
-        BFO
+        {letters
+          ? ["B", "F", "O"].map((c, i) => (
+              <span key={c} className="brand-letter" data-text={c} style={{ "--i": i } as CSSProperties}>
+                {c}
+              </span>
+            ))
+          : "BFO"}
       </span>
     </span>
   );

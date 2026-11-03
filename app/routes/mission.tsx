@@ -84,7 +84,9 @@ export default function Mission() {
   const serif = { fontFamily: "var(--font-brand)" };
 
   // A fresh visit starts at the top, not wherever the landing page was.
-  useEffect(() => window.scrollTo(0, 0), []);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   return (
     <div ref={root} className="site">
