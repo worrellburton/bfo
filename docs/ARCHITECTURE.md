@@ -256,6 +256,10 @@ foreign registrations, documents, people, Palm links per mode, closing).
   parties. A signer calls the same endpoint with `token=`: reads the document,
   signs (`lib/sign.ts` stamps the PNG and text with pdf-lib) or declines.
   Admins get a push on each signature.
+- The "Anything Is Possible" game (`app/sign/game`) in front of the signing
+  page is only for TallulahMD LLC's requests (`lib/game-entity.ts`):
+  `api/sign.ts` refuses `mode: "game"` on any other request, won't send one,
+  and serves every other signer the plain page whatever the row says.
 - `app/routes/tools-signatures.tsx` (the sheet, drag-and-drop upload),
   `app/routes/signature-detail.tsx` (pages drawn with pdf.js, fields dragged
   into place), `app/routes/sign.tsx` (the public signing page: draw or type a

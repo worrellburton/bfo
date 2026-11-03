@@ -8,6 +8,8 @@ export default [
   route("legal/privacy", "./routes/legal-privacy.tsx"),
   // The office's run through the game-mode sequence on a sample document (app/sign/preview.ts says who).
   route("sign/preview", "./routes/sign-preview.tsx"),
+  // The owner's gallery of home-page backdrops (app/home-animations), full screen, from the account menu.
+  route("home-animations", "./routes/home-animations.tsx"),
   // A signer's page: no account, the token in their emailed link is who they are.
   route("sign/:token", "./routes/sign.tsx"),
   layout("routes/app-layout.tsx", [

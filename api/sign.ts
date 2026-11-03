@@ -6,6 +6,8 @@ import { clientIp } from "./auth/request-code.js";
 import { notifyAdmins } from "../lib/push.js";
 import { storageDownload, storageRemove, storageSignedUrl, storageUpload } from "../lib/storage.js";
 import { DOCUMENTS_BUCKET, isDocumentPath } from "../lib/document-path.js";
+import { GAME_ONLY_MESSAGE, isGameEntity } from "../lib/game-entity.js";
+import { readRows } from "../lib/tree.js";
 import {
   appendCertificate,
   cleanField,
@@ -42,15 +44,18 @@ import {
  * in the link is their proof).
  *
  * Office — GET → { requests }  every request, newest first (no token hashes)
- *          GET ?id=<uuid>[&have=<pdfKey>] → { request, pdfKey, pdfUrl }  one, with a short-lived link to its
- *                     latest PDF (null when `have` already names that version: a page polling for progress)
+ *          GET ?id=<uuid>[&have=<pdfKey>] → { request, pdfKey, pdfUrl, gameAllowed }  one, with a short-lived link to its
+ *                     latest PDF (null when `have` already names that version: a page polling for progress);
+ *                     gameAllowed: a draft that may go out as the game (TallulahMD LLC's, lib/game-entity)
  *          POST { action, … }:
  *            create     { title, assetId?, contractId?, parties?, brand?, mode? } → { request }  (brand: send under that name, never BFO's;
- *                       mode: "normal" or "game", the Anything Is Possible theater in front of the signing page)
+ *                       mode: "normal" or "game", the Anything Is Possible theater in front of the signing page; the game is only for
+ *                       TallulahMD LLC's requests (lib/game-entity), game_not_for_entity on any other)
  *            upload-url { id } → { signedUrl, token, path }  a one-time PUT to a fresh path (it can't overwrite)
  *            attach     { id, path }  reads that upload (page sizes) and makes it the document → { request }
  *            attach-stored { id, path }  a PDF already in an entity's documents (lib/document-path), copied under the request → { request }
- *            update     { id, title?, fields?, parties?, mode? } → { request }  (fields and parties while nobody has signed; mode while a draft)
+ *            update     { id, title?, fields?, parties?, mode? } → { request }  (fields and parties while nobody has signed; mode while a draft,
+ *                       and the game only for TallulahMD LLC)
  *            send       { id } → { request }  emails each party their link
  *            remind     { id, party? } → { request }  re-sends the link to those who haven't signed
  *            send-copy  { id } → { request }  emails every party a link to the signed copy
@@ -104,6 +109,24 @@ async function rowByToken(token: string): Promise<SignatureRequestRow | null> {
   const probe = encodeURIComponent(JSON.stringify([{ tokenHash: hashToken(token) }]));
   const rows = await sb<SignatureRequestRow[]>(`signature_requests?parties=cs.${probe}&limit=1`);
   return rows?.[0] ?? null;
+}
+
+/** True when the request is one of TallulahMD LLC's, the one entity whose signers get the game (lib/game-entity). */
+async function gameAllowed(row: Pick<SignatureRequestRow, "asset_id">): Promise<boolean> {
+  if (!row.asset_id) return false;
+  const data = (await readRows("assets", [row.asset_id]))[0]?.data;
+  const name = data && typeof data === "object" && !Array.isArray(data) ? data.name : undefined;
+  return typeof name === "string" && isGameEntity(name);
+}
+
+/** gameAllowed for a page someone is looking at: an unreadable tree means the plain page (logged), not an error. */
+async function gameAllowedOrPlain(row: Pick<SignatureRequestRow, "asset_id">): Promise<boolean> {
+  try {
+    return await gameAllowed(row);
+  } catch (err) {
+    console.error("sign: couldn't read the request's entity, so the plain page", err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 /** Writes `changes` if the row is still at the version it was read at. Null when someone else wrote first. */
@@ -214,7 +237,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // A page polling for progress passes the key it already shows; an unchanged PDF isn't re-linked.
         const key = pdfKey(row);
         const same = typeof req.query.have === "string" && req.query.have === key;
-        return res.status(200).json({ request: toView(row), pdfKey: key, pdfUrl: same ? null : await latestPdfUrl(row) });
+        return res.status(200).json({
+          request: toView(row),
+          pdfKey: key,
+          pdfUrl: same ? null : await latestPdfUrl(row),
+          // Whether "How they sign" may offer the game: only a draft, and only TallulahMD LLC's.
+          gameAllowed: row.status === "draft" && (await gameAllowedOrPlain(row)),
+        });
       }
       const rows = await sb<SignatureRequestRow[]>("signature_requests?select=*&order=created_at.desc&limit=200");
       return res.status(200).json({ requests: (rows ?? []).map(toView) });
@@ -230,6 +259,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const contractId = typeof body.contractId === "string" && /^[\w-]{1,80}$/.test(body.contractId) ? body.contractId : null;
       const brand = typeof body.brand === "string" && body.brand.trim() ? body.brand.trim().slice(0, 120) : null;
       const mode = cleanMode(body.mode);
+      if (mode === "game" && !(await gameAllowed({ asset_id: assetId }))) return fail(res, 409, "game_not_for_entity", GAME_ONLY_MESSAGE);
       const parties = partiesFrom(body.parties, []);
       const [row] = await sb<SignatureRequestRow[]>("signature_requests", {
         method: "POST",
@@ -287,7 +317,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ request: toView(await attachPdf(me, fresh, path, bytes)) });
       }
       case "update": {
-        const next = await update(fresh, (r) => {
+        const next = await update(fresh, async (r) => {
           const changes: Partial<SignatureRequestRow> = {};
           if (typeof body.title === "string") changes.title = body.title.trim().slice(0, 160) || r.title;
           const locked = r.parties.some((p) => p.status === "signed") || r.status === "completed" || r.status === "voided";
@@ -302,6 +332,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // The mode shapes the email that goes out, so it's settled before Send.
           if (typeof body.mode === "string" && cleanMode(body.mode) !== (r.mode ?? "normal")) {
             if (r.status !== "draft") throw new Refuse(409, "already_sent", "How they sign can't change once it has been sent.");
+            if (cleanMode(body.mode) === "game" && !(await gameAllowed(r))) throw new Refuse(409, "game_not_for_entity", GAME_ONLY_MESSAGE);
             changes.mode = cleanMode(body.mode);
           }
           return changes;
@@ -311,8 +342,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "send": {
         let links: Array<[Party, string]> = [];
         // The new links are saved first; only then do the emails go out.
-        const saved = await update(fresh, (r) => {
+        const saved = await update(fresh, async (r) => {
           if (r.status === "voided") throw new Refuse(409, "voided");
+          if (r.mode === "game" && !(await gameAllowed(r))) throw new Refuse(409, "game_not_for_entity", `${GAME_ONLY_MESSAGE} Switch it to Normal e-signature.`);
           const why = sendBlocker(r);
           if (why) throw new Refuse(400, "not_ready", why);
           links = [];
@@ -349,10 +381,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           return { parties };
         });
+        // A game-mode row of any other entity (from before the rule) is reminded about the plain page its signer gets.
+        const mailRow = saved.mode === "game" && !(await gameAllowed(saved)) ? { ...saved, mode: "normal" as const } : saved;
         const next = await sendAll(
           me,
           saved,
-          links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link, true) })),
+          links.map(([party, link]) => ({ party, ...signRequestEmail(mailRow, party, link, true) })),
           "reminded",
         );
         return res.status(200).json({ request: toView(next) });
@@ -447,7 +481,8 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     const same = typeof req.query.have === "string" && req.query.have === key;
     return res.status(200).json({
       brand: current.brand,
-      mode: current.mode ?? "normal",
+      // The game is only for TallulahMD LLC's signers; anyone else gets the plain page whatever the row says.
+      mode: current.mode === "game" && (await gameAllowedOrPlain(current)) ? "game" : "normal",
       pdfKey: key,
       title: current.title,
       status: current.status,

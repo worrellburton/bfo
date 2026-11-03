@@ -943,6 +943,19 @@ export default function AppLayout() {
                 </button>
               )}
 
+              {/* The gallery of home-page backdrops (app/home-animations): pick the one the front door shows. */}
+              {canPreviewGame(user) && (
+                <button onClick={() => go("/home-animations")} className={menuItemCls} role="menuitem">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                    <circle cx="12" cy="12" r="8.5" />
+                    <circle cx="12" cy="12" r="2" />
+                    <path strokeLinecap="round" d="M3.5 12h2M18.5 12h2M12 3.5v2M12 18.5v2" />
+                  </svg>
+                  <span className="flex-1">Pop up our home page animation</span>
+                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>gallery</span>
+                </button>
+              )}
+
               {/* How it looks: light or dark, glass or solid cards, row density. */}
               <button
                 onClick={() => {

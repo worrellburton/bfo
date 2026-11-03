@@ -69,8 +69,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const signApi = {
   list: () => call<{ requests: SignatureRequest[] }>("/api/sign").then((r) => r.requests),
   /** With `have`, the key of the PDF already on screen: pdfUrl comes back null unless there's a newer one. */
+  /** One request; gameAllowed says whether this draft may go out as the game (only TallulahMD LLC's). */
   get: (id: string, have?: string | null) =>
-    call<{ request: SignatureRequest; pdfKey: string | null; pdfUrl: string | null }>(`/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`),
+    call<{ request: SignatureRequest; pdfKey: string | null; pdfUrl: string | null; gameAllowed?: boolean }>(
+      `/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`,
+    ),
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),
   download: (id: string) => call<{ url: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "download", id }) }).then((r) => r.url),
   remove: (id: string) => call<{ ok: true }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "delete", id }) }),

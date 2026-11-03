@@ -52,10 +52,15 @@ export default function SignatureDetail() {
   const [inviting, setInviting] = useState<Party | null>(null);
   const [entityName, setEntityName] = useState<string | null>(null);
   const [invited, setInvited] = useState<Set<string>>(new Set());
+  /** The server's word on whether this draft may go out as the game: only TallulahMD LLC's (lib/game-entity). */
+  const [gameOk, setGameOk] = useState(false);
   const assetId = req?.asset_id ?? null;
 
   // The entity's name and who already has it, for "Invite to BFO" on each party.
   useEffect(() => {
+    // Another request: nothing of the last one's entity sticks to it.
+    setEntityName(null);
+    setInvited(new Set());
     if (!assetId || !isAdmin()) return;
     let live = true;
     authFetch(`/api/tree?path=assets&ids=${encodeURIComponent(assetId)}`)
@@ -81,6 +86,7 @@ export default function SignatureDetail() {
     try {
       const r = await signApi.get(id, shownKey.current);
       setReq(r.request);
+      setGameOk(!!r.gameAllowed);
       // Only a new version replaces the pages on screen (each signature stamps a new one).
       if (r.pdfUrl) {
         setPdfUrl(r.pdfUrl);
@@ -310,9 +316,9 @@ export default function SignatureDetail() {
           )}
         </div>
 
-        {/* How they sign, the parties and their fields */}
+        {/* How they sign (only TallulahMD LLC's requests may go out as the game), the parties and their fields */}
         <aside className="space-y-4">
-          {req && editable && (
+          {req && editable && (gameOk || req.mode === "game") && (
             <section className={`${card} p-4`}>
               <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>How they sign</p>
               <div className="mt-3 space-y-2" role="radiogroup" aria-label="How they sign">

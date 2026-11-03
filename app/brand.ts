@@ -61,9 +61,11 @@ const listeners = new Set<(l: Logo | null) => void>();
 function loadLogo(): Promise<Logo | null> {
   if (!logoPromise) {
     logoPromise = fetch("/api/brand")
-      .then((r) => (r.ok ? r.json() : { logo: null }))
-      .then((j: { logo: Logo | null }) => {
+      .then((r) => (r.ok ? r.json() : { logo: null, homeAnimation: null }))
+      .then((j: { logo: Logo | null; homeAnimation?: string | null }) => {
         logoNow = j.logo ?? null;
+        homeAnimationNow = typeof j.homeAnimation === "string" ? j.homeAnimation : null;
+        homeListeners.forEach((fn) => fn(homeAnimationNow ?? null));
         return logoNow;
       })
       .catch(() => {
@@ -72,6 +74,31 @@ function loadLogo(): Promise<Logo | null> {
       });
   }
   return logoPromise;
+}
+
+/** Which home-page backdrop the front door shows (an id from app/home-animations); null is the default. undefined: not loaded yet. */
+let homeAnimationNow: string | null | undefined = undefined;
+const homeListeners = new Set<(id: string | null) => void>();
+
+export function useHomeAnimation(): string | null | undefined {
+  const [id, setId] = useState<string | null | undefined>(homeAnimationNow);
+  useEffect(() => {
+    let live = true;
+    void loadLogo().then(() => live && setId(homeAnimationNow ?? null));
+    const fn = (v: string | null) => setId(v);
+    homeListeners.add(fn);
+    return () => {
+      live = false;
+      homeListeners.delete(fn);
+    };
+  }, []);
+  return id;
+}
+
+/** After the gallery picks a backdrop, every viewer on the page follows. */
+export function setHomeAnimationNow(id: string | null) {
+  homeAnimationNow = id;
+  homeListeners.forEach((fn) => fn(id));
 }
 
 /** After the studio changes the logo, every viewer on the page follows. */
