@@ -20,8 +20,32 @@ export const BACKDROPS: Backdrop[] = [
   {
     id: "orrery",
     name: "The Orrery",
-    line: "A family's holdings as a system: rings of light in slow orbit around one point.",
+    line: "A family's holdings as a system: seven rings of light in slow orbit around one small point, seen low and close, like a watch movement through its glass.",
     load: () => import("./orrery"),
+  },
+  {
+    id: "sunbeam",
+    name: "The Sunbeam",
+    line: "One shaft of four-o'clock sun crosses a dark room, and all you ever see is the dust it touches, turning slowly in the warm air.",
+    load: () => import("./sunbeam"),
+  },
+  {
+    id: "glitter-path",
+    name: "The Glitter Path",
+    line: "Moonlight on a black sea: ten thousand gold glints that form, break and form again with every swell, a path that widens toward you and never once hurries.",
+    load: () => import("./glitter-path"),
+  },
+  {
+    id: "silk",
+    name: "Champagne Silk",
+    line: "A single length of silk hangs behind the mark and breathes once every half minute, and you only see it where the light catches a fold.",
+    load: () => import("./silk"),
+  },
+  {
+    id: "ink",
+    name: "Ink in Water",
+    line: "A bead of gold ink opens in black water and takes ninety seconds to become the water.",
+    load: () => import("./ink"),
   },
 ];
 
