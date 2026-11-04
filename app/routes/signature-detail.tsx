@@ -244,8 +244,8 @@ export default function SignatureDetail() {
               </Small>
             )}
             {(req.status === "sent" || req.status === "partial") && req.mode === "game" && (
-              <label className={`flex items-center gap-2 text-xs cursor-pointer ${t3}`}>
-                <input type="checkbox" checked={plainRemind} onChange={(e) => setPlainRemind(e.target.checked)} />
+              <label className={`flex items-center gap-2 text-[12px] cursor-pointer max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${t2}`}>
+                <input type="checkbox" className="h-4 w-4" checked={plainRemind} onChange={(e) => setPlainRemind(e.target.checked)} />
                 Remind as a normal request: nothing about the game in the email
               </label>
             )}

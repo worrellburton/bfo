@@ -208,9 +208,11 @@ describe("signing mode", () => {
     const view = await call("GET", {}, { token: fresh });
     expect(view.statusCode).toBe(200);
     expect(view.body.mode).toBe("game");
-    // Without the flag, a reminder still says it's the game.
-    await call("POST", { action: "remind", id: row.id });
+    // Without the flag, a reminder still says it's the game, and the record carries no note.
+    const r2 = await call("POST", { action: "remind", id: row.id });
     expect(String(vi.mocked(sendEmail).mock.calls.at(-1)![3])).toContain("Play and sign");
+    expect(r2.body.request.events.at(-1).kind).toBe("reminded");
+    expect(r2.body.request.events.at(-1).note).toBeUndefined();
   });
 
   it("gives the signer the plain page, not an error, when the entity can't be read", async () => {
