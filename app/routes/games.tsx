@@ -19,8 +19,8 @@ const GAMES = [
   {
     id: "race",
     name: "The Racetrack",
-    kind: "Three laps against Judy",
-    line: "You drive, Judy drives, and she talks the whole way. Three laps of about a minute, the music turns up for the last one, and the signing page is at the finish.",
+    kind: "Two laps against Judy",
+    line: "You drive, Judy rams you, and she talks the whole way. Two laps of about a minute, the music changes for the last one, and on the final stretch something happens to Judy's arm. The signing page is at the finish.",
     to: "/sign/preview?game=race",
   },
 ];

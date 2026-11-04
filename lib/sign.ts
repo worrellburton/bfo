@@ -459,7 +459,7 @@ const button = (href: string, label: string) =>
 /** The line that warns a game-mode signer to open the link on a computer. */
 export const GAME_NOTE = "This one is a little different: open the link on a computer. You'll walk into a theater, watch a short film, and sign on the other side of the door.";
 /** The same for the racetrack game. */
-export const RACE_NOTE = "This one is a little different: open the link on a computer. You'll race for it: three laps around a track, and you sign at the finish.";
+export const RACE_NOTE = "This one is a little different: open the link on a computer. You'll race for it: two laps around a track, and you sign at the finish.";
 
 export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name" | "brand"> & { mode?: SignMode }, party: Party, link: string, remind = false) {
   const from = row.brand || row.created_by_name || "Burton Family Office";

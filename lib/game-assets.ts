@@ -71,6 +71,12 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
   "kart-bump": { text: "Two go-karts bumping, a hollow plastic thunk with a rattle, video game style", seconds: 0.7 },
   "kart-count": { text: "A single low electronic countdown beep from a racing game start light", seconds: 0.5 },
   "kart-go": { text: "A high bright electronic GO tone from a racing game start light, with a short rising flourish", seconds: 0.8 },
+  "kart-crash": {
+    text: "A go-kart flipping over at speed: a loud plastic and metal crash, a tumble with scraping and clattering parts, then the kart skidding to a stop upside down, cartoonish but punchy",
+    seconds: 3,
+  },
+  "kart-pop": { text: "A silly cartoon pop, like a mannequin arm popping off its socket, with a rubbery boing", seconds: 0.8 },
+  "kart-tape": { text: "Duct tape being pulled off a roll and wrapped around quickly, loud ripping and crinkling, several pulls", seconds: 3 },
 };
 
 /** The props: what OpenAI draws, which Meshy then turns into a model. */

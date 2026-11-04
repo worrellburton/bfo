@@ -226,7 +226,7 @@ describe("resend", () => {
     const r = await call("POST", { action: "resend", id: OLD, mode: "race" });
     expect(r.statusCode).toBe(200);
     const text = String(vi.mocked(sendEmail).mock.calls.at(-1)![2]);
-    expect(text).toContain("three laps");
+    expect(text).toContain("two laps");
     expect(text).toContain("Play and sign");
     // The signer's link opens the race (the fake can't know the token, so the hash is looked up from the row).
     const made = rows.get(r.body.request.id)!;

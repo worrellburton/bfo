@@ -345,7 +345,7 @@ export default function SignatureDetail() {
                   [
                     { mode: "normal", blurb: "They open the link, read the document, and sign." },
                     { mode: "game", blurb: "They walk into a theater, watch the clip, and the door to the signing room opens when it ends. Computer only." },
-                    { mode: "race", blurb: "They race Judy around a track, three laps, and the signing page opens at the finish. Computer only." },
+                    { mode: "race", blurb: "They race Judy around a track, two laps, and the signing page opens at the finish. Computer only." },
                   ] as Array<{ mode: SignMode; blurb: string }>
                 ).map(({ mode, blurb }) => {
                   const on = (req.mode ?? "normal") === mode;
@@ -680,7 +680,7 @@ function ResendDialog({
     ...(gameEntity
       ? [
           { mode: "game" as SignMode, label: "Movie theater", blurb: "They walk into the theater, watch the clip, and sign on the other side of the door." },
-          { mode: "race" as SignMode, label: "Racetrack", blurb: "They race Judy around a track, three laps, and sign at the finish." },
+          { mode: "race" as SignMode, label: "Racetrack", blurb: "They race Judy around a track, two laps, and sign at the finish." },
         ]
       : []),
     { mode: "normal" as SignMode, label: "Normal e-signature", blurb: "They open the link, read the document, and sign." },
