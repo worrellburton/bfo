@@ -189,6 +189,32 @@ describe("signing mode", () => {
     expect(String(sent[3])).not.toContain("Play and sign");
   });
 
+  it("reminds as a normal request when asked, while the link still opens the game", async () => {
+    const { sendEmail } = await import("../lib/auth.js");
+    row.mode = "game";
+    row.status = "sent";
+    row.parties[0] = { ...row.parties[0], status: "sent", tokenHash: hashToken(token) };
+    const r = await call("POST", { action: "remind", id: row.id, plain: true });
+    expect(r.statusCode).toBe(200);
+    const sent = vi.mocked(sendEmail).mock.calls.at(-1)!;
+    const text = String(sent[2]);
+    expect(text).toContain("Review and sign");
+    expect(text).not.toMatch(/game|theater|film|open the link on a computer/i);
+    expect(String(sent[3])).not.toContain("Play and sign");
+    // The record says how it went out.
+    expect(r.body.request.events.at(-1)).toMatchObject({ kind: "reminded", note: "as a normal request" });
+    // The fresh link opens the game all the same.
+    const fresh = text.match(/\/sign\/([A-Za-z0-9_-]+)/)![1];
+    const view = await call("GET", {}, { token: fresh });
+    expect(view.statusCode).toBe(200);
+    expect(view.body.mode).toBe("game");
+    // Without the flag, a reminder still says it's the game, and the record carries no note.
+    const r2 = await call("POST", { action: "remind", id: row.id });
+    expect(String(vi.mocked(sendEmail).mock.calls.at(-1)![3])).toContain("Play and sign");
+    expect(r2.body.request.events.at(-1).kind).toBe("reminded");
+    expect(r2.body.request.events.at(-1).note).toBeUndefined();
+  });
+
   it("gives the signer the plain page, not an error, when the entity can't be read", async () => {
     row.mode = "game";
     row.status = "sent";

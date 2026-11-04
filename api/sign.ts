@@ -57,7 +57,8 @@ import {
  *            update     { id, title?, fields?, parties?, mode? } → { request }  (fields and parties while nobody has signed; mode while a draft,
  *                       and the game only for TallulahMD LLC)
  *            send       { id } → { request }  emails each party their link
- *            remind     { id, party? } → { request }  re-sends the link to those who haven't signed
+ *            remind     { id, party?, plain? } → { request }  re-sends the link to those who haven't signed; plain: true writes the
+ *                       email as a normal request (nothing about the game) while the link still opens it
  *            send-copy  { id } → { request }  emails every party a link to the signed copy
  *            void       { id } → { request }  the links stop working
  *            delete     { id } → { ok }
@@ -174,13 +175,13 @@ function fileName(row: SignatureRequestRow): string {
 }
 
 /** Sends each email; the links are already saved, so a failure is reported, not lost. */
-async function sendAll(me: AppUser, row: SignatureRequestRow, mails: Array<{ party: Party; subject: string; text: string; html: string }>, kind: string) {
+async function sendAll(me: AppUser, row: SignatureRequestRow, mails: Array<{ party: Party; subject: string; text: string; html: string }>, kind: string, note?: string) {
   const sent: SignEvent[] = [];
   const failed: string[] = [];
   for (const m of mails) {
     try {
       await sendEmail(m.party.email, m.subject, m.text, m.html, undefined, undefined, { replyTo: me.email ?? undefined, fromName: row.brand ?? undefined });
-      sent.push(event(kind, { party: m.party.key, by: me.id }));
+      sent.push(event(kind, { party: m.party.key, by: me.id, ...(note ? { note } : {}) }));
     } catch (err) {
       console.error(`sign: ${kind} email to party ${m.party.key} failed`, err instanceof Error ? err.message : err);
       failed.push(m.party.name || m.party.role);
@@ -367,6 +368,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       case "remind": {
         const only = body.party === "a" || body.party === "b" ? (body.party as PartyKey) : null;
+        // The office can keep the game a surprise: the email reads as a normal request, the link still opens the game.
+        const plain = body.plain === true;
         let links: Array<[Party, string]> = [];
         const saved = await update(fresh, (r) => {
           if (r.status !== "sent" && r.status !== "partial") throw new Refuse(409, "not_pending");
@@ -382,12 +385,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return { parties };
         });
         // A game-mode row of any other entity (from before the rule) is reminded about the plain page its signer gets.
-        const mailRow = saved.mode === "game" && !(await gameAllowed(saved)) ? { ...saved, mode: "normal" as const } : saved;
+        const asNormal = saved.mode === "game" && (plain || !(await gameAllowed(saved)));
+        const mailRow = asNormal ? { ...saved, mode: "normal" as const } : saved;
         const next = await sendAll(
           me,
           saved,
           links.map(([party, link]) => ({ party, ...signRequestEmail(mailRow, party, link, true) })),
           "reminded",
+          plain && saved.mode === "game" ? "as a normal request" : undefined,
         );
         return res.status(200).json({ request: toView(next) });
       }

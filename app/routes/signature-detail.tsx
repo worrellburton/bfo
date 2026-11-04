@@ -43,6 +43,8 @@ export default function SignatureDetail() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
+  // A game-mode reminder written like a normal request: nothing about the game in the email, the link still opens it.
+  const [plainRemind, setPlainRemind] = useState(false);
   const [busy, setBusy] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [placing, setPlacing] = useState<{ party: PartyKey; type: FieldType } | null>(null);
@@ -159,7 +161,7 @@ export default function SignatureDetail() {
         if (!(await confirmDialog({ title: "Void this request?", message: "The signing links stop working. Nobody is told.", tone: "danger", confirmLabel: "Void" }))) return;
         setReq(await signApi.act("void", { id: req.id }));
       } else {
-        const next = await signApi.act(action, { id: req.id });
+        const next = await signApi.act(action, action === "remind" ? { id: req.id, plain: plainRemind } : { id: req.id });
         setReq(next);
         setNote(
           action === "send"
@@ -168,7 +170,7 @@ export default function SignatureDetail() {
               ? `Reminded ${next.parties
                   .filter((p) => p.status !== "signed")
                   .map((p) => p.name)
-                  .join(" and ")}.`
+                  .join(" and ")}${plainRemind && req.mode === "game" ? " as a normal request" : ""}.`
               : `Sent the signed copy to ${next.parties.map((p) => p.email).join(" and ")}.`,
         );
       }
@@ -240,6 +242,12 @@ export default function SignatureDetail() {
               <Small isDark={isDark} disabled={!!busy} onClick={() => run("remind")}>
                 Remind
               </Small>
+            )}
+            {(req.status === "sent" || req.status === "partial") && req.mode === "game" && (
+              <label className={`flex items-center gap-2 text-[12px] cursor-pointer max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${t2}`}>
+                <input type="checkbox" className="h-4 w-4" checked={plainRemind} onChange={(e) => setPlainRemind(e.target.checked)} />
+                Remind as a normal request: nothing about the game in the email
+              </label>
             )}
             {req.status === "completed" && (
               <Small isDark={isDark} primary disabled={!!busy} onClick={() => run("send-copy")}>
@@ -432,7 +440,7 @@ export default function SignatureDetail() {
                         disabled={!!busy}
                         onClick={() =>
                           signApi
-                            .act("remind", { id: req.id, party: p.key })
+                            .act("remind", { id: req.id, party: p.key, plain: plainRemind })
                             .then(setReq)
                             .catch((e) => setError(e.message))
                         }
