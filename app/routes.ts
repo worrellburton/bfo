@@ -12,6 +12,8 @@ export default [
   route("home-animations", "./routes/home-animations.tsx"),
   // A signer's page: no account, the token in their emailed link is who they are.
   route("sign/:token", "./routes/sign.tsx"),
+  // The racetrack game on sample props, for working on it (app/sign/kart); not in production.
+  ...(process.env.NODE_ENV !== "production" ? [route("kart-dev", "./routes/kart-dev.tsx")] : []),
   layout("routes/app-layout.tsx", [
     route("home", "routes/home.tsx"),
     // The games to try, from the account menu.

@@ -316,7 +316,7 @@ const rise = (i: number): React.CSSProperties => ({ animation: `rise-in 600ms cu
  * the little animated island scene, and the way to come back on a computer
  * (copy the link, read the PDF now).
  */
-function PhoneScreen({
+export function PhoneScreen({
   title,
   brand,
   document,
