@@ -208,8 +208,6 @@ export class SigningGame {
   private talking: { round: number } | null = null;
   private talkTimers: Array<ReturnType<typeof setTimeout>> = [];
   private talkAudio: HTMLAudioElement | null = null;
-  /** Skips the rest of the line Judy is on (Space); null when she's waiting for a reply. */
-  private talkSkip: (() => void) | null = null;
   private frontDoors: Array<{ group: THREE.Group; side: -1 | 1 }> = [];
   private frontDoorSolid: Box | null = null;
   private frontOpen = 0;
@@ -1493,10 +1491,6 @@ export class SigningGame {
       this.keys.add(e.code);
       if (e.code === "KeyE" || e.code === "Enter") this.interact();
       if (this.phase === "talk" && /^(Digit|Numpad)[1-3]$/.test(e.code)) this.choose(Number(e.code.slice(-1)) - 1);
-      if (this.phase === "talk" && e.code === "Space") {
-        e.preventDefault();
-        this.talkSkip?.();
-      }
       if (["Space", "ArrowUp", "ArrowDown"].includes(e.code) && this.walking()) e.preventDefault();
       if (e.code === "Space" && this.walking()) this.jumpPressedAt = performance.now();
     });
@@ -1661,7 +1655,6 @@ export class SigningGame {
     const judy = this.opts.judy;
     const speaker = judy?.name ?? "Judy";
     const next = (k: number) => {
-      this.talkSkip = null;
       if (k >= lines.length) return then();
       const line = lines[k];
       const chunks = subtitleChunks(line.text);
@@ -1693,9 +1686,7 @@ export class SigningGame {
         });
         later(finish, seconds * 1000 + 350);
       };
-      // Space skips the rest of this line, once it has had a moment on screen.
-      this.talkSkip = null;
-      later(() => (this.talkSkip = finish), 900);
+      // Judy's line plays through: there is no skipping her.
       const url = this.opts.manifest.voice[line.id];
       if (!url) return schedule(total * 0.42 + 0.4);
       const a = new Audio(url);
@@ -1722,7 +1713,6 @@ export class SigningGame {
   private giveTicket() {
     this.play("sign");
     this.talking = null;
-    this.talkSkip = null;
     this.lookBase = null;
     // Carry the facing from the conversation into the walk.
     const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
