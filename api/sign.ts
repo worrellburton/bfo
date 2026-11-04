@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { PDFDocument } from "pdf-lib";
+import { randomBytes } from "node:crypto";
 import { canWrite, currentUser, fail, guard, handleError, sb, sendEmail, type AppUser } from "../lib/auth.js";
 import { clientIp } from "./auth/request-code.js";
 import { notifyAdmins } from "../lib/push.js";
@@ -15,27 +16,29 @@ import {
   cleanParty,
   deriveStatus,
   hashToken,
+  isGameMode,
   isUploadPath,
   newToken,
   officeDate,
   pageFrame,
+  type Party,
+  type PartyKey,
   pdfKey,
   sendBlocker,
   shownSize,
   SIGN_BUCKET,
+  type SignatureRequestRow,
   signedCopyEmail,
   signedNoticeEmail,
+  type SignEvent,
+  type SignField,
   signLink,
   signRequestEmail,
-  stampPdf,
-  toView,
-  TOKEN_RE,
-  versionPath,
-  type Party,
-  type PartyKey,
-  type SignatureRequestRow,
-  type SignEvent,
   type Stamp,
+  stampPdf,
+  TOKEN_RE,
+  toView,
+  versionPath,
 } from "../lib/sign.js";
 
 /**
@@ -56,9 +59,12 @@ import {
  *            attach-stored { id, path }  a PDF already in an entity's documents (lib/document-path), copied under the request → { request }
  *            update     { id, title?, fields?, parties?, mode? } → { request }  (fields and parties while nobody has signed; mode while a draft,
  *                       and the game only for TallulahMD LLC)
- *            send       { id } → { request }  emails each party their link
+ *            send       { id, plain? } → { request }  emails each party their link (plain: a normal-looking email for a game)
  *            remind     { id, party?, plain? } → { request }  re-sends the link to those who haven't signed; plain: true writes the
  *                       email as a normal request (nothing about the game) while the link still opens it
+ *            resend     { id, mode?, plain? } → { request }  a finished (completed, declined or voided) request sent again as a new
+ *                       one: the same document and parties, an Address box under each signature that lacks one, in the
+ *                       given mode (normal, game, race); sent at once, with the plain email when asked
  *            send-copy  { id } → { request }  emails every party a link to the signed copy
  *            void       { id } → { request }  the links stop working
  *            delete     { id } → { ok }
@@ -244,6 +250,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           pdfUrl: same ? null : await latestPdfUrl(row),
           // Whether "How they sign" may offer the game: only a draft, and only TallulahMD LLC's.
           gameAllowed: row.status === "draft" && (await gameAllowedOrPlain(row)),
+          // Whether this entity may have a game at all (the resend dialog on a finished request offers one).
+          gameEntity: await gameAllowedOrPlain(row),
         });
       }
       const rows = await sb<SignatureRequestRow[]>("signature_requests?select=*&order=created_at.desc&limit=200");
@@ -260,7 +268,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const contractId = typeof body.contractId === "string" && /^[\w-]{1,80}$/.test(body.contractId) ? body.contractId : null;
       const brand = typeof body.brand === "string" && body.brand.trim() ? body.brand.trim().slice(0, 120) : null;
       const mode = cleanMode(body.mode);
-      if (mode === "game" && !(await gameAllowed({ asset_id: assetId }))) return fail(res, 409, "game_not_for_entity", GAME_ONLY_MESSAGE);
+      if (mode !== "normal" && !(await gameAllowed({ asset_id: assetId }))) return fail(res, 409, "game_not_for_entity", GAME_ONLY_MESSAGE);
       const parties = partiesFrom(body.parties, []);
       const [row] = await sb<SignatureRequestRow[]>("signature_requests", {
         method: "POST",
@@ -333,38 +341,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // The mode shapes the email that goes out, so it's settled before Send.
           if (typeof body.mode === "string" && cleanMode(body.mode) !== (r.mode ?? "normal")) {
             if (r.status !== "draft") throw new Refuse(409, "already_sent", "How they sign can't change once it has been sent.");
-            if (cleanMode(body.mode) === "game" && !(await gameAllowed(r))) throw new Refuse(409, "game_not_for_entity", GAME_ONLY_MESSAGE);
+            if (cleanMode(body.mode) !== "normal" && !(await gameAllowed(r))) throw new Refuse(409, "game_not_for_entity", GAME_ONLY_MESSAGE);
             changes.mode = cleanMode(body.mode);
           }
           return changes;
         });
         return res.status(200).json({ request: toView(next) });
       }
-      case "send": {
-        let links: Array<[Party, string]> = [];
-        // The new links are saved first; only then do the emails go out.
-        const saved = await update(fresh, async (r) => {
-          if (r.status === "voided") throw new Refuse(409, "voided");
-          if (r.mode === "game" && !(await gameAllowed(r))) throw new Refuse(409, "game_not_for_entity", `${GAME_ONLY_MESSAGE} Switch it to Normal e-signature.`);
-          const why = sendBlocker(r);
-          if (why) throw new Refuse(400, "not_ready", why);
-          links = [];
-          const parties = r.parties.map((p) => {
-            if (p.status === "signed") return p;
-            const t = newToken();
-            const sent: Party = { ...p, tokenHash: hashToken(t), status: "sent", sentAt: new Date().toISOString() };
-            links.push([sent, signLink(t)]);
-            return sent;
-          });
-          return { parties, status: deriveStatus(parties, "sent"), sent_at: r.sent_at ?? new Date().toISOString(), events: [...r.events, event("sent", { by: me.id })] };
+      case "send":
+        return res.status(200).json({ request: toView(await sendNow(me, fresh, body.plain === true)) });
+      case "resend": {
+        // A finished request goes out again as a new one, so the old record and its signed copy stay as they were.
+        if (row.status !== "completed" && row.status !== "declined" && row.status !== "voided")
+          return fail(res, 409, "not_closed", "Resend is for a request that has run its course. A pending one can be reminded.");
+        if (!row.original_path) return fail(res, 409, "no_file", "The original document isn't on the request.");
+        const mode = cleanMode(body.mode);
+        if (mode !== "normal" && !(await gameAllowed(row))) return fail(res, 409, "game_not_for_entity", GAME_ONLY_MESSAGE);
+        const bytes = await storageDownload(row.original_path, SIGN_BUCKET);
+        if (!bytes) return fail(res, 404, "no_file", "The original document isn't in storage.");
+        const parties: Party[] = row.parties.map((p) => ({ key: p.key, role: p.role, name: p.name, email: p.email, status: "pending" }));
+        const [made] = await sb<SignatureRequestRow[]>("signature_requests", {
+          method: "POST",
+          prefer: "return=representation",
+          body: {
+            title: row.title,
+            source: row.source,
+            asset_id: row.asset_id,
+            contract_id: row.contract_id,
+            brand: row.brand,
+            mode,
+            created_by: me.id,
+            created_by_name: me.name,
+            parties,
+            pages: row.pages,
+            fields: withAddressFields(row.fields),
+            events: [event("created", { by: me.id, note: "sent again, with an address box" })],
+          },
         });
-        const next = await sendAll(
-          me,
-          saved,
-          links.map(([party, link]) => ({ party, ...signRequestEmail(saved, party, link) })),
-          "emailed",
-        );
-        return res.status(200).json({ request: toView(next) });
+        const path = versionPath(made.id, "upload");
+        await storageUpload(path, bytes, "application/pdf", SIGN_BUCKET);
+        await sb(`signature_requests?id=eq.${made.id}`, { method: "PATCH", body: { original_path: path, current_path: path } });
+        // The old record says where it went.
+        await update(fresh, (r) => ({
+          events: [...r.events, event("resent", { by: me.id, note: `as a new request${mode === "normal" ? "" : ` (${mode === "race" ? "racetrack" : "theater"})`}` })],
+        })).catch((err) => console.error("sign: couldn't note the resend on the old request", err instanceof Error ? err.message : err));
+        return res.status(200).json({ request: toView(await sendNow(me, () => rowById(made.id), body.plain === true)) });
       }
       case "remind": {
         const only = body.party === "a" || body.party === "b" ? (body.party as PartyKey) : null;
@@ -385,14 +406,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return { parties };
         });
         // A game-mode row of any other entity (from before the rule) is reminded about the plain page its signer gets.
-        const asNormal = saved.mode === "game" && (plain || !(await gameAllowed(saved)));
+        const asNormal = isGameMode(saved.mode) && (plain || !(await gameAllowed(saved)));
         const mailRow = asNormal ? { ...saved, mode: "normal" as const } : saved;
         const next = await sendAll(
           me,
           saved,
           links.map(([party, link]) => ({ party, ...signRequestEmail(mailRow, party, link, true) })),
           "reminded",
-          plain && saved.mode === "game" ? "as a normal request" : undefined,
+          plain && isGameMode(saved.mode) ? "as a normal request" : undefined,
         );
         return res.status(200).json({ request: toView(next) });
       }
@@ -442,6 +463,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+/**
+ * Sends a request: fresh links are saved first, then each party is emailed.
+ * `plain` writes a game's email as a normal request (nothing about the game).
+ */
+async function sendNow(me: AppUser, load: () => Promise<SignatureRequestRow | null>, plain = false): Promise<SignatureRequestRow> {
+  let links: Array<[Party, string]> = [];
+  const saved = await update(load, async (r) => {
+    if (r.status === "voided") throw new Refuse(409, "voided");
+    if (isGameMode(r.mode) && !(await gameAllowed(r))) throw new Refuse(409, "game_not_for_entity", `${GAME_ONLY_MESSAGE} Switch it to Normal e-signature.`);
+    const why = sendBlocker(r);
+    if (why) throw new Refuse(400, "not_ready", why);
+    links = [];
+    const parties = r.parties.map((p) => {
+      if (p.status === "signed") return p;
+      const t = newToken();
+      const sent: Party = { ...p, tokenHash: hashToken(t), status: "sent", sentAt: new Date().toISOString() };
+      links.push([sent, signLink(t)]);
+      return sent;
+    });
+    return { parties, status: deriveStatus(parties, "sent"), sent_at: r.sent_at ?? new Date().toISOString(), events: [...r.events, event("sent", { by: me.id })] };
+  });
+  const asNormal = plain && isGameMode(saved.mode);
+  const mailRow = asNormal ? { ...saved, mode: "normal" as const } : saved;
+  return sendAll(
+    me,
+    saved,
+    links.map(([party, link]) => ({ party, ...signRequestEmail(mailRow, party, link) })),
+    "emailed",
+    asNormal ? "as a normal request" : undefined,
+  );
+}
+
+/** The fields again, plus an Address box under the first signature of each party that has none. */
+export function withAddressFields(fields: SignField[]): SignField[] {
+  const out = [...fields];
+  for (const key of ["a", "b"] as PartyKey[]) {
+    if (out.some((f) => f.party === key && f.type === "address")) continue;
+    const sig = out.find((f) => f.party === key && f.type === "signature");
+    if (!sig) continue;
+    const h = 0.05;
+    out.push({ id: randomBytes(6).toString("hex"), party: key, type: "address", page: sig.page, x: sig.x, y: Math.min(1 - h, sig.y + sig.h + 0.004), w: sig.w, h });
+  }
+  return out;
+}
+
 function partiesFrom(raw: unknown, prior: Party[]): Party[] {
   const list = Array.isArray(raw) ? raw.slice(0, 2) : [];
   const out: Party[] = [];
@@ -487,7 +553,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     return res.status(200).json({
       brand: current.brand,
       // The game is only for TallulahMD LLC's signers; anyone else gets the plain page whatever the row says.
-      mode: current.mode === "game" && (await gameAllowedOrPlain(current)) ? "game" : "normal",
+      mode: isGameMode(current.mode) && (await gameAllowedOrPlain(current)) ? current.mode : "normal",
       pdfKey: key,
       title: current.title,
       status: current.status,
@@ -526,6 +592,11 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
   if (!name) return fail(res, 400, "name", "Type your full name.");
   const png = pngFromDataUrl(body.signature);
   if (!png) return fail(res, 400, "signature", "Draw or type your signature.");
+  const address = String(body.address ?? "")
+    .replace(/\r/g, "")
+    .trim()
+    .slice(0, 240);
+  if (!address && row.fields.some((f) => f.party === you.key && f.type === "address")) return fail(res, 400, "address", "Type your address.");
   const ip = clientIp(req.headers) ?? undefined;
   const initials = name
     .split(/\s+/)
@@ -547,10 +618,12 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
 
     const stamps: Stamp[] = r.fields
       .filter((f) => f.party === p0.key)
-      .map((field) => (field.type === "signature" ? { field, png } : { field, text: field.type === "date" ? officeDate() : field.type === "initials" ? initials : name }));
+      .map((field) =>
+        field.type === "signature" ? { field, png } : { field, text: field.type === "date" ? officeDate() : field.type === "initials" ? initials : field.type === "address" ? address : name },
+      );
     const stamped = await stampPdf(pdf, stamps);
     const signedAt = new Date().toISOString();
-    const parties: Party[] = r.parties.map((p) => (p.key === p0.key ? { ...p, status: "signed", signedAt, signedAs: name, ip } : p));
+    const parties: Party[] = r.parties.map((p) => (p.key === p0.key ? { ...p, status: "signed", signedAt, signedAs: name, ip, ...(address ? { address } : {}) } : p));
     const status = deriveStatus(parties, r.status);
     const events = [...r.events, event("signed", { party: p0.key })];
     // Everything that can fail is built before anything is uploaded.

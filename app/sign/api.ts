@@ -3,11 +3,13 @@
 import { authFetch } from "../auth";
 
 export type PartyKey = "a" | "b";
-export type FieldType = "signature" | "initials" | "name" | "date";
+export type FieldType = "signature" | "initials" | "name" | "date" | "address";
 export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
-/** How the parties sign: the plain page, or the Anything Is Possible game in front of it (app/sign/game). */
-export type SignMode = "normal" | "game";
+/** How the parties sign: the plain page, the Anything Is Possible theater game (app/sign/game), or the racetrack game (app/sign/kart) in front of it. */
+export type SignMode = "normal" | "game" | "race";
+/** True for a mode that puts a game in front of the signing page. */
+export const isGameMode = (mode: SignMode | undefined): boolean => mode === "game" || mode === "race";
 
 export type SignField = { id: string; party: PartyKey; type: FieldType; page: number; x: number; y: number; w: number; h: number };
 export type Party = {
@@ -22,6 +24,8 @@ export type Party = {
   declinedAt?: string;
   declinedReason?: string;
   signedAs?: string;
+  /** The address they typed when signing, when the document had an address box for them. */
+  address?: string;
 };
 export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string };
 
@@ -71,7 +75,7 @@ export const signApi = {
   /** With `have`, the key of the PDF already on screen: pdfUrl comes back null unless there's a newer one. */
   /** One request; gameAllowed says whether this draft may go out as the game (only TallulahMD LLC's). */
   get: (id: string, have?: string | null) =>
-    call<{ request: SignatureRequest; pdfKey: string | null; pdfUrl: string | null; gameAllowed?: boolean }>(
+    call<{ request: SignatureRequest; pdfKey: string | null; pdfUrl: string | null; gameAllowed?: boolean; gameEntity?: boolean }>(
       `/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`,
     ),
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),
@@ -127,13 +131,13 @@ export const PARTY_LABEL: Record<PartyStatus, string> = {
   declined: "Declined",
 };
 
-export const FIELD_LABEL: Record<FieldType, string> = { signature: "Signature", initials: "Initials", name: "Name", date: "Date" };
+export const FIELD_LABEL: Record<FieldType, string> = { signature: "Signature", initials: "Initials", name: "Name", date: "Date", address: "Address" };
 
-export const MODE_LABEL: Record<SignMode, string> = { normal: "Normal e-signature", game: "Anything Is Possible game" };
+export const MODE_LABEL: Record<SignMode, string> = { normal: "Normal e-signature", game: "Anything Is Possible game", race: "Racetrack game" };
 
 /** A fresh field of a type for a party, sized for the type. */
 export function newField(party: PartyKey, type: FieldType, page: number, at?: { x: number; y: number }): SignField {
-  const size = type === "signature" ? { w: 0.3, h: 0.055 } : type === "initials" ? { w: 0.08, h: 0.035 } : { w: 0.25, h: 0.03 };
+  const size = type === "signature" ? { w: 0.3, h: 0.055 } : type === "address" ? { w: 0.3, h: 0.05 } : type === "initials" ? { w: 0.08, h: 0.035 } : { w: 0.25, h: 0.03 };
   const x = Math.min(1 - size.w, Math.max(0, (at?.x ?? 0.1) - size.w / 2));
   const y = Math.min(1 - size.h, Math.max(0, (at?.y ?? 0.1) - size.h / 2));
   return { id: Math.random().toString(36).slice(2, 10), party, type, page, x, y, ...size };

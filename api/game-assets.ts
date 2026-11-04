@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, fail, guard, handleError, isAdmin, secretMatches } from "../lib/auth.js";
 import { ProviderError } from "../lib/brand.js";
-import { adoptOlderVoice, AssetError, checkProp, cleanLines, configured, listVoices, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
+import { adoptOlderVoice, AssetError, checkProp, cleanLines, configured, listVoices, makeMusic, makeSounds, PROPS, readAssets, startProp, voiceJudy } from "../lib/game-assets.js";
 
 /**
  * The signing game's generated assets (lib/game-assets.ts): made here, on
  * the server, with the keys Vercel holds, and stored in the public brand
  * bucket. The game reads them without an account (a signer has none).
  *
- *   GET  /api/game-assets            → { voice, sounds, models }  anyone: what the game should use over its static manifest
+ *   GET  /api/game-assets            → { voice, sounds, models, music }  anyone: what the games should use over their static manifests
  *   GET  /api/game-assets?studio=1   → the studio: everything, plus which keys the server has (booleans)
  *   POST { action }                  → the studio:
  *     voices                                        the ElevenLabs library: [{ id, name, labels }], to choose Judy's
@@ -16,6 +16,7 @@ import { adoptOlderVoice, AssetError, checkProp, cleanLines, configured, listVoi
  *     judy        { lines: [{ id, text }], redo?, voiceId? }  voices a few of Judy's lines per call → { assets, remaining }; call until
  *                                                   remaining is 0; a voiceId switches Judy's voice and starts her over
  *     sounds      { redo?, only? }                  a few sound effects per call → { assets, remaining }; only: just these names
+ *     music       { key, prompt, seconds }          one piece of music from ElevenLabs Music, stored under key → { assets }
  *     prop        { name }                          OpenAI draws it, Meshy starts the model → { assets }
  *     prop-status { name }                          Meshy's progress; on success the GLB lands in the bucket → { assets }
  *
@@ -30,9 +31,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "POST"])) return;
   try {
     if (req.method === "GET" && req.query.studio !== "1") {
-      const { voice, sounds, models } = await readAssets();
+      const { voice, sounds, models, music } = await readAssets();
       res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=600");
-      return res.status(200).json({ voice, sounds, models });
+      return res.status(200).json({ voice, sounds, models, music });
     }
     // The job token first (it isn't a session, so currentUser would refuse it); then a signed-in owner or admin.
     const token = process.env.GAME_JOB_TOKEN;
@@ -67,6 +68,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "sounds": {
         const only = Array.isArray(body.only) ? body.only.filter((n: unknown): n is string => typeof n === "string") : undefined;
         return res.status(200).json(await makeSounds(redo, 3, {}, only?.length ? only : undefined));
+      }
+      case "music": {
+        const key = String(body.key ?? "");
+        const prompt = String(body.prompt ?? "").trim();
+        if (!prompt) return fail(res, 400, "no_prompt", "Say what the music should be.");
+        return res.status(200).json({ assets: await makeMusic(key, prompt.slice(0, 2000), Number(body.seconds) || 90) });
       }
       case "prop": {
         const name = String(body.name ?? "");

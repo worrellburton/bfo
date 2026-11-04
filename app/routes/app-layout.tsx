@@ -942,6 +942,18 @@ export default function AppLayout() {
                   <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>sample document</span>
                 </button>
               )}
+              {/* The racetrack game, the same way (app/sign/kart). */}
+              {canPreviewGame(user) && (
+                <button onClick={() => go("/sign/preview?game=race")} className={menuItemCls} role="menuitem">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 17.5h14M6.5 17.5V9l2-3.5h7l2 3.5v8.5M6.5 12h11" />
+                    <circle cx="8.5" cy="17.5" r="1.5" />
+                    <circle cx="15.5" cy="17.5" r="1.5" />
+                  </svg>
+                  <span className="flex-1">Preview the racetrack game</span>
+                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>sample document</span>
+                </button>
+              )}
 
               {/* The gallery of home-page backdrops (app/home-animations): pick the one the front door shows. */}
               {canPreviewGame(user) && (
