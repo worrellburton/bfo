@@ -146,18 +146,14 @@ export function GameGate({
         </p>
       )}
 
-      {/* The controls, at the start of the game: on the island, until the signer has had a look at them. */}
+      {/* The controls, at the start of the game: on the island, until the signer has had a look at them. Only the keys: no story, nothing is given away. */}
       {controls && hud.phase === "outside" && !hud.paused && (
         <div
           className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 backdrop-blur"
           style={{ animation: "reply-in 0.5s ease-out both" }}
         >
-          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">How to get there</p>
-          <p className="mt-1 text-[13px] text-white/75">
-            {signerName}, the contract is past the theater on the far island. Cross the blocks, pick up your ticket at the booth, take the seat with your name on it, and climb the stairs after the
-            film.
-          </p>
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">Controls</p>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
             <dt className="text-white/40">Move</dt>
             <dd>W A S D or arrows</dd>
             <dt className="text-white/40">Look</dt>
