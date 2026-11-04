@@ -216,12 +216,14 @@ function elbow(px: number, py: number, busY: number, cx: number, cy: number): st
 }
 
 /**
- * A tidy org-chart layout derived purely from the ownership links. A root
- * spreads its holding companies in a row under a shared bus; everything
- * beneath a holding company is a vertical outline: each parent lists its
- * children in an indented stack, a subsidiary's own subsidiaries indented one
- * step further under it, so a column stays a column however deep it goes.
- * Roots with nothing beneath them go to the "Unlinked" tray.
+ * A tidy org-chart layout derived purely from the ownership links. The top
+ * two levels (the trust, and the holding company under it) spread their
+ * children in a row under a shared bus; from the companies in that row down,
+ * everything is a vertical outline: each parent lists its children in an
+ * indented stack, a subsidiary's own subsidiaries indented one step further
+ * under it, so a column stays a column however deep it goes. A parent whose
+ * children are all leaves stacks them at any level. Roots with nothing
+ * beneath them go to the "Unlinked" tray.
  */
 export function layoutEstate(entities: Entity[], compact = false): Layout {
   const byId = new Map(entities.map((e) => [e.id, e]));
@@ -246,15 +248,15 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
 
   // `own` is the entity's card width, `cardH` its card height, `depth` 0 at
   // a root. Stacked children are indented one step and listed top to bottom,
-  // their own children stacked under them in turn; only a root spreads its
-  // children in a row (and on a narrow, compact canvas not even that).
+  // their own children stacked under them in turn; only the top two levels
+  // spread children in a row (and on a narrow, compact canvas not even they do).
   function measure(id: string, own: number, cardH: number, depth: number): Sub {
     reached.add(id);
     const ch = kids(id);
     let m: Sub;
     if (!ch.length) {
       m = { w: own, h: cardH, stack: false, own, cardH };
-    } else if (compact || depth > 0 || ch.every((c) => !kids(c.id).length)) {
+    } else if (compact || depth >= 2 || ch.every((c) => !kids(c.id).length)) {
       const childOwn = Math.max(224, own - INDENT);
       let cursor = cardH + STACK_TOP;
       let w = own;

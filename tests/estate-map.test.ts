@@ -27,11 +27,12 @@ describe("the estate map", () => {
     expect(nodes.find((n) => n.id === "tal")).toMatchObject({ partners: [{ name: "Sameh Elguizaoui", percent: 50 }], share: 50 });
   });
 
-  it("keeps a holding company's subsidiaries in one vertical outline, a sub-subsidiary indented under its owner", () => {
+  it("keeps a company's subsidiaries in one vertical outline, a sub-subsidiary indented under its owner, while the top levels spread", () => {
     const entities = mapEntities({
       t: { name: "Burton Family Revocable Trust", type: "Trust" },
-      sun: { name: "Sundown Investments", ownerId: "t" },
-      other: { name: "Other Holdings", ownerId: "t" },
+      ll: { name: "Ledger Louise", ownerId: "t" },
+      sun: { name: "Sundown Investments", ownerId: "ll" },
+      other: { name: "Other Holdings", ownerId: "ll" },
       pal: { name: "Palomino Ranch", ownerId: "sun" },
       hes: { name: "FDJ Hesperia", ownerId: "sun" },
       cfs: { name: "FDJ CFS", ownerId: "hes" },
@@ -42,7 +43,8 @@ describe("the estate map", () => {
     const pal = byId.get("pal")!;
     const hes = byId.get("hes")!;
     const cfs = byId.get("cfs")!;
-    // The trust's holding companies sit side by side.
+    // Ledger Louise's companies sit side by side under it, as the trust's holding companies do.
+    expect(byId.get("ll")!.y).toBeGreaterThan(byId.get("t")!.y);
     expect(other.y).toBe(sun.y);
     expect(other.x + other.w).toBeLessThan(sun.x);
     // Under Sundown, one column: Hesperia and Palomino at the same step in, one above the other.
