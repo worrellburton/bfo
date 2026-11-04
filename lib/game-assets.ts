@@ -53,7 +53,7 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
   door: { text: "A heavy old wooden theater door creaking slowly open, echoing in a quiet hall, then a soft wooden knock as it settles", seconds: 3.5 },
   sit: { text: "Someone sitting down into a plush velvet cinema seat, a soft cushioned thump and a faint creak of the seat frame", seconds: 1.5 },
   sign: { text: "A fountain pen signing a signature on paper on a wooden desk, quick confident scribble, then the pen set down", seconds: 2.5 },
-  jump: { text: "A short, light, cartoon video game jump hop sound, soft and bouncy, like a blocky character leaping", seconds: 0.8 },
+  jump: { text: "A really dumb, silly cartoon boing: one exaggerated springy boioioing like a jack-in-the-box spring or a cartoon character bouncing, goofy and quick", seconds: 0.9 },
   land: { text: "A soft thud of a character landing on a wooden block in a video game, light and quick", seconds: 0.7 },
   fall: { text: "A quick descending whoosh of falling into a dark pit in a video game, ending in a low soft puff", seconds: 1.8 },
   step: { text: "A single soft footstep on short grass, close up, quick and quiet", seconds: 0.5 },
@@ -262,10 +262,10 @@ export async function voiceJudy(lines: Array<{ id: string; text: string }>, redo
   return { assets, remaining: Math.max(0, todo.length - batch) };
 }
 
-/** Makes the next `batch` of sound effects that aren't done yet; returns what's left. */
-export async function makeSounds(redo: boolean, batch = 3, text: Record<string, string> = {}): Promise<{ assets: GameAssets; remaining: number }> {
+/** Makes the next `batch` of sound effects that aren't done yet (or, with `only`, just those names); returns what's left. */
+export async function makeSounds(redo: boolean, batch = 3, text: Record<string, string> = {}, only?: string[]): Promise<{ assets: GameAssets; remaining: number }> {
   let assets = await readAssets();
-  const todo = Object.entries(EFFECTS).filter(([name]) => redo || !assets.sounds[name]);
+  const todo = Object.entries(EFFECTS).filter(([name]) => (!only || only.includes(name)) && (redo || !assets.sounds[name]));
   for (const [name, effect] of todo.slice(0, batch)) {
     const bytes = await soundEffect(text[name] || effect.text, effect.seconds);
     const path = `game/sounds/${name}-${Date.now().toString(36)}.mp3`;

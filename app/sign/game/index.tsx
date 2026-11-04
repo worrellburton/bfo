@@ -152,6 +152,10 @@ export function GameGate({
           className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 backdrop-blur"
           style={{ animation: "reply-in 0.5s ease-out both" }}
         >
+          <p className="mb-2 flex items-center gap-2 text-[13px] text-amber-200/90">
+            <span aria-hidden>🔊</span>
+            Turn your sound on.
+          </p>
           <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">Controls</p>
           <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
             <dt className="text-white/40">Move</dt>
@@ -192,7 +196,6 @@ export function GameGate({
                 )}
               </span>
               <span className="mt-1 block text-[17px] leading-snug text-white">{hud.dialogue.text}</span>
-              {!hud.dialogue.options && hud.dialogue.speaker !== "You" && <span className="mt-2 block text-[10.5px] text-white/35">Space skips to the end of this line</span>}
             </div>
             {hud.dialogue.options && (
               <div className="mt-2 grid gap-1.5">
@@ -238,7 +241,7 @@ export function GameGate({
               {title}
             </h1>
             {document && (
-              <div className="mt-6 flex w-full max-w-[560px] items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left" style={rise(3)}>
+              <div className="mt-6 flex w-full max-w-[560px] items-center gap-4 rounded-2xl border border-[#2a2a33] bg-[#141419] p-4 text-left" style={rise(3)}>
                 <span className="flex h-14 w-11 shrink-0 items-center justify-center rounded-md bg-[#f4ede0] text-[10px] font-bold uppercase tracking-wider text-[#8c2a2f] shadow">PDF</span>
                 <span className="min-w-0">
                   <span className="block truncate text-[15px] font-medium text-white">{document.fileName}</span>
@@ -258,14 +261,8 @@ export function GameGate({
               onClick={() => game.current?.begin()}
               className="h-[56px] min-w-[260px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-50"
             >
-              {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start signing"}
+              {loading === "failed" ? "The theater couldn't be built" : "Start signing"}
             </button>
-            {loading !== "failed" && (
-              <p className="flex items-center gap-2 text-[13px] text-amber-200/90">
-                <span aria-hidden>🔊</span>
-                Turn your sound on.
-              </p>
-            )}
             {loading === "failed" && (
               <p className="text-[12.5px] text-white/60">
                 Your browser couldn't run it.{" "}

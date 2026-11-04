@@ -15,7 +15,7 @@ import { adoptOlderVoice, AssetError, checkProp, cleanLines, configured, listVoi
  *     older-voice                                   finds an older woman's voice in ElevenLabs's shared library and adds it → { voice }
  *     judy        { lines: [{ id, text }], redo?, voiceId? }  voices a few of Judy's lines per call → { assets, remaining }; call until
  *                                                   remaining is 0; a voiceId switches Judy's voice and starts her over
- *     sounds      { redo? }                         a few sound effects per call → { assets, remaining }
+ *     sounds      { redo?, only? }                  a few sound effects per call → { assets, remaining }; only: just these names
  *     prop        { name }                          OpenAI draws it, Meshy starts the model → { assets }
  *     prop-status { name }                          Meshy's progress; on success the GLB lands in the bucket → { assets }
  *
@@ -64,8 +64,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const voiceId = typeof body.voiceId === "string" && /^[\w-]{1,64}$/.test(body.voiceId) ? body.voiceId : undefined;
         return res.status(200).json(await voiceJudy(lines, redo, 4, voiceId));
       }
-      case "sounds":
-        return res.status(200).json(await makeSounds(redo));
+      case "sounds": {
+        const only = Array.isArray(body.only) ? body.only.filter((n: unknown): n is string => typeof n === "string") : undefined;
+        return res.status(200).json(await makeSounds(redo, 3, {}, only?.length ? only : undefined));
+      }
       case "prop": {
         const name = String(body.name ?? "");
         if (!PROPS[name]) return fail(res, 400, "bad_prop");
