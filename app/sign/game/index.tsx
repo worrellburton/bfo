@@ -132,9 +132,6 @@ export function GameGate({
           <div className="pointer-events-auto flex items-center gap-2">
             {hud.phase !== "intro" && <span className="tabular-nums text-[11px] text-white/45">{hud.fps} fps</span>}
             <span className="rounded-full border border-amber-300/50 bg-amber-300/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200">Preview</span>
-            <button type="button" onClick={onSkip} className="h-[32px] rounded-full border border-white/15 px-3 text-[12px] text-white/80 hover:bg-white/10">
-              Skip to the signing page
-            </button>
           </div>
         )}
       </div>
