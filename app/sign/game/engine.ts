@@ -21,6 +21,13 @@ export type Manifest = {
   movie: string | null;
   youtube: string | null;
   music: string | null;
+  /**
+   * When the song comes in during the film: at `at` seconds into the film it
+   * starts from `from` seconds into the track, easing in over `fadeIn`
+   * seconds, and then plays on through the exit and the climb. Without a cue
+   * it comes in when the signer stands up.
+   */
+  musicCue?: { at: number; from: number; fadeIn: number } | null;
   sounds: Partial<Record<"door" | "sit" | "sign" | "jump" | "land" | "fall" | "step" | "cheer", string | null>>;
   models: Partial<Record<"seat" | "plant" | "popcorn" | "judy", string>>;
   /** Judy's voiced lines by line id (public/game/judy.json), from scripts/game-judy.mjs. */
@@ -41,7 +48,7 @@ export type JudyScript = {
 /** The film's name, on the marquee, the poster, the ticket. */
 export const FILM_TITLE = "Sam Signs the Operating Agreement";
 
-export const EMPTY_MANIFEST: Manifest = { movie: null, youtube: "LnVy5ZEcbH0", music: null, sounds: {}, models: {}, voice: {} };
+export const EMPTY_MANIFEST: Manifest = { movie: null, youtube: "LnVy5ZEcbH0", music: null, musicCue: null, sounds: {}, models: {}, voice: {} };
 
 /** Where the signer is in the story. */
 export type Phase = "intro" | "outside" | "talk" | "lobby" | "theater" | "seated" | "movie" | "ended" | "exit" | "done";
@@ -248,6 +255,8 @@ export class SigningGame {
   // Media
   private music: HTMLAudioElement | null = null;
   private musicFade: number | null = null;
+  /** The song has come in on its cue during the film, so nothing restarts it. */
+  private cued = false;
   private video: HTMLVideoElement | null = null;
   private videoTexture: THREE.VideoTexture | null = null;
   private audio: AudioContext | null = null;
@@ -1256,23 +1265,41 @@ export class SigningGame {
     }
   }
 
-  /** The song comes back for the climb: from the top, rising over a few seconds. */
-  private fadeInMusic() {
+  /** How loud the song sits once it has come in; the climb takes it up from here. */
+  private static readonly MUSIC_IN = 0.45;
+
+  /** The song comes in: from `from` seconds into the track, easing up to its level over `ms`. */
+  private fadeInMusic(from = this.opts.manifest.musicCue?.from ?? 0, ms = 3000) {
     const a = this.music;
     if (!a) return;
     if (this.musicFade !== null) cancelAnimationFrame(this.musicFade);
     this.musicFade = null;
-    a.currentTime = 0;
+    try {
+      a.currentTime = from;
+    } catch {
+      /* not seekable yet: it plays from wherever it is */
+    }
     a.volume = 0;
     void a.play().catch(() => {});
     const t0 = performance.now();
     const step = () => {
-      const k = Math.min(1, (performance.now() - t0) / 3000);
-      a.volume = 0.55 * k;
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      // Eased: slow at first, then up, then settling.
+      a.volume = SigningGame.MUSIC_IN * (0.5 - 0.5 * Math.cos(Math.PI * k));
       if (k < 1) this.musicFade = requestAnimationFrame(step);
       else this.musicFade = null;
     };
     this.musicFade = requestAnimationFrame(step);
+  }
+
+  /** The cue during the film ("Anything is possible"): the song comes in on the line and takes over from there. */
+  private cueMusic() {
+    const cue = this.opts.manifest.musicCue;
+    if (this.cued || !cue || !this.music || this.phase !== "movie") return;
+    const t = this.video ? this.video.currentTime : (this.yt?.player?.getCurrentTime?.() ?? 0);
+    if (t < cue.at) return;
+    this.cued = true;
+    this.fadeInMusic(cue.from, Math.max(0, cue.fadeIn) * 1000);
   }
 
   private fadeOutMusic() {
@@ -1793,7 +1820,8 @@ export class SigningGame {
     this.setPhase("exit");
     this.setHud({ prompt: "" });
     this.hint("Through the open door by the screen: a staircase climbs into the sky. The contract is at the top.", 8000);
-    this.fadeInMusic();
+    // The song is already playing if it came in on its cue; otherwise it comes in now.
+    if (!this.cued) this.fadeInMusic();
     this.startWind();
     this.lockPointer();
   }
@@ -1807,7 +1835,7 @@ export class SigningGame {
       w.filter.frequency.value = 260 + 140 * Math.sin(now / 1700) + 70 * Math.sin(now / 530);
       w.gain.gain.setTargetAtTime(0.5 * f * f, w.ctx.currentTime, 0.25);
     }
-    if (this.music && this.musicFade === null && this.phase === "exit") this.music.volume = Math.min(1, 0.4 + 0.6 * f);
+    if (this.music && this.musicFade === null && this.phase === "exit") this.music.volume = Math.min(1, SigningGame.MUSIC_IN + (1 - SigningGame.MUSIC_IN) * f);
   }
 
   private startWind() {
@@ -2143,6 +2171,7 @@ export class SigningGame {
       c.group.position.z = c.base.z + 1.0 * Math.cos(now / 5100 + c.phase);
       c.group.position.y = c.base.y + 0.3 * Math.sin(now / 2600 + c.phase);
     }
+    this.cueMusic();
     this.climb(now);
     this.handPen(now);
     const blink = Math.floor(now / 350) % 2;
@@ -2655,7 +2684,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 // ── YouTube (only when no movie file is in the manifest) ──────────────────
 
-type YTPlayer = { playVideo(): void; pauseVideo?(): void; destroy?(): void };
+type YTPlayer = { playVideo(): void; pauseVideo?(): void; destroy?(): void; getCurrentTime?(): number };
 type YTApi = { Player: new (el: HTMLIFrameElement, opts: { events: { onStateChange: (e: { data: number }) => void } }) => YTPlayer };
 
 let ytLoading: Promise<YTApi> | null = null;

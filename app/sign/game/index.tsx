@@ -260,6 +260,12 @@ export function GameGate({
             >
               {loading === "loading" ? "Building the theater…" : loading === "failed" ? "The theater couldn't be built" : "Start signing"}
             </button>
+            {loading !== "failed" && (
+              <p className="flex items-center gap-2 text-[13px] text-amber-200/90">
+                <span aria-hidden>🔊</span>
+                Turn your sound on. There's music, and someone to talk to.
+              </p>
+            )}
             {loading === "failed" && (
               <p className="text-[12.5px] text-white/60">
                 Your browser couldn't run it.{" "}

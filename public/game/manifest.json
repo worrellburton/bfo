@@ -2,6 +2,7 @@
   "movie": "/game/movie.mp4",
   "youtube": "LnVy5ZEcbH0",
   "music": "/game/lobby.mp3",
+  "musicCue": { "at": 27.3, "from": 43, "fadeIn": 2 },
   "sounds": {
     "door": null,
     "sit": null,

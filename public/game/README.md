@@ -12,7 +12,10 @@ Everything in this folder is served as-is at the same path (`/game/...`).
 - `movie`: the file that plays on the theater screen. When null, the YouTube
   video named by `youtube` is embedded on the screen instead.
 - `music`: plays from the start, fades out as the signer walks into the
-  auditorium, and comes back for the climb up the staircase at the end.
+  auditorium, and comes back during the film on `musicCue`: at `at` seconds
+  into the film it starts from `from` seconds into the track, easing in over
+  `fadeIn` seconds, then plays on through the exit and swells up the
+  staircase. Without a cue it comes back when the signer stands up.
 - `sounds`: short effects, each null until a file is dropped in: `door`
   (the exit door opening), `sit`, `sign` (the pen), `jump`, `land`, `fall`
   (into the pit). `npm run game:sounds` makes them with ElevenLabs
