@@ -86,8 +86,9 @@ signature so the signer types their address this time (`fields` of type
 racetrack, or the plain page. The racetrack (`app/sign/kart`): Sam races
 Judy, three laps of about a minute, her lines by cue from
 `public/kart/judy.json`, the song from the theater and, on the last lap, a
-piece ElevenLabs Music made (see `public/kart/README.md`). "Preview the
-racetrack game" in Robert's menu runs it (`/sign/preview?game=race`).
+piece ElevenLabs Music made (see `public/kart/README.md`). "Games" in
+Robert's menu (`/games`) lists both with a Play button each
+(`/sign/preview`, `/sign/preview?game=race`).
 
 In "Anything Is Possible" mode the signer's link opens a first-person game
 in front of the signing page: a floating island, a chain of blocks to the
@@ -95,9 +96,9 @@ theater on the next island, the seat with their name on it, the film, and the
 door to the room with the contract. The game is `app/sign/game` (three.js,
 loaded only on that page); its movie, music, sound effects and optional GLB
 props live in `public/game` and are named in `public/game/manifest.json`
-(see `public/game/README.md`). Robert's account menu has "Preview the
-signing game" (`/sign/preview`), which runs the whole thing on a sample
-document and signs nothing; its "Game studio" panel makes Judy's voice, the
+(see `public/game/README.md`). Play, on the Games page, runs the whole
+thing on a sample document and signs nothing (`/sign/preview`); its "Game
+studio" panel makes Judy's voice, the
 sound effects and the props on the server (`api/game-assets.ts`, with the
 keys Vercel holds) and stores them in the public brand bucket, where they
 win over the static manifest. A cron (`api/cron/game-assets.ts`, every five

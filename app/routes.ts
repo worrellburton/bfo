@@ -14,6 +14,8 @@ export default [
   route("sign/:token", "./routes/sign.tsx"),
   layout("routes/app-layout.tsx", [
     route("home", "routes/home.tsx"),
+    // The games to try, from the account menu.
+    route("games", "routes/games.tsx"),
     route("ask", "routes/ask.tsx"),
     route("assets", "routes/assets.tsx"),
     route("assets/:id/:tab?", "routes/asset-detail.tsx"),

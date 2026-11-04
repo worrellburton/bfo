@@ -931,27 +931,15 @@ export default function AppLayout() {
                 </button>
               )}
 
-              {/* The signing game as a signer sees it, on a sample document (app/sign/preview.ts). */}
+              {/* The games in front of the signing page, to try on a sample document (app/routes/games.tsx). */}
               {canPreviewGame(user) && (
-                <button onClick={() => go("/sign/preview")} className={menuItemCls} role="menuitem">
+                <button onClick={() => go("/games")} className={menuItemCls} role="menuitem">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v7a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 14.5v-7z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 9.25v3.5l3-1.75-3-1.75zM8 20h8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10a4 4 0 014 4v2a4 4 0 01-4 4h-1.5l-2-2h-3l-2 2H7a4 4 0 01-4-4v-2a4 4 0 014-4z" />
+                    <path strokeLinecap="round" d="M8 10.5v3M6.5 12h3M15.5 11.5h.01M17.5 13h.01" />
                   </svg>
-                  <span className="flex-1">Preview the signing game</span>
-                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>sample document</span>
-                </button>
-              )}
-              {/* The racetrack game, the same way (app/sign/kart). */}
-              {canPreviewGame(user) && (
-                <button onClick={() => go("/sign/preview?game=race")} className={menuItemCls} role="menuitem">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 17.5h14M6.5 17.5V9l2-3.5h7l2 3.5v8.5M6.5 12h11" />
-                    <circle cx="8.5" cy="17.5" r="1.5" />
-                    <circle cx="15.5" cy="17.5" r="1.5" />
-                  </svg>
-                  <span className="flex-1">Preview the racetrack game</span>
-                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>sample document</span>
+                  <span className="flex-1">Games</span>
+                  <span className={`text-[11px] ${railDark ? "text-gray-500" : "text-gray-400"}`}>try them</span>
                 </button>
               )}
 
