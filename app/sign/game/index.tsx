@@ -263,7 +263,7 @@ export function GameGate({
             {loading !== "failed" && (
               <p className="flex items-center gap-2 text-[13px] text-amber-200/90">
                 <span aria-hidden>🔊</span>
-                Turn your sound on
+                Turn your sound on.
               </p>
             )}
             {loading === "failed" && (
