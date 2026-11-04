@@ -62,9 +62,9 @@ import {
  *            send       { id, plain? } → { request }  emails each party their link (plain: a normal-looking email for a game)
  *            remind     { id, party?, plain? } → { request }  re-sends the link to those who haven't signed; plain: true writes the
  *                       email as a normal request (nothing about the game) while the link still opens it
- *            resend     { id, mode?, plain? } → { request }  a finished (completed, declined or voided) request sent again as a new
- *                       one: the same document and parties, an Address box under each signature that lacks one, in the
- *                       given mode (normal, game, race); sent at once, with the plain email when asked
+ *            resend     { id, mode?, plain? } → { request }  a request sent again as a new one: the same document and parties, an
+ *                       Address box under each signature that lacks one, in the given mode (normal, game, race); sent at
+ *                       once, with the plain email when asked. A pending original is voided (its links stop working).
  *            send-copy  { id } → { request }  emails every party a link to the signed copy
  *            void       { id } → { request }  the links stop working
  *            delete     { id } → { ok }
@@ -351,9 +351,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "send":
         return res.status(200).json({ request: toView(await sendNow(me, fresh, body.plain === true)) });
       case "resend": {
-        // A finished request goes out again as a new one, so the old record and its signed copy stay as they were.
-        if (row.status !== "completed" && row.status !== "declined" && row.status !== "voided")
-          return fail(res, 409, "not_closed", "Resend is for a request that has run its course. A pending one can be reminded.");
+        // It goes out again as a new request, so the old record (and any signed copy) stays as it was.
+        if (row.status === "draft") return fail(res, 409, "not_sent", "This one hasn't been sent yet: send it instead.");
         if (!row.original_path) return fail(res, 409, "no_file", "The original document isn't on the request.");
         const mode = cleanMode(body.mode);
         if (mode !== "normal" && !(await gameAllowed(row))) return fail(res, 409, "game_not_for_entity", GAME_ONLY_MESSAGE);
@@ -381,10 +380,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const path = versionPath(made.id, "upload");
         await storageUpload(path, bytes, "application/pdf", SIGN_BUCKET);
         await sb(`signature_requests?id=eq.${made.id}`, { method: "PATCH", body: { original_path: path, current_path: path } });
-        // The old record says where it went.
-        await update(fresh, (r) => ({
-          events: [...r.events, event("resent", { by: me.id, note: `as a new request${mode === "normal" ? "" : ` (${mode === "race" ? "racetrack" : "theater"})`}` })],
-        })).catch((err) => console.error("sign: couldn't note the resend on the old request", err instanceof Error ? err.message : err));
+        // The old record says where it went; a pending one is voided, so only the new links work.
+        await update(fresh, (r) => {
+          const note = event("resent", { by: me.id, note: `as a new request${mode === "normal" ? "" : ` (${mode === "race" ? "racetrack" : "theater"})`}` });
+          const pending = r.status === "sent" || r.status === "partial";
+          return pending
+            ? { status: "voided", parties: r.parties.map(({ tokenHash: _t, ...p }) => p), events: [...r.events, note, event("voided", { by: me.id, note: "replaced by the new request" })] }
+            : { events: [...r.events, note] };
+        }).catch((err) => console.error("sign: couldn't note the resend on the old request", err instanceof Error ? err.message : err));
         return res.status(200).json({ request: toView(await sendNow(me, () => rowById(made.id), body.plain === true)) });
       }
       case "remind": {

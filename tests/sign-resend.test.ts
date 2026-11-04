@@ -238,8 +238,27 @@ describe("resend", () => {
     expect(view.body.fields.some((f: { type: string; party: string }) => f.type === "address" && f.party === "b")).toBe(true);
   });
 
-  it("refuses a resend of a pending request, and a game for another entity", async () => {
-    rows.get(OLD)!.status = "partial";
+  it("resends a pending request too, voiding it so only the new links work", async () => {
+    const old = rows.get(OLD)!;
+    old.status = "partial";
+    old.signed_path = null;
+    old.parties = [
+      { key: "a", role: "Manager", name: "Robert W. Burton", email: "r@x.com", status: "signed", tokenHash: hashToken(tokenA) },
+      { key: "b", role: "Member", name: "Sameh Elguizaoui", email: "sam@x.com", status: "viewed", tokenHash: hashToken(tokenB) },
+    ];
+    const r = await call("POST", { action: "resend", id: OLD, mode: "race", plain: true });
+    expect(r.statusCode).toBe(200);
+    expect(r.body.request.status).toBe("sent");
+    const after = rows.get(OLD)!;
+    expect(after.status).toBe("voided");
+    expect(after.parties.every((p) => !p.tokenHash)).toBe(true);
+    expect(after.events.map((e) => e.kind)).toEqual(["resent", "voided"]);
+    // Sam's old link is dead.
+    expect((await call("GET", {}, { token: tokenB })).statusCode).toBe(404);
+  });
+
+  it("refuses a resend of a draft, and a game for another entity", async () => {
+    rows.get(OLD)!.status = "draft";
     expect((await call("POST", { action: "resend", id: OLD, mode: "race" })).statusCode).toBe(409);
     rows.get(OLD)!.status = "completed";
     rows.get(OLD)!.asset_id = "other";

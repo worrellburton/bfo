@@ -260,7 +260,7 @@ export default function SignatureDetail() {
                 {busy === "send-copy" ? "Sending…" : "Send to both parties"}
               </Small>
             )}
-            {(req.status === "completed" || req.status === "declined" || req.status === "voided") && req.original_path && (
+            {req.status !== "draft" && req.original_path && (
               <Small isDark={isDark} disabled={!!busy} onClick={() => setResending(true)}>
                 Resend for signature
               </Small>
@@ -490,6 +490,7 @@ export default function SignatureDetail() {
         <ResendDialog
           isDark={isDark}
           gameEntity={gameEntity}
+          pending={req.status === "sent" || req.status === "partial"}
           parties={req.parties.map((p) => p.name || p.role)}
           onClose={() => setResending(false)}
           onSend={async (mode, plain) => {
@@ -653,12 +654,15 @@ function FieldBox({
 function ResendDialog({
   isDark,
   gameEntity,
+  pending,
   parties,
   onClose,
   onSend,
 }: {
   isDark: boolean;
   gameEntity: boolean;
+  /** The request is still out: resending voids it, and its links stop working. */
+  pending: boolean;
   parties: string[];
   onClose: () => void;
   onSend: (mode: SignMode, plain: boolean) => Promise<void>;
@@ -689,7 +693,10 @@ function ResendDialog({
         <h2 id="resend-title" className="text-[16px] font-semibold">
           Resend for signature
         </h2>
-        <p className={`mt-1 text-[12.5px] ${sub}`}>A new request with the same document, to {parties.join(" and ")}. An Address box goes under each signature so it's filled in this time.</p>
+        <p className={`mt-1 text-[12.5px] ${sub}`}>
+          A new request with the same document, to {parties.join(" and ")}. An Address box goes under each signature so it's filled in this time.
+          {pending ? " This one is voided: its links stop working, and everyone signs the new one." : ""}
+        </p>
         <div className="mt-4 space-y-2" role="radiogroup" aria-label="How they sign">
           {choices.map((c) => {
             const on = mode === c.mode;
