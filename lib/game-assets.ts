@@ -39,6 +39,8 @@ export type GameAssets = {
   voice: Record<string, string>;
   sounds: Record<string, string>;
   models: Record<string, string>;
+  /** Music made for the games, by key ("kart-final": the racetrack's last lap). */
+  music: Record<string, string>;
   /** The ElevenLabs voice Judy speaks with. */
   judyVoice: { id: string; name: string } | null;
   /** Meshy's progress on each prop. */
@@ -46,7 +48,7 @@ export type GameAssets = {
   updatedAt: number;
 };
 
-export const EMPTY_ASSETS: GameAssets = { voice: {}, sounds: {}, models: {}, judyVoice: null, props: {}, updatedAt: 0 };
+export const EMPTY_ASSETS: GameAssets = { voice: {}, sounds: {}, models: {}, music: {}, judyVoice: null, props: {}, updatedAt: 0 };
 
 /** The sound effects: what to ask ElevenLabs for and how long each should be. */
 export const EFFECTS: Record<string, { text: string; seconds: number }> = {
@@ -58,6 +60,17 @@ export const EFFECTS: Record<string, { text: string; seconds: number }> = {
   fall: { text: "A quick descending whoosh of falling into a dark pit in a video game, ending in a low soft puff", seconds: 1.8 },
   step: { text: "A single soft footstep on short grass, close up, quick and quiet", seconds: 0.5 },
   cheer: { text: "A short burst of celebration: a small crowd cheering and clapping with a bright triumphant brass fanfare and a champagne cork pop, joyful, over in a moment", seconds: 3 },
+  // The racetrack game (app/sign/kart): keys begin "kart-".
+  "kart-engine": { text: "A small go-kart engine idling and revving steadily, a clean seamless loop, no music", seconds: 4 },
+  "kart-drift": { text: "Tires squealing in a long controlled drift around a corner on a kart track, video game style", seconds: 2 },
+  "kart-boost": { text: "A punchy turbo boost whoosh with a rising pitch and a sparkle, arcade racing game power-up", seconds: 1.5 },
+  "kart-jump": { text: "A cool arcade racing game jump: a rising synth sweep with a spring and a whoosh, satisfying and quick", seconds: 1 },
+  "kart-land": { text: "A kart landing after a jump: a quick thud with a suspension bounce and a tire chirp", seconds: 0.8 },
+  "kart-lap": { text: "A bright two-note chime for completing a lap in a racing game, crisp and quick", seconds: 1 },
+  "kart-finish": { text: "A triumphant racing game finish-line fanfare with a checkered-flag crowd cheer, short and bright", seconds: 3 },
+  "kart-bump": { text: "Two go-karts bumping, a hollow plastic thunk with a rattle, video game style", seconds: 0.7 },
+  "kart-count": { text: "A single low electronic countdown beep from a racing game start light", seconds: 0.5 },
+  "kart-go": { text: "A high bright electronic GO tone from a racing game start light, with a short rising flourish", seconds: 0.8 },
 };
 
 /** The props: what OpenAI draws, which Meshy then turns into a model. */
@@ -119,7 +132,15 @@ export function cleanLines(raw: unknown): Array<{ id: string; text: string }> {
 
 export async function readAssets(): Promise<GameAssets> {
   const got = (await readSettings([SETTING]))[SETTING] as Partial<GameAssets> | undefined;
-  return { ...EMPTY_ASSETS, ...(got ?? {}), voice: { ...(got?.voice ?? {}) }, sounds: { ...(got?.sounds ?? {}) }, models: { ...(got?.models ?? {}) }, props: { ...(got?.props ?? {}) } };
+  return {
+    ...EMPTY_ASSETS,
+    ...(got ?? {}),
+    voice: { ...(got?.voice ?? {}) },
+    sounds: { ...(got?.sounds ?? {}) },
+    models: { ...(got?.models ?? {}) },
+    music: { ...(got?.music ?? {}) },
+    props: { ...(got?.props ?? {}) },
+  };
 }
 
 export async function writeAssets(assets: GameAssets): Promise<void> {
@@ -222,6 +243,22 @@ export async function speak(voiceId: string, text: string): Promise<Uint8Array> 
     body: { text, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true } },
   });
   return new Uint8Array(await r.arrayBuffer());
+}
+
+/** A piece of music from ElevenLabs Music, as MP3 bytes. */
+export async function composeMusic(prompt: string, seconds: number): Promise<Uint8Array> {
+  const r = await elevenLabs("/music", { method: "POST", accept: "audio/mpeg", body: { prompt, music_length_ms: Math.round(seconds * 1000) } });
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+/** Makes one piece of music and stores it under `key`; the game reads it from the public bucket. */
+export async function makeMusic(key: string, prompt: string, seconds: number): Promise<GameAssets> {
+  if (!/^[\w-]{1,40}$/.test(key)) throw new AssetError("elevenlabs", 400, "A music key is letters, digits and dashes.");
+  const bytes = await composeMusic(prompt, Math.min(300, Math.max(10, seconds)));
+  const path = `game/music/${key}-${Date.now().toString(36)}.mp3`;
+  await storageUpload(path, bytes, "audio/mpeg", BRAND_BUCKET);
+  const url = publicUrl(path);
+  return patchAssets((a) => (a.music[key] = url));
 }
 
 /** One sound effect, as MP3 bytes. */

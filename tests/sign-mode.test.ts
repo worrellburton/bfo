@@ -189,6 +189,21 @@ describe("signing mode", () => {
     expect(String(sent[3])).not.toContain("Play and sign");
   });
 
+  it("treats the racetrack like the theater: TallulahMD LLC only, and the signer's page is told which", async () => {
+    const made = await call("POST", { action: "create", title: "OA", assetId: "tallulah", mode: "race", parties: [{ role: "Member", name: "Sam", email: "s@x.com" }] });
+    expect(made.statusCode).toBe(200);
+    expect(made.body.request.mode).toBe("race");
+    const refused = await call("POST", { action: "create", title: "OA", assetId: "other", mode: "race", parties: [{ role: "Member", name: "Sam", email: "s@x.com" }] });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.body.error).toBe("game_not_for_entity");
+    row.mode = "race";
+    row.status = "sent";
+    row.parties[0] = { ...row.parties[0], status: "sent", tokenHash: hashToken(token) };
+    expect((await call("GET", {}, { token })).body.mode).toBe("race");
+    row.asset_id = "other";
+    expect((await call("GET", {}, { token })).body.mode).toBe("normal");
+  });
+
   it("reminds as a normal request when asked, while the link still opens the game", async () => {
     const { sendEmail } = await import("../lib/auth.js");
     row.mode = "game";

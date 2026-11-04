@@ -22,11 +22,12 @@ const SITE = "https://www.burtonfamilyoffice.com";
 export const SIGN_BUCKET = "documents";
 
 export type PartyKey = "a" | "b";
-type FieldType = "signature" | "initials" | "name" | "date";
+type FieldType = "signature" | "initials" | "name" | "date" | "address";
 export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
 /** How the parties sign: the plain page, or the "Anything Is Possible" game in front of it (app/sign/game). */
-export type SignMode = "normal" | "game";
+/** How the parties sign: the plain page, the Anything Is Possible theater game, or the racetrack game in front of it. */
+export type SignMode = "normal" | "game" | "race";
 
 /** Where a signer's mark goes: fractions of the page, y measured from the top. */
 export type SignField = { id: string; party: PartyKey; type: FieldType; page: number; x: number; y: number; w: number; h: number };
@@ -47,6 +48,8 @@ export type Party = {
   ip?: string;
   /** What they typed as their name when signing (the certificate shows it). */
   signedAs?: string;
+  /** The address they typed when signing, when the document has an address field for them. */
+  address?: string;
 };
 
 export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string };
@@ -151,7 +154,7 @@ export function cleanField(raw: unknown, pageCount: number): SignField | null {
   const f = raw as Record<string, unknown>;
   const type = f.type;
   const party = f.party;
-  if (type !== "signature" && type !== "initials" && type !== "name" && type !== "date") return null;
+  if (type !== "signature" && type !== "initials" && type !== "name" && type !== "date" && type !== "address") return null;
   if (party !== "a" && party !== "b") return null;
   const page = Math.floor(Number(f.page));
   if (!(page >= 1 && page <= pageCount)) return null;
@@ -167,8 +170,11 @@ export function cleanField(raw: unknown, pageCount: number): SignField | null {
 
 /** A mode as sent by the office; anything unknown is the plain page. */
 export function cleanMode(raw: unknown): SignMode {
-  return raw === "game" ? "game" : "normal";
+  return raw === "game" || raw === "race" ? raw : "normal";
 }
+
+/** True for a mode that puts a game in front of the signing page. */
+export const isGameMode = (mode: SignMode | undefined): boolean => mode === "game" || mode === "race";
 
 export function cleanParty(raw: unknown, key: PartyKey, prior?: Party): Party | null {
   if (!raw || typeof raw !== "object") return null;
@@ -307,7 +313,8 @@ export async function stampPdf(pdf: Uint8Array, stamps: Stamp[]): Promise<Uint8A
       page.drawImage(img, { x: r.x, y: r.y, width: fit.w, height: fit.h, rotate: degrees(r.rotate) });
     } else if (s.text) {
       const font = s.field.type === "name" || s.field.type === "initials" ? italic : plain;
-      drawFitted(page, font, fontSafe(s.text, font), r);
+      if (s.field.type === "address") drawWrapped(page, font, fontSafe(s.text, font), r);
+      else drawFitted(page, font, fontSafe(s.text, font), r);
     }
   }
   return doc.save();
@@ -318,6 +325,43 @@ function drawFitted(page: PDFPage, font: PDFFont, text: string, r: { x: number; 
   while (size > 5 && font.widthOfTextAtSize(text, size) > r.w) size -= 0.5;
   const at = along(r.x, r.y, 0, (r.h - size) / 2 + size * 0.1, r.rotate);
   page.drawText(text, { x: at.x, y: at.y, size, font, color: rgb(0.08, 0.08, 0.1), rotate: degrees(r.rotate) });
+}
+
+/**
+ * An address in its box: on the lines it was typed on, or, typed on one line,
+ * broken at its commas into up to three, at the largest size that fits.
+ */
+function drawWrapped(page: PDFPage, font: PDFFont, text: string, r: { x: number; y: number; w: number; h: number; rotate: number }) {
+  const typed = text
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const fits = (lines: string[], size: number) => lines.every((l) => font.widthOfTextAtSize(l, size) <= r.w) && size * 1.2 * lines.length <= r.h;
+  let size = Math.min(11, r.h * 0.7);
+  let lines = typed.length ? typed : [text];
+  if (lines.length === 1) {
+    // Pack the comma-separated parts into as few lines as fit, three at most.
+    const parts = lines[0].split(/,\s*/).filter(Boolean);
+    for (; size > 5; size -= 0.5) {
+      const packed: string[] = [];
+      for (const part of parts) {
+        const last = packed[packed.length - 1];
+        if (last !== undefined && font.widthOfTextAtSize(`${last}, ${part}`, size) <= r.w) packed[packed.length - 1] = `${last}, ${part}`;
+        else packed.push(part);
+      }
+      if (packed.length <= 3 && fits(packed, size)) {
+        lines = packed;
+        break;
+      }
+    }
+  }
+  while (size > 5 && !fits(lines, size)) size -= 0.5;
+  const lineH = size * 1.2;
+  const total = lineH * lines.length;
+  lines.forEach((l, i) => {
+    const at = along(r.x, r.y, 0, (r.h - total) / 2 + (lines.length - 1 - i) * lineH + size * 0.1, r.rotate);
+    page.drawText(l, { x: at.x, y: at.y, size, font, color: rgb(0.08, 0.08, 0.1), rotate: degrees(r.rotate) });
+  });
 }
 
 /** Appends the certificate page: who signed what, when, from where. */
@@ -414,17 +458,20 @@ const button = (href: string, label: string) =>
 
 /** The line that warns a game-mode signer to open the link on a computer. */
 export const GAME_NOTE = "This one is a little different: open the link on a computer. You'll walk into a theater, watch a short film, and sign on the other side of the door.";
+/** The same for the racetrack game. */
+export const RACE_NOTE = "This one is a little different: open the link on a computer. You'll race for it: three laps around a track, and you sign at the finish.";
 
 export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name" | "brand"> & { mode?: SignMode }, party: Party, link: string, remind = false) {
   const from = row.brand || row.created_by_name || "Burton Family Office";
-  const game = row.mode === "game";
+  const game = isGameMode(row.mode);
+  const note = row.mode === "race" ? RACE_NOTE : GAME_NOTE;
   const subject = remind ? `Reminder: ${row.title} is waiting for your signature` : `${from} sent you ${row.title} to sign`;
-  const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\n${game ? `${GAME_NOTE}\n\n` : ""}${game ? "Play and sign here" : "Review and sign it here"}:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
+  const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\n${game ? `${note}\n\n` : ""}${game ? "Play and sign here" : "Review and sign it here"}:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
   const html = shell(
     `
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(from)} ${remind ? "is still waiting for your signature on" : "sent you"}<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
         <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">You're signing as ${esc(party.name)}, ${esc(party.role)}.</div>
-        ${game ? `<div style="margin-top:14px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.65);">${esc(GAME_NOTE)}</div>` : ""}
+        ${game ? `<div style="margin-top:14px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.65);">${esc(note)}</div>` : ""}
         ${button(link, game ? "Play and sign" : "Review and sign")}
         <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`,
     row.brand,

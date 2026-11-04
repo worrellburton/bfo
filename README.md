@@ -71,22 +71,34 @@ Optional ones are marked. Never commit values.
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8` | Apple push key for the iPhone app. `APNS_BUNDLE_ID` optional (default `com.burtonfamilyoffice.app`). |
 | `SITE_URL` | optional. Site origin used in emails (default `https://www.burtonfamilyoffice.com`). |
 
-## The signing game
+## The signing games
 
 A signature request can go out in "Anything Is Possible" mode (Tools ›
-Signatures › How they sign), but only one of TallulahMD LLC's: no other
-entity's request offers the choice, and the server refuses it
-(`lib/game-entity.ts`). A reminder can be sent "as a normal request" (a box
-beside Remind): the email says nothing about the game, and the link still
-opens it. The signer's link then opens a first-person game
+Signatures › How they sign) or as the racetrack game, but only one of
+TallulahMD LLC's: no other entity's request offers the choice, and the
+server refuses it (`lib/game-entity.ts`). A reminder, or a send, can go out
+"as a normal request" (a box beside Remind, or in the resend dialog): the
+email says nothing about the game, and the link still opens it. A finished
+request can be sent again ("Resend for signature" on its page): a new
+request with the same document and parties, an Address box under each
+signature so the signer types their address this time (`fields` of type
+`address`, stamped on the document with the signature), in the theater, the
+racetrack, or the plain page. The racetrack (`app/sign/kart`): Sam races
+Judy, three laps of about a minute, her lines by cue from
+`public/kart/judy.json`, the song from the theater and, on the last lap, a
+piece ElevenLabs Music made (see `public/kart/README.md`). "Games" in
+Robert's menu (`/games`) lists both with a Play button each
+(`/sign/preview`, `/sign/preview?game=race`).
+
+In "Anything Is Possible" mode the signer's link opens a first-person game
 in front of the signing page: a floating island, a chain of blocks to the
 theater on the next island, the seat with their name on it, the film, and the
 door to the room with the contract. The game is `app/sign/game` (three.js,
 loaded only on that page); its movie, music, sound effects and optional GLB
 props live in `public/game` and are named in `public/game/manifest.json`
-(see `public/game/README.md`). Robert's account menu has "Preview the
-signing game" (`/sign/preview`), which runs the whole thing on a sample
-document and signs nothing; its "Game studio" panel makes Judy's voice, the
+(see `public/game/README.md`). Play, on the Games page, runs the whole
+thing on a sample document and signs nothing (`/sign/preview`); its "Game
+studio" panel makes Judy's voice, the
 sound effects and the props on the server (`api/game-assets.ts`, with the
 keys Vercel holds) and stores them in the public brand bucket, where they
 win over the static manifest. A cron (`api/cron/game-assets.ts`, every five

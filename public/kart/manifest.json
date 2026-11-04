@@ -1,0 +1,17 @@
+{
+  "music": "/game/lobby.mp3",
+  "musicFinal": null,
+  "sounds": {
+    "kart-engine": null,
+    "kart-drift": null,
+    "kart-jump": null,
+    "kart-land": null,
+    "kart-lap": null,
+    "kart-finish": null,
+    "kart-bump": null,
+    "kart-count": null,
+    "kart-go": null,
+    "kart-boost": null
+  },
+  "voice": {}
+}

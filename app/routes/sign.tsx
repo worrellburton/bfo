@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { FIELD_LABEL, type SignField, type SignMode } from "../sign/api";
+import { FIELD_LABEL, isGameMode, type SignField, type SignMode } from "../sign/api";
 import { GameGate } from "../sign/game";
+import { RaceGate } from "../sign/kart";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
 import { PREVIEW_TITLE, samplePdf } from "../sign/preview";
 import { SignaturePad } from "../sign/signature-pad";
@@ -30,8 +31,8 @@ type View = {
   sentBy: string | null;
 };
 
-/** The office looking at the page on a sample document: nothing is fetched or saved. */
-type Preview = { name: string; email: string };
+/** The office looking at the page on a sample document: nothing is fetched or saved. `mode` picks which game comes first. */
+type Preview = { name: string; email: string; mode?: SignMode };
 
 export default function SignRoute() {
   const { token = "" } = useParams();
@@ -44,9 +45,11 @@ export default function SignRoute() {
  * link, sent to their email, is who they are. Once they sign, the document
  * shows their signature, and it keeps up as the other party signs.
  *
- * A request sent in game mode puts the Anything Is Possible game in front of
- * all this (app/sign/game): the page appears once the game's desk is reached.
- * Every visit starts the game over until they sign.
+ * A request sent in a game mode puts a game in front of all this: the
+ * Anything Is Possible theater (app/sign/game) or the racetrack (app/sign/kart);
+ * the page appears once the game is played through. Every visit starts the
+ * game over until they sign. A party with an address box types their address
+ * too, and it is stamped into the box with their signature.
  */
 export function SignPage({ token, preview }: { token: string; preview?: Preview }) {
   const [view, setView] = useState<View | null>(null);
@@ -55,6 +58,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [png, setPng] = useState<string | null>(null);
+  const [address, setAddress] = useState("");
   // The e-signature consent is asked after "Sign", as the last step.
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,7 +80,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
         setView({
           title: PREVIEW_TITLE,
           brand: null,
-          mode: "game",
+          mode: preview.mode ?? "game",
           status: "sent",
           completed: false,
           you: { key: "a", role: "Signer", name: preview.name, email: preview.email, status: "viewed" },
@@ -136,7 +140,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
       const res = await fetch("/api/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action === "sign" ? { action, token, name, signature: png, consent: true } : { action, token, reason }),
+        body: JSON.stringify(action === "sign" ? { action, token, name, signature: png, address, consent: true } : { action, token, reason }),
       });
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       if (!res.ok) throw new Error(body.message || "That didn't go through. Try again.");
@@ -171,13 +175,15 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
   const canSign = !!view && !signedNow && !closed && !done;
   const others = view?.parties.filter((p) => p.key !== view.you.key) ?? [];
   const brand = view?.brand ?? null;
-  // Game mode: the theater comes first, every visit, until they sign.
-  const inGame = !!view && view.mode === "game" && canSign && !played;
+  const needsAddress = mine.some((f) => f.type === "address");
+  // A game mode: the theater or the racetrack comes first, every visit, until they sign.
+  const inGame = !!view && isGameMode(view.mode) && canSign && !played;
 
   if (view && inGame) {
+    const Gate = view.mode === "race" ? RaceGate : GameGate;
     return (
       <div className="min-h-dvh bg-black text-white">
-        <GameGate
+        <Gate
           signerName={view.you.name}
           title={view.title}
           brand={brand}
@@ -322,6 +328,20 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
                     autoComplete="name"
                   />
                 </label>
+                {needsAddress && (
+                  <label className="mt-4 block">
+                    <span className="mb-1.5 block text-[12px] text-white/60">Your address</span>
+                    <textarea
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      rows={2}
+                      placeholder="Street, city, state, ZIP"
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[16px] leading-snug text-white focus:border-white/30 focus:outline-none"
+                      autoComplete="street-address"
+                    />
+                    <span className="mt-1 block text-[11.5px] text-white/40">It goes in the address box on the document, with your signature.</span>
+                  </label>
+                )}
                 <div className="mt-4">
                   <span className="mb-1.5 block text-[12px] text-white/60">Your signature</span>
                   <SignaturePad name={name} onChange={setPng} dark />
@@ -330,7 +350,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
                 <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
-                    disabled={busy || !png || !name.trim() || !!preview}
+                    disabled={busy || !png || !name.trim() || (needsAddress && !address.trim()) || !!preview}
                     onClick={() => setConfirming(true)}
                     className="h-[44px] rounded-xl bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-40"
                   >

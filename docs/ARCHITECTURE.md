@@ -245,8 +245,9 @@ foreign registrations, documents, people, Palm links per mode, closing).
 - `signature_requests` (`20261028_signature_requests.sql`): one row per
   document sent for signature. `parties` (two at most) carry a sha-256 of the
   token in each signer's emailed link; `fields` say where each signer's
-  signature, initials, name or date goes as fractions of a page; `events` is
-  the audit trail.
+  signature, initials, name, date or address goes as fractions of a page
+  (an address is typed on the signing page and stamped on up to three
+  lines); `events` is the audit trail.
 - The PDFs live in the private `documents` bucket under `signatures/<id>/`:
   `original.pdf`, `current.pdf` (signatures stamped so far), `signed.pdf`
   (everyone has signed; a certificate page is appended).
@@ -256,10 +257,17 @@ foreign registrations, documents, people, Palm links per mode, closing).
   parties. A signer calls the same endpoint with `token=`: reads the document,
   signs (`lib/sign.ts` stamps the PNG and text with pdf-lib) or declines.
   Admins get a push on each signature.
-- The "Anything Is Possible" game (`app/sign/game`) in front of the signing
-  page is only for TallulahMD LLC's requests (`lib/game-entity.ts`):
-  `api/sign.ts` refuses `mode: "game"` on any other request, won't send one,
-  and serves every other signer the plain page whatever the row says.
+- The games in front of the signing page, the "Anything Is Possible" theater
+  (`app/sign/game`, `mode: "game"`) and the racetrack (`app/sign/kart`,
+  `mode: "race"`), are only for TallulahMD LLC's requests
+  (`lib/game-entity.ts`): `api/sign.ts` refuses either mode on any other
+  request, won't send one, and serves every other signer the plain page
+  whatever the row says. Their server-made sounds, Judy's voice and music
+  come from `api/game-assets.ts` (`lib/game-assets.ts`).
+- `resend` on `api/sign.ts` sends a finished request again as a new row: the
+  original PDF copied under the new id, the parties reset, an `address` field
+  added under each signature that lacks one, in the mode chosen, and sent at
+  once (optionally with the plain email).
 - `app/routes/tools-signatures.tsx` (the sheet, drag-and-drop upload),
   `app/routes/signature-detail.tsx` (pages drawn with pdf.js, fields dragged
   into place), `app/routes/sign.tsx` (the public signing page: draw or type a

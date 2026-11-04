@@ -1,0 +1,19 @@
+{
+  "name": "Judy",
+  "lines": [
+    { "id": "k-start", "cue": "start", "text": "Sam. Sameh. Look at me. Three laps. I did twenty-six years of quarterly closes. I can do three laps." },
+    { "id": "k-l1a", "cue": "lap1-early", "text": "That's your line? That's the line you're taking into that corner? Fine." },
+    { "id": "k-l1b", "cue": "lap1-mid", "text": "I went to China by myself, Sam. The Wall is long. This track is not." },
+    { "id": "k-pass", "cue": "judy-passes", "text": "Excuse me. Young lady coming through." },
+    { "id": "k-l2a", "cue": "lap2-start", "text": "Lap two. This is where the paperwork usually catches up with people." },
+    { "id": "k-l2b", "cue": "lap2-mid", "text": "You know what they wrote on my retirement cake? J, U, D, I. I still drove home fine." },
+    { "id": "k-ahead", "cue": "player-ahead", "text": "Enjoy it. Every Tuesday ends, Sam." },
+    { "id": "k-l3a", "cue": "lap3-start", "text": "Last lap. Hear that? That's the music changing. That's for me." },
+    { "id": "k-l3b", "cue": "lap3-mid", "text": "I was Chief Operating Officer of a company that makes hips. I know exactly how to take a corner." },
+    { "id": "k-passed", "cue": "player-passes", "text": "Oh, that's cute. The spreadsheet's still not done, by the way." },
+    { "id": "k-bump", "cue": "bump", "text": "Hey! This is a lease!" },
+    { "id": "k-jump", "cue": "first-jump", "text": "What was that? Did you just jump? Where did you learn that?" },
+    { "id": "k-win", "cue": "player-wins", "text": "Fine. You won. Go sign the thing. And put your address on it this time, Sam." },
+    { "id": "k-lose", "cue": "judy-wins", "text": "I won. Twenty-six years, Sam. Go sign the thing anyway. And put your address on it this time." }
+  ]
+}

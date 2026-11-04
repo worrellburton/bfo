@@ -11,6 +11,7 @@ import {
   MODE_LABEL,
   newField,
   PARTY_LABEL,
+  isGameMode,
   signApi,
   when,
   type FieldType,
@@ -56,6 +57,10 @@ export default function SignatureDetail() {
   const [invited, setInvited] = useState<Set<string>>(new Set());
   /** The server's word on whether this draft may go out as the game: only TallulahMD LLC's (lib/game-entity). */
   const [gameOk, setGameOk] = useState(false);
+  // Whether this entity may have a game at all (the resend dialog offers one).
+  const [gameEntity, setGameEntity] = useState(false);
+  // The resend dialog, for a request that has run its course.
+  const [resending, setResending] = useState(false);
   const assetId = req?.asset_id ?? null;
 
   // The entity's name and who already has it, for "Invite to BFO" on each party.
@@ -89,6 +94,7 @@ export default function SignatureDetail() {
       const r = await signApi.get(id, shownKey.current);
       setReq(r.request);
       setGameOk(!!r.gameAllowed);
+      setGameEntity(!!r.gameEntity);
       // Only a new version replaces the pages on screen (each signature stamps a new one).
       if (r.pdfUrl) {
         setPdfUrl(r.pdfUrl);
@@ -170,7 +176,7 @@ export default function SignatureDetail() {
               ? `Reminded ${next.parties
                   .filter((p) => p.status !== "signed")
                   .map((p) => p.name)
-                  .join(" and ")}${plainRemind && req.mode === "game" ? " as a normal request" : ""}.`
+                  .join(" and ")}${plainRemind && isGameMode(req.mode) ? " as a normal request" : ""}.`
               : `Sent the signed copy to ${next.parties.map((p) => p.email).join(" and ")}.`,
         );
       }
@@ -243,7 +249,7 @@ export default function SignatureDetail() {
                 Remind
               </Small>
             )}
-            {(req.status === "sent" || req.status === "partial") && req.mode === "game" && (
+            {(req.status === "sent" || req.status === "partial") && isGameMode(req.mode) && (
               <label className={`flex items-center gap-2 text-[12px] cursor-pointer max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${t2}`}>
                 <input type="checkbox" className="h-4 w-4" checked={plainRemind} onChange={(e) => setPlainRemind(e.target.checked)} />
                 Remind as a normal request: nothing about the game in the email
@@ -252,6 +258,11 @@ export default function SignatureDetail() {
             {req.status === "completed" && (
               <Small isDark={isDark} primary disabled={!!busy} onClick={() => run("send-copy")}>
                 {busy === "send-copy" ? "Sending…" : "Send to both parties"}
+              </Small>
+            )}
+            {(req.status === "completed" || req.status === "declined" || req.status === "voided") && req.original_path && (
+              <Small isDark={isDark} disabled={!!busy} onClick={() => setResending(true)}>
+                Resend for signature
               </Small>
             )}
             {req.original_path && (
@@ -326,7 +337,7 @@ export default function SignatureDetail() {
 
         {/* How they sign (only TallulahMD LLC's requests may go out as the game), the parties and their fields */}
         <aside className="space-y-4">
-          {req && editable && (gameOk || req.mode === "game") && (
+          {req && editable && (gameOk || isGameMode(req.mode)) && (
             <section className={`${card} p-4`}>
               <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>How they sign</p>
               <div className="mt-3 space-y-2" role="radiogroup" aria-label="How they sign">
@@ -334,6 +345,7 @@ export default function SignatureDetail() {
                   [
                     { mode: "normal", blurb: "They open the link, read the document, and sign." },
                     { mode: "game", blurb: "They walk into a theater, watch the clip, and the door to the signing room opens when it ends. Computer only." },
+                    { mode: "race", blurb: "They race Judy around a track, three laps, and the signing page opens at the finish. Computer only." },
                   ] as Array<{ mode: SignMode; blurb: string }>
                 ).map(({ mode, blurb }) => {
                   const on = (req.mode ?? "normal") === mode;
@@ -402,7 +414,7 @@ export default function SignatureDetail() {
                       className={input}
                     />
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {(["signature", "initials", "name", "date"] as FieldType[]).map((type) => (
+                      {(["signature", "initials", "name", "date", "address"] as FieldType[]).map((type) => (
                         <Small key={type} isDark={isDark} onClick={() => setPlacing({ party: p.key, type })} aria-pressed={placing?.party === p.key && placing.type === type}>
                           + {FIELD_LABEL[type]}
                         </Small>
@@ -474,6 +486,19 @@ export default function SignatureDetail() {
         </aside>
       </div>
 
+      {resending && req && (
+        <ResendDialog
+          isDark={isDark}
+          gameEntity={gameEntity}
+          parties={req.parties.map((p) => p.name || p.role)}
+          onClose={() => setResending(false)}
+          onSend={async (mode, plain) => {
+            const next = await signApi.act("resend", { id: req.id, mode, plain });
+            setResending(false);
+            navigate(`/tools/signatures/${next.id}`);
+          }}
+        />
+      )}
       {inviting &&
         assetId &&
         createPortal(
@@ -504,6 +529,7 @@ function describe(kind: string): string {
       declined: "Declined",
       completed: "Signed by everyone",
       copy_sent: "Signed copy sent",
+      resent: "Sent again as a new request",
       voided: "Voided",
     }[kind] ?? kind
   );
@@ -616,5 +642,108 @@ function FieldBox({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Sending a finished request again: how they sign this time (the theater
+ * game, the racetrack, or the plain page), whether the email says anything
+ * about it, and a note that an Address box goes under each signature.
+ */
+function ResendDialog({
+  isDark,
+  gameEntity,
+  parties,
+  onClose,
+  onSend,
+}: {
+  isDark: boolean;
+  gameEntity: boolean;
+  parties: string[];
+  onClose: () => void;
+  onSend: (mode: SignMode, plain: boolean) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<SignMode>(gameEntity ? "race" : "normal");
+  const [plain, setPlain] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [busy, onClose]);
+  const choices: Array<{ mode: SignMode; label: string; blurb: string }> = [
+    ...(gameEntity
+      ? [
+          { mode: "game" as SignMode, label: "Movie theater", blurb: "They walk into the theater, watch the clip, and sign on the other side of the door." },
+          { mode: "race" as SignMode, label: "Racetrack", blurb: "They race Judy around a track, three laps, and sign at the finish." },
+        ]
+      : []),
+    { mode: "normal" as SignMode, label: "Normal e-signature", blurb: "They open the link, read the document, and sign." },
+  ];
+  const panel = isDark ? "bg-[#15151b] text-white border-white/10" : "bg-white text-gray-900 border-gray-200";
+  const sub = isDark ? "text-gray-400" : "text-gray-500";
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center" role="presentation" onClick={() => !busy && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="resend-title" className={`w-full max-w-[440px] rounded-2xl border p-5 shadow-xl ${panel}`} onClick={(e) => e.stopPropagation()}>
+        <h2 id="resend-title" className="text-[16px] font-semibold">
+          Resend for signature
+        </h2>
+        <p className={`mt-1 text-[12.5px] ${sub}`}>A new request with the same document, to {parties.join(" and ")}. An Address box goes under each signature so it's filled in this time.</p>
+        <div className="mt-4 space-y-2" role="radiogroup" aria-label="How they sign">
+          {choices.map((c) => {
+            const on = mode === c.mode;
+            return (
+              <button
+                key={c.mode}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setMode(c.mode)}
+                className={`block w-full rounded-xl border p-3 text-left transition-colors ${
+                  on ? (isDark ? "border-white/40 bg-white/[0.06]" : "border-gray-900 bg-gray-50") : isDark ? "border-white/10 hover:border-white/25" : "border-gray-200 hover:border-gray-400"
+                }`}
+              >
+                <span className="flex items-center gap-2 text-[13px] font-medium">
+                  <span aria-hidden className={`h-2 w-2 rounded-full ${on ? (isDark ? "bg-white" : "bg-gray-900") : isDark ? "bg-white/20" : "bg-gray-300"}`} />
+                  {c.label}
+                </span>
+                <span className={`mt-1 block text-[12px] ${sub}`}>{c.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
+        {mode !== "normal" && (
+          <label className={`mt-4 flex min-h-[44px] cursor-pointer items-center gap-2 text-[12.5px] ${sub}`}>
+            <input type="checkbox" className="h-4 w-4" checked={plain} onChange={(e) => setPlain(e.target.checked)} />
+            Say nothing about the game in the email
+          </label>
+        )}
+        {error && <p className="mt-3 text-[12.5px] text-red-500">{error}</p>}
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <Small isDark={isDark} disabled={busy} onClick={onClose}>
+            Cancel
+          </Small>
+          <Small
+            isDark={isDark}
+            primary
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                await onSend(mode, plain);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "That didn't work.");
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Sending…" : "Send"}
+          </Small>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

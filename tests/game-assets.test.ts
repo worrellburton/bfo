@@ -134,7 +134,7 @@ describe("api/game-assets", () => {
     settings.set("game-assets", { voice: { r1: "https://b/r1.mp3" }, sounds: {}, models: {}, judyVoice: { id: "f2", name: "Grace" }, props: {} });
     const r = await call("GET", {}, {}, false);
     expect(r.statusCode).toBe(200);
-    expect(r.body).toEqual({ voice: { r1: "https://b/r1.mp3" }, sounds: {}, models: {} });
+    expect(r.body).toEqual({ voice: { r1: "https://b/r1.mp3" }, sounds: {}, models: {}, music: {} });
     expect(r.headers["Cache-Control"]).toMatch(/s-maxage/);
   });
 
@@ -173,14 +173,21 @@ describe("api/game-assets", () => {
     expect(fetchLog.filter((l) => l.includes("/text-to-speech/f1"))).toHaveLength(1);
   });
 
-  it("makes the sound effects in batches", async () => {
-    const r1 = await call("POST", { action: "sounds" });
-    expect(r1.body.remaining).toBe(5);
-    const r2 = await call("POST", { action: "sounds" });
-    expect(r2.body.remaining).toBe(2);
-    const r3 = await call("POST", { action: "sounds" });
-    expect(r3.body.remaining).toBe(0);
-    expect(Object.keys(r3.body.assets.sounds).sort()).toEqual(["cheer", "door", "fall", "jump", "land", "sign", "sit", "step"]);
+  it("makes the sound effects in batches, the theater's and the racetrack's", async () => {
+    // Eighteen effects, three a call.
+    let r = await call("POST", { action: "sounds" });
+    expect(r.body.remaining).toBe(15);
+    for (let i = 0; i < 5; i++) r = await call("POST", { action: "sounds" });
+    expect(r.body.remaining).toBe(0);
+    const made = Object.keys(r.body.assets.sounds).sort();
+    expect(made.filter((k) => !k.startsWith("kart-"))).toEqual(["cheer", "door", "fall", "jump", "land", "sign", "sit", "step"]);
+    expect(made.filter((k) => k.startsWith("kart-"))).toHaveLength(10);
+  });
+
+  it("makes just the named effects when asked", async () => {
+    const r = await call("POST", { action: "sounds", only: ["kart-jump"] });
+    expect(r.body.remaining).toBe(0);
+    expect(Object.keys(r.body.assets.sounds)).toEqual(["kart-jump"]);
   });
 
   it("says plainly when a key is missing", async () => {
@@ -239,7 +246,7 @@ describe("api/cron/game-assets", () => {
     const r = await cronCall("Bearer s3cret");
     expect(r.statusCode).toBe(200);
     expect(r.body.voiced).toBe(4);
-    expect(r.body.sounds).toBe(8);
+    expect(r.body.sounds).toBe(18);
     expect(r.body.skipped.join(" ")).toMatch(/OPENAI_API_KEY/);
     expect(r.body.errors).toEqual([]);
     // Nothing more to do: the next run makes nothing.

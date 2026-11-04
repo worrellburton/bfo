@@ -109,6 +109,7 @@ describe("sendBlocker", () => {
 describe("cleaning", () => {
   it("reads a mode, falling back to the plain page", () => {
     expect(cleanMode("game")).toBe("game");
+    expect(cleanMode("race")).toBe("race");
     expect(cleanMode("normal")).toBe("normal");
     expect(cleanMode("arcade")).toBe("normal");
     expect(cleanMode(undefined)).toBe("normal");
