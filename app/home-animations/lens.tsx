@@ -8,27 +8,32 @@ import type { BackdropProps } from "./types";
  * arm's length to the far wall, but you only ever see the ones the light
  * finds: a dusk lamp just past the upper-left corner lays warm ivory on the
  * dust near it, in slow shafts a few hundred pixels across, and the dust
- * falls cool and sparse toward the lower right, where the room is nearly
- * empty. The lens is focused a few feet in, and someone is racking the focus
- * by hand, slowly, so the one thin plane that is ever sharp drifts back and
- * forth through the cloud: a mote resolves into a pin-sharp speck for a few
- * seconds and then softens again. The motes are tiny, and they stay tiny:
- * off the plane of focus a mote goes soft, never wide (a soft Gaussian whose
- * footprint never passes six pixels, four and a half on a phone), and it
- * dims with the square of its softness, so a mote just off the plane is a
- * soft dot nearly as bright as a speck and a far one a faint breath. The
- * motes are not all alike: most are faint and a few are bright, as stars
- * are, and the light has a temperature: ivory at the lamp, silver in the
- * shade. Everything is slow: the dust hangs on a current that moves the
- * plane of focus under a pixel a second, swells and relaxes over a minute
- * and a half, leans a little left and then right, and wanders by region,
- * so no two motes march in step; the exposure breathes once every forty
+ * thins toward the lower right and the floor, where the room is nearly
+ * empty and what is left is silver. The lens is focused a few feet in, and
+ * someone is racking the focus by hand, slowly, so the one thin plane that
+ * is ever sharp drifts back and forth through the cloud: a mote resolves
+ * into a pin-sharp speck for a few seconds and then softens again. The
+ * motes are tiny, and they stay tiny: off the plane of focus a mote goes
+ * soft, never wide. Its softness is a continuum, from a speck in the plane
+ * to a breath at the near and far ends, and because a point keeps its light
+ * as the lens spreads it, the peak falls with the square of the softness: a
+ * mote just off the plane is a soft dot nearly as bright as a speck, a far
+ * one a faint smear, and nothing ever draws past six pixels (four and a half
+ * on a phone), however soft it is. Most motes are faint and a few are
+ * bright, as stars are, and the light has a temperature: ivory under the
+ * lamp, neutral by the middle of the frame, cool silver in the far corner.
+ * Everything is slow: the dust hangs on a current that moves the plane of
+ * focus about a pixel a second (the near field over twice that, the far
+ * wall under half, the parallax that makes it a room), swells and relaxes over a
+ * minute and a half, leans a little left and then right, and wanders by
+ * region with a little of its own mind per mote, so no two motes march in
+ * step or trace the same hook; the exposure breathes once every forty
  * seconds; the camera leans a degree toward the pointer. When the door is
- * ready the lens finds its plane and its exposure over two and a half
- * seconds, on the same curve as the mark's bloom. One instanced draw of
- * quads (a point sprite has a size limit on some phones; a quad has none),
- * everything analytic in the vertex shader. Reduced motion draws one frame
- * at t = 29 s, already in focus.
+ * ready the lens finds its plane and its exposure on the mark's own bloom,
+ * same clock, same curve. One instanced draw of quads (a point sprite has a
+ * size limit on some phones; a quad has none), everything analytic in the
+ * vertex shader. Reduced motion draws one frame at t = 29 s, already in
+ * focus.
  */
 
 /** The focal plane at rest, and the frame there: 5.1 units tall at z = -6 → half-angle tan 0.425. */
@@ -41,9 +46,14 @@ const Z_NEAR = 3.2;
 const Z_FAR = 13;
 const STILL_T = 29;
 
-/** The light: ivory where the lamp falls, silver in the shade, a touch of champagne in the near field. */
-const LAMP = [1.0, 0.94, 0.84];
-const SHADE = [0.78, 0.8, 0.86];
+/**
+ * The light: ivory (255, 240, 204) where the lamp falls, a cool silver
+ * (186, 199, 232) in the far shade, a touch of champagne in the near field.
+ * The tint is multiplied into the mote's light, so a bright speck under the
+ * lamp carries the full warmth and a dim one stays near neutral.
+ */
+const LAMP = [1.0, 0.94, 0.8];
+const SHADE = [0.73, 0.78, 0.91];
 const CHAMPAGNE = [0.94, 0.86, 0.71];
 
 /**
@@ -51,10 +61,15 @@ const CHAMPAGNE = [0.94, 0.86, 0.71];
  * a little to the right, integrated on the CPU each frame from a rate that
  * swells and relaxes over 97 s (between 0.3 and 1 of DRIFT) and a lean that
  * swings through zero over 131 s, so the dust never moves on a conveyor. The
- * rate is in units a second at the plane of focus; the near field crosses the
- * frame faster than the far wall, the parallax that makes it a room.
+ * rate is in units a second at the plane of focus: 0.0065 is 1.15 px/s at
+ * full swell, about 0.75 px/s on average (the air below adds a little under
+ * half a pixel a second on top), which the near field crosses at over twice
+ * and the far wall at under half, the parallax that makes it a room: the
+ * perspective alone gives 1.9 and 0.46, and PARALLAX below adds a quarter
+ * power to that so the depth reads in motion as plainly as in softness.
  */
-const DRIFT = 0.009;
+const DRIFT = 0.0065;
+const PARALLAX = 0.25;
 const driftRate = (t: number) => DRIFT * (0.65 + 0.35 * Math.sin((2 * Math.PI * t) / 97));
 const driftLean = (t: number) => 0.3 * Math.sin((2 * Math.PI * t) / 131);
 
@@ -65,8 +80,11 @@ const driftLean = (t: number) => 0.3 * Math.sin((2 * Math.PI * t) / 131);
  * minutes, so the room moves as one body. The second are the wander: waves a
  * few hundred pixels across turning over twenty to forty seconds, so each
  * region of the dust bends its course a little, pauses and changes its mind
- * while its neighbours do something else; the amplitudes are under a pixel,
- * so no mote ever wriggles, it only wanders.
+ * while its neighbours do something else; the amplitudes (scaled by AIR, so
+ * the whole of it is about half a pixel a second) are under a pixel, so no
+ * mote ever wriggles, it only wanders. Each mote adds a little of its
+ * own phase to the wander (up to half a turn, `ph` below), so two neighbours
+ * drift together but never trace the same hook: dust, not wallpaper.
  */
 const FLOW: [number, number, number, number, number, number, number][] = [
   // x
@@ -90,31 +108,34 @@ const WANDER: [number, number, number, number, number, number, number][] = [
   [0.3, 0.95, 0.0, 2.9, 23, 0.004, 1.1],
   [0.9, -0.2, 0.4, 1.9, 37, 0.0055, 3.9],
 ];
-const flowTerm = ([dx, dy, dz, lambda, period, amp, phase]: (typeof FLOW)[number]) => {
+const AIR = 0.75;
+const flowTerm = ([dx, dy, dz, lambda, period, amp, phase]: (typeof FLOW)[number], own = 0) => {
   const k = (2 * Math.PI) / lambda;
   const f = (n: number) => n.toFixed(5);
-  return `${f(amp)} * sin(dot(q, vec3(${f(dx * k)}, ${f(dy * k)}, ${f(dz * k)})) + t * ${f((2 * Math.PI) / period)} + ${f(phase)})`;
+  const ownPhase = own ? ` + ph * ${f(own)}` : "";
+  return `${f(amp * AIR)} * sin(dot(q, vec3(${f(dx * k)}, ${f(dy * k)}, ${f(dz * k)})) + t * ${f((2 * Math.PI) / period)} + ${f(phase)}${ownPhase})`;
 };
-const FLOW_GLSL = `vec3 flow(vec3 q, float t) {
+const FLOW_GLSL = `vec3 flow(vec3 q, float t, float ph) {
   return vec3(
-    ${flowTerm(FLOW[0])} + ${flowTerm(FLOW[1])} + ${flowTerm(FLOW[2])} + ${flowTerm(WANDER[0])} + ${flowTerm(WANDER[1])},
-    ${flowTerm(FLOW[3])} + ${flowTerm(FLOW[4])} + ${flowTerm(FLOW[5])} + ${flowTerm(WANDER[2])} + ${flowTerm(WANDER[3])},
+    ${flowTerm(FLOW[0])} + ${flowTerm(FLOW[1])} + ${flowTerm(FLOW[2])} + ${flowTerm(WANDER[0], 0.5)} + ${flowTerm(WANDER[1], 0.35)},
+    ${flowTerm(FLOW[3])} + ${flowTerm(FLOW[4])} + ${flowTerm(FLOW[5])} + ${flowTerm(WANDER[2], 0.4)} + ${flowTerm(WANDER[3], 0.5)},
     ${flowTerm(FLOW[6])} + ${flowTerm(FLOW[7])} + ${flowTerm(FLOW[8])});
 }`;
 
 /**
  * The lamp, shared by the dust and the room behind it, in screen space with
- * the x axis scaled by the aspect (so a unit is half the frame's height):
- * just past the upper-left corner, whichever way the screen is turned, so on
- * a phone the light still comes from one side and not from under the notch.
+ * the x axis scaled by the aspect (so a unit is half the frame's height).
+ * On a desktop it sits just past the upper-left corner; on a phone it is
+ * lower, past the left edge a third of the way down, so the light has an
+ * obvious side of its own and does not pour in from under the status bar.
  * Its reach is a little more than the frame's diagonal; `light` is 1 at the
  * lamp and 0 by the far corner.
  */
 const LAMP_GLSL = /* glsl */ `
+  uniform vec2 uLamp;
   float lamp(vec2 s, float aspect) {
-    vec2 L = vec2(-aspect - 0.6, 1.35);
     float R = 2.5 * length(vec2(aspect, 1.0));
-    float d = clamp(distance(s, L) / R, 0.0, 1.0);
+    float d = clamp(distance(s, uLamp) / R, 0.0, 1.0);
     return pow(1.0 - d, 1.5);
   }
 `;
@@ -122,7 +143,7 @@ const LAMP_GLSL = /* glsl */ `
 const VERT = /* glsl */ `
   attribute vec2 corner;   // the quad: -1..1
   attribute vec3 aSeed;    // sx, sy (frame fractions), z0
-  attribute vec4 aRnd;     // brightness, twinkle phase, twinkle rate, the density draw
+  attribute vec4 aRnd;     // brightness, phase (twinkle and wander), twinkle rate, the density draw
   uniform float uTime;
   uniform float uAspect;
   uniform vec2 uViewport;  // CSS px
@@ -139,9 +160,12 @@ const VERT = /* glsl */ `
   varying float vAlpha;
   varying float vSigma;    // the dot's Gaussian sigma, CSS px
   varying float vReach;    // the quad's half-width, CSS px
+  varying float vEdge;     // the Gaussian's value where the dot is cut to nothing
   varying vec2 vUv;
   const float TAN_HALF = ${TAN_HALF.toFixed(5)};
   const float MARGIN = ${MARGIN.toFixed(2)};
+  const float FOCUS = ${FOCUS.toFixed(1)};
+  const float PARALLAX = ${PARALLAX.toFixed(2)};
   const vec3 LAMP = vec3(${LAMP.join(", ")});
   const vec3 SHADE = vec3(${SHADE.join(", ")});
   const vec3 CHAMPAGNE = vec3(${CHAMPAGNE.join(", ")});
@@ -149,75 +173,89 @@ const VERT = /* glsl */ `
   ${LAMP_GLSL}
   void main() {
     vUv = corner;
-    // Seeded as frame fractions at a depth, so every screen is full. The current is one
-    // displacement for the whole room (units), so the near field crosses the frame faster than
-    // the far wall; a mote wraps at the margin.
+    // Seeded as frame fractions at a depth, so every screen is full. The current and the air are
+    // one displacement for the whole room (units), so the near field crosses the frame faster
+    // than the far wall, by the perspective and a quarter power more; a mote wraps at the margin.
     float z0 = aSeed.z;
     float hh = TAN_HALF * -z0;
+    float par = pow(FOCUS / -z0, PARALLAX);
     vec3 q0 = vec3(aSeed.x * hh * uAspect, aSeed.y * hh, z0);
-    float sy = mod(aSeed.y + MARGIN + uDrift.y / hh, 2.0 * MARGIN) - MARGIN;
-    float sx = mod(aSeed.x + MARGIN + uDrift.x / (hh * uAspect), 2.0 * MARGIN) - MARGIN;
-    vec3 p = vec3(sx * hh * uAspect, sy * hh, z0) + flow(q0, uTime);
+    float sy = mod(aSeed.y + MARGIN + par * uDrift.y / hh, 2.0 * MARGIN) - MARGIN;
+    float sx = mod(aSeed.x + MARGIN + par * uDrift.x / (hh * uAspect), 2.0 * MARGIN) - MARGIN;
+    vec3 p = vec3(sx * hh * uAspect, sy * hh, z0) + par * flow(q0, uTime, aRnd.y);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     vec4 clip = projectionMatrix * mv;
     vec2 ndc = clip.xy / clip.w;
     float zc = -mv.z;
     // The lens: a mote is a Gaussian point; in the plane of focus its sigma is a little over half
     // a pixel (never under 0.8 device px, so it does not blink as it crosses pixel centres), and
-    // off the plane the lens adds uK px of sigma per unit of 1/z, in quadrature. The footprint
-    // drawn is five sigma wide and never past uCap: a mote goes soft, not wide.
+    // off the plane the lens adds uK px of sigma per unit of 1/z, in quadrature. The room is
+    // seeded evenly in 1/z, so the softness is a continuum weighted toward the plane: most motes
+    // are a speck or a soft dot, a few at the ends a breath. The sigma drawn stops at two fifths
+    // of the cap and the dot is cut to nothing at half the cap, so the footprint never passes
+    // uCap: a mote goes soft, not wide, and the softest is a round bump three pixels across.
     float sigma0 = max(mix(0.55, 0.7, aRnd.x), 0.8 / uDpr);
     float blur = abs(1.0 / zc - 1.0 / uFocus) * uK;
     float sigmaFull = sqrt(sigma0 * sigma0 + blur * blur);
-    float sigma = min(sigmaFull, uCap * 0.2);
+    float sigma = min(sigmaFull, uCap * 0.4);
+    float cut = min(sigma * 2.5, uCap * 0.5);
     // A point keeps its light as the lens spreads it, so its peak falls with the square of its
-    // sigma: a mote just off the plane is a soft dot nearly as bright as a speck. Past the cap
-    // the light that would have spread wider is lost instead, so the peak keeps falling, more
-    // gently (the far wall and the near field stay in the picture as a quiet second layer,
-    // never a blob). The motes are not all alike: most are faint and a few are bright, as
-    // stars are.
-    float ratio = sigma / sigma0;
+    // sigma, the full one, and a touch more (the glass eats a little of what it spreads): a mote
+    // just off the plane is a soft dot nearly as bright as a speck, one at twice the speck's
+    // sigma a fifth as bright, one at the near or far end a twelfth, a whisper (the light that
+    // would have spread past the cap is lost, not piled up: nothing brightens as it softens).
+    // The motes are not all alike: most are faint and a few are bright, as stars are.
+    float ratio = sigmaFull / sigma0;
     float spread = mix(0.25, 1.0, pow(aRnd.x, 1.8));
-    float lit = uBright * spread / (ratio * ratio * pow(sigmaFull / sigma, 0.7));
+    float lit = uBright * spread / pow(ratio, 2.25);
     // The lamp: where it falls the dust is lit in full and dense; in the shade it is dim and
-    // sparse. Density is a draw per mote against the light, shaped into slow shafts a few
-    // hundred pixels across that turn over minutes, so the dust drifts through fixed light and
-    // a mote comes and goes as it crosses a shaft; it thins again in a wide ellipse around the
-    // mark, so the field has air in it and the letters sit in their own quiet.
+    // sparse. Density is a draw per mote against a beam that is 1 under the lamp, about half at
+    // the middle of the frame and a fifth in the far corner, a third thinner again at the floor
+    // (the lamp is high), shaped into slow shafts a few hundred pixels across, three to one
+    // between a shaft and the void beside it, that turn over minutes, so the dust drifts through
+    // fixed light and a mote comes and goes as it crosses a shaft; it thins once more in a wide
+    // ellipse around the mark, so the letters sit in their own quiet. On a phone the top fifth
+    // holds half as many, under the status bar.
     vec2 s = vec2(ndc.x * uAspect, ndc.y);
     float light = lamp(s, uAspect);
     float wash = mix(0.45, 1.0, light);
+    float beam = 0.18 + 0.82 * smoothstep(0.0, 0.65, light);
+    float floorward = mix(0.65, 1.0, smoothstep(-1.0, 0.5, s.y));
     float lanes = 0.65 + 0.35 * (0.5 * sin(dot(s, vec2(6.2, 4.6)) + uTime * 0.016)
                                + 0.35 * sin(dot(s, vec2(-3.4, 5.9)) + uTime * 0.021 + 2.0)
                                + 0.15 * sin(dot(s, vec2(8.9, -2.3)) + uTime * 0.013 + 4.1));
     float e = length(ndc / uMark);
     float near = 1.0 - smoothstep(0.6, 2.0, e);
-    float density = mix(0.35, 1.0, light) * lanes * (1.0 - 0.55 * near);
+    float topBand = smoothstep(0.6, 1.0, ndc.y);
+    float density = beam * floorward * lanes * (1.0 - 0.55 * near) * (1.0 - 2.0 * uTopDim * topBand);
     float keep = 1.0 - smoothstep(density - 0.08, density + 0.08, aRnd.w);
     // Scintillation: a mote in the plane wavers a little in the air.
     float twinkle = mix(0.9, 1.0, 0.5 + 0.5 * sin(uTime * aRnd.z + aRnd.y));
     // Over the mark the dust is a third as bright, in an ellipse with no corners to resolve,
-    // so the letters always read; on a phone the top fifth is quieter still, under the status
-    // bar. The brightest speck draws at 0.82 of white, so nothing clips.
+    // so the letters always read; on a phone the top fifth is a quarter dimmer still, under the
+    // status bar. The brightest speck draws at 0.78 of white, so nothing clips.
     float overMark = 1.0 - smoothstep(0.85, 1.5, e);
-    float top = 1.0 - uTopDim * smoothstep(0.6, 1.0, ndc.y);
-    float alpha = min(lit * wash * twinkle * uExposure * keep * (1.0 - 0.65 * overMark) * top, 0.82);
-    float reach = sigma * 2.5 + 0.5;
+    float top = 1.0 - uTopDim * topBand;
+    float alpha = min(lit * wash * twinkle * uExposure * keep * (1.0 - 0.65 * overMark) * top, 0.78);
+    float reach = cut + 0.5;
     bool off = abs(ndc.x) > 1.0 + reach / uViewport.x * 2.0 || abs(ndc.y) > 1.0 + reach / uViewport.y * 2.0;
     if (alpha < 0.004 || off) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    // The light has a temperature: ivory under the lamp, silver in the shade, and the near field
-    // warms toward champagne, each mote its own shade.
+    // The light has a temperature: ivory under the lamp, neutral by the middle of the frame,
+    // silver in the far corner, and the near field warms toward champagne, each mote its own
+    // shade.
     float depth = smoothstep(2.5, 12.0, zc);
     float tint = fract(aRnd.y * 0.31831);
-    vec3 col = mix(SHADE, LAMP, pow(light, 0.7));
+    vec3 col = mix(SHADE, LAMP, smoothstep(0.0, 0.55, light));
     col = mix(col, CHAMPAGNE, 0.3 * tint * (1.0 - depth));
     vColor = col;
     vAlpha = alpha;
     vSigma = sigma;
     vReach = reach;
+    float c = cut / sigma;
+    vEdge = exp(-0.5 * c * c);
     vec2 px = corner * reach * 2.0 / uViewport;
     gl_Position = vec4(ndc + px, 0.0, 1.0);
   }
@@ -229,23 +267,27 @@ const FRAG = /* glsl */ `
   varying float vAlpha;
   varying float vSigma;
   varying float vReach;
+  varying float vEdge;
   varying vec2 vUv;
   void main() {
-    // A round Gaussian point, taken to zero at two and a half sigma so the quad has no edge: a
-    // speck is a pinhead with a half-pixel soft rim, a soft mote the same shape, wider and dimmer.
+    // A round Gaussian point, taken to zero at the cut (two and a half sigma for a speck or a
+    // soft dot, closer in for the softest, which is a round bump within the cap) so the quad
+    // has no edge: a speck is a pinhead with a half-pixel soft rim, a soft mote the same shape,
+    // wider and dimmer.
     float r = length(vUv) * vReach / vSigma;
-    const float E = 0.04394;  // exp(-2.5 * 2.5 / 2)
-    float a = max(exp(-0.5 * r * r) - E, 0.0) / (1.0 - E);
+    float a = max(exp(-0.5 * r * r) - vEdge, 0.0) / (1.0 - vEdge);
     // Additive blending multiplies by the alpha below (SRC_ALPHA, ONE): the colour is not premultiplied.
     gl_FragColor = vec4(vColor, a * vAlpha);
   }
 `;
 
 /**
- * The room behind the dust: not black, a dusk with a little air in it, warm
- * where the lamp falls and gone to a deep slate everywhere else, with no edge
- * to it. The haze peaks near 20/255 under the lamp and the shade sits near
- * 10, so the mean stays dark and the mark always reads.
+ * The room behind the dust: not black, a dusk with a trace of blue in it,
+ * (9, 9, 12) in the shade. Under the lamp the air is not lifted so much as
+ * warmed: the blue is taken out and a little red put in, so the corner
+ * under the lamp sits near 11/255 with red just over blue, lit by the same
+ * light as the dust, and the light reads as lit motes on dark air, not a
+ * wash. The mean stays dark and the mark always reads.
  */
 const SKY_FRAG = /* glsl */ `
   precision highp float;
@@ -256,8 +298,8 @@ const SKY_FRAG = /* glsl */ `
   void main() {
     vec2 s = vec2(vUv.x * uAspect, vUv.y);
     float warm = lamp(s, uAspect);
-    vec3 col = vec3(0.036, 0.038, 0.057);
-    col += vec3(0.05, 0.04, 0.025) * warm * warm;
+    vec3 col = vec3(0.034, 0.036, 0.048);
+    col *= mix(vec3(1.0), vec3(1.45, 1.25, 0.8), warm * warm);
     gl_FragColor = vec4(col * uExposure, 1.0);
   }
 `;
@@ -287,9 +329,10 @@ const bezier = (x1: number, y1: number, x2: number, y2: number) => (x: number) =
   const u = 1 - t;
   return 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t;
 };
+/** The mark's bloom (app.css "door-bloom"): 2.4 s on the curve above, 0.4 s after door-ready. The lens keeps the same clock. */
 const ENTRANCE = bezier(0.16, 1, 0.3, 1);
 const ENTRANCE_S = 2.4;
-const ENTRANCE_DELAY = 0.2;
+const ENTRANCE_DELAY = 0.4;
 
 export default function Lens({ still }: BackdropProps) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -325,7 +368,7 @@ export default function Lens({ still }: BackdropProps) {
 
       // ── The dust: motes as frame fractions at a depth from arm's length to the far wall, even in
       // 1/z so the screen is as full of the far field as the near. 36,000 seeded on a desktop,
-      // 11,000 on a phone; the lamp decides which of them show, about a third at a time. ──
+      // 11,000 on a phone; the lamp decides which of them show, under a fifth at a time. ──
       let w = window.innerWidth;
       let h = window.innerHeight;
       const count = phone ? 11000 : 36000;
@@ -354,6 +397,7 @@ export default function Lens({ still }: BackdropProps) {
       const uMark = new THREE.Vector2();
       const uViewport = new THREE.Vector2(w, h);
       const uDrift = new THREE.Vector2();
+      const uLamp = new THREE.Vector2();
       const mat = new THREE.ShaderMaterial({
         vertexShader: VERT,
         fragmentShader: FRAG,
@@ -367,20 +411,25 @@ export default function Lens({ still }: BackdropProps) {
           uViewport: { value: uViewport },
           uDpr: { value: renderer.getPixelRatio() },
           uFocus: { value: FOCUS },
-          // f/1, but tiny: 24 px of sigma per unit of 1/z, so about one mote in seven is a
-          // speck at any moment (the plane of focus is a fiftieth of the room deep: a mote is
-          // sharp for a few seconds as the focus sweeps past it), a third are soft dots within
-          // the cap, and the rest are at the cap, each fainter the further it is from the plane.
-          // Nothing ever draws past six pixels (four and a half on a phone).
-          uK: { value: 24 },
+          // f/1, but tiny: 18 px of sigma per unit of 1/z. With the room even in 1/z that puts
+          // about a quarter of the motes within a sigma of a speck (the plane of focus is a
+          // thirtieth of the room deep: a mote is sharp for a few seconds as the focus sweeps
+          // past it), a third as soft dots at two to three pixels, a fifth at three to four,
+          // and the rest, at the near and far ends, a breath at the cap, each fainter the
+          // further it is from the plane. Nothing ever draws past six pixels (four and a half
+          // on a phone).
+          uK: { value: 18 },
           uCap: { value: phone ? 4.5 : 6 },
-          // The brightest motes in the plane would draw past white (the lens clips them at 0.82,
-          // so the soft dust either side of the plane keeps up), the faintest at a quarter.
-          uBright: { value: 1.4 },
+          // The brightest motes in the plane draw at white's door (the lens clips them at 0.78,
+          // so the soft dust either side of the plane keeps up); a soft dot at twice the speck's
+          // sigma peaks at a fifth of that, about 55/255 under the lamp and 30 in the shade,
+          // and only a speck ever passes 100.
+          uBright: { value: 1.0 },
           uExposure: { value: 1 },
           uDrift: { value: uDrift },
           uTopDim: { value: phone ? 0.25 : 0 },
           uMark: { value: uMark },
+          uLamp: { value: uLamp },
         },
       });
       const motes = new THREE.Mesh(geo, mat);
@@ -392,7 +441,7 @@ export default function Lens({ still }: BackdropProps) {
       skyGeo.setIndex(new THREE.BufferAttribute(index, 1));
       skyGeo.setAttribute("corner", new THREE.BufferAttribute(quad, 2));
       skyGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(12), 3));
-      const skyMat = new THREE.ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, depthWrite: false, depthTest: false, uniforms: { uAspect: { value: w / h }, uExposure: { value: 1 } } });
+      const skyMat = new THREE.ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, depthWrite: false, depthTest: false, uniforms: { uAspect: { value: w / h }, uExposure: { value: 1 }, uLamp: { value: uLamp } } });
       const sky = new THREE.Mesh(skyGeo, skyMat);
       sky.frustumCulled = false;
       sky.renderOrder = -1;
@@ -408,6 +457,11 @@ export default function Lens({ still }: BackdropProps) {
         uViewport.set(w, h);
         mat.uniforms.uAspect.value = w / h;
         skyMat.uniforms.uAspect.value = w / h;
+        // The lamp, in screen units (x scaled by the aspect): past the upper-left corner on a
+        // desktop, past the left edge a third of the way down on a phone, so the band just
+        // above the mark is the brightest and the status bar is not.
+        if (phone) uLamp.set(-w / h - 0.45, 0.3);
+        else uLamp.set(-w / h - 0.6, 1.35);
         // The lockup's footprint, after its CSS (app.css ".door-mark .brand-lockup-mark": font-size
         // clamp(6rem, min(27vw, 34vh), 14rem) on an 11.9 px root; the lockup is about 2.06 em wide
         // and 1.25 em tall), with a little air; the shader's ellipse fades out over the next half.
@@ -478,7 +532,9 @@ export default function Lens({ still }: BackdropProps) {
       let last = t0;
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
-        const dt = Math.min(0.1, (now - last) / 1000);
+        // The current keeps wall-clock time through a slow frame or a stall, up to half a second
+        // (which moves the near field a pixel: nothing jumps); past that it waits.
+        const dt = Math.min(0.5, (now - last) / 1000);
         last = now;
         const t = STILL_T + (now - t0) / 1000;
         if (readyAt < 0 && (!door || door.classList.contains("door-ready"))) readyAt = now;
