@@ -11,7 +11,11 @@
     "kart-bump": null,
     "kart-count": null,
     "kart-go": null,
-    "kart-boost": null
+    "kart-boost": null,
+    "kart-crash": null,
+    "kart-pop": null,
+    "kart-tape": null
   },
-  "voice": {}
+  "voice": {},
+  "models": { "judy": null }
 }
