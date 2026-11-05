@@ -186,11 +186,11 @@ describe("/api/brand", () => {
     expect((await call("GET")).json.homeAnimation).toBeNull();
     settings["home-animation"] = "tide";
     expect((await call("GET")).json.homeAnimation).toBe("tide");
-    expect((await call("POST", { action: "home-animation", id: "silk" })).status).toBe(401);
+    expect((await call("POST", { action: "home-animation", id: "sunbeam" })).status).toBe(401);
     state.role = "owner";
     expect((await call("POST", { action: "home-animation", id: "../x" })).status).toBe(400);
-    expect((await call("POST", { action: "home-animation", id: "silk" })).json.homeAnimation).toBe("silk");
-    expect(settings["home-animation"]).toBe("silk");
+    expect((await call("POST", { action: "home-animation", id: "sunbeam" })).json.homeAnimation).toBe("sunbeam");
+    expect(settings["home-animation"]).toBe("sunbeam");
     expect((await call("POST", { action: "home-animation", id: null })).json.homeAnimation).toBeNull();
     expect(settings["home-animation"]).toBeUndefined();
   });

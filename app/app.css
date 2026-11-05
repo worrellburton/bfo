@@ -4144,7 +4144,9 @@ body.door-lock {
 .gallery-cards {
   grid-area: cards;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* One column per backdrop, however many there are. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
 }
@@ -4236,7 +4238,7 @@ body.door-lock {
 }
 @media (max-width: 900px) {
   .gallery-cards {
-    grid-template-columns: repeat(5, minmax(150px, 1fr));
+    grid-auto-columns: minmax(150px, 1fr);
     overflow-x: auto;
     scrollbar-width: none;
   }
