@@ -1,8 +1,10 @@
 // The race in front of the signing page (engine.ts does the 3D). This draws
 // the HUD: the title screen, the controls, the countdown, the lap counter,
-// the timer and the position, Judy's subtitles, the pause cover, the result
-// card with "Go sign", the fade into the signing page, and the way out for
-// anyone it doesn't work for. Phones and tablets get the theater's phone
+// the timer and the position, Judy's subtitles, the pause cover; in the
+// finale the letterbox bars, the on-foot objective, crosshair, reach prompt
+// and taping ring, then Judy's win with a small "Go sign" (the hand-over is
+// automatic after her last line); the fade into the signing page, and the
+// way out for anyone it doesn't work for. Phones and tablets get the theater's phone
 // screen. The engine and three.js load only here, through import(), so the
 // plain signing page never carries them. The props are the theater gate's
 // exactly, so app/routes/sign.tsx can mount either.
@@ -15,10 +17,31 @@ const ESCAPE_AFTER_MS = 60_000;
 /** How long the controls stay on screen once the race is on. */
 const CONTROLS_FOR_MS = 12_000;
 
-const IDLE: KartHud = { phase: "intro", lap: 1, laps: 3, position: 2, time: 0, countdown: null, paused: false, dark: 0, fps: 0, dialogue: null, result: null, prompt: "" };
+/** How long the on-foot controls stay up. */
+const FOOT_CONTROLS_FOR_MS = 10_000;
 
-/** What /api/game-assets answers: the keys that begin "kart-" (sounds) and "k-" (voice) are this game's; `music` is optional. */
-type Made = { sounds?: Record<string, string | null>; voice?: Record<string, string>; music?: Record<string, string | null> };
+const IDLE: KartHud = {
+  phase: "intro",
+  lap: 1,
+  laps: 2,
+  position: 2,
+  time: 0,
+  countdown: null,
+  paused: false,
+  dark: 0,
+  fps: 0,
+  dialogue: null,
+  result: null,
+  prompt: "",
+  cinematic: false,
+  firstPerson: false,
+  objective: "",
+  reach: "",
+  progress: null,
+};
+
+/** What /api/game-assets answers: the keys that begin "kart-" (sounds) and "k-" (voice) are this game's; `music` and `models` are optional. */
+type Made = { sounds?: Record<string, string | null>; voice?: Record<string, string>; music?: Record<string, string | null>; models?: Record<string, string | null> };
 
 export function RaceGate({
   signerName,
@@ -51,6 +74,12 @@ export function RaceGate({
     const t = setTimeout(() => setControls(false), CONTROLS_FOR_MS);
     return () => clearTimeout(t);
   }, [hud.phase]);
+  const [footControls, setFootControls] = useState(true);
+  useEffect(() => {
+    if (!hud.firstPerson) return;
+    const t = setTimeout(() => setFootControls(false), FOOT_CONTROLS_FOR_MS);
+    return () => clearTimeout(t);
+  }, [hud.firstPerson]);
 
   useEffect(() => {
     if (!playable) return;
@@ -88,6 +117,7 @@ export function RaceGate({
         musicFinal: made.music?.["kart-final"] || manifest.musicFinal || null,
         sounds,
         voice,
+        models: { judy: made.models?.judy || manifest.models?.judy || null },
       };
       try {
         game.current = new KartRace(el, { signerName, title, manifest: m, judy: judy && Array.isArray(judy.lines) ? judy : null, onHud: setHud, onDone });
@@ -108,16 +138,24 @@ export function RaceGate({
 
   if (!playable) return <PhoneScreen title={title} brand={brand} document={document} preview={preview} onSkip={onSkip} />;
 
-  const racing = hud.phase === "racing" || hud.phase === "finished";
-  const inPlay = hud.phase === "ready" || hud.phase === "countdown" || hud.phase === "racing";
+  const racing = hud.phase === "racing";
+  const inPlay = hud.phase === "ready" || hud.phase === "countdown" || hud.phase === "racing" || hud.phase === "finale" || hud.phase === "finished";
+  /** The cut scenes and Sam on foot show none of the race HUD. */
+  const bare = hud.cinematic || hud.firstPerson;
   const judyName = hud.dialogue?.speaker ?? "Judy";
 
   return (
     <div className="fixed inset-0 z-40 select-none bg-black text-white">
       <div ref={frame} className="absolute inset-0" />
 
+      {/* The letterbox of the finale's cut scenes. */}
+      <div aria-hidden className="pointer-events-none absolute left-0 right-0 top-0 z-10 bg-black transition-[height] duration-700 ease-out" style={{ height: hud.cinematic ? "12vh" : 0 }} />
+      <div aria-hidden className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 bg-black transition-[height] duration-700 ease-out" style={{ height: hud.cinematic ? "12vh" : 0 }} />
+
       {/* Top strip: who sent it, what it is. */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-start justify-between p-4 text-[12px] text-white/70">
+      <div
+        className={`pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-start justify-between p-4 text-[12px] text-white/70 transition-opacity duration-500 ${bare ? "opacity-0" : ""}`}
+      >
         <div>
           {brand ? <p className="font-[var(--font-brand)] text-[18px] leading-none text-white">{brand}</p> : <p className="font-[var(--font-brand)] text-[20px] leading-none text-white">BFO</p>}
           <p className="mt-1 max-w-[46vw] truncate">{title}</p>
@@ -147,7 +185,7 @@ export function RaceGate({
       )}
 
       {/* The controls, until the race has been on a while. Only the keys: nothing is given away. */}
-      {controls && inPlay && !hud.paused && (
+      {controls && (hud.phase === "ready" || hud.phase === "countdown" || hud.phase === "racing") && !hud.paused && (
         <div
           className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 backdrop-blur"
           style={{ animation: "reply-in 0.5s ease-out both" }}
@@ -181,6 +219,61 @@ export function RaceGate({
             {hud.countdown === 0 ? "GO!" : hud.countdown}
           </span>
         </div>
+      )}
+
+      {/* On foot: what to do, a crosshair, what's in reach, the taping ring, and the keys for a while. */}
+      {hud.firstPerson && !hud.paused && (
+        <>
+          {hud.objective && (
+            <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2" style={{ animation: "reply-in 0.5s ease-out both" }} key={hud.objective}>
+              <span className="block rounded-full border border-white/10 bg-black/55 px-5 py-2 text-[13px] font-semibold uppercase tracking-[0.18em] text-amber-200 backdrop-blur">
+                {hud.objective}
+              </span>
+            </div>
+          )}
+          <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-[5px] w-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80 shadow-[0_0_6px_rgba(0,0,0,0.8)]" />
+          {hud.progress !== null && (
+            <svg aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" width="84" height="84" viewBox="0 0 84 84">
+              <circle cx="42" cy="42" r="34" fill="none" stroke="rgba(0,0,0,0.45)" strokeWidth="7" />
+              <circle
+                cx="42"
+                cy="42"
+                r="34"
+                fill="none"
+                stroke="#fcd34d"
+                strokeWidth="7"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 34}
+                strokeDashoffset={2 * Math.PI * 34 * (1 - hud.progress)}
+                transform="rotate(-90 42 42)"
+              />
+            </svg>
+          )}
+          {hud.reach && (
+            <p
+              role="status"
+              className="pointer-events-none absolute left-1/2 top-[calc(50%+56px)] z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/65 px-4 py-1.5 text-[13.5px] text-white backdrop-blur"
+            >
+              {hud.reach}
+            </p>
+          )}
+          {footControls && (
+            <div
+              className="pointer-events-none absolute right-6 top-16 z-20 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 backdrop-blur"
+              style={{ animation: "reply-in 0.5s ease-out both" }}
+            >
+              <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">On foot</p>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80">
+                <dt className="text-white/40">Walk</dt>
+                <dd>W S or ↑ ↓</dd>
+                <dt className="text-white/40">Turn</dt>
+                <dd>A D or ← →, or click and use the mouse</dd>
+                <dt className="text-white/40">Pick up, tape</dt>
+                <dd>E</dd>
+              </dl>
+            </div>
+          )}
+        </>
       )}
 
       {/* Judy, over the pit radio. */}
@@ -268,22 +361,25 @@ export function RaceGate({
         </button>
       )}
 
-      {/* The result. */}
+      {/* Judy's win: a small card under the letterbox while she laughs; the hand-over comes on its own, or now. */}
       {hud.result && (hud.phase === "finished" || hud.phase === "done") && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-6">
+        <div className="pointer-events-none absolute left-0 right-0 top-[calc(12vh+16px)] z-30 flex justify-center px-6">
           <div
-            className="pointer-events-auto w-full max-w-[460px] rounded-3xl border border-white/10 bg-[#0b0b0f]/90 px-8 py-8 text-center backdrop-blur"
+            className="pointer-events-auto flex items-center gap-5 rounded-2xl border border-white/10 bg-[#0b0b0f]/85 px-6 py-4 backdrop-blur"
             style={{ animation: "rise-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both" }}
           >
-            <p className="text-[11px] uppercase tracking-[0.32em] text-amber-300/80">{hud.result.won ? "Checkered flag" : "Second place"}</p>
-            <h2 className="mt-3 font-[var(--font-brand)] text-[44px] leading-none text-white">{hud.result.won ? "You beat Judy" : "Judy won"}</h2>
-            <p className="mt-3 font-mono text-[22px] tabular-nums text-white/80">{clock(hud.result.time)}</p>
-            <p className="mt-1 text-[12.5px] text-white/50">Three laps{hud.result.won ? ". She'll want a rematch." : ". She says you've still got the spreadsheet to do."}</p>
+            <div>
+              <p className="text-[10.5px] uppercase tracking-[0.32em] text-amber-300/80">Checkered flag</p>
+              <p className="mt-1 font-[var(--font-brand)] text-[30px] leading-none text-white">Judy wins</p>
+              <p className="mt-1.5 text-[12px] text-white/55">
+                Two laps, one arm, a roll of tape · <span className="font-mono tabular-nums text-white/75">{clock(hud.result.time)}</span>
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => game.current?.goSign()}
               disabled={hud.phase === "done"}
-              className="mt-6 h-[52px] min-w-[220px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-60"
+              className="h-[44px] shrink-0 rounded-full bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-60"
             >
               Go sign
             </button>

@@ -84,9 +84,11 @@ request with the same document and parties, an Address box under each
 signature so the signer types their address this time (`fields` of type
 `address`, stamped on the document with the signature), in the theater, the
 racetrack, or the plain page. The racetrack (`app/sign/kart`): Sam races
-Judy, three laps of about a minute, her lines by cue from
-`public/kart/judy.json`, the song from the theater and, on the last lap, a
-piece ElevenLabs Music made (see `public/kart/README.md`). "Games" in
+Judy, two laps of about a minute, while she rams him; on the final stretch
+her kart flips, her arm comes off, Sam finds it on foot and tapes it back,
+and she drives over the line laughing. Her lines are by cue in
+`public/kart/judy.json`; the race's song and the last-lap track were made
+with ElevenLabs Music (see `public/kart/README.md`). "Games" in
 Robert's menu (`/games`) lists both with a Play button each
 (`/sign/preview`, `/sign/preview?game=race`).
 

@@ -174,14 +174,14 @@ describe("api/game-assets", () => {
   });
 
   it("makes the sound effects in batches, the theater's and the racetrack's", async () => {
-    // Eighteen effects, three a call.
+    // Twenty-one effects, three a call.
     let r = await call("POST", { action: "sounds" });
-    expect(r.body.remaining).toBe(15);
-    for (let i = 0; i < 5; i++) r = await call("POST", { action: "sounds" });
+    expect(r.body.remaining).toBe(18);
+    for (let i = 0; i < 6; i++) r = await call("POST", { action: "sounds" });
     expect(r.body.remaining).toBe(0);
     const made = Object.keys(r.body.assets.sounds).sort();
     expect(made.filter((k) => !k.startsWith("kart-"))).toEqual(["cheer", "door", "fall", "jump", "land", "sign", "sit", "step"]);
-    expect(made.filter((k) => k.startsWith("kart-"))).toHaveLength(10);
+    expect(made.filter((k) => k.startsWith("kart-"))).toHaveLength(13);
   });
 
   it("makes just the named effects when asked", async () => {
@@ -246,7 +246,7 @@ describe("api/cron/game-assets", () => {
     const r = await cronCall("Bearer s3cret");
     expect(r.statusCode).toBe(200);
     expect(r.body.voiced).toBe(4);
-    expect(r.body.sounds).toBe(18);
+    expect(r.body.sounds).toBe(21);
     expect(r.body.skipped.join(" ")).toMatch(/OPENAI_API_KEY/);
     expect(r.body.errors).toEqual([]);
     // Nothing more to do: the next run makes nothing.
