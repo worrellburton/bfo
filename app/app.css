@@ -1996,12 +1996,15 @@ html.light .app-shell-brand .brand-ivory {
 }
 
 /* The rail's nav tree (app/sidebar-nav.tsx). A group opens by animating its
-   row track from 0fr to 1fr; its pages hang off a thin vertical line that
-   starts under the group's icon, each with a rounded elbow into it. The last page's elbow ends the line. */
+   row track from 0fr to 1fr; its pages hang off a thin trunk that drops from the
+   centre of the group's icon, each with a rounded elbow into it. The last page's
+   elbow ends the trunk. The trunk sits 17px in (nav padding 6px + row padding 6px
+   + half a 12px icon); the tree's 26px indent puts the elbows at -15px from its rows. */
 .nav-collapse {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+  position: relative;
   transition:
     grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 160ms ease;
@@ -2009,6 +2012,22 @@ html.light .app-shell-brand .brand-ivory {
 .nav-collapse-open {
   grid-template-rows: 1fr;
   opacity: 1;
+}
+/* The top of the trunk: from just under the icon down to the first elbow (the tree clips its own overflow, so the elbow can't reach up). */
+.nav-collapse-open::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: -6px;
+  height: 7px;
+  border-left: 1.5px solid var(--nav-line);
+}
+/* Thumb-sized rows (phone drawer, touch iPad): the icon sits higher above the row's bottom edge. */
+@media (width < 48rem), (pointer: coarse) {
+  .nav-collapse-open::before {
+    top: -13px;
+    height: 14px;
+  }
 }
 .nav-collapse > .nav-tree {
   overflow: hidden;
@@ -2026,43 +2045,45 @@ html.light .app-shell-brand .brand-ivory {
   padding-top: 1px;
   padding-bottom: 3px;
 }
-.nav-tree-dark {
+.nav-tree-dark,
+.nav-collapse:has(> .nav-tree-dark) {
   --nav-line: rgba(255, 255, 255, 0.14);
 }
-.nav-tree-light {
+.nav-tree-light,
+.nav-collapse:has(> .nav-tree-light) {
   --nav-line: rgba(0, 0, 0, 0.13);
 }
 .nav-branch {
   position: relative;
   padding: 0.5px 0;
 }
-/* The elbow: down from the line, round the corner, into the row. */
+/* The elbow: down the trunk, round the corner, into the row. */
 .nav-branch::before {
   content: "";
   position: absolute;
-  left: -12px;
+  left: -15px;
   top: 0;
   height: 50%;
-  width: 12px;
+  width: 15px;
   border-left: 1.5px solid var(--nav-line);
   border-bottom: 1.5px solid var(--nav-line);
   border-bottom-left-radius: 8px;
 }
-/* The line carrying on to the next page. */
+/* The trunk carrying on to the next page. */
 .nav-branch:not(:last-child)::after {
   content: "";
   position: absolute;
-  left: -12px;
+  left: -15px;
   top: 50%;
   bottom: 0;
   border-left: 1.5px solid var(--nav-line);
 }
-/* The current page's elbow lights up. */
+/* The current page's branch lights up: the corner and the tick into its row, while the trunk stays quiet. */
 .nav-branch:has(> [aria-current="page"])::before {
-  border-color: #818cf8;
+  border-bottom-color: #818cf8;
 }
 html.light .nav-branch:has(> [aria-current="page"])::before {
-  border-color: #4f46e5;
+  border-bottom-color: #4f46e5;
 }
 /* The current top-level row: a soft accent sliver at its left edge. */
 .nav-row-on::before {
@@ -2209,8 +2230,15 @@ html.light .nav-row-on::before {
     --nav-line: rgba(244, 237, 224, 0.16);
   }
   .sidebar-rail .nav-tree-dark,
-  .sidebar-rail .nav-tree-light {
+  .sidebar-rail .nav-tree-light,
+  .sidebar-rail .nav-collapse {
     --nav-line: rgba(244, 237, 224, 0.16);
+  }
+  /* The drawer's rows are 46px with 19px icons and a 34px tree indent: the trunk's top moves with them. */
+  .sidebar-rail .nav-collapse-open::before {
+    left: 19px;
+    top: -10px;
+    height: 11px;
   }
   .sidebar-rail .nav-branch > a {
     height: 42px;
@@ -2230,7 +2258,7 @@ html.light .nav-row-on::before {
   }
   .sidebar-rail .nav-tree .nav-branch:has(> [aria-current="page"])::before,
   html.light .sidebar-rail .nav-tree .nav-branch:has(> [aria-current="page"])::before {
-    border-color: var(--ivory);
+    border-bottom-color: var(--ivory);
   }
   /* Counts: ivory, not indigo. */
   .sidebar-rail .nav-row > span.rounded-full,
