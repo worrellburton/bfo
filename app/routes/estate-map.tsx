@@ -21,8 +21,8 @@ type Entity = {
   partners?: { name: string; percent: number | null }[];
   /** This entity's own share in its parent's hands, when it isn't 100%. */
   share?: number | null;
-  /** A person (or outside company) who owns part of its parent: shown with People on. */
-  person?: { percent: number | null };
+  /** A person (or outside company) who owns part of an entity (`of`): shown above it with Owners on. */
+  person?: { percent: number | null; of: string };
   /** Its legal form as the record has it (entityType), so the card never guesses from the name. */
   type?: EntityType;
 };
@@ -108,6 +108,7 @@ const norm = (s: string) => s.trim().toLowerCase();
  * entities are left off.
  */
 export function mapEntities(assets: Record<string, MapAsset>, order: Record<string, number> = {}, opts: { people?: boolean } = {}): Entity[] {
+  // `people` is the Owners switch (the storage key keeps its old name).
   const live = Object.entries(assets).filter(([, a]) => a && typeof a.name === "string" && a.name.trim() && a.status !== "Dissolved");
   const ids = new Set(live.map(([id]) => id));
   const names = new Set(live.map(([, a]) => norm(a.name!)));
@@ -131,8 +132,9 @@ export function mapEntities(assets: Record<string, MapAsset>, order: Record<stri
     })
     .sort((x, y) => x.x - y.x || x.name.localeCompare(y.name))
     .flatMap((e) =>
-      // With People on, each partner is its own card under the entity they co-own.
-      opts.people && e.partners?.length ? [e, ...e.partners.map((p, i) => ({ id: `person:${e.id}:${i}`, name: p.name, parentId: e.id, x: i, y: 0, person: { percent: p.percent } }))] : [e],
+      // With Owners on, each partner is its own card above the entity they own a share of; an
+      // entity's owner that is itself an entity is simply its parent, so that line goes up to it.
+      opts.people && e.partners?.length ? [e, ...e.partners.map((p, i) => ({ id: `person:${e.id}:${i}`, name: p.name, parentId: null, x: i, y: 0, person: { percent: p.percent, of: e.id } }))] : [e],
     );
 }
 
@@ -151,6 +153,11 @@ const COL_GAP = 28;
 const LEVEL_GAP = 60;
 const TREE_GAP = 72;
 const R = 9; // elbow corner radius
+// An owner's card (a person, an outside company) sits above the entity it owns a share of.
+const OWNER_W = 176;
+const OWNER_H = 40;
+const OWNER_GAP = 16; // the line from the owner down into the entity
+const OWNER_STACK = 6; // between two owners of one entity
 const TRAY_GAP = 56;
 const TRAY_HEAD = 36;
 const TRAY_PAD = 16;
@@ -180,7 +187,7 @@ function toneColor(tone: number, isDark: boolean): string {
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────
-type Kind = "root" | "node" | "leaf" | "orphan";
+type Kind = "root" | "node" | "leaf" | "orphan" | "owner";
 type Box = {
   id: string;
   x: number;
@@ -192,7 +199,7 @@ type Box = {
   kids: number;
   desc: number;
 };
-type Edge = { id: string; parentId: string; d: string; tone: number; mx: number; my: number };
+type Edge = { id: string; parentId: string; d: string; tone: number; mx: number; my: number; /** An owner's line down into an entity: not an ownership link that can be unlinked. */ owner?: boolean };
 type Layout = {
   boxes: Box[];
   byId: Map<string, Box>;
@@ -225,7 +232,16 @@ function elbow(px: number, py: number, busY: number, cx: number, cy: number): st
  * children are all leaves stacks them at any level. Roots with nothing
  * beneath them go to the "Unlinked" tray.
  */
-export function layoutEstate(entities: Entity[], compact = false): Layout {
+export function layoutEstate(all: Entity[], compact = false): Layout {
+  // Owners (people, outside companies) aren't part of the tree: each is drawn above the entity it
+  // owns a share of, in a band the entity's row or stack leaves for it.
+  const ownersOf = new Map<string, Entity[]>();
+  for (const e of all) if (e.person) ownersOf.set(e.person.of, [...(ownersOf.get(e.person.of) ?? []), e]);
+  const entities = all.filter((e) => !e.person);
+  const band = (id: string) => {
+    const n = ownersOf.get(id)?.length ?? 0;
+    return n ? n * (OWNER_H + OWNER_STACK) - OWNER_STACK + OWNER_GAP : 0;
+  };
   const byId = new Map(entities.map((e) => [e.id, e]));
   const order = new Map(entities.map((e, i) => [e.id, i]));
   const kidsOf = new Map<string, Entity[]>();
@@ -243,7 +259,7 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
   const descMemo = new Map<string, number>();
   const reached = new Set<string>();
 
-  type Sub = { w: number; h: number; stack: boolean; own: number; cardH: number };
+  type Sub = { w: number; h: number; stack: boolean; own: number; cardH: number; /** The owners' band above the children of a row, the tallest any of them needs. */ rowBand: number };
   const subs = new Map<string, Sub>();
 
   // `own` is the entity's card width, `cardH` its card height, `depth` 0 at
@@ -255,21 +271,24 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
     const ch = kids(id);
     let m: Sub;
     if (!ch.length) {
-      m = { w: own, h: cardH, stack: false, own, cardH };
+      m = { w: own, h: cardH, stack: false, own, cardH, rowBand: 0 };
     } else if (compact || depth >= 2 || ch.every((c) => !kids(c.id).length)) {
       const childOwn = Math.max(224, own - INDENT);
       let cursor = cardH + STACK_TOP;
       let w = own;
       for (const c of ch) {
         const cm = measure(c.id, childOwn, kids(c.id).length ? CARD_H : LEAF_H, depth + 1);
-        cursor += cm.h + STACK_GAP;
+        // A stacked child with owners has its band above it, inside the stack.
+        cursor += band(c.id) + cm.h + STACK_GAP;
         w = Math.max(w, INDENT + cm.w);
       }
-      m = { w, h: cursor - STACK_GAP, stack: true, own, cardH };
+      m = { w, h: cursor - STACK_GAP, stack: true, own, cardH, rowBand: 0 };
     } else {
       const ms = ch.map((c) => measure(c.id, CARD_W, CARD_H, depth + 1));
       const w = ms.reduce((s, x) => s + x.w, 0) + COL_GAP * (ms.length - 1);
-      m = { w: Math.max(own, w), h: cardH + LEVEL_GAP + Math.max(...ms.map((x) => x.h)), stack: false, own, cardH };
+      // A row's children share a top edge, so the row leaves the tallest band any of them needs.
+      const rowBand = Math.max(0, ...ch.map((c) => band(c.id)));
+      m = { w: Math.max(own, w), h: cardH + LEVEL_GAP + rowBand + Math.max(...ms.map((x) => x.h)), stack: false, own, cardH, rowBand };
     }
     descMemo.set(
       id,
@@ -288,7 +307,7 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
   const orphans = entities.filter((e) => !reached.has(e.id));
 
   const forestW = trees.length ? trees.reduce((s, t) => s + subs.get(t.id)!.w, 0) + TREE_GAP * (trees.length - 1) : 0;
-  const forestH = trees.length ? Math.max(...trees.map((t) => subs.get(t.id)!.h)) : 0;
+  const forestH = trees.length ? Math.max(...trees.map((t) => subs.get(t.id)!.h + band(t.id))) : 0;
 
   // Tray geometry first, so the scene width (and the forest's centring) is known.
   let tray: Layout["tray"] = null;
@@ -323,6 +342,26 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
     childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), child]);
   }
 
+  /**
+   * An entity's owners, stacked above its card (its top edge at cardY), each with a short line
+   * down into it. In a row the parent's own line drops into the card's left part, so the owners
+   * keep to the right of it; in a stack the parent's rail comes in from the left, so the owners
+   * sit over the card, a step in from its left edge.
+   */
+  function placeOwners(id: string, cardX: number, cardY: number, cardW: number, inRow: boolean) {
+    const list = ownersOf.get(id);
+    if (!list?.length) return;
+    const ox = inRow ? cardX + cardW / 2 - 48 : cardX + 16;
+    let y = cardY - OWNER_GAP;
+    for (const o of list) {
+      y -= OWNER_H;
+      boxes.push({ id: o.id, x: ox, y, w: OWNER_W, h: OWNER_H, kind: "owner", tone: -2, kids: 0, desc: 0 });
+      const cx = ox + OWNER_W / 2;
+      edges.push({ id: o.id, parentId: id, d: `M ${cx} ${y + OWNER_H} V ${cardY}`, tone: -2, mx: cx, my: (y + OWNER_H + cardY) / 2, owner: true });
+      y -= OWNER_STACK;
+    }
+  }
+
   /** Places a subtree with its box's left edge at x; returns the card's centre x. */
   function place(id: string, x: number, y: number, depth: number, tone: number, kind: Kind): number {
     levels = Math.max(levels, depth + 1);
@@ -340,8 +379,11 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
         ch.forEach((c) => {
           const t = branching ? toneCounter++ : tone;
           const cs = subs.get(c.id)!;
-          const my = cursor + cs.cardH / 2;
-          place(c.id, x + INDENT, cursor, depth + 1, t, kids(c.id).length ? "node" : "leaf");
+          // The child's owners take the band above its card; the rail's elbow comes into the card.
+          const top = cursor + band(c.id);
+          const my = top + cs.cardH / 2;
+          place(c.id, x + INDENT, top, depth + 1, t, kids(c.id).length ? "node" : "leaf");
+          placeOwners(c.id, x + INDENT, top, cs.own, false);
           edges.push({
             id: c.id,
             parentId: id,
@@ -352,7 +394,7 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
             my: cursor - STACK_GAP / 2,
           });
           link(id, c.id);
-          cursor += cs.h + STACK_GAP;
+          cursor = top + cs.h + STACK_GAP;
         });
       }
       return x + cw / 2;
@@ -360,13 +402,18 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
     const ms = ch.map((c) => subs.get(c.id)!);
     const total = ms.reduce((s, c) => s + c.w, 0) + COL_GAP * (ms.length - 1);
     let cx = x + (m.w - total) / 2;
-    const childY = y + chH + LEVEL_GAP;
+    // The row's children start below the band their owners need (none, when none has owners).
+    const childY = y + chH + LEVEL_GAP + m.rowBand;
     const branching = tone === -1 && ch.length > 1;
     const placed = ch.map((c, i) => {
       const t = branching ? toneCounter++ : tone;
       const center = place(c.id, cx, childY, depth + 1, t, "node");
+      const owned = !!ownersOf.get(c.id)?.length;
+      placeOwners(c.id, center - ms[i].own / 2, childY, ms[i].own, true);
       cx += ms[i].w + COL_GAP;
-      return { id: c.id, center, tone: t };
+      // A child with owners takes the parent's line into the left part of its card, leaving the
+      // middle to the owners' lines.
+      return { id: c.id, center, drop: owned ? center - 72 : center, tone: t };
     });
     const pcx = (placed[0].center + placed[placed.length - 1].center) / 2;
     boxes.push({ id, x: pcx - cw / 2, y, w: cw, h: chH, kind, tone, kids: ch.length, desc });
@@ -375,9 +422,9 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
       edges.push({
         id: p.id,
         parentId: id,
-        d: elbow(pcx, y + chH, busY, p.center, childY),
+        d: elbow(pcx, y + chH, busY, p.drop, childY),
         tone: p.tone,
-        mx: p.center,
+        mx: p.drop,
         my: busY + (childY - busY) / 2,
       });
       link(id, p.id);
@@ -387,7 +434,9 @@ export function layoutEstate(entities: Entity[], compact = false): Layout {
 
   let fx = (width - forestW) / 2;
   for (const t of trees) {
-    place(t.id, fx, 0, 0, -1, "root");
+    // A root with owners starts below their band.
+    const center = place(t.id, fx, band(t.id), 0, -1, "root");
+    placeOwners(t.id, center - subs.get(t.id)!.own / 2, band(t.id), subs.get(t.id)!.own, true);
     fx += subs.get(t.id)!.w + TREE_GAP;
   }
 
@@ -955,8 +1004,8 @@ export function EstateMapView({
   function metaFor(box: Box, info: ReturnType<typeof describe>): string {
     const who = entityById.get(box.id);
     if (who?.person) {
-      const parent = who.parentId ? entityById.get(who.parentId) : null;
-      return `${info.label} · ${who.person.percent != null ? `${who.person.percent}% of ` : "owner of "}${parent ? describe(parent.name).display : "it"}`;
+      const owned = entityById.get(who.person.of);
+      return `${info.label} · ${who.person.percent != null ? `${who.person.percent}% of ` : "owner of "}${owned ? describe(owned.name, owned.type).display : "it"}`;
     }
     if (box.kind === "orphan") return `${info.label} · Unlinked`;
     if (box.kind === "root") {
@@ -985,7 +1034,7 @@ export function EstateMapView({
     if (!ent) return null;
     const info = ent.person ? personInfo(ent.name) : describe(ent.name, ent.type);
     const c = ent.person ? (isDark ? "#e2e8f0" : "#475569") : toneColor(box.tone, isDark);
-    const leaf = box.kind === "leaf";
+    const leaf = box.kind === "leaf" || box.kind === "owner";
     const root = box.kind === "root";
     const orphan = box.kind === "orphan";
     const hovered = hoveredId === box.id && !drag;
@@ -1175,17 +1224,19 @@ export function EstateMapView({
               const sel = selectedEdge === edge.id;
               return (
                 <g key={edge.id} data-edge>
-                  <path
-                    d={edge.d}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={14}
-                    style={{ pointerEvents: "stroke", cursor: "pointer" }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      setSelectedEdge(edge.id);
-                    }}
-                  />
+                  {!edge.owner && (
+                    <path
+                      d={edge.d}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={14}
+                      style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setSelectedEdge(edge.id);
+                      }}
+                    />
+                  )}
                   <path
                     d={edge.d}
                     fill="none"
@@ -1200,7 +1251,7 @@ export function EstateMapView({
                       filter: on && isDark ? `drop-shadow(0 0 3px ${c})` : undefined,
                     }}
                   />
-                  {!faded && !sel && (
+                  {!faded && !sel && !edge.owner && (
                     <path
                       className="estate-flow"
                       d={edge.d}
@@ -1369,7 +1420,7 @@ export function EstateMapView({
           <button
             onClick={togglePeople}
             aria-pressed={people}
-            title={people ? "Hide the people who co-own entities" : "Show the people who co-own entities"}
+            title={people ? "Hide the owners who hold shares of entities" : "Show the owners who hold shares of entities, above them"}
             className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${
               people ? (isDark ? "border-white/25 bg-white/[0.12] text-white" : "border-gray-900 bg-gray-900 text-white") : hudBtn
             }`}
@@ -1377,7 +1428,7 @@ export function EstateMapView({
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
-            <span className="hidden sm:inline">People</span>
+            <span className="hidden sm:inline">Owners</span>
           </button>
           <button
             onClick={handleAddEntity}
