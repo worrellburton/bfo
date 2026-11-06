@@ -15,85 +15,87 @@ import type { BackdropProps } from "./types";
  * into a pin-sharp speck for a few seconds and then softens again. The
  * motes are tiny, and they stay tiny: off the plane of focus a mote goes
  * soft, never wide. Its softness is a continuum, from a speck in the plane
- * to a breath at the near and far ends, and because a point keeps its light
- * as the lens spreads it, the peak falls with the square of the softness,
- * with nothing clipped to hide the law: the speck in the plane is the one
- * bright thing (0.9 of white at most, rolled off at the top like film's
- * shoulder, well under the ivory mark), a dot at twice its width a quarter
- * as bright, and nothing ever draws past six pixels (four and a half on a
- * phone), however soft it is. A soft dot cut off at the cap is drawn with
- * the light the cut took from its skirt put back into what is drawn (it was
- * thrown away, and the dots the cap trims came out dimmer than the law, a
- * hole in the middle of the continuum). The law stops where the drawing
- * stops: past the widest sigma drawn (2.4 px, two fifths of a desktop's
- * cap) a mote is as soft as this lens can show, and it keeps the light it
- * had there, a breath of twelve to twenty levels under the lamp, rather
- * than fading on toward nothing (it did fade on, and the far wall was drawn
- * but invisible, so the depth of field read as two kinds, speck and soft
- * dot, with no breath between them and the room). The lamp is by the camera, so
- * the dust in front of the plane of focus is brighter the nearer it is, by
- * the root of the distance (the lamp is broad), and the near field is the
- * brighter soft layer, a haze at arm's length (near 20/255) at every turn
- * of the ring, because the boost freezes where the law does; the dust behind the plane is lit as
- * the plane is, no dimmer for being far (a lamp whose light also fell off
- * behind the plane was tried: it made the focus ring an exposure pull, the
- * far half of the room losing two thirds of its light every time the plane
- * came in). The dust is
- * thinner at the middle distances the focus sweeps and thicker at arm's
- * length and along the far wall, so at any moment most of what shows is a
- * soft dot and only a sprinkle is a speck, as it is through a wide-open
- * lens. Most motes are faint and a few are bright, as stars are, and the
- * light has a temperature: ivory under the lamp, neutral by the middle of
- * the frame, cool silver in the far corner. No two motes crowd each other:
- * they are placed a little over seven pixels apart on screen whatever
- * their depth, with no exception, and further apart when they are close in depth, because
- * two soft dots closer than that join into one oblong, and an oblong is a
- * big particle. Everything is slow, and the air is nearly still: a current
- * the whole room shares rises a little under a fifth of a pixel a second, so over minutes
- * the dust is carried somewhere and does not churn in place, and the air
- * carries it further: slow swells, each a shear a few hundred
- * pixels across that turns over two to four minutes, running in six
- * directions so that no moment has a heading, carry a mote fifteen to
- * twenty pixels in half a minute in a direction that differs from one
- * region to the next, so an open curl, not a closed loop, is what a patient
- * eye sees; gentler eddies turning over a minute to a minute and a half bend
- * the path into an open arc rather than a hook. Within a glance the dust
- * sways: three ripples four hundred pixels across, headed sixty degrees
- * apart and each over twenty seconds or so, sway the dust at one spot
- * together, a pixel and a half or so either way (one ripple along each
- * screen axis was tried, at two pixels: the room nodded up and down for ten
- * seconds and then side to side, and air has no screen axes), and each soft
- * dot has a little of its own mind (two wobbles of its own, under half a
- * pixel, over ten and twenty seconds), so neighbours drift together but
- * never trace the same curve. A mote in the plane of focus has a fifth of
+ * through every width between to a breath at the near and far ends, and
+ * the drawing is spread to keep it one: a dot is drawn narrower than the
+ * lens would spread it, by less near the plane and more further out, so the
+ * widths a dot can take are filled evenly instead of most of the room
+ * landing at the widest the cap allows (drawn at the lens's own width, more
+ * than two in five of the motes that showed were the same three-pixel soft
+ * dot, a halftone screen with specks in it, and only a fifth were in
+ * between). The light still follows the lens: a point keeps its light as
+ * the lens spreads it, so the peak falls with the square of the width
+ * drawn, and a dot drawn narrower than its lens width also gives up part
+ * of the light that width would have cost it, so it reads as far from the
+ * plane as it is; past the widest dot drawn (2.4 px of sigma, two fifths of
+ * a desktop's cap) a mote dims on as if it were still widening, to twice
+ * that, and fades to a breath of a few levels over the dusk rather than
+ * holding a soft dot's light at the cap. The speck in the plane is the one
+ * bright thing, and its light is rolled off at the top like film's
+ * shoulder, from a little under half of white toward 0.58, so the brightest
+ * speck on the page lands near 140/255, a hundred levels under the ivory
+ * mark, and no single point glitters above the rest; nothing ever draws
+ * past six pixels (four and a half on a phone), however soft it is. The
+ * lamp is by the camera, so the dust in front of the plane of focus is
+ * brighter the nearer it is, by the root of the distance (the lamp is
+ * broad); the dust behind the plane is lit as the plane is, no dimmer for
+ * being far (a lamp whose light also fell off behind the plane was tried:
+ * it made the focus ring an exposure pull, the far half of the room losing
+ * two thirds of its light every time the plane came in). The dust is
+ * thinner, by about a third, at the middle distances the focus sweeps, so
+ * at any moment most of what shows is soft and only a sprinkle is a speck,
+ * as it is through a wide-open lens. Most motes are faint and a few are
+ * bright, as stars are, and the light has a temperature: ivory under the
+ * lamp, neutral by the middle of the frame, cool silver in the far corner.
+ * No two motes crowd each other: they are placed a little over seven
+ * pixels apart on screen whatever their depth, with no exception, and
+ * further apart when they are close in depth, because two soft dots closer
+ * than that join into one oblong, and an oblong is a big particle.
+ * Everything is slow, and the air is nearly still: a current the whole room
+ * shares rises about a quarter of a pixel a second, so over minutes the
+ * dust is carried somewhere and does not churn in place, and the air
+ * carries it further: slow swells, each a shear a few hundred pixels across
+ * that turns over two to four minutes, running in six directions so that no
+ * moment has a heading, carry a mote fifteen to twenty pixels in half a
+ * minute in a direction that differs from one region to the next, so an
+ * open curl, not a closed loop, is what a patient eye sees; gentler eddies
+ * turning over a minute to a minute and a half bend the path into an open
+ * arc rather than a hook. Within a glance the dust sways: three ripples,
+ * headed sixty degrees apart and each over twenty seconds or so, of three
+ * different sizes and strengths (340 to 610 px across, a pixel to a pixel
+ * and four fifths), sway the dust at one spot together (one ripple along
+ * each screen axis was tried: the room nodded up and down for ten seconds
+ * and then side to side, and air has no screen axes; three of one size and
+ * strength were tried, and they locked into a lattice of round whorls), and
+ * each soft dot has a little of its own mind (two wobbles of its own, under
+ * half a pixel, over ten and twenty seconds), so neighbours drift together
+ * but never trace the same curve. A mote drawn as a speck has a fifth of
  * that mind of its own and seven tenths of the ripple: a speck holds a
- * little stiller than the soft dust round it, the stillest thing in the
- * room, as a focused point is, and the soft dust beside it wavers, a hair,
- * as the focus ring brings it in or lets it go. That is as far as depth may
- * move, and it is a hair on purpose: the ripple was once the soft dust's
- * alone (a fifth of it for a speck, at two pixels), and measured over a
- * half minute it closed one soft neighbour in a hundred onto the speck
- * beside it, three times the pairs of a room that sways together; at seven
- * tenths the speck and its neighbour part by half a pixel or so, inside
- * the spacing's budget. The travel itself is a field
- * over the screen, not over the room: the dust at one spot moves together
- * whatever its depth (the far wall a hair behind the near field, and the
- * near field a trace faster), because the motes are placed seven pixels
- * apart and only a field that carries neighbours together keeps them
- * apart; dust that travelled by its depth would reshuffle into touching
- * pairs within a minute, and a touching pair is a big particle. For the same
- * reason the camera turns a third of a
- * degree toward the pointer (a pan: the whole room slides a few pixels, as
- * one) and does not lean about the plane of focus: a lean would slide the
- * near field across the far wall, the one depth motion the room could show
- * and exactly the reshuffle the spacing rule exists to prevent (measured
- * at a degree of lean: with the pointer at the edge one visible dot in
- * eighteen became a touching pair and one in twenty drew seven pixels
- * long). Depth is told by the lens alone, in softness and light. The
- * exposure breathes once every forty seconds. When the door is ready the
- * dust fades up out of the dark over four seconds, half there as the
- * letters land and home a second after the mark's bloom has settled, so
- * the room fills behind the mark.
+ * little stiller than the soft dust round it, as a focused point is, and
+ * the soft dust beside it wavers, a hair, as the focus ring brings it in or
+ * lets it go. That is as far as depth may move, and it is a hair on
+ * purpose: the ripple was once the soft dust's alone (a fifth of it for a
+ * speck, at two pixels), and measured over a half minute it closed one soft
+ * neighbour in a hundred onto the speck beside it, three times the pairs of
+ * a room that sways together; at seven tenths the speck and its neighbour
+ * part by half a pixel or so, inside the spacing's budget. The travel
+ * itself is a field over the screen, not over the room: the dust at one
+ * spot moves together whatever its depth (the far wall a hair behind the
+ * near field, and the near field a trace faster), because the motes are
+ * placed seven pixels apart and only a field that carries neighbours
+ * together keeps them apart; dust that travelled by its depth would
+ * reshuffle into touching pairs within a minute, and a touching pair is a
+ * big particle. For the same reason the camera turns a third of a degree
+ * toward the pointer (a pan: the whole room slides a few pixels, as one)
+ * and does not lean about the plane of focus: a lean would slide the near
+ * field across the far wall, the one depth motion the room could show and
+ * exactly the reshuffle the spacing rule exists to prevent (measured at a
+ * degree of lean: with the pointer at the edge one visible dot in eighteen
+ * became a touching pair and one in twenty drew seven pixels long). Depth
+ * is told by the lens alone, in softness and light. The exposure breathes
+ * once every forty seconds. When the door is ready the dust fades up out of
+ * the dark over four seconds, half there as the letters land and home a
+ * second after the mark's bloom has settled, so the room fills behind the
+ * mark.
  * One instanced draw of quads (a point sprite has a size limit on some
  * phones; a quad has none), everything analytic in the vertex shader; the
  * room behind is a dithered gradient so the dusk never bands. Reduced
@@ -111,25 +113,28 @@ const FOV = (2 * Math.atan(TAN_HALF) * 180) / Math.PI;
  * little deeper in front of the plane of focus than behind it in 1/z (the
  * measure the lens cares about), so both ends are a breath at rest and the
  * focus ring can reach either. The dust is seeded evenly in 1/z but thinned
- * to about half across the middle distances the focus ring sweeps
+ * by about a third across the middle distances the focus ring sweeps
  * (DEPTH_DIP, a bell centred on the sweep), so the plane of focus, wherever
  * it is, has fewer motes to make specks of than the soft field either side
  * of it has to make dots: through an f/1 lens most of what shows should be
- * soft.
+ * soft. It was thinned by nearly half, and with the ends of the room that
+ * much fuller than the middle, the soft dots came in two sizes, the few
+ * just off the plane and the many at the ends; a third leaves the middle
+ * widths enough motes to fill them.
  */
 const MARGIN = 1.18;
 const Z_NEAR = 3.8;
 const Z_FAR = 11;
-const DEPTH_DIP = 0.45;
+const DEPTH_DIP = 0.3;
 const DEPTH_DIP_AT = 0.58;
 const depthWeight = (u: number) => 1 - DEPTH_DIP * Math.exp(-(((u - DEPTH_DIP_AT) / 0.3) * ((u - DEPTH_DIP_AT) / 0.3)));
 /**
- * The widest sigma the light law follows, CSS px: two fifths of a desktop's
- * cap, the widest a desktop draws. Past it a mote keeps the light it had
- * there (see `lit` in the shader); a phone, whose cap is smaller, draws
- * narrower than this and dims on to it as before.
+ * The widest the lens's own sigma counts for, CSS px, in the light law (see
+ * `law` in the shader) and in the near field's lamp boost, which freezes
+ * where the mote's lens sigma reaches it. Past it a mote is as soft as the
+ * room ever needs, and nothing about it changes as the plane moves on.
  */
-const LAW_SIGMA = 3.2;
+const LAW_SIGMA = 4.0;
 /**
  * The light the cut keeps. A dot is drawn as a Gaussian taken to zero at its cut, and the cut
  * throws away the light in its skirt: a seventh for every speck alike (cut at two and a half
@@ -147,13 +152,41 @@ const KEEP_MAX = 1.5;
 /**
  * The highlights' shoulder: a speck's light in the plane passes straight through up to
  * SHOULDER[0] of white and above that rolls off toward SHOULDER[1], as film's shoulder does.
+ * It started at 0.62 and stopped at 0.74, and the few specks that reached it drew at 150 to
+ * 170/255 against a field whose sharp specks were 105 at the ninetieth percentile, so they
+ * glittered; it was then tried as low as 0.40 to 0.51, which held every speck under 130 but
+ * flattened every speck under the lamp to one brightness and left fewer than ten pixels of the
+ * lit corner over 120, so nothing caught the light at all. At 0.48 to 0.58 the brightest
+ * speck lands near 140, the twenty brightest pixels of the lit corner near 120 to 130, and a
+ * few dozen specks under the lamp catch the light without one of them standing out.
  */
-const SHOULDER = [0.5, 0.6];
-const SOFT_NEAR = 0.45;
+const SHOULDER = [0.48, 0.58];
+/**
+ * How a mote's softness is drawn. The lens adds `past` px to a speck's sigma (see the shader);
+ * the dot is drawn SOFT_NEAR of that wider, and SOFT_FAR more of whatever is past SOFT_KNEE px,
+ * each mote by its own share within SOFT_SPREAD either way, so the room's depths spread over
+ * the widths a dot can take rather than piling at the cap: near the plane a mote softens
+ * gently and stays a pinhead a little longer, and further out it widens faster toward the
+ * widest dot drawn, DRAW_MAX of the cap. Drawn at the lens's own width, more than two in five
+ * of the motes that showed sat at the widest the cap allows (a Gaussian's fitted width runs
+ * together past a sigma of about 1.6, where the cut at half the cap starts to shape it), and a
+ * fifth were in between; drawn this way, near a third are in between and a quarter at the cap.
+ * The light still answers to the lens: the peak falls with the square of the width that would
+ * be drawn and, for a dot drawn narrower than the lens would spread it, with DIM_PAST of the
+ * lens's width over that, so a dot looks as far from the plane as it is. Past the widest dot
+ * drawn, a mote keeps dimming as though it were still widening, as far as FADE_PAST times the
+ * widest, and is a breath of a few levels at the ends of the room rather than a soft dot held
+ * at the cap's light. (With the light following the lens's width in full, the dots between a
+ * speck and a breath came out a seventh under the law against a speck, measured on Gaussian
+ * fits.)
+ */
+const SOFT_NEAR = 0.42;
 const SOFT_KNEE = 1.3;
-const SOFT_FAR = 0.65;
+const SOFT_FAR = 0.45;
 const SOFT_SPREAD = 0.2;
 const DIM_PAST = 0.6;
+const FADE_PAST = 2.0;
+const DRAW_MAX = 0.4;
 /**
  * Parallax: the air's displacement is in screen units, the same for every
  * depth, scaled by (plane at rest / z) to this small power, so the near
@@ -184,9 +217,9 @@ const PARALLAX = 0.05;
  * because the near side of the plane is short in 1/z when the plane is
  * near, and the band of dust the plane lights is cut off by the near wall.
  * Not an exposure pull (the light law has none), but a tide all the same.
- * From 5.45 the band is whole at both ends, the far wall is a breath that
- * keeps its light (see LAW_SIGMA), and the count holds within about a
- * tenth of its mean over a turn.
+ * From 5.45 the band is whole at both ends, the far wall and arm's length
+ * are a breath at either end of the turn (see FADE_PAST), and the count of
+ * visible motes holds within a few per cent of its mean over a turn.
  */
 const ringFocus = (t: number) => FOCUS + 0.25 + 0.56 * Math.sin((2 * Math.PI * t) / 151) + 0.24 * Math.sin((2 * Math.PI * t) / 67 + 1.7);
 const STILL_T = 29;
@@ -210,20 +243,25 @@ const CHAMPAGNE = [0.94, 0.86, 0.71];
  * The current, the part the whole room shares, is slight: dust in still air
  * does not flow toward a light. A rise up the frame, integrated on the CPU
  * each frame from a rate that swells and relaxes over 97 s and a lean that
- * swings through zero over 131 s, at a little under a fifth of a pixel a
- * second on average (0.0006 of the frame's half-height a second at full
- * swell, a fifth of the pace the air moves a mote at within a glance), so that over
- * minutes the dust travels, thirty-five pixels or so in two and a half
- * minutes (on a model of the field),
- * and circulates through the shafts of light without ever reading as a
- * conveyor. At a tenth of a pixel a second the air's swells, which come
- * back on themselves, were most of the travel, and over two minutes a mote
- * wandered inside a cell forty pixels across and returned: drift within a
- * glance, churn in place over minutes. Any more than a fifth, and the lit
- * corner's half minute takes a heading of its own (the current is shared,
- * so it adds straight to the corner's collective drift).
+ * swings through zero over 131 s, at about a quarter of a pixel a second
+ * on average (0.0009 of the frame's half-height a second at full swell, a
+ * quarter of the pace the air moves a mote at within a glance), so that
+ * over minutes the dust travels, forty-five pixels or so in two and a half
+ * minutes and still going (on a model of the field), and circulates
+ * through the shafts of light without ever reading as a conveyor. At a
+ * tenth of a pixel a second the air's swells, which come back on
+ * themselves, were most of the travel, and over two minutes a mote wandered
+ * inside a cell forty pixels across and returned; at a little under a
+ * fifth, it travelled thirty-odd pixels in a minute and a half and then
+ * turned back, and the slow whorls of the swells under the lamp closed on
+ * themselves. At a quarter the current runs through them and opens the
+ * larger ones (on the model, the widest closed whorl under the lamp is about
+ * half as wide as it was). It is shared, so it adds
+ * straight to the lit corner's collective drift; the swells' phases (see
+ * SWELLS) are chosen with it in, so the corner's half minute still has no
+ * heading of its own.
  */
-const DRIFT = 0.0006;
+const DRIFT = 0.0009;
 const driftRate = (t: number) => DRIFT * (0.65 + 0.35 * Math.sin((2 * Math.PI * t) / 97));
 const driftLean = (t: number) => 0.3 * Math.sin((2 * Math.PI * t) / 131);
 
@@ -247,26 +285,38 @@ const driftLean = (t: number) => 0.3 * Math.sin((2 * Math.PI * t) / 131);
  * minutes; swells half again as large and as slow were tried for that (on a
  * model of the field), and at their size the shear moved seven-pixel neighbours against each other
  * by a pixel and a half and doubled the pairs that closed. Their phases are chosen (from
- * a few hundred random sets, measured on a model of the field) for the
- * first two minutes on the page, which every visitor sees: in that time
- * the lit corner, six hundred pixels wide inside one wave and so moving
- * largely as one, never has more than about half its dust within thirty
- * degrees of either screen axis in any one step, and its collective
- * drift over half a minute stays under a quarter of its dust's own pace
- * (with the phases as they fell, the corner nodded up and down through
- * the first glance and drifted at a third of its pace). Their phase turns by a
+ * seven hundred random sets, measured on a model of the field, with the
+ * current and the ripple as they are) for the first two minutes on the
+ * page, which every visitor sees: in that time the lit corner, six hundred
+ * pixels wide inside one wave and so moving largely as one, never has more
+ * than about half its dust within thirty degrees of either screen axis in
+ * any one step, nor the whole frame more than about two fifths, and its
+ * collective drift over half a minute stays near a fifth of its dust's own
+ * pace; within a glance the dust keeps nearly a pixel a second; and the
+ * swells' own whorls, which every sum of waves has, stay small and open
+ * under the lamp, where the dust is thickest (with the phases as they first
+ * fell, the corner nodded up and down through the first glance and drifted
+ * at a third of its pace; with the next set, the frame leaned sideways
+ * around the minute mark, half its dust within thirty degrees of level for
+ * six seconds, and the lamp's corner held a closed whorl two to three
+ * hundred pixels across near the end of the first minute). Their phase turns by a
  * twentieth of a radian or so from arm's length to the far wall, so the far
  * wall trails the near field by a hair and the motes that show together
  * move as one: any more, and the near and far dust at one spot would slide
  * across each other into touching pairs. The ripple is three more shears
- * of the same kind, short and quick: 400 to 450 px across, 1.7 px each
- * over 21 to 28 s, headed sixty degrees apart (15, 75 and 135 degrees), so
- * the dust at one spot sways a stroke within a glance (a step of a second
- * or two turns by twenty degrees or so, the heading over nine seconds not
- * at all) without moving a mote against its neighbours and without the
- * room ever bobbing along a screen axis. It was one ripple along x and one
- * along y, two pixels each, and the two took turns owning the frame, ten
- * seconds up and down and then ten side to side; before that a pixel and
+ * of the same kind, short and quick, over 21 to 28 s and headed sixty
+ * degrees apart (15, 75 and 135 degrees), so the dust at one spot sways a
+ * stroke within a glance (a step of a second or two turns by twenty degrees
+ * or so, the heading over nine seconds not at all) without moving a mote
+ * against its neighbours and without the room ever bobbing along a screen
+ * axis. The three are lopsided on purpose, 1.35, 1.0 and 1.8 px and 450,
+ * 340 and 610 px across: three shears of one size and strength sixty
+ * degrees apart add up to a hexagonal lattice of round cells, and at 1.7 px
+ * each the cells showed as closed whorls in the trails; sizes and strengths
+ * that do not match cannot lock into cells, and the strongest is the
+ * diagonal one, so neither screen axis gets more than its share. It was one
+ * ripple along x and one along y, two pixels each, and the two took turns
+ * owning the frame, ten seconds up and down and then ten side to side; before that a pixel and
  * a half over 13 to 15 s and half as wide, and at that pace and size the
  * trails curled into whorls a hundred pixels across and a mote wriggled
  * where it should drift. The ripple is what gives a half minute's path its
@@ -289,16 +339,18 @@ const driftLean = (t: number) => 0.3 * Math.sin((2 * Math.PI * t) / 131);
  * phase of the mote's own (`ph` below, a full turn, taken once, twice and
  * three times over so the four do not line up), so two neighbours drift
  * together but never trace the same curve: dust, not wallpaper. The own
- * terms are scaled by the mote's softness (`sw` below: a fifth in
- * the plane of focus, the whole of it from about one and a half times a
- * speck's width out), so a speck has a little less of a mind of its own
+ * terms are scaled by the mote's softness as drawn (`sw` below: a fifth
+ * for a speck, the whole of it from one and a half times a speck's drawn
+ * width out; it was the lens's width, and with the dots drawn narrower than
+ * the lens spreads them, a dot that looked like a speck moved like soft
+ * dust), so a speck has a little less of a mind of its own
  * than the soft dust round it. The own terms, the gain and the softness
  * scales are the only things that move a mote against its neighbours, and they are
  * kept small on purpose: measured on the field, the own terms are what
  * closes seven-pixel neighbours to five (at a pixel they did it to one
  * pair in five over a minute and a half, at half a pixel to one in
  * twenty). The ripple is scaled by softness too, but only from seven
- * tenths in the plane of focus to the whole of it (`rw` below): it was
+ * tenths for a speck to the whole of it (`rw` below): it was
  * scaled from a fifth for a round, at two pixels of ripple, which put a
  * soft dot a pixel and a half from the speck beside it and tripled the
  * touching pairs; it was everyone's in full for a round, and the speck
@@ -306,22 +358,26 @@ const driftLean = (t: number) => 0.3 * Math.sin((2 * Math.PI * t) / 131);
  * dots drawn brighter (see KEEP_MAX), touching pairs rose to four a frame
  * from under two. At seven tenths a speck and the soft dot beside it part
  * by half a pixel or so, and the speck is still the stillest thing in the
- * room.
+ * room, though only by a little: the ripple is a small part of how far a
+ * mote goes in a few seconds (the swells and the current, which every mote
+ * shares in full, are most of it), so a speck's path is about nine tenths
+ * of a soft dot's, and going lower would take a share of the ripple that
+ * parts a speck from its neighbour by more than the spacing allows.
  */
 type Term = [number, number, number, number, number, number, number];
 type Swell = [number, number, number, number, number, number];
 const SWELLS: Swell[] = [
-  [0, 0.06, 0.95, 163, 0.0247, 4.73],
-  [60, -0.075, 0.8, 211, 0.0271, 4.03],
-  [120, 0.05, 1.2, 131, 0.0193, 2.32],
-  [90, 0.05, 1.05, 181, 0.0251, 0.79],
-  [150, 0.07, 0.88, 239, 0.0294, 0.67],
-  [30, -0.06, 1.3, 149, 0.0208, 2.47],
+  [0, 0.06, 0.95, 163, 0.0247, 3.74],
+  [60, -0.075, 0.8, 211, 0.0271, 2.49],
+  [120, 0.05, 1.2, 131, 0.0193, 2.85],
+  [90, 0.05, 1.05, 181, 0.0251, 4.64],
+  [150, 0.07, 0.88, 239, 0.0294, 4.08],
+  [30, -0.06, 1.3, 149, 0.0208, 3.92],
 ];
 const RIPPLE: Swell[] = [
-  [15, 0.04, 0.9, 21, 0.00376, 0.5],
-  [75, -0.05, 1.0, 24.5, 0.00376, 2.4],
-  [135, 0.045, 0.95, 28, 0.00376, 4.4],
+  [15, 0.04, 1.0, 21, 0.003, 0.5],
+  [75, -0.05, 0.75, 24.5, 0.0022, 2.4],
+  [135, 0.045, 1.35, 28, 0.004, 4.4],
 ];
 const EDDIES: Term[] = [
   // x
@@ -353,8 +409,8 @@ const swellTerm = ([heading, kz, lambda, period, amp, phase]: Swell) => {
 /**
  * q: the mote's screen position in half-heights (x scaled by the aspect) and its depth as a
  * fraction of the room; ph its phase, g its gain on the eddies, sw its share of the own
- * wobbles (a fifth in the plane of focus, 1 soft), rw its share of the ripple (seven tenths
- * in the plane of focus, 1 soft).
+ * wobbles (a fifth for a speck as drawn, 1 soft), rw its share of the ripple (seven tenths
+ * for a speck, 1 soft).
  */
 const FLOW_GLSL = `vec2 flow(vec3 q, float t, float ph, float g, float sw, float rw) {
   return ${SWELLS.map(swellTerm).join("\n    + ")}
@@ -420,6 +476,8 @@ const VERT = /* glsl */ `
   const float SOFT_KNEE = ${SOFT_KNEE.toFixed(3)};
   const float SOFT_FAR = ${SOFT_FAR.toFixed(3)};
   const float DIM_PAST = ${DIM_PAST.toFixed(3)};
+  const float FADE_PAST = ${FADE_PAST.toFixed(2)};
+  const float DRAW_MAX = ${DRAW_MAX.toFixed(3)};
   const float SOFT_SPREAD = ${SOFT_SPREAD.toFixed(3)};
   float shoulder(float x) {
     const float K = ${SHOULDER[0].toFixed(2)};
@@ -442,32 +500,33 @@ const VERT = /* glsl */ `
     // a pixel (never under 0.8 device px, so it does not blink as it crosses pixel centres), and
     // off the plane the lens adds uK px of sigma per unit of 1/z, in quadrature. The room is
     // seeded in 1/z, thinned where the focus sweeps, so the softness is a continuum: a sprinkle
-    // of the motes a speck, most a soft dot, the ends a breath. The sigma drawn stops at two
-    // fifths of the cap and the dot is cut to nothing at half the cap, so the footprint never
-    // passes uCap: a mote goes soft, not wide, and the softest is a round bump three pixels
-    // across. The cut is as tight as the law allows: taken in to 0.45 of the cap it trims the
-    // skirts of the mid-soft dots, which then fit narrower than they are and read as if their
-    // light fell faster than the square of their softness. The light follows the softness
-    // (law below) only as far as LAW_SIGMA, the widest sigma a desktop draws: past that a mote is
-    // as soft as this lens can show, and it keeps the light it had there.
+    // of the motes a speck, most a soft dot, the ends a breath. The width drawn, sigmaD, spreads
+    // the lens's added width over the widths a dot can take (SOFT_NEAR and the rest, above),
+    // and stops at DRAW_MAX, two fifths of the cap; the dot is cut to nothing at half the cap,
+    // so the footprint never passes uCap: a mote goes soft, not wide, and the softest is a round
+    // bump three pixels across. The cut is as tight as the law allows: taken in to 0.45 of the
+    // cap it trims the skirts of the mid-soft dots, which then fit narrower than they are and
+    // read as if their light fell faster than the square of their softness. sigmaD itself runs
+    // on past the widest drawn, to FADE_PAST times it, for the light alone (law below).
     float sigma0 = max(mix(0.55, 0.7, aRnd.x), 0.8 / uDpr);
     float blur = abs(1.0 / zc - 1.0 / uFocus) * uK;
     float sigmaFull = sqrt(sigma0 * sigma0 + blur * blur);
     float past = sigmaFull - sigma0;
     float own = mix(1.0 - SOFT_SPREAD, 1.0 + SOFT_SPREAD, fract(aRnd.y * 2.71828));
-    float sigma = min(sigma0 + own * (SOFT_NEAR * past + SOFT_FAR * max(past - SOFT_KNEE, 0.0)), uCap * 0.4);
+    float sigmaD = min(sigma0 + own * (SOFT_NEAR * past + SOFT_FAR * max(past - SOFT_KNEE, 0.0)), uCap * DRAW_MAX * FADE_PAST);
+    float sigma = min(sigmaD, uCap * DRAW_MAX);
     float cut = min(sigma * 2.5, uCap * 0.5);
-    float ratio = sigmaFull / sigma0;
-    float law = sigma / sigma0 * pow(max(min(sigmaFull, LAW_SIGMA) / sigma, 1.0), DIM_PAST);
+    float law = sigmaD / sigma0 * pow(max(min(sigmaFull, LAW_SIGMA) / sigmaD, 1.0), DIM_PAST);
     // The current and the air are one displacement over the screen (in half-heights of the
     // frame), the same at every depth but for the whisper of parallax on the air, so the dust
     // that shows together moves together; a mote wraps at the margin. The mote's own wobbles
-    // (OWN, under half a pixel) are the soft dust's: a fifth of them in the plane of focus,
-    // all of them from 1.6 times a speck's width out, and the ripple likewise from seven tenths
-    // to the whole (see EDDIES for why no further), so a speck keeps a little closer to the
-    // room's path than the soft dots round it, and a mote's sway dies down over the seconds the
-    // focus ring brings it in.
-    float soft = smoothstep(1.0, 1.6, ratio);
+    // (OWN, under half a pixel) are the soft dust's: a fifth of them for a speck, all of them
+    // from one and a half times a speck's drawn width out, and the ripple likewise from seven
+    // tenths to the whole (see EDDIES for why no further), so a speck keeps a little closer to
+    // the room's path than the soft dots round it, and a mote's sway dies down over the seconds
+    // the focus ring brings it in. Softness here is the width drawn, so a dot that looks like a
+    // speck moves like one.
+    float soft = smoothstep(1.0, 1.5, sigma / sigma0);
     float sway = mix(0.2, 1.0, soft);
     float swing = mix(0.7, 1.0, soft);
     float par = pow(FOCUS / zc, PARALLAX);
@@ -482,22 +541,23 @@ const VERT = /* glsl */ `
     // A point keeps its light as the lens spreads it, so its peak falls with the square of its
     // sigma: a mote just off the plane is a soft dot nearly as bright as a speck, one at twice
     // the speck's sigma a quarter as bright, one at four times a sixteenth (the light that
-    // spreads past the widest dot drawn is lost, not piled up: nothing brightens as it softens). The
-    // law follows the lens's sigma as far as LAW_SIGMA (2.4 px, the widest a desktop draws) and
-    // holds there: a mote softer than that is drawn as soft as the cap allows and keeps the light
-    // it had there, a breath of twelve to twenty levels under the lamp, so the far wall and arm's
-    // length are part of the picture at every turn of the ring. A dot the cap cuts short is drawn
+    // spreads past the widest dot drawn is lost, not piled up: nothing brightens as it softens).
+    // The sigma in the law is sigmaD, the width the dot would be drawn at, so past the widest
+    // drawn the dot keeps its width and goes on dimming, to a breath of a few levels at the ends
+    // of the room (it held the light it had at the widest for a round, twelve to twenty levels
+    // under the lamp, and the widest dot was then the commonest one on the screen); and where
+    // sigmaD is narrower than the lens's own sigma, the law also takes DIM_PAST of the
+    // difference, as far as LAW_SIGMA, so a dot is as dim as its distance from the plane, not
+    // only as its drawing. A dot the cap cuts short is drawn
     // with the light of its lost skirt put back (held: a whole Gaussian's light over the cut
     // one's, against a speck's, as far as KEEP_MAX), so the dots between a speck and a breath
-    // carry the light the law gives them, not a third less. (It fell on
-    // with the full sigma for a round, and the softest motes were drawn but invisible: the
-    // depth of field read as two kinds, speck and one-size soft dot, with no breath between
-    // them and the dark.) The lamp is by the camera, so a mote in front of the plane of focus
+    // carry the light the law gives them, not a third less. The lamp is by the camera, so a
+    // mote in front of the plane of focus
     // is brighter the nearer it is (dist, against the plane of the moment, so a speck in the
     // plane lands at uBright times its draw wherever the plane is, a near-speck just in front
     // of it a hair more): the near field is the brighter soft layer, a breath at arm's length
-    // near 20/255 whatever the ring does, because the boost is frozen, with the law, at the
-    // plane's position when the mote reached LAW_SIGMA (left to grow with the plane, it swung
+    // whatever the ring does, because the boost is frozen at the plane's position when the
+    // mote's lens sigma reached LAW_SIGMA (left to grow with the plane, it swung
     // the arm's-length haze between 30 and 50 over a turn of the ring once the law no longer
     // dimmed it back). The boost is the square root of the distance, not its square: the lamp
     // is broad, a window's worth of dusk, and falls off gently; and it was measured with the
@@ -518,7 +578,9 @@ const VERT = /* glsl */ `
     // the brightest tenth of the specks under the lamp drew as white pinpricks). The speck's light
     // in the plane is rolled off over SHOULDER[0] toward SHOULDER[1] of white, as film's
     // shoulder rolls off a highlight, before the law divides it, so a soft dot keeps its place
-    // under the speck it would be in focus.
+    // under the speck it would be in focus; the knee sits where the brighter specks under the
+    // lamp begin, so the catch-lights gather a little under 0.58 instead of one of them
+    // standing out above the rest.
     float spread = mix(0.6, 1.0, pow(aRnd.x, 3.5));
     float invz = 1.0 / zc;
     float lawReach = sqrt(LAW_SIGMA * LAW_SIGMA - sigma0 * sigma0) / uK;
@@ -565,13 +627,12 @@ const VERT = /* glsl */ `
     // ellipse clears the lockup's box by 170 px at the sides and 105 above and below) nothing
     // draws past 0.18 of white (46/255 over the dusk, under 60 with it), so no speck sits at
     // the letters' shoulder; on a phone the top fifth is up to
-    // three tenths dimmer, under the status bar. The brightest speck anywhere draws at under 0.74
-    // of white after the shoulder (about 0.68 under the lamp, 173/255 at a pixel's centre, and a
-    // speck is narrower than a pixel, so what lands on the screen is 140 to 170 at best, and only
-    // for a few): bright
-    // enough to be a pinhead that catches the light, well under the ivory mark (245), which
-    // stays the brightest thing on the page. The ceiling is a safety, not a tool: nothing
-    // reaches it.
+    // three tenths dimmer, under the status bar. The brightest speck anywhere draws at under 0.58
+    // of white after the shoulder (about 150/255 at a pixel's centre under the lamp, and a speck is
+    // narrower than a pixel, so what lands on the screen is 130 to 145 at best, and only for a
+    // few): bright enough to be a pinhead that catches the light, a hundred levels under the
+    // ivory mark (245), which stays the brightest thing on the page. The ceiling is a safety,
+    // not a tool: nothing reaches it.
     float overMark = 1.0 - smoothstep(0.85, 1.5, eMark);
     float top = 1.0 - uTopDim * topBand;
     float ceiling = mix(0.18, 0.95, smoothstep(1.9, 2.6, eMark));
@@ -875,17 +936,18 @@ export default function Lens({ still }: BackdropProps) {
           // ever draws past six pixels (four and a half on a phone).
           uK: { value: 28 },
           uCap: { value: phone ? 4.5 : 6 },
-          // The brightest mote in the plane is lit at 0.9 of white and rolled off by the
-          // shoulder to under 0.74, under the ceiling, so nothing is clipped and the law holds
+          // The brightest mote in the plane is lit at 0.95 of white and rolled off by the
+          // shoulder to under 0.58, under the ceiling, so nothing is clipped and the law holds
           // all the way down: a speck under the lamp peaks near 85/255 as a rule (a speck is a
           // little over half a pixel wide, so between pixel centres it loses up to a fifth of
-          // its peak to the sampling) and the twenty brightest pixels on the page land near
-          // 130 to 140, the brightest under 170, well under the mark, so a few specks catch the
-          // light (at 0.8 with a gentler weighting the twenty brightest sat at 130 and every
-          // speck was of a kind; at 0.95 the top tenth went white); a soft dot at twice the
-          // speck's sigma peaks at a quarter of that, at three times a ninth, and the far ends,
-          // held by LAW_SIGMA, at twelve to twenty levels over the dusk under the lamp.
-          uBright: { value: 0.93 },
+          // its peak to the sampling) and the twenty brightest pixels of the lit corner land
+          // near 120 to 130, the brightest near 140, a hundred levels under the mark, so a few
+          // dozen specks catch the light and none glitters (at 0.9 with the shoulder at 0.62 to
+          // 0.74 the brightest few reached 150 to 170 and stood out of the field; at 0.8 with a
+          // gentler weighting every speck was of a kind); a soft dot at twice the speck's sigma
+          // peaks at a quarter of that, at three times a ninth, and the far ends fade to a
+          // breath of a few levels over the dusk.
+          uBright: { value: 0.95 },
           uExposure: { value: 1 },
           uDrift: { value: uDrift },
           uTopDim: { value: phone ? 0.28 : 0 },
