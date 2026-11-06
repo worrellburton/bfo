@@ -194,14 +194,14 @@ export function MailListRow({
         <UnreadDot on={unread} />
         {/* The avatar turns into its pick box on hover, and stays one while anything is picked. */}
         <span className="relative mt-[2px] size-10 shrink-0">
-          <span className={cx("absolute inset-0", onPick && (picked || picking) ? "invisible" : onPick ? "group-hover/row:invisible group-focus-within/row:invisible" : "")}>
+          <span className={cx("absolute inset-0", onPick && (picked || picking) ? "invisible" : onPick ? "group-hover/row:invisible group-focus-within/row:invisible touch:visible!" : "")}>
             <MailAvatar a={face} trusted={sent || !m.unverified} size={40} />
           </span>
           {onPick && (
             <span
               className={cx(
                 "absolute -inset-1 flex items-center justify-center touch:-inset-[2px]",
-                picked || picking ? "visible" : "invisible group-hover/row:visible group-focus-within/row:visible touch:invisible",
+                picked || picking ? "" : "opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-within:opacity-100 touch:pointer-events-none touch:opacity-0!",
               )}
             >
               <SelectBox on={picked} onToggle={onPick} label={picked ? "Unselect" : "Select"} className="size-full!" />

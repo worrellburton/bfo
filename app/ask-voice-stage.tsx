@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import type { ChatMessage } from "./ask-client";
 import { revealWords } from "./ask-voice";
 import { ParticleGlobe, type GlobeMode } from "./particle-globe";
@@ -112,8 +113,8 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
   return (
     <div className={cx("grid h-full min-h-0 text-door-ink", hasTranscript && "lg:grid-cols-[minmax(0,1fr)_320px]")}>
       {/* The stage */}
-      <section className="relative flex min-h-0 flex-col items-center justify-center gap-6 px-4 py-6">
-        <div className="relative aspect-square w-[min(48vw,32vh,320px)] max-sm:w-[min(56vw,26vh)]">
+      <section className="relative flex min-h-0 flex-col items-center justify-center-safe gap-5 overflow-y-auto px-4 py-4">
+        <div className="pointer-events-none relative aspect-square w-[min(48vw,30vh,300px)] shrink-0 max-sm:w-[min(48vw,22vh)]">
           <ParticleGlobe mode={globeMode(status)} level={level} className="absolute inset-[-30%] h-[160%] w-[160%]" />
         </div>
 
@@ -123,7 +124,7 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
         </p>
 
         {/* The words */}
-        <div className="flex min-h-[96px] w-full max-w-[640px] items-start justify-center text-center">
+        <div className="flex min-h-[64px] w-full max-w-[640px] items-start justify-center text-center">
           {caption ? (
             caption.role === "user" ? (
               <p className="text-reading text-door-ink-2">“{shown}”</p>
@@ -200,7 +201,10 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
           <p className="text-small text-door-ink-2">{!micAvailable ? "This browser has no microphone. Use Text instead." : keyboard ? "Hold to talk, or hold Space" : "Hold to talk"}</p>
         </div>
         <p className="max-w-[520px] text-center text-caption text-pretty text-door-ink-2">
-          Answers come from BFO’s records and can be wrong. Not legal or tax advice. Your voice goes to OpenAI to be understood and answered; the words are saved to History.
+          Answers come from BFO’s records and can be wrong. Not legal or tax advice. Your voice goes to OpenAI to be understood and answered; the words are saved to History.{" "}
+          <Link to="/legal/privacy" className="underline underline-offset-[3px] hover:text-door-ink">
+            Privacy
+          </Link>
         </p>
       </section>
 

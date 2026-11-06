@@ -144,7 +144,7 @@ export default function BooksLoans() {
     { key: "start", header: "Starting balance", align: "right", width: "150px", render: (l) => format.money(l.starting_balance, { zero: "dash" }) },
     { key: "lent", header: "Lent", align: "right", width: "130px", render: (l) => format.money(l.advanced, { zero: "dash" }) },
     { key: "repaid", header: "Repaid", align: "right", width: "130px", render: (l) => format.money(l.repaid, { zero: "dash" }) },
-    { key: "out", header: "Outstanding", align: "right", width: "150px", sort: (a, b) => a.outstanding - b.outstanding, render: (l) => <span className="font-medium">{money(l.outstanding)}</span> },
+    { key: "out", header: "Outstanding", align: "right", width: "150px", sort: (a, b) => a.outstanding - b.outstanding, render: (l) => <span className="font-medium">{format.money(l.outstanding, { zero: "dash" })}</span> },
   ];
 
   const context = loans

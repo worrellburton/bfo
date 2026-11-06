@@ -357,9 +357,13 @@ export function AgreementsTab() {
         info="Management services agreements this entity has with each counterparty: the fee, the term, and where each stands."
         action={
           admin && live.length > 0 ? (
-            <Button variant="quiet" size="sm" icon="plus" onClick={() => setSheet({ contract: null })}>
-              New contract
-            </Button>
+            phone ? (
+              <IconButton icon="plus" label="New contract" onClick={() => setSheet({ contract: null })} />
+            ) : (
+              <Button variant="quiet" size="sm" icon="plus" onClick={() => setSheet({ contract: null })}>
+                New contract
+              </Button>
+            )
           ) : undefined
         }
         menu={cardMenu.length ? cardMenu : undefined}
@@ -403,6 +407,7 @@ export function AgreementsTab() {
                 trailing: feeShort(r.c) ? feeShort(r.c).replace(/ a /, " / ") : undefined,
                 onClick: () => open(r.c),
                 menu: menuFor(r),
+                className: "[&_.truncate]:whitespace-normal",
               };
             }}
           />
@@ -708,7 +713,7 @@ function ContractSheet({
           )}
         </div>
 
-        <Field label="Masthead" hint={trade ? undefined : "The agreement is headed with the entity’s legal name. Record a trade name (Contracts › …) to head it with that instead."}>
+        <Field label="Masthead" hint={trade ? undefined : "The agreement is headed with the entity’s legal name. Add a trade name from the Contracts card’s “…” menu to head it with that instead."}>
           {trade ? (
             <Segmented
               label="Masthead"

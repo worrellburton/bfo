@@ -28,8 +28,11 @@ const row = (id: string, thread_key: string | null, over: Partial<SummaryRow> = 
 });
 
 describe("Active", () => {
-  it("is inbox and sent together, for the caller only", () => {
-    expect(folderFilter("active", "u1", true)).toBe("user_id=eq.u1&folder=in.(inbox,sent)&active_hidden=is.false");
+  it("is inbox and sent together, for the caller only, and never what's in Trash", () => {
+    expect(folderFilter("active", "u1", true)).toBe("user_id=eq.u1&folder=in.(inbox,sent)&active_hidden=is.false&deleted_at=is.null");
+    // Before the Trash columns exist, the condition is left out so lists keep working.
+    expect(folderFilter("active", "u1", true, { trash: false })).toBe("user_id=eq.u1&folder=in.(inbox,sent)&active_hidden=is.false");
+    expect(folderFilter("trash", "u1", true)).toBe("or=(user_id.eq.u1,user_id.is.null)&deleted_at=not.is.null");
   });
 
   it("keeps each conversation's newest message, in order", () => {

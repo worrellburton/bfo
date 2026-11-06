@@ -265,7 +265,7 @@ function DecideSection({ review, writable }: { review: Review; writable: boolean
                 </h3>
                 <p className="text-small text-ink-2">{g.hint}</p>
               </div>
-              <Rows rows={g.rows} limit={5} />
+              <Rows rows={g.rows} limit={5} total={g.total} />
             </section>
           ),
         )
@@ -275,7 +275,7 @@ function DecideSection({ review, writable }: { review: Review; writable: boolean
 }
 
 /** A short list of transactions; each opens its vendor, where the rows are refiled. */
-function Rows({ rows, limit = SHOW }: { rows: Row[]; limit?: number }) {
+function Rows({ rows, limit = SHOW, total }: { rows: Row[]; limit?: number; total?: number }) {
   const [all, setAll] = useState(false);
   const shown = all ? rows : rows.slice(0, limit);
   if (!rows.length) return null;
@@ -295,7 +295,7 @@ function Rows({ rows, limit = SHOW }: { rows: Row[]; limit?: number }) {
       {rows.length > limit && (
         <div className="border-t border-line px-5 py-2 touch:px-4">
           <Button variant="quiet" size="sm" onClick={() => setAll(!all)}>
-            {all ? "Show fewer" : `Show all ${rows.length}`}
+            {all ? "Show fewer" : total && total > rows.length ? `Show ${rows.length} of ${total.toLocaleString("en-US")}` : `Show all ${rows.length}`}
           </Button>
         </div>
       )}

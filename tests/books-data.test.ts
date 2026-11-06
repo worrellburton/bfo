@@ -310,7 +310,9 @@ describe("report=transactions", () => {
     const filter = decodeURIComponent(transactionsFilter(prefs, { entity: ENT_A, type: "expenses", q: "ac_me" }));
     expect(pageCall.path).toBe(`book_transactions?select=*${filter}&order=amount.asc.nullslast,transaction_id.asc`);
     expect(pageCall.headers).toEqual({ Range: "0-1", Prefer: "count=exact" });
-    expect(sumCall.path).toBe(`book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,counterparty_account_id,txn_type${filter}&order=date.asc,transaction_id.asc`);
+    expect(sumCall.path).toBe(
+      `book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,counterparty_account_id,txn_type${filter}&order=date.asc,transaction_id.asc`,
+    );
   });
 
   it("leaves transfers, card payments, roll-ups and loans out of income and expenses", async () => {

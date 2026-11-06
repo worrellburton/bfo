@@ -123,7 +123,7 @@ export function MailTable({
                     {unread && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
                     {unread && <span className="sr-only">Unread. </span>}
                   </span>
-                  <span className={cx(picking || on ? "visible" : "invisible group-hover/row:visible group-focus-within/row:visible")}>
+                  <span className={cx(picking || on ? "" : "opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-within:opacity-100")}>
                     <SelectBox on={on} onToggle={(shift) => onPick(m.id, shift)} label={on ? "Unselect" : "Select"} className="-my-1" />
                   </span>
                 </span>

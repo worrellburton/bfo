@@ -855,7 +855,6 @@ export default function Ask() {
             </section>
           </div>
         )}
-        {voiceMode && <div className="px-4 pt-2 text-center">{disclosure}</div>}
 
         <Dialog
           open={noticeOpen}

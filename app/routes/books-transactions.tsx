@@ -25,7 +25,8 @@ type BankAccount = {
   entity_name?: string | null;
 };
 
-const PAGE = 100;
+/** Rows per page: fewer on a phone, where each is a two-line row. */
+const pageSize = () => (typeof window !== "undefined" && window.matchMedia("(width < 48rem)").matches ? 50 : 100);
 const PERIOD_KEY = "bfo-books-period";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -131,7 +132,7 @@ export default function BooksTransactions() {
 
   const query = useCallback(
     (offset: number) => {
-      const params = new URLSearchParams({ report: "transactions", limit: String(PAGE), offset: String(offset) });
+      const params = new URLSearchParams({ report: "transactions", limit: String(pageSize()), offset: String(offset) });
       const effEntity = tagMatch ? tagMatch.id : entity;
       if (effEntity !== "all") params.set("entity", effEntity);
       if (type !== "all") params.set("type", type);
@@ -496,7 +497,7 @@ export default function BooksTransactions() {
               Showing {rows.length.toLocaleString("en-US")} of {total.toLocaleString("en-US")}
             </span>
             <Button size="sm" busy={loadingMore} busyLabel="Loading…" onClick={() => void loadMore()}>
-              Show {Math.min(PAGE, total - rows.length)} more
+              Show {Math.min(pageSize(), total - rows.length)} more
             </Button>
           </div>
         )}

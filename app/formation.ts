@@ -846,7 +846,7 @@ export const fiscalYearFollowsOwners = (d: FormationDraft) => taxOutcome(d).valu
 
 /** How the formation cost is treated for tax, by classification (§248 corporations, §709 partnerships). */
 export function organizationalCostNote(t: FormationTaxClass): string {
-  if (t === "Disregarded Entity") return "For tax it's its owner's organizational cost.";
+  if (t === "Disregarded Entity") return "For tax, a disregarded entity's organizational cost is its owner's.";
   const section = t === "Partnership" ? "§709" : "§248";
   return `An organizational cost under ${section}: up to $5,000 deductible in the first year, the rest over 180 months.`;
 }

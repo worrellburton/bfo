@@ -93,7 +93,7 @@ function RequiredDocuments() {
       flush
     >
       {staff() && (
-        <p className="max-w-[68ch] px-5 pb-3 text-small text-pretty text-ink-2 touch:px-4">
+        <p className="max-w-[68ch] px-5 py-3 text-small text-pretty text-ink-2 touch:px-4">
           Files you add are read by Anthropic’s Claude to put them on the right row and to suggest facts. Nothing it reads goes on the record until someone accepts it on Overview.
         </p>
       )}
@@ -125,7 +125,9 @@ function FilingRow({ kind, rule }: { kind: FileKind; rule?: DocRule }) {
   const picker = useRef<HTMLInputElement>(null);
   const file = asset[kind];
   const slot = page.uploadState[kind];
-  const title = filingTitle(kind, asset);
+  const { view } = useEntity();
+  // A disregarded LLC's W-9 is in its owner's name and TIN, with its own name on line 2.
+  const title = kind === "w9" && view.homeLine ? `${filingTitle(kind, asset)}, in its owner’s name` : filingTitle(kind, asset);
   const canAct = staff() && !asset.archived;
   const doc = file?.docId ? page.docs.find((d) => d.id === file.docId) : undefined;
   const generate = !canAct

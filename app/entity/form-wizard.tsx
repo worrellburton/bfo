@@ -268,6 +268,8 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
       STEPS.findIndex((s) => s.key === saved?.step),
     ),
   );
+  /** Where a restored draft reopened: the "picked up" note shows there. */
+  const [openedAt] = useState(stepAt);
   const [reached, setReached] = useState(saved?.reached ?? 0);
   const [mode, setMode] = useState<PalmMode | null | "off">(null);
   const [requirements, setRequirements] = useState<Requirements | null>(null);
@@ -650,7 +652,7 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
               </h3>
               {lede && <p className="mt-1 max-w-[68ch] text-body text-pretty text-ink-2">{lede}</p>}
               <div className="mt-6 flex flex-col gap-4">
-                {restored && step === 0 && (
+                {restored && stepAt === openedAt && (
                   <Banner
                     tone="info"
                     title="Picked up where you left off."
@@ -722,6 +724,8 @@ type Ctx = {
 
 const agentName = (d: FormationDraft) => (d.agent.provider === "palm" ? "Palm's registered-agent provider" : d.agent.kind === "person" ? personName(d.agent.name) : d.agent.entityName.trim());
 
+const TAX_LABEL: Record<string, string> = { "Disregarded Entity": "Disregarded entity", Partnership: "Partnership", "S Corporation": "S corporation", "C Corporation": "C corporation" };
+
 const taxWords = (t: string) =>
   ({ "Disregarded Entity": "a disregarded entity", Partnership: "a partnership", "S Corporation": "an S corporation", "C Corporation": "a C corporation" })[t] ?? t.toLowerCase();
 
@@ -748,7 +752,7 @@ function stepSummary(k: StepKey, { draft: d, llc, state, fee }: Ctx, extras: num
     case "agent":
       return d.agent.provider === "palm" ? "Palm" : agentName(d) || "Registered agent";
     case "ein":
-      return `${{ "Disregarded Entity": "Disregarded", Partnership: "Partnership", "S Corporation": "S corporation", "C Corporation": "C corporation" }[taxOutcome(d).value]}${d.ein ? " · EIN" : ""}`;
+      return `${TAX_LABEL[taxOutcome(d).value]}${d.ein ? " · EIN" : ""}`;
     case "state":
       return format.count(extras, "question");
     case "review":
@@ -2221,7 +2225,7 @@ function ReviewStep({
             </Row>
           )}
           <Row label="Taxed as" hint={due ? `Form ${due.form} due by ${format.date(due.dueBy, "medium")}${due.estimated ? ", counted from today" : ""}.` : undefined}>
-            {`${tax.value}${tax.elected ? " (by election)" : " (the default)"}`}
+            {`${TAX_LABEL[tax.value]}${tax.elected ? ", by election" : ", the default"}`}
           </Row>
         </Rows>
       </Card>
@@ -2263,7 +2267,7 @@ function CostCard({ ctx, entities, payer }: { ctx: Ctx; entities: Entities; paye
                 <li key={i} className="flex justify-between gap-3 text-body text-ink">
                   <span className="min-w-0">{c.label}</span>
                   <span className="shrink-0 text-ink-2 tabular-nums">
-                    {c.dollars === null ? (c.per === "year" ? "Yearly" : "Varies") : `${format.money(c.dollars)}${c.per === "year" ? " a year" : " once"}`}
+                    {c.dollars === null ? "Not quoted" : `${format.money(c.dollars)}${c.per === "year" ? " a year" : " once"}`}
                   </span>
                 </li>
               ))}

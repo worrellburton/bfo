@@ -192,9 +192,9 @@ export function OwnerDialog({
           <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
         </Field>
         {entities.length > 0 && (
-          <Field label="One of the family’s entities?" optional hint="Links the row to its record, its address and the estate map.">
+          <Field label="Family entity" optional hint="When the owner is one of the family’s entities: links the row to its record, its address and the estate map.">
             <Select
-              label="One of the family’s entities?"
+              label="Family entity"
               value={entityId || "none"}
               onChange={(v) => {
                 setEntityId(v === "none" ? "" : v);
@@ -403,6 +403,7 @@ export function RemoveOwnerDialog({
                 ]
           }
         />
+        {!how && <p className="text-small text-ink-2">Choose why to continue.</p>}
         {how === "transfer" && (
           <Field label="To whom">
             <Select label="To whom" value={to} onChange={setTo} placeholder="Choose an owner" options={others.map((x) => ({ value: x.name, label: x.name, hint: pct(x.percent) }))} />
@@ -641,8 +642,10 @@ export function TrustRemoveDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const words = TRUST_WORDS[person.role];
-  const otherRoles = people.filter((p) => p !== person && sameName(p.name, person.name)).map((p) => TRUST_WORDS[p.role].one.toLowerCase());
-  const actingLeft = people.filter((p) => p !== person && p.role === "trustee").length;
+  // The list is rebuilt on each render, so the person is matched by role and name, not by identity.
+  const isThis = (p: TrustPerson) => p.role === person.role && sameName(p.name, person.name);
+  const otherRoles = people.filter((p) => !isThis(p) && sameName(p.name, person.name)).map((p) => TRUST_WORDS[p.role].one.toLowerCase());
+  const actingLeft = people.filter((p) => !isThis(p) && p.role === "trustee").length;
   const lastTrustee = person.role === "trustee" && actingLeft === 0 && reason !== "error";
   const isGrantor = person.role === "grantor" || people.some((p) => p.role === "grantor" && sameName(p.name, person.name));
   const grantorGone = isGrantor && grantorTrust && (reason === "died" || reason === "incapacity");
@@ -655,7 +658,7 @@ export function TrustRemoveDialog({
     setBusy(true);
     try {
       await onRemove({
-        people: people.filter((p) => p !== person),
+        people: people.filter((p) => !isThis(p)),
         history: { kind: "remove", name: person.name, role: person.role, reason, date: reason === "error" ? null : date, doc: doc ? { id: doc.id, name: doc.name } : null },
         revokeAccess: hasAccess && revoke,
       });
@@ -701,6 +704,7 @@ export function TrustRemoveDialog({
           <p className="text-small text-ink-2">{otherRoles.length ? `Stays ${format.list(otherRoles)}` : words.one}</p>
         </div>
         <ChoiceTiles label="Why" value={reason} onChange={setReason} options={REASONS[person.role]} stacked />
+        {!reason && <p className="text-small text-ink-2">Choose why to continue.</p>}
         {reason && reason !== "error" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="As of">

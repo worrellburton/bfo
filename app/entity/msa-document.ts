@@ -378,8 +378,11 @@ export async function renderMsaPdf(input: MsaInput, s: MsaSections = msaSections
   const witnessLines = doc.splitTextToSize(s.witness, tw) as string[];
   const witnessH = witnessLines.length * 10.5 * 1.6;
   const sigBlockH = witnessH + 26 + 138;
-  if (y + sigBlockH > bottomLimit) newPage();
-  y = bottomLimit - sigBlockH;
+  // On the last page of text it sits at the foot; on a page of its own, at the top.
+  if (y + sigBlockH > bottomLimit) {
+    newPage();
+    y += 12;
+  } else y = bottomLimit - sigBlockH;
   doc.setFont("times", "italic");
   doc.setFontSize(10.5);
   doc.setTextColor(...ink);

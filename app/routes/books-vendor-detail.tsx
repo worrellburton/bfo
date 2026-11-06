@@ -334,7 +334,7 @@ export default function BooksVendorDetail() {
               </Card>
             ))}
 
-          <Card title="Transactions" count={list.length || undefined} flush>
+          <Card title="Transactions" flush>
             {!txns ? (
               <TxnTableSkeleton />
             ) : (

@@ -197,10 +197,10 @@ export function GovernanceTab() {
             </Button>
           ) : undefined
         }
-        flush={now.length > 0 || past.length > 0}
+        flush
       >
         {now.length === 0 ? (
-          <div className={past.length ? "px-5 pt-4 touch:px-4" : undefined}>
+          <div className="px-5 py-4 touch:px-4">
             {office === "director" ? (
               <Banner tone="warning">No directors on record. A corporation needs at least one; record the board from the incorporator’s action or the shareholders’ election.</Banner>
             ) : (
@@ -276,9 +276,9 @@ export function GovernanceTab() {
                 </Button>
               ) : undefined
             }
-            hint="The deadlines on Compliance follow it."
+            hint={taxYearEnd ? "The deadlines on Compliance follow it." : "Not recorded, so a calendar year is assumed. The deadlines on Compliance follow it."}
           >
-            {taxYearEnd ? MONTHS[taxYearEnd - 1] : "December (a calendar year, unless you record otherwise)"}
+            {taxYearEnd ? MONTHS[taxYearEnd - 1] : "December"}
           </Row>
         </Rows>
       </Card>
@@ -287,7 +287,7 @@ export function GovernanceTab() {
         title="Shareholders"
         count={holders.length || undefined}
         info="The corporation’s one shareholder register: the Shareholders tab keeps it, with each holder’s shares and class."
-        action={<TextLink to={tabPath("people")}>Edit on Shareholders</TextLink>}
+        action={<TextLink to={tabPath("people")}>Edit the list</TextLink>}
         flush={holders.length > 0}
       >
         {legacy.length > 0 && (
@@ -506,6 +506,7 @@ function LeaveDialog({ office, person, docs, onClose }: { office: "director" | "
             { value: "Died", title: "Died" },
           ]}
         />
+        {!reason && <p className="text-small text-ink-2">Choose why to continue.</p>}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="As of">
             <DateInput value={until} onChange={setUntil} />

@@ -168,6 +168,11 @@ async function namesInOffice(): Promise<(string | null)[]> {
   return officeNames.names;
 }
 
+/** For tests: forget the office's names. */
+export function resetOfficeNames() {
+  officeNames = null;
+}
+
 /** A hold in force that covers the caller's mail (their mailbox, or all mail). */
 const holdFor = (holds: MailHold[], me: AppUser) => holds.find((h) => h.user_id === null || h.user_id === me.id) ?? null;
 

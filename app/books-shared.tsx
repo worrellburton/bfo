@@ -538,7 +538,7 @@ export function Menu({
           readOnly ? "cursor-default" : disabled ? "cursor-not-allowed" : "cursor-pointer",
           !inRow && (disabled && !readOnly ? "border-line bg-selected text-ink-disabled" : "border-edge text-ink"),
           inRow && !readOnly && !disabled && "hover:bg-hover aria-expanded:bg-selected",
-          inRow && (tone === "amber" || (empty && placeholder) ? "text-warning" : "text-ink"),
+          inRow && (tone === "amber" ? "text-warning" : empty ? "text-ink-2" : "text-ink"),
           !inRow && empty && "text-ink-3",
           className,
         )}
@@ -1378,12 +1378,18 @@ export function TxnTable({
     lastPicked.current = ri;
   }
 
+  // On a vendor's page a description every row shares says nothing; the rows then read as paid or received.
+  const sharedMemo = useMemo(() => {
+    if (context !== "vendor" || rows.length < 2) return null;
+    const first = memoText(rows[0].name);
+    return rows.every((r) => memoText(r.name) === first) ? first : null;
+  }, [rows, context]);
   const model = (t: Txn) => {
     const eff = effType(t);
     const vendor = t.merchant_name || (eff === "normal" ? t.name : null);
     const vendorText = displayName(vendor);
     const memo = vendor ? descriptorFor(t.name, vendor, t.entity_name) : memoText(t.name);
-    const title = context === "vendor" ? memo || vendorText || "—" : (vendor ? vendorText : memo) || "—";
+    const title = context === "vendor" ? (sharedMemo !== null ? (t.amount < 0 ? "Received" : "Paid") : memo || vendorText || "—") : (vendor ? vendorText : memo) || "—";
     const secondary = context === "vendor" ? null : vendor ? memo : null;
     return { eff, vendor, vendorText, memo, title, secondary, inflow: t.amount < 0, word: typeWord(eff) };
   };
@@ -1394,7 +1400,7 @@ export function TxnTable({
       <Menu
         value={t.book_category ?? ""}
         placeholder={loanName ? `On ${loanName}` : "Uncategorized"}
-        tone="soft"
+        tone={!t.book_category && !loanName ? "amber" : "soft"}
         readOnly={readOnly}
         chevron="hover"
         label="Account"

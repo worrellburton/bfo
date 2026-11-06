@@ -32,6 +32,7 @@ import {
   Disclosure,
   Field,
   IconButton,
+  InfoToggle,
   Input,
   List,
   ListRow,
@@ -580,7 +581,13 @@ function TaxClassRows() {
     action = <AddValue field="llcType" />;
   } else if (!c) {
     if (formingNow(asset) && (!src || src === BY_HAND)) note = "Set at formation; the EIN letter confirms it once Palm has it.";
-    else if (src && src !== BY_HAND) note = `Matches ${src.replace(/^stated in the document \(|\)$/g, "")}`;
+    else if (src && src !== BY_HAND)
+      note = (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          Matches the documents
+          <InfoToggle label="What the documents say">{src}</InfoToggle>
+        </span>
+      );
     else if (src === BY_HAND) note = "Entered by hand; not yet matched to a document.";
     else if (page.sorting > 0) note = "Checking it against the EIN letter and W-9…";
     else if (page.aiDown) note = "Not confirmed yet: document reading is paused.";
@@ -995,7 +1002,7 @@ function MoneyCard() {
   return (
     <Card title="Money" footer={<TextLink to={books}>Open in Books</TextLink>}>
       <p className="mb-2 text-small text-ink-2">
-        {format.dateRange(`${year}-01-01`, sum.last ?? new Date())} · Cash basis
+        {format.dateRange(`${year}-01-01`, sum.last ?? new Date())} · Cash basis · the accounts mapped to it
       </p>
       <Rows>
         <Row label="Income">
@@ -1005,7 +1012,7 @@ function MoneyCard() {
           <Money value={Math.abs(sum.expenses)} />
         </Row>
         <Row label="Net">
-          <Money value={net} tone="direction" />
+          <Money value={net} />
         </Row>
       </Rows>
       <p className="mt-2 text-small text-ink-2">{format.count(sum.count, "transaction")}; transfers and loans left out, as in the P&amp;L.</p>
@@ -1251,11 +1258,11 @@ function About() {
   const p = asset.profile;
   if (!p && !page.docs.length && !page.profiling) return null;
   const canRead = !isPartner() && !asset.archived && ["owner", "admin", "member"].includes(getUser()?.role ?? "");
-  const from = p?.sources.length ? p.sources.map((s) => `“${s}”`).join(", ") : "the documents on file";
+  const from = p?.sources.length ? format.count(p.sources.length, "document") : "the documents on file";
   // The documents' word on who runs it, against the state's record.
   const stateManagers = (asset.stateRecord?.people?.filter((x) => /manager|managing/i.test(x.role)).map((x) => x.name) ?? asset.stateRecord?.managers ?? []).filter(Boolean);
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
-  const differs = !!p && p.managers.length > 0 && stateManagers.length > 0 && (p.managers.length !== stateManagers.length || p.managers.some((m) => !stateManagers.some((s) => norm(s).includes(norm(m).slice(0, 8)))));
+  const differs = !!p && p.managers.length > 0 && stateManagers.length > 0 && !sameNames(p.managers, stateManagers);
   const recordClass = asset.llcType?.trim();
   const taxDiffers = !!p?.taxTreatment && !!recordClass && norm(p.taxTreatment) !== norm(recordClass) && !norm(p.taxTreatment).includes(norm(recordClass));
   const where = stateName(stateCode(asset.state) ?? "") || "the state";
@@ -1298,7 +1305,7 @@ function About() {
                 {p.managers.length ? p.managers.join(", ") : <span className="text-ink-3">No one named</span>}
                 {differs && (
                   <Line tone="warn">
-                    {where}’s record names {stateManagers.join(", ")} instead. Check which is right before anyone signs for it.
+                    {where}’s record names {stateManagers.map((n) => `“${titleCase(n)}”`).join(", ")} instead. Check which is right before anyone signs for it.
                   </Line>
                 )}
               </Row>
@@ -1336,6 +1343,11 @@ function About() {
               <TextList items={p.issues} />
             </Disclosure>
           )}
+          {p.sources.length > 0 && (
+            <Disclosure label="Documents read" count={p.sources.length}>
+              <TextList items={p.sources} />
+            </Disclosure>
+          )}
           {page.profileError && <p className="text-small text-negative">{page.profileError}</p>}
         </div>
       ) : page.profiling ? (
@@ -1360,6 +1372,23 @@ function About() {
       )}
     </Card>
   );
+}
+
+/** A name as a person writes it: "AMANDA DOE" → "Amanda Doe" (names already in mixed case are left alone). */
+function titleCase(name: string): string {
+  return name === name.toUpperCase() ? name.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()) : name;
+}
+
+/** Two lists name the same people: each name's words appear in a name on the other list (middle initials and asides aside). */
+export function sameNames(a: string[], b: string[]): boolean {
+  const words = (n: string) => n.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter((w) => w.length > 1);
+  const covers = (x: string, y: string) => {
+    const wy = new Set(words(y));
+    const wx = words(x);
+    return wx.length > 0 && wx.every((w) => wy.has(w));
+  };
+  const match = (x: string, list: string[]) => list.some((y) => covers(x, y) || covers(y, x));
+  return a.length === b.length && a.every((x) => match(x, b)) && b.every((y) => match(y, a));
 }
 
 function TextList({ items }: { items: string[] }) {

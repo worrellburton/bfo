@@ -476,7 +476,18 @@ describe("report=balance-sheet", () => {
 });
 
 describe("report=balance-sheet, individuals' accounts", () => {
-  const ira = { account_id: "acc-ira", institution_name: "Cedar Funds", mask: "4712", subtype: "ira", account_name: "IRA", nickname: null, entity_id: ENT_B, entity_name: "Beta Trust (100%)", hidden: false, archived_at: null };
+  const ira = {
+    account_id: "acc-ira",
+    institution_name: "Cedar Funds",
+    mask: "4712",
+    subtype: "ira",
+    account_name: "IRA",
+    nickname: null,
+    entity_id: ENT_B,
+    entity_name: "Beta Trust (100%)",
+    hidden: false,
+    archived_at: null,
+  };
   beforeEach(() => {
     routes.unshift(
       [/^GET plaid_account_prefs\?select=\*/, () => [ira]],
@@ -506,7 +517,14 @@ describe("report=ledger", () => {
     const r = await get({ report: "ledger", year: "2026" });
     expect(r.status).toBe(200);
     expect(r.json.rows).toHaveLength(7);
-    expect(r.json.rows.find((x: any) => x.transaction_id === "e1")).toMatchObject({ bank_account: "Ops", mask: "1234", account: "6100 Professional Fees", statement_line: "Operating expenses", type: "normal", receipts: 1 });
+    expect(r.json.rows.find((x: any) => x.transaction_id === "e1")).toMatchObject({
+      bank_account: "Ops",
+      mask: "1234",
+      account: "6100 Professional Fees",
+      statement_line: "Operating expenses",
+      type: "normal",
+      receipts: 1,
+    });
     expect(r.json.rows.find((x: any) => x.transaction_id === "u1").statement_line).toBe("Uncategorized");
     const logged = calls.find((c) => c.method === "POST" && c.path.startsWith("audit_log"));
     expect(logged?.body).toMatchObject({ action: "books.export", actor_name: "Robert", count: 7 });

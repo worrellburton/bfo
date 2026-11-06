@@ -99,7 +99,7 @@ export function Standing() {
   const price = priceSuffix(page.palmMode, stateRecordCents(!!asset.fileNumber));
 
   return (
-    <Card title="Compliance" count={count || undefined} countTone="attention" flush>
+    <Card title="Compliance" flush>
       {behind && (
         <div className="flex flex-col gap-3 px-5 pt-1 pb-4 touch:px-4">
           <p className="flex items-start gap-2 text-body text-ink">

@@ -63,7 +63,7 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
   };
 });
 
-import mailHandler from "../api/mail";
+import mailHandler, { resetOfficeNames } from "../api/mail";
 import webhookHandler from "../api/mail-webhook";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -1160,6 +1160,54 @@ describe("/api/mail", () => {
     // A hold on all mail: an owner's alone.
     me = { ...robert, role: "admin" };
     expect((await call("POST", { body: { action: "hold-all", on: true } })).status).toBe(403);
+  });
+
+  it("purges Trash past 30 days on the cron only, keeping held mail and recording each message", async () => {
+    const OLD = "77777777-7777-4777-8777-777777777777";
+    const HELD = "88888888-8888-4888-8888-888888888888";
+    sbRoutes = [
+      [/GET mail_holds/, () => []],
+      [/^GET mail_messages\?or=\(user_id\.not\.is\.null,user_id\.is\.null\)&deleted_at=lt\./, () => [row({ id: OLD, deleted_at: "2026-09-01T00:00:00Z" }), row({ id: HELD, deleted_at: "2026-09-01T00:00:00Z", held_at: "2026-09-02T00:00:00Z" })]],
+      [/POST cron_runs/, () => [{ id: 1 }]],
+    ];
+    const res: any = { code: 0, body: null, status(c: number) { this.code = c; return this; }, json(j: unknown) { this.body = j; return this; }, end() { return this; } };
+    // No secret presented: refused, and nothing is touched.
+    process.env.CRON_SECRET = "cron-secret";
+    await mailHandler({ method: "GET", query: { cron: "purge" }, headers: { "x-vercel-cron-schedule": "0 9 * * *" } } as any, res);
+    expect(res.code).toBe(401);
+    expect(sbCalls.some((c) => c.method === "DELETE")).toBe(false);
+    await mailHandler({ method: "GET", query: { cron: "purge" }, headers: { authorization: "Bearer cron-secret" } } as any, res);
+    expect(res.code).toBe(200);
+    expect(res.body).toEqual({ purged: 1 });
+    const read = sbCalls.find((c) => c.method === "GET" && c.path.includes("deleted_at=lt."))!;
+    // Thirty days before now, oldest first.
+    const cutoff = Date.parse(decodeURIComponent(/deleted_at=lt\.([^&]+)/.exec(read.path)![1]));
+    expect(Math.round((Date.now() - cutoff) / 86_400_000)).toBe(30);
+    expect(sbCalls.find((c) => c.method === "DELETE")!.path).toBe(`mail_messages?id=in.(${OLD})&or=(user_id.not.is.null,user_id.is.null)`);
+    const log = sbCalls.find((c) => c.path === "audit_log")!.body;
+    expect(log).toMatchObject({ action: "mail.purge", actor_kind: "cron", count: 1, detail: { reason: "trash_expired" } });
+    delete process.env.CRON_SECRET;
+  });
+
+  it("records the office-mailbox notice once read, with its version", async () => {
+    sbRoutes = [[/GET audit_log/, () => [{ at: "2026-11-01T00:00:00Z", detail: { version: "older" } }]]];
+    const before = await call("GET", { query: { view: "notice" } });
+    expect(before.json).toMatchObject({ acknowledgedAt: null, recordable: true });
+    const version = before.json.version;
+    expect((await call("POST", { body: { action: "notice-ack", version: "made-up" } })).status).toBe(400);
+    const ack = await call("POST", { body: { action: "notice-ack", version } });
+    expect(ack.json.recorded).toBe(true);
+    expect(sbCalls.find((c) => c.method === "POST" && c.path === "audit_log")!.body).toMatchObject({ action: "mail.notice_ack", actor_id: U1, detail: { version } });
+  });
+
+  it("tells the reader where Reply-To points, and flags payment instructions and a copied name", async () => {
+    resetOfficeNames();
+    sbRoutes = [
+      [/GET mail_messages\?id=eq\./, () => [row({ from_name: "Sam Lee", from_email: "sam.lee@gmail.com", subject: "Updated wire instructions", reply_to: [{ email: "billing@example.com" }], read_at: "2026-10-14T12:00:00Z" })]],
+      [/GET app_users\?status=eq\.approved&select=name/, () => [{ name: "Sam Lee" }]],
+    ];
+    const r = await call("GET", { query: { view: "message", id: MSG } });
+    expect(r.json.message).toMatchObject({ replyTo: [{ email: "billing@example.com" }], paymentRisk: true, impersonation: true, knownSender: false, kept: null });
   });
 
   describe("extra addresses", () => {
