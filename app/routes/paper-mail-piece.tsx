@@ -447,7 +447,7 @@ export default function PaperMailPiece() {
       {legal}
       {filed}
       {wide ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_360px] items-start gap-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
           <div className="flex min-w-0 flex-col gap-4">
             {says}
             {checks}

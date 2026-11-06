@@ -80,7 +80,7 @@ export type ManagersOnRecord = {
 const isManagerRole = (role?: string | null) => /manager/i.test(role ?? "") && !/managing member/i.test(role ?? "");
 
 /** The managers on record, with where the list came from. Never a guess about how it's run. */
-export function managersOnRecord(asset: Pick<Asset, "members" | "stateRecord" | "profile" | "state">): ManagersOnRecord {
+export function managersOnRecord(asset: Partial<Pick<Asset, "members" | "stateRecord" | "profile" | "state">>): ManagersOnRecord {
   const own = (asset.members ?? []).filter((m) => !holdsShare(m)).map((m) => ({ name: m.name, role: m.role ?? "Manager", address: m.address ?? null }));
   const statePeople = (asset.stateRecord?.people ?? []).filter((p) => isManagerRole(p.role) || /^manager$/i.test(p.title ?? ""));
   const fromState: ManagerOnRecord[] = statePeople.length

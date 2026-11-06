@@ -8,23 +8,14 @@
 
 import { useEffect, useState } from "react";
 import { isAdmin } from "../auth";
+import { confirm, format, Status, TextLink as UiTextLink } from "../ui";
+import { stateName } from "../entity-paperwork";
 import { type FormationAddress } from "../formation";
 import { fromBundle, palmCall } from "../palm";
 import { caseAnswer, caseDefaults, type PalmCase } from "../palm-cases";
 import { useEntity, usePalmSeed } from "./context";
-import { fmtDate, type Asset } from "./model";
-import { Button, Dot, ErrorLine, Field, Input, Section, Textarea, useTone } from "./ui";
-
-const linkClass = "relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap text-[12px] font-medium hover:underline";
-
-function TextLink({ href, children }: { href: string; children: React.ReactNode }) {
-  const { accent } = useTone();
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={`${linkClass} ${accent}`}>
-      {children}
-    </a>
-  );
-}
+import type { Asset } from "./model";
+import { Button, ErrorLine, Field, Input, Section, Textarea } from "./ui";
 
 // ── Palm's questions on the filing ───────────────────────────────────────
 
@@ -35,7 +26,6 @@ function TextLink({ href, children }: { href: string; children: React.ReactNode 
  */
 export function PalmQuestions({ openCases = 0, title }: { openCases?: number; title?: string }) {
   const { page, asset } = useEntity();
-  const t = useTone();
   const [cases, setCases] = useState<PalmCase[] | null>(null);
   const [error, setError] = useState("");
   const mode = page.palmMode;
@@ -83,12 +73,11 @@ export function PalmQuestions({ openCases = 0, title }: { openCases?: number; ti
       </Section>
     );
   }
-  return <div className={`border-t ${t.line}`}>{list}</div>;
+  return <div className="mt-4 border-t border-line">{list}</div>;
 }
 
 function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswered: (c: PalmCase) => void }) {
   const { page } = useEntity();
-  const t = useTone();
   const [values, setValues] = useState(() => caseDefaults(c, facts));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -107,6 +96,18 @@ function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswe
       setError(`Still needed: ${answer.missing.join("; ")}.`);
       return;
     }
+    // The answers go on the state's record through Palm: the person attests they're true first.
+    const where = stateName(facts.state ?? "") || facts.state || "the state";
+    const ok = await confirm({
+      title: "Send these answers to Palm?",
+      message: `Palm files them with ${where}, and they go on the state’s record. Check that they’re true and complete.`,
+      details: Object.entries(answer.fields)
+        .slice(0, 5)
+        .map(([name, v]) => `${(c.request?.fields ?? []).find((x) => x.name === name)?.description || name}: ${typeof v === "string" ? v : v && typeof v === "object" ? Object.values(v).filter(Boolean).join(", ") : String(v ?? "")}`),
+      confirmLabel: "They’re true; send them",
+      tone: "commit",
+    });
+    if (!ok) return;
     setBusy(true);
     setError("");
     try {
@@ -120,16 +121,14 @@ function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswe
   }
 
   return (
-    <div className="space-y-3 px-5 py-4">
+    <div className="flex flex-col gap-3 px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className={`flex items-center gap-2 text-[13px] font-semibold ${t.text}`}>
-            <Dot tone={waiting ? "accent" : "warn"}>{waiting ? "Answered: Palm is reviewing" : "Palm needs an answer"}</Dot>
-          </p>
-          <p className={`mt-1 text-[13px] ${t.text}`}>{c.summary}</p>
-          {c.details && <p className={`mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed ${t.soft}`}>{c.details.replace(/[*_`#]/g, "")}</p>}
+          <Status tone={waiting ? "info" : "warning"}>{waiting ? "Answered: Palm is reviewing" : "Palm needs an answer"}</Status>
+          <p className="mt-1 text-body text-ink">{c.summary}</p>
+          {c.details && <p className="mt-1 max-w-[68ch] text-small text-pretty whitespace-pre-wrap text-ink-2">{c.details.replace(/[*_`#]/g, "")}</p>}
         </div>
-        {c.due_at && <span className={`shrink-0 text-[12px] ${t.muted}`}>Due {fmtDate(c.due_at.slice(0, 10))}</span>}
+        {c.due_at && <span className="shrink-0 text-small text-ink-2">Due {format.date(c.due_at.slice(0, 10), "medium")}</span>}
       </div>
       {!waiting && (
         <>
@@ -138,10 +137,10 @@ function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswe
             if (v?.kind === "address") {
               const from = /mail/i.test(f.name) ? "mailing address" : /agent/i.test(f.name) ? "agent's address" : "principal office";
               return (
-                <div key={f.name} className={`rounded-xl border p-3 ${t.line}`}>
-                  <p className={`mb-2 text-[12px] ${t.muted}`}>
+                <div key={f.name} className="border-t border-line pt-3">
+                  <p className="mb-2 text-small text-ink-2">
                     {f.description || f.name}
-                    <span className={t.faint}> · from BFO's {from}</span>
+                    <span className="text-ink-3"> · from BFO’s {from}</span>
                   </p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
                     <Input value={v.address.street1} onChange={(e) => setAddr(f.name, "street1", e.target.value)} placeholder="Street" aria-label="Street" />
@@ -157,8 +156,12 @@ function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswe
             }
             if (v?.kind === "document") {
               return (
-                <p key={f.name} className={`text-[12.5px] ${t.soft}`}>
-                  {f.description || f.name}: upload it in <TextLink href="https://app.getpalm.com">Palm</TextLink>.
+                <p key={f.name} className="text-small text-ink-2">
+                  {f.description || f.name}: upload it in{" "}
+                  <UiTextLink to="https://app.getpalm.com" inline>
+                    Palm
+                  </UiTextLink>
+                  .
                 </p>
               );
             }
@@ -174,8 +177,9 @@ function CaseCard({ c, facts, onAnswered }: { c: PalmCase; facts: Asset; onAnswe
           })}
           {error && <ErrorLine>{error}</ErrorLine>}
           <div className="flex justify-end">
+            {!isAdmin() && <p className="mr-3 self-center text-small text-ink-2">An owner or admin sends the answers.</p>}
             <Button kind="primary" disabled={busy || !isAdmin()} onClick={() => void send()}>
-              {busy ? "Sending…" : isAdmin() ? "Send to Palm" : "Owner or admin sends"}
+              {busy ? "Sending…" : "Send to Palm…"}
             </Button>
           </div>
         </>

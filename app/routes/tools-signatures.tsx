@@ -9,6 +9,7 @@ import {
   Button,
   Card,
   Empty,
+  Icon,
   Menu,
   IconButton,
   Page,
@@ -268,7 +269,14 @@ export default function ToolsSignatures() {
         )}
         {r.source === "contract" ? " · MSA" : ""}
         {r.status === "draft" ? ` · created ${whenShort(r.created_at)}` : ""}
-        {later ? <span className="block text-warning">A later version was signed {whenShort(later.completed_at)}. Void this one?</span> : null}
+        {later ? (
+          <span className="mt-1 flex items-start gap-[6px] text-ink">
+            <span className="mt-[1px] text-warning">
+              <Icon name="warning" size={16} />
+            </span>
+            <span>A later version was signed {whenShort(later.completed_at)}. Void this one?</span>
+          </span>
+        ) : null}
       </span>
     );
   };
@@ -297,7 +305,9 @@ export default function ToolsSignatures() {
       header: "Document",
       render: (r) => (
         <span className="flex flex-col">
-          <span className="font-medium break-words">{r.title}</span>
+          <Link to={`/tools/signatures/${r.id}`} onClick={(e) => e.stopPropagation()} className="font-medium break-words text-ink hover:underline">
+            {r.title}
+          </Link>
           {source(r)}
         </span>
       ),
@@ -305,7 +315,7 @@ export default function ToolsSignatures() {
     { key: "parties", header: "Parties", width: "28%", render: partyList },
     { key: "status", header: "Status", width: "120px", render: (r) => <StatusChip status={r.status} /> },
     { key: "sent", header: "Sent", width: "96px", render: (r) => (r.sent_at ? <span className="tabular-nums">{whenShort(r.sent_at)}</span> : <span className="text-ink-3">—</span>) },
-    { key: "completed", header: "Completed", width: "120px", render: completedCell },
+    { key: "completed", header: "Completed", width: "140px", render: completedCell },
     { key: "actions", header: "", width: "152px", align: "right", render: actionsCell },
   ];
 
@@ -339,7 +349,7 @@ export default function ToolsSignatures() {
           <PageHeader
             title={archived ? "Archived signature requests" : "Signatures"}
             back={archived ? { to: "/tools/signatures", label: "Signatures" } : undefined}
-            context={archived ? "Kept whole, out of the list. Times are Arizona time." : "Documents sent out to be signed, who has signed, and the signed copies. Times are Arizona time."}
+            context={archived ? "Kept whole, out of the list. Times are Arizona time." : "Documents out for signature, who has signed, and the signed copies. Arizona time."}
             create={archived ? undefined : { label: busy === "new" ? "Uploading…" : "Send for signature", onClick: () => fileInput.current?.click() }}
             menu={[archived ? { label: "Back to the list", onSelect: () => setArchived(false) } : { label: "Archived requests", onSelect: () => setArchived(true) }]}
           />

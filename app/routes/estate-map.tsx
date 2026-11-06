@@ -104,7 +104,6 @@ const TRAY_HEAD = 36;
 const TRAY_PAD = 16;
 const TRAY_ROW_GAP = 12;
 
-
 // ── Layout ───────────────────────────────────────────────────────────────
 type Kind = "root" | "node" | "leaf" | "orphan" | "owner";
 type Box = {
@@ -851,9 +850,19 @@ export function EstateMapView({
   function scoreOf(id: string) {
     const r = records.get(id);
     if (!r) return null;
-    const g = r.tone === "positive" ? { icon: "check" as const, cls: "text-positive" } : r.tone === "warning" ? { icon: "warning" as const, cls: "text-warning" } : r.tone === "negative" ? { icon: "x" as const, cls: "text-negative" } : null;
+    const g =
+      r.tone === "positive"
+        ? { icon: "check" as const, cls: "text-positive" }
+        : r.tone === "warning"
+          ? { icon: "warning" as const, cls: "text-warning" }
+          : r.tone === "negative"
+            ? { icon: "x" as const, cls: "text-negative" }
+            : null;
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-small text-ink tabular-nums" title={r.conflicts.length ? `Records disagree: ${r.conflicts.map((c) => c.title).join("; ")}` : `Records ${r.score}%`}>
+      <span
+        className="inline-flex shrink-0 items-center gap-1 text-small text-ink tabular-nums"
+        title={r.conflicts.length ? `Records disagree: ${r.conflicts.map((c) => c.title).join("; ")}` : `Records ${r.score}%`}
+      >
         {g && (
           <span className={cx("inline-flex", g.cls)}>
             <Icon name={g.icon} size={16} />
@@ -868,7 +877,10 @@ export function EstateMapView({
     const rec = recs.get(ent.id);
     const text = ent.person ? format.initials(ent.name) : rec?.initials || entityTag(ent.name);
     return (
-      <span aria-hidden="true" className={cx("inline-flex h-6 min-w-[40px] shrink-0 items-center justify-center bg-sunken px-1 text-caption font-medium text-ink-2", ent.person ? "rounded-full" : "rounded-mark")}>
+      <span
+        aria-hidden="true"
+        className={cx("inline-flex h-6 min-w-[40px] shrink-0 items-center justify-center bg-sunken px-1 text-caption font-medium text-ink-2", ent.person ? "rounded-full" : "rounded-mark")}
+      >
         {text}
       </span>
     );
@@ -909,8 +921,7 @@ export function EstateMapView({
   const dragBox = drag ? layout.byId.get(drag.id) : undefined;
   const targetBox = drag?.target && drag.target !== "tray" ? layout.byId.get(drag.target) : undefined;
   // Part of the scene past the canvas's edge: say so, so nobody counts short.
-  const outOfView =
-    size.w > 0 && (view.x < -2 || view.y < band - 40 || view.x + layout.width * view.k > size.w + 2 || view.y + layout.height * view.k > size.h + 2);
+  const outOfView = size.w > 0 && (view.x < -2 || view.y < band - 40 || view.x + layout.width * view.k > size.w + 2 || view.y + layout.height * view.k > size.h + 2);
 
   // The structure as a nested list, for screen readers (and the phone outline).
   const tree = useMemo(() => {

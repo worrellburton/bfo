@@ -6,6 +6,7 @@ import {
   blankTab,
   capacity,
   deviceWords,
+  entityNamesFor,
   FIELD_LABEL,
   isGameMode,
   isOpen,
@@ -119,7 +120,8 @@ export default function SignatureDetail() {
       setReq(r.request);
       setGameOk(!!r.gameAllowed);
       setGameEntity(!!r.gameEntity);
-      setEntityName(r.entityName ?? null);
+      // A server that doesn't name the entity yet: read the name from the tree.
+      setEntityName(r.entityName !== undefined ? r.entityName : r.request.asset_id ? ((await entityNamesFor([r.request.asset_id]))[r.request.asset_id] ?? null) : null);
       setAccounts(r.accounts ?? {});
       setPeople(r.people ?? {});
       setRelated(r.related ?? []);
@@ -461,7 +463,7 @@ export default function SignatureDetail() {
             />
           ))}
 
-          {r && !editable && <RecordCard request={r} entityName={entityName} related={related} />}
+          {r && !editable && <RecordCard request={r} entityName={entityName} related={related} filing={busy === "file"} onFile={() => run("file")} />}
           {r && r.events.length > 0 && <HistoryCard events={r.events} parties={parties} people={people} />}
         </aside>
       </div>
@@ -698,7 +700,7 @@ function PartyCard({
             (account ? (
               <p className="text-small text-ink-2">Has a BFO account ({account}).</p>
             ) : (
-              <Button size="sm" variant="quiet" disabled={!!busy} onClick={onInvite}>
+              <Button size="sm" variant="quiet" className="-ml-3" disabled={!!busy} onClick={onInvite}>
                 Give access to {entityName ?? "the entity"}…
               </Button>
             ))}
@@ -709,7 +711,7 @@ function PartyCard({
 }
 
 /** What the record holds: fingerprints, where the signed copy is filed, the request it replaced or was replaced by, other versions. */
-function RecordCard({ request: r, entityName, related }: { request: SignatureRequest; entityName: string | null; related: RelatedRequest[] }) {
+function RecordCard({ request: r, entityName, related, onFile, filing }: { request: SignatureRequest; entityName: string | null; related: RelatedRequest[]; onFile: () => void; filing: boolean }) {
   return (
     <Card title="Record" staffOnly>
       <dl className="flex flex-col gap-3">
@@ -735,7 +737,12 @@ function RecordCard({ request: r, entityName, related }: { request: SignatureReq
                 {`In ${entityName ?? "the entity"} › Documents`}
               </TextLink>
             ) : (
-              "Not filed with the entity yet (More › File)"
+              <span className="flex flex-col items-start gap-2">
+                <span>Not with {entityName ?? "the entity"}’s documents yet.</span>
+                <Button size="sm" busy={filing} busyLabel="Filing…" onClick={onFile}>
+                  File the signed copy
+                </Button>
+              </span>
             )}
           </Fact>
         )}

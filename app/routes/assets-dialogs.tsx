@@ -194,7 +194,11 @@ export function NewEntityDialog({
             />
           </Field>
         )}
-        <Field label="Tax classification" optional hint={suggested ? `IRS default: ${taxLabel(suggested)}.` : isTrust ? "Choose revocable or irrevocable for the default." : "One owner: disregarded. Two or more: a partnership."}>
+        <Field
+          label="Tax classification"
+          optional
+          hint={suggested ? `IRS default: ${taxLabel(suggested)}.` : isTrust ? "Choose revocable or irrevocable for the default." : "One owner: disregarded. Two or more: a partnership."}
+        >
           <Select
             label="Tax classification"
             value={taxClass || null}
@@ -326,9 +330,12 @@ export function OwnerDialog({
             </ul>
           </Banner>
         )}
-        {others.length > 0 && <p className="text-small text-ink-2">Other owners on record stay as they are: {format.list(others.map((o) => o.name))}. Change shares on the entity&apos;s Owners tab.</p>}
+        {others.length > 0 && (
+          <p className="text-small text-ink-2">Other owners on record stay as they are: {format.list(others.map((o) => o.name))}. Change shares on the entity&apos;s Owners tab.</p>
+        )}
         <p className="text-small text-pretty text-ink-2">
-          This changes BFO&apos;s record only. A transfer of ownership needs a signed assignment and any consents the operating agreement requires. Keep the signed assignment in the entity&apos;s Documents.
+          This changes BFO&apos;s record only. A transfer of ownership needs a signed assignment and any consents the operating agreement requires. Keep the signed assignment in the entity&apos;s
+          Documents.
         </p>
         {error && <Banner tone="negative">{error}</Banner>}
       </div>
@@ -493,7 +500,14 @@ export function PalmChecksDialog({
       footer={<Button onClick={onClose}>Close</Button>}
     >
       {error ? (
-        <Banner tone="negative" action={<Button variant="quiet" size="sm" onClick={() => setTick((n) => n + 1)}>Try again</Button>}>
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setTick((n) => n + 1)}>
+              Try again
+            </Button>
+          }
+        >
           {error}
         </Banner>
       ) : !plan ? (
@@ -505,7 +519,8 @@ export function PalmChecksDialog({
             <>
               <p>Palm tells you when a state&apos;s record changes, and when a filing comes due or goes overdue.</p>
               <p className="mt-2">
-                {format.count(plan.monitor.count + plan.monitor.on + plan.monitor.unidentified, "registration")} on record: {plan.monitor.count} ready to watch{plan.monitor.on ? `, ${plan.monitor.on} already watched` : ""}
+                {format.count(plan.monitor.count + plan.monitor.on + plan.monitor.unidentified, "registration")} on record: {plan.monitor.count} ready to watch
+                {plan.monitor.on ? `, ${plan.monitor.on} already watched` : ""}
                 {plan.monitor.unidentified ? `, and ${plan.monitor.unidentified} more that need a file number first (sync state records to read it)` : ""}.
               </p>
               {plan.mode === "live" && <p className="mt-2">{format.money(MONITOR_CENTS / 100)} a month each while on.</p>}
@@ -539,13 +554,7 @@ export type PalmRunResult = { id: string; name: string; lines: { label: string; 
 
 const TONE: Record<PalmRunResult["lines"][number]["tone"], Tone> = { good: "positive", warn: "warning", bad: "negative", muted: "neutral" };
 
-export function PalmResultsDialog({
-  run,
-  onClose,
-}: {
-  run: { title: string; results: PalmRunResult[]; error?: string; mode?: PalmMode } | null;
-  onClose: () => void;
-}) {
+export function PalmResultsDialog({ run, onClose }: { run: { title: string; results: PalmRunResult[]; error?: string; mode?: PalmMode } | null; onClose: () => void }) {
   return (
     <Dialog
       open={!!run}

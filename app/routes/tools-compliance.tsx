@@ -15,7 +15,21 @@ import { useSearchParams } from "react-router";
 import { stateReadCost, type StateReadable } from "../../lib/state-reads";
 import { stateRecordCents } from "../../lib/palm-pricing";
 import { authFetch, canWrite, getUser, isAdmin } from "../auth";
-import { assessAll, byUrgency, PILLARS, STALE_DAYS, summarize, TIER_LABEL, treeLevels, type Assessment, type EntityInput, type Fix, type PillarKey, type PillarStatus, type Tier } from "../compliance-map";
+import {
+  assessAll,
+  byUrgency,
+  PILLARS,
+  STALE_DAYS,
+  summarize,
+  TIER_LABEL,
+  treeLevels,
+  type Assessment,
+  type EntityInput,
+  type Fix,
+  type PillarKey,
+  type PillarStatus,
+  type Tier,
+} from "../compliance-map";
 import { effectiveRecord, lookupStateRecord, palmCall, PalmUnavailable, type PalmMode } from "../palm";
 import { PalmCostLine } from "../palm-usage";
 import {
@@ -57,7 +71,6 @@ type Filter = "all" | Tier | "unverified";
 type Note = { tone: "ok" | "warn" | "bad"; text: string };
 
 const TIER_TONE: Record<Tier, Tone> = { act: "negative", attention: "warning", clear: "neutral" };
-const STANDING_TONE: Record<Assessment["standing"]["tone"], Tone> = { good: "neutral", bad: "negative", unknown: "neutral", none: "neutral" };
 const STATUS_WORD: Record<PillarStatus, string> = { good: "In order", warn: "Needs a look", bad: "Problem", missing: "Not known or not recorded", na: "Doesn't apply" };
 const money = (cents: number) => format.money(cents / 100);
 const stamp = (ms: number) => format.date(new Date(ms), "medium");
@@ -156,7 +169,9 @@ export default function EntityCompliance() {
     const ok = await confirm({
       title: `Read ${a.name}'s state record?`,
       message: "Palm reads its status, standing and agent from its home state. Nothing is filed.",
-      ...(live ? { receipt: { lines: [{ label: a.fileNumber ? "The record, by its file number" : "A name search, then the record", cents }] }, details: ["Billed to the Palm account."] } : { details: ["Palm is in test mode: nothing is billed."] }),
+      ...(live
+        ? { receipt: { lines: [{ label: a.fileNumber ? "The record, by its file number" : "A name search, then the record", cents }] }, details: ["Billed to the Palm account."] }
+        : { details: ["Palm is in test mode: nothing is billed."] }),
       confirmLabel: live ? `Read it for ${money(cents)}` : "Read it",
       tone: live ? "commit" : "default",
     });
@@ -290,7 +305,15 @@ export default function EntityCompliance() {
       {!assets ? (
         <Skeleton kind="card" rows={6} />
       ) : !list.length ? (
-        <Empty size="page" title="No entities yet" action={<LinkButton to="/assets" variant="primary">Open Entities</LinkButton>}>
+        <Empty
+          size="page"
+          title="No entities yet"
+          action={
+            <LinkButton to="/assets" variant="primary">
+              Open Entities
+            </LinkButton>
+          }
+        >
           Entities added on the Entities page are checked here against their states, their filings and their paperwork.
         </Empty>
       ) : (
@@ -319,11 +342,15 @@ export default function EntityCompliance() {
               setQ("");
             }}
           />
-          {view === "map" ? <MapView list={list} matches={matches} selected={selected} onSelect={setSelected} checking={checking} /> : <ListView list={list.filter(matches)} onSelect={setSelected} checking={checking} />}
+          {view === "map" ? (
+            <MapView list={list} matches={matches} selected={selected} onSelect={setSelected} checking={checking} />
+          ) : (
+            <ListView list={list.filter(matches)} onSelect={setSelected} checking={checking} />
+          )}
           <Coverage sum={sum} />
           <p className="max-w-[68ch] text-small text-ink-2">
-            These are BFO's checks of the records it holds and the states' records read through Palm, as of the dates shown. "In good standing" is only ever the state's own word. The steps are general; check with counsel before
-            filing.
+            These are BFO's checks of the records it holds and the states' records read through Palm, as of the dates shown. "In good standing" is only ever the state's own word. The steps are
+            general; check with counsel before filing.
           </p>
         </div>
       )}
@@ -353,10 +380,7 @@ function Summary({ sum, filter, setFilter, palmLoaded, mode }: { sum: ReturnType
       type="button"
       aria-pressed={filter === f}
       onClick={() => setFilter(filter === f ? "all" : f)}
-      className={cx(
-        "inline-flex min-h-[32px] cursor-pointer items-center gap-2 rounded-control px-2 text-body text-ink hover:bg-hover touch:min-h-[44px]",
-        filter === f && "bg-selected",
-      )}
+      className={cx("inline-flex min-h-[32px] cursor-pointer items-center gap-2 rounded-control px-2 text-body text-ink hover:bg-hover touch:min-h-[44px]", filter === f && "bg-selected")}
     >
       <span aria-hidden="true" className={cx("size-2 rounded-full", tone === "negative" ? "bg-negative" : tone === "warning" ? "bg-warning" : "bg-ink-3")} />
       <span className="tabular-nums">{n}</span> {words}
@@ -462,7 +486,19 @@ function EntityCard({ a, dim, selected, onSelect, checking, owner }: { a: Assess
   );
 }
 
-function MapView({ list, matches, selected, onSelect, checking }: { list: Assessment[]; matches: (a: Assessment) => boolean; selected: string | null; onSelect: (id: string) => void; checking: Set<string> }) {
+function MapView({
+  list,
+  matches,
+  selected,
+  onSelect,
+  checking,
+}: {
+  list: Assessment[];
+  matches: (a: Assessment) => boolean;
+  selected: string | null;
+  onSelect: (id: string) => void;
+  checking: Set<string>;
+}) {
   const levels = useMemo(() => treeLevels(list), [list]);
   const phone = usePhone();
   const canvas = useRef<HTMLDivElement>(null);
@@ -537,7 +573,14 @@ function MapView({ list, matches, selected, onSelect, checking }: { list: Assess
       const owner = a.ownerId ? byId.get(a.ownerId) : undefined;
       rows.push(
         <li key={a.id} style={{ paddingLeft: Math.min(depth, 2) * 16 }}>
-          <EntityCard a={a} dim={!matches(a)} selected={selected === a.id} onSelect={onSelect} checking={checking.has(a.id)} owner={depth >= 3 && owner ? `${owner.name}${a.ownerShare != null ? ` (${format.percent(a.ownerShare, { decimals: 2, trim: true })})` : ""}` : null} />
+          <EntityCard
+            a={a}
+            dim={!matches(a)}
+            selected={selected === a.id}
+            onSelect={onSelect}
+            checking={checking.has(a.id)}
+            owner={depth >= 3 && owner ? `${owner.name}${a.ownerShare != null ? ` (${format.percent(a.ownerShare, { decimals: 2, trim: true })})` : ""}` : null}
+          />
         </li>,
       );
       if (seen.has(a.id)) return;
@@ -591,7 +634,9 @@ function MapView({ list, matches, selected, onSelect, checking }: { list: Assess
           </div>
         </div>
       </div>
-      <p className="border-t border-line px-5 py-3 text-small text-ink-2">Owners on the left, what they own to the right. A line's figure is the owner's share, from the members list; no figure means none is recorded.</p>
+      <p className="border-t border-line px-5 py-3 text-small text-ink-2">
+        Owners on the left, what they own to the right. A line's figure is the owner's share, from the members list; no figure means none is recorded.
+      </p>
     </Card>
   );
 }
@@ -752,11 +797,7 @@ function Detail({
                 ? `${s.state ?? "The state"}: ${s.word}, ${s.confirmed ? "seen on its own site" : "read through Palm"} ${stamp(s.asOf)}.`
                 : `${s.state ?? "The state"}: not checked yet.`}
           </p>
-          {note && (
-            <Banner tone={note.tone === "ok" ? "positive" : note.tone === "warn" ? "warning" : "negative"}>
-              {note.text}
-            </Banner>
-          )}
+          {note && <Banner tone={note.tone === "ok" ? "positive" : note.tone === "warn" ? "warning" : "negative"}>{note.text}</Banner>}
         </div>
 
         <section className="flex flex-col gap-3">

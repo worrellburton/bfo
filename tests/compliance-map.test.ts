@@ -140,13 +140,26 @@ describe("filings and standing", () => {
       a: { name: "Alder, LLC", type: "LLC", state: "Arizona" },
       n: { name: "Northwind Holdings, LLC", type: "LLC", state: "Nevada", formationDate: "2023-08-11", stateRecord: behind },
     };
-    expect(assessAll(all, "live", nov).sort(byUrgency).map((x) => x.name)).toEqual(["Northwind Holdings, LLC", "Alder, LLC"]);
+    expect(
+      assessAll(all, "live", nov)
+        .sort(byUrgency)
+        .map((x) => x.name),
+    ).toEqual(["Northwind Holdings, LLC", "Alder, LLC"]);
   });
 
   it("shows the owner's share from the members list, and the tax class in words", () => {
     const all: Record<string, EntityInput> = {
       p: { name: "Parent, LLC", type: "LLC", state: "Arizona" },
-      c: { name: "Child, LLC", type: "LLC", state: "Arizona", ownerId: "p", members: [{ name: "Parent LLC", percent: 65 }, { name: "Alex Rivera", percent: 35 }] },
+      c: {
+        name: "Child, LLC",
+        type: "LLC",
+        state: "Arizona",
+        ownerId: "p",
+        members: [
+          { name: "Parent LLC", percent: 65 },
+          { name: "Alex Rivera", percent: 35 },
+        ],
+      },
     };
     const c = assessAll(all, "live", nov).find((x) => x.id === "c")!;
     expect(c.ownerShare).toBe(65);
@@ -165,4 +178,3 @@ describe("filings and standing", () => {
     expect(t.tier).toBe("attention");
   });
 });
-

@@ -1,339 +1,134 @@
 /**
- * Overview: the record's facts (or the form that edits them), what the entity
- * is according to its documents, and what the record still needs.
+ * Overview: what the entity needs now (Compliance, To do), what AI read and
+ * is waiting to be accepted, the record's facts (or the form that edits
+ * them), its addresses, its money in Books, and what its documents say it
+ * is (About, labelled as an AI summary).
+ *
+ * Desktop: the record on the left, To do, Money, Mail and people on the
+ * right (main and rail, §5.4). Phone: the urgent cards first.
  */
 
 import { useEffect, useState, type ReactNode } from "react";
-import { priceSuffix, stateRecordCents } from "../../lib/palm-pricing";
-import { Link } from "react-router";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { agentTerm, stateCode, stateName } from "../entity-paperwork";
-import { entityAddresses, foreignStates, formingNow, type Check } from "../entity-addresses";
+import { entityAddresses, foreignAskWhy, foreignStates, formingNow, type Check } from "../entity-addresses";
 import { DOC_LABEL, docKindOf, fromBundle, openPalmDocument, palmCall, sameAddressText, type PalmDocument } from "../palm";
 import { STABLE_ADDRESS } from "../paper-mail";
 import { f8822bData, stateAddressStep } from "../paperwork-generate";
-import { isPartner } from "../auth";
-import { StoredFileLink } from "../stored-file";
+import { authFetch, getUser, isAdmin, isPartner } from "../auth";
+import { openStoredFile } from "../stored-file";
 import { FILING_LABEL, FILING_STATUSES, US_STATES } from "../formation";
+import {
+  AiNote,
+
+  Banner,
+  Button,
+  Card,
+  CardSection,
+  Checkbox,
+  ChoiceTiles,
+  DateInput,
+  Dialog,
+  Disclosure,
+  Field,
+  IconButton,
+  Input,
+  List,
+  ListRow,
+  Money,
+  Row,
+  Rows,
+  Segmented,
+  Select,
+  Status,
+  TextLink,
+  Textarea,
+  cx,
+  format,
+  useMedia,
+  type Tone,
+} from "../ui";
 import { PalmQuestions } from "./palm-questions";
 import { ClosingCard } from "./closing";
 import { addressChangeRemaining, Standing } from "./standing";
 import { WITH_FORMATION } from "./derive";
 import { useEntity, usePalmSeed } from "./context";
 import { UsersCard } from "./people";
-import { BY_HAND, einLooksRight, fmtDate, fmtStamp, type Asset, type FileKind } from "./model";
-import { Button, Disclosure, Dot, Empty, ErrorLine, Field, Icon, IconButton, Input, Row, Rows, Section, Select, Textarea, TextButton, toneText, useTone } from "./ui";
+import { BY_HAND, einLooksRight, fmtDate, FIELD_LABEL, type Asset, type FileKind, type Member } from "./model";
 
 export function OverviewTab() {
   const { page, view } = useEntity();
-  // What it needs comes first, always. Then, on a desktop: the record on the left, Mail and To do on the right.
-  // Phones: the same, top to bottom. (Address change lives in the Addresses card; a trust has no such card.)
-  return (
-    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr]">
-      <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
-        <ClosingCard />
-        <Standing />
-        <Formation />
-        {page.editing ? (
-          <EditForm />
-        ) : (
-          <>
-            <Addresses />
-            <Details />
-          </>
-        )}
-        {view.isTrust && !page.editing && <AddressChange />}
-      </div>
-      <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-        <Mail />
-        <ToDo />
-        <UsersCard />
-      </div>
-      <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-        <About />
-      </div>
-    </div>
+  const wide = useMedia("(width >= 64rem)");
+  const editing = page.editing;
+  const record = editing ? (
+    <EditForm key="edit" />
+  ) : (
+    <>
+      <Details key="details" />
+      <Addresses key="addresses" />
+    </>
   );
-}
-
-// ── Address change ───────────────────────────────────────────────────────
-
-/**
- * After the address changes in BFO, what's left to tell: the state (checked
- * against its own record through Palm), the IRS (Form 8822-B, filled in
- * here), the W-9, and the banks. Each step is marked done with its date;
- * the card goes once they all are.
- */
-function AddressChange({ embedded = false }: { embedded?: boolean }) {
-  const { page, asset } = useEntity();
-  const t = useTone();
-  const [busy, setBusy] = useState<string | null>(null);
-  if (!asset.previousAddress || isPartner() || !addressChangeRemaining(asset)) return null;
-  const done = asset.addressUpdates ?? {};
-  const step = stateAddressStep(asset.state, asset.type);
-  const rec = asset.stateRecord;
-  // The state's own record says which address it has, once read after the change.
-  const stateMatches = !!rec?.address && sameAddressText(rec.address, asset.address);
-  const stateDone = !step.needed || !!done.state || stateMatches;
-  const irs = f8822bData(asset);
-  const irsNeeded = !!irs.ein;
-  const irsDone = !irsNeeded || !!done.irs;
-  const w9Old = !!asset.w9 && (!asset.addressChangedAt || (asset.w9.uploadedAt ?? 0) < Date.parse(asset.addressChangedAt));
-  const banksDone = !!done.banks;
-  const remaining = [!stateDone, !irsDone, w9Old, !banksDone].filter(Boolean).length;
-
-  const run = async (key: string, fn: () => Promise<unknown>) => {
-    setBusy(key);
-    try {
-      await fn();
-    } finally {
-      setBusy(null);
-    }
-  };
-  const doneMark = (date: string) => <Dot tone="good">Done {fmtDate(date)}</Dot>;
-  const markBtn = (key: "state" | "irs" | "banks", on: boolean) => (
-    <TextButton onClick={() => void run(key, () => page.markAddressStep(key, !on))} disabled={busy === key}>
-      {on ? "Undo" : "Mark done"}
-    </TextButton>
-  );
-
-  const moved = `Moved from ${asset.previousAddress}${asset.addressChangedAt ? ` on ${fmtDate(asset.addressChangedAt)}` : ""}. These still have the old one.`;
-  const rows = (
-    <Rows className={embedded ? `border-t ${t.line}` : ""}>
-      {embedded && (
-        <div className="px-5 pb-1 pt-3">
-          <div className={`flex items-center gap-2 text-[12.5px] font-medium ${t.text}`}>
-            Address change
-            <span
-              className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums ${t.dark ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-800"}`}
-            >
-              {remaining}
-            </span>
-          </div>
-          <p className={`mt-0.5 text-[12px] ${t.muted}`}>{moved}</p>
+  if (wide)
+    return (
+      <div className="grid grid-cols-[minmax(0,1fr)_320px] items-start gap-6">
+        <div className="flex min-w-0 flex-col gap-4">
+          <ClosingCard />
+          <Standing />
+          <Formation />
+          <Proposals />
+          {!view.isTrust && !editing && <AddressChange />}
+          {record}
+          {view.isTrust && !editing && <AddressChange />}
+          <About />
         </div>
-      )}
-      <Row
-        label={step.agency}
-        info={step.how}
-        actions={
-          step.needed && !stateMatches ? (
-            <div className="flex items-center gap-3">
-              {step.url && <TextLink href={step.url}>{step.linkLabel ?? "Open"}</TextLink>}
-              <TextButton onClick={() => void page.checkStateRecord()} disabled={!!page.palmBusy}>
-                {page.palmBusy === "record" ? "Checking…" : `Check state record${priceSuffix(page.palmMode, stateRecordCents(!!asset.fileNumber))}`}
-              </TextButton>
-              {markBtn("state", !!done.state)}
-            </div>
-          ) : undefined
-        }
-      >
-        {!step.needed ? (
-          <Dot tone="good">Nothing to file</Dot>
-        ) : stateMatches ? (
-          <Dot tone="good">The state has the new address</Dot>
-        ) : done.state ? (
-          doneMark(done.state)
-        ) : rec?.address ? (
-          <span>
-            <Dot tone="warn">The state still has the old address</Dot>
-            <span className={`mt-0.5 block text-[12px] ${t.muted}`}>{rec.address}</span>
-          </span>
-        ) : (
-          <Dot tone="warn">To file</Dot>
-        )}
-      </Row>
-      <Row
-        label="IRS · Form 8822-B"
-        info={irsNeeded ? `Sign it, then mail it to ${irs.mailTo}. The IRS takes 4–6 weeks to process it.` : irs.notes[0]}
-        actions={
-          irsNeeded ? (
-            <div className="flex items-center gap-3">
-              {!done.irs && (
-                <TextButton onClick={() => void run("8822", page.generate8822B)} disabled={busy === "8822"}>
-                  {busy === "8822" ? "Filling in…" : "Fill in 8822-B"}
-                </TextButton>
-              )}
-              {markBtn("irs", !!done.irs)}
-            </div>
-          ) : undefined
-        }
-      >
-        {!irsNeeded ? <Dot tone="muted">No EIN of its own</Dot> : done.irs ? doneMark(done.irs) : <Dot tone="warn">To mail</Dot>}
-      </Row>
-      {w9Old && (
-        <Row
-          label="W-9"
-          info="The W-9 on file has the old address. A new one goes on file; the old one stays in Documents."
-          actions={
-            <TextButton onClick={() => void run("w9", () => page.generateW9(true))} disabled={busy === "w9"}>
-              {busy === "w9" ? "Filling in…" : "Fill in a new W-9"}
-            </TextButton>
-          }
-        >
-          <Dot tone="warn">Old address</Dot>
-        </Row>
-      )}
-      <Row label="Banks, Palm, insurers" info="Anyone who mails it statements or notices: update the address in each." actions={markBtn("banks", banksDone)}>
-        {banksDone ? doneMark(done.banks!) : <Dot tone="warn">To update</Dot>}
-      </Row>
-    </Rows>
-  );
-  if (embedded) return rows;
+        <div className="flex min-w-0 flex-col gap-4">
+          <ToDo />
+          <MoneyCard />
+          <Mail />
+          <UsersCard />
+        </div>
+      </div>
+    );
+  // Phones and tablets: what needs the person first, then the record.
   return (
-    <Section title="Address change" count={remaining} alert info={moved}>
-      {rows}
-    </Section>
+    <div className="flex min-w-0 flex-col gap-4">
+      <ClosingCard />
+      <Standing />
+      {!editing && <ToDo />}
+      <Formation />
+      <Proposals />
+      {!editing && <AddressChange />}
+      {record}
+      <About />
+      <MoneyCard />
+      <Mail />
+      {!page.editing && <UsersCard />}
+    </div>
   );
 }
 
 // ── Small pieces ─────────────────────────────────────────────────────────
 
-const linkClass =
-  "relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap text-[12px] font-medium hover:underline max-sm:after:absolute max-sm:after:-inset-y-3 max-sm:after:inset-x-0 max-sm:after:content-['']";
-
-/** TextButton's look, for navigation: an in-app route (`to`) or a new tab (`href`). */
-function TextLink({ children, ...where }: { children: ReactNode } & ({ to: string } | { href: string })) {
-  const { accent } = useTone();
-  if ("href" in where)
-    return (
-      <a href={where.href} target="_blank" rel="noopener noreferrer" className={`${linkClass} ${accent}`}>
+/** A check under a value: the dot carries the tone, the sentence stays in ink (§2.4). */
+function Line({ tone, children }: { tone: Check["tone"] | "neutral"; children: ReactNode }) {
+  const dot = tone === "bad" ? "bg-negative" : tone === "warn" ? "bg-warning" : tone === "good" ? "bg-positive" : "bg-ink-3";
+  return (
+    <span className="mt-1 flex items-start gap-2 text-small text-pretty text-ink">
+      <span aria-hidden="true" className={cx("mt-[5px] size-2 shrink-0 rounded-full", dot)} />
+      <span className="min-w-0">
+        {tone === "bad" || tone === "warn" ? <span className="sr-only">{tone === "bad" ? "Problem: " : "Check: "}</span> : null}
         {children}
-      </a>
-    );
+      </span>
+    </span>
+  );
+}
+
+/** A quiet text action in a row ("Add", "View", "Upload"): small, accent, 44px on touch. */
+function RowAction({ onClick, children, disabled }: { onClick: () => void; children: ReactNode; disabled?: boolean }) {
   return (
-    <Link to={where.to} className={`${linkClass} ${accent}`}>
+    <Button variant="quiet" size="sm" onClick={onClick} disabled={disabled} className="text-accent enabled:hover:text-accent-hover">
       {children}
-    </Link>
-  );
-}
-
-/** A value, or nothing (the Row then shows a dash). */
-const val = (s?: string | null) => (s?.trim() ? s : undefined);
-
-// ── Formation (an entity BFO formed through Palm) ────────────────────────
-
-/** The filing's progress with the state, while it's under way and once it's done. */
-function Formation() {
-  const { page } = useEntity();
-  const t = useTone();
-  const f = page.formation;
-  if (!f) return null;
-  const done = f.status === "completed";
-  const canceled = f.status === "canceled";
-  const steps = FILING_STATUSES.map((s) => ({
-    key: s,
-    label: FILING_LABEL[s],
-    reached: !canceled && FILING_STATUSES.indexOf(s) <= FILING_STATUSES.indexOf(f.status as (typeof FILING_STATUSES)[number]),
-  }));
-  const stateName = US_STATES.find(([abbr]) => `US-${abbr}` === f.jurisdiction)?.[1] ?? f.jurisdiction;
-  // Once formed, the filing's story is one line; Palm's questions (on the EIN, say) still show.
-  if (done)
-    return (
-      <Section title="Formation" actions={<Dot tone="good">Formed</Dot>}>
-        <Rows>
-          <Row label="Formed">
-            {f.formationDate ? fmtDate(f.formationDate) : "Yes"} with {stateName} through Palm
-            {f.registrationNumber && <span className={t.muted}> · file number {f.registrationNumber}</span>}
-          </Row>
-        </Rows>
-        <PalmQuestions openCases={f.openCases} />
-      </Section>
-    );
-  return (
-    <Section
-      title="Formation"
-      info={`Filed with ${stateName} through Palm${page.palmMode === "test" ? " (test mode: nothing reached the state)" : ""}.`}
-      actions={
-        <Dot tone={done ? "good" : canceled ? "bad" : f.openCases ? "warn" : "accent"}>
-          {canceled ? "Canceled" : done ? "Formed" : f.openCases ? `${f.openCases} question${f.openCases === 1 ? "" : "s"} from Palm` : "In progress"}
-        </Dot>
-      }
-    >
-      {!canceled && (
-        <ol className="flex flex-wrap gap-x-4 gap-y-2 px-4 py-3">
-          {steps.map((s, i) => (
-            <li key={s.key} className={`flex items-center gap-1.5 text-[12px] ${s.reached ? t.text : t.faint}`}>
-              <span
-                className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${s.reached ? (t.dark ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-700") : t.dark ? "bg-white/[0.06]" : "bg-gray-100"}`}
-              >
-                {s.reached && (done || s.key !== f.status) ? <Icon name="check" className="h-2.5 w-2.5" strokeWidth={2.5} /> : i + 1}
-              </span>
-              {s.label}
-            </li>
-          ))}
-        </ol>
-      )}
-      <Rows>
-        <Row label="Status" info={f.statusReason ?? undefined}>
-          {FILING_LABEL[f.status]}
-          {f.statusReason ? <span className={`ml-2 ${t.muted}`}>{f.statusReason}</span> : null}
-        </Row>
-        <Row label="Submitted">{fmtDate(new Date(f.submittedAt).toISOString().slice(0, 10))}</Row>
-        {f.formationDate && <Row label="Formed">{fmtDate(f.formationDate)}</Row>}
-        {f.registrationNumber && <Row label="File number">{f.registrationNumber}</Row>}
-        {f.fee && <Row label="State fee">{new Intl.NumberFormat("en-US", { style: "currency", currency: f.fee.currency }).format(f.fee.total)}</Row>}
-        {f.expeditedTier && <Row label="Processing">{f.expeditedTier.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}</Row>}
-        <Row label="Registered agent">{f.registeredAgent ? `Palm, ${f.registeredAgent.status.replace(/_/g, " ")}` : "Your own agent"}</Row>
-        <Row label="EIN">{f.ein ? (f.ein.number ? f.ein.number : `Palm is applying (${f.ein.status.replace(/_/g, " ")})`) : "Not requested"}</Row>
-      </Rows>
-      {!canceled && <PalmQuestions openCases={f.openCases} />}
-      {page.formationError && <ErrorLine>{page.formationError}</ErrorLine>}
-    </Section>
-  );
-}
-
-// ── Details ──────────────────────────────────────────────────────────────
-
-function Details() {
-  const { view, asset } = useEntity();
-  const t = useTone();
-  const corp = view.etype === "C-Corp";
-  const formed = fmtDate(asset.formationDate);
-
-  return (
-    <Section title="Details">
-      {/* Free text (addresses, notes with links, file names) wraps instead of running off the card. */}
-      <Rows className="[overflow-wrap:anywhere]">
-        {view.isTrust ? (
-          <>
-            {/* Trustees, grantors and beneficiaries live on the People tab. */}
-            <Row label="Trust date">{formed ? <span className="tabular-nums">{formed}</span> : <AddValue field="formationDate" />}</Row>
-            <Row label="Governing law">{val(asset.state) ?? <AddValue field="state" />}</Row>
-            <Row label="Tax classification">{val(asset.llcType) ?? <AddValue field="llcType" />}</Row>
-            <Row label="Trust agreement">{filedFact(asset, "trustAgreement", asset.formationDate)}</Row>
-            <Row label="Mailing address">{val(asset.address) ?? <AddValue field="address" />}</Row>
-          </>
-        ) : (
-          <>
-            <TaxClassRows />
-            <Row label={corp ? "Bylaws" : "Operating agreement"}>{filedFact(asset, "operatingAgreement", asset.operatingAgreementDate)}</Row>
-            <Row label={corp ? "Certificate" : "Articles of org"}>{filedFact(asset, "articles", asset.articlesOfOrgDate)}</Row>
-            <Row label={asset.fileNumber ? "State file number" : "State link"}>
-              {asset.fileNumber || asset.stateLink ? (
-                <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {asset.fileNumber && <span className="font-mono tabular-nums tracking-[0.02em]">{asset.fileNumber}</span>}
-                  {asset.stateLink && (
-                    <TextLink href={asset.stateLink}>
-                      View filing
-                      <Icon name="external" className="h-3 w-3" />
-                    </TextLink>
-                  )}
-                </span>
-              ) : (
-                <AddValue field="fileNumber" />
-              )}
-            </Row>
-          </>
-        )}
-
-        {val(asset.notes) && (
-          <Row label="Notes">
-            <span className={`whitespace-pre-wrap ${t.soft}`}>{asset.notes}</span>
-          </Row>
-        )}
-      </Rows>
-    </Section>
+    </Button>
   );
 }
 
@@ -345,48 +140,499 @@ function useEditField() {
     window.setTimeout(() => {
       const el = document.getElementById(`edit-${key}`) ?? document.getElementById("entity-edit");
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.focus({ preventScroll: true });
-    }, 60);
+      if (el instanceof HTMLInputElement || el instanceof HTMLButtonElement || el instanceof HTMLTextAreaElement) el.focus({ preventScroll: true });
+    }, 80);
   };
 }
 
-/** An empty value, as the one thing to do about it. */
 function AddValue({ field, label = "Add" }: { field: string; label?: string }) {
   const editField = useEditField();
+  const { asset } = useEntity();
+  if (asset.archived || isPartner()) return <span className="text-ink-3">Not on record</span>;
+  return <RowAction onClick={() => editField(field)}>{label}</RowAction>;
+}
+
+const val = (s?: string | null) => (s?.trim() ? s : undefined);
+const date = (iso?: string | null) => (iso ? fmtDate(iso) : "");
+
+/** Dates inside AI text ("08/11/2023", "September 12, 2023") in one form: "Aug 11, 2023". */
+export function tidyDates(text: string): string {
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return text
+    .replace(/\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(\d{4})\b/g, (_, m, d, y) => `${MONTHS[Number(m) - 1]} ${Number(d)}, ${y}`)
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (all, y, m, d) => (Number(m) >= 1 && Number(m) <= 12 ? `${MONTHS[Number(m) - 1]} ${Number(d)}, ${y}` : all))
+    .replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})\b/g, (_, mo: string, d, y) => `${mo.slice(0, 3)} ${Number(d)}, ${y}`);
+}
+
+// ── Facts read by AI, waiting for a person ───────────────────────────────
+
+/**
+ * What AI read from the documents that isn't on the record yet: each with
+ * where it came from, Accept (it goes on the record, and Activity names who
+ * accepted it) or Dismiss. Nothing read goes on the record by itself (§11.6).
+ */
+function Proposals() {
+  const { page, asset } = useEntity();
+  const [busy, setBusy] = useState<string | null>(null);
+  const list = Object.entries(asset.proposed ?? {}).filter(([, p]) => p) as [string, NonNullable<NonNullable<Asset["proposed"]>[string]>][];
+  if (!list.length || isPartner()) return null;
+  const canAct = !asset.archived && ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+  const show = (field: string, v: string | Member[]) =>
+    Array.isArray(v) ? v.map((m) => `${m.name}${m.percent != null ? ` ${format.percent(m.percent, { decimals: 2, trim: true })}` : ""}${m.role ? ` (${m.role})` : ""}`).join("; ") : /date/i.test(field) ? date(v) : v;
+  const run = async (key: string, fn: () => Promise<void>) => {
+    setBusy(key);
+    try {
+      await fn();
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
-    <TextButton onClick={() => editField(field)}>
-      <Icon name="plus" className="h-3 w-3" />
-      {label}
-    </TextButton>
+    <Card title="Read from the documents" count={list.length} countTone="attention" info="AI read these from the documents on file. They aren't on the record until someone checks them against the document and accepts them.">
+      <Rows>
+        {list.map(([field, p]) => (
+          <Row
+            key={field}
+            label={(FIELD_LABEL[field] ?? (field === "members" ? "owners" : field)).replace(/^./, (m) => m.toUpperCase())}
+            hint={<AiNote kind="read" source={p.docName ? `“${p.docName}”` : undefined} />}
+            action={
+              canAct ? (
+                <span className="flex items-center gap-1">
+                  <Button size="sm" busy={busy === field} busyLabel="Accepting…" onClick={() => void run(field, () => page.acceptProposal(field))}>
+                    Accept
+                  </Button>
+                  <Button size="sm" variant="quiet" disabled={!!busy} onClick={() => void run(field, () => page.dismissProposal(field))}>
+                    Dismiss
+                  </Button>
+                </span>
+              ) : undefined
+            }
+          >
+            <span className="break-words">{show(field, p.value)}</span>
+          </Row>
+        ))}
+      </Rows>
+    </Card>
   );
 }
 
-/** A filing's date, and whether the document itself is on file; Upload when it isn't. */
-function filedFact(asset: Asset, kind: FileKind, date?: string): ReactNode {
-  const file = asset[kind];
-  const when = fmtDate(date);
-  if (!file && !when) return <UploadSlot kind={kind} />;
+// ── Address change ───────────────────────────────────────────────────────
+
+type StepKey = "state" | "irs" | "banks";
+
+/**
+ * After the address changes, who still has the old one: the state (checked
+ * against its own record through Palm), the IRS (Form 8822-B, filled in
+ * here), the W-9, and the banks. Each step's box is checked with the day it
+ * was sent and a tracking or confirmation number; the card goes once they
+ * all are.
+ */
+function AddressChange() {
+  const { page, asset } = useEntity();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [marking, setMarking] = useState<StepKey | null>(null);
+  const remaining = addressChangeRemaining(asset);
+  if (!asset.previousAddress || isPartner() || !remaining) return null;
+  const done = asset.addressUpdates ?? {};
+  const refs = asset.addressUpdateRefs ?? {};
+  const step = stateAddressStep(asset.state, asset.type);
+  const rec = asset.stateRecord;
+  const stateMatches = !!rec?.address && sameAddressText(rec.address, asset.address);
+  const irs = f8822bData(asset);
+  const w9Old = !!asset.w9 && (!asset.addressChangedAt || (asset.w9.uploadedAt ?? 0) < Date.parse(asset.addressChangedAt));
+  const canAct = !asset.archived && ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+  const run = async (key: string, fn: () => Promise<unknown>) => {
+    setBusy(key);
+    try {
+      await fn();
+    } finally {
+      setBusy(null);
+    }
+  };
+  const proof = (k: StepKey) => {
+    const on = done[k];
+    if (!on) return null;
+    const r = refs[k];
+    return `Sent ${date(on)}${r?.ref ? ` · ${r.ref}` : ""}${r?.by ? ` · ${r.by}` : ""}`;
+  };
+  const box = (k: StepKey, label: string) => (
+    <Checkbox
+      checked={!!done[k]}
+      disabled={!canAct}
+      label={<span className="sr-only">{done[k] ? `Mark ${label} not done` : `Mark ${label} done`}</span>}
+      onChange={(v) => (v ? setMarking(k) : void page.markAddressStep(k, false))}
+    />
+  );
+
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-      {file ? (
-        <StoredFileLink file={file} className={`${linkClass} font-normal`}>
-          <Dot tone="good">On file</Dot>
-        </StoredFileLink>
-      ) : (
-        <Dot tone="warn">No document</Dot>
+    <Card
+      title={`New address: ${remaining} ${remaining === 1 ? "place" : "places"} to tell`}
+      info={`Moved from ${asset.previousAddress}${asset.addressChangedAt ? ` on ${date(asset.addressChangedAt)}` : ""}. Check each one off with the day it was sent and the tracking or confirmation number.`}
+      flush
+    >
+      <List label="Who still has the old address">
+        {step.needed && !stateMatches && (
+          <li className="ds flex items-start gap-3 py-3 pr-4 pl-4 touch:pl-3">
+            {box("state", step.agency)}
+            <div className="min-w-0 flex-1">
+              <p className="text-body text-ink">{step.agency}</p>
+              <p className="text-small text-ink-2">
+                {proof("state") ?? (rec?.address ? `Its record still has ${rec.address}.` : step.how)}
+              </p>
+            </div>
+            {!done.state && step.url && <TextLink to={step.url} className="text-small">{step.linkLabel ?? "Open the state’s site"}</TextLink>}
+          </li>
+        )}
+        {!!irs.ein && (
+          <li className="ds flex items-start gap-3 border-t border-line py-3 pr-4 pl-4 touch:pl-3">
+            {box("irs", "the IRS")}
+            <div className="min-w-0 flex-1">
+              <p className="text-body text-ink">IRS · Form 8822-B</p>
+              <p className="text-small text-ink-2">{proof("irs") ?? `Sign it and mail it to ${irs.mailTo}. The IRS takes 4–6 weeks.`}</p>
+            </div>
+            {!done.irs && canAct && (
+              <Button size="sm" busy={busy === "8822"} busyLabel="Filling in…" onClick={() => void run("8822", page.generate8822B)}>
+                Fill in 8822-B
+              </Button>
+            )}
+          </li>
+        )}
+        {w9Old && (
+          <li className="ds flex items-start gap-3 border-t border-line py-3 pr-4 pl-11 touch:pl-12">
+            <div className="min-w-0 flex-1">
+              <p className="text-body text-ink">Form W-9</p>
+              <p className="text-small text-ink-2">The W-9 on file has the old address. A new one goes on the row; the old one stays in the Library.</p>
+            </div>
+            {canAct && (
+              <Button size="sm" busy={busy === "w9"} busyLabel="Filling in…" onClick={() => void run("w9", () => page.generateW9(true))}>
+                Fill in a new W-9
+              </Button>
+            )}
+          </li>
+        )}
+        <li className="ds flex items-start gap-3 border-t border-line py-3 pr-4 pl-4 touch:pl-3">
+          {box("banks", "banks, Palm and insurers")}
+          <div className="min-w-0 flex-1">
+            <p className="text-body text-ink">Banks, Palm, insurers</p>
+            <p className="text-small text-ink-2">{proof("banks") ?? "Anyone who mails it statements or notices."}</p>
+          </div>
+        </li>
+      </List>
+      <MarkSentDialog step={marking} onClose={() => setMarking(null)} />
+    </Card>
+  );
+}
+
+/** Asks for the day it was sent and the tracking or confirmation number, then checks the step off. */
+function MarkSentDialog({ step, onClose }: { step: StepKey | null; onClose: () => void }) {
+  const { page } = useEntity();
+  const [on, setOn] = useState<string | null>(null);
+  const [ref, setRef] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (step) {
+      setOn(new Date().toISOString().slice(0, 10));
+      setRef("");
+    }
+  }, [step]);
+  const who = step === "state" ? "the state" : step === "irs" ? "the IRS" : "the banks and others";
+  return (
+    <Dialog
+      open={!!step}
+      onClose={onClose}
+      title={`Reported to ${who}`}
+      description="The day it went out, and proof it was sent: kept with the step."
+      size="sm"
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            busy={busy}
+            busyLabel="Saving…"
+            disabled={!on}
+            onClick={async () => {
+              if (!step || !on) return;
+              setBusy(true);
+              try {
+                await page.markAddressStep(step, true, { on, ref });
+                onClose();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Mark as sent
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Field label="Sent on">
+          <DateInput value={on} onChange={setOn} />
+        </Field>
+        <Field label={step === "irs" ? "Certified mail tracking number" : "Tracking or confirmation number"} optional hint="From the post office receipt, or the confirmation the site gave.">
+          <Input value={ref} onChange={(e) => setRef(e.target.value)} />
+        </Field>
+      </div>
+    </Dialog>
+  );
+}
+
+// ── Formation (an entity BFO formed through Palm) ────────────────────────
+
+function Formation() {
+  const { page } = useEntity();
+  const f = page.formation;
+  if (!f) return null;
+  const done = f.status === "completed";
+  const canceled = f.status === "canceled";
+  const where = US_STATES.find(([abbr]) => `US-${abbr}` === f.jurisdiction)?.[1] ?? f.jurisdiction;
+  const at = FILING_STATUSES.indexOf(f.status as (typeof FILING_STATUSES)[number]);
+  if (done)
+    return (
+      <Card title="Formation">
+        <Rows>
+          <Row label="Formed">
+            {f.formationDate ? date(f.formationDate) : "Yes"} with {where} through Palm
+          </Row>
+          {f.registrationNumber && (
+            <Row label="File number">
+              <span className="font-mono">{f.registrationNumber}</span>
+            </Row>
+          )}
+        </Rows>
+        <PalmQuestions openCases={f.openCases} />
+      </Card>
+    );
+  const tone: Tone = canceled ? "negative" : f.openCases ? "warning" : "info";
+  return (
+    <Card title="Formation" info={`Filed with ${where} through Palm${page.palmMode === "test" ? " in test mode: nothing reached the state" : ""}.`}>
+      <div className="mb-3">
+        <Status tone={tone}>{canceled ? "Canceled" : f.openCases ? `${f.openCases} ${f.openCases === 1 ? "question" : "questions"} from Palm` : "In progress"}</Status>
+      </div>
+      {!canceled && (
+        <ol className="mb-3 flex flex-wrap gap-x-4 gap-y-2">
+          {FILING_STATUSES.map((s, i) => (
+            <li key={s} className={cx("flex items-center gap-2 text-small", i <= at ? "text-ink" : "text-ink-3")}>
+              <Status tone={i < at ? "positive" : i === at ? "info" : "neutral"} shape>
+                {FILING_LABEL[s]}
+              </Status>
+            </li>
+          ))}
+        </ol>
       )}
-      {when ? <span className="tabular-nums">{when}</span> : <span className="text-gray-500">no date</span>}
+      <Rows>
+        <Row label="Status" hint={f.statusReason ?? undefined}>
+          {FILING_LABEL[f.status]}
+        </Row>
+        <Row label="Submitted">{format.date(new Date(f.submittedAt), "medium")}</Row>
+        {f.registrationNumber && (
+          <Row label="File number">
+            <span className="font-mono">{f.registrationNumber}</span>
+          </Row>
+        )}
+        {f.fee && <Row label="State fee">{format.money(f.fee.total, { currency: f.fee.currency })}</Row>}
+        <Row label="Registered agent">{f.registeredAgent ? `Palm, ${f.registeredAgent.status.replace(/_/g, " ")}` : "Your own agent"}</Row>
+        <Row label="EIN">{f.ein ? (f.ein.number ? <span className="font-mono">{f.ein.number}</span> : `Palm is applying: ${f.ein.status.replace(/_/g, " ")}`) : "Not requested"}</Row>
+      </Rows>
+      {!canceled && <PalmQuestions openCases={f.openCases} />}
+      {page.formationError && <p className="mt-2 text-small text-negative">{page.formationError}</p>}
+    </Card>
+  );
+}
+
+// ── Details ──────────────────────────────────────────────────────────────
+
+/** The EIN masked (§10.8): staff can show it for 30 seconds, or copy it. */
+function Ein({ ein }: { ein: string }) {
+  const { page } = useEntity();
+  const [shown, setShown] = useState(false);
+  const staff = !isPartner() && ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+  useEffect(() => {
+    if (!shown) return;
+    const t = window.setTimeout(() => setShown(false), 30_000);
+    return () => window.clearTimeout(t);
+  }, [shown]);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={cx("tabular-nums", shown && "font-mono")}>{shown ? ein : format.maskEin(ein)}</span>
+      {staff && (
+        <>
+          <IconButton icon={shown ? "eyeOff" : "eye"} label={shown ? "Hide the EIN" : "Show the EIN"} onClick={() => setShown((v) => !v)} />
+          <IconButton
+            icon={page.copied === "ein" ? "check" : "copy"}
+            label={page.copied === "ein" ? "Copied" : "Copy the EIN"}
+            onClick={() => void page.copyValue("ein", ein)}
+          />
+        </>
+      )}
     </span>
   );
 }
 
-function UploadSlot({ kind }: { kind: FileKind }) {
-  const { goToTab } = useEntity();
+function Details() {
+  const { view, asset } = useEntity();
+  const corp = view.etype === "C-Corp";
+  const trust = view.isTrust;
   return (
-    <TextButton onClick={() => goToTab("documents", `filing-${kind}`, "center")}>
-      <Icon name="upload" className="h-3 w-3" />
-      Upload
-    </TextButton>
+    <Card title="Details">
+      <Rows className="[overflow-wrap:anywhere]">
+        {asset.ein?.trim() ? (
+          <Row label="EIN">
+            <Ein ein={asset.ein} />
+          </Row>
+        ) : (
+          !trust && (
+            <Row label="EIN" action={<AddValue field="ein" />}>
+              {undefined}
+            </Row>
+          )
+        )}
+        <Row label={trust ? "Trust date" : corp ? "Incorporated" : "Formed"} action={asset.formationDate ? undefined : <AddValue field="formationDate" />}>
+          {asset.formationDate ? <span className="tabular-nums">{date(asset.formationDate)}</span> : undefined}
+        </Row>
+        {trust ? (
+          <>
+            <Row label="Governing law" action={val(asset.state) ? undefined : <AddValue field="state" />}>
+              {val(asset.state)}
+            </Row>
+            <TaxClassRows />
+            <FiledRow kind="trustAgreement" label="Trust agreement" />
+            <Row label="Mailing address" action={val(asset.address) ? undefined : <AddValue field="address" />}>
+              {val(asset.address)}
+            </Row>
+          </>
+        ) : (
+          <>
+            <TaxClassRows />
+            {(asset.taxYearEnd || asset.accountingMethod) && (
+              <Row label="Tax year">
+                {asset.taxYearEnd && asset.taxYearEnd !== "12" ? `Ends ${MONTHS[Number(asset.taxYearEnd) - 1] ?? asset.taxYearEnd}` : "Calendar year"}
+                {asset.accountingMethod ? ` · ${asset.accountingMethod} basis` : ""}
+              </Row>
+            )}
+            <FiledRow kind="operatingAgreement" label={corp ? "Bylaws" : view.etype === "LP" ? "Partnership agreement" : "Operating agreement"} />
+            <FiledRow kind="articles" label={corp ? "Certificate of incorporation" : "Articles"} />
+            <Row
+              label="State file number"
+              action={
+                asset.stateLink ? (
+                  <TextLink to={asset.stateLink} className="text-small">
+                    State’s record
+                  </TextLink>
+                ) : asset.fileNumber ? undefined : (
+                  <AddValue field="fileNumber" />
+                )
+              }
+            >
+              {asset.fileNumber ? <span className="font-mono">{asset.fileNumber}</span> : undefined}
+            </Row>
+          </>
+        )}
+        {val(asset.notes) && (
+          <Row label="Notes">
+            <span className="text-pretty whitespace-pre-wrap">{asset.notes}</span>
+          </Row>
+        )}
+      </Rows>
+    </Card>
+  );
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** A paper on file: its own date, and whether the document is on record; View opens it, Upload goes to its row. */
+function FiledRow({ kind, label }: { kind: FileKind; label: string }) {
+  const { asset, goToTab } = useEntity();
+  const file = asset[kind];
+  const when = kind === "operatingAgreement" ? asset.operatingAgreementDate : kind === "articles" ? asset.articlesOfOrgDate : asset.formationDate;
+  const canAct = !isPartner() && !asset.archived;
+  return (
+    <Row
+      label={label}
+      action={
+        file ? (
+          <RowAction onClick={() => void openStoredFile(file, { subtitle: `${asset.name}${when ? ` · ${kind === "articles" ? "filed" : "dated"} ${date(when)}` : ""}` })}>View</RowAction>
+        ) : canAct ? (
+          <RowAction onClick={() => goToTab("documents", `filing-${kind}`, "center")}>Upload</RowAction>
+        ) : undefined
+      }
+    >
+      <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+        {file ? <Status tone="neutral">On file</Status> : <Status tone="warning">No document</Status>}
+        {when ? <span className="tabular-nums">{kind === "articles" ? "Filed" : "Dated"} {date(when)}</span> : <span className="text-ink-3">No date on record</span>}
+      </span>
+    </Row>
+  );
+}
+
+/** Tax class with where it came from, whose return it lands on, and a document that disagrees. */
+function TaxClassRows() {
+  const { page, view, asset, goToTab } = useEntity();
+  const editField = useEditField();
+  const c = asset.llcTypeConflict;
+  const src = asset.llcTypeSource;
+  const home = view.homeLine;
+  let note: ReactNode = null;
+  let action: ReactNode = null;
+  if (!asset.llcType) {
+    action = <AddValue field="llcType" />;
+  } else if (!c) {
+    if (formingNow(asset) && (!src || src === BY_HAND)) note = "Set at formation; the EIN letter confirms it once Palm has it.";
+    else if (src && src !== BY_HAND) note = `Matches ${src.replace(/^stated in the document \(|\)$/g, "")}`;
+    else if (src === BY_HAND) note = "Entered by hand; not yet matched to a document.";
+    else if (page.sorting > 0) note = "Checking it against the EIN letter and W-9…";
+    else if (page.aiDown) note = "Not confirmed yet: document reading is paused.";
+    else {
+      note = <Line tone="warn">Not confirmed by a document. The EIN letter or a W-9 confirms it.</Line>;
+      action = !isPartner() ? <RowAction onClick={() => goToTab("documents", "filing-einLetter", "center")}>Upload</RowAction> : null;
+    }
+  }
+  return (
+    <>
+      <Row label="Tax classification" action={action ?? undefined}>
+        {asset.llcType ? (
+          <>
+            <span>{asset.llcType}</span>
+            {note && <span className="block text-small text-ink-2">{note}</span>}
+            {home && (
+              <span className="mt-1 block text-small text-pretty text-ink-2">
+                {home.text}
+                {home.needsClass && !isPartner() && (
+                  <>
+                    {" "}
+                    <TextLink to={`/assets/${home.needsClass.id}`} inline>
+                      Set it
+                    </TextLink>
+                  </>
+                )}
+              </span>
+            )}
+          </>
+        ) : undefined}
+      </Row>
+      {c && (
+        <Row label="Documents say" hint={c.evidence ? `${c.evidence}.` : undefined}>
+          <Line tone="warn">
+            <span className="font-medium">“{c.docName}”</span> says {c.value}; the record says {asset.llcType || "nothing"}.
+          </Line>
+          {!isPartner() && !asset.archived && (
+            <span className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => void page.acceptDocumentTaxClass()}>
+                Use {c.value}
+              </Button>
+              <Button size="sm" variant="quiet" onClick={() => void page.dismissTaxClassConflict()}>
+                Keep {asset.llcType || "blank"}
+              </Button>
+              <Button size="sm" variant="quiet" onClick={() => editField("llcType")}>
+                Edit
+              </Button>
+            </span>
+          )}
+        </Row>
+      )}
+    </>
   );
 }
 
@@ -400,140 +646,224 @@ function UploadSlot({ kind }: { kind: FileKind }) {
  */
 function Addresses() {
   const { page, view, asset, tabPath } = useEntity();
-  const t = useTone();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [deciding, setDeciding] = useState<string | null>(null);
   if (view.isTrust) return null;
   const a = entityAddresses(asset);
   const forming = formingNow(asset);
-  const alerts = a.gaps.filter((g) => g.tone === "bad" || g.tone === "warn").length;
   const source = asset.registeredAgentSource ?? "";
   const palmStopped = source.startsWith("Palm stopped");
+  const canAct = !isPartner() && !asset.archived;
 
   async function check(code: string) {
     setErrors((e) => ({ ...e, [code]: "" }));
     const why = await page.checkForeignRecord(code);
     if (why) setErrors((e) => ({ ...e, [code]: why }));
   }
-
   const checks = (list: Check[]) =>
-    list.length > 0 && (
-      <span className="mt-1.5 flex flex-col gap-1">
-        {list.map((c) => (
-          <Dot key={c.text} tone={c.tone === "info" ? "muted" : c.tone} className="!items-start !whitespace-normal [&>span:first-child]:mt-[6px] [&>span:first-child]:shrink-0">
-            <span className="text-[12px] leading-snug">{c.text}</span>
-          </Dot>
-        ))}
-      </span>
-    );
+    list.map((c) => (
+      <Line key={c.text} tone={c.tone === "info" ? "neutral" : c.tone}>
+        {c.text}
+      </Line>
+    ));
 
   return (
-    <Section
+    <Card
       id="addresses"
       title="Addresses"
-      count={alerts || undefined}
-      alert={alerts > 0}
-      info={
-        <>
-          The <b>principal office</b> is where the business is: the address the state lists publicly. The <b>mailing address</b> is where its mail goes, when that's somewhere else. The{" "}
-          <b>registered agent</b> accepts lawsuits and official notices for it: one in every state it's registered in, at a street address in that state (never a PO box or mailbox), open during
-          business hours. A company formed in one state and run from another needs an agent in both.
-        </>
-      }
-      actions={
-        <TextButton onClick={page.startEditing}>
-          <Icon name="edit" className="h-3 w-3" /> Edit
-        </TextButton>
-      }
+      info="The principal office is where the business is: the address the state lists. The mailing address is where its mail goes, when that's somewhere else. The registered agent accepts lawsuits and official notices for it: one in every state it's registered in, at a street address in that state (never a PO box or mailbox), open during business hours."
+      action={canAct ? <Button variant="quiet" size="sm" onClick={() => page.startEditing()}>Edit</Button> : undefined}
     >
       <Rows className="[overflow-wrap:anywhere]">
-        {!a.principal.value && !a.mailing.value ? (
-          // No address at all: one line, one thing to do.
-          <Row label="Address" actions={<AddValue field="address" />}>
-            <span className={t.faint}>None on record. The principal office is the address the state lists; mail goes there unless you add a separate mailing address.</span>
-          </Row>
-        ) : (
-          <>
-            <Row label="Principal office">
-              {a.principal.value ?? <AddValue field="address" />}
-              {checks(a.principal.checks)}
-            </Row>
-            <Row label="Mailing address">
-              {a.mailing.value ? (
+        <Row label="Principal office" action={a.principal.value || !canAct ? undefined : <AddValue field="address" />}>
+          {a.principal.value ?? undefined}
+          {a.principal.value && checks(a.principal.checks)}
+        </Row>
+        <Row label="Mailing address">
+          {a.mailing.value ? (
+            <>
+              {a.mailing.same ? <span className="text-ink-2">Same as the principal office</span> : a.mailing.value}
+              {sameAddressText(a.mailing.value, STABLE_ADDRESS) && (
+                <span className="block text-small text-ink-2">
+                  The Stable mailbox: each piece is scanned into{" "}
+                  <TextLink to="/mailbox" inline>
+                    Paper mail
+                  </TextLink>
+                  .
+                </span>
+              )}
+              {checks(a.mailing.checks)}
+            </>
+          ) : (
+            <span className="text-ink-3">Not on record</span>
+          )}
+        </Row>
+        {a.agents.map((g) => {
+          const name = g.palm && g.name && !/^palm/i.test(g.name) ? `${g.name}, through Palm` : g.palm ? "Palm" : g.name;
+          return (
+            <Row
+              key={g.state}
+              label={
+                <span>
+                  {g.term}
+                  <span className="block text-small text-ink-3">{g.home ? `${g.stateLabel}, where it was formed` : g.stateLabel}</span>
+                </span>
+              }
+              hint={g.home && source && !palmStopped && !g.palm ? source : !g.home && g.record ? `${g.stateLabel}’s record read through Palm, ${format.date(new Date(g.record.checkedAt), "medium")}.` : undefined}
+              action={
+                !canAct || g.ask ? undefined : g.home ? (
+                  forming && g.palm ? undefined : (
+                    <TextLink to={tabPath("compliance")} className="text-small">
+                      {g.palm ? "Manage" : "Move to Palm"}
+                    </TextLink>
+                  )
+                ) : page.palmStatus?.configured ? (
+                  <RowAction onClick={() => void check(g.state)} disabled={page.foreignBusy === g.state}>
+                    {page.foreignBusy === g.state ? "Checking…" : g.record ? `Check ${g.state} again` : `Check ${g.state}’s record`}
+                  </RowAction>
+                ) : undefined
+              }
+            >
+              {g.ask ? (
                 <>
-                  {a.mailing.same ? <span className={t.soft}>Same as the principal office</span> : a.mailing.value}
-                  {sameAddressText(a.mailing.value, STABLE_ADDRESS) && (
-                    <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
-                      The Stable mailbox: each piece is scanned into{" "}
-                      <Link to="/mailbox" className={t.accent}>
-                        Mailbox
-                      </Link>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-warning" />
+                    <span className="font-medium">Does it do business in {g.stateLabel}?</span>
+                  </span>
+                  <span className="mt-1 block max-w-[68ch] text-small text-ink-2">{foreignAskWhy(g.stateLabel, view.etype === "C-Corp" ? "corporation" : "LLC", g.term)}</span>
+                  {canAct && (
+                    <span className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => setDeciding(g.state)}>
+                        Answer
+                      </Button>
                     </span>
                   )}
                 </>
               ) : (
-                <span className={t.faint}>None on record: mail goes to the principal office once there is one.</span>
+                <>
+                  {name ? (
+                    <span className="flex flex-wrap items-center gap-x-2">
+                      <span>{name}</span>
+                      {g.home && palmStopped && <Status tone="warning">Confirm</Status>}
+                    </span>
+                  ) : (
+                    <span className="text-ink-3">Not on record</span>
+                  )}
+                  {g.address && <span className="block text-small text-ink-2">{g.address}</span>}
+                  {g.fileNumber && (
+                    <span className="block text-small text-ink-2">
+                      File number <span className="font-mono">{g.fileNumber}</span>
+                    </span>
+                  )}
+                  {checks(g.checks)}
+                </>
               )}
-              {checks(a.mailing.checks)}
+              {errors[g.state] && <span className="mt-1 block text-small text-negative">{errors[g.state]}</span>}
             </Row>
-          </>
-        )}
-        {a.agents.map((g) => (
+          );
+        })}
+        {a.notNeeded.length > 0 && (
           <Row
-            key={g.state}
-            label={
-              <span>
-                {g.term}
-                <span className={`block text-[11.5px] ${t.faint}`}>{g.home ? `${g.stateLabel} · formed here` : `${g.stateLabel} · foreign`}</span>
-              </span>
-            }
-            info={g.home && source ? source : !g.home && g.record ? `${g.stateLabel}'s record read through Palm, ${fmtStamp(g.record.checkedAt)}.` : undefined}
-            actions={
-              g.home ? (
-                forming && g.palm ? undefined : (
-                  <TextLink to={tabPath("compliance")}>{g.palm ? "Manage" : "Move to Palm"}</TextLink>
-                )
-              ) : g.ask ? undefined : page.palmStatus?.configured ? (
-                <TextButton onClick={() => void check(g.state)} disabled={page.foreignBusy === g.state}>
-                  {page.foreignBusy === g.state ? "Checking…" : `${g.record ? `Re-check ${g.state}` : `Check ${g.state} record`}${priceSuffix(page.palmMode, stateRecordCents(!!g.fileNumber))}`}
-                </TextButton>
+            label="Not registered in"
+            action={
+              canAct && isAdmin() ? (
+                <RowAction onClick={() => void page.patchAsset(Object.fromEntries(a.notNeeded.flatMap((c) => [[`foreign/${c}/notNeeded`, null], [`foreign/${c}/decisionReason`, null]])))}>Reopen</RowAction>
               ) : undefined
             }
           >
-            {g.name ? (
-              <span className="flex flex-wrap items-center gap-x-2">
-                <span className="font-medium">{g.palm ? "Palm" : g.name}</span>
-                {g.palm && g.name && !/^palm/i.test(g.name) && <span className={t.muted}>listed as {g.name}</span>}
-                {g.home && palmStopped && <Dot tone="warn">Confirm</Dot>}
-              </span>
-            ) : (
-              <span className={t.faint}>None on record</span>
-            )}
-            {g.address && <span className={`mt-0.5 block text-[12.5px] ${t.soft}`}>{g.address}</span>}
-            {g.fileNumber && (
-              <span className={`mt-0.5 block text-[12px] ${t.muted}`}>
-                File number <span className="font-mono tabular-nums">{g.fileNumber}</span>
-              </span>
-            )}
-            {checks(g.checks)}
-            {g.ask && (
-              <span className="mt-2 flex flex-wrap gap-2">
-                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/confirmed`]: true, [`foreign/${g.state}/notNeeded`]: null })}>It does business in {g.stateLabel}</Button>
-                <Button onClick={() => void page.patchAsset({ [`foreign/${g.state}/notNeeded`]: true, [`foreign/${g.state}/confirmed`]: null })}>Only its mail goes there</Button>
-              </span>
-            )}
-            {errors[g.state] && <span className={`mt-1 block text-[12px] ${toneText("bad", t.dark)}`}>{errors[g.state]}</span>}
-          </Row>
-        ))}
-        {a.notNeeded.length > 0 && (
-          <Row label="Not registered in">
-            <span className={t.soft}>{a.notNeeded.map((c) => stateName(c)).join(", ")}: its address is there, but it doesn't do business there.</span>{" "}
-            <TextButton onClick={() => void page.patchAsset(Object.fromEntries(a.notNeeded.map((c) => [`foreign/${c}/notNeeded`, null])))}>Undo</TextButton>
+            <span className="text-ink-2">{a.notNeeded.map((c) => stateName(c)).join(", ")}: its address is there, but it doesn’t do business there.</span>
+            {a.notNeeded.map((c) => asset.foreign?.[c]?.decisionReason && <span key={c} className="block text-small text-ink-2">Why: {asset.foreign[c].decisionReason}</span>)}
           </Row>
         )}
       </Rows>
-      {/* After a move: who still has the old address. */}
-      <AddressChange embedded />
-    </Section>
+      <ForeignDecisionDialog code={deciding} onClose={() => setDeciding(null)} />
+    </Card>
+  );
+}
+
+/**
+ * Whether it does business in a state its address is in: what each answer
+ * means, a reason, and owners and admins only. The answer and the reason go
+ * in Activity.
+ */
+function ForeignDecisionDialog({ code, onClose }: { code: string | null; onClose: () => void }) {
+  const { page, view, asset } = useEntity();
+  const [answer, setAnswer] = useState<"yes" | "no" | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (code) {
+      setAnswer(null);
+      setReason("");
+    }
+  }, [code]);
+  const where = code ? stateName(code) : "";
+  const what = view.etype === "C-Corp" ? "corporation" : "LLC";
+  const admin = isAdmin();
+  const officeThere = !!code && stateCode(asset.address?.match(/,\s*([A-Za-z]{2})\s+\d{5}/)?.[1] ?? "") === code;
+  const ready = admin && !!answer && reason.trim().length > 2;
+  return (
+    <Dialog
+      open={!!code}
+      onClose={onClose}
+      title={`Does it do business in ${where}?`}
+      size="md"
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={!ready}
+            disabledReason={!admin ? "An owner or admin answers this" : ready ? undefined : "Choose an answer and say why"}
+            busy={busy}
+            busyLabel="Saving…"
+            onClick={async () => {
+              if (!code || !answer) return;
+              setBusy(true);
+              try {
+                await page.decideForeign(code, answer === "yes", reason);
+                onClose();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Record the answer
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <ChoiceTiles
+          label="The answer"
+          hideLabel
+          stacked
+          value={answer}
+          onChange={setAnswer}
+          options={[
+            {
+              value: "yes",
+              title: "Yes, it does business there",
+              description: `It registers in ${where} as a foreign ${what}, with an agent there. The registration and the agent go on its To do.`,
+            },
+            {
+              value: "no",
+              title: "No, only its mail goes there",
+              description: `No ${where} registration. If ${where} later finds it was doing business there unregistered, it can face penalties and back fees, and can’t sue in ${where}’s courts until it registers.`,
+            },
+          ]}
+        />
+        {answer === "no" && officeThere && (
+          <Banner tone="warning">
+            Its principal office is in {where}. An office there usually means it does business there; answer no only if the office is just a mailing address.
+          </Banner>
+        )}
+        <Field label="Why" hint="Kept with the answer, in Activity.">
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+        </Field>
+        {!admin && <p className="text-small text-ink-2">An owner or admin records this answer.</p>}
+      </div>
+    </Dialog>
   );
 }
 
@@ -543,18 +873,16 @@ const MAIL_SHOWN = 3;
 type InboxEvent = { id: string; document_id: string | null };
 
 /**
- * Mail Palm received for the entity, readable here. Shown while Palm is the
- * agent in the current Palm mode (or once mail exists). Unread mail is marked
- * New until it's opened; the full list is on Compliance.
+ * Mail Palm received for the entity, readable here, once there is some.
+ * Unread mail is marked New until it's opened; the full list is on
+ * Compliance.
  */
 function Mail() {
   const { page, view, asset, goToTab } = useEntity();
-  const t = useTone();
   const mode = page.palmMode;
   const docs = page.palmDocs;
-  // The agent status in the mode the mail comes from: Palm's answer once in, the saved one until then.
   const status = page.palmRa !== undefined ? page.palmRa?.status : mode ? asset.palm?.[mode]?.ra?.status : undefined;
-  const shown = !view.isTrust && !!page.palmStatus?.configured && !!mode && (status === "active" || !!docs?.length);
+  const shown = !view.isTrust && !!page.palmStatus?.configured && !!mode && (status === "active" || !!docs?.length) && !!docs?.length;
   const assetId = page.id;
   const count = docs?.length ?? 0;
   const [unread, setUnread] = useState<InboxEvent[]>([]);
@@ -565,7 +893,6 @@ function Mail() {
   useEffect(() => {
     if (!shown || !mode || !assetId) return;
     let live = true;
-    // The page's opening read when it just came in (its mail count and unread mail are one reading); Palm itself otherwise.
     const part = seed(`${assetId}:${mode}`);
     (part ? fromBundle(part) : palmCall<{ events: InboxEvent[] }>("inbox", { assetId, mode, unread: true })).then((r) => live && setUnread(r.events.filter((e) => e.document_id))).catch(() => {});
     return () => {
@@ -573,8 +900,7 @@ function Mail() {
     };
   }, [shown, mode, assetId, count]);
 
-  if (!shown) return null;
-
+  if (!shown || !docs) return null;
   const isNew = (d: PalmDocument) => unread.some((e) => e.document_id === d.id);
   const open = (d: PalmDocument) => {
     setError("");
@@ -585,375 +911,336 @@ function Mail() {
         setUnread((u) => u.filter((e) => e.document_id !== d.id));
         void palmCall("inbox-read", { ids, mode }).catch(() => {});
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't open that document."));
+      .catch((e) => setError(e instanceof Error ? e.message : "Couldn’t open that document."));
   };
-  // New first, then Palm's order (legal papers, notices, newest).
-  const list = docs ? [...docs].sort((a, b) => Number(isNew(b)) - Number(isNew(a))).slice(0, MAIL_SHOWN) : [];
-
+  const list = [...docs].sort((a, b) => Number(isNew(b)) - Number(isNew(a))).slice(0, MAIL_SHOWN);
+  const fresh = unread.length;
   return (
-    <Section
+    <Card
       title="Mail"
-      count={count}
+      count={fresh || undefined}
+      countTone="attention"
       info="State mail and legal papers served on the entity, received by Palm as its registered agent."
-      actions={
-        mode === "test" || count > MAIL_SHOWN ? (
-          <>
-            {mode === "test" && <Dot tone="warn">Test mode</Dot>}
-            {count > MAIL_SHOWN && <TextButton onClick={() => goToTab("compliance", "palm-mail")}>All mail</TextButton>}
-          </>
-        ) : undefined
-      }
+      flush
+      footer={count > MAIL_SHOWN ? <TextLink to={`${page.tabPath("compliance")}#palm-mail`} onClick={(e) => (e.preventDefault(), goToTab("compliance", "palm-mail"))}>All {count}</TextLink> : undefined}
     >
-      {docs === null ? (
-        page.palmError && page.palmBusinessId ? (
-          <Empty
-            action={
-              <TextButton disabled={!!page.palmBusy} onClick={() => void page.refreshPalm(page.palmBusinessId!)}>
-                Try again
-              </TextButton>
-            }
-          >
-            Couldn't load mail.
-          </Empty>
-        ) : (
-          <Empty>Checking for mail…</Empty>
-        )
-      ) : docs.length === 0 ? (
-        <Empty>No mail yet.</Empty>
-      ) : (
-        <Rows>
-          {list.map((d) => {
-            const kind = docKindOf(d);
-            const legal = kind === "service_of_process";
-            const meta = [d.filename, d.created_at ? fmtDate(d.created_at.slice(0, 10)) : null].filter(Boolean).join(" · ");
-            return (
-              <div key={d.id} className="flex items-center gap-3 px-5 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] leading-snug">
-                    <span className={legal ? `font-medium ${toneText("bad", t.dark)}` : t.text}>{DOC_LABEL[kind] ?? (kind || "Document").replace(/_/g, " ")}</span>
-                    {isNew(d) && <Dot tone="accent">New</Dot>}
-                  </div>
-                  {meta && <div className={`mt-0.5 truncate text-[12px] tabular-nums ${t.muted}`}>{meta}</div>}
-                </div>
-                <IconButton icon="external" label="Open" onClick={() => open(d)} />
-              </div>
-            );
-          })}
-        </Rows>
-      )}
-      <ErrorLine>{error}</ErrorLine>
-    </Section>
+      {mode === "test" && <p className="px-5 pt-3 text-small text-ink-2 touch:px-4">Test mode: Palm’s sandbox, not real mail.</p>}
+      <List label="Mail">
+        {list.map((d) => {
+          const kind = docKindOf(d);
+          const legal = kind === "service_of_process";
+          return (
+            <ListRow
+              key={d.id}
+              unread={isNew(d)}
+              title={
+                <span className="inline-flex items-center gap-2">
+                  {legal && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-negative" />}
+                  {DOC_LABEL[kind] ?? (kind || "Document").replace(/_/g, " ")}
+                </span>
+              }
+              secondary={[d.filename, d.created_at ? format.date(d.created_at.slice(0, 10), "medium") : null].filter(Boolean).join(" · ")}
+              onClick={() => open(d)}
+            />
+          );
+        })}
+      </List>
+      {error && <p className="px-5 py-2 text-small text-negative">{error}</p>}
+    </Card>
   );
 }
 
-/** Tax class with where it came from, and a document that disagrees. */
-function TaxClassRows() {
-  const { page, view, asset, tabPath, goToTab } = useEntity();
-  const label = view.etype === "C-Corp" ? "Classification" : "Tax classification";
-  const c = asset.llcTypeConflict;
-  if (!asset.llcType && !c)
+// ── Money (what Books knows about it) ────────────────────────────────────
+
+type BooksSummary = { count: number; income: number; expenses: number; first: string | null; last: string | null };
+
+/**
+ * The entity in Books: this year's income and expenses, cash basis, from the
+ * bank and card accounts mapped to it, with where to see the rest. Read from
+ * Books' mirror; nothing is called at the bank.
+ */
+function MoneyCard() {
+  const { page, asset } = useEntity();
+  const [sum, setSum] = useState<BooksSummary | null | "error">(null);
+  const year = new Date().getFullYear();
+  const id = page.id;
+  useEffect(() => {
+    if (!id || isPartner()) return;
+    let live = true;
+    authFetch(`/api/books/data?${new URLSearchParams({ report: "transactions", entity: id, year: String(year), limit: "1" })}`)
+      .then(async (r) => {
+        const j = (await r.json().catch(() => ({}))) as { summary?: BooksSummary | null };
+        if (live) setSum(r.ok ? (j.summary ?? { count: 0, income: 0, expenses: 0, first: null, last: null }) : "error");
+      })
+      .catch(() => live && setSum("error"));
+    return () => {
+      live = false;
+    };
+  }, [id, year]);
+  if (isPartner() || entityType(asset) === "Trust" || sum === null) return null;
+  const books = `/books/transactions?entity=${encodeURIComponent(id ?? "")}`;
+  if (sum === "error")
     return (
-      <Row label={label}>
-        <AddValue field="llcType" />
-      </Row>
+      <Card title="Money">
+        <p className="text-body text-ink-2">Books didn’t answer. Open Books to see its accounts.</p>
+      </Card>
     );
-
-  const src = asset.llcTypeSource;
-  const home = view.homeReturn;
-  const homeLine = home ? `Reported on ${home.form === "return" ? `${home.name}'s return` : `${home.name}'s ${home.form}`}.` : null;
-  let status: ReactNode = null;
-  let hint: string | null = null;
-  let action: ReactNode = null;
-  if (!c) {
-    if (formingNow(asset) && (!src || src === BY_HAND)) {
-      // Being formed: the IRS's EIN letter, which Palm brings, is what confirms it.
-      status = <Dot tone="muted">Set at formation</Dot>;
-      hint = "The EIN letter confirms it once Palm has it.";
-    } else if (src && src !== BY_HAND) {
-      status = <Dot tone="good">From document</Dot>;
-      hint = src;
-    } else if (src === BY_HAND) {
-      status = <Dot tone="muted">By hand</Dot>;
-      hint = "Not yet matched to a document.";
-    } else if (asset.einLetter || asset.w9) {
-      if (page.sorting > 0) {
-        status = <Dot tone="muted">Checking…</Dot>;
-        hint = "Checking it against the EIN letter and W-9.";
-      } else if (page.aiDown) {
-        status = <Dot tone="muted">Reading paused</Dot>;
-        hint = "Not confirmed yet — document reading is paused.";
-      } else {
-        status = <Dot tone="warn">Unconfirmed</Dot>;
-        hint = "Not confirmed by the EIN letter or W-9 on file. Check them, or run Verify.";
-        action = <TextLink to={tabPath("documents")}>Check documents</TextLink>;
-      }
-    } else {
-      status = <Dot tone="warn">Unconfirmed</Dot>;
-      hint = "Not confirmed by a document. Upload the EIN letter or W-9.";
-      action = <TextButton onClick={() => goToTab("documents", "filing-einLetter", "center")}>Upload EIN letter or W-9</TextButton>;
-    }
-  }
-  // Whose return it lands on is a fact, so it shows; only the hint waits behind (i).
-  const info = hint ? <p className="break-words">{hint}</p> : undefined;
-
+  if (!sum.count)
+    return (
+      <Card title="Money" footer={<TextLink to="/treasury/mappings">Map accounts</TextLink>}>
+        <p className="text-body text-pretty text-ink-2">No bank or card account is mapped to it in Books, so it has no transactions here this year.</p>
+      </Card>
+    );
+  const net = sum.income - Math.abs(sum.expenses);
   return (
-    <>
-      <Row label={label} info={info} actions={action ?? undefined}>
-        {asset.llcType ? (
-          <>
-            <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-              {asset.llcType}
-              {status}
-            </span>
-            {homeLine && <span className="mt-0.5 block text-[12px] text-gray-500">{homeLine.replace(/\.$/, "")}</span>}
-          </>
-        ) : undefined}
-      </Row>
-      {c && (
-        <Row label={<Dot tone="warn">Conflict</Dot>} info={c.evidence ? `${c.evidence}.` : undefined}>
-          <div className="[overflow-wrap:anywhere]">
-            <span className="font-medium">{c.docName}</span> says <span className="font-medium">{c.value}</span>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <Button onClick={() => void page.acceptDocumentTaxClass()}>Use {c.value}</Button>
-            <Button kind="ghost" onClick={() => void page.dismissTaxClassConflict()}>
-              Keep {asset.llcType || "blank"}
-            </Button>
-          </div>
+    <Card title="Money" footer={<TextLink to={books}>Open in Books</TextLink>}>
+      <p className="mb-2 text-small text-ink-2">
+        {format.dateRange(`${year}-01-01`, sum.last ?? new Date())} · Cash basis
+      </p>
+      <Rows>
+        <Row label="Income">
+          <Money value={sum.income} />
         </Row>
-      )}
-    </>
+        <Row label="Expenses">
+          <Money value={Math.abs(sum.expenses)} />
+        </Row>
+        <Row label="Net">
+          <Money value={net} tone="direction" />
+        </Row>
+      </Rows>
+      <p className="mt-2 text-small text-ink-2">{format.count(sum.count, "transaction")}; transfers and loans left out, as in the P&amp;L.</p>
+    </Card>
   );
 }
 
 // ── Edit form ────────────────────────────────────────────────────────────
 
 const ENTITY_TYPES = ["LLC", "C-Corp", "LP", "Trust"] as const;
-
-const ENTITY_STATUSES = ["Active", "Inactive", "Dissolved", "Pending"];
+const STATUSES = ["Active", "Inactive", "Pending"];
 
 function EditForm() {
   const { page, asset } = useEntity();
-  const t = useTone();
   const { form } = page;
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const ft = entityType(form);
   const trust = ft === "Trust";
   const classes: readonly string[] = TAX_CLASSES[ft];
-  const named = !!form.name?.trim();
-  const set = <K extends keyof Asset>(k: K, v: Asset[K]) => {
-    setError(""); // an old save error doesn't apply to new edits
-    page.setForm((f) => ({ ...f, [k]: v }));
-  };
-  const text = (
-    k: "name" | "state" | "ein" | "registeredAgent" | "registeredAgentAddress" | "address" | "mailingAddress" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink",
-  ) => ({
+  const admin = isAdmin();
+  // A legal name, form, tax class or EIN already on record is an owner's or admin's to change (the server refuses others).
+  const locked = (k: "name" | "type" | "llcType" | "ein") => !admin && !!String(page.editBaseRef.current[k] ?? "").trim();
+  const lockHint = "An owner or admin changes this.";
+  const set = <K extends keyof Asset>(k: K, v: Asset[K]) => page.setForm((f) => ({ ...f, [k]: v }));
+  const text = (k: "name" | "state" | "ein" | "registeredAgent" | "registeredAgentAddress" | "address" | "mailingAddress" | "trustees" | "grantors" | "beneficiaries" | "fileNumber" | "stateLink") => ({
     id: `edit-${k}`,
     value: form[k] || "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
   });
-  const date = (k: "formationDate" | "operatingAgreementDate" | "articlesOfOrgDate") => ({
-    id: `edit-${k}`,
-    type: "date",
-    value: form[k] || "",
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
-  });
+  const dateField = (k: "formationDate" | "operatingAgreementDate" | "articlesOfOrgDate") => <DateInput id={`edit-${k}`} value={form[k] || null} onChange={(v) => set(k, v ?? "")} />;
+  const home = stateCode(form.state);
+  const decided = foreignStates(form, { decided: true });
+  const undecided = foreignStates(form).filter((c) => !decided.includes(c));
+  const rec = asset.stateRecord;
 
-  async function save() {
-    if (!named) return;
-    setSaving(true);
-    setError("");
-    try {
-      await page.handleSave();
-    } catch (err) {
-      console.error("save failed", err);
-      setError("Couldn't save — try again.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // A <form>, so Enter in a one-line field saves. ⌘/Ctrl+Enter saves from Notes; Esc cancels.
-  // noValidate: the browser's URL check would block Enter where Save never was.
   function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
     if (e.key === "Escape" && !e.defaultPrevented) {
-      // Stop here: the "Discard changes?" dialog opens within this keypress
-      // and would otherwise hear the same Esc as its own Cancel.
       e.preventDefault();
       e.stopPropagation();
       void page.cancelEditing();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.target instanceof HTMLTextAreaElement) {
       e.preventDefault();
-      void save();
+      void page.saveEdits();
     }
   }
 
   return (
-    <Section id="entity-edit" title="Edit details" className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20">
+    <Card id="entity-edit" title={`Edit ${asset.name}`} className="scroll-mt-[96px]">
       <form
         noValidate
         onKeyDown={onKeyDown}
         onSubmit={(e) => {
           e.preventDefault();
-          void save();
+          void page.saveEdits();
         }}
       >
-        <div className="grid grid-cols-1 gap-x-4 gap-y-4 p-5 md:grid-cols-2">
-          <Field label="Entity name" wide>
-            <Input {...text("name")} />
-          </Field>
-
-          {/* Not a <label>: a label would pass clicks on its text to the first type button. */}
-          <div role="group" aria-label="Entity type">
-            <span className={`mb-1.5 block text-[12px] ${t.muted}`}>Entity type</span>
-            <div className={`grid grid-cols-4 gap-1 rounded-lg border p-1 ${t.dark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-gray-50"}`}>
-              {ENTITY_TYPES.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => set("type", type)}
-                  aria-pressed={form.type === type}
-                  className={`h-[22px] cursor-pointer rounded-md text-[12px] font-medium transition-colors max-sm:h-[40px] ${
-                    form.type === type ? (t.dark ? "bg-white text-gray-950" : "bg-gray-900 text-white") : t.dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Field label="Status">
-            <Select value={form.status || "Active"} onChange={(e) => set("status", e.target.value)}>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Dissolved">Dissolved</option>
-              <option value="Pending">Pending</option>
-              {/* A status a Palm formation writes (Forming, Formation canceled): kept on offer so it shows and can be picked back. */}
-              {[...new Set([asset.status, form.status])]
-                .filter((s): s is string => !!s && !ENTITY_STATUSES.includes(s))
-                .map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-            </Select>
-          </Field>
-          <Field label={trust ? "Governing law (state)" : "State of formation"}>
-            <Input {...text("state")} />
-          </Field>
-          <Field label="EIN" hint={einLooksRight(form.ein) ? undefined : <span className={toneText("warn", t.dark)}>An EIN is nine digits, like 93-1234567.</span>}>
-            <Input {...text("ein")} className="font-mono tabular-nums" placeholder="93-1234567" />
-          </Field>
-          <Field label={trust ? "Mailing address" : "Principal office"} hint={trust ? undefined : "Where the business is: the address the state lists."}>
-            <Input {...text("address")} />
-          </Field>
-          {!trust && (
-            <Field label="Mailing address" hint="Leave blank when mail goes to the principal office.">
-              <Input {...text("mailingAddress")} placeholder={form.address || "Same as the principal office"} />
+        {page.saveError && (
+          <Banner tone="negative" className="mb-4">
+            {page.saveError}
+          </Banner>
+        )}
+        <CardSection title="Identity">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Legal name" hint={locked("name") ? lockHint : undefined} className="md:col-span-2">
+              <Input {...text("name")} disabled={locked("name")} />
             </Field>
-          )}
-          {!trust && (
-            <>
-              <Field label={`${agentTerm(stateCode(form.state))}${form.state ? ` (${form.state})` : ""}`}>
+            <div className="md:col-span-2">
+              <p className="mb-[6px] text-small font-medium text-ink">Legal form</p>
+              {locked("type") ? (
+                <p className="text-body text-ink">
+                  {form.type} <span className="text-small text-ink-2">· {lockHint}</span>
+                </p>
+              ) : (
+                <Segmented label="Legal form" value={(form.type ?? "LLC") as (typeof ENTITY_TYPES)[number]} onChange={(v) => set("type", v)} options={ENTITY_TYPES.map((t) => ({ value: t, label: t === "C-Corp" ? "Corporation" : t }))} />
+              )}
+            </div>
+            <Field label={trust ? "Governing law (state)" : "State of formation"}>
+              <Input {...text("state")} />
+            </Field>
+            <Field label="Status" hint={rec?.status ? `The state’s record says ${rec.status}, read ${format.date(new Date(rec.checkedAt), "medium")}.` : "Dissolving it is under ⋯ › Dissolve."}>
+              <Select
+                id="edit-status"
+                label="Status"
+                placeholder="Not set"
+                value={form.status || null}
+                onChange={(v) => set("status", v)}
+                options={[...STATUSES, ...[asset.status].filter((s): s is string => !!s && !STATUSES.includes(s))].map((s) => ({ value: s, label: s, disabled: s === "Dissolved" && asset.status !== "Dissolved" }))}
+              />
+            </Field>
+            <Field label="EIN" error={einLooksRight(form.ein) ? undefined : "An EIN is nine digits, written 12-3456789."} hint={locked("ein") ? lockHint : undefined}>
+              <Input {...text("ein")} className="font-mono" placeholder="12-3456789" disabled={locked("ein")} />
+            </Field>
+            <Field label="Tax classification" hint={locked("llcType") ? lockHint : "A change asks for its effective date and the election."}>
+              <Select
+                id="edit-llcType"
+                label="Tax classification"
+                placeholder="Choose…"
+                disabled={locked("llcType")}
+                value={form.llcType || null}
+                onChange={(v) => set("llcType", v)}
+                options={[...classes, ...(form.llcType && !classes.includes(form.llcType) ? [form.llcType] : [])].map((c) => ({ value: c, label: c }))}
+              />
+            </Field>
+            <Field label={trust ? "Trust date" : "Formation date"}>{dateField("formationDate")}</Field>
+            {!trust && (
+              <Field label="State file number">
+                <Input {...text("fileNumber")} className="font-mono" />
+              </Field>
+            )}
+            <Field label="Tax year ends" optional>
+              <Select
+                id="edit-taxYearEnd"
+                label="Tax year ends"
+                placeholder="December (calendar year)"
+                value={form.taxYearEnd || null}
+                onChange={(v) => set("taxYearEnd", v)}
+                options={MONTHS.map((m, i) => ({ value: String(i + 1), label: m }))}
+              />
+            </Field>
+            <Field label="Accounting method" optional>
+              <Select
+                id="edit-accountingMethod"
+                label="Accounting method"
+                placeholder="Choose…"
+                value={form.accountingMethod || null}
+                onChange={(v) => set("accountingMethod", v as Asset["accountingMethod"])}
+                options={[
+                  { value: "Cash", label: "Cash" },
+                  { value: "Accrual", label: "Accrual" },
+                ]}
+              />
+            </Field>
+          </div>
+        </CardSection>
+
+        <CardSection title="Addresses">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label={trust ? "Mailing address" : "Principal office"} hint={trust ? undefined : "Where the business is: the address the state lists."}>
+              <Input {...text("address")} />
+            </Field>
+            {!trust && (
+              <Field label="Mailing address" optional hint="A new address starts the address-change steps when you save.">
+                <Input {...text("mailingAddress")} placeholder="Same as the principal office" />
+              </Field>
+            )}
+          </div>
+        </CardSection>
+
+        {!trust && (
+          <CardSection title="Agents">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label={`${agentTerm(home)}${form.state ? ` in ${stateName(home) || form.state}` : ""}`}>
                 <Input {...text("registeredAgent")} />
               </Field>
-              <Field label="Agent's street address" hint={`In ${form.state || "the state of formation"}; not a PO box or mailbox.`}>
+              <Field label="Agent’s street address" hint={`In ${stateName(home) || form.state || "the state of formation"}; not a PO box or mailbox.`}>
                 <Input {...text("registeredAgentAddress")} />
               </Field>
-              {foreignStates(form).map((code) => {
-                const f = form.foreign?.[code] ?? {};
-                const setF = (k: "agent" | "agentAddress" | "fileNumber", v: string) => set("foreign", { ...(form.foreign ?? {}), [code]: { ...f, [k]: v } });
-                return (
-                  <div key={code} className={`grid grid-cols-1 gap-x-4 gap-y-4 rounded-xl border p-4 md:col-span-2 md:grid-cols-2 ${t.line}`}>
-                    <p className={`text-[12px] font-medium md:col-span-2 ${t.soft}`}>
-                      {stateName(code)}: registered as a foreign {trust ? "entity" : ft === "C-Corp" ? "corporation" : "LLC"}
-                    </p>
+            </div>
+            {decided.map((code) => {
+              const f = form.foreign?.[code] ?? {};
+              const setF = (k: "agent" | "agentAddress" | "fileNumber", v: string) => set("foreign", { ...(form.foreign ?? {}), [code]: { ...f, [k]: v } });
+              return (
+                <div key={code} className="mt-4 border-t border-line pt-4">
+                  <p className="mb-3 text-small font-medium text-ink">
+                    {stateName(code)}: registered as a foreign {ft === "C-Corp" ? "corporation" : "LLC"}
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Field label={agentTerm(code)}>
                       <Input value={f.agent ?? ""} onChange={(e) => setF("agent", e.target.value)} />
                     </Field>
-                    <Field label="Agent's street address" hint={`In ${stateName(code)}; not a PO box or mailbox.`}>
+                    <Field label="Agent’s street address" hint={`In ${stateName(code)}; not a PO box or mailbox.`}>
                       <Input value={f.agentAddress ?? ""} onChange={(e) => setF("agentAddress", e.target.value)} />
                     </Field>
                     <Field label={`${stateName(code)} file number`}>
                       <Input value={f.fileNumber ?? ""} onChange={(e) => setF("fileNumber", e.target.value)} className="font-mono" />
                     </Field>
                   </div>
-                );
-              })}
-              <Field label="Registered in another state too?" hint="Doing business elsewhere (an office, staff, operating property) means registering there, with an agent there.">
-                <Select value="" onChange={(e) => e.target.value && set("foreign", { ...(form.foreign ?? {}), [e.target.value]: {} })}>
-                  <option value="">Add a state…</option>
-                  {US_STATES.filter(([code]) => code !== stateCode(form.state) && !foreignStates(form).includes(code)).map(([code, name]) => (
-                    <option key={code} value={code}>
-                      {name}
-                    </option>
-                  ))}
-                </Select>
+                </div>
+              );
+            })}
+            {undecided.map((code) => (
+              <p key={code} className="mt-4 border-t border-line pt-4 text-small text-ink-2">
+                {stateName(code)}: not registered. Whether it does business there is answered on the Addresses card.
+              </p>
+            ))}
+            <div className="mt-4 border-t border-line pt-4 md:w-1/2">
+              <Field label="Registered in another state too?" optional hint="Doing business elsewhere (an office, staff, operating property) means registering there, with an agent there.">
+                <Select
+                  label="Add a state"
+                  placeholder="Add a state…"
+                  value={null}
+                  onChange={(code) => set("foreign", { ...(form.foreign ?? {}), [code]: { ...(form.foreign?.[code] ?? {}), confirmed: true } })}
+                  options={US_STATES.filter(([code]) => code !== home && !foreignStates(form).includes(code)).map(([code, name]) => ({ value: code, label: name }))}
+                />
               </Field>
-            </>
-          )}
-          <Field label={trust ? "Trust date" : "Formation date"}>
-            <Input {...date("formationDate")} />
-          </Field>
-          <Field label="Entity classification">
-            <Select id="edit-llcType" value={form.llcType || ""} onChange={(e) => set("llcType", e.target.value)}>
-              <option value="">Select…</option>
-              {classes.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-              {form.llcType && !classes.includes(form.llcType) && <option value={form.llcType}>{form.llcType}</option>}
-            </Select>
-          </Field>
+            </div>
+          </CardSection>
+        )}
 
-          {trust ? (
-            <>
-              <Field label="Trustees">
-                <Input {...text("trustees")} placeholder="e.g. Robert Burton, Claire Burton" />
+        {trust ? (
+          <CardSection title="People">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Trustees" hint="Names, separated by commas.">
+                <Input {...text("trustees")} />
               </Field>
               <Field label="Grantors">
                 <Input {...text("grantors")} />
               </Field>
-              <Field label="Beneficiaries" wide>
+              <Field label="Beneficiaries" className="md:col-span-2">
                 <Input {...text("beneficiaries")} />
               </Field>
-            </>
-          ) : (
-            <>
-              <Field label="State file number">
-                <Input {...text("fileNumber")} className="font-mono" />
+            </div>
+          </CardSection>
+        ) : (
+          <CardSection title="Paperwork dates">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Operating agreement signed">{dateField("operatingAgreementDate")}</Field>
+              <Field label="Articles filed">{dateField("articlesOfOrgDate")}</Field>
+              <Field label="Link to the state’s record" optional className="md:col-span-2">
+                <Input {...text("stateLink")} type="url" placeholder="https://" />
               </Field>
-              <Field label="State filing link">
-                <Input {...text("stateLink")} type="url" />
-              </Field>
-              <Field label="Operating agreement">
-                <Input {...date("operatingAgreementDate")} />
-              </Field>
-              <Field label="Articles of organization">
-                <Input {...date("articlesOfOrgDate")} />
-              </Field>
-            </>
-          )}
+            </div>
+          </CardSection>
+        )}
 
-          <Field label="Notes" wide>
-            <Textarea value={form.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={3} className="resize-none" />
+        <CardSection title="Notes">
+          <Field label="Notes" optional hint="Staff only.">
+            <Textarea id="edit-notes" value={form.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={3} />
           </Field>
-        </div>
-        <ErrorLine>{error}</ErrorLine>
-        <div className={`flex items-center justify-end gap-2 border-t px-5 py-3 ${t.line}`}>
-          <Button kind="ghost" onClick={() => void page.cancelEditing()}>
-            Cancel
-          </Button>
-          {/* Not disabled while saving: offline, the write only settles once the connection is back, and Save stays clickable as before. */}
-          <Button kind="primary" icon="check" type="submit" disabled={!named} title={named ? undefined : "The entity needs a name"}>
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
+        </CardSection>
+        {/* Enter in a one-line field saves; the buttons are in the header (desktop) or the bar at the bottom (phone). */}
+        <button type="submit" className="sr-only" tabIndex={-1}>
+          Save changes
+        </button>
       </form>
-    </Section>
+    </Card>
   );
 }
 
@@ -961,122 +1248,125 @@ function EditForm() {
 
 function About() {
   const { page, asset, goToTab } = useEntity();
-  const t = useTone();
   const p = asset.profile;
-  // Nothing on file means nothing to read: To do already asks for the documents.
   if (!p && !page.docs.length && !page.profiling) return null;
-
-  const info = p
-    ? `Read ${fmtStamp(p.checkedAt)} from ${p.sources.length ? p.sources.join(", ") : "the documents on file"}.`
-    : "Reads the operating agreement (or bylaws / trust agreement) and fills in what the entity is for, what it owns, who runs and owns it, and how it's taxed.";
+  const canRead = !isPartner() && !asset.archived && ["owner", "admin", "member"].includes(getUser()?.role ?? "");
+  const from = p?.sources.length ? p.sources.map((s) => `“${s}”`).join(", ") : "the documents on file";
+  // The documents' word on who runs it, against the state's record.
+  const stateManagers = (asset.stateRecord?.people?.filter((x) => /manager|managing/i.test(x.role)).map((x) => x.name) ?? asset.stateRecord?.managers ?? []).filter(Boolean);
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+  const differs = !!p && p.managers.length > 0 && stateManagers.length > 0 && (p.managers.length !== stateManagers.length || p.managers.some((m) => !stateManagers.some((s) => norm(s).includes(norm(m).slice(0, 8)))));
+  const recordClass = asset.llcType?.trim();
+  const taxDiffers = !!p?.taxTreatment && !!recordClass && norm(p.taxTreatment) !== norm(recordClass) && !norm(p.taxTreatment).includes(norm(recordClass));
+  const where = stateName(stateCode(asset.state) ?? "") || "the state";
 
   return (
-    <Section
+    <Card
       title="About"
-      info={info}
-      actions={
-        // One way forward: with nothing on file there is nothing to read, so the body offers adding documents instead.
-        p || page.docs.length ? (
-          <TextButton onClick={() => void page.buildProfile()} disabled={page.profiling}>
-            <Icon name="sparkle" className="h-3 w-3" />
-            {page.profiling ? "Reading…" : p ? "Re-read" : "Read documents"}
-          </TextButton>
+      action={
+        canRead && (p || page.docs.length) ? (
+          <Button variant="quiet" size="sm" icon="sparkle" busy={page.profiling} busyLabel="Reading…" onClick={() => void page.buildProfile()}>
+            {p ? "Read again" : "Read documents"}
+          </Button>
         ) : undefined
       }
     >
       {p ? (
-        <>
+        <div className="flex flex-col gap-3">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-ink-2">
+            <AiNote kind="summary" />
+            <span>
+              from {from}, {format.date(new Date(p.checkedAt), "medium")}. Check it against the signed documents; it isn’t legal advice.
+            </span>
+          </p>
+          {p.whatItIs && <p className="max-w-[68ch] text-body text-pretty text-ink">{tidyDates(p.whatItIs)}</p>}
           <Rows>
-            {p.whatItIs && <p className={`px-5 py-4 text-[13px] leading-relaxed ${t.text}`}>{p.whatItIs}</p>}
             {p.members.length > 0 && (
-              <Row label="Owners">
-                <ul className="space-y-1">
+              <Row label="Owners, per the documents">
+                <ul className="flex flex-col gap-1">
                   {p.members.map((m, i) => (
                     <li key={i} className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0 break-words">{m.name}</span>
-                      <span className={`shrink-0 tabular-nums ${t.muted}`}>{m.percent != null ? `${m.percent}%` : "—"}</span>
+                      <span className="shrink-0 text-ink-2 tabular-nums">{m.percent != null ? format.percent(m.percent, { decimals: 2, trim: true }) : ""}</span>
                     </li>
                   ))}
                 </ul>
               </Row>
             )}
-            {p.management && (
-              <Row label="Managed by">
-                {p.managers.length ? p.managers.join(", ") : "—"}
-                <span className={t.muted}> · {p.management}</span>
+            {(p.management || p.managers.length > 0) && (
+              <Row label="Run by" hint={p.management ? `The documents say ${p.management}.` : undefined}>
+                {p.managers.length ? p.managers.join(", ") : <span className="text-ink-3">No one named</span>}
+                {differs && (
+                  <Line tone="warn">
+                    {where}’s record names {stateManagers.join(", ")} instead. Check which is right before anyone signs for it.
+                  </Line>
+                )}
               </Row>
             )}
-            {p.taxTreatment && (
-              <Row label="Taxed as" info={val(p.taxEvidence)}>
+            {taxDiffers && (
+              <Row label="Taxed as, per the documents" hint={p.taxEvidence ? tidyDates(p.taxEvidence) : undefined}>
                 {p.taxTreatment}
+                <Line tone="warn">The record says {recordClass}.</Line>
               </Row>
             )}
             {p.governingLaw && <Row label="Governing law">{p.governingLaw}</Row>}
             {p.properties.length > 0 && (
               <Row label="Property">
-                <ul className="space-y-1">
+                <ul className="flex flex-col gap-1">
                   {p.properties.map((pr, i) => (
                     <li key={i} className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0 break-words">
                         {pr.description}
                         {pr.state ? `, ${pr.state}` : ""}
                       </span>
-                      {pr.status && (
-                        <Dot tone={/sold/i.test(pr.status) ? "muted" : "good"} className="shrink-0">
-                          {pr.status}
-                        </Dot>
-                      )}
+                      {pr.status && <span className="shrink-0 text-small text-ink-2">{tidyDates(pr.status)}</span>}
                     </li>
                   ))}
                 </ul>
               </Row>
             )}
-            {p.keyTerms.length > 0 && (
-              <Disclosure label="Key terms" count={p.keyTerms.length}>
-                <List items={p.keyTerms} />
-              </Disclosure>
-            )}
-            {p.issues.length > 0 && (
-              <Disclosure label={<Dot tone="warn">Issues</Dot>} count={p.issues.length}>
-                <List items={p.issues} />
-              </Disclosure>
-            )}
           </Rows>
-          {page.profileError && (
-            <div className={`border-t ${t.line}`}>
-              <ErrorLine>{page.profileError}</ErrorLine>
-            </div>
+          {p.keyTerms.length > 0 && (
+            <Disclosure label="Key terms" count={p.keyTerms.length}>
+              <TextList items={p.keyTerms} />
+            </Disclosure>
           )}
-        </>
+          {p.issues.length > 0 && (
+            <Disclosure label="Notes from the documents" count={p.issues.length}>
+              <TextList items={p.issues} />
+            </Disclosure>
+          )}
+          {page.profileError && <p className="text-small text-negative">{page.profileError}</p>}
+        </div>
       ) : page.profiling ? (
-        <Empty>Reading documents…</Empty>
+        <p className="text-body text-ink-2">Reading the documents…</p>
       ) : page.profileError ? (
-        <ErrorLine>{page.profileError}</ErrorLine>
+        <p className="text-body text-negative">{page.profileError}</p>
       ) : page.aiDown ? (
-        <Empty>Document reading is paused.</Empty>
+        <p className="text-body text-ink-2">Document reading is paused.</p>
       ) : page.docs.length ? (
-        <Empty>Not read yet: Read documents fills this in from what's on file.</Empty>
+        <p className="max-w-[68ch] text-body text-pretty text-ink-2">
+          Not read yet. Read documents sends the governing documents to Anthropic’s Claude, which writes a short summary here: what it is, who owns and runs it. You check it; nothing it reads goes on the record by itself.
+        </p>
       ) : (
-        <Empty
-          action={
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-body text-ink-2">No documents yet. Add the operating agreement, and BFO can summarize what the entity is from it.</p>
+          {canRead && (
             <Button icon="upload" onClick={() => goToTab("documents")}>
               Add documents
             </Button>
-          }
-        >
-          No documents yet. Add the operating agreement and BFO reads what the entity is from it.
-        </Empty>
+          )}
+        </div>
       )}
-    </Section>
+    </Card>
   );
 }
 
-function List({ items }: { items: string[] }) {
-  const t = useTone();
+function TextList({ items }: { items: string[] }) {
   return (
-    <ul className={`list-disc space-y-1 pb-3 pl-9 pr-5 text-[12.5px] leading-snug ${t.soft}`}>
+    <ul className="mt-1 flex max-w-[68ch] list-disc flex-col gap-1 pl-5 text-body text-ink-2">
       {items.map((s, i) => (
-        <li key={i}>{s}</li>
+        <li key={i}>{tidyDates(s)}</li>
       ))}
     </ul>
   );
@@ -1086,67 +1376,61 @@ function List({ items }: { items: string[] }) {
 
 function ToDo() {
   const { view, asset, goToTab } = useEntity();
-  const t = useTone();
-  const { checklist } = view;
   const forming = !!formingNow(asset);
   const coming = forming ? view.missing.filter((i) => WITH_FORMATION.has(i.key)) : [];
   const missing = forming ? view.missing.filter((i) => !WITH_FORMATION.has(i.key)) : view.missing;
   const editField = useEditField();
-  const done = checklist.filter((i) => i.done);
+  const done = view.checklist.filter((i) => i.done);
+  const toAddresses = () => document.getElementById("addresses")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const canAct = !isPartner() && !asset.archived;
 
-  // Each item opens exactly where it's fixed: its filing row, the Addresses card, or its field in the edit form.
+  // Each item opens exactly where it's fixed: its document row, the Addresses card, or its field in the edit form.
   function open(item: (typeof missing)[number]) {
     if (item.filing) return goToTab("documents", `filing-${item.key}`, "center");
     if (["trustees", "grantors", "beneficiaries"].includes(item.key)) return goToTab("people");
-    if (item.key.startsWith("foreign:")) return document.getElementById("addresses")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (item.key.startsWith("foreign:") || item.key.startsWith("decide:")) return toAddresses();
     editField(item.key);
   }
 
   return (
-    <Section id="todo" title="To do" count={missing.length} className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20">
-      <Rows>
-        {missing.length === 0 ? (
-          <div className="px-5 py-3">
-            <Dot tone="good">Record complete</Dot>
-          </div>
-        ) : (
-          missing.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => open(item)}
-              className={`group flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left text-[13px] transition-colors max-sm:min-h-[44px] ${t.text} ${t.hover}`}
-            >
-              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              <Icon name="chevronRight" className={`h-3 w-3 ${t.faint}`} />
-            </button>
-          ))
-        )}
-        {coming.length > 0 && (
-          <Disclosure label="Comes with the formation" count={coming.length}>
-            <ul className="pb-2">
-              {coming.map((item) => (
-                <li key={item.key} className={`flex items-center gap-2.5 px-5 py-1.5 text-[12.5px] ${t.muted}`}>
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#818cf8]" aria-hidden />
-                  <span className="min-w-0 truncate">{item.label}</span>
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        )}
-        {done.length > 0 && (
-          <Disclosure label="Done" count={done.length}>
-            <ul className="pb-2">
-              {done.map((item) => (
-                <li key={item.key} className={`flex items-center gap-2.5 px-5 py-1.5 text-[12.5px] ${t.muted}`}>
-                  <Icon name="check" className={`h-3 w-3 ${t.dark ? "text-emerald-400" : "text-emerald-600"}`} strokeWidth={2.25} />
-                  <span className="min-w-0 truncate">{item.label}</span>
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        )}
-      </Rows>
-    </Section>
+    <Card id="todo" title="To do" count={missing.length} countTone="attention" flush className="scroll-mt-[96px]">
+      {missing.length === 0 ? (
+        <p className="px-5 py-3 text-body text-ink-2 touch:px-4">Nothing left: the record is complete.</p>
+      ) : (
+        <List label="To do">
+          {missing.map((item) => (
+            <ListRow key={item.key} title={item.label} onClick={canAct ? () => open(item) : undefined} />
+          ))}
+        </List>
+      )}
+      {(coming.length > 0 || done.length > 0) && (
+        <div className="flex flex-col gap-1 border-t border-line px-5 py-2 touch:px-4">
+          {coming.length > 0 && (
+            <Disclosure label="Comes with the formation" count={coming.length}>
+              <ul className="pb-2 text-small text-ink-2">
+                {coming.map((i) => (
+                  <li key={i.key} className="py-1">
+                    {i.label}
+                  </li>
+                ))}
+              </ul>
+            </Disclosure>
+          )}
+          {done.length > 0 && (
+            <Disclosure label="Done" count={done.length}>
+              <ul className="pb-2 text-small text-ink-2">
+                {done.map((i) => (
+                  <li key={i.key} className="py-1">
+                    {i.label}
+                  </li>
+                ))}
+              </ul>
+            </Disclosure>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
+
+

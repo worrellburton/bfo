@@ -429,7 +429,11 @@ function DeadlineRow({ o, where, onMark }: { o: Obligation; where: string; onMar
           {o.lateFee && <p>Late: {o.lateFee}.</p>}
           {o.consequence && <p>{o.consequence}</p>}
           {o.note && <p>{o.note}</p>}
-          {last?.status === "current" && last.sourceAt && <p>Counted as current because {where}'s record, read {stamp(last.sourceAt)}, shows its filings current. Record it when you have the confirmation.</p>}
+          {last?.status === "current" && last.sourceAt && (
+            <p>
+              Counted as current because {where}'s record, read {stamp(last.sourceAt)}, shows its filings current. Record it when you have the confirmation.
+            </p>
+          )}
           {o.url && (
             <p>
               <a href={o.url} target="_blank" rel="noopener noreferrer" className="text-accent underline decoration-1 underline-offset-[3px] hover:text-accent-hover">
@@ -678,19 +682,30 @@ function AgentCard() {
   const startedAt = known ? (svc?.started_at ?? null) : (cached?.startedAt ?? null);
   const reason = raStatus === "failed" ? ((known ? svc?.rejection_reason : cached?.rejectionReason) ?? page.palmInbox.find((e) => e.rejection_reason)?.rejection_reason) : null;
 
-  const action = configured && canMove ? (
-    <Button size="sm" busy={page.palmBusy === "move"} busyLabel="Requesting…" disabled={busy} onClick={() => void page.moveAgentToPalm()}>
-      {svc?.status === "failed" ? "Try again" : "Make Palm the agent"}
-    </Button>
-  ) : undefined;
+  const action =
+    configured && canMove ? (
+      <Button size="sm" busy={page.palmBusy === "move"} busyLabel="Requesting…" disabled={busy} onClick={() => void page.moveAgentToPalm()}>
+        {svc?.status === "failed" ? "Try again" : "Make Palm the agent"}
+      </Button>
+    ) : undefined;
   const menu: MenuItem[] | undefined =
-    configured && page.palmBusinessId ? [{ label: page.palmBusy === "refresh" ? "Refreshing…" : "Refresh from Palm", icon: "sync", disabled: busy, onSelect: () => void page.refreshPalm(page.palmBusinessId!) }] : undefined;
+    configured && page.palmBusinessId
+      ? [{ label: page.palmBusy === "refresh" ? "Refreshing…" : "Refresh from Palm", icon: "sync", disabled: busy, onSelect: () => void page.refreshPalm(page.palmBusinessId!) }]
+      : undefined;
 
   let body: ReactNode;
   if (!status) body = <p className="text-body text-ink-2">Checking the Palm connection…</p>;
   else if (status.error)
     body = (
-      <Empty action={<Button size="sm" variant="quiet" onClick={() => void page.loadPalmStatus()}>Try again</Button>}>Couldn't reach Palm just now.</Empty>
+      <Empty
+        action={
+          <Button size="sm" variant="quiet" onClick={() => void page.loadPalmStatus()}>
+            Try again
+          </Button>
+        }
+      >
+        Couldn't reach Palm just now.
+      </Empty>
     );
   else if (forming)
     body = (
@@ -719,10 +734,22 @@ function AgentCard() {
           <Row label="Change">
             <div className="flex flex-col gap-1">
               <Status tone={raStatus === "failed" ? "negative" : raStatus === "pending" || raStatus === "termination_requested" ? "warning" : "neutral"}>
-                {raStatus === "pending" ? "Filed with the state" : raStatus === "failed" ? "Didn't go through" : raStatus === "termination_requested" ? "Resigning" : raStatus === "terminated" ? "Ended" : "Canceled"}
+                {raStatus === "pending"
+                  ? "Filed with the state"
+                  : raStatus === "failed"
+                    ? "Didn't go through"
+                    : raStatus === "termination_requested"
+                      ? "Resigning"
+                      : raStatus === "terminated"
+                        ? "Ended"
+                        : "Canceled"}
               </Status>
-              {raStatus === "pending" && <p className="text-small text-ink-2">Palm is filing the change. It can take a few business days; the current agent stays on file until the state accepts it.</p>}
-              {raStatus === "failed" && <p className="text-small text-ink-2">{reason ? `The state didn't accept it: ${reason}.` : "Palm couldn't complete the change."} Palm Console shows the reason under this business.</p>}
+              {raStatus === "pending" && (
+                <p className="text-small text-ink-2">Palm is filing the change. It can take a few business days; the current agent stays on file until the state accepts it.</p>
+              )}
+              {raStatus === "failed" && (
+                <p className="text-small text-ink-2">{reason ? `The state didn't accept it: ${reason}.` : "Palm couldn't complete the change."} Palm Console shows the reason under this business.</p>
+              )}
             </div>
           </Row>
         )}
@@ -756,7 +783,14 @@ function AgentCard() {
 
 // ── The state's record ───────────────────────────────────────────────────
 
-const ENTITY_WORD: Record<string, string> = { llc: "LLC", "limited liability company": "LLC", corporation: "Corporation", corp: "Corporation", lp: "Limited partnership", "limited partnership": "Limited partnership" };
+const ENTITY_WORD: Record<string, string> = {
+  llc: "LLC",
+  "limited liability company": "LLC",
+  corporation: "Corporation",
+  corp: "Corporation",
+  lp: "Limited partnership",
+  "limited partnership": "Limited partnership",
+};
 
 function StateRecordCard() {
   const { page, asset } = useEntity();
@@ -804,7 +838,9 @@ function StateRecordCard() {
         </div>
       )}
       {!rec ? (
-        choices.length ? null : <p className="text-body text-ink-2">Not read yet. Reading it shows its status, standing, agent and the people the state lists.</p>
+        choices.length ? null : (
+          <p className="text-body text-ink-2">Not read yet. Reading it shows its status, standing, agent and the people the state lists.</p>
+        )
       ) : (
         <>
           <Rows>
@@ -1000,7 +1036,13 @@ function Monitoring() {
         {regs?.length === 0 && <p className="py-2 text-body text-ink-2">No state registrations to watch yet.</p>}
         {regs?.map((r) => {
           const change = asset.palmMonitor?.[r.state]?.lastChange;
-          const lines = change && change.mode === mode ? change.changes.map((c) => c.summary || c.attribute).filter(Boolean).slice(0, 3) : [];
+          const lines =
+            change && change.mode === mode
+              ? change.changes
+                  .map((c) => c.summary || c.attribute)
+                  .filter(Boolean)
+                  .slice(0, 3)
+              : [];
           return (
             <div key={r.state} className="flex items-start gap-3 py-3 first:pt-0">
               <div className="min-w-0 flex-1">
@@ -1049,7 +1091,15 @@ function Monitoring() {
         )}
       </Rows>
       {error && (
-        <Banner tone="negative" className="mt-3" action={<Button size="sm" variant="quiet" onClick={() => (setError(""), load())}>Try again</Button>}>
+        <Banner
+          tone="negative"
+          className="mt-3"
+          action={
+            <Button size="sm" variant="quiet" onClick={() => (setError(""), load())}>
+              Try again
+            </Button>
+          }
+        >
           {error}
         </Banner>
       )}

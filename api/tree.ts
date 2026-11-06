@@ -179,9 +179,8 @@ async function write(req: VercelRequest, res: VercelResponse, me: AppUser) {
     const problem = einProblem(c.to);
     if (problem) return fail(res, 400, "bad_ein", problem);
     const forms = einForms(c.to);
-    const holders = (await sb<{ id: string; name: string | null }[]>(
-      `tree_nodes?collection=eq.assets&select=id,name:data->>name&data->>ein=in.(${encodeURIComponent(forms.map((f) => `"${f}"`).join(","))})`,
-    )) ?? [];
+    const holders =
+      (await sb<{ id: string; name: string | null }[]>(`tree_nodes?collection=eq.assets&select=id,name:data->>name&data->>ein=in.(${encodeURIComponent(forms.map((f) => `"${f}"`).join(","))})`)) ?? [];
     const other = holders.find((h) => h.id !== c.id && !changes.some((x) => x.id === h.id && (x.field === "ein" || x.deleted)));
     if (other) return fail(res, 409, "ein_in_use", `${c.to} is already ${other.name || "another entity"}'s EIN.`);
   }
@@ -192,9 +191,7 @@ async function write(req: VercelRequest, res: VercelResponse, me: AppUser) {
   if (notes.refusal) return fail(res, notes.refusal.status, notes.refusal.code, notes.refusal.message);
 
   const actor =
-    (body as { source?: unknown }).source === "scan"
-      ? { id: me.id, name: `Document scan, started by ${name ?? "staff"}`, source: "system" as const }
-      : { id: me.id, name, source: "user" as const };
+    (body as { source?: unknown }).source === "scan" ? { id: me.id, name: `Document scan, started by ${name ?? "staff"}`, source: "system" as const } : { id: me.id, name, source: "user" as const };
   const rows = await applyOps([...ops, ...stamped, ...notes.stamps], actor, before);
 
   // The record people and counsel read: owner changes, and notes deleted or restored.
@@ -216,7 +213,12 @@ async function write(req: VercelRequest, res: VercelResponse, me: AppUser) {
     });
   }
   for (const e of notes.events) {
-    await audit({ actor: me, action: e.kind === "delete" ? "note.delete" : "note.restore", target: { type: "note", id: e.id, label: e.title }, summary: `${e.kind === "delete" ? "Deleted" : "Restored"} the note “${e.title}”` });
+    await audit({
+      actor: me,
+      action: e.kind === "delete" ? "note.delete" : "note.restore",
+      target: { type: "note", id: e.id, label: e.title },
+      summary: `${e.kind === "delete" ? "Deleted" : "Restored"} the note “${e.title}”`,
+    });
   }
   return res.status(200).json({ rows });
 }

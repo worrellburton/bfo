@@ -1,323 +1,178 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
-import { useTheme } from "../theme";
-import { fetchAllTxns } from "../books-batch";
-import { type Txn, money as fmtMoney, pretty, shortDate, EntityTag, Menu, entityTag, entityTagClass } from "../books-shared";
+import { Menu, displayName, entityLabel } from "../books-shared";
+import { Banner, Card, Checkbox, Empty, Page, PageHeader, SearchField, Table, Toolbar, format, useDocumentTitle, type Column } from "../ui";
 
 export function meta() {
-  return [{ title: "BFO - Books · Vendors" }];
+  return [{ title: "Vendors · BFO" }];
 }
 
-type Vendor = {
-  vendor: string;
-  count: number;
-  monthly: number[];
-  spent: number;
-  received: number;
-  last_date: string;
-  entities: string[];
-};
-
+type Vendor = { vendor: string; count: number; monthly: number[]; spent: number; received: number; last_date: string; entities: string[] };
 type Entity = { id: string; name: string };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function money(n: number): string {
-  if (Math.round(n) === 0) return "—";
-  return "$" + Math.round(n).toLocaleString("en-US");
+/** A payee that is one of the family's own entities (payments between them aren't vendor spend). */
+function relatedEntity(vendor: string, entities: Entity[]): Entity | null {
+  const v = vendor.toLowerCase().replace(/[^a-z0-9 ]/g, " ");
+  for (const e of entities) {
+    const words = entityLabel(e.name)
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !["llc", "trust", "family", "revocable", "the", "inc", "pllc"].includes(w));
+    if (words.length && words.every((w) => v.includes(w))) return e;
+  }
+  return null;
 }
 
-/** Every vendor and their monthly spend — the family's outflows by counterparty. */
+/**
+ * Everyone the family paid this year, by month: the payee, what was spent
+ * each month, refunds, and when they were last paid. Payees that are the
+ * family's own entities are marked and left out of the totals unless asked
+ * for. A row opens the vendor.
+ */
 export default function BooksVendors() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const [vendors, setVendors] = useState<Vendor[]>([]);
+  useDocumentTitle("Vendors");
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [vendors, setVendors] = useState<Vendor[] | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entity, setEntity] = useState("all");
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [q, setQ] = useState(searchParams.get("q") ?? "");
-  const [loading, setLoading] = useState(true);
+  const thisYear = new Date().getFullYear();
+  const [year, setYear] = useState(String(thisYear));
+  const [q, setQ] = useState(params.get("q") ?? "");
   const [error, setError] = useState("");
-
-  // Per-vendor drill-down: which row is open, and its lazily-loaded transactions.
-  const [openVendor, setOpenVendor] = useState<string | null>(null);
-  const [vendorTxns, setVendorTxns] = useState<Record<string, Txn[]>>({});
-  const [txnLoading, setTxnLoading] = useState<string | null>(null);
+  const [related, setRelated] = useState(false);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await authFetch("/api/books/data?report=meta");
-        if (res.ok) setEntities((await res.json()).entities ?? []);
-      } catch {
-        // filter just stays short
-      }
-    })();
+    void authFetch("/api/books/data?report=meta")
+      .then(async (r) => r.ok && setEntities((await r.json()).entities ?? []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    setLoading(true);
+    setVendors(null);
     setError("");
-    // Filters changed — cached drill-downs no longer apply.
-    setOpenVendor(null);
-    setVendorTxns({});
     void (async () => {
       try {
-        const params = new URLSearchParams({ report: "vendors", year });
-        if (entity !== "all") params.set("entity", entity);
-        const res = await authFetch(`/api/books/data?${params}`);
+        const qs = new URLSearchParams({ report: "vendors", year });
+        if (entity !== "all") qs.set("entity", entity);
+        const res = await authFetch(`/api/books/data?${qs}`);
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || "Couldn't load vendors.");
+        if (!res.ok) throw new Error(data?.message || "Couldn’t load vendors.");
         setVendors(data.vendors ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn't load vendors.");
-      } finally {
-        setLoading(false);
+        setError(err instanceof Error ? err.message : "Couldn’t load vendors.");
+        setVendors([]);
       }
     })();
   }, [entity, year]);
 
-  async function toggleVendor(name: string) {
-    if (openVendor === name) {
-      setOpenVendor(null);
-      return;
-    }
-    setOpenVendor(name);
-    if (vendorTxns[name]) return; // already loaded
-    setTxnLoading(name);
-    try {
-      const params = new URLSearchParams({ report: "transactions", q: name, year });
-      if (entity !== "all") params.set("entity", entity);
-      const all = await fetchAllTxns<Txn>(authFetch, params);
-      // The vendor key is merchant_name || name, trimmed and lower-cased as
-      // the report groups it; keep only that vendor so a substring search
-      // doesn't fold in a different one.
-      const key = name.trim().toLowerCase();
-      const list = all.filter((t) => (t.merchant_name || t.name || "").trim().toLowerCase() === key);
-      setVendorTxns((prev) => ({ ...prev, [name]: list }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't load transactions.");
-    } finally {
-      setTxnLoading(null);
-    }
-  }
-
+  const now = new Date();
+  const current = Number(year) === thisYear;
+  const lastMonth = current ? now.getMonth() : 11;
+  const relOf = useMemo(() => new Map((vendors ?? []).map((v) => [v.vendor, relatedEntity(v.vendor, entities)])), [vendors, entities]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return vendors;
-    return vendors.filter((v) => v.vendor.toLowerCase().includes(needle));
-  }, [vendors, q]);
-
+    return (vendors ?? []).filter((v) => (related || !relOf.get(v.vendor)) && (!needle || v.vendor.toLowerCase().includes(needle) || displayName(v.vendor).toLowerCase().includes(needle)));
+  }, [vendors, q, related, relOf]);
+  const relatedCount = (vendors ?? []).filter((v) => relOf.get(v.vendor)).length;
   const totals = useMemo(() => {
     const monthly = Array(12).fill(0) as number[];
     let spent = 0;
+    let received = 0;
     for (const v of shown) {
       spent += v.spent;
+      received += v.received;
       v.monthly.forEach((m, i) => (monthly[i] += m));
     }
-    return { monthly, spent };
+    return { monthly, spent, received };
   }, [shown]);
+  const anyRefunds = shown.some((v) => v.received > 0);
+  const dollars = (n: number) => format.money(n, { precision: "dollars", zero: "dash" });
 
-  const subtle = "text-gray-500";
-  const card = isDark ? "glass-card" : "glass-card";
-  const border = isDark ? "border-white/10" : "border-gray-200";
-  const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
-  const drawerBg = isDark ? "bg-white/[0.015]" : "bg-gray-50/70";
-  const field = `px-4 h-[40px] sm:h-9 rounded-full text-sm border ${isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`;
-  const num = "px-2.5 py-2 text-right whitespace-nowrap tabular-nums";
-  const faint = isDark ? "text-gray-700" : "text-gray-300";
-
-  const years = [0, 1].map((d) => String(new Date().getFullYear() - d));
-  const entityTagIcon = (name: string) => <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${entityTagClass(name, isDark)}`}>{entityTag(name)}</span>;
+  const columns: Column<Vendor>[] = [
+    {
+      key: "vendor",
+      header: "Vendor",
+      width: "240px",
+      sort: (a, b) => displayName(a.vendor).localeCompare(displayName(b.vendor)),
+      render: (v) => (
+        <span>
+          {displayName(v.vendor)}
+          {relOf.get(v.vendor) && <span className="ml-2 text-small text-ink-2">Related party</span>}
+        </span>
+      ),
+    },
+    ...MONTHS.map(
+      (m, i): Column<Vendor> => ({
+        key: m,
+        header: current && i === lastMonth ? `${m} (to ${now.getDate()})` : m,
+        align: "right",
+        width: current && i === lastMonth ? "104px" : "84px",
+        render: (v) => (i > lastMonth ? "" : <span className={v.monthly[i] ? "" : "text-ink-3"}>{dollars(v.monthly[i])}</span>),
+      }),
+    ),
+    { key: "spent", header: "Spent", align: "right", width: "104px", sort: (a, b) => a.spent - b.spent, render: (v) => <span className="font-medium">{dollars(v.spent)}</span> },
+    ...(anyRefunds ? [{ key: "in", header: "Refunds", align: "right" as const, width: "96px", render: (v: Vendor) => (v.received ? dollars(v.received) : "") }] : []),
+    { key: "last", header: "Last paid", width: "120px", sort: (a, b) => a.last_date.localeCompare(b.last_date), render: (v) => <span className="text-ink-2">{format.date(v.last_date, "short")}</span> },
+  ];
+  const yearLabel = current ? `${year} to ${format.date(now, "short")}` : year;
+  const context = vendors ? `${format.count(shown.length, "vendor", "vendors")} · ${format.money(totals.spent, { precision: "dollars" })} paid in ${yearLabel}${totals.received ? ` · ${format.money(totals.received, { precision: "dollars" })} refunded` : ""}` : undefined;
 
   return (
-    <div className="w-full">
-      <div className="mb-6">
-        <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Vendors</h1>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setSearchParams(e.target.value ? { q: e.target.value } : {}, { replace: true });
-          }}
-          placeholder="Search vendors…"
-          aria-label="Search vendors"
-          className={`${field} w-full sm:w-auto sm:min-w-[220px]`}
-        />
-        <Menu
-          value={entity}
-          isDark={isDark}
-          size="md"
-          label="Entity"
-          onChange={setEntity}
-          options={[{ value: "all", label: "All entities" }, ...entities.map((en) => ({ value: en.id, label: en.name, icon: entityTagIcon(en.name) }))]}
-        />
-        <Menu value={year} isDark={isDark} size="md" label="Year" onChange={setYear} options={years.map((y) => ({ value: y, label: y }))} />
-        {!loading && !error && (
-          <span className={`text-xs ml-auto ${subtle}`}>
-            {shown.length} vendor{shown.length === 1 ? "" : "s"}
-          </span>
-        )}
-      </div>
-
-      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
-
-      {/* Empty: a plain card — inside the 1050px table the message sat off-screen on phones. */}
-      {!loading && !error && shown.length === 0 ? (
-        <div className={`rounded-2xl border px-4 py-8 text-center text-sm rise-in ${card} ${subtle}`}>
-          {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
+    <Page width="full" header={<PageHeader title="Vendors" context={context} />}>
+      {error && <Banner tone="negative">{error}</Banner>}
+      <Card flush>
+        <div className="px-5 py-3 touch:px-4">
+          <Toolbar
+            search={
+              <SearchField
+                value={q}
+                onChange={(v) => {
+                  setQ(v);
+                  setParams(v ? { q: v } : {}, { replace: true });
+                }}
+                placeholder="Search vendors"
+                label="Search vendors"
+              />
+            }
+            filters={
+              <>
+                <Menu value={entity} label="Entity" onChange={setEntity} options={[{ value: "all", label: "All entities" }, ...entities.map((e) => ({ value: e.id, label: entityLabel(e.name) }))]} />
+                <Menu value={year} label="Period" onChange={setYear} options={[0, 1, 2].map((d) => ({ value: String(thisYear - d), label: d === 0 ? `${thisYear} to date` : String(thisYear - d) }))} />
+              </>
+            }
+          />
+          {relatedCount > 0 && (
+            <div className="mt-3">
+              <Checkbox checked={related} onChange={setRelated} label={`Include the family’s own entities (${relatedCount})`} hint="Payments between the family’s entities need their own basis (a loan, a contribution, a distribution) and aren’t vendor spend." />
+            </div>
+          )}
         </div>
-      ) : (
-        <div className={`rounded-2xl border overflow-x-auto rise-in ${card}`}>
-          <table className="text-sm min-w-[1050px] w-full">
-            <thead className={`sticky top-0 z-10 ${stickyBg}`}>
-              <tr className={`text-xs ${subtle} border-b ${border}`}>
-                <th className={`px-3 py-3 text-left font-medium sticky left-0 ${stickyBg}`}>Vendor</th>
-                {MONTHS.map((m) => (
-                  <th key={m} className="px-2.5 py-3 text-right font-medium">
-                    {m}
-                  </th>
-                ))}
-                <th className="px-2.5 py-3 text-right font-medium">Total</th>
-                <th className="px-2.5 py-3 text-right font-medium">In</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={15} className="px-4 py-4">
-                    <div className="space-y-2.5">
-                      {Array.from({ length: 6 }, (_, i) => (
-                        <div key={i} className="shimmer h-5" style={{ width: `${96 - (i % 3) * 8}%` }} />
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ) : shown.length === 0 ? (
-                error ? null : (
-                  <tr>
-                    <td colSpan={15} className={`px-4 py-8 text-center ${subtle}`}>
-                      {vendors.length > 0 ? "No vendors match that search." : "No vendors yet — sync transactions on the Transactions page first."}
-                    </td>
-                  </tr>
-                )
-              ) : (
-                <>
-                  {shown.map((v) => {
-                    const isOpen = openVendor === v.vendor;
-                    const txns = vendorTxns[v.vendor];
-                    return (
-                      <Fragment key={v.vendor}>
-                        <tr className={`border-t ${rowBorder} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
-                          <td
-                            className={`px-3 py-2 sticky left-0 max-w-[260px] ${stickyBg}`}
-                            title={v.entities.length ? `${v.count} transactions · ${v.entities.join(", ")}` : `${v.count} transactions`}
-                          >
-                            <span className="flex items-center gap-1.5 max-w-full">
-                              <button
-                                onClick={() => void toggleVendor(v.vendor)}
-                                aria-expanded={isOpen}
-                                aria-label={`Show ${v.vendor} transactions inline`}
-                                className="cursor-pointer shrink-0 w-[32px] h-[40px] -my-[12px] -ml-2 sm:w-6 sm:h-6 sm:my-0 sm:-ml-1 flex items-center justify-center rounded-md"
-                              >
-                                <svg className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                                </svg>
-                              </button>
-                              <Link to={`/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`} className="font-medium truncate hover:underline py-[13px] -my-[13px] sm:py-0 sm:my-0">
-                                {v.vendor}
-                              </Link>
-                            </span>
-                          </td>
-                          {v.monthly.map((m, i) => (
-                            <td key={i} className={`${num} ${m === 0 ? faint : ""}`}>
-                              {money(m)}
-                            </td>
-                          ))}
-                          <td className={`${num} font-semibold`}>{money(v.spent)}</td>
-                          <td className={`${num} ${v.received ? "text-emerald-500" : faint}`}>{v.received ? `+${money(v.received)}` : "—"}</td>
-                        </tr>
-                        {isOpen && (
-                          <tr>
-                            <td colSpan={15} className={`px-3 pb-4 pt-1 ${drawerBg}`}>
-                              {txnLoading === v.vendor && !txns ? (
-                                <p className={`text-sm py-3 ${subtle}`}>Loading transactions…</p>
-                              ) : txns && txns.length > 0 ? (
-                                <div className={`rounded-lg border overflow-x-auto ${border} ${stickyBg}`}>
-                                  <table className="w-full text-sm min-w-[720px]">
-                                    <thead>
-                                      <tr className={`text-xs ${subtle} border-b ${border}`}>
-                                        <th className="px-3 py-2 text-left font-medium">Date</th>
-                                        <th className="px-3 py-2 text-left font-medium">Description</th>
-                                        <th className="px-3 py-2 text-left font-medium">Account</th>
-                                        <th className="px-3 py-2 text-left font-medium">Entity</th>
-                                        <th className="px-3 py-2 text-right font-medium">Amount</th>
-                                        <th className="px-3 py-2 text-right font-medium">Balance</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {(() => {
-                                        let bal = 0;
-                                        const asc = [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.transaction_id.localeCompare(b.transaction_id));
-                                        return asc.map((t) => {
-                                          bal += t.amount; // outflow positive = money paid to the vendor
-                                          const inflow = t.amount < 0;
-                                          return (
-                                            <tr key={t.transaction_id} className={`border-t ${rowBorder}`}>
-                                              <td className={`px-3 py-2 whitespace-nowrap ${subtle}`} title={t.date}>
-                                                {shortDate(t.date)}
-                                              </td>
-                                              <td className="px-3 py-2 max-w-[320px]" title={t.name ?? undefined}>
-                                                <span className="truncate block max-w-full">{t.name || "—"}</span>
-                                              </td>
-                                              <td className={`px-3 py-2 whitespace-nowrap ${subtle}`}>{t.book_category || pretty(t.plaid_category)}</td>
-                                              <td className="px-3 py-2 whitespace-nowrap">
-                                                {t.entity_name ? <EntityTag name={t.entity_name} isDark={isDark} /> : <span className={`text-xs ${subtle}`}>—</span>}
-                                              </td>
-                                              <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${inflow ? "text-emerald-500" : ""}`}>
-                                                {inflow ? `+${fmtMoney(-t.amount, t.currency ?? "USD")}` : fmtMoney(t.amount, t.currency ?? "USD")}
-                                              </td>
-                                              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtMoney(bal, t.currency ?? "USD")}</td>
-                                            </tr>
-                                          );
-                                        });
-                                      })()}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <p className={`text-sm py-3 ${subtle}`}>No transactions found for this vendor.</p>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                  <tr className={`border-t font-semibold ${border}`}>
-                    <td className={`px-3 py-2 sticky left-0 ${stickyBg}`}>Total</td>
-                    {totals.monthly.map((m, i) => (
-                      <td key={i} className={num}>
-                        {money(m)}
-                      </td>
-                    ))}
-                    <td className={num}>{money(totals.spent)}</td>
-                    <td className={num} />
-                  </tr>
-                </>
-              )}
-            </tbody>
-          </table>
+        <div className="border-t border-line">
+          <Table
+            caption={`Vendors, ${yearLabel}`}
+            columns={columns}
+            rows={shown}
+            rowKey={(v) => v.vendor}
+            loading={!vendors}
+            stickyFirst
+            onRowClick={(v) => navigate(`/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`)}
+            totals={[`Total, ${format.count(shown.length, "vendor", "vendors")}`, ...MONTHS.map((_, i) => (i > lastMonth ? "" : dollars(totals.monthly[i]))), dollars(totals.spent), ...(anyRefunds ? [dollars(totals.received)] : []), ""]}
+            phoneRow={(v) => ({
+              title: displayName(v.vendor),
+              secondary: [`Last paid ${format.date(v.last_date, "short")}`, v.entities.length > 1 ? `${v.entities.length} entities` : v.entities[0] ? entityLabel(v.entities[0]) : null, relOf.get(v.vendor) ? "Related party" : null].filter(Boolean).join(" · "),
+              trailing: dollars(v.spent),
+              to: `/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`,
+            })}
+            empty={<Empty size="section">{vendors && vendors.length ? `No vendors match “${q}”.` : "No vendor payments in this period yet."}</Empty>}
+          />
         </div>
-      )}
-    </div>
+      </Card>
+      <p className="text-small text-ink-2">Spent counts posted money out filed as income or expense; transfers between the family’s own accounts aren’t vendors. Taxes paid are included, so the total won’t match the expenses on the profit and loss.</p>
+    </Page>
   );
 }

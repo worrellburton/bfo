@@ -20,7 +20,15 @@ import {
 
 // Made-up records only.
 const trust: EntityRec = { id: "t", name: "Northwind Family Revocable Trust", type: "Trust", state: "Arizona", trustees: "Alex Rivera and Sam Rivera", grantors: "Alex Rivera, Sam Rivera" };
-const holding: EntityRec = { id: "h", name: "Northwind Holdings, LLC", type: "LLC", state: "AZ", ownerId: "t", llcType: "Disregarded Entity", members: [{ name: "Alex Rivera and Sam Rivera", percent: null, role: "member" }] };
+const holding: EntityRec = {
+  id: "h",
+  name: "Northwind Holdings, LLC",
+  type: "LLC",
+  state: "AZ",
+  ownerId: "t",
+  llcType: "Disregarded Entity",
+  members: [{ name: "Alex Rivera and Sam Rivera", percent: null, role: "member" }],
+};
 const venture: EntityRec = {
   id: "v",
   name: "Alder Ventures, LLC",
@@ -66,7 +74,15 @@ describe("the entities list", () => {
   });
 
   it("flags owners' shares that don't add up to 100%", () => {
-    const odd = { ...venture, llcType: "Partnership", members: [{ name: "Northwind Holdings, LLC", percent: 10, role: "member" }, { name: "Jordan Lee", percent: 20, role: "member" }, { name: "Casey Kim", percent: 60, role: "member" }] };
+    const odd = {
+      ...venture,
+      llcType: "Partnership",
+      members: [
+        { name: "Northwind Holdings, LLC", percent: 10, role: "member" },
+        { name: "Jordan Lee", percent: 20, role: "member" },
+        { name: "Casey Kim", percent: 60, role: "member" },
+      ],
+    };
     expect(recordsOf(odd, new Map([...all, ["v", odd]])).conflicts.map((c) => c.title)).toContain("Owners' shares add up to 90%");
   });
 

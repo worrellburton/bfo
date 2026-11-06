@@ -2268,7 +2268,7 @@ export function useEntityPage() {
   async function finishClosing() {
     const current = assetRef.current;
     if (!current?.closing) return;
-    const left = stepsLeft(current);
+    const left = stepsLeft({ ...current, owned: ownedNow(), ownerName: current.ownerId ? assetNames[current.ownerId] : null });
     const ok = await confirmDialog({
       title: `Mark ${current.name} dissolved?`,
       message: "Its status becomes Dissolved: it drops out of compliance checks and the daily state check, and its record stays here.",

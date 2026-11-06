@@ -10,7 +10,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { canWrite, getUser, isAdmin } from "../auth";
-import { Banner, Button, Card, Checkbox, Empty, Field, Input, Page, PageHeader, Segmented, Select, Sheet, Skeleton, Textarea, Toolbar, format, toast, useDocumentTitle, usePhone, type MenuItem } from "../ui";
+import {
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  Empty,
+  Field,
+  Input,
+  Page,
+  PageHeader,
+  Segmented,
+  Select,
+  Sheet,
+  Skeleton,
+  Textarea,
+  Toolbar,
+  format,
+  toast,
+  useDocumentTitle,
+  usePhone,
+  type MenuItem,
+} from "../ui";
 
 export function meta() {
   return [{ title: "Notes · BFO" }];
@@ -108,8 +129,7 @@ export default function Notes() {
     }
   }
 
-  const byline = (n: Note) =>
-    [n.createdBy?.name ?? "Author not recorded", n.createdAt ? format.dateTime(new Date(n.createdAt), { zone: true }) : ""].filter(Boolean).join(" · ");
+  const byline = (n: Note) => [n.createdBy?.name ?? "Author not recorded", n.createdAt ? format.dateTime(new Date(n.createdAt), { zone: true }) : ""].filter(Boolean).join(" · ");
 
   const composer = <Composer entities={entities} onClose={() => setComposing(false)} phone={phone} />;
 
@@ -120,7 +140,7 @@ export default function Notes() {
         <PageHeader
           title="Notes"
           context="Shared with the office team: owners, admins, staff and read-only viewers. Partners can't see notes."
-          create={writer ? { label: "New note", onClick: () => setComposing(true) } : undefined}
+          create={writer && kept.length > 0 ? { label: "New note", onClick: () => setComposing(true) } : undefined}
         />
       }
     >
@@ -182,7 +202,9 @@ export default function Notes() {
       ) : (
         <div className="flex flex-col gap-4">
           {shown.map((n) => {
-            const menu: MenuItem[] = mayChange(n) ? [n.deletedAt ? { label: "Restore", onSelect: () => void setDeleted(n, false) } : { label: "Delete", danger: true, onSelect: () => void setDeleted(n, true) }] : [];
+            const menu: MenuItem[] = mayChange(n)
+              ? [n.deletedAt ? { label: "Restore", onSelect: () => void setDeleted(n, false) } : { label: "Delete", danger: true, onSelect: () => void setDeleted(n, true) }]
+              : [];
             return (
               <Card key={n.id} title={n.title || "Untitled note"} menu={menu.length ? menu : undefined}>
                 <div className="flex flex-col gap-3">
@@ -268,7 +290,13 @@ function Composer({ entities, onClose, phone }: { entities: { id: string; name: 
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Entity" optional>
-          <Select label="Entity" value={entityId || null} placeholder="None" onChange={setEntityId} options={[{ value: "", label: "None" }, ...entities.map((e) => ({ value: e.id, label: e.name }))]} />
+          <Select
+            label="Entity"
+            value={entityId || null}
+            placeholder="None"
+            onChange={setEntityId}
+            options={[{ value: "", label: "None" }, ...entities.map((e) => ({ value: e.id, label: e.name }))]}
+          />
         </Field>
         <Field label="Tax year" optional>
           <Select
@@ -280,7 +308,12 @@ function Composer({ entities, onClose, phone }: { entities: { id: string; name: 
           />
         </Field>
       </div>
-      <Checkbox checked={privileged} onChange={setPrivileged} label="Privileged and confidential: attorney-client communication" hint="Marks the note so everyone reading it knows; it's still shared with the office team." />
+      <Checkbox
+        checked={privileged}
+        onChange={setPrivileged}
+        label="Privileged and confidential: attorney-client communication"
+        hint="Marks the note so everyone reading it knows; it's still shared with the office team."
+      />
       {error && <Banner tone="negative">{error}</Banner>}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button onClick={onClose}>Cancel</Button>

@@ -18,14 +18,14 @@ export type GameDocument = { fileName: string; pages: number; sentBy: string | n
 export const CHROME: CSSProperties = { background: "rgb(0 0 0 / 0.6)" };
 
 /** The document: its title, length, sender and where the signature goes. */
-function DocumentCard({ title, document }: { title: string; document?: GameDocument }) {
+function DocumentCard({ title, document, showTitle = true }: { title: string; document?: GameDocument; /** Off under a heading that already names it. */ showTitle?: boolean }) {
   return (
     <div className="flex w-full items-start gap-4 rounded-card border border-line bg-raised p-4 text-left">
       <span aria-hidden className="flex h-14 w-11 shrink-0 items-center justify-center rounded-mark bg-paper text-caption font-semibold text-brand-ink">
         PDF
       </span>
       <span className="min-w-0">
-        <span className="block text-body font-medium break-words text-ink">{title}</span>
+        {showTitle ? <span className="block text-body font-medium break-words text-ink">{title}</span> : document && <span className="block text-body font-medium break-all text-ink">{document.fileName}</span>}
         {document && (
           <span className="mt-1 block text-small text-ink-2">
             {format.count(document.pages, "page")}
@@ -33,7 +33,7 @@ function DocumentCard({ title, document }: { title: string; document?: GameDocum
             {document.signPages.length > 0 ? ` · your signature goes on page ${format.list(document.signPages.map(String))}` : ""}
           </span>
         )}
-        {document && <span className="mt-1 block text-caption break-all text-ink-3">{document.fileName}</span>}
+        {document && showTitle && <span className="mt-1 block text-caption break-all text-ink-3">{document.fileName}</span>}
       </span>
     </div>
   );
@@ -92,13 +92,13 @@ export function TitleScreen({
   const getting = kind === "film" ? "Getting the theater ready…" : "Getting the track ready…";
   return (
     <div data-theme="dark" className="ds absolute inset-0 z-30 flex flex-col overflow-y-auto bg-page text-ink">
-      {preview && <span className="absolute top-4 right-4 rounded-full bg-sunken px-3 py-1 text-caption font-medium text-ink-2">Preview · {kind === "film" ? "Theater" : "Race"}</span>}
+      {preview && <span className="absolute top-4 right-4 shrink-0 rounded-full bg-sunken px-3 py-1 text-caption font-medium whitespace-nowrap text-ink-2">Preview · {kind === "film" ? "Theater" : "Race"}</span>}
       <div className="m-auto flex w-full max-w-[600px] flex-col items-center gap-6 px-6 py-12 text-center">
         <p className="text-small text-ink-2">{brand ? `A document from ${brand}` : "A document from Burton Family Office"}</p>
         <h1 className="font-brand text-balance text-ink" style={{ fontSize: "clamp(32px, 5vw, 52px)", lineHeight: 1.08 }}>
           {title}
         </h1>
-        <DocumentCard title={title} document={document} />
+        <DocumentCard title={title} document={document} showTitle={false} />
         <p className="text-body text-ink-2">{what} It’s optional: you can read and sign straight away.</p>
         <WaysOut
           document={document}
@@ -155,7 +155,7 @@ export function PhoneScreen({
       <div className="mx-auto flex max-w-[520px] flex-col gap-6 px-4 pt-6" style={{ paddingBottom: "max(32px, env(safe-area-inset-bottom))" }}>
         <div className="flex items-center justify-between gap-3">
           <p className="text-small text-ink-2">{brand ? `A document from ${brand}` : "A document from Burton Family Office"}</p>
-          {preview && <span className="rounded-full bg-sunken px-3 py-1 text-caption font-medium text-ink-2">Preview · {kind === "film" ? "Theater" : "Race"}</span>}
+          {preview && <span className="shrink-0 rounded-full bg-sunken px-3 py-1 text-caption font-medium whitespace-nowrap text-ink-2">Preview · {kind === "film" ? "Theater" : "Race"}</span>}
         </div>
         <DocumentCard title={title} document={document} />
         <div>

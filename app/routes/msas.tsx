@@ -26,7 +26,8 @@ const SIDES: { key: "income" | "expense" | "intercompany"; label: string; note?:
 ];
 const sideOf = (m: Msa) => (m.intercompany ? "intercompany" : m.direction);
 
-const cents = (n: number | null) => (n == null ? "" : format.money(n, { zero: "dash" }));
+/** The schedule is a statement: whole dollars, zero as a dash, nothing where the agreement isn't in effect. The fee itself is in cents. */
+const cents = (n: number | null) => (n == null ? "" : format.money(n, { precision: "dollars", zero: "dash" }));
 const per: Record<string, string> = { Monthly: "a month", Quarterly: "a quarter", Annually: "a year", "One-time": "one time" };
 
 export default function MSAs() {
@@ -96,20 +97,36 @@ export default function MSAs() {
 
   const parties = (m: Msa) => (m.direction === "income" ? `${m.entity} manages; ${m.counterparty} pays` : `${m.counterparty} manages; ${m.entity} pays`);
   const terms = (m: Msa) =>
-    [m.amount != null ? `${format.money(m.amount)}${m.frequency ? ` ${per[m.frequency]}` : ""}` : "Fee not recorded", m.effective ? `from ${format.date(m.effective, "medium")}` : "", m.ends ? `to ${format.date(m.ends, "medium")}` : m.term].filter(Boolean).join(" · ");
-  const flag = (m: Msa) => (m.stage === "unsigned-active" ? <Status tone="warning">Active, not signed</Status> : m.stage === "terminated" ? <Status tone="neutral">Terminated</Status> : m.stage === "draft" ? <Status tone="neutral">Draft</Status> : null);
+    [
+      m.amount != null ? `${format.money(m.amount)}${m.frequency ? ` ${per[m.frequency]}` : ""}` : "Fee not recorded",
+      m.effective ? `from ${format.date(m.effective, "medium")}` : "",
+      m.ends ? `to ${format.date(m.ends, "medium")}` : m.term,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const flag = (m: Msa) =>
+    m.stage === "unsigned-active" ? (
+      <Status tone="warning">Active, not signed</Status>
+    ) : m.stage === "terminated" ? (
+      <Status tone="neutral">Terminated</Status>
+    ) : m.stage === "draft" ? (
+      <Status tone="neutral">Draft</Status>
+    ) : null;
 
-  const head = "sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised px-3 text-right text-caption font-medium whitespace-nowrap";
+  const head = "sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised px-2 text-right text-caption font-medium whitespace-nowrap";
   const table = (
     <Card flush>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-body text-ink">
+        <table className="w-full min-w-[1060px] border-separate border-spacing-0 text-body text-ink">
           <caption className="sr-only">
             Contracted fees by month, {year}. Months after {MONTHS[Math.max(0, lastActual)]} are projected.
           </caption>
           <thead>
             <tr>
-              <th scope="col" className="sticky top-0 left-0 z-sticky h-8 w-[300px] min-w-[300px] border-r border-b border-r-line border-b-line-strong bg-raised pr-3 pl-5 text-left text-caption font-medium text-ink-2">
+              <th
+                scope="col"
+                className="sticky top-0 left-0 z-sticky h-8 w-[248px] min-w-[248px] border-r border-b border-r-line border-b-line-strong bg-raised pr-3 pl-5 text-left text-caption font-medium text-ink-2"
+              >
                 Agreement
               </th>
               {MONTHS.map((mo, i) => (
@@ -144,7 +161,10 @@ export default function MSAs() {
                         {flag(m) && <span className="mt-1 block">{flag(m)}</span>}
                       </td>
                       {cells.map((c, i) => (
-                        <td key={i} className={cx("border-b border-line px-3 py-2 text-right align-top whitespace-nowrap tabular-nums", c === 0 ? "text-ink-3" : i > lastActual ? "text-ink-2" : "text-ink")}>
+                        <td
+                          key={i}
+                          className={cx("border-b border-line px-2 py-2 text-right align-top whitespace-nowrap tabular-nums", c === 0 ? "text-ink-3" : i > lastActual ? "text-ink-2" : "text-ink")}
+                        >
                           {cents(c)}
                         </td>
                       ))}
@@ -156,7 +176,7 @@ export default function MSAs() {
                   <tr className="font-semibold">
                     <td className="sticky left-0 border-t border-r border-b border-t-line-strong border-r-line border-b-line bg-raised py-2 pr-3 pl-5">Total {s.label.toLowerCase()}</td>
                     {totals.map((t, i) => (
-                      <td key={i} className={cx("border-t border-b border-t-line-strong border-b-line px-3 py-2 text-right whitespace-nowrap tabular-nums", t === 0 && "text-ink-3")}>
+                      <td key={i} className={cx("border-t border-b border-t-line-strong border-b-line px-2 py-2 text-right whitespace-nowrap tabular-nums", t === 0 && "text-ink-3")}>
                         {cents(t)}
                       </td>
                     ))}
@@ -216,7 +236,15 @@ export default function MSAs() {
     >
       <div className="flex flex-col gap-4">
         <Toolbar
-          filters={<Select size="sm" label="Year" value={String(year)} onChange={(v) => setYear(Number(v))} options={years.map((y) => ({ value: String(y), label: String(y), hint: y > thisYear ? "Projected" : undefined }))} />}
+          filters={
+            <Select
+              size="sm"
+              label="Year"
+              value={String(year)}
+              onChange={(v) => setYear(Number(v))}
+              options={years.map((y) => ({ value: String(y), label: String(y), hint: y > thisYear ? "Projected" : undefined }))}
+            />
+          }
           view={
             <Segmented
               label="Agreements"
@@ -230,7 +258,8 @@ export default function MSAs() {
           }
         />
         <p className="text-small text-pretty text-ink-2">
-          Fees sit in the months they&apos;re billed: monthly every month, quarterly every third month from the effective date, annually on the anniversary, one-time once. Each agreement stops at its termination or at the end of a fixed term. Nothing is prorated.
+          Fees sit in the months they&apos;re billed: monthly every month, quarterly every third month from the effective date, annually on the anniversary, one-time once. Each agreement stops at its
+          termination or at the end of a fixed term. Nothing is prorated.
           {year >= thisYear && lastActual < 11 ? ` Months after ${MONTHS[Math.max(0, lastActual)]} ${year} are projected.` : ""}
         </p>
         {all === null ? (

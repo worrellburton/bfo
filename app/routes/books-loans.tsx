@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch, canWrite } from "../auth";
-import { useTheme } from "../theme";
-import { TxnTable, midDate, money, type Txn } from "../books-shared";
+import { Menu, TxnTable, changedToast, displayName, entityLabel, ledgerMoney, memoText, txnCount, type Txn } from "../books-shared";
+import { Banner, Button, Card, ChoiceTiles, Dialog, Empty, IconButton, Input, List, ListRow, Page, PageHeader, Row, Rows, SearchField, Skeleton, Switch, Table, confirm, format, toast, useDocumentTitle, type Column } from "../ui";
 
 export function meta() {
-  return [{ title: "BFO - Books · Loans" }];
+  return [{ title: "Loans · BFO" }];
 }
 
 type Loan = {
@@ -18,108 +18,370 @@ type Loan = {
   first_date: string | null;
   last_date: string | null;
   transactions: Txn[];
+  direction?: string | null;
+  holder_entity_name?: string | null;
+  counterparty?: string | null;
+  rate?: number | null;
+  start_date?: string | null;
+  maturity_date?: string | null;
+  starting_balance_as_of?: string | null;
+  hidden_reason?: string | null;
+  notes?: string | null;
+  unattached?: Txn[];
 };
+type Entity = { id: string; name: string };
+type LoanRule = { id: string; match: string; loan_id: string | null };
+
+const money = (n: number) => format.money(n);
+const keyOf = (l: Loan) => l.id ?? l.name;
 
 /**
- * Search-and-attach: find any synced transaction and connect it to a loan.
- * Results come from the same transactions report the Transactions page uses.
+ * Loans the family has made (and owes): each with who holds it, its terms,
+ * what was lent and repaid, and what's outstanding. Rows filed to Loans but
+ * not attached to a loan are listed, so a balance never sits still while
+ * repayments come in.
  */
-function TxnFinder({ loanId, attached, isDark, onAttached, onError }: { loanId: string; attached: Set<string>; isDark: boolean; onAttached: () => void; onError: (message: string) => void }) {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<Txn[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [attaching, setAttaching] = useState<string | null>(null);
-  // The parent hands a fresh Set every render; key the search on its
-  // contents so an unrelated parent re-render doesn't re-run the query.
-  const attachedRef = useRef(attached);
-  attachedRef.current = attached;
-  const attachedKey = [...attached].sort().join("|");
+export default function BooksLoans() {
+  useDocumentTitle("Loans");
+  const writable = canWrite();
+  const [loans, setLoans] = useState<Loan[] | null>(null);
+  const [rules, setRules] = useState<LoanRule[]>([]);
+  const [registry, setRegistry] = useState<Array<{ id: string; name: string }>>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [loose, setLoose] = useState<Txn[] | null>(null);
+  const [error, setError] = useState("");
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Loan | "new" | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
 
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const [loansRes, metaRes, looseRes] = await Promise.all([authFetch("/api/books/data?report=loans"), authFetch("/api/books/data?report=meta"), authFetch("/api/books/ledger?report=loan-activity").catch(() => null)]);
+      const data = await loansRes.json().catch(() => ({}));
+      if (!loansRes.ok) throw new Error(data?.message || "Couldn’t load the loans.");
+      setLoans(data.loans ?? []);
+      setRules(data.rules ?? []);
+      if (metaRes.ok) {
+        const m = await metaRes.json();
+        setRegistry(m.loans ?? []);
+        setCategories(m.categories ?? []);
+        setEntities(m.entities ?? []);
+      }
+      if (looseRes?.ok) setLoose(((await looseRes.json()).rows ?? []) as Txn[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn’t load the loans.");
+      setLoans([]);
+    }
+  }, []);
   useEffect(() => {
-    if (!q.trim()) {
-      setResults([]);
+    void load();
+  }, [load]);
+
+  async function post(url: string, body: Record<string, unknown>) {
+    const res = await authFetch(url, { method: "POST", body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || "That didn’t save.");
+    return data;
+  }
+
+  const receivable = (loans ?? []).filter((l) => l.direction !== "payable");
+  const payable = (loans ?? []).filter((l) => l.direction === "payable");
+  const owedTo = receivable.reduce((s, l) => s + l.outstanding, 0);
+  const owedBy = payable.reduce((s, l) => s + l.outstanding, 0);
+  const attachedIds = new Set((loans ?? []).flatMap((l) => [...l.transactions, ...(l.unattached ?? [])].map((t) => t.transaction_id)));
+  const orphans = (loose ?? []).filter((t) => !attachedIds.has(t.transaction_id));
+  const open = (loans ?? []).find((l) => keyOf(l) === openKey) ?? null;
+
+  const columns: Column<Loan>[] = [
+    {
+      key: "name",
+      header: "Loan",
+      render: (l) => (
+        <span>
+          {l.name}
+          <span className="block text-small text-ink-2">{[l.holder_entity_name ? `Held by ${entityLabel(l.holder_entity_name)}` : "Holder not recorded", l.id ? null : "found from account categories", l.show_on_report ? null : "left off the Treasury report"].filter(Boolean).join(" · ")}</span>
+        </span>
+      ),
+    },
+    { key: "start", header: "Starting balance", align: "right", width: "150px", render: (l) => format.money(l.starting_balance, { zero: "dash" }) },
+    { key: "lent", header: "Lent", align: "right", width: "130px", render: (l) => format.money(l.advanced, { zero: "dash" }) },
+    { key: "repaid", header: "Repaid", align: "right", width: "130px", render: (l) => format.money(l.repaid, { zero: "dash" }) },
+    { key: "out", header: "Outstanding", align: "right", width: "150px", sort: (a, b) => a.outstanding - b.outstanding, render: (l) => <span className="font-medium">{money(l.outstanding)}</span> },
+  ];
+
+  const context = loans ? [`Owed to the family ${format.money(owedTo)}`, payable.length ? `owed by the family ${format.money(owedBy)}` : null, format.count(loans.length, "loan", "loans")].filter(Boolean).join(" · ") : undefined;
+  return (
+    <Page width="workspace" header={<PageHeader title="Loans" context={context} create={writable ? { label: "Add loan", onClick: () => setEditing("new") } : undefined} />}>
+      {error && <Banner tone="negative" onDismiss={() => setError("")}>{error}</Banner>}
+      {orphans.length > 0 && (
+        <Banner tone="warning" title={`${txnCount(orphans.length)} filed to Loans aren’t on a loan.`}>
+          {format.money(orphans.reduce((s, t) => s - t.amount, 0), { sign: "always" })} net. A loan’s balance only moves for the transactions attached to it; open a loan to attach the ones that name its borrower, or attach any of them from its search.
+        </Banner>
+      )}
+      {!loans ? (
+        <Skeleton kind="card" />
+      ) : loans.length === 0 ? (
+        <Empty title="No loans yet" action={writable ? <Button variant="primary" onClick={() => setEditing("new")}>Add loan</Button> : undefined}>
+          Loans the family makes or owes appear here with what was lent, repaid and is outstanding.
+        </Empty>
+      ) : (
+        <Card flush>
+          <Table
+            caption="Loans"
+            columns={columns}
+            rows={loans}
+            rowKey={keyOf}
+            onRowClick={(l) => {
+              setOpenKey(keyOf(l));
+              requestAnimationFrame(() => detailRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
+            }}
+            totals={["Total owed to the family", "", "", "", money(owedTo)]}
+            phoneRow={(l) => ({ title: l.name, secondary: l.holder_entity_name ? `Held by ${entityLabel(l.holder_entity_name)}` : "Holder not recorded", trailing: money(l.outstanding), onClick: () => setOpenKey(keyOf(l)) })}
+          />
+        </Card>
+      )}
+
+      <div ref={detailRef} className="scroll-mt-[72px]">
+        {open && (
+          <LoanDetail
+            key={keyOf(open)}
+            loan={open}
+            rules={rules.filter((r) => r.loan_id === open.id)}
+            registry={registry}
+            categories={categories}
+            writable={writable}
+            onEdit={() => setEditing(open)}
+            onChanged={() => void load()}
+            onError={setError}
+            post={post}
+          />
+        )}
+      </div>
+
+      {editing && (
+        <LoanDialog
+          loan={editing === "new" ? null : editing}
+          entities={entities}
+          onClose={() => setEditing(null)}
+          onSaved={(name) => {
+            setEditing(null);
+            toast({ message: editing === "new" ? `Added the loan ${name}` : `Saved the loan ${name}` });
+            void load();
+          }}
+          post={post}
+        />
+      )}
+    </Page>
+  );
+}
+
+function LoanDetail({
+  loan,
+  rules,
+  registry,
+  categories,
+  writable,
+  onEdit,
+  onChanged,
+  onError,
+  post,
+}: {
+  loan: Loan;
+  rules: LoanRule[];
+  registry: Array<{ id: string; name: string }>;
+  categories: string[];
+  writable: boolean;
+  onEdit: () => void;
+  onChanged: () => void;
+  onError: (m: string) => void;
+  post: (url: string, body: Record<string, unknown>) => Promise<any>;
+}) {
+  const [ruleText, setRuleText] = useState("");
+  const [hideOpen, setHideOpen] = useState(false);
+  const unattached = loan.unattached ?? [];
+
+  async function attach(ids: string[]) {
+    if (!loan.id) return;
+    const ok = await confirm({
+      title: `Attach ${txnCount(ids.length)} to ${loan.name}?`,
+      message: "They count toward this loan’s balance from now on. Each is recorded, and you can undo it right after.",
+      confirmLabel: `Attach ${txnCount(ids.length)}`,
+    });
+    if (!ok) return;
+    try {
+      const data = await post("/api/books/ledger", { action: "attach_loan", loan_id: loan.id, transaction_ids: ids });
+      changedToast(`Attached ${txnCount(Number(data.attached ?? ids.length))} to ${loan.name}`, data.undo, onChanged);
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Couldn’t attach those.");
+    }
+  }
+
+  async function removeRule(r: LoanRule) {
+    const ok = await confirm({
+      title: "Delete this auto-attach rule?",
+      object: { name: r.match },
+      message: "New transactions stop attaching to this loan by themselves. The ones already attached stay.",
+      confirmLabel: "Delete rule",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await post("/api/books/data", { action: "delete_rule", rule_id: r.id });
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Couldn’t delete that rule.");
+    }
+  }
+
+  async function addRule() {
+    const text = ruleText.trim();
+    if (text.length < 3 || !loan.id) return;
+    try {
+      const data = await post("/api/books/data", { action: "loan_rule", loan_id: loan.id, match: text });
+      setRuleText("");
+      changedToast(`Attached ${txnCount(Number(data.attached ?? 0))}, and new ones will follow`, data.undo, onChanged);
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Couldn’t save that rule.");
+    }
+  }
+
+  async function setShown(on: boolean) {
+    if (!loan.id) return;
+    if (!on) {
+      setHideOpen(true);
       return;
     }
-    // A search already in flight when the text changes is dropped, so an
-    // older, slower answer never replaces the current one.
+    try {
+      await post("/api/books/data", { action: "update_loan", loan_id: loan.id, show_on_report: true });
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Couldn’t save that.");
+    }
+  }
+
+  const related = !!loan.holder_entity_name;
+  return (
+    <Card title={loan.name} menu={writable && loan.id ? [{ label: "Edit loan…", onSelect: onEdit }] : undefined}>
+      <div className="flex flex-col gap-6">
+        <Rows>
+          <Row label="Direction">{loan.direction === "payable" ? "Owed by the family" : loan.direction === "receivable" ? "Owed to the family" : "Owed to the family (not confirmed)"}</Row>
+          <Row label="Held by">{loan.holder_entity_name ? entityLabel(loan.holder_entity_name) : undefined}</Row>
+          <Row label="Other party">{loan.counterparty ?? undefined}</Row>
+          <Row label="Starting balance" hint={loan.starting_balance_as_of ? `As of ${format.date(loan.starting_balance_as_of, "medium")}` : "The date it was counted from isn’t recorded."}>
+            {money(loan.starting_balance)}
+          </Row>
+          <Row label="Interest rate" hint={related ? "A loan between family members or entities needs a rate at least at the applicable federal rate, or the IRS treats the difference as interest (IRC §7872)." : undefined}>
+            {loan.rate !== null && loan.rate !== undefined ? format.percent(loan.rate, { decimals: 2 }) : undefined}
+          </Row>
+          <Row label="Term">{loan.start_date || loan.maturity_date ? [loan.start_date ? `From ${format.date(loan.start_date, "medium")}` : null, loan.maturity_date ? `due ${format.date(loan.maturity_date, "medium")}` : null].filter(Boolean).join(", ") : undefined}</Row>
+          <Row label="Outstanding" hint="Starting balance, plus what was lent, less what was repaid. Interest isn’t split out yet: each repayment reduces the balance in full.">
+            <span className="font-medium">{money(loan.outstanding)}</span>
+          </Row>
+        </Rows>
+
+        {unattached.length > 0 && (
+          <Banner tone="warning" title={`${txnCount(unattached.length)} name this borrower but aren’t on the loan.`} action={writable && loan.id ? <Button size="sm" variant="quiet" onClick={() => void attach(unattached.map((t) => t.transaction_id))}>Attach {unattached.length}</Button> : undefined}>
+            {format.money(unattached.reduce((s, t) => s - t.amount, 0), { sign: "always" })} net, filed to Loans by an account rule.
+          </Banner>
+        )}
+
+        {writable && loan.id && (
+          <div className="flex flex-col gap-3">
+            <Switch checked={loan.show_on_report} onChange={(v) => void setShown(v)} label="Show on the Treasury report" hint={loan.show_on_report ? undefined : `Left off${loan.hidden_reason ? `: ${loan.hidden_reason}` : ""}.`} />
+            <div>
+              <h3 className="mb-1 text-small font-semibold text-ink">Attach automatically</h3>
+              <p className="mb-2 text-small text-ink-2">New transactions whose payee contains these words attach to this loan.</p>
+              {rules.length > 0 && (
+                <ul className="mb-2 flex flex-col">
+                  {rules.map((r) => (
+                    <li key={r.id} className="flex items-center justify-between gap-2 border-b border-line py-1 text-body">
+                      <span>{r.match}</span>
+                      <IconButton icon="trash" label={`Delete the rule “${r.match}”`} onClick={() => void removeRule(r)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex items-center gap-2">
+                <Input aria-label="Attach when the payee contains" placeholder="Words in the payee" value={ruleText} onChange={(e) => setRuleText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void addRule()} className="max-w-[280px]" />
+                <Button size="sm" disabled={ruleText.trim().length < 3} disabledReason={ruleText.trim().length < 3 ? "At least 3 letters" : undefined} onClick={() => void addRule()}>
+                  Add rule
+                </Button>
+              </div>
+            </div>
+            <Finder loan={loan} attach={(ids) => void attach(ids)} />
+          </div>
+        )}
+
+        <div className="-mx-5 border-t border-line touch:-mx-4">
+          {loan.transactions.length === 0 ? (
+            <div className="px-5 pt-4 touch:px-4">
+              <Empty size="section">No transactions attached yet. Search above, or attach one from any transaction’s Loan picker.</Empty>
+            </div>
+          ) : (
+            <TxnTable context="loan" rows={loan.transactions} categories={categories} loans={registry} readOnly={!writable} onRowChange={onChanged} onError={onError} onReload={onChanged} />
+          )}
+        </div>
+      </div>
+      {hideOpen && <HideDialog loan={loan} post={post} onClose={() => setHideOpen(false)} onDone={onChanged} />}
+    </Card>
+  );
+}
+
+/** Search any synced transaction and attach it to this loan. */
+function Finder({ loan, attach }: { loan: Loan; attach: (ids: string[]) => void }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<Txn[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!q.trim()) {
+      setRows([]);
+      return;
+    }
     let cancelled = false;
     const t = setTimeout(() => {
-      void (async () => {
-        setSearching(true);
-        try {
-          const res = await authFetch(`/api/books/data?report=transactions&limit=25&summary=0&q=${encodeURIComponent(q.trim())}`);
-          const data = await res.json().catch(() => ({}));
-          if (!cancelled && res.ok) setResults((data.transactions ?? []).filter((r: Txn) => !attachedRef.current.has(r.transaction_id)));
-        } finally {
-          if (!cancelled) setSearching(false);
-        }
-      })();
+      setBusy(true);
+      void authFetch(`/api/books/data?report=transactions&limit=25&summary=0&q=${encodeURIComponent(q.trim())}`)
+        .then(async (r) => {
+          const d = await r.json().catch(() => ({}));
+          if (!cancelled && r.ok) setRows(((d.transactions ?? []) as Txn[]).filter((x) => x.loan_id !== loan.id));
+        })
+        .finally(() => !cancelled && setBusy(false));
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [q, attachedKey]);
-
-  async function attach(t: Txn) {
-    setAttaching(t.transaction_id);
-    try {
-      const res = await authFetch("/api/books/data", {
-        method: "POST",
-        body: JSON.stringify({ transaction_id: t.transaction_id, loan_id: loanId }),
-      });
-      if (!res.ok) throw new Error("Couldn't attach that transaction.");
-      setResults((prev) => prev.filter((r) => r.transaction_id !== t.transaction_id));
-      onAttached();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "Couldn't attach that transaction.");
-    } finally {
-      setAttaching(null);
-    }
-  }
-
-  const subtle = "text-gray-500";
+  }, [q, loan.id]);
   return (
-    <div className="min-w-0 flex-1">
-      <input
-        type="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Find transactions to attach — search any description…"
-        aria-label="Find transactions to attach"
-        className={`w-full max-w-md px-3 h-[40px] sm:h-9 rounded-lg text-sm border ${isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`}
-      />
+    <div>
+      <h3 className="mb-2 text-small font-semibold text-ink">Find transactions to attach</h3>
+      <SearchField value={q} onChange={setQ} placeholder="Search payees and descriptions" label="Search transactions to attach" />
       {q.trim() && (
-        <div className={`mt-2 rounded-lg border overflow-hidden ${isDark ? "border-white/10" : "border-gray-200"}`}>
-          {searching && results.length === 0 ? (
-            <p className={`px-3 py-2.5 text-xs ${subtle}`}>Searching…</p>
-          ) : results.length === 0 ? (
-            <p className={`px-3 py-2.5 text-xs ${subtle}`}>No matches (already-attached rows are hidden).</p>
+        <div className="mt-2 rounded-card border border-line">
+          {busy && !rows.length ? (
+            <p className="px-4 py-3 text-body text-ink-2">Searching…</p>
+          ) : rows.length === 0 ? (
+            <p className="px-4 py-3 text-body text-ink-2">Nothing matches “{q.trim()}” that isn’t on this loan already.</p>
           ) : (
-            results.map((t) => (
-              <div
-                key={t.transaction_id}
-                className={`flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 px-3 py-2 border-t first:border-t-0 text-sm ${isDark ? "border-white/5" : "border-gray-100"}`}
-              >
-                <span className={`tabular-nums text-xs whitespace-nowrap ${subtle}`}>{t.date}</span>
-                <span className="truncate flex-1 min-w-[60%] sm:min-w-0">
-                  {t.merchant_name || t.name || "—"}
-                  {t.loan_id && <span className={`ml-2 text-xs ${subtle}`}>· on another loan</span>}
-                </span>
-                <span className={`text-xs whitespace-nowrap ${subtle}`}>{t.entity_name ?? "Unmapped"}</span>
-                <span className={`tabular-nums whitespace-nowrap font-medium ${t.amount < 0 ? "text-emerald-500" : ""}`}>{t.amount < 0 ? `+${money(-t.amount)}` : money(t.amount)}</span>
-                <button
-                  onClick={() => void attach(t)}
-                  disabled={attaching === t.transaction_id}
-                  aria-label={`Attach ${t.merchant_name || t.name || "transaction"}`}
-                  className={`ml-auto sm:ml-0 px-3 h-[40px] sm:h-auto sm:px-2.5 sm:py-1 rounded-md text-xs font-medium cursor-pointer disabled:opacity-50 ${
-                    isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
-                  }`}
-                >
-                  {attaching === t.transaction_id ? "…" : "Attach"}
-                </button>
-              </div>
-            ))
+            <List label="Matching transactions">
+              {rows.map((t) => (
+                <ListRow
+                  key={t.transaction_id}
+                  title={displayName(t.merchant_name) || memoText(t.name)}
+                  secondary={[format.date(t.date, "short"), t.entity_name ? entityLabel(t.entity_name) : "No entity", t.loan_id ? "on another loan" : null].filter(Boolean).join(" · ")}
+                  meta={ledgerMoney(t.amount)}
+                  action={
+                    <Button size="sm" onClick={() => attach([t.transaction_id])}>
+                      Attach
+                    </Button>
+                  }
+                />
+              ))}
+            </List>
           )}
         </div>
       )}
@@ -127,378 +389,143 @@ function TxnFinder({ loanId, attached, isDark, onAttached, onError }: { loanId: 
   );
 }
 
-/**
- * Money the family is owed: each loan with its starting balance, tracked
- * advances and repayments, and the transactions behind it.
- */
-export default function BooksLoans() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  // Viewers see the loans; adding, attaching and editing are for editors.
-  const writable = canWrite();
-
-  const [loans, setLoans] = useState<Loan[]>([]);
-  const [rules, setRules] = useState<Array<{ id: string; match: string; loan_id: string | null }>>([]);
-  const [ruleDraft, setRuleDraft] = useState<Record<string, string>>({});
-  const [registry, setRegistry] = useState<Array<{ id: string; name: string }>>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [open, setOpen] = useState<Set<string>>(new Set());
-
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newBalance, setNewBalance] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [editingBalance, setEditingBalance] = useState<string | null>(null);
-  const [balanceDraft, setBalanceDraft] = useState("");
-
-  const load = useCallback(async () => {
-    setError("");
-    try {
-      const [loansRes, metaRes] = await Promise.all([authFetch("/api/books/data?report=loans"), authFetch("/api/books/data?report=meta")]);
-      const loansData = await loansRes.json().catch(() => ({}));
-      if (!loansRes.ok) throw new Error(loansData?.message || "Couldn't load loans.");
-      setLoans(loansData.loans ?? []);
-      setRules(loansData.rules ?? []);
-      if (metaRes.ok) {
-        const meta = await metaRes.json();
-        setRegistry(meta.loans ?? []);
-        setCategories(meta.categories ?? []);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't load loans.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function post(body: Record<string, unknown>) {
-    const res = await authFetch("/api/books/data", { method: "POST", body: JSON.stringify(body) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "That didn't save.");
-    return data;
-  }
-
-  async function createLoan(name: string, startingBalance: number) {
-    setSaving(true);
-    setError("");
-    try {
-      await post({ action: "create_loan", name, starting_balance: startingBalance });
-      setAdding(false);
-      setNewName("");
-      setNewBalance("");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't create that loan.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveBalance(loan: Loan) {
-    const n = Number(balanceDraft.replace(/[$,]/g, ""));
-    if (!Number.isFinite(n)) {
-      setError("Enter a number for the starting balance.");
-      return;
-    }
-    setSaving(true);
-    setError("");
-    try {
-      if (loan.id) {
-        await post({ action: "update_loan", loan_id: loan.id, starting_balance: n });
-      } else {
-        // An implicit (category-only) loan becomes registered the moment it
-        // needs a starting balance.
-        await post({ action: "create_loan", name: loan.name, starting_balance: n });
-      }
-      setEditingBalance(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save that balance.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const subtle = "text-gray-500";
-  const card = isDark ? "glass-card" : "glass-card";
-  const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const field = `px-3 py-2 rounded-lg text-sm border ${isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`;
-
-  const totalOutstanding = loans.reduce((s, l) => s + l.outstanding, 0);
-
+/** Leaving a loan off the Treasury report needs a reason, which is kept and shown. */
+function HideDialog({ loan, post, onClose, onDone }: { loan: Loan; post: (url: string, body: Record<string, unknown>) => Promise<any>; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState("");
   return (
-    <div className="w-full">
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Loans</h1>
-        </div>
-        {writable && (
-          <button
-            onClick={() => setAdding((v) => !v)}
-            aria-expanded={adding}
-            className={`px-4 h-[40px] sm:h-9 rounded-full text-sm font-medium transition-colors cursor-pointer ${
-              isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
-            }`}
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Leave ${loan.name} off the Treasury report?`}
+      description="The report then shows one fewer loan; the reason is kept with the loan and shown here."
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={reason.trim().length < 3}
+            disabledReason="Say why"
+            onClick={() =>
+              void post("/api/books/data", { action: "update_loan", loan_id: loan.id, show_on_report: false, hidden_reason: reason.trim() })
+                .then(() => {
+                  onClose();
+                  onDone();
+                })
+                .catch((e) => setErr(e instanceof Error ? e.message : "Couldn’t save that."))
+            }
           >
-            {adding ? "Cancel" : "Add loan"}
-          </button>
-        )}
+            Leave it off
+          </Button>
+        </>
+      }
+    >
+      <label className="flex flex-col gap-[6px]">
+        <span className="text-small font-medium text-ink">Reason</span>
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: forgiven in 2025, pending write-off" />
+      </label>
+      {err && <Banner tone="negative" className="mt-3">{err}</Banner>}
+    </Dialog>
+  );
+}
+
+/** Add or edit a loan: who, which way, held by whom, the starting balance and its date, and the terms. */
+function LoanDialog({ loan, entities, onClose, onSaved, post }: { loan: Loan | null; entities: Entity[]; onClose: () => void; onSaved: (name: string) => void; post: (url: string, body: Record<string, unknown>) => Promise<any> }) {
+  const [name, setName] = useState(loan?.name ?? "");
+  const [direction, setDirection] = useState<"receivable" | "payable">(loan?.direction === "payable" ? "payable" : "receivable");
+  const [holder, setHolder] = useState(entities.find((e) => e.name === loan?.holder_entity_name)?.id ?? "");
+  const [counterparty, setCounterparty] = useState(loan?.counterparty ?? "");
+  const [balance, setBalance] = useState(loan ? String(loan.starting_balance) : "");
+  const [asOf, setAsOf] = useState(loan?.starting_balance_as_of ?? "");
+  const [rate, setRate] = useState(loan?.rate !== null && loan?.rate !== undefined ? String(loan.rate) : "");
+  const [start, setStart] = useState(loan?.start_date ?? "");
+  const [maturity, setMaturity] = useState(loan?.maturity_date ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const day = (s: string) => (s.trim() ? format.parseDate(s) : null);
+
+  async function save() {
+    const amount = balance.trim() ? format.parseMoney(balance) : 0;
+    if (!name.trim()) return setErr("Give the loan a name.");
+    if (amount === null) return setErr("Enter the starting balance as an amount.");
+    for (const [label, v] of [
+      ["the as-of date", asOf],
+      ["the start date", start],
+      ["the due date", maturity],
+    ] as const)
+      if (v.trim() && !day(v)) return setErr(`Enter ${label} like Dec 31, 2025.`);
+    setBusy(true);
+    setErr("");
+    const ent = entities.find((e) => e.id === holder);
+    const body = {
+      name: name.trim(),
+      starting_balance: amount,
+      starting_balance_as_of: day(asOf),
+      direction,
+      holder_entity_id: ent?.id ?? null,
+      holder_entity_name: ent?.name ?? null,
+      counterparty: counterparty.trim() || null,
+      rate: rate.trim() ? Number(rate) : null,
+      start_date: day(start),
+      maturity_date: day(maturity),
+    };
+    try {
+      if (loan?.id) await post("/api/books/data", { action: "update_loan", loan_id: loan.id, ...body });
+      else await post("/api/books/data", { action: "create_loan", ...body });
+      onSaved(body.name);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn’t save that loan.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const field = (label: string, input: React.ReactNode, hint?: string) => (
+    <label className="flex flex-col gap-[6px]">
+      <span className="text-small font-medium text-ink">{label}</span>
+      {input}
+      {hint && <span className="text-small text-ink-2">{hint}</span>}
+    </label>
+  );
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      dirty
+      title={loan ? `Edit loan: ${loan.name}` : "Add a loan"}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" busy={busy} busyLabel="Saving…" onClick={() => void save()}>
+            {loan?.id ? "Save loan" : "Add loan"}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {field("Name", <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Who owes the money" maxLength={80} />)}
+        <ChoiceTiles
+          label="Which way"
+          stacked
+          value={direction}
+          onChange={setDirection}
+          options={[
+            { value: "receivable", title: "Owed to the family", description: "The family lent the money." },
+            { value: "payable", title: "Owed by the family", description: "The family borrowed it." },
+          ]}
+        />
+        {field("Held by", <Menu value={holder} label="Held by" placeholder="Choose the entity" size="md" className="w-full" onChange={setHolder} options={entities.map((e) => ({ value: e.id, label: entityLabel(e.name) }))} />, "The entity whose books carry the loan.")}
+        {field("Other party", <Input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="The borrower or lender’s legal name" />)}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {field("Starting balance", <Input inputMode="decimal" prefix="$" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" />)}
+          {field("As of", <Input value={asOf} onChange={(e) => setAsOf(e.target.value)} placeholder="Dec 31, 2025" />)}
+          {field("Interest rate", <Input inputMode="decimal" suffix="%" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="4.25" />)}
+          {field("Start", <Input value={start} onChange={(e) => setStart(e.target.value)} placeholder="Jan 1, 2024" />)}
+          {field("Due", <Input value={maturity} onChange={(e) => setMaturity(e.target.value)} placeholder="Dec 31, 2030" />)}
+        </div>
+        <p className="text-small text-ink-2">The starting balance covers anything lent before the bank history begins; what’s lent and repaid after moves it. Changes are recorded with your name.</p>
+        {err && <Banner tone="negative">{err}</Banner>}
       </div>
-
-      {adding && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!newName.trim()) return;
-            void createLoan(newName.trim(), Number(newBalance.replace(/[$,]/g, "")) || 0);
-          }}
-          className={`rounded-2xl border p-4 mb-6 flex flex-wrap items-end gap-3 ${card}`}
-        >
-          <label className="flex flex-col gap-1 text-xs w-full sm:w-auto sm:min-w-[220px]">
-            <span className={subtle}>Who owes it</span>
-            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Seven Arrows Recovery" className={`${field} h-[40px] sm:h-auto`} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs w-full sm:w-auto sm:min-w-[180px]">
-            <span className={subtle}>Starting balance</span>
-            <input value={newBalance} onChange={(e) => setNewBalance(e.target.value)} inputMode="decimal" placeholder="$0" className={`${field} h-[40px] sm:h-auto`} />
-          </label>
-          <button
-            type="submit"
-            disabled={saving || !newName.trim()}
-            className={`px-4 h-[40px] sm:h-auto sm:py-2 rounded-full text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-              isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
-            }`}
-          >
-            {saving ? "Saving…" : "Create loan"}
-          </button>
-          <p className={`text-xs w-full ${subtle}`}>Starting balance covers anything lent before the transaction history begins — tracked advances and repayments move it from there.</p>
-        </form>
-      )}
-
-      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
-
-      {!loading && loans.length > 0 && (
-        <div className={`rounded-2xl border p-5 mb-6 flex flex-wrap items-baseline gap-x-8 gap-y-2 ${card}`}>
-          <div>
-            <p className={`text-xs ${subtle}`}>
-              Outstanding across {loans.length} loan{loans.length === 1 ? "" : "s"}
-            </p>
-            <p className="text-2xl font-semibold tabular-nums mt-1">{money(totalOutstanding)}</p>
-          </div>
-          <div className={`text-sm ${subtle}`}>
-            Starting {money(loans.reduce((s, l) => s + l.starting_balance, 0))} · Advanced {money(loans.reduce((s, l) => s + l.advanced, 0))} · Repaid {money(loans.reduce((s, l) => s + l.repaid, 0))}
-          </div>
-        </div>
-      )}
-
-      {loading ? (
-        <p className={`text-sm ${subtle}`}>Loading…</p>
-      ) : loans.length === 0 ? (
-        error ? null : (
-          <div className={`rounded-2xl border p-10 text-center ${card}`}>
-            <p className="text-sm font-medium">No loans yet</p>
-            <p className={`text-xs mt-1 ${subtle}`}>
-              {writable ? "Add one above, then attach transactions to it from its Find transactions box or any transaction's Loan picker." : "Loans the office tracks will show up here."}
-            </p>
-          </div>
-        )
-      ) : (
-        loans.map((loan) => {
-          const key = loan.id ?? loan.name;
-          const isOpen = open.has(key);
-          return (
-            <section key={key} className={`rounded-2xl border mb-4 overflow-hidden ${card}`}>
-              <button
-                onClick={() =>
-                  setOpen((prev) => {
-                    const next = new Set(prev);
-                    next.has(key) ? next.delete(key) : next.add(key);
-                    return next;
-                  })
-                }
-                aria-expanded={isOpen}
-                className={`w-full flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-left cursor-pointer ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}
-              >
-                <svg className={`w-4 h-4 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""} ${subtle}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">
-                    {loan.name}
-                    {!loan.id && <span className={`ml-2 text-xs font-normal ${subtle}`}>from categories</span>}
-                  </p>
-                  <p className={`text-xs mt-0.5 ${subtle}`}>
-                    {loan.transactions.length} transaction{loan.transactions.length === 1 ? "" : "s"}
-                    {loan.last_date && ` · last activity ${midDate(loan.last_date)}`}
-                  </p>
-                </div>
-                <div className={`order-last sm:order-none basis-full sm:basis-auto pl-[30px] sm:pl-0 flex gap-x-6 gap-y-1 flex-wrap text-sm tabular-nums ${subtle}`}>
-                  <span>Start {money(loan.starting_balance)}</span>
-                  <span>Advanced {money(loan.advanced)}</span>
-                  <span>Repaid {money(loan.repaid)}</span>
-                </div>
-                <span className="text-lg font-semibold tabular-nums shrink-0">{money(loan.outstanding)}</span>
-              </button>
-
-              {isOpen && (
-                <div className={`border-t ${rowBorder}`}>
-                  {writable && loan.id && (
-                    <div className="px-5 pt-3">
-                      <TxnFinder loanId={loan.id} attached={new Set(loan.transactions.map((t) => t.transaction_id))} isDark={isDark} onAttached={() => void load()} onError={setError} />
-                    </div>
-                  )}
-                  {writable && loan.id && (
-                    <div className="px-5 pt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-                      <label className={`flex items-center gap-2 text-xs cursor-pointer ${subtle}`}>
-                        <input
-                          type="checkbox"
-                          checked={loan.show_on_report}
-                          onChange={async (e) => {
-                            try {
-                              await post({ action: "update_loan", loan_id: loan.id, show_on_report: e.target.checked });
-                              await load();
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "Couldn't save that.");
-                            }
-                          }}
-                        />
-                        Show on Treasury report
-                      </label>
-
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const draft = (ruleDraft[key] ?? "").trim();
-                          if (draft.length < 3) {
-                            setError("Rule text needs at least 3 characters.");
-                            return;
-                          }
-                          void (async () => {
-                            try {
-                              const out = await post({ action: "loan_rule", loan_id: loan.id, match: draft });
-                              setRuleDraft((prev) => ({ ...prev, [key]: "" }));
-                              await load();
-                              if (out.attached) setError("");
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "Couldn't save that rule.");
-                            }
-                          })();
-                        }}
-                        className="flex flex-wrap items-center gap-2"
-                      >
-                        <label htmlFor={`loan-rule-${key}`} className={`text-xs w-full sm:w-auto ${subtle}`}>
-                          Auto-attach descriptions containing
-                        </label>
-                        <input
-                          id={`loan-rule-${key}`}
-                          value={ruleDraft[key] ?? ""}
-                          onChange={(e) => setRuleDraft((prev) => ({ ...prev, [key]: e.target.value }))}
-                          placeholder="VISIONQUEST"
-                          className={`${field} flex-1 min-w-0 sm:flex-none sm:w-44 h-[40px] sm:h-auto sm:py-1.5 text-xs`}
-                        />
-                        <button
-                          type="submit"
-                          disabled={saving || (ruleDraft[key] ?? "").trim().length < 3}
-                          className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
-                            isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
-                          }`}
-                        >
-                          Save rule
-                        </button>
-                      </form>
-
-                      {rules
-                        .filter((r) => r.loan_id === loan.id)
-                        .map((r) => (
-                          <span key={r.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700"}`}>
-                            “{r.match}”
-                            <button
-                              onClick={() => {
-                                void (async () => {
-                                  try {
-                                    await post({ action: "delete_rule", rule_id: r.id });
-                                    await load();
-                                  } catch (err) {
-                                    setError(err instanceof Error ? err.message : "Couldn't remove that rule.");
-                                  }
-                                })();
-                              }}
-                              title="Remove rule"
-                              aria-label={`Remove rule “${r.match}”`}
-                              className={`cursor-pointer w-[40px] h-[40px] -my-[14px] -mr-[12px] sm:w-auto sm:h-auto sm:m-0 inline-flex items-center justify-center ${subtle} hover:text-red-400`}
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        ))}
-                    </div>
-                  )}
-                  {writable && (
-                    <div className="px-5 py-3 flex flex-wrap items-center gap-3">
-                      {editingBalance === key ? (
-                        <>
-                          <input
-                            autoFocus
-                            value={balanceDraft}
-                            onChange={(e) => setBalanceDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void saveBalance(loan);
-                              else if (e.key === "Escape") setEditingBalance(null);
-                            }}
-                            inputMode="decimal"
-                            aria-label={`Starting balance for ${loan.name}`}
-                            className={`${field} w-36`}
-                          />
-                          <button
-                            onClick={() => void saveBalance(loan)}
-                            disabled={saving}
-                            className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 ${
-                              isDark ? "bg-white/10 text-white" : "bg-gray-900 text-white"
-                            }`}
-                          >
-                            Save
-                          </button>
-                          <button onClick={() => setEditingBalance(null)} className={`text-xs cursor-pointer px-2 h-[40px] sm:h-auto ${subtle}`}>
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingBalance(key);
-                            setBalanceDraft(String(loan.starting_balance || ""));
-                          }}
-                          className={`text-xs underline cursor-pointer py-[14px] -my-[14px] sm:py-0 sm:my-0 ${subtle} hover:no-underline`}
-                        >
-                          {loan.id ? "Edit starting balance" : "Set starting balance"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className="overflow-x-auto">
-                    <TxnTable
-                      rows={loan.transactions}
-                      categories={categories}
-                      loans={registry}
-                      isDark={isDark}
-                      readOnly={!writable}
-                      onRowChange={() => void load()}
-                      onError={setError}
-                      onReload={() => void load()}
-                    />
-                  </div>
-                </div>
-              )}
-            </section>
-          );
-        })
-      )}
-    </div>
+    </Dialog>
   );
 }

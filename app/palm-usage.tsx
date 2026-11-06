@@ -78,7 +78,13 @@ export function PalmCostLine({ names, refreshKey = 0 }: { names: Record<string, 
           Nothing has reached BFO from Palm's webhooks yet, so state mail and filing news won't arrive on their own. Details says where they must point.
         </Banner>
       )}
-      <Sheet open={open} onClose={() => setOpen(false)} side="right" title={`Palm in ${month}`} description="An estimate from BFO's own log of billed calls and Palm's list prices. Palm's invoice is the bill: reconcile against it.">
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        side="right"
+        title={`Palm in ${month}`}
+        description="An estimate from BFO's own log of billed calls and Palm's list prices. Palm's invoice is the bill: reconcile against it."
+      >
         <div className="flex flex-col gap-6">
           <CardSection title="This month">
             <Rows>
@@ -136,9 +142,7 @@ export function PalmCostLine({ names, refreshKey = 0 }: { names: Record<string, 
                   ? `Last received ${format.dateTime(usage.webhook.lastAt)} (${usage.webhook.lastType ?? "an event"}${usage.webhook.lastMode === "test" ? ", test" : ""}); ${format.count(usage.webhook.weekCount, "event")} in the last 7 days.`
                   : "Nothing has reached BFO from Palm yet."}
               </p>
-              <p className="mt-1 text-small break-all text-ink-2">
-                In Palm Console, Webhooks must point at {usage.webhook.url}. The bare domain answers with a redirect, which Palm doesn't follow.
-              </p>
+              <p className="mt-1 text-small break-all text-ink-2">In Palm Console, Webhooks must point at {usage.webhook.url}. The bare domain answers with a redirect, which Palm doesn't follow.</p>
             </CardSection>
           )}
           <CardSection title="Palm's prices">
@@ -148,8 +152,8 @@ export function PalmCostLine({ names, refreshKey = 0 }: { names: Record<string, 
               ))}
             </Rows>
             <p className="mt-2 text-small text-ink-2">
-              Reading a state record is a search and a detail, {money(STATE_RECORD_CENTS)}; just the detail, {money(PALM_PRICES.detail.cents)}, once the file number is on record. The daily check reads each
-              record again once a week. Business records, the agent service, documents and filings aren't billed per call; a filing's state fee shows before it's submitted.
+              Reading a state record is a search and a detail, {money(STATE_RECORD_CENTS)}; just the detail, {money(PALM_PRICES.detail.cents)}, once the file number is on record. The daily check reads
+              each record again once a week. Business records, the agent service, documents and filings aren't billed per call; a filing's state fee shows before it's submitted.
             </p>
           </CardSection>
         </div>

@@ -550,7 +550,7 @@ function PushView({ open, onBack, children }: { open: boolean; onBack: () => voi
   if (!mounted) return null;
   return createPortal(
     <div className="ds fixed inset-0">
-      <div ref={handle.panelRef} {...MODAL} aria-labelledby="thread-title" className="absolute inset-0 flex flex-col bg-page pt-[env(safe-area-inset-top)] text-body text-ink outline-none">
+      <div ref={handle.panelRef} {...MODAL} aria-labelledby="thread-title" className="absolute inset-0 flex flex-col bg-raised pt-[env(safe-area-inset-top)] text-body text-ink outline-none">
         {last.current}
       </div>
     </div>,

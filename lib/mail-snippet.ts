@@ -31,7 +31,7 @@ export function decodeEntities(s: string): string {
 }
 
 /** Characters that take no space: zero-width spaces and joiners, soft hyphens, the combining grapheme joiner, BOMs. */
-const INVISIBLE = /[­͏؜ᅟᅠ឴឵᠎​-‏‪-‮⁠-⁤⁪-⁯ㅤ﻿ﾠ]/g;
+const INVISIBLE = /\u034f|\u17b4|\u17b5|[\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u206a-\u206f\u3164\ufeff\uffa0]/g;
 
 /** Words in an image's description that mark a link as a picture, not words worth reading. */
 const IMAGE_WORDS = /\b(logo|icon|image|photo|picture|banner|graphic|illustration|avatar|headshot|screenshot)\b/i;

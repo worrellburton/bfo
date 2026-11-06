@@ -14,8 +14,8 @@ describe("previews", () => {
   });
 
   it("drops invisible preheader padding, bare addresses and a help desk's wrapping", () => {
-    expect(tidySnippet("‌ ͏ ‌ ͏ …")).toBe("");
-    expect(tidySnippet("Your code is ready ​​­ see https://example.com/long/path")).toBe("Your code is ready see");
+    expect(tidySnippet("\u200c\u00a0\u034f \u200c\u00a0\u034f …")).toBe("");
+    expect(tidySnippet("Your code is ready \u200b\u200b\u00ad see https://example.com/long/path")).toBe("Your code is ready see");
     expect(tidySnippet("##- Please type your reply above this line -## Thanks, it's fixed. Delivered by Zendesk")).toBe("Thanks, it's fixed.");
     expect(tidySnippet(tidySnippet("Plain words stay"))).toBe("Plain words stay");
   });

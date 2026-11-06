@@ -292,4 +292,3 @@ describe("tax home and conflicts", () => {
     expect(filingAgency("Nevada")).toBe("Nevada Secretary of State");
   });
 });
-

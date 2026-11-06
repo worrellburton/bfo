@@ -254,4 +254,3 @@ export function linkFacts(
     from: { formationDate: stateDate ? "state" : ourDate ? "record" : null, address: stateAddress ? "state" : ourAddress ? "record" : null },
   };
 }
-

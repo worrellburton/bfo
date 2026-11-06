@@ -81,7 +81,10 @@ export type Finding = { tone: "bad" | "warn" | "info"; text: string };
 
 export function stateFindings(
   palmRec: StateRecord,
-  asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string; stateConfirmed?: StateConfirmation | null } & Omit<PaperworkInput, "stateRecord" | "stateConfirmed">,
+  asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string; stateConfirmed?: StateConfirmation | null } & Omit<
+    PaperworkInput,
+    "stateRecord" | "stateConfirmed"
+  >,
   today = new Date(),
 ): Finding[] {
   const out: Finding[] = [];

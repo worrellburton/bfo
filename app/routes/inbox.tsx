@@ -7,7 +7,7 @@ import { PullToRefresh } from "../mail-pull";
 import { usePushState } from "../push";
 import { emptyTrash, getFaces, markRead, moveMail, notifyMailChanged, purgeMail, restoreMail, sendMail, syncMail, trashMail, useMailCount, type MailCount, type MailFaces, type MailFilter, type MailFolder } from "../mail-client";
 import { FacesContext } from "../mail/avatar";
-import { FOLDERS, NARROW_LABELS, VIEW_KEY, filterFor, folderLabel, narrowOf, savedView, type Narrow, type NarrowKey, type View } from "../mail/constants";
+import { FOLDERS, NARROW_LABELS, VIEW_KEY, folderLabel, narrowOf, savedView, type Narrow, type NarrowKey, type View } from "../mail/constants";
 import { eachRow, listRows } from "../mail/list-state";
 import { FolderTabs, MailSearch, type FolderTab } from "../mail/controls";
 import { blankDraft, forwardDraft, replyDraft, type Draft } from "../mail/drafts";
@@ -405,7 +405,8 @@ export default function Inbox() {
     else if (n > seenUnread.current && (folder === "active" || folder === "inbox") && !q) setFreshMail(true);
     seenUnread.current = n;
   }, [count?.unread, folder, q]);
-  useEffect(() => setFreshMail(false), [list?.messages[0]?.id, folder, box, q]);
+  const firstId = list?.messages[0]?.id;
+  useEffect(() => setFreshMail(false), [firstId, folder, box, q]);
 
   /** Pulled down on a phone: check for new mail, then read the list and the count again. */
   async function refreshFromPull(): Promise<{ fresh: number }> {

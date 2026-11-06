@@ -422,7 +422,10 @@ describe("/api/tree", () => {
     });
 
     it("stamps a note with its author and keeps it when deleted", async () => {
-      sbRoutes.push([/GET tree_nodes\?collection=eq\.notes&id=in\./, (c) => (c.path.includes('"old"') ? [{ collection: "notes", id: "old", data: { title: "Old", createdBy: { id: "u2" } }, updated_at: "t" }] : [])]);
+      sbRoutes.push([
+        /GET tree_nodes\?collection=eq\.notes&id=in\./,
+        (c) => (c.path.includes('"old"') ? [{ collection: "notes", id: "old", data: { title: "Old", createdBy: { id: "u2" } }, updated_at: "t" }] : []),
+      ]);
       expect((await call("POST", { body: { ops: [{ op: "set", path: "notes/n1", value: { title: "T", body: "B" } }] } })).status).toBe(200);
       expect(sbCalls.find((c) => c.path === "rpc/tree_apply")!.body.ops[1]).toMatchObject({ path: ["notes", "n1"], value: { createdBy: { id: "u1", name: "Robert" } } });
       expect((await call("POST", { body: { ops: [{ op: "set", path: "notes/old", value: null }] } })).status).toBe(409);
@@ -431,7 +434,10 @@ describe("/api/tree", () => {
 
     it("credits a document scan's writes to the scan, started by the person who ran it", async () => {
       let reads = 0;
-      sbRoutes.push([/GET tree_nodes\?collection=eq\.assets&id=in\./, () => [{ collection: "assets", id: "x", data: reads++ ? { name: "Child, LLC", address: "1 Main St" } : { name: "Child, LLC" }, updated_at: "t" }]]);
+      sbRoutes.push([
+        /GET tree_nodes\?collection=eq\.assets&id=in\./,
+        () => [{ collection: "assets", id: "x", data: reads++ ? { name: "Child, LLC", address: "1 Main St" } : { name: "Child, LLC" }, updated_at: "t" }],
+      ]);
       expect((await call("POST", { body: { source: "scan", ops: [{ op: "update", path: "assets/x", value: { address: "1 Main St" } }] } })).status).toBe(200);
       const logged = sbCalls.find((c) => c.method === "POST" && c.path.startsWith("entity_activity"))?.body;
       expect(logged?.[0]).toMatchObject({ actor_name: "Document scan, started by Robert", source: "system" });

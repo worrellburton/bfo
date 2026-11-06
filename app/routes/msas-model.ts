@@ -69,7 +69,13 @@ export function endOf(c: ContractTerms & { endDate?: string | null; terminatedAt
 }
 
 /** One agreement on an entity's record, as the page reads it. */
-export function msaFrom(assetId: string, entity: string, contractId: string, c: ContractTerms & { endDate?: string | null; terminatedAt?: number | null }, family: { id: string; name?: string | null }[]): Msa {
+export function msaFrom(
+  assetId: string,
+  entity: string,
+  contractId: string,
+  c: ContractTerms & { endDate?: string | null; terminatedAt?: number | null },
+  family: { id: string; name?: string | null }[],
+): Msa {
   const other = familyEntityNamed(c.counterparty ?? "", family);
   return {
     id: `${assetId}:${contractId}`,

@@ -84,7 +84,7 @@ export function fullStamp(iso: string): string {
   if (Number.isNaN(d.getTime())) return "";
   return stampFormat({ weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
     .format(d)
-    .replace(/[  ]/g, " ");
+    .replace(/[\u202f\u00a0]/g, " ");
 }
 
 /**
@@ -97,7 +97,7 @@ export function quoteStamp(iso: string): string {
   const day = stampFormat({ weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(d);
   const at = stampFormat({ hour: "numeric", minute: "2-digit", timeZoneName: "short" })
     .format(d)
-    .replace(/[  ]/g, " ");
+    .replace(/[\u202f\u00a0]/g, " ");
   return `${day} at ${at}`;
 }
 

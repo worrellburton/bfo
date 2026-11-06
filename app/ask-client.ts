@@ -6,9 +6,20 @@ import { authFetch } from "./auth";
  */
 
 export type ChatSummary = { id: string; title: string; updatedAt: string };
-export type ChatMessage = { role: "user" | "assistant"; text: string; at?: string };
+/** One lookup behind an answer: which records, which period or as-of (lib/ask.ts provenance). */
+export type Source = { tool: string; label: string; detail: string | null };
+export type ChatMessage = { role: "user" | "assistant"; text: string; at?: string; sources?: Source[] };
 
-type AskEvent = { type: "chat"; id: string; title: string } | { type: "tool"; label: string } | { type: "text"; delta: string } | { type: "done" } | { type: "error"; message: string };
+type AskEvent =
+  | { type: "chat"; id: string; title: string }
+  | { type: "tool"; label: string }
+  | { type: "text"; delta: string }
+  | { type: "sources"; sources: Source[] }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+/** The version of the first-use notice (who processes what); a new version shows it again. */
+export const NOTICE_VERSION = "2026-11-06";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await authFetch(path, init);
@@ -17,7 +28,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export const listChats = () => call<{ chats: ChatSummary[] }>("/api/ask?view=chats");
+/** Conversations, newest first, 50 at a time; `before` is the oldest one already shown. */
+export const listChats = (before?: string) => call<{ chats: ChatSummary[]; more?: boolean }>(`/api/ask?view=chats${before ? `&before=${encodeURIComponent(before)}` : ""}`);
+export const deleteAllChats = () => call<{ ok: true; deleted: number }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "delete-all" }) });
+/** The person's answer to the first-use notice, kept in the audit log. */
+export const recordNotice = (choice: "continue" | "not-now") => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "consent", version: NOTICE_VERSION, choice }) });
 export const getChat = (id: string) => call<{ chat: ChatSummary; messages: ChatMessage[] }>(`/api/ask?view=chat&id=${encodeURIComponent(id)}`);
 export const deleteChat = (chatId: string) => call<{ ok: true }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "delete", chatId }) });
 
@@ -26,10 +41,10 @@ type RealtimeSecret = { secret: string; model: string; voice: string; api: "ga" 
 export const realtimeSecret = () => call<RealtimeSecret>("/api/ask", { method: "POST", body: JSON.stringify({ action: "realtime-secret" }) });
 /** One lookup the live voice asked for, run as this person. */
 export const runAskTool = (name: string, input: Record<string, unknown>) =>
-  call<{ label: string; output: string }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "tool", name, input }) });
-/** A spoken turn, kept with the conversation (started here when there's none yet). */
-export const logTurn = (chatId: string | null, role: "user" | "assistant", text: string) =>
-  call<{ chatId: string; title: string }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "log", chatId: chatId ?? undefined, role, text }) });
+  call<{ label: string; output: string; source?: Source }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "tool", name, input }) });
+/** A spoken turn, kept with the conversation (started here when there's none yet), with what an answer read. */
+export const logTurn = (chatId: string | null, role: "user" | "assistant", text: string, sources?: Source[]) =>
+  call<{ chatId: string; title: string }>("/api/ask", { method: "POST", body: JSON.stringify({ action: "log", chatId: chatId ?? undefined, role, text, ...(sources?.length ? { sources } : {}) }) });
 
 /** What was said, as text. `hint` steers spelling (names the office uses). */
 export async function transcribeAudio(blob: Blob, hint?: string): Promise<string> {

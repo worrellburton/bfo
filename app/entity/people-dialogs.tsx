@@ -10,7 +10,6 @@ import { useMemo, useState } from "react";
 import { Banner, ChoiceTiles, Checkbox, DateInput, Dialog, Field, Input, Select, Button, format, type Option } from "../ui";
 import type { AssetDoc } from "./model";
 import {
-  CLASS_WORDS,
   TRUST_WORDS,
   applyOwnerChange,
   classificationNote,

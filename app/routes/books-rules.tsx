@@ -1,217 +1,224 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { authFetch, canWrite } from "../auth";
-import { useTheme } from "../theme";
-import { ConfirmDialog } from "../books-shared";
+import { accountShort, displayName, memoText, txnCount } from "../books-shared";
+import { Banner, Button, Card, Disclosure, Empty, IconButton, List, ListRow, Page, PageHeader, SearchField, Skeleton, Table, confirm, format, toast, useDocumentTitle, usePhone, type Column } from "../ui";
 
 export function meta() {
-  return [{ title: "BFO - Books · Rules" }];
+  return [{ title: "Rules · BFO" }];
 }
 
 type Rule = {
   id: string;
+  position?: number;
   match: string;
+  match_kind?: "vendor" | "contains";
   book_category: string | null;
   vendor_name: string | null;
   type_override: string | null;
   loan_id: string | null;
+  loan_name?: string | null;
   matches: number;
+  filed?: number | null;
   created_at: string;
+  created_by_name?: string | null;
+  reason?: string | null;
+  overlaps?: Array<{ id: string; match: string; wins: boolean }>;
 };
+type BuiltIn = { match: string; category: string | null; type: string | null; payeeOnly: boolean; plaid: string | null };
 
-/** A rule's type override in the words the rest of Books uses. */
-const TYPE_LABELS: Record<string, string> = { normal: "Income / Expense", transfer: "Transfer", intercompany: "Roll-up" };
+const TYPE_WORDS: Record<string, string> = { normal: "Mark as income or expense", transfer: "Mark as a transfer", intercompany: "Mark as intercompany" };
+
+/** What a rule does, as verbs. */
+function effects(r: Pick<Rule, "book_category" | "vendor_name" | "type_override" | "loan_id" | "loan_name">): string[] {
+  const out: string[] = [];
+  if (r.book_category) out.push(`File under ${accountShort(r.book_category)}`);
+  if (r.vendor_name) out.push(`Rename to ${r.vendor_name}`);
+  if (r.type_override) out.push(TYPE_WORDS[r.type_override] ?? r.type_override);
+  if (r.loan_id) out.push(r.loan_name ? `Attach to the loan ${r.loan_name}` : "Attach to a loan");
+  return out;
+}
+
+/** A rule's text as people read it: shouting cased, references dropped. */
+const matchText = (m: string) => memoText(m) || displayName(m) || m;
 
 /**
- * Every rule the books have learned — from "apply to all", vendor renames,
- * type overrides, and loan links. This is the memory that makes the system
- * run itself; here you can see it, and prune anything that's wrong.
+ * What the books have learned: every rule a person taught (by "apply to
+ * all", a vendor's default or name, a merge, or a loan's auto-attach), in
+ * the order they're tried, with how many transactions each reaches and
+ * which other rules reach the same ones. The built-in chart follows.
  */
 export default function BooksRules() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [loading, setLoading] = useState(true);
+  useDocumentTitle("Rules");
+  const phone = usePhone();
+  const writable = canWrite();
+  const [rules, setRules] = useState<Rule[] | null>(null);
+  const [builtIn, setBuiltIn] = useState<BuiltIn[]>([]);
+  const [ordered, setOrdered] = useState(false);
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
-  // The rule waiting on the delete confirmation.
-  const [confirming, setConfirming] = useState<Rule | null>(null);
-  // Viewers see what the books learned; pruning is for editors.
-  const writable = canWrite();
 
-  async function load() {
+  const load = useCallback(async () => {
+    setError("");
     try {
-      const res = await authFetch("/api/books/data?report=rules");
-      if (!res.ok) throw new Error();
-      setRules((await res.json()).rules ?? []);
+      const res = await authFetch("/api/books/ledger?report=rules");
+      if (res.ok) {
+        const d = await res.json();
+        setRules(d.rules ?? []);
+        setBuiltIn(d.built_in ?? []);
+        setOrdered(true);
+        return;
+      }
+      // An older server: the plain list.
+      const old = await authFetch("/api/books/data?report=rules");
+      if (!old.ok) throw new Error();
+      setRules(((await old.json()).rules ?? []) as Rule[]);
     } catch {
-      setError("Couldn't load the rules. Refresh to try again.");
-    } finally {
-      setLoading(false);
+      setError("Couldn’t load the rules.");
+      setRules([]);
     }
-  }
+  }, []);
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
-  async function remove(id: string) {
+  async function remove(r: Rule) {
+    const ok = await confirm({
+      title: "Delete this rule?",
+      object: { name: matchText(r.match), detail: [effects(r).join(" · "), `reaches ${txnCount(r.matches)}`].filter(Boolean).join(" · ") },
+      message: "New transactions stop following it. The ones it already filed keep their account and their history. You can undo this right after.",
+      confirmLabel: "Delete rule",
+      tone: "danger",
+    });
+    if (!ok) return;
     const before = rules;
-    setError("");
-    setRules((prev) => prev.filter((r) => r.id !== id));
-    try {
-      const res = await authFetch("/api/books/data", {
-        method: "POST",
-        body: JSON.stringify({ action: "delete_rule", rule_id: id }),
-      });
-      if (!res.ok) throw new Error(res.status === 403 ? "You have view-only access to Books." : "Couldn't delete that rule.");
-    } catch (err) {
-      // Put it back — the rule is still live on the server.
+    setRules((prev) => (prev ?? []).filter((x) => x.id !== r.id));
+    const res = await authFetch("/api/books/data", { method: "POST", body: JSON.stringify({ action: "delete_rule", rule_id: r.id }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
       setRules(before);
-      setError(err instanceof Error && err.message ? err.message : "Couldn't delete that rule.");
+      setError(res.status === 403 ? "You have view-only access to Books." : "Couldn’t delete that rule.");
+      return;
     }
+    const saved = (data.rule ?? r) as Rule;
+    toast({
+      message: `Deleted the rule “${matchText(r.match)}”`,
+      action: {
+        label: "Undo",
+        run: () =>
+          void authFetch("/api/books/ledger", { method: "POST", body: JSON.stringify({ action: "restore_rule", rule: saved }) }).then((x) => {
+            toast({ message: x.ok ? "Rule restored" : "Couldn’t restore the rule. Teach it again from a transaction." });
+            void load();
+          }),
+      },
+    });
   }
 
-  const subtle = "text-gray-500";
-  const card = isDark ? "glass-card" : "glass-card";
-  const border = isDark ? "border-white/10" : "border-gray-200";
-  const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const head = `text-xs ${subtle}`;
-  const chip = isDark ? "bg-white/[0.06] text-gray-300" : "bg-gray-100 text-gray-700";
-
   const needle = q.trim().toLowerCase();
-  const shown = needle ? rules.filter((r) => r.match.toLowerCase().includes(needle)) : rules;
+  const shown = useMemo(() => (rules ?? []).filter((r) => !needle || r.match.toLowerCase().includes(needle) || effects(r).join(" ").toLowerCase().includes(needle)), [rules, needle]);
+  const overlapping = (rules ?? []).filter((r) => r.overlaps && r.overlaps.length > 0).length;
 
-  const effect = (r: Rule) => {
-    const bits: string[] = [];
-    if (r.book_category) bits.push(r.book_category);
-    if (r.vendor_name) bits.push(`vendor → ${r.vendor_name}`);
-    if (r.type_override) bits.push(`type → ${TYPE_LABELS[r.type_override] ?? r.type_override}`);
-    if (r.loan_id) bits.push("linked to a loan");
-    return bits;
-  };
+  const matchesLink = (r: Rule) => (
+    <Link to={`/books/transactions?q=${encodeURIComponent(r.match)}`} className="text-accent tabular-nums hover:underline">
+      {r.matches.toLocaleString("en-US")}
+    </Link>
+  );
+  const columns: Column<Rule>[] = [
+    ...(ordered ? [{ key: "pos", header: "Order", width: "64px", render: (r: Rule) => <span className="text-ink-2 tabular-nums">{r.position}</span> }] : []),
+    {
+      key: "match",
+      header: "When the payee",
+      render: (r) => (
+        <span title={r.match}>
+          <span className="text-ink-2">{r.match_kind === "vendor" ? "is " : "contains "}</span>
+          {matchText(r.match)}
+          {r.overlaps && r.overlaps.length > 0 && (
+            <span className="block text-small text-warning">
+              Also reached by {r.overlaps.map((o) => `“${matchText(o.match)}”${o.wins ? " (tried first)" : ""}`).join(", ")}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    { key: "do", header: "Do this", width: "28%", render: (r) => effects(r).join(" · ") || <span className="text-ink-3">Nothing</span> },
+    { key: "matches", header: "Reaches", align: "right", width: "96px", sort: (a, b) => a.matches - b.matches, render: matchesLink },
+    { key: "added", header: "Added", width: "160px", sort: (a, b) => a.created_at.localeCompare(b.created_at), render: (r) => <span className="text-small text-ink-2">{[format.date(r.created_at, "short"), r.created_by_name].filter(Boolean).join(" · ")}</span> },
+    ...(writable
+      ? [
+          {
+            key: "act",
+            header: "",
+            width: "56px",
+            render: (r: Rule) => (
+              <span className="inline-flex [@media(hover:hover)]:opacity-0 [tr:hover_&]:opacity-100 focus-within:opacity-100">
+                <IconButton icon="trash" label={`Delete rule “${matchText(r.match)}”`} onClick={() => void remove(r)} />
+              </span>
+            ),
+          },
+        ]
+      : []),
+  ];
 
+  const context = rules ? `${format.count(rules.length, "rule", "rules")}${ordered ? " · tried top to bottom; a payee’s exact name before words in it, then the longer text" : ""}${overlapping ? ` · ${overlapping} overlap` : ""}` : undefined;
   return (
-    <div className="w-full max-w-4xl">
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
-        <div>
-          <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "" : "text-gray-900"}`}>Rules</h1>
-          <p className={`text-sm mt-0.5 ${subtle}`}>
-            What the books have learned — {rules.length} rule{rules.length === 1 ? "" : "s"}. New ones are created whenever you choose “apply to all”.
-          </p>
+    <Page width="workspace" header={<PageHeader title="Rules" context={context} />}>
+      {error && <Banner tone="negative" action={<Button variant="quiet" size="sm" onClick={() => void load()}>Try again</Button>}>{error}</Banner>}
+      <p className="max-w-[68ch] text-body text-ink-2">Rules are made when you file a payee’s transactions all at once, set a vendor’s default, rename or merge a vendor, or auto-attach a loan. They decide how new transactions are filed, before the built-in chart. Each change a rule makes is recorded in that transaction’s history.</p>
+      <Card flush>
+        <div className="px-5 py-3 touch:px-4">
+          <SearchField value={q} onChange={setQ} placeholder="Search rules" label="Search rules" />
         </div>
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search rules…"
-          aria-label="Search rules"
-          className={`px-3.5 h-[40px] sm:h-9 rounded-full text-sm border focus:outline-none w-full sm:w-56 ${
-            isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400"
-          }`}
-        />
-      </div>
-
-      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
-
-      {loading ? (
-        <div className={`rounded-2xl border p-4 space-y-2.5 rise-in ${card}`}>
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="shimmer h-4" style={{ width: `${95 - (i % 3) * 10}%` }} />
-          ))}
-        </div>
-      ) : shown.length === 0 ? (
-        error && rules.length === 0 ? null : (
-          <p className={`text-sm ${subtle}`}>{rules.length === 0 ? "No rules yet. Categorize a vendor with “apply to all” to teach your first one." : "No rules match that search."}</p>
-        )
-      ) : (
-        <>
-          {/* Below lg each rule is a card — the match, what it does (chips
-            wrap), then its match count and Delete — so nothing hides off to
-            the side of a narrow column. */}
-          <ul className={`lg:hidden rounded-2xl border rise-in ${card}`}>
-            {shown.map((r) => (
-              <li key={r.id} className={`px-4 pt-3 pb-1 border-t first:border-t-0 ${rowBorder}`}>
-                <p className="text-sm font-medium break-all">“{r.match}”</p>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {effect(r).map((b) => (
-                    <span key={b} className={`px-2 py-0.5 rounded-full text-xs break-all ${chip}`}>
-                      {b}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className={`text-xs tabular-nums ${subtle}`}>
-                    {r.matches} match{r.matches === 1 ? "" : "es"}
-                  </span>
-                  {writable && (
-                    <button onClick={() => setConfirming(r)} aria-label={`Delete rule “${r.match}”`} className={`h-[44px] px-3 -mr-3 text-sm cursor-pointer ${subtle} hover:text-red-500`}>
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className={`hidden lg:block rounded-2xl border overflow-x-auto rise-in ${card}`}>
-            <table className="w-full text-sm min-w-[640px]">
-              <thead>
-                <tr className={`${head} border-b ${border}`}>
-                  <th className="px-4 py-2.5 text-left font-medium">When description contains</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Do this</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Matches</th>
-                  <th className="px-4 py-2.5" />
-                </tr>
-              </thead>
-              <tbody>
+        <div className="border-t border-line">
+          {!rules ? (
+            <Skeleton kind={phone ? "rows" : "table"} rows={8} />
+          ) : phone ? (
+            shown.length ? (
+              <List label="Rules">
                 {shown.map((r) => (
-                  <tr key={r.id} className={`border-t ${rowBorder}`}>
-                    <td className="px-4 py-2.5 font-medium break-all max-w-[280px]">“{r.match}”</td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {effect(r).map((b) => (
-                          <span key={b} className={`px-2 py-0.5 rounded-full text-xs ${chip}`}>
-                            {b}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className={`px-4 py-2.5 text-right tabular-nums ${r.matches ? "" : subtle}`}>{r.matches}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      {/* The padding is the tap box (a touch iPad shows this
-                        table too); the negative margins keep the row slim. */}
-                      {writable && (
-                        <button
-                          onClick={() => setConfirming(r)}
-                          title="Delete this rule"
-                          aria-label={`Delete rule “${r.match}”`}
-                          className={`text-xs cursor-pointer px-3 py-[14px] -my-[14px] -mr-3 ${subtle} hover:text-red-500`}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <ListRow
+                    key={r.id}
+                    title={`${r.match_kind === "vendor" ? "Is" : "Contains"} ${matchText(r.match)}`}
+                    secondary={[effects(r).join(" · "), `reaches ${r.matches}`].join(" · ")}
+                    to={`/books/transactions?q=${encodeURIComponent(r.match)}`}
+                    menu={writable ? [{ label: "Delete rule…", danger: true, onSelect: () => void remove(r) }] : undefined}
+                  />
                 ))}
-              </tbody>
-            </table>
+              </List>
+            ) : (
+              <div className="px-4 py-4">
+                <Empty size="section">{rules.length ? `No rules match “${q}”.` : "No rules yet. File a payee’s transactions all at once to teach the first one."}</Empty>
+              </div>
+            )
+          ) : (
+            <Table
+              caption="Rules"
+              columns={columns}
+              rows={shown}
+              rowKey={(r) => r.id}
+              phoneRow={(r) => ({ title: matchText(r.match) })}
+              empty={<Empty size="section">{rules.length ? `No rules match “${q}”.` : "No rules yet. File a payee’s transactions all at once to teach the first one."}</Empty>}
+            />
+          )}
+        </div>
+      </Card>
+      {builtIn.length > 0 && (
+        <Card title="Built into the books" flush info="Tried after the rules above, in this order. They can’t be changed here; a rule above overrides them.">
+          <div className="px-5 pb-4 touch:px-4">
+            <Disclosure label="Show the built-in rules" count={builtIn.length}>
+              <ul className="mt-2 flex flex-col">
+                {builtIn.map((b, i) => (
+                  <li key={i} className="border-b border-line py-2 text-body last:border-b-0">
+                    <span className="text-ink-2">{b.payeeOnly ? "When the payee names " : "When it mentions "}</span>
+                    {b.match}
+                    {b.plaid ? <span className="text-ink-2"> (bank category {b.plaid})</span> : null}
+                    <span className="block text-small text-ink-2">{b.category ? `File under ${accountShort(b.category)}` : "Leave for a person to decide"}</span>
+                  </li>
+                ))}
+              </ul>
+            </Disclosure>
           </div>
-        </>
+        </Card>
       )}
-      {confirming && (
-        <ConfirmDialog
-          isDark={isDark}
-          tone="danger"
-          title={`Delete rule “${confirming.match}”?`}
-          message="Future syncs will stop applying it. Transactions it already filed keep their account."
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
-          onConfirm={() => {
-            const id = confirming.id;
-            setConfirming(null);
-            void remove(id);
-          }}
-          onClose={() => setConfirming(null)}
-        />
-      )}
-    </div>
+    </Page>
   );
 }

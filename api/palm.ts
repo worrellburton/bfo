@@ -250,7 +250,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body: { display_name: e.name, metadata: { bfo_asset_id: assetId }, vault },
         });
         await logActivity(assetId, { id: user.id, name: user.name || user.email, source: "user" }, [
-          { kind: "palm", summary: `Added to Palm${mode === "test" ? " (test)" : ""}, with the ${facts.from.formationDate === "state" ? "state's" : "record's"} formation date and the ${facts.from.address === "state" ? "state's" : "record's"} address` },
+          {
+            kind: "palm",
+            summary: `Added to Palm${mode === "test" ? " (test)" : ""}, with the ${facts.from.formationDate === "state" ? "state's" : "record's"} formation date and the ${facts.from.address === "state" ? "state's" : "record's"} address`,
+          },
         ]);
         return res.status(200).json({ mode, businessId: created.id, palmId: created.palm_id, created: true, from: facts.from });
       }

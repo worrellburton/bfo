@@ -282,13 +282,7 @@ export type NoteRuling = {
  * who), and a hard delete is refused. Only the note's author, or an owner
  * or admin, may change or delete it, and nobody may change its author or date.
  */
-export function noteRules(
-  before: Map<string, Json>,
-  after: Map<string, Json>,
-  ids: string[],
-  me: { id: string; name: string | null; admin: boolean },
-  now: Date,
-): NoteRuling {
+export function noteRules(before: Map<string, Json>, after: Map<string, Json>, ids: string[], me: { id: string; name: string | null; admin: boolean }, now: Date): NoteRuling {
   const stamps: TreeOp[] = [];
   const events: NoteRuling["events"] = [];
   const by = { id: me.id, name: me.name };

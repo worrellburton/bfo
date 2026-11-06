@@ -1,4 +1,4 @@
-import { realtimeSecret, runAskTool } from "./ask-client";
+import { realtimeSecret, runAskTool, type Source } from "./ask-client";
 
 /**
  * The live voice: a WebRTC call to OpenAI's Realtime model (lib/realtime.ts
@@ -21,8 +21,8 @@ type LiveHandlers = {
   /** The answer's words as they're spoken, and the whole answer when it's done. */
   onAssistantDelta: (delta: string) => void;
   onAssistantDone: (text: string) => void;
-  /** What's being looked up. */
-  onTool: (label: string) => void;
+  /** What's being looked up, and what it read (for the transcript and History). */
+  onTool: (label: string, source?: Source) => void;
   onError: (message: string) => void;
 };
 
@@ -228,7 +228,7 @@ export class LiveVoice {
         this.set("thinking");
         void runAskTool(name, input)
           .then((r) => {
-            this.h.onTool(r.label);
+            this.h.onTool(r.label, r.source);
             this.send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: r.output } });
           })
           .catch((e) => {

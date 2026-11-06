@@ -141,6 +141,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
   const shownKey = useRef<string | null>(null);
   const opened = useRef(false);
   const formRef = useRef<HTMLElement | null>(null);
+  const frameEl = useRef<HTMLElement | null>(null);
   const reasonRef = useRef<HTMLTextAreaElement | null>(null);
   const introRef = useRef<HTMLParagraphElement | null>(null);
 
@@ -223,6 +224,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
   const signPages = [...new Set(mine.filter((f) => f.type === "signature").map((f) => f.page))].sort((a, b) => a - b);
   const what = format.list([...new Set(mine.map((f) => FIELD_LABEL[f.type].toLowerCase()))].map((l, i) => (i === 0 ? `your ${l}` : `the ${l}`)));
   const whereText = signPages.length ? ` on page ${format.list(signPages.map(String))}` : "";
+  const markedWhere = signPages.length === 1 ? `where page ${signPages[0]} is marked` : signPages.length ? `where pages ${format.list(signPages.map(String))} are marked` : "where the page is marked";
   const capacity = view?.you.entity ? `for ${view.you.entity} as its ${view.you.title || "signer"}` : view ? `as ${view.you.name}${view.you.role ? `, ${view.you.role}` : ""}` : "";
   const differs = !!view && !!name.trim() && !sameName(name, view.you.name);
   const missing = !name.trim() ? "Type your full legal name to continue" : needsAddress && !address.trim() ? "Type your address to continue" : !png ? "Draw or type your signature to continue" : "";
@@ -244,9 +246,16 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
       const pageEl = field ? document.querySelector<HTMLElement>(`[data-page="${field.page}"]`) : null;
       if (!field || !pageEl) return;
       const rect = pageEl.getBoundingClientRect();
-      const top = window.scrollY + rect.top + field.y * rect.height - window.innerHeight / 3;
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      window.scrollTo({ top: Math.max(0, top), behavior: reduce ? "auto" : "smooth" });
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      // On a computer the document has its own frame; on a phone the pages flow in the page.
+      const frame = frameEl.current;
+      if (frame && frame.scrollHeight > frame.clientHeight + 4) {
+        const fr = frame.getBoundingClientRect();
+        frame.scrollTo({ top: Math.max(0, frame.scrollTop + rect.top - fr.top + field.y * rect.height - frame.clientHeight / 3), behavior });
+        frame.scrollIntoView({ block: "nearest", behavior });
+        return;
+      }
+      window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + field.y * rect.height - window.innerHeight / 3), behavior });
     },
     [view, fields],
   );
@@ -421,7 +430,7 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
                 </Banner>
               ) : (
                 <p className="text-body text-pretty">
-                  You’re signing {capacity}. {mine.length ? `${what.charAt(0).toUpperCase()}${what.slice(1)} ${mine.length === 1 ? "goes" : "go"} where the page is marked${whereText}.` : ""}
+                  You’re signing {capacity}. {mine.length ? `${what.charAt(0).toUpperCase()}${what.slice(1)} ${mine.length === 1 ? "goes" : "go"} ${markedWhere}.` : ""}
                 </p>
               )}
             </div>
@@ -451,7 +460,16 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
               </p>
             )}
 
-            <section ref={frameRef} aria-label="The document" className="mt-4 rounded-card bg-sunken p-2 sm:p-6">
+            <section
+              ref={(el) => {
+                frameRef(el as HTMLDivElement | null);
+                frameEl.current = el;
+              }}
+              aria-label="The document"
+              tabIndex={phone ? undefined : 0}
+              className="mt-4 rounded-card bg-sunken p-2 sm:p-6"
+              style={phone ? undefined : { maxHeight: "75dvh", overflowY: "auto" }}
+            >
               {width > 0 && (
                 <PdfPages
                   src={pdfUrl}
@@ -461,15 +479,22 @@ export function SignPage({ token, preview }: { token: string; preview?: Preview 
                   overlay={(page) =>
                     canSign
                       ? fields
-                          .filter((f) => f.page === page)
+                          // Another party's places only while they haven't signed (after that their mark is on the page).
+                          .filter((f) => f.page === page && (f.party === view.you.key || view.parties?.find((p) => p.key === f.party)?.status !== "signed"))
                           .map((f) => {
                             const yours = f.party === view.you.key;
                             return (
                               <div
                                 key={f.id}
                                 aria-hidden
-                                className={cx("absolute rounded-mark", yours ? "border-2 border-accent bg-accent-tint" : "border border-dashed border-edge")}
-                                style={{ left: `${f.x * 100}%`, top: `${f.y * 100}%`, width: `${f.w * 100}%`, height: `${f.h * 100}%`, opacity: yours ? 0.85 : 0.6 }}
+                                className={cx("absolute rounded-mark", yours ? "border-2 border-accent" : "border border-dashed border-edge")}
+                                style={{
+                                  left: `${f.x * 100}%`,
+                                  top: `${f.y * 100}%`,
+                                  width: `${f.w * 100}%`,
+                                  height: `${f.h * 100}%`,
+                                  background: yours ? "color-mix(in srgb, var(--color-accent) 14%, transparent)" : undefined,
+                                }}
                               >
                                 {yours && (
                                   <span className="absolute bottom-full left-0 mb-[2px] rounded-mark bg-accent px-1 text-caption font-medium whitespace-nowrap text-on-accent">

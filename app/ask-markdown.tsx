@@ -98,6 +98,9 @@ export function parseBlocks(md: string): Block[] {
 
 const INLINE = /(\*\*[^*]+\*\*|\*[^*\n]+\*|_[^_\n]+_|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
 
+/** A cell that is a figure: "$1,200", "−$1,200", "+$1,200", "($1,200)", "12.5%", "1,204". */
+export const NUMERIC = /^[(]?[-−–+]?\$?[\d,.]+%?[)]?$/;
+
 function Inline({ text }: { text: string }) {
   const parts = text.split(INLINE);
   return (
@@ -108,7 +111,7 @@ function Inline({ text }: { text: string }) {
         if ((part.startsWith("*") && part.endsWith("*")) || (part.startsWith("_") && part.endsWith("_"))) return <em key={i}>{part.slice(1, -1)}</em>;
         if (part.startsWith("`") && part.endsWith("`"))
           return (
-            <code key={i} className="rounded bg-black/[0.06] px-1 py-px font-mono text-[0.92em] dark:bg-white/10">
+            <code key={i} className="rounded-mark bg-sunken px-1 font-mono text-[0.92em]">
               {part.slice(1, -1)}
             </code>
           );
@@ -121,12 +124,16 @@ function Inline({ text }: { text: string }) {
                 {label}
               </Link>
             );
-          if (/^https?:\/\//i.test(href))
-            return (
-              <a key={i} href={href} target="_blank" rel="noreferrer" className="ask-link">
-                {label}
-              </a>
-            );
+          // An off-site link came from the model, and mail it read can steer it: show where it goes, as text.
+          if (/^https?:\/\//i.test(href)) {
+            let host = "";
+            try {
+              host = new URL(href).hostname.replace(/^www\./, "");
+            } catch {
+              host = "";
+            }
+            return <Fragment key={i}>{host && !label.toLowerCase().includes(host) ? `${label} (${host})` : label}</Fragment>;
+          }
           return <Fragment key={i}>{label}</Fragment>;
         }
         return <Fragment key={i}>{part}</Fragment>;
@@ -186,7 +193,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
                     {b.rows.slice(1).map((r, j) => (
                       <tr key={j}>
                         {r.map((c, k) => (
-                          <td key={k} className={/^[-–]?\$?[\d,.]+%?$/.test(c.trim()) ? "text-right tabular-nums" : ""}>
+                          <td key={k} className={NUMERIC.test(c.trim()) ? "text-right tabular-nums" : ""}>
                             <Inline text={c} />
                           </td>
                         ))}

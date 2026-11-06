@@ -118,10 +118,27 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+/** Entity names by id, read from the tree: for a server that doesn't name them with the requests. */
+export async function entityNamesFor(ids: string[]): Promise<Record<string, string>> {
+  const want = [...new Set(ids.filter(Boolean))];
+  if (!want.length) return {};
+  try {
+    const res = await authFetch(`/api/tree?path=assets&ids=${want.map(encodeURIComponent).join(",")}`);
+    if (!res.ok) return {};
+    const body = (await res.json()) as { rows?: Array<{ id: string; data?: { name?: unknown } | null }> };
+    return Object.fromEntries((body.rows ?? []).filter((r) => typeof r.data?.name === "string" && r.data.name.trim()).map((r) => [r.id, String(r.data!.name).trim()]));
+  } catch {
+    return {};
+  }
+}
+
 export const signApi = {
   /** Every request that isn't archived (or only the archived ones), and the names of their entities. */
-  list: (archived = false) =>
-    call<{ requests: SignatureRequest[]; entityNames?: Record<string, string> }>(`/api/sign${archived ? "?archived=1" : ""}`).then((r) => ({ requests: r.requests, entityNames: r.entityNames ?? {} })),
+  list: async (archived = false) => {
+    const r = await call<{ requests: SignatureRequest[]; entityNames?: Record<string, string> }>(`/api/sign${archived ? "?archived=1" : ""}`);
+    const entityNames = r.entityNames ?? (await entityNamesFor(r.requests.map((x) => x.asset_id ?? "")));
+    return { requests: r.requests, entityNames };
+  },
   /** One request. With `have`, the key of the PDF already on screen: pdfUrl comes back null unless there's a newer one. gameAllowed: this draft may go out as the game (only TallulahMD LLC's). */
   get: (id: string, have?: string | null) => call<RequestPage>(`/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`),
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),

@@ -151,17 +151,9 @@ export default function PaperMailPage() {
   const segment = (label: string, count: number | null) => (count ? `${label} ${count > 99 ? "99+" : count}` : label);
   const entityOptions: Option<string>[] = [{ value: "", label: "All entities" }, ...entities.map((e) => ({ value: e.id, label: e.name }))];
   const kindOptions: Option<string>[] = [{ value: "", label: "Any kind" }, ...KIND_OPTIONS];
-  const entitySelect = <Select label="Entity" size="sm" value={entity ?? ""} options={entityOptions} onChange={(v) => setEntity(v || null)} className={phone ? undefined : "w-[200px]"} />;
+  const entitySelect = <Select label="Entity" size="sm" value={entity ?? ""} options={entityOptions} onChange={(v) => setEntity(v || null)} />;
   const kindSelect = (
-    <Select
-      label="Kind"
-      size="sm"
-      value={kind ?? ""}
-      options={kindOptions}
-      onChange={(v) => setKind(v || null)}
-      footnote="Kinds come from BFO’s reading, made the first time a piece is opened."
-      className={phone ? undefined : "w-[160px]"}
-    />
+    <Select label="Kind" size="sm" value={kind ?? ""} options={kindOptions} onChange={(v) => setKind(v || null)} footnote="Kinds come from BFO’s reading, made the first time a piece is opened." />
   );
   const active = [...(entity ? [{ label: nameOf(entity), clear: () => setEntity(null) }] : []), ...(kind ? [{ label: KIND_LABEL[kind] ?? kind, clear: () => setKind(null) }] : [])];
 
@@ -232,7 +224,6 @@ export default function PaperMailPage() {
       <Card
         title="Our mailing address"
         info="A mailbox at Stable, a mail receiving service: it isn’t an office, and it can’t serve as a registered agent’s address. Legal papers are served on each entity’s registered agent."
-        action={writer ? <TextLink to={STABLE_DASHBOARD}>Open Stable</TextLink> : undefined}
       >
         <div className="flex items-start gap-2">
           <address className="text-heading font-medium not-italic tabular-nums">
@@ -245,6 +236,11 @@ export default function PaperMailPage() {
         <p className="mt-2 max-w-[68ch] text-small text-ink-2">
           Stable receives each piece, photographs the envelope and scans what you ask it to. Every piece shows up below, filed under its entity, or under No entity until someone chooses.
         </p>
+        {writer && (
+          <TextLink to={STABLE_DASHBOARD} className="mt-2">
+            Open Stable
+          </TextLink>
+        )}
       </Card>
 
       <section aria-label="The mail" className="flex flex-col gap-4">
@@ -263,8 +259,8 @@ export default function PaperMailPage() {
           />
           {!phone && (
             <div className="ml-auto flex items-center gap-2">
-              {entitySelect}
-              {kindSelect}
+              <div className="w-[220px]">{entitySelect}</div>
+              <div className="w-[160px]">{kindSelect}</div>
             </div>
           )}
           {phone && (

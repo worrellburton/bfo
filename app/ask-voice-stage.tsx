@@ -2,14 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "./ask-client";
 import { revealWords } from "./ask-voice";
 import { ParticleGlobe, type GlobeMode } from "./particle-globe";
+import { cx, Spinner, useFinePointer } from "./ui";
 
 /**
- * The voice conversation (the default face of Ask BFO): a particle globe,
- * the words being said under it, and a hold-to-talk button. What the person
- * said shows as they said it; the answer's words appear as the voice reaches
- * them. The whole exchange runs down the side as a transcript.
+ * The voice conversation: a particle globe that shows listening, thinking
+ * and speaking, the words being said under it, and a hold-to-talk button.
+ * What the person said shows as they said it; the answer's words appear as
+ * the voice reaches them. Once there's an exchange, it runs down the side as
+ * a transcript, with what each answer read.
  *
- * Always dark, like the landing page, whatever the app's theme.
+ * The voice room is a brand moment, so it's drawn in the door's night
+ * palette (docs/DESIGN.md §2.7); the page around it sets data-theme="dark"
+ * and fills the content area, so it never sits as a dark box in a light page.
+ * One line says what to do (under the button); the line above the words is
+ * live status only, announced to screen readers.
  */
 
 export type VoiceStatus = "idle" | "connecting" | "listening" | "transcribing" | "thinking" | "speaking";
@@ -32,15 +38,15 @@ type Props = {
   onHoldEnd: () => void;
   /** Stop the voice mid-answer. */
   onHush: () => void;
-  onType: () => void;
 };
 
 const globeMode = (s: VoiceStatus): GlobeMode =>
   s === "listening" ? "listening" : s === "transcribing" || s === "thinking" || s === "connecting" ? "thinking" : s === "speaking" ? "speaking" : "idle";
 
-export function VoiceStage({ status, tools, caption, messages, micAvailable, error, firstName, level, progress, onHoldStart, onHoldEnd, onHush, onType }: Props) {
+export function VoiceStage({ status, tools, caption, messages, micAvailable, error, firstName, level, progress, onHoldStart, onHoldEnd, onHush }: Props) {
   const holding = useRef(false);
   const transcript = useRef<HTMLDivElement>(null);
+  const keyboard = useFinePointer();
 
   // While the answer is spoken, redraw every frame so its words keep pace with the voice.
   const [, setFrame] = useState(0);
@@ -66,7 +72,7 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) || !!el.closest("[role=dialog],[role=menu],[role=listbox]"));
     };
     const down = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat || typing(e) || holding.current) return;
@@ -89,105 +95,73 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
   }, [onHoldStart, onHoldEnd]);
 
   const busy = status === "transcribing" || status === "thinking" || status === "connecting";
-  const statusLine =
+  const live =
     status === "listening"
-      ? "Listening"
+      ? "Listening. Let go to send."
       : status === "connecting"
-        ? "Connecting"
+        ? "Connecting…"
         : status === "transcribing"
-          ? "Writing down what you said"
+          ? "Writing down what you said…"
           : status === "thinking"
-            ? tools.length
-              ? tools[tools.length - 1]
-              : "Thinking"
+            ? `${tools.length ? tools[tools.length - 1] : "Thinking"}…`
             : status === "speaking"
               ? "Speaking"
-              : messages.length
-                ? "Hold to ask something else"
-                : micAvailable
-                  ? "Hold the button and ask"
-                  : "This browser has no microphone";
-
-  const ivory = "text-[#f4ede0]";
+              : "";
+  const hasTranscript = messages.length > 0 || !!caption;
 
   return (
-    <div className="relative grid h-full min-h-0 overflow-hidden rounded-2xl bg-black text-[#f4ede0] lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div aria-hidden className="absolute inset-0">
-        <div className="landing-orb landing-orb-1 opacity-60" />
-        <div className="landing-orb landing-orb-3 opacity-50" />
-      </div>
-
+    <div className={cx("grid h-full min-h-0 text-door-ink", hasTranscript && "lg:grid-cols-[minmax(0,1fr)_320px]")}>
       {/* The stage */}
-      <section className="relative flex min-h-0 flex-col items-center">
-        <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onType}
-            className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-1.5 rounded-full border border-[#f4ede0]/15 px-3.5 hover:border-[#f4ede0]/35"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h10" />
-            </svg>
-            Type
-          </button>
+      <section className="relative flex min-h-0 flex-col items-center justify-center gap-6 px-4 py-6">
+        <div className="relative aspect-square w-[min(48vw,32vh,320px)] max-sm:w-[min(56vw,26vh)]">
+          <ParticleGlobe mode={globeMode(status)} level={level} className="absolute inset-[-30%] h-[160%] w-[160%]" />
         </div>
 
-        <div className="relative flex w-full flex-1 flex-col items-center justify-center px-6 pt-6">
-          <div className="relative aspect-square w-[min(50vw,38vh,360px)] max-sm:w-[min(62vw,30vh)]">
-            <ParticleGlobe mode={globeMode(status)} level={level} className="absolute inset-[-30%] h-[160%] w-[160%]" />
-          </div>
+        {/* Live status: only while something is happening. */}
+        <p role="status" aria-live="polite" className={cx("min-h-[20px] text-small", status === "listening" ? "text-door-ink" : "text-door-ink-2")}>
+          {live}
+        </p>
 
-          <p className={`auth-eyebrow mt-12 flex items-center gap-2 ${busy || status === "speaking" || status === "listening" ? "text-[#f4ede0]/70" : ""}`}>
-            {(busy || status === "listening" || status === "speaking") && (
-              <span className={`h-1.5 w-1.5 rounded-full ${status === "listening" ? "bg-red-400 ask-pulse" : status === "speaking" ? "bg-[#f4ede0] ask-pulse" : "bg-[#818cf8] ask-pulse"}`} />
-            )}
-            {statusLine}
+        {/* The words */}
+        <div className="flex min-h-[96px] w-full max-w-[640px] items-start justify-center text-center">
+          {caption ? (
+            caption.role === "user" ? (
+              <p className="text-reading text-door-ink-2">“{shown}”</p>
+            ) : (
+              <p className="text-title font-normal text-door-ink">
+                {shown}
+                {status === "speaking" && shown.length < caption.text.length && <span className="ask-caret" aria-hidden />}
+              </p>
+            )
+          ) : !messages.length && status === "idle" ? (
+            <p className="text-heading text-door-ink">{firstName ? `Hello, ${firstName}. ` : "Hello. "}What would you like to know about the office?</p>
+          ) : null}
+        </div>
+        {error && (
+          <p role="alert" className="max-w-[560px] text-center text-small text-door-error">
+            {error}
           </p>
-
-          {/* The words */}
-          <div className="mt-5 flex min-h-[7.5rem] w-full max-w-[640px] items-start justify-center text-center">
-            {caption ? (
-              caption.role === "user" ? (
-                <p className="text-[16px] leading-relaxed text-[#f4ede0]/70 sm:text-[17px]">
-                  <span className="text-[#f4ede0]/35">“</span>
-                  {shown}
-                  <span className="text-[#f4ede0]/35">”</span>
-                </p>
-              ) : (
-                <p className={`font-brand text-[19px] leading-[1.45] sm:text-[23px] ${ivory}`}>
-                  {shown}
-                  {status === "speaking" && shown.length < caption.text.length && <span className="ask-caret" aria-hidden />}
-                </p>
-              )
-            ) : !messages.length && status === "idle" ? (
-              <p className={`font-brand text-[22px] leading-[1.35] sm:text-[26px] ${ivory}`}>{firstName ? `Hello, ${firstName}. ` : "Hello. "}Ask me anything about the office.</p>
-            ) : null}
-          </div>
-          {error && (
-            <p role="alert" className="mt-2 text-[12.5px] text-red-300/90">
-              {error}
-            </p>
-          )}
-        </div>
+        )}
 
         {/* Hold to talk */}
-        <div className="relative flex w-full flex-col items-center gap-3 pb-6 pt-2">
+        <div className="flex flex-col items-center gap-4">
           {status === "speaking" ? (
             <button
               type="button"
               onClick={onHush}
-              className="auth-link inline-flex h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] items-center gap-2 rounded-full border border-[#f4ede0]/15 px-4 hover:border-[#f4ede0]/35"
+              className="inline-flex h-(--control-sm) cursor-pointer items-center gap-2 rounded-full border border-door-edge px-4 text-small text-door-ink hover:border-door-ink-2"
             >
-              <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
-              Stop
+              <span className="size-[10px] rounded-[2px] bg-current" aria-hidden />
+              Stop speaking
             </button>
           ) : (
-            <span className="auth-link h-9 max-md:h-[44px] md:pointer-coarse:h-[44px]" aria-hidden />
+            <span className="h-(--control-sm)" aria-hidden />
           )}
           <button
             type="button"
             disabled={!micAvailable || busy}
             aria-label="Hold to talk"
+            aria-pressed={status === "listening"}
             onPointerDown={(e) => {
               if (e.button !== 0 || holding.current) return;
               e.currentTarget.setPointerCapture(e.pointerId);
@@ -205,17 +179,16 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
               onHoldEnd();
             }}
             onContextMenu={(e) => e.preventDefault()}
-            className={`voice-hold grid h-[84px] w-[84px] cursor-pointer select-none place-items-center rounded-full border transition-transform disabled:cursor-default disabled:opacity-40 ${
-              status === "listening"
-                ? "voice-hold-on scale-110 border-red-400/60 bg-red-500/90 text-white"
-                : "border-[#f4ede0]/25 bg-[#f4ede0]/[0.06] text-[#f4ede0] hover:bg-[#f4ede0]/[0.12] active:scale-95"
-            }`}
+            className={cx(
+              "voice-hold grid size-[84px] cursor-pointer place-items-center rounded-full border select-none disabled:cursor-default disabled:border-door-edge disabled:text-door-ink-3",
+              status === "listening" ? "voice-hold-on border-danger bg-danger text-on-danger" : "border-door-edge text-door-ink hover:border-door-ink-2",
+            )}
             style={{ touchAction: "none", WebkitUserSelect: "none" }}
           >
             {busy ? (
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              <Spinner className="size-[24px]" />
             ) : (
-              <svg className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+              <svg className="size-[32px]" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -224,23 +197,26 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
               </svg>
             )}
           </button>
-          <p className="auth-eyebrow text-[#f4ede0]/40">{status === "listening" ? "Release to send" : "Hold to talk · or hold space"}</p>
+          <p className="text-small text-door-ink-2">{!micAvailable ? "This browser has no microphone. Use Text instead." : keyboard ? "Hold to talk, or hold Space" : "Hold to talk"}</p>
         </div>
+        <p className="max-w-[520px] text-center text-caption text-pretty text-door-ink-2">
+          Answers come from BFO’s records and can be wrong. Not legal or tax advice. Your voice goes to OpenAI to be understood and answered; the words are saved to History.
+        </p>
       </section>
 
-      {/* The transcript */}
-      <aside className="relative hidden min-h-0 flex-col border-l border-[#f4ede0]/10 lg:flex">
-        <p className="auth-eyebrow px-5 pt-5 text-left" style={{ marginRight: 0 }}>
-          Transcript
-        </p>
-        <div ref={transcript} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {messages.length === 0 && !caption ? <p className="text-[12.5px] text-[#f4ede0]/35">What you say and what it answers will run here.</p> : null}
-          {messages.map((m, i) => (
-            <Line key={i} m={m} />
-          ))}
-          {caption && !messages.some((m) => m.role === caption.role && m.text === caption.text) && <Line m={{ role: caption.role, text: caption.text }} live />}
-        </div>
-      </aside>
+      {/* The transcript, once there is one */}
+      {hasTranscript && (
+        <aside aria-label="Transcript" className="hidden min-h-0 flex-col border-l border-door-edge lg:flex">
+          <h2 className="px-5 pt-5 text-small font-medium text-door-ink-2">Transcript</h2>
+          <div ref={transcript} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            {messages.map((m, i) => (
+              <Line key={i} m={m} />
+            ))}
+            {caption && !messages.some((m) => m.role === caption.role && m.text === caption.text) && <Line m={{ role: caption.role, text: caption.text }} live />}
+          </div>
+          <p className="border-t border-door-edge px-5 py-3 text-caption text-door-ink-2">Saved to History until you delete it.</p>
+        </aside>
+      )}
     </div>
   );
 }
@@ -248,9 +224,12 @@ export function VoiceStage({ status, tools, caption, messages, micAvailable, err
 function Line({ m, live = false }: { m: ChatMessage; live?: boolean }) {
   const you = m.role === "user";
   return (
-    <div className={live ? "opacity-70" : ""}>
-      <p className={`mb-1 text-[10px] uppercase tracking-[0.22em] ${you ? "text-[#f4ede0]/35" : "text-[#a5b4fc]/70"}`}>{you ? "You" : "BFO"}</p>
-      <p className={`whitespace-pre-wrap text-[12.5px] leading-relaxed ${you ? "text-[#f4ede0]/75" : "text-[#f4ede0]/90"}`}>{m.text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\*\*/g, "")}</p>
+    <div>
+      <p className="mb-1 text-caption font-medium text-door-ink-2">{you ? "You" : live ? "BFO, speaking" : "BFO"}</p>
+      <p className={cx("text-small whitespace-pre-wrap", you ? "text-door-ink-2" : "text-door-ink")}>{m.text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\*\*/g, "")}</p>
+      {!you && m.sources && m.sources.length > 0 && (
+        <p className="mt-1 text-caption text-door-ink-2">Read: {m.sources.map((s) => s.detail ?? s.label).join(" · ")}</p>
+      )}
     </div>
   );
 }

@@ -162,7 +162,9 @@ export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined, opt
         // A grantor's SSN goes on the form only when the record says the trust is a grantor trust.
         chain.push({ name: curName, as: "class not recorded" });
         notes.unshift(`Line 1 follows the owners: ${path()}.`);
-        notes.push(`${curName}'s tax classification isn't on record, so whose TIN goes on line 1 can't be said. Record it on the trust's page (a revocable trust is a grantor trust), then fill in the W-9 again. Line 1 and Part I are left blank.`);
+        notes.push(
+          `${curName}'s tax classification isn't on record, so whose TIN goes on line 1 can't be said. Record it on the trust's page (a revocable trust is a grantor trust), then fill in the W-9 again. Line 1 and Part I are left blank.`,
+        );
         notes.push(W9_REVIEW);
         return { ...empty, notes, blocked: null, chain };
       }

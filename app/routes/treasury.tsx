@@ -260,7 +260,13 @@ export default function Treasury() {
       object: { names: dormant.map((a) => (accountName(a).toLowerCase().includes(a.institution_name.toLowerCase()) ? accountName(a) : `${accountName(a)} · ${a.institution_name}`)) },
       message:
         "They're empty and no money has moved in 90 days. Hidden accounts are left out of Treasury's totals, every Books report and the emailed Treasury report until you show them again. Nothing is deleted.",
-      details: noOwner.some((a) => dormant.includes(a)) ? [dormant.every((a) => noOwner.includes(a)) ? "None of them has an owner yet, so no entity’s Books change." : `${format.count(dormant.filter((a) => noOwner.includes(a)).length, "of them has", "of them have")} no owner yet.`] : undefined,
+      details: noOwner.some((a) => dormant.includes(a))
+        ? [
+            dormant.every((a) => noOwner.includes(a))
+              ? "None of them has an owner yet, so no entity’s Books change."
+              : `${format.count(dormant.filter((a) => noOwner.includes(a)).length, "of them has", "of them have")} no owner yet.`,
+          ]
+        : undefined,
       confirmLabel: `Hide ${format.count(n, "account")}`,
     });
     if (!ok) return;

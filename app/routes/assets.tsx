@@ -440,7 +440,8 @@ function StaffAssets() {
   async function syncWithPalm() {
     if (!palmMode || running) return;
     const live = palmMode === "live";
-    const why = (a: Rec) => (entityType(a) === "Trust" ? "a trust has no state record" : isDissolved(a) ? "dissolved" : isForming(a) ? "still being formed" : !formedIn(a) ? "no state on record" : "nothing to read");
+    const why = (a: Rec) =>
+      entityType(a) === "Trust" ? "a trust has no state record" : isDissolved(a) ? "dissolved" : isForming(a) ? "still being formed" : !formedIn(a) ? "no state on record" : "nothing to read";
     const skipped = palmPlan.skipped;
     const ok = await confirm({
       title: `Sync ${palmPlan.entities} of ${format.count(assets.length, "entity", "entities")} with Palm?`,
@@ -455,8 +456,12 @@ function StaffAssets() {
       receipt: live
         ? {
             lines: [
-              ...(palmPlan.withNumber ? [{ label: `${palmPlan.withNumber} with a file number × ${format.money(stateRecordCents(true) / 100)}`, cents: palmPlan.withNumber * stateRecordCents(true), estimate: true }] : []),
-              ...(palmPlan.withoutNumber ? [{ label: `${palmPlan.withoutNumber} without one × ${format.money(stateRecordCents(false) / 100)}`, cents: palmPlan.withoutNumber * stateRecordCents(false), estimate: true }] : []),
+              ...(palmPlan.withNumber
+                ? [{ label: `${palmPlan.withNumber} with a file number × ${format.money(stateRecordCents(true) / 100)}`, cents: palmPlan.withNumber * stateRecordCents(true), estimate: true }]
+                : []),
+              ...(palmPlan.withoutNumber
+                ? [{ label: `${palmPlan.withoutNumber} without one × ${format.money(stateRecordCents(false) / 100)}`, cents: palmPlan.withoutNumber * stateRecordCents(false), estimate: true }]
+                : []),
               ...(!palmPlan.states ? [{ label: "No state records to read", cents: 0 }] : []),
             ],
             mode: "live",
@@ -516,7 +521,9 @@ function StaffAssets() {
       message:
         "Each document not read yet is sent to Anthropic (Claude) to be read. It's filed into its empty slot, and what it says fills blank facts; where it disagrees with the record, the difference is flagged, not written. Member lists read earlier from governing documents are read again.",
       details: [
-        unread.docs ? `${format.count(unread.docs, "document")} not read yet, across ${format.count(unread.ents, "entity", "entities")}.` : "Every document has been read; only the operating agreements are checked again.",
+        unread.docs
+          ? `${format.count(unread.docs, "document")} not read yet, across ${format.count(unread.ents, "entity", "entities")}.`
+          : "Every document has been read; only the operating agreements are checked again.",
         "It runs in this tab: keep it open until it finishes. You can stop it at any time.",
         "Each change shows in the entity's history as the document scan, started by you.",
       ],
@@ -551,7 +558,15 @@ function StaffAssets() {
       });
       setScan({ ...end, notes: [...end.notes, ...extra] });
     } catch (err) {
-      setScan((s) => (s ? { ...s, done: true, paused: err instanceof Stopped ? "Stopped. Scan again to pick up where it left off." : `The scan stopped on an error: ${(err as Error).message} Scan again to pick up where it left off.` } : s));
+      setScan((s) =>
+        s
+          ? {
+              ...s,
+              done: true,
+              paused: err instanceof Stopped ? "Stopped. Scan again to pick up where it left off." : `The scan stopped on an error: ${(err as Error).message} Scan again to pick up where it left off.`,
+            }
+          : s,
+      );
     } finally {
       // The store learns of the scan's writes on its next poll; ask for it now.
       window.dispatchEvent(new Event("focus"));
@@ -595,7 +610,12 @@ function StaffAssets() {
 
   // ── Row actions ────────────────────────────────────────────────────────
   const rowItems = (a: Rec): MenuItem[] => [
-    ...(phone ? [{ label: "Open entity", onSelect: () => navigate(`/assets/${a.id}`) }, { label: `Records ${rec(a).score}%: what's missing`, onSelect: () => setRecordsFor(a.id) }] : []),
+    ...(phone
+      ? [
+          { label: "Open entity", onSelect: () => navigate(`/assets/${a.id}`) },
+          { label: `Records ${rec(a).score}%: what's missing`, onSelect: () => setRecordsFor(a.id) },
+        ]
+      : []),
     ...(writer && a.ein ? [{ label: "Copy EIN", onSelect: () => copyEin(a.ein!) }] : []),
     ...(a.stateLink ? [{ label: "Open state filing", hint: "State's site", onSelect: () => window.open(a.stateLink, "_blank", "noopener,noreferrer") }] : []),
     { label: "History", onSelect: () => navigate(`/assets/${a.id}/activity`) },
@@ -644,7 +664,9 @@ function StaffAssets() {
     }
     const list = owners.get(a.id) ?? [];
     if (!list.length) return { text: "Owner not recorded", more: "", full: "", none: true };
-    const changed = a.ownerChangedAt ? ` Recorded ${format.date(a.ownerChangedAt, "medium")}${a.ownerChangedBy?.name ? ` by ${a.ownerChangedBy.name}` : ""}${a.ownerEffective ? `, effective ${format.date(a.ownerEffective, "medium")}` : ""}.` : "";
+    const changed = a.ownerChangedAt
+      ? ` Recorded ${format.date(a.ownerChangedAt, "medium")}${a.ownerChangedBy?.name ? ` by ${a.ownerChangedBy.name}` : ""}${a.ownerEffective ? `, effective ${format.date(a.ownerEffective, "medium")}` : ""}.`
+      : "";
     return { text: ownerPhrase(list[0]), more: list.length > 1 ? `and ${format.count(list.length - 1, "other owner")}` : "", full: list.map(ownerPhrase).join(" · ") + changed, none: false };
   };
 
@@ -704,8 +726,12 @@ function StaffAssets() {
     { value: "Trust", label: "Trust" },
   ];
   const stateOptions: Option<string>[] = [
-    ...[...choices.formed.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n, c]) => ({ value: `formed:${n}`, label: n, short: `Formed in ${n}`, hint: String(c), group: "Formed in" })),
-    ...[...choices.foreign.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n, c]) => ({ value: `foreign:${n}`, label: n, short: `Registered in ${n}`, hint: String(c), group: "Registered in, as a foreign entity" })),
+    ...[...choices.formed.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([n, c]) => ({ value: `formed:${n}`, label: n, short: `Formed in ${n}`, hint: String(c), group: "Formed in" })),
+    ...[...choices.foreign.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([n, c]) => ({ value: `foreign:${n}`, label: n, short: `Registered in ${n}`, hint: String(c), group: "Registered in, as a foreign entity" })),
     ...(choices.none ? [{ value: NO_STATE, label: "No state on record", hint: String(choices.none), group: "Formed in" }] : []),
   ];
   const recordsOptions: Option<"all" | "incomplete" | "disagree">[] = [
@@ -750,7 +776,11 @@ function StaffAssets() {
   const sortHead = (label: string, key: SortKey, className = "") => {
     const on = sort.key === key;
     return (
-      <th scope="col" aria-sort={on ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className={cx("sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised px-3 text-left font-medium", className)}>
+      <th
+        scope="col"
+        aria-sort={on ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
+        className={cx("sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised px-3 text-left font-medium", className)}
+      >
         <button
           type="button"
           onClick={() => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))}
@@ -780,7 +810,11 @@ function StaffAssets() {
           <tr>
             <th scope="col" aria-sort={tree ? "ascending" : "none"} className="sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised pr-3 pl-5 text-left font-medium">
               <span className="flex items-center gap-3">
-                <button type="button" onClick={() => setSort({ key: "name", dir: 1 })} className={cx("inline-flex cursor-pointer items-center gap-1 text-caption font-medium hover:text-ink", tree ? "text-ink" : "text-ink-2")}>
+                <button
+                  type="button"
+                  onClick={() => setSort({ key: "name", dir: 1 })}
+                  className={cx("inline-flex cursor-pointer items-center gap-1 text-caption font-medium hover:text-ink", tree ? "text-ink" : "text-ink-2")}
+                >
                   Entity
                 </button>
                 {tree && parentIds.length > 0 && (
@@ -847,9 +881,7 @@ function StaffAssets() {
                         {sharedMark(a)}
                         {shut && kids > 0 && <span className="shrink-0 text-small text-ink-2">+{kids}</span>}
                       </span>
-                      <span className="truncate text-small text-ink-2">
-                        {context ? "Shown as an owner" : [TYPE_LABEL[a.type as EntityType], formedIn(a), ex].filter(Boolean).join(" · ")}
-                      </span>
+                      <span className="truncate text-small text-ink-2">{context ? "Shown as an owner" : [TYPE_LABEL[a.type as EntityType], formedIn(a), ex].filter(Boolean).join(" · ")}</span>
                     </span>
                   </div>
                 </td>
@@ -890,7 +922,14 @@ function StaffAssets() {
               {tree && (
                 <span className="flex w-8 shrink-0 justify-center">
                   {kids > 0 && (
-                    <IconButton icon={shut ? "chevronRight" : "chevronDown"} label={`${shut ? "Expand" : "Collapse"} ${a.name}`} noTooltip aria-expanded={!shut} className="-mx-[6px]" onClick={() => toggle(a.id)} />
+                    <IconButton
+                      icon={shut ? "chevronRight" : "chevronDown"}
+                      label={`${shut ? "Expand" : "Collapse"} ${a.name}`}
+                      noTooltip
+                      aria-expanded={!shut}
+                      className="-mx-[6px]"
+                      onClick={() => toggle(a.id)}
+                    />
                   )}
                 </span>
               )}

@@ -162,7 +162,8 @@ export function shortDate(isoDate: string): string {
 const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 
 /** The members who hold a share (managers with none don't). */
-export const shareHolders = (members?: Member[] | null) => (members ?? []).filter((m) => m?.name?.trim() && (!/manager|director|officer/i.test(m.role ?? "") || m.percent != null) && (m.percent == null || m.percent > 0));
+export const shareHolders = (members?: Member[] | null) =>
+  (members ?? []).filter((m) => m?.name?.trim() && (!/manager|director|officer/i.test(m.role ?? "") || m.percent != null) && (m.percent == null || m.percent > 0));
 
 /** The record as the rule book reads it: its owner, and how many members hold a share. */
 export function paperFor(a: EntityInput, all: Record<string, EntityInput>, id?: string): PaperworkInput & { ownerId?: string } {
@@ -249,7 +250,13 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
 
   // ── State record ────────────────────────────────────────────────────
   if (isTrust) add({ key: "state", status: "na", summary: "A trust files nothing with a state" });
-  else if (!st) add({ key: "state", status: "bad", summary: "No state of formation", fix: { text: "Set the state it was formed in, so its record and filings can be looked up.", href: page("overview"), cta: "Open entity" } });
+  else if (!st)
+    add({
+      key: "state",
+      status: "bad",
+      summary: "No state of formation",
+      fix: { text: "Set the state it was formed in, so its record and filings can be looked up.", href: page("overview"), cta: "Open entity" },
+    });
   else if (!mode) add({ key: "state", status: "missing", summary: "Needs Palm to read" });
   else if (!rec) add({ key: "state", status: "missing", summary: "Never checked with the state", fix: { ...check, text: `Read its record from ${agency} through Palm.` } });
   else if (rec.status && rec.status !== "active") {
@@ -280,7 +287,8 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
     add({ key: "standing", status: "na", summary: "Nothing filed with a state" });
     add({ key: "tax", status: "na", summary: "No state record for a trust" });
   } else {
-    if (!rec) add({ key: "standing", status: "missing", summary: "Unknown until the state is read", fix: mode && st ? { ...check, text: "Check it with the state to learn its standing." } : undefined });
+    if (!rec)
+      add({ key: "standing", status: "missing", summary: "Unknown until the state is read", fix: mode && st ? { ...check, text: "Check it with the state to learn its standing." } : undefined });
     else if (std?.registration === "not_compliant") {
       const m = standing.missed;
       add({
@@ -298,11 +306,22 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
             : { text: `A required filing or fee is outstanding with ${agency}. File it, then read the record again.`, href: page("compliance"), cta: "Open Compliance" },
       });
     } else if (std?.registration === "compliant") add({ key: "standing", status: "good", summary: standing.confirmed ? "In good standing, per the state's own site" : "In good standing" });
-    else add({ key: "standing", status: "warn", summary: "The state's registry doesn't say", fix: { text: `${where ?? "The state"}'s registry doesn't report standing. Order a certificate of good standing from ${agency} to confirm it.` } });
+    else
+      add({
+        key: "standing",
+        status: "warn",
+        summary: "The state's registry doesn't say",
+        fix: { text: `${where ?? "The state"}'s registry doesn't report standing. Order a certificate of good standing from ${agency} to confirm it.` },
+      });
 
     if (!rec) add({ key: "tax", status: "missing", summary: "Unknown until the state is read" });
     else if (std?.tax === "not_compliant")
-      add({ key: "tax", status: "bad", summary: "Behind on state tax", fix: { text: `Settle the state tax account${where ? ` with ${where}` : ""} (franchise tax, annual tax report or fees), then read the record again.` } });
+      add({
+        key: "tax",
+        status: "bad",
+        summary: "Behind on state tax",
+        fix: { text: `Settle the state tax account${where ? ` with ${where}` : ""} (franchise tax, annual tax report or fees), then read the record again.` },
+      });
     else if (std?.tax === "compliant") add({ key: "tax", status: "good", summary: "Current" });
     else add({ key: "tax", status: "na", summary: "Not reported by this state" });
   }
@@ -322,14 +341,24 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
   else if (ra === "active") add({ key: "agent", label: term, status: "good", summary: rec?.agent ? `${titleCase(rec.agent)}, through Palm` : "Arranged through Palm" });
   else if (ra === "pending") add({ key: "agent", label: term, status: "warn", summary: "Change with the state", fix: { text: "The change is with the state; nothing to do until it's accepted." } });
   else if (ra === "failed")
-    add({ key: "agent", label: term, status: "bad", summary: "The change didn't go through", fix: { text: "See why on the Compliance tab and try again.", href: page("compliance"), cta: "Open Compliance" } });
+    add({
+      key: "agent",
+      label: term,
+      status: "bad",
+      summary: "The change didn't go through",
+      fix: { text: "See why on the Compliance tab and try again.", href: page("compliance"), cta: "Open Compliance" },
+    });
   else if (rec?.agent && a.registeredAgent && normalizeName(rec.agent) !== normalizeName(a.registeredAgent))
     add({
       key: "agent",
       label: term,
       status: "warn",
       summary: "The state has a different agent",
-      fix: { text: `The state has ${titleCase(rec.agent)}; our record says ${a.registeredAgent}. Update the record, or change the agent with the state.`, href: page("compliance"), cta: "Open Compliance" },
+      fix: {
+        text: `The state has ${titleCase(rec.agent)}; our record says ${a.registeredAgent}. Update the record, or change the agent with the state.`,
+        href: page("compliance"),
+        cta: "Open Compliance",
+      },
     });
   else if (rec?.agent || a.registeredAgent?.trim()) add({ key: "agent", label: term, status: "good", summary: titleCase(rec?.agent ?? a.registeredAgent!.trim()) });
   else
@@ -350,7 +379,11 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
       key: "filings",
       status: "bad",
       summary: `${palmLate[0].state} ${palmLate[0].name} is overdue`,
-      fix: { text: `The state's records (through Palm Monitor) show the ${palmLate[0].state} ${palmLate[0].name} overdue. File it, then record it as filed.`, href: page("compliance"), cta: "Open Compliance" },
+      fix: {
+        text: `The state's records (through Palm Monitor) show the ${palmLate[0].state} ${palmLate[0].name} overdue. File it, then record it as filed.`,
+        href: page("compliance"),
+        cta: "Open Compliance",
+      },
     });
   else if (annual) add(periodPillar("filings", annual, today, page("compliance")));
   else add({ key: "filings", status: "na", summary: isTrust ? "None for a trust" : st ? `${where} has no annual filing for it` : "Unknown without a state" });
@@ -359,7 +392,13 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
   const fed = due.find((o) => o.key === "fed");
   const stateReturn = due.find((o) => o.key === "az-return");
   if (dissolved) add({ key: "returns", status: "na", summary: "Closed" });
-  else if (!fed) add({ key: "returns", status: "missing", summary: "Tax classification not on record", fix: { text: "Record how it's taxed; the returns it files follow from that.", href: page("overview"), cta: "Open entity" } });
+  else if (!fed)
+    add({
+      key: "returns",
+      status: "missing",
+      summary: "Tax classification not on record",
+      fix: { text: "Record how it's taxed; the returns it files follow from that.", href: page("overview"), cta: "Open entity" },
+    });
   else if (fed.missing)
     add({ key: "returns", status: "missing", summary: `${fed.missing} not on record`, fix: { text: `${fed.title}. ${fed.note ?? ""}`.trim(), href: page("overview"), cta: "Open entity" } });
   else if (!fed.last && !fed.next) {
@@ -452,14 +491,25 @@ function periodPillar(key: "filings" | "returns", o: Obligation, today: Date, co
   const label = PILLARS.find((p) => p.key === key)!.label;
   const last = o.last;
   const short = shortTitle(o.title);
-  if (o.missing) return { key, label, status: "missing", summary: `${short}: date unknown`, fix: { text: `Add the ${o.missing.toLowerCase()}; the ${o.title} is due ${o.rule.toLowerCase()}.`, href: compliance.replace(/compliance$/, "overview"), cta: "Open entity" } };
+  if (o.missing)
+    return {
+      key,
+      label,
+      status: "missing",
+      summary: `${short}: date unknown`,
+      fix: { text: `Add the ${o.missing.toLowerCase()}; the ${o.title} is due ${o.rule.toLowerCase()}.`, href: compliance.replace(/compliance$/, "overview"), cta: "Open entity" },
+    };
   if (last?.status === "overdue")
     return {
       key,
       label,
       status: "bad",
       summary: `${last.label} ${short}: ${days(last.daysLate ?? 0)} late`,
-      fix: { text: `File the ${last.label} ${o.title} with ${o.agency}${o.lateFee ? ` (late: ${o.lateFee})` : ""}, then record it as filed.`, href: o.url ?? compliance, cta: o.url ? "File it" : "Open Compliance" },
+      fix: {
+        text: `File the ${last.label} ${o.title} with ${o.agency}${o.lateFee ? ` (late: ${o.lateFee})` : ""}, then record it as filed.`,
+        href: o.url ?? compliance,
+        cta: o.url ? "File it" : "Open Compliance",
+      },
     };
   if (last?.status === "unrecorded")
     return {
@@ -467,7 +517,11 @@ function periodPillar(key: "filings" | "returns", o: Obligation, today: Date, co
       label,
       status: "missing",
       summary: `${last.label} ${short} not recorded as filed`,
-      fix: { text: `Record the ${last.label} ${o.title} as filed (the date, and the confirmation if there is one), or file it if it wasn't. It was due ${shortDate(last.extendedTo ?? last.due)}.`, href: compliance, cta: "Open Compliance" },
+      fix: {
+        text: `Record the ${last.label} ${o.title} as filed (the date, and the confirmation if there is one), or file it if it wasn't. It was due ${shortDate(last.extendedTo ?? last.due)}.`,
+        href: compliance,
+        cta: "Open Compliance",
+      },
     };
   const nextDue = o.due;
   const d = nextDue ? daysUntil(nextDue, today) : null;

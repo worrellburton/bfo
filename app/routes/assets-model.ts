@@ -36,12 +36,7 @@ export const TYPE_LABEL: Record<EntityType, string> = { LLC: "LLC", "C-Corp": "C
 export const isDissolved = (a: { status?: string }) => (a.status ?? "").toLowerCase() === "dissolved";
 export const isForming = (a: EntityRec) => Object.values(a.palm ?? {}).some((p) => p?.formation && p.formation.status !== "completed" && p.formation.status !== "canceled");
 
-const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[.,]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+const norm = (s: string) => s.toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
 
 /** An owner, not only a manager: a Manager/Director/Officer counts once they hold a share (as app/entity/model.ts). */
 const holdsOwnership = (m: Member) => !/manager|director|officer/i.test(m.role ?? "") || m.percent != null;
@@ -195,9 +190,7 @@ export function recordsOf(a: EntityRec, byId: Map<string, EntityRec>, today = ne
   const raw = entityCompleteness(paper, today);
   let items = raw.items;
   if (classUnknownTrust(paper)) {
-    items = items
-      .filter((i) => !(i.key === "ein" && !i.done))
-      .map((i) => (i.key === "llcType" && !i.done ? { ...i, label: "Tax classification (grantor or non-grantor)" } : i));
+    items = items.filter((i) => !(i.key === "ein" && !i.done)).map((i) => (i.key === "llcType" && !i.done ? { ...i, label: "Tax classification (grantor or non-grantor)" } : i));
   }
   const total = items.reduce((s, i) => s + i.weight, 0);
   const got = items.reduce((s, i) => s + (i.done ? i.weight : 0), 0);
@@ -221,7 +214,12 @@ export function recordsOf(a: EntityRec, byId: Map<string, EntityRec>, today = ne
   const owners = ownersOf(a, byId);
   const sum = sharesTotal(owners);
   if (sum != null && Math.abs(sum - 100) > 0.01) {
-    conflicts.push({ key: "shares", severity: "medium", title: `Owners' shares add up to ${share(sum)}`, detail: "The shares on record should add up to 100%. Correct them on the entity's Owners tab." });
+    conflicts.push({
+      key: "shares",
+      severity: "medium",
+      title: `Owners' shares add up to ${share(sum)}`,
+      detail: "The shares on record should add up to 100%. Correct them on the entity's Owners tab.",
+    });
   }
   const tone: RecordsTone = conflicts.some((c) => c.severity === "high") ? "negative" : score >= 100 ? "positive" : score < ATTENTION_BELOW || conflicts.length ? "warning" : "neutral";
   return { score, items, missing, points, conflicts, tone };

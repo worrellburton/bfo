@@ -79,7 +79,9 @@ describe("operating agreement", () => {
     const doc = operatingAgreement(input);
     expect(doc.title).toBe("Single-Member Operating Agreement");
     expect(doc.subtitle).toBe("of TallulahMD LLC, a Delaware limited liability company");
-    expect(doc.preamble).toContain("is entered into by Ledger Louise, LLC, as the sole member of the Company (the \"Member\") on the dates of their signatures below, and is effective as of October 20, 2026");
+    expect(doc.preamble).toContain(
+      'is entered into by Ledger Louise, LLC, as the sole member of the Company (the "Member") on the dates of their signatures below, and is effective as of October 20, 2026',
+    );
     const text = doc.sections.flatMap((s) => s.paragraphs).join(" ");
     expect(text).toContain("6 Del. C. § 18-101");
     expect(text).toContain("disregarded as an entity separate from its owner");
@@ -313,4 +315,3 @@ describe("W-9 and the agreement wait for the tax class", () => {
     expect(text).toContain("partnership representative");
   });
 });
-
