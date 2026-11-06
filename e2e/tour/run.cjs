@@ -1767,7 +1767,9 @@ const POPUPS = [
     path: "/books/transactions",
     steps: async (p) => {
       const details = p.locator("main").getByRole("button", { name: /^Details for / });
+      const card = p.locator('main [data-txn-card] button[aria-expanded="false"]');
       if (await details.count()) await tap(details, { force: true });
+      else if (await card.count()) await tap(card);
       else await tap(p.locator('main button[aria-expanded="false"]').filter({ hasText: /\S/ }));
     },
     expect: (p) => p.locator('main [aria-expanded="true"]'),
@@ -2210,6 +2212,25 @@ async function settle(page, ms = SETTLE_MS, idle = 5000) {
   await page.waitForTimeout(ms);
 }
 
+/** Every finite animation still playing has finished (a menu caught mid-fade reads as broken). Loops are left alone. */
+async function animationsDone(page, ms = 2500) {
+  await page
+    .evaluate(
+      (limit) =>
+        Promise.race([
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a.playState === "running" && Number.isFinite(a.effect?.getComputedTiming?.().endTime ?? Infinity))
+              .map((a) => a.finished.catch(() => undefined)),
+          ),
+          new Promise((r) => setTimeout(r, limit)),
+        ]),
+      ms,
+    )
+    .catch(() => undefined);
+}
+
 function withTimeout(promise, ms, what) {
   let timer;
   return Promise.race([promise, new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms / 1000}s`)), ms)))]).finally(() => clearTimeout(timer));
@@ -2286,6 +2307,7 @@ async function capture(browser, surface, size, theme) {
             .catch(() => false);
           if (!shown) note("recipe", "the pop-up isn't on screen");
         }
+        await animationsDone(page);
         url = page.url().replace(BASE, "");
         fs.mkdirSync(dir, { recursive: true });
         if (surface.kind === "page") {
