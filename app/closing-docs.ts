@@ -210,9 +210,38 @@ async function sheet() {
 
 export const isCompany = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|trust|lp|l\.p\.|ltd\.?|company|partners(hip)?)\b/i.test(name);
 
+/** Where a signer's marks go on the consent (fractions of the page, y from the top), as api/sign.ts fields them. */
+export type ConsentSignBox = { party: "a" | "b"; type: "signature" | "date"; page: number; x: number; y: number; w: number; h: number };
+
 export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): Promise<Blob> {
+  return (await dissolutionConsentPdfWithBoxes(d, entityName)).blob;
+}
+
+/**
+ * The PDF, and where each signature and date line is, so the consent can be
+ * signed in BFO: the first line is party "a", the second party "b". A
+ * consent with more than two lines comes back with no boxes, because a
+ * request has two parties; it is signed on paper or sent twice.
+ */
+export async function dissolutionConsentPdfWithBoxes(d: ConsentDoc, entityName: string): Promise<{ blob: Blob; boxes: ConsentSignBox[] }> {
   const s = await sheet();
-  const { pdf, W, M, width, st } = s;
+  const { pdf, W, H, M, width, st } = s;
+  const boxes: ConsentSignBox[] = [];
+  let lines = 0;
+  /** Note a signature line (drawn at `y`, starting after any "By:" prefix) and the date line beside or below it. */
+  const mark = (sigX: number, sigW: number, y: number, dateX: number, dateW: number, dateY: number, prefixed: boolean) => {
+    const party = lines === 0 ? "a" : "b";
+    lines += 1;
+    if (lines > 2) return;
+    let lx = sigX;
+    if (prefixed) {
+      s.font("normal", 10.5);
+      lx = sigX + pdf.getTextWidth("By:") + 6;
+    }
+    const page = pdf.getNumberOfPages();
+    boxes.push({ party, type: "signature", page, x: lx / W, y: (y - 24) / H, w: (sigX + sigW - lx) / W, h: 26 / H });
+    boxes.push({ party, type: "date", page, x: dateX / W, y: (dateY - 20) / H, w: dateW / W, h: 22 / H });
+  };
   st.y = 112;
   s.caps("Action by written consent", W / 2, st.y, 9, MUTED, "center");
   st.y += 28;
@@ -298,21 +327,26 @@ export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): 
         for (const p of sg.signatories) {
           s.line(x + pad, y, sigW, p.name ? `${p.name}, ${p.title}` : p.title, "By:");
           s.line(x + pad + sigW + 14, y, inner - sigW - 14, "Date");
+          mark(x + pad, sigW, y, x + pad + sigW + 14, inner - sigW - 14, y, true);
           y += 46;
         }
       } else if (isCompany(sg.name)) {
         y += 44;
         s.line(x + pad, y, inner, "Authorized signature", "By:");
+        const sigY = y;
         y += 40;
         s.line(x + pad, y, half, "Printed name");
         s.line(x + pad + half + 14, y, half, "Title");
         y += 40;
         s.line(x + pad, y, half, "Date");
+        mark(x + pad, inner, sigY, x + pad, half, y, true);
       } else {
         y += 44;
         s.line(x + pad, y, inner, "Signature");
+        const sigY = y;
         y += 40;
         s.line(x + pad, y, half, "Date");
+        mark(x + pad, inner, sigY, x + pad, half, y, false);
       }
     });
     st.y += h + 20;
@@ -343,7 +377,7 @@ export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): 
     }
   }
   s.footers(`Consent to dissolve ${entityName}`);
-  return pdf.output("blob");
+  return { blob: pdf.output("blob"), boxes: lines <= 2 ? boxes : [] };
 }
 
 type EinLetter = { name: string; ein: string; address: string; reason: string; type: string; mailTo: string[] };

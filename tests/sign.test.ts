@@ -298,3 +298,27 @@ describe("upload paths", () => {
     expect(versionPath(id, "current")).not.toBe(versionPath(id, "current"));
   });
 });
+
+describe("what happens once everyone has signed", () => {
+  it("keeps only an on-complete instruction it knows, for the request's own entity", async () => {
+    const { cleanOnComplete } = await import("../lib/sign");
+    expect(cleanOnComplete({ kind: "closing-consent", assetId: "-Opr1", step: "consent" }, "-Opr1")).toEqual({ kind: "closing-consent", assetId: "-Opr1", step: "consent" });
+    expect(cleanOnComplete({ kind: "closing-consent", assetId: "-Opr1" }, "-Opr1")).toEqual({ kind: "closing-consent", assetId: "-Opr1", step: "consent" });
+    expect(cleanOnComplete({ kind: "closing-consent", assetId: "-Opr2", step: "consent" }, "-Opr1")).toBeNull();
+    expect(cleanOnComplete({ kind: "closing-consent", assetId: "-Opr1", step: "../x" }, "-Opr1")).toEqual({ kind: "closing-consent", assetId: "-Opr1", step: "consent" });
+    expect(cleanOnComplete({ kind: "something-else", assetId: "-Opr1" }, "-Opr1")).toBeNull();
+    expect(cleanOnComplete("closing-consent", "-Opr1")).toBeNull();
+    expect(cleanOnComplete({ kind: "closing-consent", assetId: null }, null)).toBeNull();
+  });
+
+  it("matches a signer's name to a BFO user's, as people type them", async () => {
+    const { namesMatch } = await import("../lib/sign");
+    expect(namesMatch("Robert Burton", "Robert W. Burton")).toBe(true);
+    expect(namesMatch("Amanda", "Amanda Burton Dawson")).toBe(true);
+    expect(namesMatch("Robert W. Burton (Robert Worrell Burton)", "Robert Burton")).toBe(true);
+    expect(namesMatch("Claire Burton", "Robert W. Burton")).toBe(false);
+    expect(namesMatch("Robert Ledger Burton", "Robert W. Burton")).toBe(false);
+    expect(namesMatch("", "Robert Burton")).toBe(false);
+    expect(namesMatch(null, undefined)).toBe(false);
+  });
+});

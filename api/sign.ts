@@ -9,12 +9,16 @@ import { storageDownload, storageRemove, storageSignedUrl, storageUpload } from 
 import { DOCUMENTS_BUCKET, isDocumentPath } from "../lib/document-path.js";
 import { GAME_ONLY_MESSAGE, isGameEntity } from "../lib/game-entity.js";
 import { readRows } from "../lib/tree.js";
+import { notifyUsers } from "../lib/push.js";
+import { applyOps, pushId, type Json } from "../lib/tree.js";
 import {
   appendCertificate,
   cleanField,
   cleanMode,
+  cleanOnComplete,
   cleanParty,
   deriveStatus,
+  namesMatch,
   hashToken,
   isGameMode,
   isUploadPath,
@@ -51,9 +55,11 @@ import {
  *                     latest PDF (null when `have` already names that version: a page polling for progress);
  *                     gameAllowed: a draft that may go out as the game (TallulahMD LLC's, lib/game-entity)
  *          POST { action, … }:
- *            create     { title, assetId?, contractId?, parties?, brand?, mode? } → { request }  (brand: send under that name, never BFO's;
+ *            create     { title, assetId?, contractId?, parties?, brand?, mode?, onComplete? } → { request }  (brand: send under that name, never BFO's;
  *                       mode: "normal" or "game", the Anything Is Possible theater in front of the signing page; the game is only for
- *                       TallulahMD LLC's requests (lib/game-entity), game_not_for_entity on any other)
+ *                       TallulahMD LLC's requests (lib/game-entity), game_not_for_entity on any other; onComplete: what happens once
+ *                       everyone has signed (lib/sign.ts OnComplete), and then a party named without an email gets the BFO user's)
+ *            my-link    { id } → { url }  the signed-in person's own signing link, when they are a party: they sign in BFO, nothing is emailed
  *            upload-url { id } → { signedUrl, token, path }  a one-time PUT to a fresh path (it can't overwrite)
  *            attach     { id, path }  reads that upload (page sizes) and makes it the document → { request }
  *            attach-stored { id, path }  a PDF already in an entity's documents (lib/document-path), copied under the request → { request }
@@ -181,7 +187,7 @@ function fileName(row: SignatureRequestRow): string {
 }
 
 /** Sends each email; the links are already saved, so a failure is reported, not lost. */
-async function sendAll(me: AppUser, row: SignatureRequestRow, mails: Array<{ party: Party; subject: string; text: string; html: string }>, kind: string, note?: string) {
+async function sendAll(me: Pick<AppUser, "id" | "email">, row: SignatureRequestRow, mails: Array<{ party: Party; subject: string; text: string; html: string }>, kind: string, note?: string) {
   const sent: SignEvent[] = [];
   const failed: string[] = [];
   for (const m of mails) {
@@ -269,7 +275,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const brand = typeof body.brand === "string" && body.brand.trim() ? body.brand.trim().slice(0, 120) : null;
       const mode = cleanMode(body.mode);
       if (mode !== "normal" && !(await gameAllowed({ asset_id: assetId }))) return fail(res, 409, "game_not_for_entity", GAME_ONLY_MESSAGE);
-      const parties = partiesFrom(body.parties, []);
+      const onComplete = cleanOnComplete(body.onComplete, assetId);
+      // A closing consent names the family's signers by name; the ones who use BFO get their address from their account.
+      const parties = onComplete ? await withKnownEmails(partiesFrom(body.parties, [])) : partiesFrom(body.parties, []);
       const [row] = await sb<SignatureRequestRow[]>("signature_requests", {
         method: "POST",
         prefer: "return=representation",
@@ -284,6 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           created_by_name: me.name,
           parties,
           events: [event("created", { by: me.id })],
+          ...(onComplete ? { on_complete: onComplete } : {}),
         },
       });
       return res.status(200).json({ request: toView(row) });
@@ -350,6 +359,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       case "send":
         return res.status(200).json({ request: toView(await sendNow(me, fresh, body.plain === true)) });
+      case "my-link": {
+        // The signed-in person is one of the parties: a fresh link for them alone, opened in BFO rather than emailed.
+        const mail = (me.email ?? "").trim().toLowerCase();
+        if (!mail || !row.parties.some((p) => p.email === mail)) return fail(res, 404, "not_a_party", "You aren't one of the people this goes to.");
+        const why = sendBlocker(row);
+        if (why) return fail(res, 400, "not_ready", why);
+        let token = "";
+        await update(fresh, (r) => {
+          if (r.status === "voided") throw new Refuse(409, "voided");
+          const p0 = r.parties.find((p) => p.email === mail)!;
+          if (p0.status === "signed") throw new Refuse(409, "already_signed", "You've already signed this.");
+          token = newToken();
+          const now = new Date().toISOString();
+          const parties = r.parties.map((p) => (p.key === p0.key ? { ...p, tokenHash: hashToken(token), status: p.status === "pending" ? ("sent" as const) : p.status, sentAt: p.sentAt ?? now } : p));
+          return { parties, status: deriveStatus(parties, "sent"), sent_at: r.sent_at ?? now, events: [...r.events, event("opened", { party: p0.key, by: me.id, note: "signing in BFO" })] };
+        });
+        return res.status(200).json({ url: signLink(token) });
+      }
       case "resend": {
         // It goes out again as a new request, so the old record (and any signed copy) stays as it was.
         if (row.status === "draft") return fail(res, 409, "not_sent", "This one hasn't been sent yet: send it instead.");
@@ -420,27 +447,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
         return res.status(200).json({ request: toView(next) });
       }
-      case "send-copy": {
-        let links: Array<[Party, string]> = [];
-        const saved = await update(fresh, (r) => {
-          if (r.status !== "completed" || !r.signed_path) throw new Refuse(409, "not_completed", "The copy goes out once everyone has signed.");
-          links = [];
-          const parties = r.parties.map((p) => {
-            const t = newToken();
-            const next: Party = { ...p, tokenHash: hashToken(t) };
-            links.push([next, signLink(t)]);
-            return next;
-          });
-          return { parties, copy_sent_at: new Date().toISOString() };
-        });
-        const next = await sendAll(
-          me,
-          saved,
-          links.map(([party, link]) => ({ party, ...signedCopyEmail(saved, party, link) })),
-          "copy_sent",
-        );
-        return res.status(200).json({ request: toView(next) });
-      }
+      case "send-copy":
+        return res.status(200).json({ request: toView(await sendCopyToParties(me, fresh)) });
       case "void": {
         const next = await update(fresh, (r) => {
           if (r.status === "completed") throw new Refuse(409, "completed", "A signed document can't be voided; delete it instead.");
@@ -496,6 +504,99 @@ async function sendNow(me: AppUser, load: () => Promise<SignatureRequestRow | nu
     "emailed",
     asNormal ? "as a normal request" : undefined,
   );
+}
+
+/** Emails every party a link to the signed copy (the office's Send copy, and a closing consent on completion). */
+async function sendCopyToParties(me: Pick<AppUser, "id" | "email">, load: () => Promise<SignatureRequestRow | null>): Promise<SignatureRequestRow> {
+  let links: Array<[Party, string]> = [];
+  const saved = await update(load, (r) => {
+    if (r.status !== "completed" || !r.signed_path) throw new Refuse(409, "not_completed", "The copy goes out once everyone has signed.");
+    links = [];
+    const parties = r.parties.map((p) => {
+      const t = newToken();
+      const next: Party = { ...p, tokenHash: hashToken(t) };
+      links.push([next, signLink(t)]);
+      return next;
+    });
+    return { parties, copy_sent_at: new Date().toISOString() };
+  });
+  return sendAll(
+    me,
+    saved,
+    links.map(([party, link]) => ({ party, ...signedCopyEmail(saved, party, link) })),
+    "copy_sent",
+  );
+}
+
+/** Parties named but without an address: the one approved BFO user whose name is theirs supplies it. */
+async function withKnownEmails(parties: Party[]): Promise<Party[]> {
+  if (!parties.some((p) => p.name && !p.email)) return parties;
+  const users = (await sb<Array<{ name: string | null; email: string | null }>>("app_users?status=eq.approved&select=name,email").catch(() => null)) ?? [];
+  return parties.map((p) => {
+    if (p.email || !p.name) return p;
+    const hits = users.filter((u) => u.email && namesMatch(u.name, p.name));
+    return hits.length === 1 ? { ...p, email: hits[0].email!.trim().toLowerCase() } : p;
+  });
+}
+
+/** The BFO users among the parties, by email, for a push. */
+async function partyUserIds(row: SignatureRequestRow): Promise<string[]> {
+  const emails = row.parties.map((p) => p.email).filter((e) => /^[^\s"(),]+@[^\s"(),]+$/.test(e));
+  if (!emails.length) return [];
+  const list = emails.map((e) => `"${e}"`).join(",");
+  const rows = (await sb<Array<{ id: string }>>(`app_users?status=eq.approved&select=id&email=in.(${encodeURIComponent(list)})`).catch(() => null)) ?? [];
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Once everyone has signed a closing consent (lib/sign.ts OnComplete): the
+ * signed copy goes into the entity's Documents, the closing step is marked
+ * done, each party gets the copy by email, and the parties who use BFO get a
+ * push. Each part is its own try: a failure is logged, never shown to the
+ * signer, and the next part still runs.
+ */
+async function afterCompleted(row: SignatureRequestRow): Promise<void> {
+  const oc = row.on_complete;
+  if (!oc || oc.kind !== "closing-consent") return;
+  const log = (what: string, err: unknown) => console.error(`sign: after completion, ${what} failed`, err instanceof Error ? err.message : err);
+  const value: Record<string, Json> = { [`closing/steps/${oc.step}`]: new Date().toISOString().slice(0, 10) };
+  try {
+    const bytes = row.signed_path ? await storageDownload(row.signed_path, SIGN_BUCKET) : null;
+    if (bytes) {
+      const name = fileName(row).replace(/\.pdf$/i, "");
+      const path = `assets/${oc.assetId}/${Date.now()}-${name.replace(/[^a-zA-Z0-9._-]+/g, "_")}.pdf`;
+      await storageUpload(path, bytes, "application/pdf", DOCUMENTS_BUCKET);
+      value[`documents/${pushId()}`] = {
+        name,
+        url: `${process.env.SUPABASE_URL}/storage/v1/object/public/${DOCUMENTS_BUCKET}/${path}`,
+        storagePath: path,
+        storageProvider: "supabase",
+        size: bytes.byteLength,
+        contentType: "application/pdf",
+        createdAt: Date.now(),
+      };
+    }
+  } catch (err) {
+    log("filing the signed copy", err);
+  }
+  try {
+    await applyOps([{ op: "update", path: ["assets", oc.assetId], value }], { id: null, name: "Signatures", source: "system" });
+  } catch (err) {
+    log("marking the closing step", err);
+  }
+  try {
+    await sendCopyToParties({ id: row.created_by ?? "system", email: null }, () => rowById(row.id));
+  } catch (err) {
+    log("emailing the copy", err);
+  }
+  const ids = await partyUserIds(row).catch(() => [] as string[]);
+  if (ids.length) {
+    await notifyUsers(
+      ids,
+      { aps: { alert: { title: "Signed by everyone", body: `${row.title} is fully signed. Your copy is in your email.` }, sound: "default" }, url: `/assets/${oc.assetId}` },
+      `sign-${row.id}-copy`,
+    );
+  }
 }
 
 /** The fields again, plus an Address box under the first signature of each party that has none. */
@@ -660,6 +761,7 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     `sign-${done.id}`,
   );
   void emailAdmins(done, name, completed);
+  if (completed) void afterCompleted(done);
   return res.status(200).json({ ok: true, completed });
 }
 

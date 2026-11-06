@@ -2154,6 +2154,69 @@ export function useEntityPage() {
     }
   }
 
+  // ── Signing the consent to dissolve in BFO (api/sign.ts, lib/sign.ts OnComplete) ──
+
+  /**
+   * Drafts the consent with its signature boxes, files it in Documents, and
+   * opens a signature request for its two signers: the signed-in person, when
+   * they are one, is party "a" with their own address; the other is found by
+   * name among BFO's users on the server. The request's id goes on the closing
+   * so the checklist can follow it. Returns the request's id, or why not.
+   */
+  async function startConsentSigning(): Promise<{ id: string } | { error: string }> {
+    const current = assetRef.current;
+    if (!current) return { error: "The entity isn't loaded." };
+    const { dissolutionConsent, dissolutionConsentPdfWithBoxes, isCompany } = await import("../closing-docs");
+    const { namesMatch } = await import("../../lib/names");
+    try {
+      const doc = dissolutionConsent({ ...current } as Rec & { name: string }, lookupAsset, assetByName);
+      if (!doc.signers.length) return { error: "Add its owners on the Owners tab first: the consent is signed by each of them." };
+      const people = doc.signers.flatMap((sg) =>
+        sg.signatories.length ? sg.signatories.map((p) => ({ role: p.title.slice(0, 40), name: p.name })) : [{ role: sg.capacity, name: isCompany(sg.name) ? "" : sg.name }],
+      );
+      const { blob, boxes } = await dissolutionConsentPdfWithBoxes(doc, current.name);
+      if (people.length !== 2 || !boxes.length) {
+        return {
+          error:
+            people.length < 2
+              ? "Signing in BFO needs two signers. Name a second authorized signer on the owner's People tab, or draft the PDF and sign it outside BFO."
+              : "Signing in BFO takes two signers and this consent has more. Name the two who sign on the owner's People tab, or draft the PDF and sign it outside BFO.",
+        };
+      }
+      const stored = await uploadDocFile(new File([blob], `Consent to Dissolve - ${current.name}.pdf`, { type: "application/pdf" }), () => {});
+      const me = getUser();
+      const parties = people.map((p) => ({ role: p.role, name: p.name, email: me?.email && namesMatch(p.name, me.name) ? me.email : "" }));
+      const created = await signApi.act("create", { title: `Consent to Dissolve - ${current.name}`, assetId: id, parties, onComplete: { kind: "closing-consent", assetId: id, step: "consent" } });
+      await signApi.attachStored(created.id, stored.storagePath ?? "");
+      await signApi.act("update", { id: created.id, fields: boxes.map((b, i) => ({ id: `${b.party}-${b.type}-${i}`, ...b })) });
+      await patchAsset({ "closing/consentRequestId": created.id });
+      return { id: created.id };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Couldn't set up the signing." };
+    }
+  }
+
+  /** The signed-in person signs now: their own link, opened here. */
+  async function signConsentNow(requestId: string): Promise<string | null> {
+    try {
+      const url = await signApi.myLink(requestId);
+      navigate(new URL(url).pathname);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Couldn't open the signing page.";
+    }
+  }
+
+  /** Emails the other signer their link (everyone who hasn't signed; a reminder when it already went). */
+  async function sendConsentToOthers(requestId: string, remind = false): Promise<string | null> {
+    try {
+      await signApi.act(remind ? "remind" : "send", { id: requestId });
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Couldn't send it.";
+    }
+  }
+
   /** Fill in the IRS's Form 8822-B for an address change; it goes into Documents, unsigned. */
   async function generate8822B() {
     const current = assetRef.current;
@@ -2766,6 +2829,9 @@ export function useEntityPage() {
     cancelClosing,
     assetByName,
     saveAuthorizedSigners,
+    startConsentSigning,
+    signConsentNow,
+    sendConsentToOthers,
     markClosingStep,
     finishClosing,
     endPalmAgent,

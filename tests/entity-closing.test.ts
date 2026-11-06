@@ -162,3 +162,36 @@ describe("closing an entity", () => {
     expect(signed.detail).toMatchObject({ fields: [{ label: "Authorized signers", from: null, to: "Robert W. Burton (Authorized Representative)" }] });
   });
 });
+
+describe("signing the consent in BFO", () => {
+  it("marks where each of two signers signs and dates, and gives up past two", async () => {
+    const { dissolutionConsentPdfWithBoxes, signingChain } = await import("../app/closing-docs");
+    const two = {
+      through: ["Ledger Louise, LLC, its Manager"],
+      signatories: [
+        { name: "Robert W. Burton", title: "Authorized Representative, Ledger Louise, LLC" },
+        { name: "Amanda Burton Dawson", title: "Authorized Representative, Ledger Louise, LLC" },
+      ],
+    };
+    const doc = dissolutionConsent({ ...louise, state: "Arizona", members: [{ name: "Sundown Investments, LLC", percent: 100, role: "member" }] } as never, lookup, () => undefined);
+    doc.signers = [{ ...doc.signers[0], ...two }];
+    const { blob, boxes } = await dissolutionConsentPdfWithBoxes(doc, louise.name);
+    expect(new TextDecoder().decode((await blob.arrayBuffer()).slice(0, 5))).toBe("%PDF-");
+    expect(boxes.map((b) => `${b.party}:${b.type}`)).toEqual(["a:signature", "a:date", "b:signature", "b:date"]);
+    for (const b of boxes) {
+      expect(b.page).toBeGreaterThan(0);
+      for (const n of [b.x, b.y, b.w, b.h]) expect(n).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.w).toBeLessThanOrEqual(1);
+      expect(b.y + b.h).toBeLessThanOrEqual(1);
+    }
+    // The date box sits to the right of the signature box on the same line.
+    expect(boxes[1].x).toBeGreaterThan(boxes[0].x + boxes[0].w);
+    // A person signing for themselves gets boxes too; four managers do not.
+    const person = dissolutionConsent({ ...louise, members: [{ name: "Laura Fedele", percent: 100, role: "member" }] } as never, lookup);
+    expect((await dissolutionConsentPdfWithBoxes(person, "X")).boxes.map((b) => b.party)).toEqual(["a", "a"]);
+    const four = { ...two, signatories: ["A B", "C D", "E F", "G H"].map((name) => ({ name, title: "Manager, Ledger Louise, LLC" })) };
+    doc.signers = [{ ...doc.signers[0], ...four }];
+    expect((await dissolutionConsentPdfWithBoxes(doc, louise.name)).boxes).toEqual([]);
+    expect(signingChain("Nobody, LLC", () => undefined)).toEqual({ through: [], signatories: [] });
+  });
+});

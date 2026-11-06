@@ -20,6 +20,8 @@ export type Closing = {
   steps?: Record<string, string | null>;
   /** YYYY-MM-DD the entity was marked dissolved. */
   closedAt?: string | null;
+  /** The signature request for the consent to dissolve, once it is signed in BFO (api/sign.ts). */
+  consentRequestId?: string | null;
 };
 
 type ClosingStep = {

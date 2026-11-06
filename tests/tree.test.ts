@@ -317,3 +317,15 @@ describe("/api/tree", () => {
     expect((await call("POST", { body: { ops: [{ op: "set", path: "notes", value: {} }] } })).status).toBe(400);
   });
 });
+
+describe("pushId", () => {
+  it("makes keys the app's store would: 20 characters, time-ordered, distinct", async () => {
+    const { pushId } = await import("../lib/tree");
+    const a = pushId(1_793_972_884_792);
+    const b = pushId(1_793_972_884_793);
+    expect(a).toMatch(/^[-0-9A-Z_a-z]{20}$/);
+    expect(a.slice(0, 8)).toBe("-P5l6SJs");
+    expect(b.slice(0, 8) > a.slice(0, 8)).toBe(true);
+    expect(pushId()).not.toBe(pushId());
+  });
+});

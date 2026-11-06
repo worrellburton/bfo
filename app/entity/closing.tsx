@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { authFetch, isAdmin, isPartner } from "../auth";
+import { namesMatch } from "../../lib/names";
+import { authFetch, getUser, isAdmin, isPartner } from "../auth";
 import { isCompany, signingChain, type Signatory } from "../closing-docs";
 import { closingBlockers, closingHints, closingSteps, stateFilingFacts, stepsLeft, type LinkedAccount } from "../entity-closing";
+import { blankTab, PARTY_LABEL, signApi, type SignatureRequest } from "../sign/api";
+import { usePoll } from "../sign/use-poll";
 import { useEntity } from "./context";
 import { fmtDate, holdsOwnership } from "./model";
-import { Button, Dot, ErrorLine, Icon, Section, TextButton, toneText, useTone } from "./ui";
+import { Button, Dot, ErrorLine, Icon, Input, Section, TextButton, toneText, useTone } from "./ui";
 
 /**
  * Closing the entity down as a checklist, top to bottom. Each step is one
@@ -25,6 +28,21 @@ export function ClosingCard() {
   const [showDone, setShowDone] = useState(false);
   const closing = asset.closing;
   const admin = isAdmin();
+
+  // The consent's signature request, once signing has started in BFO: read now, then followed while someone still has to sign.
+  const requestId = closing?.consentRequestId ?? null;
+  const [req, setReq] = useState<SignatureRequest | null>(null);
+  const [emails, setEmails] = useState<Record<string, string>>({});
+  const loadReq = useCallback(async () => {
+    if (!requestId) return;
+    const r = await signApi.get(requestId).catch(() => null);
+    if (r) setReq(r.request);
+  }, [requestId]);
+  useEffect(() => {
+    setReq(null);
+    void loadReq();
+  }, [loadReq]);
+  usePoll(loadReq, 15_000, !!requestId && !!req && (req.status === "sent" || req.status === "partial" || req.status === "draft"));
 
   // The linked accounts, once: the bank step says what they hold.
   useEffect(() => {
@@ -56,6 +74,45 @@ export function ClosingCard() {
   const doneCount = required.length - left.length;
   const pct = required.length ? Math.round((doneCount / required.length) * 100) : 0;
   const doneSteps = steps.filter((s) => done[s.key]);
+  const me = getUser();
+  const myEmail = (me?.email ?? "").trim().toLowerCase();
+  // Signing in BFO: two people, and one of them is the person looking.
+  const consentPeople = signers.flatMap((sg) => (sg.signatories.length ? sg.signatories.map((p) => p.name) : isCompany(sg.name) ? [""] : [sg.name]));
+  const canSignHere = consentPeople.length === 2 && consentPeople.every(Boolean);
+  const imASigner = consentPeople.some((n) => namesMatch(n, me?.name));
+  const myParty = req?.parties.find((p) => p.email && p.email === myEmail) ?? null;
+  const others = req?.parties.filter((p) => p !== myParty) ?? [];
+  const reqOpen = !!req && (req.status === "draft" || req.status === "sent" || req.status === "partial");
+  const missingEmail = req?.parties.filter((p) => !p.email) ?? [];
+
+  /** A party named without an address, typed in here before anyone signs. */
+  async function saveEmails() {
+    if (!req) return null;
+    const parties = req.parties.map((p) => ({ role: p.role, name: p.name, email: p.email || (emails[p.key] ?? "").trim().toLowerCase() }));
+    if (parties.some((p) => !/^\S+@\S+\.\S+$/.test(p.email))) return "Type each signer's email address.";
+    const next = await signApi.act("update", { id: req.id, parties });
+    setReq(next);
+    return null;
+  }
+
+  async function startSigning() {
+    const r = await page.startConsentSigning();
+    if ("error" in r) return r.error;
+    await loadReq();
+    return imASigner ? page.signConsentNow(r.id) : null;
+  }
+
+  async function openSigned() {
+    if (!req) return null;
+    const tab = blankTab();
+    try {
+      tab.go(await signApi.download(req.id));
+      return null;
+    } catch (err) {
+      tab.close();
+      return err instanceof Error ? err.message : "Couldn't open it.";
+    }
+  }
 
   async function run(key: string, fn: () => Promise<string | null | void>) {
     setBusy(key);
@@ -219,17 +276,88 @@ export function ClosingCard() {
                           </TextButton>
                         </div>
                       )}
+                      {/* The consent signed in BFO: who has signed, and the one thing to do next. */}
+                      {s.generate === "consent" && req && (
+                        <div className={`mt-2 rounded-lg border px-3 py-2 text-[12.5px] leading-relaxed ${t.dark ? "border-white/10" : "border-gray-200"}`}>
+                          <ul className="space-y-0.5">
+                            {req.parties.map((p) => (
+                              <li key={p.key} className={`flex flex-wrap items-baseline justify-between gap-x-3 ${t.text}`}>
+                                <span>
+                                  <span className="font-medium">{p.name || p.role}</span>
+                                  {p === myParty && <span className={`ml-1.5 text-[11.5px] ${t.muted}`}>you</span>}
+                                </span>
+                                <span className={p.status === "signed" ? toneText("good", t.dark) : p.status === "declined" ? toneText("bad", t.dark) : t.muted}>
+                                  {p.status === "signed" ? `Signed ${fmtDate((p.signedAt ?? "").slice(0, 10))}` : PARTY_LABEL[p.status]}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          {missingEmail.length > 0 && reqOpen && req.status === "draft" && (
+                            <div className="mt-2 space-y-1.5">
+                              {missingEmail.map((p) => (
+                                <label key={p.key} className="block">
+                                  <span className={`mb-1 block text-[11.5px] ${t.muted}`}>{p.name || p.role}'s email</span>
+                                  <Input type="email" value={emails[p.key] ?? ""} onChange={(e) => setEmails((m) => ({ ...m, [p.key]: e.target.value }))} placeholder="name@example.com" />
+                                </label>
+                              ))}
+                              <Button disabled={!!busy} onClick={() => void run(s.key, saveEmails)}>
+                                Save
+                              </Button>
+                            </div>
+                          )}
+                          {req.status === "completed" && <p className={`mt-1.5 ${toneText("good", t.dark)}`}>Signed by everyone. The signed copy is in Documents and each signer has it by email.</p>}
+                        </div>
+                      )}
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                        {s.generate === "consent" && !req && canSignHere && (
+                          <Button icon="pen" kind={lit ? "primary" : "secondary"} disabled={!!busy} onClick={() => void run(s.key, startSigning)}>
+                            {busy === s.key ? "Setting up…" : imASigner ? "Sign the consent" : "Send the consent for signature"}
+                          </Button>
+                        )}
+                        {s.generate === "consent" && req && reqOpen && myParty && myParty.status !== "signed" && !missingEmail.length && (
+                          <Button icon="pen" kind="primary" disabled={!!busy} onClick={() => void run(s.key, () => page.signConsentNow(req.id))}>
+                            Sign now
+                          </Button>
+                        )}
+                        {s.generate === "consent" &&
+                          req &&
+                          reqOpen &&
+                          !missingEmail.length &&
+                          others.some((p) => p.status !== "signed") &&
+                          (others.some((p) => p.status === "pending") ? (
+                            <Button kind={myParty?.status === "signed" || !myParty ? "primary" : "secondary"} disabled={!!busy} onClick={() => void run(s.key, () => page.sendConsentToOthers(req.id))}>
+                              Send to {others.map((p) => p.name.split(" ")[0] || p.role).join(" and ")}
+                            </Button>
+                          ) : (
+                            <Button disabled={!!busy} onClick={() => void run(s.key, () => page.sendConsentToOthers(req.id, true))}>
+                              Remind {others.map((p) => p.name.split(" ")[0] || p.role).join(" and ")}
+                            </Button>
+                          ))}
+                        {s.generate === "consent" && req?.status === "completed" && (
+                          <Button icon="doc" disabled={!!busy} onClick={() => void run(s.key, openSigned)}>
+                            Open the signed copy
+                          </Button>
+                        )}
+                        {s.generate === "consent" && req && admin && reqOpen && !req.parties.some((p) => p.status === "signed") && (
+                          <TextButton onClick={() => void page.patchAsset({ "closing/consentRequestId": null })}>Start over</TextButton>
+                        )}
                         {s.generate && (
-                          <Button icon="sparkle" kind={lit ? "primary" : "secondary"} disabled={!!busy} onClick={() => void run(s.key, () => page.generateClosingDoc(s.generate!))}>
+                          <Button
+                            icon="sparkle"
+                            kind={lit && !(s.generate === "consent" && (req || canSignHere)) ? "primary" : "ghost"}
+                            disabled={!!busy}
+                            onClick={() => void run(s.key, () => page.generateClosingDoc(s.generate!))}
+                          >
                             {busy === s.key
                               ? "Drafting…"
                               : drafted[s.key]
                                 ? s.generate === "consent"
-                                  ? "Draft the consent again"
+                                  ? "Draft the PDF again"
                                   : "Draft the IRS letter again"
                                 : s.generate === "consent"
-                                  ? "Draft the consent"
+                                  ? req || canSignHere
+                                    ? "Draft the PDF only"
+                                    : "Draft the consent"
                                   : "Draft the IRS letter"}
                           </Button>
                         )}
@@ -259,7 +387,15 @@ export function ClosingCard() {
                           </Button>
                         )}
                       </div>
-                      {drafted[s.key] && !err && <p className={`mt-1.5 text-[12px] ${t.muted}`}>Drafted into Documents and opened. Sign it, then mark this done.</p>}
+                      {drafted[s.key] && !err && !(s.generate === "consent" && req) && (
+                        <p className={`mt-1.5 text-[12px] ${t.muted}`}>Drafted into Documents and opened. Sign it, then mark this done.</p>
+                      )}
+                      {s.generate === "consent" && !req && canSignHere && !drafted[s.key] && (
+                        <p className={`mt-1.5 text-[12px] ${t.muted}`}>
+                          {imASigner ? "You sign here, then send it to the other signer. " : "Each signer gets a private link by email. "}
+                          Once both have signed, the signed copy is filed in Documents, this step is ticked, and both are told.
+                        </p>
+                      )}
                       {err && (
                         <div className="mt-2">
                           <ErrorLine>{err}</ErrorLine>

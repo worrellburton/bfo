@@ -53,6 +53,8 @@ export type SignatureRequest = {
   brand: string | null;
   /** The plain page or the game; rows from before the column come back without it. */
   mode?: SignMode;
+  /** What happens once everyone has signed (lib/sign.ts OnComplete). */
+  on_complete?: { kind: "closing-consent"; assetId: string; step: string } | null;
 };
 
 class SignError extends Error {
@@ -80,6 +82,8 @@ export const signApi = {
     ),
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),
   download: (id: string) => call<{ url: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "download", id }) }).then((r) => r.url),
+  /** The signed-in person's own signing link, when they are one of the parties: they sign in BFO, no email needed. */
+  myLink: (id: string) => call<{ url: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "my-link", id }) }).then((r) => r.url),
   remove: (id: string) => call<{ ok: true }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "delete", id }) }),
   /** Makes a PDF already in an entity's documents the request's document (the server copies it). */
   attachStored: (id: string, path: string) => signApi.act("attach-stored", { id, path }),

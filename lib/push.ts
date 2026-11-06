@@ -219,6 +219,17 @@ export async function notifyNewPaperMail(rows: NewPaperMail[], now = Date.now())
  * A notice to every approved owner and admin, whatever their preferences:
  * the office's own operational alerts (lib/alert.ts). Never throws.
  */
+/** A notice to the people named, whatever their role (a signer who uses BFO, say). */
+export async function notifyUsers(userIds: string[], payload: Record<string, unknown>, collapseId?: string): Promise<number> {
+  if (!apnsConfig() || !userIds.length) return 0;
+  try {
+    return await deliver([{ to: userIds, payload, ...(collapseId ? { collapseId } : {}) }], "user");
+  } catch (err) {
+    console.error("push: couldn't notify the people named", err instanceof Error ? err.message : err);
+    return 0;
+  }
+}
+
 export async function notifyAdmins(payload: Record<string, unknown>, collapseId?: string): Promise<number> {
   if (!apnsConfig()) return 0;
   try {

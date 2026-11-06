@@ -29,6 +29,19 @@ export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 const isCollection = (s: string): s is Collection => (COLLECTIONS as readonly string[]).includes(s);
 
+const PUSH_CHARS = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
+
+/** A key for a new child of a list node, as the app's store makes them (app/store.ts pushId): time-ordered, then random. */
+export function pushId(now = Date.now()): string {
+  const stamp: string[] = [];
+  let t = now;
+  for (let i = 7; i >= 0; i--) {
+    stamp[i] = PUSH_CHARS[t % 64];
+    t = Math.floor(t / 64);
+  }
+  return stamp.join("") + Array.from({ length: 12 }, () => PUSH_CHARS[Math.floor(Math.random() * 64)]).join("");
+}
+
 /** "a/b//c/" → ["a","b","c"], or null when a segment isn't allowed. The root is []. */
 export function parsePath(raw: unknown): string[] | null {
   if (typeof raw !== "string") return null;

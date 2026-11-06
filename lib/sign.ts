@@ -54,6 +54,27 @@ export type Party = {
 
 export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string };
 
+/**
+ * What happens once everyone has signed, beyond the office's notices
+ * (supabase/migrations/20261106_signature_requests_on_complete.sql).
+ * closing-consent: a consent to dissolve from an entity's closing checklist
+ * (app/entity-closing.ts). The signed copy is filed in the entity's
+ * Documents, the step is marked done, and each party gets the copy.
+ */
+export type OnComplete = { kind: "closing-consent"; assetId: string; step: string };
+
+/** The on-complete instruction as the office sends it, or null when it isn't one BFO knows. */
+export function cleanOnComplete(raw: unknown, assetId: string | null): OnComplete | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (o.kind !== "closing-consent" || !assetId || o.assetId !== assetId) return null;
+  const step = typeof o.step === "string" && /^[\w:-]{1,40}$/.test(o.step) ? o.step : "consent";
+  return { kind: "closing-consent", assetId, step };
+}
+
+/** A signer's name against a BFO user's (lib/names.ts); here so api/sign.ts has one import. */
+export { namesMatch } from "./names.js";
+
 export type SignatureRequestRow = {
   id: string;
   title: string;
@@ -80,6 +101,8 @@ export type SignatureRequestRow = {
   mode: SignMode;
   /** Bumped on every write; writes name the version they read so none overwrites another. */
   version: number;
+  /** What to do once everyone has signed; rows from before the column read as null. */
+  on_complete?: OnComplete | null;
 };
 
 /** What the office sees: the row without the token hashes. */
