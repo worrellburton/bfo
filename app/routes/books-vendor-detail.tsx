@@ -91,8 +91,8 @@ export default function BooksVendorDetail() {
       .catch(() => {});
   }, []);
 
-  const list = txns ?? [];
-  const posted = list.filter((t) => !t.pending);
+  const list = useMemo(() => txns ?? [], [txns]);
+  const posted = useMemo(() => list.filter((t) => !t.pending), [list]);
   const stats = useMemo(() => {
     const year = String(new Date().getFullYear());
     let paidYear = 0;

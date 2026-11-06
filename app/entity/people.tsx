@@ -20,6 +20,8 @@ import {
   CLASS_WORDS,
   TRUST_WORDS,
   classificationNote,
+  fromWords,
+  probablySamePerson,
   historyWords,
   holdsShare,
   isCompanyName,
@@ -56,6 +58,9 @@ type PeopleRecord = Asset & {
   successorTrustees?: string;
   ownershipHistory?: Record<string, HistoryEntry & { doc?: { id: string; name: string } | null; recordedAt?: number; recordedBy?: string | null }>;
 };
+
+/** Names and their details wrap in full rather than cutting off (a trust's legal name is long). */
+const WRAP = "[&_.line-clamp-2]:line-clamp-none [&_.truncate]:whitespace-normal";
 
 const BAR = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5"];
 const barColour = (i: number) => BAR[i] ?? "bg-chart-other";
@@ -281,7 +286,7 @@ function OwnersAndManagers({ ctx }: { ctx: PeopleCtx }) {
 
   const taxLine = (() => {
     const t = asset.llcType;
-    const sole = owners.length === 1 ? owners[0].m.name : null;
+    const sole = owners.length === 1 ? (linkedEntity(owners[0].m, entities, asset.ownerId)?.name ?? owners[0].m.name) : null;
     if (asset.type !== "LLC") return null;
     if (t === "Disregarded Entity") return sole ? `Disregarded: its income is reported on ${sole}’s return.` : "Disregarded: its income is reported on its owner’s return.";
     if (t === "Partnership") return "A partnership: Form 1065, with a K-1 to each owner by these shares.";
@@ -409,6 +414,7 @@ function OwnersAndManagers({ ctx }: { ctx: PeopleCtx }) {
                     }
                     to={link ? `/assets/${encodeURIComponent(link.id)}` : undefined}
                     menu={menu.length ? menu : undefined}
+                    className={WRAP}
                   />
                 );
               })}
@@ -492,11 +498,10 @@ function OwnersAndManagers({ ctx }: { ctx: PeopleCtx }) {
                       key={m.name}
                       label={m.name}
                       title={m.name}
-                      secondary={[m.role, managers.onOwnerList ? null : `From ${managers.source?.charAt(0).toLowerCase()}${managers.source?.slice(1)}`, a ? accessWords(a) : null]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      secondary={[m.role, managers.onOwnerList ? null : fromWords(managers.source).replace(/^f/, "F"), a ? accessWords(a) : null].filter(Boolean).join(" · ")}
                       leading={<Avatar name={m.name} kind={isCompanyName(m.name) ? "organisation" : "person"} />}
                       menu={menu.length ? menu : undefined}
+                      className={WRAP}
                     />
                   );
                 })}
@@ -589,6 +594,13 @@ function TrustPeople({ ctx }: { ctx: PeopleCtx }) {
   }
 
   const unsorted = !structured && people.filter((p) => p.role === "trustee").length > 1;
+  const names = [...new Set(people.map((p) => p.name))];
+  const variants = names.flatMap((a, i) =>
+    names
+      .slice(i + 1)
+      .filter((b) => probablySamePerson(a, b))
+      .map((b) => `${a} and ${b}`),
+  );
 
   return (
     <>
@@ -706,6 +718,7 @@ function TrustPeople({ ctx }: { ctx: PeopleCtx }) {
                               .join(" · ")}
                             leading={<Avatar name={p.name} kind={isCompanyName(p.name) ? "organisation" : "person"} />}
                             menu={menu.length ? menu : undefined}
+                            className={WRAP}
                           />
                         );
                       })}
@@ -717,6 +730,11 @@ function TrustPeople({ ctx }: { ctx: PeopleCtx }) {
           </Card>
         );
       })}
+      {variants.length > 0 && (
+        <Banner tone="info">
+          Some names may be one person written two ways: {format.list(variants)}. Use one spelling, the one in the trust agreement, so BFO counts and invites each person once.
+        </Banner>
+      )}
       {error && <Banner tone="negative">{error}</Banner>}
 
       {dialog?.kind === "add" && <TrustAddDialog open onClose={() => setDialog(null)} role={dialog.role} people={people} docs={page.docs} onSave={save} />}

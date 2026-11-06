@@ -203,7 +203,10 @@ export function useMailActions({
     const files = m.attachments?.length ?? 0;
     const ok = await confirm({
       title: "Delete this message forever?",
-      object: { name: m.subject || "(no subject)", detail: `${m.direction === "out" ? "To" : "From"} ${senderLabel(m.direction === "out" ? (m.to[0] ?? m.from) : m.from)} · ${format.date(m.occurredAt, "medium")}` },
+      object: {
+        name: m.subject || "(no subject)",
+        detail: `${m.direction === "out" ? "To" : "From"} ${senderLabel(m.direction === "out" ? (m.to[0] ?? m.from) : m.from)} · ${format.date(m.occurredAt, "medium")}`,
+      },
       message: `It${files ? ` and its ${files === 1 ? "attachment" : `${files} attachments`}` : ""} will be removed from BFO. A record of who deleted it, and when, is kept.`,
       irreversible: true,
       confirmLabel: "Delete forever",

@@ -45,6 +45,35 @@ export function sameName(a?: string | null, b?: string | null): boolean {
   return !!n(a) && n(a) === n(b);
 }
 
+/** A name as people write it: a registry's ALL-CAPS "AMANDA BURTON DAWSON" becomes "Amanda Burton Dawson"; anything with lowercase is left alone. */
+export function tidyName(name: string): string {
+  const t = name.trim().replace(/\s+/g, " ");
+  if (/[a-z]/.test(t)) return t;
+  return t
+    .toLowerCase()
+    .replace(/(^|[\s\-'(])([a-z])/g, (_, pre: string, c: string) => pre + c.toUpperCase())
+    .replace(/\b(Llc|Lp|Llp|Pllc|Inc|Ii|Iii|Iv|Na|Pc)\b/g, (w) => w.toUpperCase());
+}
+
+/** "From Nevada’s record", "from the owner list": a source as the middle of a sentence. */
+export function fromWords(source: string | null | undefined): string {
+  if (!source) return "";
+  return /^The /.test(source) ? `from ${source.charAt(0).toLowerCase()}${source.slice(1)}` : `from ${source}`;
+}
+
+/** Two spellings that are probably one person: same first and last name, and the middle names agree where both have one ("Alex J. Rivera", "Alex James Rivera"). */
+export function probablySamePerson(a: string, b: string): boolean {
+  const parts = (s: string) => s.toLowerCase().replace(/[.,]/g, " ").split(/\s+/).filter(Boolean);
+  const x = parts(a);
+  const y = parts(b);
+  if (x.length < 2 || y.length < 2 || x.join(" ") === y.join(" ")) return false;
+  if (x[0] !== y[0] || x[x.length - 1] !== y[y.length - 1]) return false;
+  const mx = x.slice(1, -1);
+  const my = y.slice(1, -1);
+  if (!mx.length || !my.length) return false;
+  return mx.length === my.length && mx.every((m, i) => m[0] === my[i][0]);
+}
+
 export const isCompanyName = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|company|trust|trustees?|lp|l\.p\.|ltd\.?|partners|llp|pllc)\b/i.test(name);
 
 /** The roles an owner can hold, by entity type (an LLC has members, not shareholders). */
@@ -84,9 +113,9 @@ export function managersOnRecord(asset: Partial<Pick<Asset, "members" | "stateRe
   const own = (asset.members ?? []).filter((m) => !holdsShare(m)).map((m) => ({ name: m.name, role: m.role ?? "Manager", address: m.address ?? null }));
   const statePeople = (asset.stateRecord?.people ?? []).filter((p) => isManagerRole(p.role) || /^manager$/i.test(p.title ?? ""));
   const fromState: ManagerOnRecord[] = statePeople.length
-    ? statePeople.map((p) => ({ name: p.name, role: "Manager", address: p.address ?? null }))
-    : (asset.stateRecord?.managers ?? []).map((name) => ({ name, role: "Manager" }));
-  const fromProfile: ManagerOnRecord[] = (asset.profile?.managers ?? []).map((name) => ({ name, role: "Manager" }));
+    ? statePeople.map((p) => ({ name: tidyName(p.name), role: "Manager", address: p.address ?? null }))
+    : (asset.stateRecord?.managers ?? []).map((name) => ({ name: tidyName(name), role: "Manager" }));
+  const fromProfile: ManagerOnRecord[] = (asset.profile?.managers ?? []).map((name) => ({ name: tidyName(name), role: "Manager" }));
   const management = asset.profile?.management ?? "";
   const managerManaged = /manager[- ]managed/i.test(management) || fromState.length > 0 || fromProfile.length > 0 || own.some((m) => isManagerRole(m.role));
   const stateName = asset.state ? `${asset.state}’s record` : "The state’s record";

@@ -974,6 +974,8 @@ export async function pnlReport(query: Query, report: "pnl" | "cell"): Promise<R
       entities: entities.map((e) => e.name),
       net: dollars(exactC),
       shown: fig ? figureAt(fig, pnl, { month, entity: col }) : null,
+      // The statement's whole dollars for this line by month, so the drill-down's months match it.
+      figures: fig && !col ? { monthly: fig.monthly, total: fig.total } : null,
       duplicates: [...groups.entries()].filter(([k, ids]) => ids.length > 1 && !settled.has(k)).map(([, ids]) => ids),
       locked,
       closed_through: locks.length ? locks.map((l) => l.closed_through).sort()[0] : null,

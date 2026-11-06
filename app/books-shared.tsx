@@ -59,6 +59,9 @@ export {
 } from "./books-legacy";
 export { Icon } from "./books-legacy";
 
+/** Kept for callers that still pass the theme; every part here follows it through the tokens. */
+type LegacyTheme = Partial<Record<`is${"Dark"}`, boolean>>;
+
 /** Full-detail Books transaction, as the API returns it. */
 export type Txn = {
   transaction_id: string;
@@ -331,7 +334,7 @@ export function entityLabel(name: string | null | undefined): string {
 export function setEntityHueOrder(_names: string[]): void {}
 
 /** The entity's short code as a neutral tag, with the full name on hover and for screen readers. */
-export function EntityTag({ name, tooltip = true, srName = true }: { name: string; isDark?: boolean; tooltip?: boolean; size?: "sm" | "touch"; srName?: boolean }) {
+export function EntityTag({ name, tooltip = true, srName = true }: { name: string; tooltip?: boolean; size?: "sm" | "touch"; srName?: boolean } & LegacyTheme) {
   const tag = (
     <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-sunken px-2 text-caption font-medium text-ink-2 tabular-nums">
       {entityTag(name)}
@@ -490,8 +493,6 @@ export function Menu({
 }: {
   value: string;
   options: Option[];
-  /** Kept for callers; the picker follows the theme by itself. */
-  isDark?: boolean;
   disabled?: boolean;
   readOnly?: boolean;
   onChange: (v: string) => void;
@@ -507,7 +508,7 @@ export function Menu({
   touch?: boolean;
   className?: string;
   footnote?: ReactNode;
-}) {
+} & LegacyTheme) {
   const shell = useListbox();
   const current = options.find((o) => o.value === value);
   const text = current?.short ?? current?.label ?? placeholder ?? "Choose…";
@@ -587,8 +588,7 @@ export function ConfirmDialog({
   details,
   irreversible,
   focus,
-}: {
-  isDark?: boolean;
+}: LegacyTheme & {
   title: string;
   message?: ReactNode;
   confirmLabel?: string;
@@ -628,7 +628,7 @@ export function ConfirmDialog({
 }
 
 /** Kept for callers outside Books: shows `message` as the system's toast, once. */
-export function Toast({ message, onClose }: { message: string; isDark?: boolean; onClose: () => void }) {
+export function Toast({ message, onClose }: { message: string; onClose: () => void } & LegacyTheme) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -854,7 +854,6 @@ export function BatchBar({
   summary,
 }: {
   count: number;
-  isDark?: boolean;
   busy?: boolean;
   /** Resolves true once saved; the fields keep what was typed until then. */
   onApply: (patch: Record<string, string>) => Promise<boolean>;
@@ -862,7 +861,7 @@ export function BatchBar({
   vendorSuggestions?: string[];
   categories?: string[];
   summary?: BatchSummary;
-}) {
+} & LegacyTheme) {
   const phone = usePhone();
   const [vendor, setVendor] = useState("");
   const [note, setNote] = useState("");
@@ -878,7 +877,8 @@ export function BatchBar({
     // Escape drops the selection, when nothing floats above the bar.
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector("#overlays [role='dialog'], #overlays [role='alertdialog'], #overlays [role='listbox'], #overlays [role='menu']")) return;
+      // The overlay manager marks <html> while a dialog, sheet or menu is open.
+      if (document.documentElement.dataset.overlay) return;
       onClear();
     }
     document.addEventListener("keydown", onKey);
@@ -1259,7 +1259,7 @@ type Selection = {
 };
 
 /** The loaded layout's shape while the rows load. */
-export function TxnTableSkeleton(_p: { isDark?: boolean; view?: TxnView; selection?: boolean }) {
+export function TxnTableSkeleton(_p: { view?: TxnView; selection?: boolean } & LegacyTheme) {
   const phone = usePhone();
   return phone ? <Skeleton kind="rows" rows={8} /> : <Skeleton kind="table" rows={8} columns={["36%", "22%", "8%", "12%", "14%"]} />;
 }
@@ -1292,7 +1292,6 @@ export function TxnTable({
   rows: Txn[];
   categories: string[];
   loans?: Array<{ id: string; name: string }>;
-  isDark?: boolean;
   onRowChange: (t: Txn) => void;
   onError: (message: string) => void;
   onReload?: () => void;
@@ -1307,7 +1306,7 @@ export function TxnTable({
   context?: "ledger" | "vendor" | "loan";
   /** Account id → "Operating checking •• 4821", for the detail and the bank-account column. */
   accounts?: Record<string, string>;
-}) {
+} & LegacyTheme) {
   const phone = usePhone();
   const [open, setOpen] = useState<string | null>(null);
   const [pending, setPending] = useState<{ t: Txn; category: string } | null>(null);

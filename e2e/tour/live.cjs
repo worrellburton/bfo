@@ -64,7 +64,7 @@ const BOOKS_REPORTS = new Set([
 const PALM_READS = new Set(["status", "usage", "ra", "documents", "inbox", "cases", "form-requirements", "form-fee", "form-validate"]);
 const PLAID_ONCE = new Set(["treasury", "bank-transactions", "investments"]);
 /** Answers that carry a short-lived signed link: always asked fresh, never kept. */
-const FRESH = (p, q) => p === "/api/documents/url" || (p === "/api/mail" && q.get("view") === "attachment") || p === "/api/sign";
+const FRESH = (p, q) => p === "/api/documents/url" || (p === "/api/mail" && q.get("view") === "attachment") || p === "/api/sign" || p === "/api/stable";
 
 const ok = (body) => ({ kind: "reply", status: 200, body });
 const blocked = { kind: "reply", status: 503, body: { error: "tour_blocked", message: "Disabled in the screenshot tour." } };

@@ -107,7 +107,7 @@ export function VoidDialog({ request: r, open, onClose, onVoid }: { request: Sig
           This can’t be undone.
         </p>
         <Field label="Reason" hint="Kept with the request and shown in its history.">
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Wrong effective date" />
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
         </Field>
         <Checkbox checked={notify} onChange={setNotify} label="Email the parties that it was withdrawn" hint="Without it, nobody is emailed; their links just stop working." />
         {error && <p className="text-small text-negative">{error}</p>}
@@ -168,7 +168,7 @@ export function ArchiveDialog({ request: r, open, onClose, onArchive }: { reques
           {r.signed_path ? "Its signers can still open their copy. " : ""}You can restore it.
         </p>
         <Field label="Reason" hint="Kept with the request.">
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Superseded by a later version" />
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
         </Field>
         {error && <p className="text-small text-negative">{error}</p>}
       </div>

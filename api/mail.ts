@@ -233,12 +233,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         const v = encodeURIComponent(`"${to}"`);
         // Mail from before extra addresses existed has no delivered-to: it came to the main one.
         received = to === main ? `or(delivered_to.eq.${v},delivered_to.is.null)` : `delivered_to.eq.${v}`;
-        box =
-          folder === "sent"
-            ? `from_email.eq.${v}`
-            : folder === "active" || folder === "trash"
-              ? `or(and(direction.eq.out,from_email.eq.${v}),and(direction.eq.in,${received}))`
-              : received;
+        box = folder === "sent" ? `from_email.eq.${v}` : folder === "active" || folder === "trash" ? `or(and(direction.eq.out,from_email.eq.${v}),and(direction.eq.in,${received}))` : received;
       }
       // A search looks through everything the caller may see but Trash, whatever folder is open.
       const where = searching ? liveScope(me.id, admin, { trash }) : folderFilter(folder, me.id, admin, { trash });
@@ -279,9 +274,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
         .map(pgQuote)
         .join(",");
       const pinnedRows =
-        pins && !active
-          ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${before ? "id" : columns}&order=occurred_at.desc,id.desc&limit=100`)) ?? [])
-          : [];
+        pins && !active ? ((await sb<SummaryRow[]>(`mail_messages?${where}&starred_at=not.is.null${inBox}&select=${before ? "id" : columns}&order=occurred_at.desc,id.desc&limit=100`)) ?? []) : [];
       // Paging and search go in one and=(…), so neither clashes with the or=(…) an admin's scope uses.
       const conditions = [
         keyList ? `or(thread_key.is.null,thread_key.not.in.(${keyList}))` : "",
@@ -407,9 +400,9 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
     }
 
     case "notice": {
-      const rows = await sb<{ at: string; detail: { version?: string } | null }[]>(
-        `audit_log?actor_id=eq.${me.id}&action=eq.mail.notice_ack&select=at,detail&order=at.desc&limit=20`,
-      ).catch(() => null);
+      const rows = await sb<{ at: string; detail: { version?: string } | null }[]>(`audit_log?actor_id=eq.${me.id}&action=eq.mail.notice_ack&select=at,detail&order=at.desc&limit=20`).catch(
+        () => null,
+      );
       const hit = (rows ?? []).find((r) => r.detail?.version === NOTICE_VERSION);
       return res.status(200).json({ version: NOTICE_VERSION, acknowledgedAt: hit?.at ?? null, recordable: rows !== null });
     }
@@ -439,9 +432,7 @@ async function view(req: VercelRequest, res: VercelResponse, me: AppUser, admin:
 /** Whether the mailbox has written to this sender before: their pictures may load. The office's own verified mail counts. */
 async function wroteTo(me: AppUser, from: string, row: MailRow): Promise<boolean> {
   if (onOurDomain(from) && (row.spf_pass === true || row.dkim_pass === true)) return true;
-  const rows = await sb<{ id: string }[]>(`mail_messages?user_id=eq.${me.id}&direction=eq.out&to_addrs=cs.${encodeURIComponent(JSON.stringify([{ email: from }]))}&select=id&limit=1`).catch(
-    () => [],
-  );
+  const rows = await sb<{ id: string }[]>(`mail_messages?user_id=eq.${me.id}&direction=eq.out&to_addrs=cs.${encodeURIComponent(JSON.stringify([{ email: from }]))}&select=id&limit=1`).catch(() => []);
   return !!rows?.length;
 }
 
@@ -490,7 +481,7 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
         actor: me,
         action: "mail.alias_remove",
         target: { type: "mail_address", id: address, label: address },
-        summary: `Removed the address ${address}; new mail to it goes to Other`,
+        summary: `Removed the address ${address}; new mail to it goes to Unclaimed`,
       });
       return res.status(200).json({ aliases: await listAliases(me.id) });
     }
@@ -664,7 +655,13 @@ async function act(req: VercelRequest, res: VercelResponse, me: AppUser, admin: 
       const current = (await activeHolds()).filter((h) => h.user_id === null);
       if (body.on && !current.length) {
         await sb("mail_holds", { method: "POST", body: { user_id: null, reason: reason || null, set_by: me.id }, prefer: "return=minimal" });
-        await audit({ actor: me, action: "mail.hold_all", target: { type: "mail_hold", id: "all", label: "All mail" }, summary: "Put all mail on hold for records", detail: { reason: reason || null } });
+        await audit({
+          actor: me,
+          action: "mail.hold_all",
+          target: { type: "mail_hold", id: "all", label: "All mail" },
+          summary: "Put all mail on hold for records",
+          detail: { reason: reason || null },
+        });
       } else if (!body.on && current.length) {
         await sb(`mail_holds?id=in.(${current.map((h) => h.id).join(",")})`, { method: "PATCH", body: { lifted_at: new Date().toISOString(), lifted_by: me.id } });
         await audit({ actor: me, action: "mail.release_all", target: { type: "mail_hold", id: "all", label: "All mail" }, summary: "Lifted the records hold on all mail" });
@@ -746,7 +743,13 @@ async function improve(res: VercelResponse, me: AppUser, body: Record<string, un
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return fail(res, 503, "not_configured", "Tidy layout isn't set up.");
   if (body.ack === TIDY_NOTICE_VERSION) {
-    await audit({ actor: me, action: "mail.ai_ack", target: { type: "user", id: me.id, label: me.name ?? null }, summary: "Read the notice about Tidy layout (AI)", detail: { version: TIDY_NOTICE_VERSION } });
+    await audit({
+      actor: me,
+      action: "mail.ai_ack",
+      target: { type: "user", id: me.id, label: me.name ?? null },
+      summary: "Read the notice about Tidy layout (AI)",
+      detail: { version: TIDY_NOTICE_VERSION },
+    });
   }
   const subject = typeof body.subject === "string" ? body.subject.slice(0, 300) : "";
   const client = new Anthropic({ apiKey });

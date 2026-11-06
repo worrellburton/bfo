@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker } from "react-router";
-import { AiNote, Banner, Button, Icon, IconButton, Select, TextLink, Tooltip, confirm, cx, isApple, useOverlay, usePhone } from "../ui";
+import { AiNote, Banner, Button, ButtonLayout, Icon, IconButton, Select, Sheet, TextLink, Tooltip, confirm, cx, isApple, usePhone } from "../ui";
 import { overlayRoot } from "../ui/portal";
 import { FormatBar, MailEditor, type MailEditorHandle } from "../mail-editor";
 import { composeText, htmlFromPlain } from "../../lib/mail-compose";
@@ -58,24 +58,6 @@ function readBase64(file: File): Promise<string> {
     reader.onerror = () => reject(new Error(`Couldn't read ${file.name}. Choose it again.`));
     reader.readAsDataURL(file);
   });
-}
-
-/** The visual viewport (the part of the screen the keyboard leaves), so a phone's composer keeps Send and its bar in view. */
-function useVisualViewport(on: boolean): { top: number; height: number } | null {
-  const [v, setV] = useState<{ top: number; height: number } | null>(null);
-  useEffect(() => {
-    const vv = typeof window !== "undefined" ? window.visualViewport : null;
-    if (!on || !vv) return;
-    const sync = () => setV({ top: vv.offsetTop, height: vv.height });
-    sync();
-    vv.addEventListener("resize", sync);
-    vv.addEventListener("scroll", sync);
-    return () => {
-      vv.removeEventListener("resize", sync);
-      vv.removeEventListener("scroll", sync);
-    };
-  }, [on]);
-  return v;
 }
 
 /**
@@ -209,17 +191,13 @@ export function Compose({
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<MailEditorHandle>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const asking = useRef(false);
   const officeDomain = domainOf(from || addresses[0] || "");
 
   const dirty = to !== draft.to || cc !== draft.cc || bcc !== draft.bcc || subject !== draft.subject || html !== htmlFromPlain(draft.text) || files.length > 0;
   const totalBytes = files.reduce((n, f) => n + f.size, 0);
   const ownText = composeText(html).trim();
-
-  // Phones: a modal full-screen sheet (the page behind is inert, focus is held, Escape closes). Desktop: docked, not modal.
-  const overlay = useOverlay({ open: phone, onClose: () => void close(), kind: "sheet", modal: true });
-  const vv = useVisualViewport(phone);
 
   // Leaving the page (Back, a palette jump) asks first; ?m and ?f changes inside the inbox don't.
   const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname);
@@ -438,10 +416,17 @@ export function Compose({
             From
           </span>
           <div className="min-w-0 flex-1 py-1">
-            <Select label="Send from" placeholder="Choose an address" size="sm" value={from || null} onChange={(v) => {
+            <Select
+              label="Send from"
+              placeholder="Choose an address"
+              size="sm"
+              value={from || null}
+              onChange={(v) => {
                 setFrom(v);
                 setError(null);
-              }} options={addresses.map((a) => ({ value: a, label: a }))} />
+              }}
+              options={addresses.map((a) => ({ value: a, label: a }))}
+            />
           </div>
         </div>
       )}
@@ -522,7 +507,7 @@ export function Compose({
   );
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className={cx("flex flex-col", phone ? "-mx-4 -my-4 min-h-full" : "min-h-0 flex-1 overflow-y-auto")}>
       {fields}
       {notes}
       {beforeImprove !== null && (
@@ -603,53 +588,46 @@ export function Compose({
     </div>
   );
 
-  // ── Phones: the full-screen sheet ──
+  // ── Phones: the system's full-screen sheet: Cancel, the title, then Attach and Send in its top bar, clear of the keyboard ──
   if (phone) {
-    return createPortal(
-      <div className="ds fixed inset-x-0 z-modal" style={vv ? { top: vv.top, height: vv.height } : { top: 0, bottom: 0 }}>
-        <div
-          ref={overlay.panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="compose-title"
-          onKeyDown={onKeyDown}
-          className="ds-full-in flex h-full flex-col bg-overlay text-body text-ink outline-none"
-        >
-          <div className={cx("grid min-h-[52px] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-line px-2", (!vv || vv.top === 0) && "pt-[env(safe-area-inset-top)]")}>
-            <div>
-              <Button variant="quiet" size="sm" onClick={() => void close()}>
-                Cancel
-              </Button>
+    return (
+      <Sheet
+        open
+        side="full"
+        onClose={() => void close()}
+        title={draft.title}
+        action={
+          <span className="flex items-center gap-1">
+            {fileInput}
+            <GlyphButton glyph="clip" label="Attach files" noTooltip onClick={() => fileRef.current?.click()} />
+            {sendButton}
+          </span>
+        }
+        footer={
+          <ButtonLayout.Provider value={{}}>
+            <div className="flex flex-col gap-1" onKeyDown={onKeyDown}>
+              {formatting && <FormatBar onFormat={() => setHtml(document.activeElement?.innerHTML ?? html)} disabled={improving} />}
+              <div className="flex items-center gap-1">
+                <GlyphButton glyph="letters" label="Formatting" noTooltip pressed={formatting} onMouseDown={(e) => e.preventDefault()} onClick={() => setFormatting((f) => !f)} />
+                {totalBytes > 0 && <span className="text-caption text-ink-3 tabular-nums">{bytes(totalBytes)}</span>}
+                <span className="flex-1" />
+                {tidyButton}
+              </div>
             </div>
-            <h2 id="compose-title" className="max-w-[52vw] truncate text-center text-title text-ink">
-              {draft.title}
-            </h2>
-            <div className="flex justify-end">{sendButton}</div>
-          </div>
+          </ButtonLayout.Provider>
+        }
+      >
+        <div onKeyDown={onKeyDown} className="contents">
           {body}
-          {/* The accessory bar: always just above the keyboard (the sheet is sized to what the keyboard leaves). */}
-          <div className="shrink-0 border-t border-line bg-overlay px-2 pt-1 pb-[max(4px,env(safe-area-inset-bottom))]">
-            {formatting && <FormatBar onFormat={() => setHtml(document.activeElement?.innerHTML ?? html)} disabled={improving} />}
-            <div className="flex items-center gap-1">
-              {fileInput}
-              <GlyphButton glyph="clip" label="Attach files" noTooltip onClick={() => fileRef.current?.click()} />
-              <GlyphButton glyph="letters" label="Formatting" noTooltip pressed={formatting} onMouseDown={(e) => e.preventDefault()} onClick={() => setFormatting((f) => !f)} />
-              {totalBytes > 0 && <span className="text-caption text-ink-3 tabular-nums">{bytes(totalBytes)}</span>}
-              <span className="flex-1" />
-              {tidyButton}
-            </div>
-          </div>
         </div>
-      </div>,
-      overlayRoot(),
+      </Sheet>
     );
   }
 
   // ── Desktop: docked, not modal ──
   return createPortal(
-    <div
+    <section
       ref={panelRef}
-      role="dialog"
       aria-labelledby="compose-title"
       onKeyDown={onKeyDown}
       className={cx(
@@ -683,7 +661,7 @@ export function Compose({
           </div>
         </>
       )}
-    </div>,
+    </section>,
     overlayRoot(),
   );
 }

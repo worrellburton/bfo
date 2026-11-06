@@ -522,7 +522,9 @@ export function toMessage(row: MailRow): MailMessage {
     // Our own sent copies carry no SPF/DKIM result, and need none.
     unverifiedSender: unverified(row),
     replyTo: row.direction === "in" ? replyToOf(row) : [],
-    paymentRisk: row.direction === "in" && paymentRisk({ subject: row.subject, text: row.text_body ?? (row.html_body ? htmlToText(row.html_body) : ""), attachmentNames: (row.attachments ?? []).map((a) => a.filename) }),
+    paymentRisk:
+      row.direction === "in" &&
+      paymentRisk({ subject: row.subject, text: row.text_body ?? (row.html_body ? htmlToText(row.html_body) : ""), attachmentNames: (row.attachments ?? []).map((a) => a.filename) }),
   };
 }
 
@@ -848,7 +850,11 @@ export function replyToFrom(msg: Pick<BirdInbound, "reply_to">, headers: string 
       .filter((a) => isValidEmail(a.email))
       .map((a) => (a.name ? { email: storable(a.email), name: storable(a.name) } : { email: storable(a.email) }));
   }
-  const line = headers ? headerBlock(headers).split(/\r?\n/).find((l) => /^reply-to\s*:/i.test(l)) : undefined;
+  const line = headers
+    ? headerBlock(headers)
+        .split(/\r?\n/)
+        .find((l) => /^reply-to\s*:/i.test(l))
+    : undefined;
   return line ? addressesIn(line.slice(line.indexOf(":") + 1)) : [];
 }
 
@@ -1476,8 +1482,7 @@ export async function restoreMessages(ids: string[], scope: string): Promise<Mai
 export async function purgeMessages(o: { ids: string[] | null; scope: string; holds: MailHold[]; before?: string; limit?: number }): Promise<{ purged: MailRecord[]; kept: MailRecord[] }> {
   const which = o.ids ? `id=in.(${o.ids.join(",")})&` : "";
   const when = o.before ? `&deleted_at=lt.${enc(o.before)}` : "&deleted_at=not.is.null";
-  const rows =
-    (await sb<MailRecord[]>(`mail_messages?${which}${o.scope}${when}&select=${RECORD_COLUMNS}&order=deleted_at.asc,id.asc&limit=${Math.min(o.limit ?? 200, 1000)}`)) ?? [];
+  const rows = (await sb<MailRecord[]>(`mail_messages?${which}${o.scope}${when}&select=${RECORD_COLUMNS}&order=deleted_at.asc,id.asc&limit=${Math.min(o.limit ?? 200, 1000)}`)) ?? [];
   const purged = rows.filter((r) => !isHeld(r, o.holds));
   const kept = rows.filter((r) => isHeld(r, o.holds));
   await destroy(purged, o.scope);

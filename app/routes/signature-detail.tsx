@@ -43,6 +43,7 @@ import {
   Disclosure,
   ErrorPage,
   Field,
+  Icon,
   Input,
   Menu,
   Page,
@@ -617,7 +618,14 @@ function PartyCard({
               {fields.some((f) => f.type === "date") ? ". The date is stamped in the signer’s own time zone." : ""}
             </p>
           </div>
-          {problem && <p className="text-small text-warning">{problem}</p>}
+          {problem && (
+            <p className="flex items-start gap-[6px] text-small text-ink">
+              <span className="mt-px text-warning">
+                <Icon name="warning" size={16} />
+              </span>
+              <span>{problem}</span>
+            </p>
+          )}
         </div>
       </Card>
     );
@@ -958,7 +966,8 @@ function ResendDialog({
   onClose: () => void;
   onSend: (body: { mode: SignMode; plain: boolean; address: PartyKey[]; reason?: string }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<SignMode>(gameEntity ? (r.mode ?? "normal") : "normal");
+  // The plain page first: the record of an agreement should come from it unless someone chooses otherwise.
+  const [mode, setMode] = useState<SignMode>("normal");
   const [mention, setMention] = useState(true);
   const [address, setAddress] = useState<PartyKey[]>([]);
   const [reason, setReason] = useState("");

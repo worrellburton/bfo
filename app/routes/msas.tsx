@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Badge, Button, Card, Empty, List, ListRow, Page, PageHeader, Segmented, Select, Skeleton, Status, Toolbar, cx, format, useDocumentTitle, usePhone } from "../ui";
+import { Badge, Button, Card, Disclosure, Empty, List, ListRow, Page, PageHeader, Segmented, Select, Skeleton, Status, cx, format, useDocumentTitle, usePhone } from "../ui";
 import { isContracted, inYear, msaCsv, msaFrom, schedule, span, sum, type Msa } from "./msas-model";
 
 export function meta() {
@@ -93,7 +93,7 @@ export default function MSAs() {
   const context =
     all === null
       ? undefined
-      : `${format.count(count, scope === "active" ? "active agreement" : "agreement")} in ${year}${income ? ` · ${format.money(income)} fee income` : ""}${expense ? ` · ${format.money(expense)} fee expense` : ""} · contracted, not what was billed`;
+      : `${format.count(count, scope === "active" ? "active agreement" : "agreement")} in ${year}${income ? ` · ${format.money(income, { precision: "dollars" })} fee income` : ""}${expense ? ` · ${format.money(expense, { precision: "dollars" })} fee expense` : ""} · contracted, not what was billed`;
 
   const parties = (m: Msa) => (m.direction === "income" ? `${m.entity} manages; ${m.counterparty} pays` : `${m.counterparty} manages; ${m.entity} pays`);
   const terms = (m: Msa) =>
@@ -195,8 +195,7 @@ export default function MSAs() {
   const phoneList = (
     <div className="flex flex-col gap-4">
       {sides.map((s) => (
-        <Card key={s.key} title={s.label} flush>
-          <p className="px-4 pb-3 text-small text-ink-2">{s.note}</p>
+        <Card key={s.key} title={s.label} info={s.note} flush>
           <List label={s.label}>
             {s.rows.map((m) => (
               <ListRow
@@ -227,16 +226,19 @@ export default function MSAs() {
           title="MSAs"
           context={context}
           secondary={
-            <Button icon="download" onClick={exportCsv} disabled={!rows.length} disabledReason={rows.length ? undefined : "Nothing to export"}>
-              Export
-            </Button>
+            phone ? undefined : (
+              <Button icon="download" onClick={exportCsv} disabled={!rows.length} disabledReason={rows.length ? undefined : "Nothing to export"}>
+                Export
+              </Button>
+            )
           }
+          menu={phone && rows.length ? [{ label: "Export as CSV", icon: "download", onSelect: exportCsv }] : undefined}
         />
       }
     >
       <div className="flex flex-col gap-4">
-        <Toolbar
-          filters={
+        <div className="flex items-center gap-2">
+          <div className="w-[160px]">
             <Select
               size="sm"
               label="Year"
@@ -244,24 +246,25 @@ export default function MSAs() {
               onChange={(v) => setYear(Number(v))}
               options={years.map((y) => ({ value: String(y), label: String(y), hint: y > thisYear ? "Projected" : undefined }))}
             />
-          }
-          view={
-            <Segmented
-              label="Agreements"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "active", label: "Active" },
-                { value: "all", label: "All" },
-              ]}
-            />
-          }
-        />
-        <p className="text-small text-pretty text-ink-2">
-          Fees sit in the months they&apos;re billed: monthly every month, quarterly every third month from the effective date, annually on the anniversary, one-time once. Each agreement stops at its
-          termination or at the end of a fixed term. Nothing is prorated.
-          {year >= thisYear && lastActual < 11 ? ` Months after ${MONTHS[Math.max(0, lastActual)]} ${year} are projected.` : ""}
-        </p>
+          </div>
+          <Segmented
+            label="Agreements"
+            value={scope}
+            onChange={setScope}
+            className="ml-auto"
+            options={[
+              { value: "active", label: "Active" },
+              { value: "all", label: "All" },
+            ]}
+          />
+        </div>
+        <Disclosure label="How fees are placed">
+          <p className="mt-1 max-w-[68ch] text-small text-pretty text-ink-2">
+            Fees sit in the months they&apos;re billed: monthly every month, quarterly every third month from the effective date, annually on the anniversary, one-time once. Each agreement stops at
+            its termination or at the end of a fixed term. Nothing is prorated. These are what the agreements say, not what was billed or received.
+            {year >= thisYear && lastActual < 11 ? ` Months after ${MONTHS[Math.max(0, lastActual)]} ${year} are projected.` : ""}
+          </p>
+        </Disclosure>
         {all === null ? (
           <Card flush>
             <Skeleton kind="table" rows={3} columns={["30%", "50%", "20%"]} />

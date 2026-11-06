@@ -15,7 +15,7 @@ import { postBatchEdit, visibleSelection } from "../books-batch";
 import { KpiStrip } from "../books-report-kit";
 import { kpiMoney, periodText, splitAccount, statementMoney } from "../books-report-model";
 import { BatchBar, TxnTable, TxnTableSkeleton, type Txn } from "../books-shared";
-import { Banner, Button, Empty, Page, PageHeader, TextLink, cx, format, useDocumentTitle } from "../ui";
+import { Banner, Button, Empty, Page, PageHeader, TextLink, cx, format, useDocumentTitle, usePhone } from "../ui";
 
 export function meta() {
   return [{ title: "Transactions behind a figure · Reports · BFO" }];
@@ -54,6 +54,7 @@ type CellReply = {
   locked?: number;
   closed_through?: string | null;
   accounts?: Record<string, string>;
+  figures?: { monthly: number[]; total: number } | null;
 };
 
 /** The sign a section reads in: operating expenses money out, the rest money in. */
@@ -69,6 +70,7 @@ export default function BooksCell() {
   const col = params.get("col");
   const view = params.get("view");
   const writable = canWrite();
+  const phone = usePhone();
 
   const [reply, setReply] = useState<CellReply | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
@@ -125,11 +127,13 @@ export default function BooksCell() {
   const inTotal = rows.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0);
   const outTotal = rows.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const net = Math.round(rows.reduce((s, t) => s + signed(t, section), 0) * 100) / 100;
+  // The months as the statement shows them (whole dollars that add to its total), else summed here.
   const byMonth = useMemo(() => {
+    if (reply?.figures) return reply.figures.monthly;
     const m = Array<number>(12).fill(0);
     for (const t of all) m[Number(t.date.slice(5, 7)) - 1] += signed(t, section);
-    return m.map((v) => Math.round(v * 100) / 100);
-  }, [all, section]);
+    return m.map((v) => Math.round(v));
+  }, [all, section, reply]);
 
   const account = label ? splitAccount(label) : null;
   const title = account?.name ?? SECTION_TITLES[section] ?? "Transactions";
@@ -152,10 +156,20 @@ export default function BooksCell() {
   const backTo = `/books/reports${back.toString() ? `?${back}` : ""}`;
 
   // Ties to the figure it was opened from: the statement's whole dollars against the rows to the cent.
-  const shownServer = !month && reply?.shown !== undefined ? reply.shown : null;
+  const shownServer = month ? (reply?.figures?.monthly[Number(month) - 1] ?? null) : (reply?.shown ?? null);
   const ties = shownServer === null || shownServer === undefined ? null : Math.abs(Math.round(net) - shownServer) <= 1;
 
-  const duplicates = (reply?.duplicates ?? []).filter((ids) => ids.some((id) => rows.some((t) => t.transaction_id === id)));
+  // Rows on the same account, day and amount look like one payment twice. The
+  // server leaves out groups Review has settled; an older server sends none, so they're found here.
+  const duplicates = useMemo(() => {
+    if (reply?.duplicates) return reply.duplicates.filter((ids) => ids.some((id) => rows.some((t) => t.transaction_id === id)));
+    const groups = new Map<string, string[]>();
+    for (const t of rows) {
+      const k = `${t.account_id}|${t.date}|${Math.round(t.amount * 100)}`;
+      groups.set(k, [...(groups.get(k) ?? []), t.transaction_id]);
+    }
+    return [...groups.values()].filter((ids) => ids.length > 1);
+  }, [reply, rows]);
   const locked = reply?.locked ?? 0;
   const allLocked = rows.length > 0 && locked >= all.length;
   const readOnly = !writable || allLocked;
@@ -184,10 +198,10 @@ export default function BooksCell() {
               : ties === null
                 ? `${format.money(net)} exactly`
                 : ties
-                  ? `${format.money(net)} · ties to the statement's ${statementMoney(shownServer)}`
+                  ? `${format.money(net)} · ties to the statement’s ${statementMoney(shownServer)}`
                   : `${format.money(net)} · the statement shows ${statementMoney(shownServer)}`,
           },
-          { label: "Transactions", value: loading ? "" : format.count(rows.length, "transaction", "transactions", { zero: "numeral" }) },
+          { label: "Transactions", value: loading ? "" : rows.length.toLocaleString("en-US") },
         ]}
       />
 
@@ -231,7 +245,7 @@ export default function BooksCell() {
         </nav>
       )}
 
-      <div className="overflow-hidden rounded-card border border-line bg-raised">
+      <div className={phone ? "" : "overflow-clip rounded-card border border-line bg-raised"}>
         {loading ? (
           <TxnTableSkeleton selection={!readOnly} />
         ) : rows.length === 0 ? (
@@ -310,7 +324,7 @@ function MonthLink({ to, current, label, amount }: { to: string; current: boolea
       className={cx("flex min-h-[44px] min-w-[72px] flex-col justify-center rounded-control border px-3 py-1 hover:bg-hover", current ? "border-accent bg-accent-tint" : "border-line bg-raised")}
     >
       <span className="text-caption text-ink-2">{label}</span>
-      {amount !== null && <span className="text-small font-medium text-ink tabular-nums">{statementMoney(Math.round(amount))}</span>}
+      {amount !== null && <span className="text-small font-medium text-ink tabular-nums">{statementMoney(amount)}</span>}
     </Link>
   );
 }

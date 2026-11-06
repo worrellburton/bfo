@@ -56,7 +56,7 @@ export function payeeText(name: string | null, merchant: string | null): string 
 export function normName(s: string | null | undefined): string {
   return String(s ?? "")
     .toLowerCase()
-    .replace(/[\s ]+/g, " ")
+    .replace(/[\s\u00a0]+/g, " ")
     .replace(/[.,;:]+$/g, "")
     .trim();
 }

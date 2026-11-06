@@ -89,7 +89,14 @@ describe("checks inside a piece", () => {
   it("reads each check's details, and an amount only when its unit is plain", () => {
     const [a, b, c] = checksOf({
       checks: [
-        { amountCents: 124000, payerName: "Acme Tenant Co", checkNumber: 1042, checkDate: "2026-10-28", payee: "Northwind Holdings LLC", depositDetails: { status: "completed", depositedAt: "2026-10-30", account: "Operating •• 4821" } },
+        {
+          amountCents: 124000,
+          payerName: "Acme Tenant Co",
+          checkNumber: 1042,
+          checkDate: "2026-10-28",
+          payee: "Northwind Holdings LLC",
+          depositDetails: { status: "completed", depositedAt: "2026-10-30", account: "Operating •• 4821" },
+        },
         { amount: "$1,250.50", from: { name: "Second Payer" } },
         { amount: 5000 },
       ],

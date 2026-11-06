@@ -181,7 +181,10 @@ export function paperFor(a: EntityInput, all: Record<string, EntityInput>, id?: 
 function ownerShareOf(a: EntityInput, owner: EntityInput | undefined): number | null {
   if (!owner?.name) return null;
   const hit = (a.members ?? []).find((m) => m?.name && normalizeName(m.name) === normalizeName(owner.name!));
-  return typeof hit?.percent === "number" ? hit.percent : null;
+  if (typeof hit?.percent === "number") return hit.percent;
+  // One member holding it all, recorded under another name (a trust's trustees, say): the owner on record holds 100%.
+  const holders = shareHolders(a.members);
+  return holders.length === 1 && holders[0].percent === 100 ? 100 : null;
 }
 
 /** The state's word on an entity, as of its last read in `mode`, and the filing the rule book says is behind. */
@@ -299,7 +302,7 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
           ? undefined
           : m
             ? {
-                text: `File the ${m.period} ${m.title} with ${m.agency} and pay the late fees (${m.lateFee}), then record it as filed. ${m.consequence ?? ""}`.trim(),
+                text: `File the ${m.period} ${m.title} with the ${m.agency} and pay the late fees (${m.lateFee}), then record it as filed. ${m.consequence ?? ""}`.trim(),
                 href: m.url ?? page("compliance"),
                 cta: m.url ? "File it" : "Open Compliance",
               }
@@ -403,7 +406,15 @@ export function assessEntity(id: string, a: EntityInput, all: Record<string, Ent
     add({ key: "returns", status: "missing", summary: `${fed.missing} not on record`, fix: { text: `${fed.title}. ${fed.note ?? ""}`.trim(), href: page("overview"), cta: "Open entity" } });
   else if (!fed.last && !fed.next) {
     const r = stateReturn ? periodPillar("returns", stateReturn, today, page("compliance")) : null;
-    add(r ?? { key: "returns", status: "na", summary: home ? `On ${home.name}’s ${home.form}` : fed.title });
+    // No return of its own: say whose it's on, rather than "nothing dated".
+    const on = isTrust
+      ? "On the grantors’ Form 1040 (April 15)"
+      : home
+        ? home.unknown
+          ? `On ${home.name}’s return; its class isn’t recorded`
+          : `On ${home.name}’s ${home.form}`
+        : "On its owner’s return";
+    add(r ?? { key: "returns", status: home?.unknown ? "missing" : "good", summary: on });
   } else {
     const worst = [periodPillar("returns", fed, today, page("compliance")), ...(stateReturn ? [periodPillar("returns", stateReturn, today, page("compliance"))] : [])].sort(
       (x, y) => URGENCY[x.status] - URGENCY[y.status],
@@ -506,7 +517,7 @@ function periodPillar(key: "filings" | "returns", o: Obligation, today: Date, co
       status: "bad",
       summary: `${last.label} ${short}: ${days(last.daysLate ?? 0)} late`,
       fix: {
-        text: `File the ${last.label} ${o.title} with ${o.agency}${o.lateFee ? ` (late: ${o.lateFee})` : ""}, then record it as filed.`,
+        text: `File the ${last.label} ${o.title} with ${o.agency === "IRS" ? "the IRS" : `the ${o.agency}`}${o.lateFee ? ` (late: ${o.lateFee})` : ""}, then record it as filed.`,
         href: o.url ?? compliance,
         cta: o.url ? "File it" : "Open Compliance",
       },

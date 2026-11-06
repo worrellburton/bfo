@@ -15,7 +15,24 @@
  * and the lines a help desk wraps around a reply.
  */
 
-const NAMED: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "–", mdash: "—", hellip: "…", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", zwnj: "", zwj: "", shy: "" };
+const NAMED: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  ndash: "–",
+  mdash: "—",
+  hellip: "…",
+  rsquo: "’",
+  lsquo: "‘",
+  rdquo: "”",
+  ldquo: "“",
+  zwnj: "",
+  zwj: "",
+  shy: "",
+};
 
 /** "&quot;" → '"', "&#8217;" → "’"; anything unknown is left as it was. */
 export function decodeEntities(s: string): string {

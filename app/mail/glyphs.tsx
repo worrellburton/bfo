@@ -63,7 +63,14 @@ export function GlyphButton({
   className,
   type = "button",
   ...rest
-}: { glyph: GlyphName; /** Drawn instead of the glyph (the filled star). */ icon?: React.ReactNode; label: string; pressed?: boolean; danger?: boolean; noTooltip?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: {
+  glyph: GlyphName;
+  /** Drawn instead of the glyph (the filled star). */ icon?: React.ReactNode;
+  label: string;
+  pressed?: boolean;
+  danger?: boolean;
+  noTooltip?: boolean;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const button = (
     <button
       type={type}
@@ -87,7 +94,15 @@ export function GlyphButton({
 export function Star({ on, size, className }: { on: boolean; size?: 16 | 20; className?: string }) {
   const box = size === 16 ? "size-[16px]" : size === 20 ? "size-[20px]" : "size-(--icon)";
   return (
-    <svg className={cx("shrink-0", box, on && "text-warning", className)} viewBox="0 0 24 24" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth={1.75} aria-hidden="true" focusable="false">
+    <svg
+      className={cx("shrink-0", box, on && "text-warning", className)}
+      viewBox="0 0 24 24"
+      fill={on ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={1.75}
+      aria-hidden="true"
+      focusable="false"
+    >
       <path strokeLinecap="round" strokeLinejoin="round" d={GLYPHS.star} />
     </svg>
   );

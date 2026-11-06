@@ -22,7 +22,7 @@ export function BalanceView({ sheet }: { sheet: Sheet }) {
       <KpiStrip
         label="Connected balances"
         items={[
-          { label: "Net connected balances", value: kpiMoney(sheet.net_worth), tone: "direction", amount: sheet.net_worth },
+          { label: "Net connected balances", value: kpiMoney(sheet.net_worth) },
           { label: "Assets", value: kpiMoney(sheet.total_assets) },
           { label: "Liabilities", value: kpiMoney(sheet.total_liabilities) },
         ]}
@@ -89,6 +89,7 @@ export function BalanceView({ sheet }: { sheet: Sheet }) {
               <TotalRow label="Net connected balances" value={sheet.net_worth} grand />
             </tbody>
           </table>
+          <div className="h-3" aria-hidden="true" />
         </div>
         {sheet.earliest_as_of && sheet.earliest_as_of !== latest && <p className="text-caption text-ink-2">Oldest reading in this view: {format.dateTime(sheet.earliest_as_of)}.</p>}
       </section>

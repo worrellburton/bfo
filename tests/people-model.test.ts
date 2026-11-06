@@ -3,6 +3,9 @@ import {
   applyOwnerChange,
   capTableChecks,
   classificationNote,
+  fromWords,
+  probablySamePerson,
+  tidyName,
   historyWords,
   legacyStrings,
   linkedEntity,
@@ -177,5 +180,21 @@ describe("a corporation's cap table", () => {
     });
     expect(c.some((x) => /one class of stock/.test(x.text))).toBe(true);
     expect(c.some((x) => /Northwind Holdings, LLC may not be an eligible/.test(x.text))).toBe(true);
+  });
+});
+
+describe("names as people write them", () => {
+  it("tidies a registry's capitals and leaves written names alone", () => {
+    expect(tidyName("AMANDA J. RIVERA-LEE")).toBe("Amanda J. Rivera-Lee");
+    expect(tidyName("NORTHWIND HOLDINGS LLC")).toBe("Northwind Holdings LLC");
+    expect(tidyName("Alex van Rivera")).toBe("Alex van Rivera");
+  });
+
+  it("spots one person written two ways, and not two different people", () => {
+    expect(probablySamePerson("Alex J. Rivera", "Alex James Rivera")).toBe(true);
+    expect(probablySamePerson("Alex J. Rivera", "Alex K. Rivera")).toBe(false);
+    expect(probablySamePerson("Alex Rivera", "Alex James Rivera")).toBe(false);
+    expect(fromWords("The owner list")).toBe("from the owner list");
+    expect(fromWords("Nevada’s record")).toBe("from Nevada’s record");
   });
 });

@@ -1035,7 +1035,11 @@ describe("/api/mail", () => {
   it("moves only received mail, within the caller's scope", async () => {
     const r = await call("POST", { body: { action: "move", ids: [MSG], folder: "archive" } });
     expect(r).toEqual({ status: 200, json: { ok: true } });
-    expect(sbCalls.find((c) => c.method === "PATCH")).toMatchObject({ method: "PATCH", path: `mail_messages?id=in.(${MSG})&direction=eq.in&user_id=eq.${U1}&deleted_at=is.null`, body: { folder: "archive" } });
+    expect(sbCalls.find((c) => c.method === "PATCH")).toMatchObject({
+      method: "PATCH",
+      path: `mail_messages?id=in.(${MSG})&direction=eq.in&user_id=eq.${U1}&deleted_at=is.null`,
+      body: { folder: "archive" },
+    });
     expect((await call("POST", { body: { action: "move", ids: [MSG], folder: "sent" } })).status).toBe(400);
     expect((await call("POST", { body: { action: "read", ids: ["x"], read: true } })).status).toBe(400);
   });
@@ -1117,7 +1121,15 @@ describe("/api/mail", () => {
         /GET mail_messages\?id=in\./,
         () => [
           row({ deleted_at: "2026-11-01T00:00:00Z", attachments: [{ id: "rea_1", filename: "a", contentType: "x/y", size: 1, path: "in/rem_1/rea_1" }] }),
-          row({ id: SENT, deleted_at: "2026-11-01T00:00:00Z", direction: "out", folder: "sent", dedupe_key: "out:em_1", bird_id: "em_1", attachments: [{ id: "a0", filename: "b", contentType: "x/y", size: 1, path: "out/m/0-b" }] }),
+          row({
+            id: SENT,
+            deleted_at: "2026-11-01T00:00:00Z",
+            direction: "out",
+            folder: "sent",
+            dedupe_key: "out:em_1",
+            bird_id: "em_1",
+            attachments: [{ id: "a0", filename: "b", contentType: "x/y", size: 1, path: "out/m/0-b" }],
+          }),
           row({ id: HELD, deleted_at: "2026-11-01T00:00:00Z", held_at: "2026-11-02T00:00:00Z" }),
         ],
       ],

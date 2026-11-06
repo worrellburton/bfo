@@ -5,7 +5,23 @@ import { getUser, isAdmin } from "../auth";
 import { Banner, Button, Disclosure, FilterChip, Page, confirm, cx, usePhone, useDocumentTitle } from "../ui";
 import { PullToRefresh } from "../mail-pull";
 import { usePushState } from "../push";
-import { emptyTrash, getFaces, markRead, moveMail, notifyMailChanged, purgeMail, restoreMail, sendMail, syncMail, trashMail, useMailCount, type MailCount, type MailFaces, type MailFilter, type MailFolder } from "../mail-client";
+import {
+  emptyTrash,
+  getFaces,
+  markRead,
+  moveMail,
+  notifyMailChanged,
+  purgeMail,
+  restoreMail,
+  sendMail,
+  syncMail,
+  trashMail,
+  useMailCount,
+  type MailCount,
+  type MailFaces,
+  type MailFilter,
+  type MailFolder,
+} from "../mail-client";
 import { FacesContext } from "../mail/avatar";
 import { FOLDERS, NARROW_LABELS, VIEW_KEY, folderLabel, narrowOf, savedView, type Narrow, type NarrowKey, type View } from "../mail/constants";
 import { eachRow, listRows } from "../mail/list-state";
@@ -127,7 +143,19 @@ export default function Inbox() {
     navigate,
     location,
   });
-  const { move, archiveRow, remove, restore, purge, hold: holdMessage, star, undoWith, undoTrash, markUnread, onSent } = useMailActions({
+  const {
+    move,
+    archiveRow,
+    remove,
+    restore,
+    purge,
+    hold: holdMessage,
+    star,
+    undoWith,
+    undoTrash,
+    markUnread,
+    onSent,
+  } = useMailActions({
     folder,
     q,
     cache,
@@ -268,8 +296,9 @@ export default function Inbox() {
         drop(ids);
         refreshActive();
         const back = action === "archive" ? "inbox" : "archive";
-        notify(action === "archive" ? `Archived ${n(ids.length, whole ? "conversation" : "message", whole ? "conversations" : "messages")}` : `Moved ${n(ids.length)} to your inbox`, () =>
-          void undoWith(() => moveMail(ids, back, { conversation: whole })),
+        notify(
+          action === "archive" ? `Archived ${n(ids.length, whole ? "conversation" : "message", whole ? "conversations" : "messages")}` : `Moved ${n(ids.length)} to your inbox`,
+          () => void undoWith(() => moveMail(ids, back, { conversation: whole })),
         );
       }
       notifyMailChanged();
@@ -432,12 +461,13 @@ export default function Inbox() {
     }
   }
 
+  // Unread is counted once, where it lives (the Inbox; the chosen mailbox's when one is), as the nav counts it.
   const tabs: FolderTab[] = folders.map((x) => ({
     key: x.key,
     label: x.label,
     to: `/inbox${x.key === "active" ? "" : `?f=${x.key}`}`,
-    count: x.key === "active" ? (box && list?.to === box && list.unread !== undefined ? list.unread : (count?.activeUnread ?? count?.unread)) : x.key === "other" ? count?.otherUnread : undefined,
-    title: x.key === "active" ? "Received and sent together, one row per conversation" : x.key === "other" ? "Mail to addresses no one has. Owners and admins can see it." : undefined,
+    count: x.key === "inbox" ? (box && list?.to === box && list.unread !== undefined ? list.unread : count?.unread) : x.key === "other" ? count?.otherUnread : undefined,
+    title: x.hint,
   }));
   const counts: Partial<Record<MailFolder, number>> = Object.fromEntries(tabs.map((t) => [t.key, t.count ?? 0]));
   const activeChips = (Object.keys(NARROW_LABELS) as NarrowKey[]).filter((k) => narrow[k]);
@@ -468,6 +498,7 @@ export default function Inbox() {
           {hold.reason ? ` Reason: ${hold.reason}` : ""}
         </Banner>
       )}
+      {folder === "other" && !q && <Banner tone="info">Mail sent to addresses no one has lands here. Owners and admins can see it; reply from your own address.</Banner>}
       {folder === "trash" && !q && (
         <Banner
           tone="info"

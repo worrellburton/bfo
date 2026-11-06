@@ -57,7 +57,7 @@ export default function Landing() {
           >
             {signedIn ? "Open BFO" : "Sign in"}
           </Link>
-          <DoorFooter className="mt-6 max-w-[360px]" />
+          <DoorFooter className="mt-6 w-full max-w-[560px]" />
         </div>
       )}
     </div>

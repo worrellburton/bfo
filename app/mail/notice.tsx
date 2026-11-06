@@ -82,7 +82,7 @@ export function OfficeMailNotice({ show }: { show: boolean }) {
       <ul className="flex flex-col gap-2 text-body text-pretty text-ink">
         {[
           "This mailbox belongs to the office. Mail you send and receive here is kept as part of the office's records, and the office may review it.",
-          "Owners and admins see mail sent to addresses no one has (Other addresses). Your own mailbox isn't shown to anyone else in BFO.",
+          "Owners and admins see mail sent to addresses no one has (Unclaimed). Your own mailbox isn't shown to anyone else in BFO.",
           "Mail is received and sent through Bird, the office's email provider. If you use Ask BFO or Tidy layout, the words involved go to Anthropic.",
           "Delete moves mail to Trash for 30 days, then removes it for good. Mail kept for records isn't deleted. Each deletion is recorded.",
         ].map((t) => (

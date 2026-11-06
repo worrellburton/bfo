@@ -205,7 +205,7 @@ export function ContractSignature({
               {signers.length === 0 ? (
                 <Banner tone="warning">No one on record can sign for {managerEntity}. Add its managers on the Owners tab first.</Banner>
               ) : (
-                <Field label="Signer" error={errs.aName} hint={chosen?.source ? `From ${chosen.source.charAt(0).toLowerCase()}${chosen.source.slice(1)}.` : undefined}>
+                <Field label="Signer" error={errs.aName} hint={chosen?.source ? `${/^The /.test(chosen.source) ? `From ${chosen.source.charAt(0).toLowerCase()}${chosen.source.slice(1)}` : `From ${chosen.source}`}.` : undefined}>
                   <Select
                     label="Signer"
                     value={pick}

@@ -61,11 +61,11 @@ export function PnlView({ pnl, entityCount, scope, drill }: { pnl: Pnl; entityCo
     { label: "Receipts", value: kpiMoney(pnl.receipts) },
     { label: "Disbursements", value: kpiMoney(pnl.disbursements) },
     { label: "Excess of receipts over disbursements", value: kpiMoney(pnl.net.exact), tone: "direction" as const, amount: pnl.net.exact },
-    pnl.uncategorized.count > 0
+    pnl.uncategorized.lines.length > 0
       ? {
           label: "Uncategorized, needs review",
-          value: format.count(pnl.uncategorized.count, "row"),
-          hint: `${kpiMoney(pnl.uncategorized.in)} in · ${kpiMoney(pnl.uncategorized.out)} out, outside the totals`,
+          value: kpiMoney(pnl.uncategorized.total.exact),
+          hint: pnl.uncategorized.count > 0 ? `${format.count(pnl.uncategorized.count, "row")}, outside the totals` : "Outside the totals",
         }
       : margin !== null
         ? { label: "Operating margin", value: format.percent(margin, { sign: "accounting" }) }
@@ -145,8 +145,14 @@ export function PnlView({ pnl, entityCount, scope, drill }: { pnl: Pnl; entityCo
           )}
           {pnl.eliminated.count > 0 && (
             <p className="text-small text-ink-2">
-              Between family entities, matched on both sides and left out: {statementMoney(pnl.eliminated.in)} in and {statementMoney(pnl.eliminated.out)} out, in{" "}
-              {format.count(pnl.eliminated.count, "transaction")}.
+              {pnl.eliminated.in || pnl.eliminated.out
+                ? `Between family entities, matched on both sides and left out: ${format.list(
+                    [
+                      pnl.eliminated.in ? `${format.money(pnl.eliminated.in, { precision: "dollars" })} in` : "",
+                      pnl.eliminated.out ? `${format.money(pnl.eliminated.out, { precision: "dollars" })} out` : "",
+                    ].filter(Boolean),
+                  )}, in ${format.count(pnl.eliminated.count, "transaction")}.`
+                : `${format.count(pnl.eliminated.count, "transaction")} between family entities ${pnl.eliminated.count === 1 ? "is" : "are"} left out.`}
             </p>
           )}
         </section>
@@ -213,7 +219,7 @@ function Matrix({
   const total = (v: number, rowName: string, section: string | null, label: string | null, strong = false, rule = "") => {
     const text = statementMoney(v);
     return (
-      <td className={cx(NUM, "border-l border-l-line pr-5", rule, strong ? "font-semibold" : "font-medium", text === "—" && "text-ink-3")}>
+      <td className={cx(NUM, TOTAL, rule, strong ? "font-semibold" : "font-medium", text === "—" && "text-ink-3")}>
         {text === "—" || section === null ? (
           text
         ) : (
@@ -254,7 +260,7 @@ function Matrix({
             {future(i) && v === 0 ? "" : statementMoney(v)}
           </td>
         ))}
-        <td className={cx(NUM, "border-l border-l-line pr-5 text-ink-2")}>{statementMoney(b.rounding.total)}</td>
+        <td className={cx(NUM, TOTAL, "text-ink-2")}>{statementMoney(b.rounding.total)}</td>
       </tr>
     );
 
@@ -317,11 +323,12 @@ function Matrix({
 
   return (
     <div className="ds overflow-x-auto rounded-card border border-line bg-raised">
-      <table className="w-full min-w-max border-separate border-spacing-0 text-body text-ink">
+      {/* The same column widths in both tables: the account column fixed (long names wrap), each figure column 88px or more. */}
+      <table className="w-full border-separate border-spacing-0 text-body text-ink" style={{ minWidth: 260 + heads.length * 96 + 112 }}>
         <caption className="sr-only">{flows ? "Outside the statement, net in" : "Revenue and expenses, cash basis"}</caption>
         <thead>
           <tr>
-            <th scope="col" className="sticky left-0 z-sticky h-8 min-w-[260px] border-r border-b border-r-line border-b-line-strong bg-raised pr-3 pl-5 text-left text-caption font-medium text-ink-2">
+            <th scope="col" className="sticky left-0 z-sticky h-8 w-[260px] border-r border-b border-r-line border-b-line-strong bg-raised pr-3 pl-5 text-left text-caption font-medium text-ink-2">
               {flows ? "Net in / (out)" : "Account"}
             </th>
             {heads.map((h, i) => (
@@ -338,7 +345,10 @@ function Matrix({
                 {h.label}
               </th>
             ))}
-            <th scope="col" className="h-8 min-w-[96px] border-b border-l border-b-line-strong border-l-line pr-5 pl-3 text-right text-caption font-medium text-ink-2">
+            <th
+              scope="col"
+              className="sticky right-0 z-sticky h-8 min-w-[104px] border-b border-l border-b-line-strong border-l-line bg-raised pr-5 pl-3 text-right text-caption font-medium text-ink-2"
+            >
               Total
             </th>
           </tr>
@@ -404,11 +414,14 @@ function Matrix({
           )}
         </tbody>
       </table>
+      <div className="h-3" aria-hidden="true" />
     </div>
   );
 }
 
 const NUM = "h-(--row-1) border-b border-line px-3 py-2 text-right tabular-nums whitespace-nowrap";
+/** The year's total stays in view while the months scroll. */
+const TOTAL = "sticky right-0 z-sticky border-l border-l-line bg-raised pr-5";
 const LABEL = "sticky left-0 z-sticky h-(--row-1) border-r border-b border-r-line border-b-line bg-raised py-2 pr-3 pl-5 text-left";
 
 // ── Phones: a list per section ───────────────────────────────────────────
@@ -443,7 +456,7 @@ function PhoneBlock({ b, drill, totalLabel, extra }: { b: Block; drill: Drill; t
         {b.lines.map((l) => (
           <PhoneRow key={l.label} title={l.name} secondary={l.code ?? undefined} amount={l.figures.total} onOpen={l.drill && l.figures.total !== 0 ? () => drill(l.drill!, l.label, {}) : null} />
         ))}
-        {b.rounding && <PhoneRow title="Rounding" amount={b.rounding.total} onOpen={null} />}
+        {b.rounding && b.rounding.total !== 0 && <PhoneRow title="Rounding" amount={b.rounding.total} onOpen={null} />}
         <PhoneRow title={totalLabel} amount={b.total.total} onOpen={totalDrill(b) && b.total.total !== 0 ? () => drill(totalDrill(b)!, null, {}) : null} strong />
       </List>
     </section>

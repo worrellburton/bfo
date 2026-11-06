@@ -94,7 +94,9 @@ function Shape({ s, label }: { s: PillarStatus; label?: string }) {
 }
 
 /** "AZ · LLC · Disregarded". */
-const metaLine = (a: Assessment) => [a.state, a.type, a.taxClass ? `${a.taxClass.label}${a.taxClass.assumed ? " (default)" : ""}` : null].filter(Boolean).join(" · ");
+const metaLine = (a: Assessment) =>
+  [a.state, a.type, a.taxClass ? `${a.taxClass.label}${a.taxClass.assumed ? (a.type === "Trust" ? " (from its name)" : " (default)") : ""}` : null].filter(Boolean).join(" · ");
+
 /** What needs doing first, in a few words; nothing at all when nothing does. */
 const topLine = (a: Assessment) => {
   const f = a.fixes[0];
@@ -202,7 +204,8 @@ export default function EntityCompliance() {
   }
 
   /** Never read, or read too long ago: what "Check with the state" reads. */
-  const toCheck = list.filter((a) => a.type !== "Trust" && a.state && a.pillars.find((p) => p.key === "state")?.status !== "good");
+  const staleMs = STALE_DAYS * 86_400_000;
+  const toCheck = list.filter((a) => a.type !== "Trust" && a.state && (a.unverified || (!!a.standing.asOf && Date.now() - a.standing.asOf > staleMs)));
 
   async function checkAll() {
     const mode = palm.mode;
@@ -457,7 +460,9 @@ function Coverage({ sum }: { sum: ReturnType<typeof summarize> }) {
 
 // ── Map ──────────────────────────────────────────────────────────────────
 
-const CARD_W = 216;
+/** Cards are as wide as the columns allow, between these, so the whole map fits a desktop window. */
+const CARD_MIN = 172;
+const CARD_MAX = 232;
 const GAP = 40;
 
 function EntityCard({ a, dim, selected, onSelect, checking, owner }: { a: Assessment; dim: boolean; selected: boolean; onSelect: (id: string) => void; checking: boolean; owner?: string | null }) {
@@ -506,6 +511,8 @@ function MapView({
   const [more, setMore] = useState({ left: false, right: false });
   const [lines, setLines] = useState<{ id: string; parent: string; d: string; x: number; y: number; share: number | null }[]>([]);
   const [box, setBox] = useState({ w: 0, h: 0 });
+  const [room, setRoom] = useState(0);
+  const cardW = room ? Math.max(CARD_MIN, Math.min(CARD_MAX, Math.floor((room - 56 - (levels.length - 1) * GAP) / Math.max(1, levels.length)))) : CARD_MAX;
 
   // Draw the ownership lines from where the cards actually landed.
   useLayoutEffect(() => {
@@ -535,13 +542,16 @@ function MapView({
     const ro = new ResizeObserver(draw);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [list, levels, phone]);
+  }, [list, levels, phone, cardW]);
 
   // Say which way the map continues, with buttons to get there.
   useEffect(() => {
     const sc = scroller.current;
     if (!sc) return;
-    const sync = () => setMore({ left: sc.scrollLeft > 4, right: sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 4 });
+    const sync = () => {
+      setRoom(sc.clientWidth);
+      setMore({ left: sc.scrollLeft > 4, right: sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 4 });
+    };
     sync();
     sc.addEventListener("scroll", sync, { passive: true });
     const ro = new ResizeObserver(sync);
@@ -590,25 +600,11 @@ function MapView({
     return <ul className="flex flex-col gap-2">{rows}</ul>;
   }
 
-  const scrollBy = (dir: 1 | -1) => scroller.current?.scrollBy({ left: dir * (CARD_W + GAP) * 2, behavior: "smooth" });
-  const hiddenRight = more.right ? levels.length : null;
+  const scrollBy = (dir: 1 | -1) => scroller.current?.scrollBy({ left: dir * (cardW + GAP) * 2, behavior: "smooth" });
 
   return (
     <Card flush>
-      <div className="relative">
-        {more.left && (
-          <div className="absolute top-3 left-3 z-sticky">
-            <IconButton icon="chevronLeft" variant="secondary" label="Scroll the map left" className="bg-raised" onClick={() => scrollBy(-1)} />
-          </div>
-        )}
-        {more.right && (
-          <div className="absolute top-3 right-3 z-sticky">
-            <Button size="sm" className="bg-raised" onClick={() => scrollBy(1)}>
-              More to the right{hiddenRight ? ` (${hiddenRight} levels)` : ""}
-              <Icon name="chevronRight" size={16} />
-            </Button>
-          </div>
-        )}
+      <div>
         <div ref={scroller} className="overflow-x-auto overscroll-x-contain">
           <div ref={canvas} className="relative flex min-w-max p-6" style={{ gap: GAP }}>
             <svg className="pointer-events-none absolute top-0 left-0 text-line-strong" width={box.w} height={box.h} aria-hidden="true">
@@ -625,7 +621,7 @@ function MapView({
               )}
             </svg>
             {levels.map((column, i) => (
-              <div key={i} className="relative flex flex-col justify-center gap-3" style={{ width: CARD_W }}>
+              <div key={i} className="relative flex flex-col justify-center gap-3" style={{ width: cardW }}>
                 {column.map((a) => (
                   <EntityCard key={a.id} a={a} dim={!matches(a)} selected={selected === a.id} onSelect={onSelect} checking={checking.has(a.id)} />
                 ))}
@@ -634,9 +630,18 @@ function MapView({
           </div>
         </div>
       </div>
-      <p className="border-t border-line px-5 py-3 text-small text-ink-2">
-        Owners on the left, what they own to the right. A line's figure is the owner's share, from the members list; no figure means none is recorded.
-      </p>
+      <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
+        <p className="min-w-0 flex-1 text-small text-ink-2">
+          Owners on the left, what they own to the right. A line's figure is the owner's share, from the members list; no figure means none is recorded.
+        </p>
+        {(more.left || more.right) && (
+          <span className="flex shrink-0 items-center gap-1">
+            <span className="text-small text-ink-2">{more.right ? "More to the right" : "More to the left"}</span>
+            <IconButton icon="chevronLeft" variant="secondary" label="Scroll the map left" disabled={!more.left} onClick={() => scrollBy(-1)} />
+            <IconButton icon="chevronRight" variant="secondary" label="Scroll the map right" disabled={!more.right} onClick={() => scrollBy(1)} />
+          </span>
+        )}
+      </div>
     </Card>
   );
 }
@@ -849,7 +854,7 @@ function Detail({
             </Disclosure>
           )}
           <p className="text-small text-ink-2">
-            Record completeness on its page: {format.percent(a.record.score)}
+            Record completeness on its page: {format.percent(a.record.score, { decimals: 0 })}
             {a.record.todo ? `, ${format.count(a.record.todo, "item")} to add` : ""}. That's how complete the record is; these checks are what the state and the rules ask of it.
           </p>
         </section>

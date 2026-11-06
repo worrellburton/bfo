@@ -7,6 +7,7 @@
  * React, no network.
  */
 
+import { foreignStates } from "../entity-addresses";
 import { entityCompleteness, type CompletenessItem } from "../entity-completeness";
 import { entityType, paperworkChecks, stateCode, stateName, taxClassOf, TAX_CLASSES, type EntityType, type PaperworkInput, type PaperworkIssue } from "../entity-paperwork";
 
@@ -313,12 +314,13 @@ export type StateChoices = {
   none: number;
 };
 
-/** The states a foreign registration is on record for (not "not needed"), as names. */
+/**
+ * The states, other than its home state, it's registered in or must register
+ * in (it does business there: its address is there), as names. The same list
+ * the records score asks an agent for (app/entity-addresses.ts).
+ */
 export function foreignNames(a: EntityRec): string[] {
-  const home = stateCode(a.state);
-  return Object.entries(a.foreign ?? {})
-    .filter(([code, f]) => code !== home && !f?.notNeeded && stateCode(code))
-    .map(([code]) => stateName(stateCode(code)));
+  return foreignStates(a as Parameters<typeof foreignStates>[0]).map((c) => stateName(c));
 }
 
 /** A record's state of formation as a name ("AZ" and "Arizona" are one state). */

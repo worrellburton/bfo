@@ -67,7 +67,7 @@ export function StatementsView({ statements, worksheet, drill }: { statements: S
                   ))
                 )}
                 <tr className="font-semibold">
-                  <td className={cx(CELL, "border-t border-t-line-strong")}>{b.key === "own" ? "Net transfers" : `Net from ${b.title.charAt(0).toLowerCase()}${b.title.slice(1)}`}</td>
+                  <td className={cx(CELL, "border-t border-t-line-strong")}>{BLOCK_TOTAL[b.key] ?? `Total ${b.title.toLowerCase()}`}</td>
                   <td className={cx(AMT, "border-t border-t-line-strong")}>{statementMoney(b.total)}</td>
                 </tr>
               </Fragment>
@@ -147,6 +147,7 @@ export function StatementsView({ statements, worksheet, drill }: { statements: S
             </tr>
           </tbody>
         </table>
+        <div className="h-3" aria-hidden="true" />
         {!balanced && (
           <div className="border-t border-line px-5 py-3 touch:px-4">
             <p className="flex items-start gap-2 text-small text-ink">
@@ -296,6 +297,15 @@ function groupRows<T extends { group: string }>(rows: T[], render: (group: strin
   }
   return order.map((g) => render(g, by.get(g)!));
 }
+
+const BLOCK_TOTAL: Record<string, string> = {
+  operating: "Net from operating activities",
+  uncategorized: "Total uncategorized",
+  investing: "Net from investing activities",
+  financing: "Net from financing activities",
+  own: "Net transfers",
+  other: "Net transfers, loans and distributions",
+};
 
 const BAND = "h-8 border-b border-line bg-sunken pr-5 pl-5 text-left text-small font-semibold text-ink touch:pl-4";
 const HEAD = "h-8 border-b border-line-strong pl-5 pr-3 text-caption font-medium text-ink-2 touch:pl-4";

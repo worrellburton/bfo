@@ -50,7 +50,8 @@ export function bulkActions(folder: MailFolder, picked: MailSummary[]): { key: B
   const out: ReturnType<typeof bulkActions> = [];
   if (picked.some((m) => !m.read)) out.push({ key: "read", label: "Mark read", short: "Read", glyph: "unread" });
   else out.push({ key: "unread", label: "Mark unread", short: "Unread", glyph: "unread" });
-  if (folder === "active" || ((folder === "inbox" || folder === "other") && picked.some((m) => m.direction === "in"))) out.push({ key: "archive", label: "Archive", short: "Archive", glyph: "archive" });
+  if (folder === "active" || ((folder === "inbox" || folder === "other") && picked.some((m) => m.direction === "in")))
+    out.push({ key: "archive", label: "Archive", short: "Archive", glyph: "archive" });
   if (folder === "archive") out.push({ key: "inbox", label: "Move to inbox", short: "Inbox", glyph: "unarchive" });
   out.push({ key: "delete", label: "Delete", short: "Delete", glyph: "trash", danger: true });
   return out;

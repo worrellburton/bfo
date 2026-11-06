@@ -10,7 +10,7 @@ const FOLDER_GLYPH: Record<MailFolder, GlyphName> = { active: "chats", inbox: "i
  * Phones: one button beside the search names the folder (and how many
  * filters are on); it opens a sheet. Choosing a folder applies it and closes
  * the sheet; the filters apply as they're switched. Every folder is listed,
- * Other addresses included for those who may see it.
+ * Unclaimed included for those who may see it.
  */
 export function FolderMenu({
   folders,

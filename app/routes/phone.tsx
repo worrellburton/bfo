@@ -483,7 +483,8 @@ export default function PhonePage() {
       </Card>
 
       <Card flush>
-        <div className="md:grid md:h-[min(780px,calc(100dvh-280px))] md:min-h-[460px] md:grid-cols-[280px_minmax(0,1fr)] lg:grid-cols-[320px_minmax(0,1fr)]">
+        {/* As tall as the window allows below the number, with the composer clear of the Ask button in the corner. */}
+        <div className="md:grid md:h-[min(780px,calc(100dvh-440px))] md:min-h-[440px] md:grid-cols-[280px_minmax(0,1fr)] lg:grid-cols-[320px_minmax(0,1fr)]">
           {list}
           {/* iPad and desktop: the conversation beside the list. */}
           {wide && (
@@ -699,8 +700,8 @@ function Thread({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 outline-offset-[-2px]! md:px-5"
       >
         {suggestions.length > 0 && (
-          <div className="-mx-4 md:-mx-5">
-            <p className="px-4 pb-1 text-small font-medium text-ink-2 md:px-5">Recent</p>
+          <div className="-mx-4 md:-mx-1">
+            <p className="px-4 pb-1 text-small font-medium text-ink-2">Recent</p>
             <List label="Recent conversations">
               {suggestions.map((c) => (
                 <ListRow

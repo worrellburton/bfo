@@ -290,7 +290,7 @@ function periodWord(p: Period, where: string): string {
     case "current":
       return `Current, per ${where}'s record`;
     case "overdue":
-      return `Overdue: ${days(p.daysLate ?? 0)} late`;
+      return `Overdue, ${days(p.daysLate ?? 0)} late`;
     case "unrecorded":
       return p.extendedTo ? `Not recorded as filed: extension ran out ${day(p.extendedTo)}` : "Not recorded as filed";
     default:
@@ -387,7 +387,7 @@ function DeadlineRow({ o, where, onMark }: { o: Obligation; where: string; onMar
           <p className="text-body text-pretty text-ink">{o.title}</p>
           <p className="text-small text-ink-2">{o.agency}</p>
         </div>
-        {needs && recordable && canRecord && (
+        {needs && recordable && canRecord && !(o.key === "state-annual" && last?.status === "overdue") && (
           <Button size="sm" onClick={() => onMark(last!)}>
             Record as filed…
           </Button>
@@ -397,7 +397,7 @@ function DeadlineRow({ o, where, onMark }: { o: Obligation; where: string; onMar
         {last && (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <Status tone={PERIOD_TONE[last.status]}>
-              {last.label}: {periodWord(last, where)}
+              {last.label} · {periodWord(last, where)}
             </Status>
             <span className="text-small text-ink-2">was due {day(last.due)}</span>
           </div>

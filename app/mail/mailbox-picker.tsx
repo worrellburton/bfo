@@ -198,7 +198,7 @@ function RemoveAddress({ open, extras, onClose, onRemoved }: { open: boolean; ex
   async function remove(a: string) {
     const ok = await confirm({
       title: `Remove ${a}?`,
-      message: "New mail to it will go to Other addresses, where owners and admins can see it. Mail already received stays in your mailbox. Removing it is recorded.",
+      message: "New mail to it will go to Unclaimed, where owners and admins can see it. Mail already received stays in your mailbox. Removing it is recorded.",
       confirmLabel: "Remove address",
       tone: "danger",
     });

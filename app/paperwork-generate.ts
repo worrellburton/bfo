@@ -111,6 +111,8 @@ export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined, opt
   const empty = { name: "", business: own, box: 0, llcLetter: "", ...base, tin: null };
   const stop = (why: string, chain: W9Data["chain"]): W9Data => ({
     ...empty,
+    // Nothing on line 2 either: there's no form to describe until the class is settled.
+    business: "",
     notes: [why, "Settle the tax classification first. Payers report its income under the TIN on the W-9, so a W-9 in the wrong taxpayer's name misreports it."],
     blocked: `${why} Settle the tax classification before filling in the W-9.`,
     chain,

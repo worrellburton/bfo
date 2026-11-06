@@ -19,6 +19,7 @@ function Kind({ title, from, use, to, children }: { title: string; from: ReactNo
   return (
     <div className="border-t border-line pt-4 first:border-t-0 first:pt-0">
       <h3 className="text-body font-semibold text-ink">{title}</h3>
+      {children && <div className="mt-1 text-reading">{children}</div>}
       <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-reading sm:grid-cols-[120px_1fr]">
         <dt className="text-small font-medium text-ink-2 sm:pt-1">From</dt>
         <dd>{from}</dd>
@@ -27,7 +28,6 @@ function Kind({ title, from, use, to, children }: { title: string; from: ReactNo
         <dt className="text-small font-medium text-ink-2 sm:pt-1">Received by</dt>
         <dd>{to}</dd>
       </dl>
-      {children && <div className="mt-2 text-reading">{children}</div>}
     </div>
   );
 }

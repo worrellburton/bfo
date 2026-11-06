@@ -912,17 +912,15 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
   if (row.status === "voided") {
     if (req.method !== "GET") return fail(res, 409, "voided", "This request was withdrawn. Nothing more is needed from you.");
     const voided = [...row.events].reverse().find((e) => e.kind === "voided");
-    return res
-      .status(200)
-      .json({
-        title: row.title,
-        brand: row.brand,
-        status: "voided",
-        voidedAt: voided?.at ?? null,
-        replaced: !!row.replaced_by,
-        sentBy: row.created_by_name,
-        you: { key: you.key, name: you.name, status: you.status },
-      });
+    return res.status(200).json({
+      title: row.title,
+      brand: row.brand,
+      status: "voided",
+      voidedAt: voided?.at ?? null,
+      replaced: !!row.replaced_by,
+      sentBy: row.created_by_name,
+      you: { key: you.key, name: you.name, status: you.status },
+    });
   }
   if (linkExpired(you)) return fail(res, 410, "expired", `This link has expired. Ask ${sender} to send a new one.`);
 

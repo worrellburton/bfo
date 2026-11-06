@@ -99,7 +99,7 @@ export function parseBlocks(md: string): Block[] {
 const INLINE = /(\*\*[^*]+\*\*|\*[^*\n]+\*|_[^_\n]+_|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
 
 /** A cell that is a figure: "$1,200", "−$1,200", "+$1,200", "($1,200)", "12.5%", "1,204". */
-export const NUMERIC = /^[(]?[-−–+]?\$?[\d,.]+%?[)]?$/;
+const NUMERIC = /^[(]?[-−–+]?\$?[\d,.]+%?[)]?$/;
 
 function Inline({ text }: { text: string }) {
   const parts = text.split(INLINE);
@@ -111,7 +111,7 @@ function Inline({ text }: { text: string }) {
         if ((part.startsWith("*") && part.endsWith("*")) || (part.startsWith("_") && part.endsWith("_"))) return <em key={i}>{part.slice(1, -1)}</em>;
         if (part.startsWith("`") && part.endsWith("`"))
           return (
-            <code key={i} className="rounded-mark bg-sunken px-1 font-mono text-[0.92em]">
+            <code key={i} className="rounded-mark bg-sunken px-1 font-mono text-small">
               {part.slice(1, -1)}
             </code>
           );
@@ -151,7 +151,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
           case "h": {
             const Tag = (b.level <= 2 ? "h3" : "h4") as "h3" | "h4";
             return (
-              <Tag key={i} className={`ask-h ${b.level <= 2 ? "text-[14.5px]" : "text-[13.5px]"}`}>
+              <Tag key={i} className={`ask-h ${b.level <= 2 ? "text-section" : "text-body font-semibold"}`}>
                 <Inline text={b.text} />
               </Tag>
             );

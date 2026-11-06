@@ -49,7 +49,7 @@ describe("senders", () => {
   it("reads Reply-To from Bird's field or the header block", () => {
     expect(replyToFrom({ reply_to: [{ email: "Help@Example.com", name: "Help" }] }, null)).toEqual([{ email: "help@example.com", name: "Help" }]);
     expect(replyToFrom({ reply_to: "Desk <desk@example.com>" }, null)).toEqual([{ email: "desk@example.com", name: "Desk" }]);
-    expect(replyToFrom({}, "From: a@x.com\r\nReply-To: \"Billing, Team\" <billing@example.com>, other@example.com\r\nSubject: hi\r\n\r\nbody")).toEqual([
+    expect(replyToFrom({}, 'From: a@x.com\r\nReply-To: "Billing, Team" <billing@example.com>, other@example.com\r\nSubject: hi\r\n\r\nbody')).toEqual([
       { email: "billing@example.com", name: "Billing, Team" },
       { email: "other@example.com" },
     ]);

@@ -303,7 +303,6 @@ export function readPnl(raw: unknown): Pnl {
   const inc = (l: Line) => (l.code ?? "").startsWith("4");
   const receipts = revenue.total.exact + sumIf(personal.lines, inc, 1);
   const disbursements = operating.total.exact - other.total.exact - sumIf(personal.lines, (l) => !inc(l), 1);
-  const uncCount = plain(old.revenue).length + plain(old.operating).length;
   const uncIn = unc.lines.reduce((s, l) => s + Math.max(0, l.figures.exact), 0);
   const uncOut = unc.lines.reduce((s, l) => s + Math.max(0, -l.figures.exact), 0);
   return {
@@ -318,7 +317,8 @@ export function readPnl(raw: unknown): Pnl {
     net,
     receipts: Math.round(receipts * 100) / 100,
     disbursements: Math.round(disbursements * 100) / 100,
-    uncategorized: { ...unc, count: uncCount, in: uncIn, out: uncOut },
+    // The older report doesn't count rows, only accounts.
+    uncategorized: { ...unc, count: 0, in: uncIn, out: uncOut },
     flows,
     eliminated: { in: 0, out: 0, net: 0, count: old.eliminated_count ?? 0 },
     coverage: null,

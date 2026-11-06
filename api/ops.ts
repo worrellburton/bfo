@@ -1,13 +1,16 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, fail, guard, handleError, isAdmin, sb } from "../lib/auth.js";
-
 /**
  * The System card on the Notifications page (owners and admins).
  *
  * GET → { alerts, crons }: the last 50 ops_alerts (lib/alert.ts) and each
  *       cron's most recent run from cron_runs (lib/cron.ts).
  * POST { action: "ack", id } → marks an alert acknowledged.
+ *
+ * Who may call it: owners and admins (others get 403).
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY (through sb() in lib/auth.ts).
  */
+
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { currentUser, fail, guard, handleError, isAdmin, sb } from "../lib/auth.js";
 
 type OpsAlert = { id: string; kind: string; title: string; detail: string | null; created_at: string; acknowledged_at: string | null };
 type CronRunRow = { id: string; name: string; started_at: string; finished_at: string | null; ok: boolean | null; note: string | null };

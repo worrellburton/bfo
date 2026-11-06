@@ -25,7 +25,11 @@ function DocumentCard({ title, document, showTitle = true }: { title: string; do
         PDF
       </span>
       <span className="min-w-0">
-        {showTitle ? <span className="block text-body font-medium break-words text-ink">{title}</span> : document && <span className="block text-body font-medium break-all text-ink">{document.fileName}</span>}
+        {showTitle ? (
+          <span className="block text-body font-medium break-words text-ink">{title}</span>
+        ) : (
+          document && <span className="block text-body font-medium break-all text-ink">{document.fileName}</span>
+        )}
         {document && (
           <span className="mt-1 block text-small text-ink-2">
             {format.count(document.pages, "page")}
@@ -92,7 +96,9 @@ export function TitleScreen({
   const getting = kind === "film" ? "Getting the theater ready…" : "Getting the track ready…";
   return (
     <div data-theme="dark" className="ds absolute inset-0 z-30 flex flex-col overflow-y-auto bg-page text-ink">
-      {preview && <span className="absolute top-4 right-4 shrink-0 rounded-full bg-sunken px-3 py-1 text-caption font-medium whitespace-nowrap text-ink-2">Preview · {kind === "film" ? "Theater" : "Race"}</span>}
+      {preview && (
+        <span className="absolute top-4 right-4 shrink-0 rounded-full bg-sunken px-3 py-1 text-caption font-medium whitespace-nowrap text-ink-2">Preview · {kind === "film" ? "Theater" : "Race"}</span>
+      )}
       <div className="m-auto flex w-full max-w-[600px] flex-col items-center gap-6 px-6 py-12 text-center">
         <p className="text-small text-ink-2">{brand ? `A document from ${brand}` : "A document from Burton Family Office"}</p>
         <h1 className="font-brand text-balance text-ink" style={{ fontSize: "clamp(32px, 5vw, 52px)", lineHeight: 1.08 }}>

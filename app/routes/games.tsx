@@ -1,63 +1,66 @@
-import { Link, Navigate } from "react-router";
+import { Navigate } from "react-router";
 import { getUser } from "../auth";
 import { canPreviewGame } from "../sign/preview";
-import { useTheme } from "../theme";
+import { Card, LinkButton, Page, PageHeader, useDocumentTitle, useTouch } from "../ui";
 
 export function meta() {
-  return [{ title: "Games · BFO" }];
+  return [{ title: "Signing games · BFO" }];
 }
 
-/** The games a signer can be sent through, each with a way to play it on a sample document. */
+/**
+ * The signing games: what each one is and what a signer will meet (length,
+ * sound, motion, what it needs), and Play, which runs it as a signer sees it
+ * on a sample document and signs nothing (app/routes/sign-preview.tsx). The
+ * games need a keyboard and a mouse, so a phone or tablet says so instead of
+ * offering Play. Shown to the accounts app/sign/preview.ts allows, the same
+ * rule the preview itself applies.
+ */
 const GAMES = [
   {
     id: "game",
     name: "Anything Is Possible",
-    kind: "The movie theater",
-    line: "A floating island, a chain of blocks to the theater, Judy at the ticket booth, the seat with your name on it, the film, and the door to the room with the contract.",
+    kind: "A trip to the movie theater",
+    line: "A floating island, a chain of blocks to the theater, Judy (the guide) at the ticket booth, the seat with the signer’s name on it, a short film, and the door to the room with the document.",
+    facts: "A few minutes · computer with a keyboard and mouse · sound and motion · not usable with a screen reader",
     to: "/sign/preview",
   },
   {
     id: "race",
     name: "The Racetrack",
-    kind: "Two laps against Judy",
-    line: "You drive, Judy rams you, and she talks the whole way. Two laps of about a minute, the music changes for the last one, and on the final stretch something happens to Judy's arm. The signing page is at the finish.",
+    kind: "Two laps against Judy, the guide",
+    line: "The signer drives two laps of about a minute each while Judy talks and bumps into them. The music changes for the last lap, and the signing page is at the finish.",
+    facts: "About 2 minutes of driving · computer with a keyboard and mouse · sound and fast motion · a cartoon crash in which Judy is hurt · not usable with a screen reader",
     to: "/sign/preview?game=race",
   },
 ];
 
-/**
- * The games, from the account menu ("Games"): what each is, and Play, which
- * runs it as a signer sees it on a sample document and signs nothing
- * (app/routes/sign-preview.tsx). Only the account app/sign/preview.ts names.
- */
 export default function Games() {
+  useDocumentTitle("Signing games");
   const user = getUser();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const touch = useTouch();
   if (!canPreviewGame(user)) return <Navigate to="/home" replace />;
-  const card = `rounded-2xl border p-5 ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`;
-  const t2 = isDark ? "text-gray-400" : "text-gray-600";
-  const t3 = isDark ? "text-gray-500" : "text-gray-400";
   return (
-    <div className="mx-auto max-w-[720px] px-4 py-6 sm:px-6">
-      <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>Games</p>
-      <h1 className="mt-1 text-[22px] font-semibold tracking-tight">The games a signer can be sent through</h1>
-      <p className={`mt-1 text-[13px] ${t2}`}>Each runs as a signer sees it, on a sample document, and signs nothing. A computer with a keyboard is needed.</p>
-      <div className="mt-6 space-y-4">
-        {GAMES.map((g) => (
-          <section key={g.id} className={card}>
-            <p className={`text-[11px] uppercase tracking-[0.14em] ${t3}`}>{g.kind}</p>
-            <h2 className="mt-1 text-[17px] font-semibold">{g.name}</h2>
-            <p className={`mt-2 text-[13px] leading-relaxed ${t2}`}>{g.line}</p>
-            <Link
-              to={g.to}
-              className={`mt-4 inline-flex h-[44px] items-center rounded-xl px-5 text-[13px] font-semibold transition-colors ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"}`}
-            >
-              Play {g.name}
-            </Link>
-          </section>
-        ))}
-      </div>
-    </div>
+    <Page width="reading" header={<PageHeader title="Signing games" context="Try each one as a signer would, on a sample document. Nothing gets signed." />}>
+      {GAMES.map((g) => (
+        <Card
+          key={g.id}
+          title={g.name}
+          footer={
+            touch ? (
+              <p className="text-body text-ink-2">Open on a computer to play.</p>
+            ) : (
+              <LinkButton to={g.to} aria-label={`Play ${g.name}`}>
+                Play
+              </LinkButton>
+            )
+          }
+        >
+          <p className="text-small text-ink-2">{g.kind}</p>
+          <p className="mt-2 text-body text-pretty text-ink">{g.line}</p>
+          <p className="mt-3 text-small text-pretty text-ink-2">{g.facts}</p>
+        </Card>
+      ))}
+      <p className="text-small text-pretty text-ink-2">A game is chosen when a document is sent for signature. Signers on a phone or tablet can’t play it.</p>
+    </Page>
   );
 }

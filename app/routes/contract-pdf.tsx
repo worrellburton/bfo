@@ -152,11 +152,15 @@ export default function ContractPDF() {
   }, [asset, contract, entities, signers]);
   const sections = useMemo(() => (input ? msaSections(input) : null), [input]);
 
-  // Draw the agreement as it reads now.
+  // Draw the agreement as it reads now: once per change of its words, not per store update.
+  const drawKey = useMemo(() => (input ? JSON.stringify(input) : ""), [input]);
+  const latest = useRef<{ input: MsaInput | null; sections: typeof sections }>({ input: null, sections: null });
+  latest.current = { input, sections };
   useEffect(() => {
-    if (!input || !sections) return;
+    const { input: now, sections: words } = latest.current;
+    if (!drawKey || !now || !words) return;
     let alive = true;
-    renderMsaPdf(input, sections)
+    renderMsaPdf(now, words)
       .then(async ({ blob, pages }) => {
         const bytes = new Uint8Array(await blob.arrayBuffer());
         if (!alive) return;
@@ -167,7 +171,7 @@ export default function ContractPDF() {
     return () => {
       alive = false;
     };
-  }, [input, sections]);
+  }, [drawKey]);
   useEffect(() => () => void (pdf && URL.revokeObjectURL(pdf.url)), [pdf]);
 
   // A request that completed: the contract is signed, as of then.

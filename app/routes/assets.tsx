@@ -731,7 +731,7 @@ function StaffAssets() {
       .map(([n, c]) => ({ value: `formed:${n}`, label: n, short: `Formed in ${n}`, hint: String(c), group: "Formed in" })),
     ...[...choices.foreign.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([n, c]) => ({ value: `foreign:${n}`, label: n, short: `Registered in ${n}`, hint: String(c), group: "Registered in, as a foreign entity" })),
+      .map(([n, c]) => ({ value: `foreign:${n}`, label: n, short: `Doing business in ${n}`, hint: String(c), group: "Registered or doing business in" })),
     ...(choices.none ? [{ value: NO_STATE, label: "No state on record", hint: String(choices.none), group: "Formed in" }] : []),
   ];
   const recordsOptions: Option<"all" | "incomplete" | "disagree">[] = [

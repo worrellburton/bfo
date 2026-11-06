@@ -258,7 +258,7 @@ export function AgreementsTab() {
           ? `Signed ${format.date(signed, "short")}${ren ? ` · notice by ${format.date(ren.noticeBy, "short")} to stop it renewing` : ""}`
           : r.stage === "terminated" && r.c.terminatedOn
             ? `Ended ${format.date(r.c.terminatedOn, "short")}`
-            : late
+            : late && r.stage === "draft"
               ? "Effective date passed; not signed"
               : null,
     };

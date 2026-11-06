@@ -18,6 +18,10 @@ describe("linkFacts", () => {
   });
 
   it("fills a blank from the state, and leaves out what neither has", () => {
-    expect(linkFacts({ jurisdiction: "US-AZ" }, { mode: "live", address: "2 Oak Ave, Tucson, AZ 85701" })).toEqual({ formationDate: undefined, address: "2 Oak Ave, Tucson, AZ 85701", from: { formationDate: null, address: "state" } });
+    expect(linkFacts({ jurisdiction: "US-AZ" }, { mode: "live", address: "2 Oak Ave, Tucson, AZ 85701" })).toEqual({
+      formationDate: undefined,
+      address: "2 Oak Ave, Tucson, AZ 85701",
+      from: { formationDate: null, address: "state" },
+    });
   });
 });

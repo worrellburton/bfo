@@ -344,10 +344,7 @@ export function Reader({
         !inTrash &&
         !noAddress &&
         createPortal(
-          <div
-            data-floating
-            className="ds fixed inset-x-0 bottom-0 z-fab flex items-center gap-2 border-t border-line bg-page px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
-          >
+          <div data-floating className="ds fixed inset-x-0 bottom-0 z-fab flex items-center gap-2 border-t border-line bg-page px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
             <Button variant="primary" className="flex-1" onClick={() => act.onReply(m, "reply")}>
               <Glyph name="reply" />
               Reply
@@ -373,9 +370,7 @@ function LoadingMessage({ preview, mine }: { preview: MailSummary | null; mine: 
           <h1 className="text-heading text-balance break-words text-ink">{preview.subject || "(no subject)"}</h1>
           <div className="mt-6 flex items-center gap-3">
             <MailAvatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} trusted={!preview.unverified} size={40} />
-            <span className="text-body font-semibold text-ink">
-              {preview.direction === "out" ? `To ${preview.to.map((a) => recipientLabel(a, mine)).join(", ")}` : senderLabel(preview.from)}
-            </span>
+            <span className="text-body font-semibold text-ink">{preview.direction === "out" ? `To ${preview.to.map((a) => recipientLabel(a, mine)).join(", ")}` : senderLabel(preview.from)}</span>
             <span className="ml-auto text-ink-3">
               <Spinner />
             </span>
@@ -583,7 +578,10 @@ function AttachmentChip({ messageId, a }: { messageId: string; a: MailAttachment
   }
   if (!a.available) {
     return (
-      <span className="inline-flex max-w-full items-center gap-2 rounded-control border border-line px-3 py-2 text-small text-ink-2" title="BFO doesn't have this file: it wasn't kept when the message arrived.">
+      <span
+        className="inline-flex max-w-full items-center gap-2 rounded-control border border-line px-3 py-2 text-small text-ink-2"
+        title="BFO doesn't have this file: it wasn't kept when the message arrived."
+      >
         <Icon name="doc" size={16} />
         <span className="min-w-0 truncate">{a.filename || "attachment"}</span>
         <span className="shrink-0 text-ink-3">· Not kept by BFO</span>

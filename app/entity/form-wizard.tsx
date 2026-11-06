@@ -391,7 +391,7 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
   useEffect(() => {
     if (!started || submitting) return;
     const t = window.setTimeout(() => {
-      const ok = writeSaved(me?.id, { v: 1, savedAt: Date.now(), draft: redactDraft(draft), step: here.key, reached, checks: [...nameChecks.current], billed, idempotencyKey, assetId });
+      const ok = writeSaved(me?.id, snapshot());
       setStorable(ok);
     }, 400);
     return () => window.clearTimeout(t);
@@ -415,8 +415,12 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
     setReached((r) => Math.max(r, next));
   }
 
+  const snapshot = (): Saved => ({ v: 1, savedAt: Date.now(), draft: redactDraft(draft), step: here.key, reached, checks: [...nameChecks.current], billed, idempotencyKey, assetId });
+
   function leave() {
     if (submitting) return;
+    // The last keystrokes may still be waiting on the debounce: keep them now.
+    if (started && storable && !writeSaved(me?.id, snapshot())) setStorable(false);
     if (started && storable) {
       const ssn = JSON.stringify(draft) !== JSON.stringify(redactDraft(draft));
       toast({ message: ssn ? "Saved as a draft. SSNs aren't kept: enter them again when you come back." : "Saved as a draft" });
@@ -489,7 +493,7 @@ function Wizard({ onClose, entities, onCreated }: { onClose: () => void; entitie
     const role = llc ? "organizer" : "incorporator";
     const tax = taxOutcome(draft);
     const due = electionDeadline(draft);
-    const lines = fee?.total != null ? fee.items.map((i) => ({ label: feeLabel(i, fee.items), cents: Math.round(i.amount * 100), estimate: true })) : [];
+    const lines = fee?.total != null ? fee.items.map((i) => ({ label: feeLabel(i, fee.items).replace(/ of the state fee\)$/, ")"), cents: Math.round(i.amount * 100), estimate: true })) : [];
     const result = await confirm({
       title: `File ${name} with ${state}?`,
       message: live
@@ -981,16 +985,14 @@ function ForeignNote({ ctx, ask = false }: { ctx: Ctx; ask?: boolean }) {
   if (!host) return null;
   const hostName = stateName(`US-${host}`);
   const costs = expectedCosts(d);
-  const once = costs.find((c) => c.per === "once");
-  const yearly = costs.filter((c) => c.per === "year" && c.dollars !== null);
+  const once = costs.find((c) => c.per === "once")?.dollars;
+  const homeYear = costs.find((c) => c.per === "year" && c.label.startsWith(state))?.dollars;
   const kind = llc ? "LLC" : "corporation";
   return (
     <>
       <Banner tone="info" title={`Run from ${hostName}, it will likely need to register there too.`}>
-        If it does business in {hostName}, it registers there as a foreign {kind}, with a registered agent in {hostName}
-        {once?.dollars != null ? ` (about ${format.money(once.dollars)} once)` : ""}
-        {yearly.length ? `, on top of ${format.list(yearly.map((c) => `${c.label.replace(/,.*$/, "")} (about ${format.money(c.dollars!)} a year)`))}` : ""}. Forming in {hostName} instead avoids the
-        second registration; {state || "the other state"} may suit for privacy or its laws.
+        If it does business in {hostName}, it registers there as a foreign {kind} with a {hostName} registered agent{once != null ? `: about ${format.money(once)} once` : ""}.{" "}
+        {state ? `${state}'s yearly filing${homeYear ? `, about ${format.money(homeYear)},` : ""} applies either way. ` : ""}Forming in {hostName} instead avoids the second registration.
       </Banner>
       {ask && (
         <ChoiceTiles<"yes" | "no" | "unsure">
@@ -1159,7 +1161,7 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
             </Stack>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button variant="quiet" size="sm" icon="plus" onClick={add}>
+            <Button variant="quiet" size="sm" icon="plus" className="-ml-3" onClick={add}>
               Add {d.owners.length ? "another" : "a"} {llc ? "member" : "shareholder"}
             </Button>
             {d.owners.length > 1 &&
@@ -1174,13 +1176,12 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
               ))}
           </div>
           <div className="flex flex-col gap-1 border-t border-line pt-4">
-            {llc && <Note>Each member&rsquo;s share covers capital, profits and votes alike. The operating agreement can split them.</Note>}
             {llc ? (
               <Note>
+                Shares cover capital, profits and votes alike; the operating agreement can split them.{" "}
                 {filed
                   ? `${state || "The state"}'s filing asks for the members, so their names, addresses and contacts go to Palm and into the state's file.`
-                  : `${state || "The state"}'s filing doesn't ask for the members, so they stay in BFO and off the filing.`}{" "}
-                Shares and contributions stay in BFO.
+                  : `${state || "The state"}'s filing doesn't ask for members, so they stay in BFO, off the filing.`}
               </Note>
             ) : (
               <Note>Kept in BFO; the shares are issued after the state forms it.</Note>
@@ -1188,8 +1189,8 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
             {d.owners.length > 0 && (
               <Note>
                 For tax: {taxWords(tax.value)}
-                {tax.value === "Disregarded Entity" && home ? `, so its income goes on ${home}'s return` : tax.value === "Partnership" ? ", filing Form 1065 with a K-1 for each member" : ""}
-                {tax.elected ? " (by election)" : " (the default)"}. The Tax step can change it.
+                {tax.value === "Disregarded Entity" && home ? `, on ${home}'s return` : tax.value === "Partnership" ? ", filing Form 1065 with a K-1 for each member" : ""}
+                {tax.elected ? ", by election" : ", the default"}. The Tax step can change it.
               </Note>
             )}
           </div>
@@ -1226,7 +1227,7 @@ function OwnershipStep({ ctx }: { ctx: Ctx }) {
                   ))}
                 </Stack>
                 <div>
-                  <Button variant="quiet" size="sm" icon="plus" onClick={() => set({ managers: [...d.managers, emptyOfficial("Manager")] })}>
+                  <Button variant="quiet" size="sm" icon="plus" className="-ml-3" onClick={() => set({ managers: [...d.managers, emptyOfficial("Manager")] })}>
                     Add a manager
                   </Button>
                 </div>
@@ -1296,7 +1297,7 @@ function PeopleCard<T extends FormationOfficial>({
           </Stack>
         )}
         <div>
-          <Button variant="quiet" size="sm" icon="plus" onClick={() => onChange([...list, make()])}>
+          <Button variant="quiet" size="sm" icon="plus" className="-ml-3" onClick={() => onChange([...list, make()])}>
             Add {list.length ? "another" : "a"} {word}
           </Button>
         </div>
@@ -1392,7 +1393,7 @@ function StockCard({ ctx }: { ctx: Ctx }) {
               ))}
             </Stack>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Button variant="quiet" size="sm" icon="plus" onClick={() => setS({ classes: [...s.classes, emptyStockClass()] })}>
+              <Button variant="quiet" size="sm" icon="plus" className="-ml-3" onClick={() => setS({ classes: [...s.classes, emptyStockClass()] })}>
                 Add a class
               </Button>
               <span className="text-small text-ink-2 tabular-nums">{classTotal.toLocaleString("en-US")} shares authorized in all</span>
@@ -1462,7 +1463,7 @@ function FilersStep({ ctx }: { ctx: Ctx }) {
           })}
         </Stack>
         <div>
-          <Button variant="quiet" size="sm" icon="plus" onClick={() => set({ organizers: [...d.organizers, emptyParty(word)] })}>
+          <Button variant="quiet" size="sm" icon="plus" className="-ml-3" onClick={() => set({ organizers: [...d.organizers, emptyParty(word)] })}>
             Add another {word.toLowerCase()}
           </Button>
         </div>
@@ -1578,6 +1579,11 @@ function TaxStep({ ctx }: { ctx: Ctx }) {
       : "It files Form 1065 and gives each member a K-1."
     : "It files Form 1120 and pays its own tax.";
   const married = asksMarried(d);
+  // An S corporation's owners must be people, estates or certain trusts; a company member generally can't be one.
+  const companyOwner = d.owners.some((o) => o.kind === "entity" && o.entityKind !== "trust");
+  const sNote = companyOwner
+    ? `A company ${llc ? "member" : "shareholder"} generally can't hold an S corporation unless it's disregarded into an eligible owner; check with your CPA.`
+    : `Every ${llc ? "member" : "shareholder"} must consent; only people, estates and certain trusts can hold it.`;
   return (
     <>
       <Card title="How it's taxed">
@@ -1591,12 +1597,12 @@ function TaxStep({ ctx }: { ctx: Ctx }) {
               llc
                 ? [
                     { value: "default", title: defaultTitle, description: defaultText },
-                    { value: "s_corp", title: "Elect an S corporation", description: `${dueText("2553")} Every member must consent; only people, certain trusts and estates can hold it.` },
+                    { value: "s_corp", title: "Elect an S corporation", description: `${dueText("2553")} ${sNote}` },
                     { value: "c_corp", title: "Elect a C corporation", description: dueText("8832") },
                   ]
                 : [
                     { value: "default", title: "C corporation", description: defaultText },
-                    { value: "s_corp", title: "S corporation", description: `${dueText("2553")} Every shareholder must consent; only people, certain trusts and estates can hold shares.` },
+                    { value: "s_corp", title: "S corporation", description: `${dueText("2553")} ${sNote}` },
                   ]
             }
           />
@@ -1691,7 +1697,7 @@ function EinQuestions({ ctx, e, setE, me }: { ctx: Ctx; e: FormationEin; setE: (
               />
             </Field>
           )}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-12">
+          <div className="grid grid-cols-2 items-end gap-4 sm:grid-cols-12">
             <Field label="First name" className="col-span-2 sm:col-span-4">
               <Input value={e.responsible.first} onChange={(x) => setE({ responsible: { ...e.responsible, first: x.target.value }, responsibleConsent: false })} autoComplete="off" />
             </Field>
@@ -2609,7 +2615,7 @@ function OfficerFields({ ctx, value: p, onChange }: { ctx: Ctx; value: Formation
 /** First, middle, last and suffix on a 12-column grid (address and contact rows share its edges). */
 function NameFields({ value: n, onChange }: { value: PersonName; onChange: (next: PersonName) => void }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-12">
+    <div className="grid grid-cols-2 items-end gap-4 sm:grid-cols-12">
       <Field label="First name" className="sm:col-span-4">
         <Input value={n.first} onChange={(e) => onChange({ ...n, first: e.target.value })} autoComplete="off" />
       </Field>

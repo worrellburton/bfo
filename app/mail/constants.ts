@@ -1,18 +1,18 @@
 import type { MailFilter, MailFolder } from "../mail-client";
 
 /**
- * Mail's folders, as one name each everywhere (the tabs, the phone's folder
- * sheet, the empty states). "Inbox" is the conversation view (received and
- * sent together, by latest activity); "Received" is every message that came
- * in, one row each.
+ * Mail's folders, one name each, the same as the nav's (app/shell-model.ts):
+ * "Active" is the conversation view (received and sent together, by latest
+ * activity); "Inbox" is every message that came in, one row each;
+ * "Unclaimed" is mail to addresses no one has.
  */
-export const FOLDERS: { key: MailFolder; label: string }[] = [
-  { key: "active", label: "Inbox" },
-  { key: "inbox", label: "Received" },
+export const FOLDERS: { key: MailFolder; label: string; hint?: string }[] = [
+  { key: "active", label: "Active", hint: "Received and sent together, one row per conversation" },
+  { key: "inbox", label: "Inbox", hint: "Every message you've received" },
   { key: "sent", label: "Sent" },
   { key: "archive", label: "Archive" },
-  { key: "trash", label: "Trash" },
-  { key: "other", label: "Other addresses" },
+  { key: "trash", label: "Trash", hint: "Deleted mail, kept 30 days" },
+  { key: "other", label: "Unclaimed", hint: "Mail to addresses no one has. Owners and admins can see it." },
 ];
 
 export const folderLabel = (f: MailFolder) => FOLDERS.find((x) => x.key === f)?.label ?? "Mail";
@@ -20,11 +20,11 @@ export const folderLabel = (f: MailFolder) => FOLDERS.find((x) => x.key === f)?.
 /** What each folder holds when it's empty, and who can see it (§8.13). */
 export const EMPTY: Record<MailFolder, { title: string; body: string }> = {
   active: { title: "No conversations yet", body: "Mail you receive and send shows here, one row per conversation. Only you can see your mailbox." },
-  inbox: { title: "Nothing received yet", body: "Every message sent to your address shows here, newest first." },
+  inbox: { title: "Your inbox is empty", body: "Every message sent to your address shows here, newest first." },
   sent: { title: "Nothing sent yet", body: "Messages you send show here." },
   archive: { title: "Nothing archived", body: "Archived mail is kept here, out of your inbox. A reply to it brings the conversation back." },
   trash: { title: "Trash is empty", body: "Deleted mail stays here for 30 days, then it's removed for good with its attachments." },
-  other: { title: "No mail to other addresses", body: "Mail sent to an address no one has lands here. Owners and admins can see it." },
+  other: { title: "No unclaimed mail", body: "Mail sent to an address no one has lands here. Owners and admins can see it." },
 };
 
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
