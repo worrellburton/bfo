@@ -2266,9 +2266,7 @@ function CostCard({ ctx, entities, payer }: { ctx: Ctx; entities: Entities; paye
               {also.map((c, i) => (
                 <li key={i} className="flex justify-between gap-3 text-body text-ink">
                   <span className="min-w-0">{c.label}</span>
-                  <span className="shrink-0 text-ink-2 tabular-nums">
-                    {c.dollars === null ? "Not quoted" : `${format.money(c.dollars)}${c.per === "year" ? " a year" : " once"}`}
-                  </span>
+                  <span className="shrink-0 text-ink-2 tabular-nums">{c.dollars === null ? "Not quoted" : `${format.money(c.dollars)}${c.per === "year" ? " a year" : " once"}`}</span>
                 </li>
               ))}
             </ul>

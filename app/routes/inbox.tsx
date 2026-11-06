@@ -39,7 +39,7 @@ import { FolderMenu } from "../mail/folder-menu";
 import { ListBody, MailFooter, PushInvite } from "../mail/list-body";
 import { MailHeader, checkedLine } from "../mail/header";
 import { OfficeMailNotice } from "../mail/notice";
-import { holdSend } from "../mail/outbox";
+import { holdSend, keepFailed, takeFailed } from "../mail/outbox";
 import { Glyph } from "../mail/glyphs";
 
 export function meta() {
@@ -106,7 +106,10 @@ export default function Inbox() {
     }
   }
 
-  const [draft, setDraft] = useState<Draft | null>(null);
+  // A message whose send failed while Mail was closed opens again, with what went wrong.
+  const [draft, setDraft] = useState<Draft | null>(() => takeFailed<Draft>());
+  /** Each draft its own composer (two replies to the same sender are two composers). */
+  const draftKey = useMemo(() => (draft ? Math.random().toString(36).slice(2) : ""), [draft]);
   /** Everyone's chosen pictures, by address; asked for once per visit. */
   const [faces, setFaces] = useState<MailFaces>({});
   useEffect(() => {
@@ -349,7 +352,11 @@ export default function Inbox() {
           notify("Sent");
         } catch (e) {
           if (mountedRef.current) reopen((e as Error).message);
-          else notify("A message couldn't be sent. Open Mail to see it and try again.");
+          else {
+            // Mail was left: the message waits here, and opens with what went wrong when Mail does.
+            keepFailed<Draft>({ ...restore, sendId, restore: { ...(restore.restore ?? { html: "", files: [] }), error: (e as Error).message } });
+            notify("A message wasn't sent. It's waiting in Mail.");
+          }
         }
       },
       onCancelled: () => reopen(),
@@ -683,7 +690,7 @@ export default function Inbox() {
 
       {bulkFloat}
 
-      {draft && <Compose key={draft.sendId ?? draft.title} draft={draft} addresses={mine} onClose={() => setDraft(null)} onQueue={queueSend} />}
+      {draft && <Compose key={draftKey} draft={draft} addresses={mine} onClose={() => setDraft(null)} onQueue={queueSend} />}
 
       <OfficeMailNotice show={!!me && me.role !== "owner" && !noAddress} />
     </FacesContext.Provider>

@@ -9,32 +9,76 @@ import { sectionOf } from "../lib/books-accounts";
 import { count, isoDate, percent } from "./ui/format";
 
 export type PnlLine = { label: string; monthly: number[]; total: number };
-export type Pnl = { year: number; revenue: PnlLine[]; operating: PnlLine[]; other: PnlLine[]; revenue_monthly: number[]; operating_monthly: number[]; other_monthly: number[] };
+type Block = { key: string; sign: "in" | "out"; lines: { label: string; figures: { monthly: number[]; total: number; exact?: number } }[] };
+/**
+ * The P&L as /api/books/data?report=pnl answers. Two shapes: sections[] with
+ * receipts and disbursements, uncategorized kept outside every total (the
+ * statements as reworked), and the earlier revenue/operating/other arrays,
+ * where uncategorized rows sit inside by their direction. Home reads either.
+ */
+export type Pnl = {
+  year: number;
+  sections?: Block[];
+  receipts?: number;
+  disbursements?: number;
+  uncategorized?: { count?: number; in?: number; out?: number } | PnlLine[] | null;
+  revenue?: PnlLine[];
+  operating?: PnlLine[];
+  other?: PnlLine[];
+};
 export type FlowKind = "income" | "expenses";
-export type FlowLine = { label: string; total: number; section: "revenue" | "operating" | "other" };
+/** One account on Home's Income or Expenses card: its year-to-date total and months, in the card's direction. */
+export type FlowLine = { label: string; total: number; monthly: number[]; section: string };
 export type Member = { name?: string; percent?: number | string | null; role?: string | null };
 
 const DAY = 86_400_000;
 /** A calendar day ("2026-11-06") as a UTC noon instant, so arithmetic never slips a day. */
 export const dayMs = (iso: string) => Date.parse(`${iso.slice(0, 10)}T12:00:00Z`);
 
+const neg = (xs: number[]) => xs.map((x) => -x);
+
+/** Every statement line, as income (money in positive) or expense (money out positive). */
+function pnlLines(p: Pnl): { kind: FlowKind; line: FlowLine }[] {
+  if (Array.isArray(p.sections)) {
+    return p.sections.flatMap((b) =>
+      b.lines.map((l) => {
+        const kind: FlowKind = l.label.trim().startsWith("4") ? "income" : "expenses";
+        // A block reads money in (sign "in") or money out ("out"); turn each line to its card's direction.
+        const flip = (kind === "income") === (b.sign === "out");
+        return { kind, line: { label: l.label, section: b.key, total: flip ? -l.figures.total : l.figures.total, monthly: flip ? neg(l.figures.monthly) : l.figures.monthly } };
+      }),
+    );
+  }
+  const old = (xs: PnlLine[] | undefined, section: string, kind: FlowKind) => (xs ?? []).map((l) => ({ kind, line: { label: l.label, section, total: l.total, monthly: l.monthly } }));
+  return [...old(p.revenue, "revenue", "income"), ...old(p.operating, "operating", "expenses"), ...old(p.other, "other", "expenses")];
+}
+
 /**
- * One side of the P&L, year to date: its total, its accounts largest first,
- * and how much of it is still uncategorized (a label with no chart account,
- * which the P&L files by direction).
+ * One side of the P&L, year to date: its total (the P&L's receipts or
+ * disbursements), its accounts largest first, and what's uncategorized:
+ * outside the total in the reworked statements, inside it (by direction)
+ * in the earlier ones.
  */
-export function flowSide(pnl: Pick<Pnl, "revenue" | "operating" | "other">, kind: FlowKind): { total: number; lines: FlowLine[]; uncategorized: number } {
-  const lines: FlowLine[] =
-    kind === "income"
-      ? pnl.revenue.map((l) => ({ label: l.label, total: l.total, section: "revenue" as const }))
-      : [...pnl.operating.map((l) => ({ label: l.label, total: l.total, section: "operating" as const })), ...pnl.other.map((l) => ({ label: l.label, total: l.total, section: "other" as const }))];
-  const total = lines.reduce((s, l) => s + l.total, 0);
-  const uncategorized = lines.filter((l) => sectionOf(l.label) === null).reduce((s, l) => s + l.total, 0);
-  return { total, lines: [...lines].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label)), uncategorized };
+export function flowSide(pnl: Pnl, kind: FlowKind): { total: number; lines: FlowLine[]; uncategorized: number; uncategorizedInside: boolean } {
+  const lines = pnlLines(pnl)
+    .filter((x) => x.kind === kind)
+    .map((x) => x.line);
+  const sum = lines.reduce((s, l) => s + l.total, 0);
+  const reworked = Array.isArray(pnl.sections);
+  const total = reworked ? ((kind === "income" ? pnl.receipts : pnl.disbursements) ?? sum) : sum;
+  const unc = pnl.uncategorized && !Array.isArray(pnl.uncategorized) ? pnl.uncategorized : null;
+  const uncategorized = reworked ? ((kind === "income" ? unc?.in : unc?.out) ?? 0) : lines.filter((l) => sectionOf(l.label) === null).reduce((s, l) => s + l.total, 0);
+  return { total, lines: [...lines].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label)), uncategorized, uncategorizedInside: !reworked };
 }
 
 /** The six calendar months ending this month, from this year's P&L and, early in the year, last year's. */
 export function sixMonths(now: Date, kind: FlowKind, thisYear: Pnl, lastYear: Pnl | null): { key: string; value: number | null }[] {
+  const monthly = (p: Pnl) =>
+    pnlLines(p)
+      .filter((x) => x.kind === kind)
+      .reduce((acc, x) => acc.map((v, i) => v + (x.line.monthly[i] ?? 0)), Array(12).fill(0) as number[]);
+  const cache = new Map<Pnl, number[]>();
+  const of = (p: Pnl) => cache.get(p) ?? cache.set(p, monthly(p)).get(p)!;
   const out: { key: string; value: number | null }[] = [];
   for (let i = 5; i >= 0; i--) {
     // The person's own calendar month, not UTC's.
@@ -42,8 +86,7 @@ export function sixMonths(now: Date, kind: FlowKind, thisYear: Pnl, lastYear: Pn
     const y = d.getFullYear();
     const m = d.getMonth();
     const p = y === thisYear.year ? thisYear : lastYear && y === lastYear.year ? lastYear : null;
-    const value = p ? (kind === "income" ? p.revenue_monthly[m] : p.operating_monthly[m] + p.other_monthly[m]) : null;
-    out.push({ key: `${y}-${String(m + 1).padStart(2, "0")}`, value });
+    out.push({ key: `${y}-${String(m + 1).padStart(2, "0")}`, value: p ? Math.round(of(p)[m] * 100) / 100 : null });
   }
   return out;
 }

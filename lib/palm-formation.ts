@@ -227,7 +227,8 @@ function einRequest(d: FormationDraft, e: FormationEin): Record<string, unknown>
     llc_member_count: llc ? einMemberCount(d) : undefined,
     members_are_married_couple: married,
     llc_classification: married ? e.llcClassification : "",
-    corporation_subtype: llc ? "" : e.corporationSubtype,
+    // A special kind (personal service, REIT…) as chosen; otherwise S when it elects S, and blank (a plain C corporation) by default.
+    corporation_subtype: llc ? "" : e.corporationSubtype && e.corporationSubtype !== "corporation" ? e.corporationSubtype : d.taxElection === "s_corp" ? "s_corporation" : "",
   });
 }
 

@@ -239,6 +239,18 @@ describe("what goes to Palm", () => {
     expect(isSsnIssue({ field: "/legal_name", message: "Lessons learned" })).toBe(false);
   });
 
+  it("puts a corporation's S election on the SS-4", () => {
+    const d = draft();
+    d.entityType = "corporation";
+    d.ein = { ...emptyEin(), responsible: { first: "Alex", middle: "", last: "Rivera", ssn: "123-45-6789" } };
+    const subtype = () => (buildFormationRequest(d, "a") as { ein: { corporation_subtype?: string } }).ein.corporation_subtype;
+    expect(subtype()).toBeUndefined();
+    d.taxElection = "s_corp";
+    expect(subtype()).toBe("s_corporation");
+    d.ein.corporationSubtype = "personal_service_corporation";
+    expect(subtype()).toBe("personal_service_corporation");
+  });
+
   it("adds a scheme to the website and tells Palm's team what the request can't carry", () => {
     expect(normalizeWebsite("example.com")).toBe("https://example.com");
     expect(normalizeWebsite("http://example.com")).toBe("http://example.com");

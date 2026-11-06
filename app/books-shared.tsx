@@ -985,14 +985,18 @@ export function BatchBar({
       role="toolbar"
       aria-label="Batch edit"
       data-floating
-      className="ds fixed bottom-6 left-[calc(50%+var(--content-inset,var(--inset,0px))/2)] z-fab flex max-w-[calc(100vw-var(--content-inset,var(--inset,0px))-64px)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-card border border-line-strong bg-overlay p-2 pl-4 text-body text-ink shadow-(--elevation-2)"
+      className="ds fixed bottom-6 left-[calc(50%+var(--content-inset,var(--inset,0px))/2)] z-fab flex w-max max-w-[calc(100vw-var(--content-inset,var(--inset,0px))-64px)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-card border border-line-strong bg-overlay p-2 pl-4 text-body text-ink shadow-(--elevation-2)"
     >
       <span role="status" aria-live="polite" className="mr-2 whitespace-nowrap tabular-nums">
         {txnCount(count)} selected{summary ? <span className="text-ink-2"> · {ledgerMoney(-summary.net)}</span> : null}
       </span>
-      <Input aria-label="Set vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} list={listId} placeholder="Set vendor" autoComplete="off" className="w-[160px]" />
+      <div className="w-[160px] shrink-0">
+        <Input aria-label="Set vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} list={listId} placeholder="Set vendor" autoComplete="off" />
+      </div>
       {datalist}
-      <Input aria-label="Add a note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note" className="w-[180px]" />
+      <div className="w-[180px] shrink-0">
+        <Input aria-label="Add a note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note" />
+      </div>
       <Menu value={batchType} label="Set type" placeholder="Set type" onChange={setBatchType} options={TYPE_OPTIONS} size="md" />
       {categories.length > 0 && <Menu value={account} label="Set account" placeholder="Set account" onChange={setAccount} options={accountOptions} size="md" className="max-w-[220px]" />}
       <Button variant="primary" busy={busy} busyLabel="Applying…" disabled={!canApply} onClick={() => void apply()}>
@@ -1394,7 +1398,7 @@ export function TxnTable({
     return { eff, vendor, vendorText, memo, title, secondary, inflow: t.amount < 0, word: typeWord(eff) };
   };
 
-  const accountPicker = (t: Txn, extra?: string) => {
+  const accountPicker = (t: Txn, extra?: string, inRow = false) => {
     const loanName = t.loan_id ? (loans.find((l) => l.id === t.loan_id)?.name ?? "a loan") : null;
     return (
       <Menu
@@ -1402,7 +1406,7 @@ export function TxnTable({
         placeholder={loanName ? `On ${loanName}` : "Uncategorized"}
         tone={!t.book_category && !loanName ? "amber" : "soft"}
         readOnly={readOnly}
-        chevron="hover"
+        chevron={inRow ? "hover" : "always"}
         label="Account"
         onChange={(v) => pickAccount(t, v)}
         options={catOptionsFor(t)}
@@ -1682,7 +1686,7 @@ export function TxnTable({
                       {(m.word || t.pending) && <span className="shrink-0 text-small text-ink-2">{[m.word, t.pending ? "Pending" : null].filter(Boolean).join(" · ")}</span>}
                     </span>
                   </td>
-                  <td className="h-(--row-1) border-b border-line px-3 py-1">{accountPicker(t, "max-w-full")}</td>
+                  <td className="h-(--row-1) border-b border-line px-3 py-1">{accountPicker(t, "max-w-full", true)}</td>
                   {showEntity && <td className="h-(--row-1) border-b border-line px-3">{t.entity_name ? <EntityTag name={t.entity_name} /> : <span className="text-small text-warning">No entity</span>}</td>}
                   <td className="h-(--row-1) border-b border-line px-3 text-small whitespace-nowrap text-ink-2">{midDate(t.date, { omitCurrentYear: true })}</td>
                   <td className={cx("h-(--row-1) border-b border-line px-3 text-right font-medium whitespace-nowrap", m.inflow && m.eff === "normal" ? "text-positive" : "text-ink")}>{ledgerMoney(t.amount, t.currency)}</td>

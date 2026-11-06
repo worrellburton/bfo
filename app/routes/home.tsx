@@ -279,7 +279,7 @@ function FlowCard({ kind, pnl, lastYear, load, retry }: { kind: FlowKind; pnl: P
       <p className="mt-2 text-heading text-ink tabular-nums">{format.money(side.total, { precision: "dollars" })}</p>
       {Math.abs(side.uncategorized) >= 0.5 && (
         <p className="mt-1 text-small text-ink-2">
-          Includes {format.money(side.uncategorized, { precision: "dollars" })} not yet categorized ·{" "}
+          {side.uncategorizedInside ? "Includes" : "Leaves out"} {format.money(side.uncategorized, { precision: "dollars" })} not yet categorized ·{" "}
           <Link to="/books/review" className="text-accent underline underline-offset-[3px] hover:text-accent-hover">
             Review
           </Link>

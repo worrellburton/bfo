@@ -56,3 +56,14 @@ export function holdSend(o: { send: () => Promise<void>; onCancelled: () => void
 
 /** Sends waiting their ten seconds. */
 export const sendsWaiting = () => pending.size;
+
+/** A message whose send failed after Mail was left: kept here and reopened, with what went wrong, when Mail opens again. */
+let failed: unknown = null;
+export function keepFailed<T>(draft: T) {
+  failed = draft;
+}
+export function takeFailed<T>(): T | null {
+  const d = failed as T | null;
+  failed = null;
+  return d;
+}

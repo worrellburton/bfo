@@ -305,7 +305,7 @@ export default function BooksTransactions() {
 
   const menu: MenuItem[] = writable
     ? [
-        { label: "Import a bank CSV…", onSelect: () => setImportOpen(true) },
+        { label: "Import CSV…", hint: "older bank history", onSelect: () => setImportOpen(true) },
         { label: "Load older Mercury transactions…", onSelect: () => void loadOlderMercury() },
         ...(sunrise
           ? [{ label: "Sync each morning", hint: sunrise.on && sunrise.next ? `next ${format.time(sunrise.next)}` : undefined, checked: sunrise.on, onSelect: () => void toggleSunrise() }]
