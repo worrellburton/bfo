@@ -202,6 +202,8 @@ export function PeopleTab() {
                 )}
               </Section>
             )}
+
+            <SignersCard />
           </>
         )}
 
@@ -256,6 +258,141 @@ export function PeopleTab() {
           document.body,
         )}
     </div>
+  );
+}
+
+// ── Who signs for it ─────────────────────────────────────────────────────
+
+/**
+ * The people who put pen to paper for the entity. Left empty, BFO follows
+ * the records: a company owner signs through its managers, and theirs, until
+ * it reaches people, and a company whose managers act together gets a line
+ * for each of them. Set here, the list is what every paper uses, for this
+ * entity and for anything it owns.
+ */
+function SignersCard() {
+  const { page, asset } = useEntity();
+  const t = useTone();
+  const admin = isAdmin() && !isPartner();
+  const [adding, setAdding] = useState(false);
+  const set = (asset.authorizedSigners ?? []).filter((s) => s?.name?.trim());
+  // What the papers would show without a list here: the chain up from this entity, as closing-docs walks it.
+  const [chain, setChain] = useState<{ through: string[]; signatories: { name: string; title: string }[] } | null>(null);
+  useEffect(() => {
+    let on = true;
+    if (set.length) {
+      setChain(null);
+      return;
+    }
+    void import("../closing-docs").then(({ signingChain }) => on && setChain(signingChain(asset.name, page.assetByName)));
+    return () => {
+      on = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset.name, set.length, asset.members, asset.profile?.managers, page.allAssets]);
+
+  async function save(list: { name: string; title: string }[]) {
+    await page.saveAuthorizedSigners(list);
+    setAdding(false);
+  }
+
+  if (!admin && !set.length) return null;
+  return (
+    <Section
+      id="signers"
+      title="Who signs for it"
+      count={set.length || undefined}
+      className="scroll-mt-[calc(3.5rem+env(safe-area-inset-top)+80px)] lg:scroll-mt-20"
+      info="The people who sign papers in its name, such as a consent to dissolve. Set them once here and every paper for it, and for anything it owns, is signed by them. Left empty, BFO follows the owners and managers on record up to the people at the top."
+      actions={
+        admin && !adding ? (
+          <Button icon="plus" onClick={() => setAdding(true)}>
+            Add signer
+          </Button>
+        ) : undefined
+      }
+    >
+      {set.length > 0 ? (
+        <div className={`divide-y ${t.divide}`}>
+          {set.map((s, i) => (
+            <PersonRow
+              key={i}
+              color={t.dark ? "#4b5563" : "#9ca3af"}
+              name={s.name}
+              detail={s.title || "Authorized Representative"}
+              share={null}
+              access={null}
+              admin={admin}
+              onRevoke={() => {}}
+              onRemove={() => void save(set.filter((x) => x !== s))}
+            />
+          ))}
+        </div>
+      ) : chain && chain.signatories.length ? (
+        <div className={`px-5 py-3.5 text-[12.5px] leading-relaxed ${t.soft}`}>
+          <p>Nothing set, so its papers follow the records:</p>
+          <p className={`mt-1 ${t.text}`}>
+            {chain.through.map((x) => `by ${x}`).join(", ")}
+            {chain.through.length ? ": " : ""}
+            {chain.signatories.map((p) => p.name || p.title).join(", ")}
+          </p>
+          {chain.signatories.length > 1 && (
+            <p className={`mt-1 ${t.muted}`}>
+              All {chain.signatories.length} sign, because the company at the top of the chain acts by all of its managers. If one of them is delegated to sign alone, add them here, or on that
+              company's page.
+            </p>
+          )}
+        </div>
+      ) : (
+        <Empty>Nothing set. Its papers are signed by whoever its owners and managers on record say.</Empty>
+      )}
+      {adding && (
+        <SignerForm
+          onSave={(s) => save([...set, s])}
+          onCancel={() => setAdding(false)}
+          hint={asset.ownerId ? "To have everything the owner holds inherit this, set it on the owner's page instead." : undefined}
+        />
+      )}
+    </Section>
+  );
+}
+
+function SignerForm({ onSave, onCancel, hint }: { onSave: (s: { name: string; title: string }) => Promise<void>; onCancel: () => void; hint?: string }) {
+  const t = useTone();
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("Authorized Representative");
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    await onSave({ name: name.trim(), title: title.trim() || "Authorized Representative" });
+    setBusy(false);
+  }
+  return (
+    <form onSubmit={(e) => void submit(e)} className={`grid grid-cols-2 items-end gap-2 px-5 py-3.5 sm:grid-cols-[1fr_200px_auto] ${t.dark ? "bg-white/[0.015]" : "bg-gray-50/60"}`}>
+      <label className="col-span-2 block sm:col-span-1">
+        <span className={`mb-1 block text-[11.5px] ${t.muted}`}>Name</span>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Person who signs" autoFocus />
+      </label>
+      <label className="block">
+        <span className={`mb-1 block text-[11.5px] ${t.muted}`}>Signs as</span>
+        <Select value={title} onChange={(e) => setTitle(e.target.value)}>
+          {["Authorized Representative", "Manager", "Managing Member", "Member", "President", "Trustee"].map((r) => (
+            <option key={r}>{r}</option>
+          ))}
+        </Select>
+      </label>
+      <div className="col-span-2 flex items-center justify-end gap-1.5 sm:col-span-1">
+        <Button kind="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button kind="primary" type="submit" disabled={busy || !name.trim()}>
+          Save
+        </Button>
+      </div>
+      {hint && <p className={`col-span-2 text-[12px] sm:col-span-3 ${t.muted}`}>{hint}</p>}
+    </form>
   );
 }
 

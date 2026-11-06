@@ -19,6 +19,8 @@ export type Rec = PaperworkInput & {
   ownerId?: string;
   members?: { name: string; percent: number | null; role: string | null }[];
   profile?: { purpose?: string | null; management?: string | null; managers?: string[] } | null;
+  /** Who signs for it, when set on the record (app/entity/model.ts). */
+  authorizedSigners?: { name: string; title: string }[] | null;
 };
 
 // ── Form W-9 ─────────────────────────────────────────────────────────────

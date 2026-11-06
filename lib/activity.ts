@@ -136,6 +136,9 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
       if (!same(b[k], a[k])) fields.push({ key: `foreign.${code}.${k}`, label: `${code} ${label}`, from: text(b[k]), to: text(a[k]) });
     }
   }
+  // Who signs for it (app/entity/model.ts authorizedSigners).
+  const signers = (r: Rec) => (Array.isArray(r.authorizedSigners) ? (r.authorizedSigners as Rec[]) : []).filter((s) => s && s.name).map((s) => `${s.name}${s.title ? ` (${s.title})` : ""}`);
+  if (!same(signers(before), signers(after))) fields.push({ key: "authorizedSigners", label: "Authorized signers", from: signers(before).join(", ") || null, to: signers(after).join(", ") || null });
   if (fields.length) out.push({ kind: "edit", summary: editSummary(fields), detail: { fields } });
 
   // Owners

@@ -28,17 +28,76 @@ const FILING: Record<string, { llc: string; corp: string }> = {
 const pct = (n: number) => `${Math.round(n * 100) / 100}%`;
 const longDate = (d: Date) => d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
+/** A person who puts pen to paper for a signer, with the capacity they sign in. */
+export type Signatory = { name: string; title: string };
+
+/**
+ * One party's signature block. A company signs through whoever runs it:
+ * `through` is that chain, top down ("Ledger Louise, LLC, its Manager"),
+ * and `signatories` the people at the end of it, one line each. A company
+ * BFO knows nothing about gets a blank "authorized signature" line instead.
+ */
+export type ConsentSigner = { name: string; capacity: string; through: string[]; signatories: Signatory[] };
+
 type ConsentDoc = {
   title: string;
   subtitle: string;
   intro: string;
   resolutions: { heading: string; text: string }[];
-  signers: { name: string; capacity: string }[];
+  signers: ConsentSigner[];
   schedule: [string, string][];
 };
 
-/** The written consent to dissolve, from the owners on record. */
-export function dissolutionConsent(entity: Rec & { name: string }, lookup: (id: string) => Rec | undefined): ConsentDoc {
+/** A record by its name, as the entity page keeps them (app/entity/use-entity.tsx). */
+export type ByName = (name: string) => Rec | undefined;
+
+/** "Robert W. Burton (Robert Worrell Burton)" → "Robert W. Burton"; "X, LLC (Manager; signs through …)" → "X, LLC". */
+const bareName = (s: string) =>
+  s
+    .replace(/\s*\(.*$/s, "")
+    .replace(/[;,]\s*$/, "")
+    .trim();
+
+/** Who runs a record: its managers on the Owners tab, else the managers its documents name, else (member-managed) its members. */
+function runBy(rec: Rec): { names: string[]; title: string } {
+  const listed = (rec.members ?? []).filter((m) => /manager/i.test(m.role ?? "") && m.percent == null).map((m) => bareName(m.name));
+  if (listed.length) return { names: listed, title: "Manager" };
+  const profiled = (rec.profile?.managers ?? []).map(bareName).filter(Boolean);
+  if (profiled.length) return { names: profiled, title: /trustee/i.test(rec.profile?.management ?? "") ? "Trustee" : "Manager" };
+  const members = (rec.members ?? []).filter((m) => m.percent != null).map((m) => bareName(m.name));
+  return { names: members, title: "Member" };
+}
+
+/**
+ * Who actually signs for a named party, following the records up through
+ * every company that runs it until people are reached. Each company along
+ * the way is a "By:" line; each person a signature line. A company whose
+ * managers all act together (Ledger Louise's four) gets a line for each,
+ * because its agreement needs all of them unless one has been delegated.
+ */
+export function signingChain(name: string, byName: ByName, depth = 0): { through: string[]; signatories: Signatory[] } {
+  const rec = byName(name);
+  if (!rec?.name || depth > 4) return { through: [], signatories: [] };
+  // Signers set on the record win over whoever its documents say runs it.
+  const set = (rec.authorizedSigners ?? []).filter((s) => s?.name?.trim());
+  if (set.length) return { through: [], signatories: set.map((s) => ({ name: s.name.trim(), title: `${s.title?.trim() || "Authorized Representative"}, ${rec.name}` })) };
+  const { names, title } = runBy(rec);
+  const out = { through: [] as string[], signatories: [] as Signatory[] };
+  for (const n of names) {
+    if (isCompany(n)) {
+      const sub = signingChain(n, byName, depth + 1);
+      out.through.push(`${n}, its ${title}`, ...sub.through);
+      // A company BFO can't follow further still needs a hand: one blank line for its representative.
+      out.signatories.push(...(sub.signatories.length ? sub.signatories : [{ name: "", title: `Authorized Representative, ${n}` }]));
+    } else {
+      out.signatories.push({ name: n, title: `${title}, ${rec.name}` });
+    }
+  }
+  return out;
+}
+
+/** The written consent to dissolve, from the owners on record; `byName` lets it follow an owner that's a company here up to the people who sign for it. */
+export function dissolutionConsent(entity: Rec & { name: string }, lookup: (id: string) => Rec | undefined, byName: ByName = () => undefined): ConsentDoc {
   const corp = entityType(entity) === "C-Corp";
   const st = stateCode(entity.state) ?? "";
   const stName = stateName(st) || entity.state || "its state";
@@ -72,7 +131,11 @@ export function dissolutionConsent(entity: Rec & { name: string }, lookup: (id: 
         text: `RESOLVED, that each ${corp ? "director and officer" : holder} is authorized to sign and deliver any document, and to take any action, needed to carry out these resolutions, and that any such action already taken is ratified and approved.`,
       },
     ],
-    signers: members.map((m) => ({ name: m.name, capacity: corp ? "Shareholder" : members.length === 1 ? "Sole Member" : "Member" })),
+    signers: members.map((m) => ({
+      name: m.name,
+      capacity: corp ? "Shareholder" : members.length === 1 ? "Sole Member" : "Member",
+      ...(isCompany(m.name) ? signingChain(m.name, byName) : { through: [], signatories: [] }),
+    })),
     schedule: members.map((m) => [m.name, pct(m.percent)]),
   };
 }
@@ -145,7 +208,7 @@ async function sheet() {
   return { pdf, W, H, M, width, st, font, para, caps, line, room, footers };
 }
 
-const isCompany = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|trust|lp|l\.p\.|ltd\.?|company|partners(hip)?)\b/i.test(name);
+export const isCompany = (name: string) => /\b(llc|l\.l\.c\.|inc\.?|corp\.?|corporation|trust|lp|l\.p\.|ltd\.?|company|partners(hip)?)\b/i.test(name);
 
 export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): Promise<Blob> {
   const s = await sheet();
@@ -183,37 +246,62 @@ export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): 
     s.para(r.text, { align: "justify", gap: 12 });
   });
 
-  // Signatures: a block per signer, two across.
+  // Signatures: a block per signer, two across; a company that signs through
+  // people gets the full width and a line for each of them.
   st.y += 10;
   s.room(60);
-  s.para(`IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} signed this consent. It may be signed in counterparts and by electronic signature.`, {
-    align: "justify",
-    gap: 18,
-  });
-  const colW = d.signers.length === 1 ? width * 0.62 : (width - 24) / 2;
-  const blockH = (n: string) => (isCompany(n) ? 196 : 150);
-  for (let k = 0; k < d.signers.length; k += 2) {
-    const pair = d.signers.slice(k, k + 2);
-    const h = Math.max(...pair.map((p) => blockH(p.name)));
+  const several = d.signers.some((sg) => sg.signatories.length > 1);
+  s.para(
+    `IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} signed this consent${
+      several ? ", each company by the person or persons who act for it under its own operating agreement" : ""
+    }. It may be signed in counterparts and by electronic signature.`,
+    { align: "justify", gap: 18 },
+  );
+  const wide = d.signers.length === 1 || d.signers.some((sg) => sg.signatories.length > 0);
+  const colW = wide ? (d.signers.length === 1 && !d.signers[0].signatories.length ? width * 0.62 : width) : (width - 24) / 2;
+  const per = wide ? 1 : 2;
+  const blockH = (sg: ConsentSigner) => {
+    if (!isCompany(sg.name)) return 150;
+    if (!sg.signatories.length) return 196;
+    return 68 + sg.through.length * 15 + 26 + sg.signatories.length * 46;
+  };
+  for (let k = 0; k < d.signers.length; k += per) {
+    const row = d.signers.slice(k, k + per);
+    const h = Math.max(...row.map(blockH));
     s.room(h + 20);
-    pair.forEach((sg, j) => {
+    row.forEach((sg, j) => {
       const x = M + j * (colW + 24);
       const top = st.y;
       const pad = 16;
       const inner = colW - pad * 2;
       pdf.setDrawColor(RULE[0], RULE[1], RULE[2]);
       pdf.setLineWidth(0.6);
-      pdf.roundedRect(x, top, colW, blockH(sg.name), 3, 3);
+      pdf.roundedRect(x, top, colW, blockH(sg), 3, 3);
       pdf.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
-      pdf.rect(x, top, 3, blockH(sg.name), "F");
+      pdf.rect(x, top, 3, blockH(sg), "F");
       let y = top + pad + 8;
       s.caps(sg.capacity, x + pad, y, 7.5, MUTED);
       y += 17;
       s.font("bold", 12.5);
       pdf.text((pdf.splitTextToSize(sg.name, inner) as string[])[0], x + pad, y);
-      y += 44;
       const half = (inner - 14) / 2;
-      if (isCompany(sg.name)) {
+      if (isCompany(sg.name) && sg.signatories.length) {
+        // The chain it signs through, then a line per person at the end of it.
+        y += 16;
+        s.font("normal", 10.5);
+        for (const t of sg.through) {
+          pdf.text(`By: ${t}`, x + pad, y);
+          y += 15;
+        }
+        y += 28;
+        const sigW = Math.round(inner * 0.62);
+        for (const p of sg.signatories) {
+          s.line(x + pad, y, sigW, p.name ? `${p.name}, ${p.title}` : p.title, "By:");
+          s.line(x + pad + sigW + 14, y, inner - sigW - 14, "Date");
+          y += 46;
+        }
+      } else if (isCompany(sg.name)) {
+        y += 44;
         s.line(x + pad, y, inner, "Authorized signature", "By:");
         y += 40;
         s.line(x + pad, y, half, "Printed name");
@@ -221,6 +309,7 @@ export async function dissolutionConsentPdf(d: ConsentDoc, entityName: string): 
         y += 40;
         s.line(x + pad, y, half, "Date");
       } else {
+        y += 44;
         s.line(x + pad, y, inner, "Signature");
         y += 40;
         s.line(x + pad, y, half, "Date");

@@ -1944,6 +1944,26 @@ export function useEntityPage() {
     return hit ? hit.mailingAddress || hit.address || null : null;
   };
 
+  /** One of the family's entities, by name, ignoring the "(100%)" the chart appends and how the suffix is punctuated. */
+  const assetByName = (name: string): Rec | undefined => {
+    const key = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/\s*\(.*?\)\s*/g, " ")
+        .replace(/[.,]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const want = key(name);
+    if (!want) return undefined;
+    return Object.values(allAssets).find((a) => key(a.name ?? "") === want) as Rec | undefined;
+  };
+
+  /** Who signs for it, set by hand (app/entity/model.ts authorizedSigners). */
+  async function saveAuthorizedSigners(list: { name: string; title: string }[]) {
+    const clean = list.map((s) => ({ name: s.name.trim(), title: s.title.trim() })).filter((s) => s.name);
+    await patchAsset({ authorizedSigners: clean.length ? clean : null });
+  }
+
   /** Fill in the IRS's W-9 from the record (a disregarded LLC's goes in its owner's name and TIN). */
   async function generateW9(replace = false) {
     const current = assetRef.current;
@@ -2116,7 +2136,7 @@ export function useEntityPage() {
       let blob: Blob;
       let name: string;
       if (kind === "consent") {
-        const doc = dissolutionConsent({ ...current } as Rec & { name: string }, lookupAsset);
+        const doc = dissolutionConsent({ ...current } as Rec & { name: string }, lookupAsset, assetByName);
         if (!doc.signers.length) return "Add its owners on the Owners tab first: the consent is signed by each of them.";
         blob = await dissolutionConsentPdf(doc, current.name);
         name = `Consent to Dissolve - ${current.name}.pdf`;
@@ -2744,6 +2764,8 @@ export function useEntityPage() {
     assetAddressByName,
     startClosing,
     cancelClosing,
+    assetByName,
+    saveAuthorizedSigners,
     markClosingStep,
     finishClosing,
     endPalmAgent,

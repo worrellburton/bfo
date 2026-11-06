@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dissolutionConsent, dissolutionConsentPdf, einLetter, einLetterPdf } from "../app/closing-docs";
+import { dissolutionConsent, dissolutionConsentPdf, einLetter, einLetterPdf, signingChain } from "../app/closing-docs";
 import { closingBlockers, closingHints, closingSteps, stateFilingFacts, stepsLeft } from "../app/entity-closing";
 import { describeChange } from "../lib/activity";
 
@@ -39,12 +39,79 @@ describe("closing an entity", () => {
     expect(c.title).toBe("Written Consent of the Members");
     expect(c.intro).toContain("Chapter 86 of the Nevada Revised Statutes");
     expect(c.resolutions[2].text).toContain("Certificate of Dissolution with the Nevada Secretary of State, a withdrawal of its registration in Arizona");
-    expect(c.signers).toEqual([{ name: "Burton Family Revocable Trust", capacity: "Sole Member" }]);
+    expect(c.signers).toEqual([{ name: "Burton Family Revocable Trust", capacity: "Sole Member", through: [], signatories: [] }]);
     const l = einLetter(louise as never, "2026-11-30");
     expect(l).toMatchObject({ ein: "93-3776895", reason: "The limited liability company has been dissolved on November 30, 2026 and has ceased doing business." });
     for (const blob of [await dissolutionConsentPdf(c, louise.name), await einLetterPdf(l)]) {
       expect(new TextDecoder().decode((await blob.arrayBuffer()).slice(0, 5))).toBe("%PDF-");
     }
+  });
+
+  it("follows a company owner up to the people who sign for it", async () => {
+    const family: Record<string, Record<string, unknown>> = {
+      "sundown investments llc": {
+        name: "Sundown Investments, LLC",
+        members: [{ name: "Ledger Louise, LLC", percent: 100, role: "member" }],
+        profile: { management: "manager-managed", managers: ["Ledger Louise, LLC (Managing Member; signs through Authorized Representative Robert W. Burton)"] },
+      },
+      "ledger louise llc": {
+        name: "Ledger Louise, LLC",
+        members: [{ name: "Burton Family Revocable Trust", percent: 100, role: "member" }],
+        profile: { management: "manager-managed", managers: ["Robert Ledger Burton", "Claire Burton", "Robert W. Burton (Robert Worrell Burton)", "Amanda Burton Dawson"] },
+      },
+    };
+    const byName = (n: string) =>
+      family[
+        n
+          .toLowerCase()
+          .replace(/\s*\(.*?\)\s*/g, " ")
+          .replace(/[.,]/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+      ] as never;
+    // Nothing set anywhere: Sundown signs by Ledger Louise, by all four of its managers.
+    expect(signingChain("Sundown Investments, LLC", byName)).toEqual({
+      through: ["Ledger Louise, LLC, its Manager"],
+      signatories: [
+        { name: "Robert Ledger Burton", title: "Manager, Ledger Louise, LLC" },
+        { name: "Claire Burton", title: "Manager, Ledger Louise, LLC" },
+        { name: "Robert W. Burton", title: "Manager, Ledger Louise, LLC" },
+        { name: "Amanda Burton Dawson", title: "Manager, Ledger Louise, LLC" },
+      ],
+    });
+    // A signer set on Ledger Louise is inherited by Sundown and by anything Sundown owns.
+    family["ledger louise llc"].authorizedSigners = [{ name: "Robert W. Burton", title: "Authorized Representative" }];
+    expect(signingChain("Sundown Investments, LLC", byName)).toEqual({
+      through: ["Ledger Louise, LLC, its Manager"],
+      signatories: [{ name: "Robert W. Burton", title: "Authorized Representative, Ledger Louise, LLC" }],
+    });
+    // Set on Sundown itself, the chain stops there.
+    family["sundown investments llc"].authorizedSigners = [{ name: "Robert W. Burton", title: "Manager" }];
+    expect(signingChain("Sundown Investments, LLC", byName)).toEqual({ through: [], signatories: [{ name: "Robert W. Burton", title: "Manager, Sundown Investments, LLC" }] });
+    // A company BFO has no record of gets a blank line.
+    expect(signingChain("Outside Capital, LLC", byName)).toEqual({ through: [], signatories: [] });
+    delete family["sundown investments llc"].authorizedSigners;
+    delete family["ledger louise llc"].authorizedSigners;
+
+    const palomino = {
+      name: "Palomino Ranch on the Bend, LLC",
+      type: "LLC",
+      state: "Arizona",
+      llcType: "Disregarded Entity",
+      members: [{ name: "Sundown Investments, LLC", percent: 100, role: "member" }],
+    };
+    const c = dissolutionConsent(palomino as never, lookup, byName);
+    expect(c.signers).toEqual([
+      {
+        name: "Sundown Investments, LLC",
+        capacity: "Sole Member",
+        through: ["Ledger Louise, LLC, its Manager"],
+        signatories: expect.arrayContaining([{ name: "Amanda Burton Dawson", title: "Manager, Ledger Louise, LLC" }]),
+      },
+    ]);
+    expect(c.signers[0].signatories).toHaveLength(4);
+    const blob = await dissolutionConsentPdf(c, palomino.name);
+    expect(new TextDecoder().decode((await blob.arrayBuffer()).slice(0, 5))).toBe("%PDF-");
   });
 
   it("says what is still live: owned entities, property on record, money in linked accounts", () => {
@@ -91,5 +158,7 @@ describe("closing an entity", () => {
     const start = { name: "X", closing: { startedAt: "2026-10-21", steps: {} } };
     expect(describeChange({ name: "X" }, start)[0].summary).toBe("Started closing it down");
     expect(describeChange(start, { name: "X", closing: { startedAt: "2026-10-21", steps: { "state:NV": "2026-10-22" } } })[0].summary).toBe("Closing: done with the state filing (NV)");
+    const signed = describeChange({ name: "X" }, { name: "X", authorizedSigners: [{ name: "Robert W. Burton", title: "Authorized Representative" }] })[0];
+    expect(signed.detail).toMatchObject({ fields: [{ label: "Authorized signers", from: null, to: "Robert W. Burton (Authorized Representative)" }] });
   });
 });

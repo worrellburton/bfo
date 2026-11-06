@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { authFetch, isAdmin, isPartner } from "../auth";
+import { isCompany, signingChain, type Signatory } from "../closing-docs";
 import { closingBlockers, closingHints, closingSteps, stateFilingFacts, stepsLeft, type LinkedAccount } from "../entity-closing";
 import { useEntity } from "./context";
-import { fmtDate } from "./model";
+import { fmtDate, holdsOwnership } from "./model";
 import { Button, Dot, ErrorLine, Icon, Section, TextButton, toneText, useTone } from "./ui";
 
 /**
@@ -15,7 +16,7 @@ import { Button, Dot, ErrorLine, Icon, Section, TextButton, toneText, useTone } 
  * done, the entity is marked Dissolved.
  */
 export function ClosingCard() {
-  const { page, asset } = useEntity();
+  const { page, asset, goToTab } = useEntity();
   const t = useTone();
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -49,6 +50,9 @@ export function ClosingCard() {
   const hints = closingHints({ ...asset, id: page.id }, accounts);
   const blockers = closingBlockers({ ...asset, id: page.id }, page.allAssets as Record<string, { name?: string; ownerId?: string; status?: string }>, accounts);
   const facts = stateFilingFacts(asset);
+  // Who the consent will be signed by: each owner on record, a company owner followed up to its people (app/closing-docs.ts).
+  const owners = asset.members?.length ? asset.members.filter(holdsOwnership).map((m) => m.name) : asset.ownerId && page.assetNames[asset.ownerId] ? [page.assetNames[asset.ownerId]] : [];
+  const signers = owners.map((name) => ({ name, ...(isCompany(name) ? signingChain(name, page.assetByName) : { through: [] as string[], signatories: [] as Signatory[] }) }));
   const doneCount = required.length - left.length;
   const pct = required.length ? Math.round((doneCount / required.length) * 100) : 0;
   const doneSteps = steps.filter((s) => done[s.key]);
@@ -195,6 +199,26 @@ export function ClosingCard() {
                         </p>
                       ))}
                       {s.key.startsWith("state:") && facts.length > 0 && <FilingFacts facts={facts} />}
+                      {s.generate === "consent" && signers.length > 0 && (
+                        <div className={`mt-2 rounded-lg border px-3 py-2 text-[12.5px] leading-relaxed ${t.dark ? "border-white/10" : "border-gray-200"}`}>
+                          <p className={t.muted}>Signed by</p>
+                          {signers.map((sg) => (
+                            <p key={sg.name} className={t.text}>
+                              <span className="font-medium">{sg.name}</span>
+                              {sg.through.map((x) => `, by ${x}`).join("")}
+                              {sg.signatories.length ? `: ${sg.signatories.map((p) => p.name || p.title).join(", ")}` : isCompany(sg.name) ? ": an authorized signature (no one on record)" : ""}
+                            </p>
+                          ))}
+                          {signers.some((sg) => sg.signatories.length > 1) && (
+                            <p className={`mt-1 ${t.muted}`}>
+                              Several sign because the company at the top acts by all of its managers. To have one person sign alone, name them on that company's People tab.
+                            </p>
+                          )}
+                          <TextButton className="mt-1" onClick={() => goToTab("people", "signers")}>
+                            Change who signs
+                          </TextButton>
+                        </div>
+                      )}
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         {s.generate && (
                           <Button icon="sparkle" kind={lit ? "primary" : "secondary"} disabled={!!busy} onClick={() => void run(s.key, () => page.generateClosingDoc(s.generate!))}>

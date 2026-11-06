@@ -92,6 +92,13 @@ export interface Asset {
   /** Owners and managers as a document lists them (operating agreement, ledger, articles). */
   members?: Member[];
   membersSource?: string;
+  /**
+   * Who puts pen to paper for it, when that isn't simply its managers: a
+   * delegated representative, or the one manager the others let sign. Papers
+   * for anything it owns follow the chain up to here (app/closing-docs.ts
+   * signingChain), so set it once on the company that signs for the rest.
+   */
+  authorizedSigners?: Signer[] | null;
   /** Year the latest annual report / tax receipt on file covers. */
   annualReportYear?: number;
   /** What the entity is, read from its governing documents. */
@@ -101,6 +108,9 @@ export interface Asset {
 
 /** An owner or manager. `address` is theirs (Exhibit A of the operating agreement lists it). */
 export type Member = { name: string; percent: number | null; role: string | null; address?: string | null };
+
+/** A person who signs for the entity, and the capacity they sign in ("Authorized Representative", "Manager"). */
+export type Signer = { name: string; title: string };
 
 /** An owner, not only a manager: a Manager/Director/Officer counts once they hold a share. */
 export const holdsOwnership = (m: { role?: string | null; percent?: number | null }) => !/manager|director|officer/i.test(m.role ?? "") || m.percent != null;
