@@ -92,6 +92,19 @@ export function EntityHeader() {
                 <span className="max-sm:hidden">{page.editing ? "Cancel" : "Edit"}</span>
               </Button>
             )}
+            {/* Closing it down is its own button, not a menu item: it's a checklist people come back to. A trust isn't filed anywhere, so it has none. */}
+            {isAdmin() &&
+              !isTrust &&
+              !page.editing &&
+              (asset.closing ? (
+                <Button icon="check" onClick={() => goToTab("overview", "closing")} aria-label={asset.closing.closedAt ? "Dissolved" : "Closing checklist"}>
+                  <span className="max-sm:hidden">{asset.closing.closedAt ? "Dissolved" : "Closing"}</span>
+                </Button>
+              ) : (
+                <Button icon="x" onClick={() => void page.startClosing().then(() => goToTab("overview", "closing"))} aria-label="Close entity">
+                  <span className="max-sm:hidden">Close entity</span>
+                </Button>
+              ))}
             {!isPartner() && <MoreMenu />}
           </div>
         </div>
@@ -274,9 +287,9 @@ function CopyMetric({ id, label, value, mono = false, badge }: { id: string; lab
   );
 }
 
-/** Rarely-used actions: delete. */
+/** Rarely-used actions: delete. (Closing it down has its own button in the header.) */
 function MoreMenu() {
-  const { page, asset, goToTab } = useEntity();
+  const { page } = useEntity();
   const t = useTone();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -297,19 +310,6 @@ function MoreMenu() {
       <IconButton icon="more" label="More actions" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
       {open && (
         <div className={`absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-xl border py-1 shadow-lg ${t.dark ? "border-white/10 bg-[#111114]" : "border-gray-200 bg-white"}`}>
-          {!asset.closing && asset.type !== "Trust" && isAdmin() && (
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                void page.startClosing().then(() => goToTab("overview"));
-              }}
-              className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12.5px] max-sm:min-h-[44px] ${t.dark ? "text-gray-200 hover:bg-white/[0.05]" : "text-gray-800 hover:bg-gray-50"}`}
-            >
-              <Icon name="x" />
-              Close this entity…
-            </button>
-          )}
           <button
             type="button"
             disabled={page.deleting}

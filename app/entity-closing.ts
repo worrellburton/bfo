@@ -39,15 +39,24 @@ type ClosingStep = {
 };
 
 type Input = {
+  id?: string;
   name?: string;
   type?: string;
   state?: string;
   llcType?: string;
   ein?: string;
+  fileNumber?: string;
+  formationDate?: string;
+  status?: string;
   registeredAgent?: string;
   registeredAgentSource?: string;
   foreign?: Record<string, { notNeeded?: boolean; confirmed?: boolean; agent?: string; fileNumber?: string; record?: unknown }>;
-  palm?: Partial<Record<"live" | "test", { ra?: { status?: string | null } | null }>>;
+  palm?: Partial<Record<"live" | "test", { ra?: { status?: string | null; endedAt?: string | null } | null }>>;
+  /** The state's own record, as Palm last read it. */
+  stateRecord?: { status?: string | null; registrationNumber?: string | null; checkedAt?: number | null } | null;
+  /** What the documents say it holds (app/entity/model.ts EntityProfile). */
+  profile?: { properties?: { description: string; status: string | null }[] | null } | null;
+  closing?: Closing | null;
 };
 
 const SOS: Record<string, { llc: string; corp: string; where: { label: string; url: string }; note?: string }> = {
@@ -172,4 +181,96 @@ export function closingSteps(a: Input): ClosingStep[] {
 export function stepsLeft(a: Input & { closing?: Closing | null }): ClosingStep[] {
   const done = a.closing?.steps ?? {};
   return closingSteps(a).filter((s) => !s.optional && !done[s.key]);
+}
+
+// ── What BFO can see for itself ─────────────────────────────────────────
+
+/** A bank or brokerage account as the Treasury report lists it (api/plaid/data?report=treasury). */
+export type LinkedAccount = {
+  account_id: string;
+  name: string;
+  official_name?: string | null;
+  nickname?: string | null;
+  mask: string | null;
+  balance_current: number | null;
+  entity_id: string | null;
+  institution_name?: string | null;
+};
+
+/** Something on the record that closing still has to deal with, and the step it belongs to. */
+export type ClosingBlocker = { step: string; text: string; link?: { label: string; to: string } };
+
+const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+
+function accountLabel(a: LinkedAccount): string {
+  const base = a.nickname || a.official_name || a.name || "Account";
+  const name = a.institution_name && !base.toLowerCase().includes(a.institution_name.toLowerCase()) ? `${a.institution_name} ${base}` : base;
+  return a.mask && !name.includes(a.mask) ? `${name} ····${a.mask}` : name;
+}
+
+/** The accounts the Treasury report links to this entity. */
+export function entityAccounts(id: string | undefined, accounts: LinkedAccount[] | null | undefined): LinkedAccount[] {
+  if (!id || !accounts) return [];
+  return accounts.filter((a) => a.entity_id === id);
+}
+
+/**
+ * What is still live, as far as BFO can tell: entities it owns, property its
+ * documents say it holds, and linked accounts with money in them. Each points
+ * at the step that deals with it. Nothing here is proof the entity is empty;
+ * it is what would be wrong to leave behind.
+ */
+export function closingBlockers(a: Input, others: Record<string, { name?: string; ownerId?: string; status?: string } | null | undefined>, accounts?: LinkedAccount[] | null): ClosingBlocker[] {
+  const out: ClosingBlocker[] = [];
+  if (a.id) {
+    for (const [id, o] of Object.entries(others)) {
+      if (!o || id === a.id || o.ownerId !== a.id || o.status === "Dissolved" || !o.name?.trim()) continue;
+      out.push({ step: "windup", text: `It still owns ${o.name.trim()}: move it to its new owner first.`, link: { label: "Open", to: `/assets/${id}` } });
+    }
+  }
+  for (const p of a.profile?.properties ?? []) {
+    if ((p.status ?? "owned").toLowerCase() !== "owned" || !p.description?.trim()) continue;
+    out.push({ step: "windup", text: `Its documents say it holds ${p.description.trim()}: deed it out, or note that it was sold.` });
+  }
+  for (const acct of entityAccounts(a.id, accounts)) {
+    if (acct.balance_current == null) out.push({ step: "bank", text: `${accountLabel(acct)} is linked and its balance isn't known.`, link: { label: "Treasury", to: "/treasury" } });
+    else if (Math.abs(acct.balance_current) >= 0.005) out.push({ step: "bank", text: `${accountLabel(acct)} still holds ${usd(acct.balance_current)}.`, link: { label: "Treasury", to: "/treasury" } });
+  }
+  return out;
+}
+
+const ENDED = /^(terminated|dissolved|cancell?ed|withdrawn|inactive)$/i;
+
+/**
+ * What BFO already knows about a step, one line each: the state's record
+ * shows it ended, Palm has stopped serving, the linked accounts are empty.
+ * A hint is a reason to mark the step done, never a mark on its own.
+ */
+export function closingHints(a: Input, accounts?: LinkedAccount[] | null): Record<string, string> {
+  const hints: Record<string, string> = {};
+  const st = stateCode(a.state);
+  const status = a.stateRecord?.status?.trim();
+  if (status && ENDED.test(status)) hints[`state:${st ?? "home"}`] = `${stateName(st) || "The state"}'s record shows it ${status.toLowerCase()}.`;
+  if (/^Palm stopped/.test(a.registeredAgentSource ?? "") || (a.palm?.live?.ra && a.palm.live.ra.status && a.palm.live.ra.status !== "active")) {
+    hints.agent = "Palm has ended its registered agent service.";
+  }
+  const linked = entityAccounts(a.id, accounts);
+  if (accounts && !linked.length) hints.bank = "No bank or brokerage account is linked to it in Treasury.";
+  else if (linked.length && linked.every((x) => x.balance_current != null && Math.abs(x.balance_current) < 0.005)) {
+    hints.bank = linked.length === 1 ? `${accountLabel(linked[0])} is at $0.00.` : `All ${linked.length} linked accounts are at $0.00.`;
+  }
+  return hints;
+}
+
+/** The facts the state's termination form asks for, ready to copy. */
+export function stateFilingFacts(a: Input): { label: string; value: string }[] {
+  const st = stateCode(a.state);
+  const corp = entityType(a) === "C-Corp";
+  const out: { label: string; value: string }[] = [];
+  if (a.name?.trim()) out.push({ label: "Exact legal name", value: a.name.trim() });
+  const file = a.fileNumber?.trim() || a.stateRecord?.registrationNumber?.trim();
+  if (file) out.push({ label: `${stateName(st) || "State"} file number`, value: file });
+  if (a.formationDate) out.push({ label: corp ? "Incorporated" : "Formed", value: a.formationDate });
+  if (st === "AZ") out.push({ label: "Statement the form requires", value: "All of the known property and assets of the company have been applied and distributed." });
+  return out;
 }

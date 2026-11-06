@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dissolutionConsent, dissolutionConsentPdf, einLetter, einLetterPdf } from "../app/closing-docs";
-import { closingSteps, stepsLeft } from "../app/entity-closing";
+import { closingBlockers, closingHints, closingSteps, stateFilingFacts, stepsLeft } from "../app/entity-closing";
 import { describeChange } from "../lib/activity";
 
 const lookup = () => undefined;
@@ -45,6 +45,46 @@ describe("closing an entity", () => {
     for (const blob of [await dissolutionConsentPdf(c, louise.name), await einLetterPdf(l)]) {
       expect(new TextDecoder().decode((await blob.arrayBuffer()).slice(0, 5))).toBe("%PDF-");
     }
+  });
+
+  it("says what is still live: owned entities, property on record, money in linked accounts", () => {
+    const palomino = { ...louise, id: "pal", name: "Palomino Ranch on the Bend, LLC", state: "Arizona", profile: { properties: [{ description: "3378 E River Rd, Tucson", status: "owned" }] } };
+    const others = {
+      pal: { name: palomino.name, ownerId: "sun" },
+      cfs: { name: "FDJ CFS, LLC", ownerId: "pal" },
+      old: { name: "Old Sub, LLC", ownerId: "pal", status: "Dissolved" },
+      sun: { name: "Sundown Investments, LLC" },
+    };
+    const accounts = [
+      { account_id: "a", name: "Mercury Checking", mask: "8974", balance_current: 0, entity_id: "pal", institution_name: "Mercury" },
+      { account_id: "b", name: "Savings", mask: "1234", balance_current: 1250.5, entity_id: "pal", institution_name: "Chase" },
+      { account_id: "c", name: "Other", mask: "9", balance_current: 99, entity_id: "sun", institution_name: "Chase" },
+    ];
+    const b = closingBlockers(palomino, others, accounts);
+    expect(b.map((x) => x.step)).toEqual(["windup", "windup", "bank"]);
+    expect(b[0]).toMatchObject({ text: "It still owns FDJ CFS, LLC: move it to its new owner first.", link: { to: "/assets/cfs" } });
+    expect(b[1].text).toContain("3378 E River Rd, Tucson");
+    expect(b[2].text).toBe("Chase Savings ····1234 still holds $1,250.50.");
+    // Sold property and an empty account are not in the way.
+    expect(closingBlockers({ ...palomino, profile: { properties: [{ description: "x", status: "sold" }] } }, { sun: others.sun }, [accounts[0]])).toEqual([]);
+  });
+
+  it("tells what it already knows about a step", () => {
+    const a = { ...louise, id: "pal", state: "Arizona", stateRecord: { status: "terminated" }, registeredAgentSource: "Palm stopped 2026-11-01" };
+    const h = closingHints(a, [{ account_id: "a", name: "Mercury Checking", mask: "8974", balance_current: 0, entity_id: "pal", institution_name: "Mercury" }]);
+    expect(h).toEqual({ "state:AZ": "Arizona's record shows it terminated.", agent: "Palm has ended its registered agent service.", bank: "Mercury Checking ····8974 is at $0.00." });
+    expect(closingHints({ ...louise, id: "x" }, [])).toEqual({ bank: "No bank or brokerage account is linked to it in Treasury." });
+    expect(closingHints({ ...louise, id: "x" }, null)).toEqual({});
+  });
+
+  it("lists the facts the state's form asks for", () => {
+    expect(stateFilingFacts({ name: "Palomino Ranch on the Bend, LLC", type: "LLC", state: "Arizona", fileNumber: "L16787484", formationDate: "2011-05-05" })).toEqual([
+      { label: "Exact legal name", value: "Palomino Ranch on the Bend, LLC" },
+      { label: "Arizona file number", value: "L16787484" },
+      { label: "Formed", value: "2011-05-05" },
+      { label: "Statement the form requires", value: "All of the known property and assets of the company have been applied and distributed." },
+    ]);
+    expect(stateFilingFacts({ ...louise, stateRecord: { registrationNumber: "E340" } }).map((f) => f.label)).toEqual(["Exact legal name", "Nevada file number"]);
   });
 
   it("shows in the activity", () => {
