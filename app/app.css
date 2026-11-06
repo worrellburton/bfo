@@ -1,36 +1,540 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+/* ══════════════════════════════════════════════════════════════════════
+   The design system (docs/DESIGN.md). Tokens, the type scale, the `ds`
+   scope, the focus ring and the overlay plumbing live in this first part;
+   everything after the "Legacy" marker below predates it and goes as the
+   areas migrate (DESIGN.md §14.8).
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Fonts, self-hosted (§3.1, §14.8 step 7): no request leaves BFO. ─────
+   Variable woff2 files from the Geist and Playfair Display projects (SIL
+   Open Font License; public/fonts/LICENSE-*.txt), Latin and Latin Extended. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/playfair-display-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/playfair-display-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ── Variants (§2.1, §8.0) ─────────────────────────────────────────────── */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant touch {
+  @media (width < 48rem), (pointer: coarse) {
+    @slot;
+  }
+}
+
+/* ── Tokens. Light values here; dark values in the base layer below. ─────
+   `static`, so every token is in the stylesheet even when no class names it
+   (a chart reads var(--color-chart-2) from script). */
+@theme static {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-brand: "Playfair Display", ui-serif, Georgia, serif;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-small: 13px;
+  --text-small--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-field: 14px;
+  --text-field--line-height: 20px;
+  --text-reading: 16px;
+  --text-reading--line-height: 26px;
+  --text-section: 15px;
+  --text-section--line-height: 20px;
+  --text-section--font-weight: 600;
+  --text-section--letter-spacing: -0.005em;
+  --text-title: 17px;
+  --text-title--line-height: 22px;
+  --text-title--font-weight: 600;
+  --text-title--letter-spacing: -0.01em;
+  --text-heading: 22px;
+  --text-heading--line-height: 28px;
+  --text-heading--font-weight: 600;
+  --text-heading--letter-spacing: -0.015em;
+  --text-display: 28px;
+  --text-display--line-height: 34px;
+  --text-display--font-weight: 600;
+  --text-display--letter-spacing: -0.02em;
+
+  --color-page: #f7f7f8;
+  --color-raised: #ffffff;
+  --color-sunken: #efeff1;
+  --color-overlay: #ffffff;
+  --color-field: #ffffff;
+  --color-hover: #f1f1f3;
+  --color-selected: #e9e9ec;
+  --color-ink: #18181b;
+  --color-ink-2: #52525b;
+  --color-ink-3: #64646d;
+  --color-ink-disabled: #64646d;
+  --color-ink-inverse: #ffffff;
+  --color-line: #e4e4e7;
+  --color-line-strong: #d4d4d8;
+  --color-edge: #85858e;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-tint: #eef0fe;
+  --color-on-accent: #ffffff;
+  --color-primary-hover: #3f3f46;
+  --color-primary-pressed: #52525b;
+  --color-positive: #047857;
+  --color-positive-tint: #ecf8f2;
+  --color-negative: #b91c1c;
+  --color-negative-tint: #fdf1f1;
+  --color-warning: #a35200;
+  --color-warning-tint: #fdf6e9;
+  --color-info: #0b6aa2;
+  --color-info-tint: #edf6fb;
+  --color-danger: #b91c1c;
+  --color-danger-hover: #991b1b;
+  --color-on-danger: #ffffff;
+  --color-scrim: rgb(9 9 11 / 0.32);
+  --color-chart-1: #4f46e5;
+  --color-chart-2: #0f8a7e;
+  --color-chart-3: #c27c0e;
+  --color-chart-4: #c2416b;
+  --color-chart-5: #64748b;
+  --color-chart-other: #85858e;
+  --color-paper: #ffffff;
+  --color-brand-ivory: #f4ede0;
+  --color-brand-ink: #0a0a0a;
+  --color-door: #05060b;
+  --color-door-ink: #f4ede0;
+  --color-door-ink-2: #aca8a0;
+  --color-door-ink-3: #888580;
+  --color-door-edge: #716e6b;
+  --color-door-error: #f2a0a0;
+  --color-door-success: #d8b56a;
+
+  --radius-mark: 4px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-dialog: 16px;
+
+  --container-reading: 720px;
+  --container-workspace: 1200px;
+  --container-dialog-sm: 400px;
+  --container-dialog-md: 520px;
+  --container-dialog-lg: 640px;
+}
+
+/* z-index ladder (§8.19). Inline, so z-modal is the number itself. */
+@theme inline {
+  --z-index-sticky: 10;
+  --z-index-shell: 30;
+  --z-index-fab: 40;
+  --z-index-popover: 50;
+  --z-index-modal: 60;
+  --z-index-toast: 70;
+  --z-index-tooltip: 80;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --control-sm: 32px;
+    --control-md: 36px;
+    --control-lg: 44px;
+    --row-menu: 32px;
+    --row-1: 40px;
+    --row-2: 56px;
+    --icon: 16px;
+    --gutter: 32px;
+    --fab-clearance: 96px;
+    --sidebar-expanded: 240px;
+    --sidebar-collapsed: 64px;
+    --elevation-1: 0 1px 2px rgb(9 9 11 / 0.08);
+    --elevation-2: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -8px rgb(9 9 11 / 0.18);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --dur-1: 120ms;
+    --dur-2: 160ms;
+    --dur-3: 200ms;
+    --dur-4: 240ms;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --color-page: #0b0b0c;
+    --color-raised: #141416;
+    --color-sunken: #070708;
+    --color-overlay: #1b1b1e;
+    --color-field: #101012;
+    --color-hover: #1e1e22;
+    --color-selected: #25252a;
+    --color-ink: #f4f4f5;
+    --color-ink-2: #a8a8b1;
+    --color-ink-3: #8e8e97;
+    --color-ink-disabled: #8e8e97;
+    --color-ink-inverse: #0b0b0c;
+    --color-line: #2a2a2e;
+    --color-line-strong: #3a3a40;
+    --color-edge: #717179;
+    --color-accent: #8b93f8;
+    --color-accent-hover: #a5acfa;
+    --color-accent-tint: #1f2040;
+    --color-on-accent: #0b0b0c;
+    --color-primary-hover: #d4d4d8;
+    --color-primary-pressed: #a8a8b1;
+    --color-positive: #4cc38a;
+    --color-positive-tint: #11261c;
+    --color-negative: #f47a7a;
+    --color-negative-tint: #2c1515;
+    --color-warning: #e8b04e;
+    --color-warning-tint: #2a2010;
+    --color-info: #6cb6e6;
+    --color-info-tint: #0f2230;
+    --color-danger: #d42a2a;
+    --color-danger-hover: #b82222;
+    --color-on-danger: #ffffff;
+    --color-scrim: rgb(0 0 0 / 0.6);
+    --color-chart-1: #8b93f8;
+    --color-chart-2: #3fbfb0;
+    --color-chart-3: #e0a43c;
+    --color-chart-4: #ec7aa0;
+    --color-chart-5: #94a3b8;
+    --color-chart-other: #717179;
+    --elevation-1: 0 1px 2px rgb(0 0 0 / 0.5);
+    --elevation-2: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -8px rgb(0 0 0 / 0.7);
+  }
+
+  /* Touch: phones, and any device whose primary pointer is coarse. */
+  @media (width < 48rem), (pointer: coarse) {
+    :root {
+      --text-body: 15px;
+      --text-body--line-height: 22px;
+      --text-field: 16px;
+      --text-field--line-height: 22px;
+      --text-section: 17px;
+      --text-section--line-height: 22px;
+      --control-sm: 44px;
+      --control-md: 44px;
+      --control-lg: 48px;
+      --row-menu: 44px;
+      --row-1: 48px;
+      --row-2: 64px;
+      --icon: 20px;
+    }
+  }
+  @media (width < 48rem) {
+    :root {
+      --gutter: 16px;
+    }
+  }
+  @media (48rem <= width < 64rem) {
+    :root {
+      --gutter: 24px;
+    }
+  }
+
+  /* The new scale, switched on per subtree while pages migrate (§4.2).
+     Every app/ui component root and every <Page> carries `ds`. */
+  .ds {
+    --spacing: 4px;
+    --text-xs: 12px;
+    --text-xs--line-height: 16px;
+    --text-sm: 13px;
+    --text-sm--line-height: 18px;
+    --text-base: var(--text-body);
+    --text-base--line-height: var(--text-body--line-height);
+    --text-lg: 17px;
+    --text-lg--line-height: 22px;
+    --text-xl: 17px;
+    --text-xl--line-height: 22px;
+    --text-2xl: 22px;
+    --text-2xl--line-height: 28px;
+    --text-3xl: 28px;
+    --text-3xl--line-height: 34px;
+    --text-4xl: 28px;
+    --text-4xl--line-height: 34px;
+    --radius-xs: 4px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-2xl: 12px;
+    --radius-3xl: 16px;
+    --container-3xs: 256px;
+    --container-2xs: 288px;
+    --container-xs: 320px;
+    --container-sm: 384px;
+    --container-md: 448px;
+    --container-lg: 512px;
+    --container-xl: 576px;
+    --container-2xl: 672px;
+    --container-3xl: 768px;
+    --container-4xl: 896px;
+    --container-5xl: 1024px;
+    --container-6xl: 1152px;
+    --container-7xl: 1280px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --dur-1: 100ms;
+      --dur-2: 100ms;
+      --dur-3: 100ms;
+      --dur-4: 100ms;
+    }
+  }
+}
+
+/* One focus ring, everywhere (§2.2, §8.0). Outside the layers on purpose:
+   unlayered rules outrank every utility, so a legacy `focus:outline-none`
+   can't remove it (the ring is never removed). A component that needs the
+   ring inset writes `outline-offset-[-2px]!`. */
+:where(a, button, input, select, textarea, summary, [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+tr[tabindex]:focus-visible {
+  outline-offset: -2px;
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
-  /* Base text scaled down 15% (14px → 11.9px); rem-based sizes follow — Tailwind's spacing too, so h-11 is
-     33px, not 44. Where a size must be exact (tap targets on phones), write it in px: h-[44px]. */
+  /* The root stays 11.9px until every area has moved into `ds` (§4.4, §14.8);
+     the system's own sizes are px tokens and don't depend on it. Legacy
+     rem sizes follow it, so h-11 there is 33px, not 44. */
   font-size: 11.9px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-feature-settings: normal;
-  /* Let the browser pick sensible form-control / scrollbar defaults for both
-     schemes. Hard-coding color-scheme: dark (even via prefers-color-scheme)
-     causes light-mode text to inherit near-white defaults on dark-OS users. */
-  color-scheme: light dark;
+  /* The page behind the app follows the app's theme, not the phone's: Safari
+     tints its status bar and bottom toolbar from this colour. */
+  background-color: var(--color-page);
 }
 
-/* The page behind the app follows the app's theme, not the phone's: Safari
-   tints its status bar and bottom toolbar from this colour, so a dark app
-   on a light-mode phone was framed by white bars. */
-html,
-html body {
-  background-color: #000;
+/* ── Overlay plumbing (§8.19, §14.4; app/ui/overlay.tsx) ──────────────── */
+
+/* The one portal root (app/ui/portal.ts). It sits above the page, so inside
+   it overlays stack in the order they open: a menu opened from a dialog is
+   above the dialog. 1000 keeps it over the legacy layers (z-[60] to z-[300])
+   until the flip; then it takes the ladder's `popover` value. */
+[data-overlay-root] {
+  position: relative;
+  z-index: 1000;
 }
-html.light,
-html.light body {
-  background-color: rgb(249 250 251);
+
+/* The Ask button and any floating bar step aside while a modal is open, the
+   on-screen keyboard is up, or a selection bar is showing. */
+html[data-overlay="modal"] :is(.ask-fab, [data-floating]),
+html[data-keyboard="open"] :is(.ask-fab, [data-floating]),
+html[data-selection] .ask-fab {
+  visibility: hidden;
 }
+
+/* Motion (§7). Entrances sit on the overlay's own wrapper, never on a control. */
+@keyframes ds-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ds-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ds-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes ds-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes ds-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@keyframes ds-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes ds-sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes ds-right-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes ds-right-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes ds-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes ds-breathe {
+  50% {
+    opacity: 0.6;
+  }
+}
+@keyframes ds-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ds-scrim-in {
+  animation: ds-fade-in var(--dur-3) var(--ease-out) both;
+}
+.ds-scrim-out {
+  animation: ds-fade-out var(--dur-1) var(--ease-in) both;
+}
+.ds-menu-in {
+  animation: ds-drop-in var(--dur-2) var(--ease-out) both;
+}
+.ds-menu-in-up {
+  animation: ds-rise-in var(--dur-2) var(--ease-out) both;
+}
+.ds-menu-out {
+  animation: ds-fade-out var(--dur-1) var(--ease-in) both;
+}
+.ds-dialog-in {
+  animation: ds-scale-in var(--dur-3) var(--ease-out) both;
+}
+.ds-dialog-out {
+  animation: ds-fade-out var(--dur-1) var(--ease-in) both;
+}
+.ds-sheet-in {
+  animation: ds-sheet-in var(--dur-4) var(--ease-out) both;
+}
+.ds-sheet-out {
+  animation: ds-sheet-out var(--dur-3) var(--ease-in) both;
+}
+.ds-side-in {
+  animation: ds-right-in var(--dur-4) var(--ease-out) both;
+}
+.ds-side-out {
+  animation: ds-right-out var(--dur-3) var(--ease-in) both;
+}
+.ds-full-in {
+  animation: ds-rise-in var(--dur-4) var(--ease-out) both;
+}
+.ds-toast-in {
+  animation: ds-toast-in var(--dur-3) var(--ease-out) both;
+}
+.ds-toast-out {
+  animation: ds-fade-out var(--dur-2) var(--ease-in) both;
+}
+.ds-skeleton {
+  animation: ds-breathe 1.6s var(--ease-standard) infinite;
+}
+.ds-spinner {
+  animation: ds-turn 800ms linear infinite;
+}
+.ds-reveal {
+  animation: ds-fade-in var(--dur-3) var(--ease-standard) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.ds-menu-in, .ds-menu-in-up, .ds-dialog-in, .ds-sheet-in, .ds-side-in, .ds-full-in, .ds-toast-in, .ds-scrim-in, .ds-reveal) {
+    animation: ds-fade-in 100ms linear both;
+  }
+  :is(.ds-menu-out, .ds-dialog-out, .ds-sheet-out, .ds-side-out, .ds-toast-out, .ds-scrim-out) {
+    animation: ds-fade-out 100ms linear both;
+  }
+  .ds-skeleton {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+
+/* Toasts sit 24px up on desktop; on phones above the Ask button's row (16 + 48 + 12, §8.16). */
+:root {
+  --toast-bottom: 24px;
+}
+@media (width < 48rem) {
+  :root {
+    --toast-bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+}
+
+/* List hairlines start at the title's left edge and run to the right edge (§8.9). */
+.ds-list > li + li .ds-row-body,
+.ds-list > li + li > .ds-row-tail {
+  border-top: 1px solid var(--color-line);
+}
+
+/* A wide table's corner cell stays above the other sticky heads as rows and columns scroll under it. */
+.ds-table-corner {
+  z-index: 11;
+}
+
+/* Native search decorations: SearchField draws its own clear button. */
+.ds input[type="search"]::-webkit-search-cancel-button,
+.ds input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Legacy. Everything below predates the design system; it goes as the
+   areas migrate, and the rescue layer goes at the flip (§14.8).
+   ══════════════════════════════════════════════════════════════════════ */
 
 /* ──────────────────────────────────────────────────────────────────────
    Global light-mode rescue layer.
@@ -45,382 +549,117 @@ html.light body {
    only when html.light is present.
    ────────────────────────────────────────────────────────────────────── */
 html.light {
+  /* A region that declares itself dark (data-theme="dark": the door, the media
+     viewer, the signing page) is never repainted (§14.1). */
   /* Severity / status text — make them readable on white */
-  .text-red-400 {
+  .text-red-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(220 38 38);
   } /* red-600 */
-  .text-red-300 {
+  .text-red-300:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(185 28 28);
   } /* red-700 */
-  .text-rose-400 {
+  .text-rose-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(225 29 72);
   } /* rose-600 */
-  .text-amber-400 {
+  .text-amber-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(180 83 9);
   } /* amber-700 */
-  .text-green-400 {
+  .text-green-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(5 150 105);
   } /* emerald-600 */
-  .text-green-300 {
+  .text-green-300:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(4 120 87);
   } /* emerald-700 */
-  .text-emerald-400 {
+  .text-emerald-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(5 150 105);
   }
-  .text-emerald-300 {
+  .text-emerald-300:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(4 120 87);
   }
-  .text-blue-400 {
+  .text-blue-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(37 99 235);
   } /* blue-600 */
-  .text-blue-300 {
+  .text-blue-300:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(29 78 216);
   } /* blue-700 */
-  .text-indigo-400 {
+  .text-indigo-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(79 70 229);
   } /* indigo-600 */
-  .text-purple-400 {
+  .text-purple-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(147 51 234);
   } /* purple-600 */
 
   /* "Near-white" content text that bleeds on a white page */
-  .text-gray-400 {
+  .text-gray-400:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(75 85 99);
   } /* gray-600 */
-  .text-gray-500 {
+  .text-gray-500:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(55 65 81);
   } /* gray-700 */
-  .text-gray-600 {
+  .text-gray-600:not([data-theme="dark"], [data-theme="dark"] *) {
     color: rgb(31 41 55);
   } /* gray-800 */
 
   /* Translucent colored backgrounds used as chips / banners */
-  .bg-red-500\/10,
-  .bg-red-500\/15 {
+  .bg-red-500\/10:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-red-500\/15:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(254 226 226);
   } /* red-100 */
-  .bg-rose-500\/10 {
+  .bg-rose-500\/10:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(255 228 230);
   }
 
-  .bg-amber-500\/10,
-  .bg-amber-500\/20 {
+  .bg-amber-500\/10:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-amber-500\/20:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(254 243 199);
   }
-  .bg-orange-500\/10 {
+  .bg-orange-500\/10:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(255 237 213);
   }
 
-  .bg-emerald-500\/10,
-  .bg-emerald-500\/20 {
+  .bg-emerald-500\/10:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-emerald-500\/20:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(209 250 229);
   }
 
-  .bg-indigo-500\/10 {
+  .bg-indigo-500\/10:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(224 231 255);
   }
-  .bg-purple-500\/10 {
+  .bg-purple-500\/10:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(243 232 255);
   }
-  .bg-teal-500\/10 {
+  .bg-teal-500\/10:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(204 251 241);
   }
 
   /* Colored borders that were sized for dark surfaces */
-  .border-red-500\/20 {
+  .border-red-500\/20:not([data-theme="dark"], [data-theme="dark"] *) {
     border-color: rgb(252 165 165);
   } /* red-300 */
 
   /* "white-over-dark" tokens that vanish on a white surface */
-  .bg-white\/5,
-  .bg-white\/10,
-  .bg-white\/\[0\.02\],
-  .bg-white\/\[0\.03\],
-  .bg-white\/\[0\.04\] {
+  .bg-white\/5:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-white\/10:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-white\/\[0\.02\]:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-white\/\[0\.03\]:not([data-theme="dark"], [data-theme="dark"] *),
+  .bg-white\/\[0\.04\]:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(249 250 251);
   } /* gray-50 */
 
-  .border-white\/5,
-  .border-white\/10,
-  .border-white\/20 {
+  .border-white\/5:not([data-theme="dark"], [data-theme="dark"] *),
+  .border-white\/10:not([data-theme="dark"], [data-theme="dark"] *),
+  .border-white\/20:not([data-theme="dark"], [data-theme="dark"] *) {
     border-color: rgb(229 231 235);
   } /* gray-200 */
 
-  .divide-white\/5 > :not([hidden]) ~ :not([hidden]) {
+  .divide-white\/5 > :not([hidden]) ~ :not([hidden]):not([data-theme="dark"], [data-theme="dark"] *) {
     border-color: rgb(229 231 235);
   }
 
-  .hover\:bg-white\/5:hover,
-  .hover\:bg-white\/10:hover {
+  .hover\:bg-white\/5:hover:not([data-theme="dark"], [data-theme="dark"] *),
+  .hover\:bg-white\/10:hover:not([data-theme="dark"], [data-theme="dark"] *) {
     background-color: rgb(243 244 246);
   }
-}
-
-/* ──────────────────────────────────────────────────────────────────────
-   WADR Profit & Loss statement (Finance page) — monochrome "ledger" look.
-   All tokens/classes scoped under .pnl-statement; see WADR P&L Style Guide.
-   ────────────────────────────────────────────────────────────────────── */
-.pnl-statement {
-  --pnl-white: #ffffff;
-  --pnl-black: #111111;
-  --pnl-gray-50: #fafafa;
-  --pnl-gray-100: #f5f5f5;
-  --pnl-gray-200: #e5e5e5;
-  --pnl-gray-300: #d4d4d4;
-  --pnl-gray-400: #a3a3a3;
-  --pnl-gray-500: #737373;
-  --pnl-gray-900: #171717;
-  --pnl-text-primary: var(--pnl-gray-900);
-  --pnl-text-secondary: var(--pnl-gray-500);
-  --pnl-text-muted: var(--pnl-gray-400);
-  --pnl-amber: #f59e0b;
-  --pnl-radius-xs: 6px;
-  --pnl-font-heading: "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
-  --pnl-font-body: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--pnl-white);
-  color: var(--pnl-text-primary);
-  font-family: var(--pnl-font-body);
-  border: 1px solid var(--pnl-gray-200);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.pnl-statement .finance-card-title {
-  font-family: var(--pnl-font-heading);
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--pnl-text-primary);
-  margin: 0;
-}
-
-.pnl-statement .pnl-row-header,
-.pnl-statement .pnl-child-row,
-.pnl-statement .pnl-subchild-row,
-.pnl-statement .pnl-row-section,
-.pnl-statement .pnl-row-subtotal,
-.pnl-statement .pnl-row-net {
-  display: grid;
-  grid-template-columns: 1fr 160px 120px;
-  align-items: center;
-}
-
-.pnl-statement .pnl-row-amount,
-.pnl-statement .pnl-row-pct {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.pnl-statement .pnl-row-header {
-  padding: 10px 20px;
-  border-bottom: 2px solid var(--pnl-gray-200);
-}
-.pnl-statement .pnl-row-header span {
-  font-family: var(--pnl-font-body);
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--pnl-text-muted);
-}
-
-.pnl-statement .pnl-row-section {
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--pnl-gray-200);
-}
-.pnl-statement .pnl-row-section .pnl-row-label,
-.pnl-statement .pnl-row-section .pnl-row-amount {
-  font-family: var(--pnl-font-heading);
-  font-weight: 700;
-  font-size: 1.05rem;
-  color: var(--pnl-text-primary);
-}
-.pnl-statement .pnl-row-section .pnl-row-pct {
-  font-size: 0.85rem;
-  color: var(--pnl-text-secondary);
-}
-
-.pnl-statement .pnl-child-row {
-  padding: 12px 20px 12px 52px;
-  border-bottom: 1px solid var(--pnl-gray-50);
-}
-.pnl-statement .pnl-child-row .pnl-row-label {
-  font-size: 0.88rem;
-  color: var(--pnl-text-primary);
-  font-weight: 400;
-}
-.pnl-statement .pnl-child-row .pnl-row-amount {
-  font-size: 0.88rem;
-  font-weight: 500;
-  color: var(--pnl-text-primary);
-  padding: 4px 8px;
-  border-radius: var(--pnl-radius-xs);
-}
-.pnl-statement .pnl-child-row .pnl-row-amount.pnl-clickable {
-  cursor: pointer;
-}
-.pnl-statement .pnl-child-row .pnl-row-amount.pnl-clickable:hover {
-  background: var(--pnl-gray-200);
-}
-.pnl-statement .pnl-child-row .pnl-row-pct {
-  font-size: 0.8rem;
-  color: var(--pnl-text-muted);
-}
-
-.pnl-statement .pnl-subchild-row {
-  padding: 10px 20px 10px 76px;
-  border-bottom: 1px solid var(--pnl-gray-50);
-}
-.pnl-statement .pnl-subchild-row .pnl-row-label {
-  font-size: 0.82rem;
-  color: var(--pnl-text-secondary);
-  font-weight: 400;
-  padding-left: 4px;
-  border-left: 2px solid var(--pnl-gray-200);
-}
-.pnl-statement .pnl-subchild-row .pnl-row-amount {
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--pnl-text-primary);
-}
-.pnl-statement .pnl-subchild-row .pnl-row-pct {
-  font-size: 0.75rem;
-  color: var(--pnl-text-muted);
-}
-
-.pnl-statement .pnl-row-subtotal {
-  padding: 14px 20px;
-  background: var(--pnl-gray-50);
-  border-bottom: 1px solid var(--pnl-gray-200);
-}
-.pnl-statement .pnl-row-subtotal .pnl-row-label,
-.pnl-statement .pnl-row-subtotal .pnl-row-amount {
-  font-family: var(--pnl-font-heading);
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--pnl-text-primary);
-}
-.pnl-statement .pnl-row-subtotal .pnl-row-pct {
-  font-size: 0.85rem;
-  color: var(--pnl-text-secondary);
-}
-
-.pnl-statement .pnl-row-net {
-  padding: 20px;
-  background: var(--pnl-gray-50);
-  border-top: 2px solid var(--pnl-black);
-  border-bottom: none;
-}
-.pnl-statement .pnl-row-net .pnl-row-label,
-.pnl-statement .pnl-row-net .pnl-row-amount {
-  font-family: var(--pnl-font-heading);
-  font-weight: 700;
-  font-size: 1.15rem;
-  color: var(--pnl-text-primary);
-}
-.pnl-statement .pnl-row-net .pnl-row-pct {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--pnl-text-secondary);
-}
-
-.pnl-statement .pnl-mtable {
-  width: 100%;
-  border-collapse: collapse;
-}
-.pnl-statement .pnl-mhead {
-  font-family: var(--pnl-font-body);
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--pnl-text-muted);
-  padding: 8px;
-  border-bottom: 2px solid var(--pnl-gray-200);
-}
-.pnl-statement .pnl-mcol-label {
-  font-family: var(--pnl-font-body);
-  font-size: 0.85rem;
-  color: var(--pnl-text-primary);
-  white-space: nowrap;
-}
-.pnl-statement .pnl-mcol {
-  text-align: right;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--pnl-text-primary);
-  padding: 6px 8px;
-}
-.pnl-statement .pnl-mcol-total {
-  text-align: right;
-  font-size: 0.82rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  border-left: 1px solid var(--pnl-gray-200);
-  padding: 6px 8px 6px 10px;
-  font-family: var(--pnl-font-heading);
-  color: var(--pnl-text-primary);
-}
-.pnl-statement .pnl-mrow-section td {
-  font-family: var(--pnl-font-heading);
-  font-weight: 700;
-  font-size: 0.95rem;
-  padding-top: 14px;
-  color: var(--pnl-text-primary);
-}
-.pnl-statement .pnl-mrow-subtotal td {
-  background: var(--pnl-gray-50);
-  font-family: var(--pnl-font-heading);
-  font-weight: 600;
-}
-.pnl-statement .pnl-mrow-net td {
-  background: var(--pnl-gray-50);
-  border-top: 2px solid var(--pnl-black);
-  font-family: var(--pnl-font-heading);
-  font-weight: 700;
-  font-size: 1rem;
-}
-.pnl-statement .pnl-mcol-current {
-  animation: pnlCurrentPulse 2.5s ease-in-out infinite;
-  border-radius: var(--pnl-radius-xs);
-}
-.pnl-statement .pnl-amber-dot {
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--pnl-amber);
-  margin-left: 5px;
-  vertical-align: middle;
-  animation: pnlCurrentPulse 2.5s ease-in-out infinite;
-}
-.pnl-statement .pnl-divider {
-  height: 1px;
-  background: var(--pnl-gray-300);
-  margin: 4px 20px;
-}
-@keyframes pnlCurrentPulse {
-  0%,
-  100% {
-    background: rgba(245, 158, 11, 0.08);
-  }
-  50% {
-    background: rgba(245, 158, 11, 0.22);
-  }
-}
-
-/* Dark ledger variant — same type ramp, inverted palette (amber accent kept).
-   Public pages stay light per the guide; the app's Finance page follows theme. */
-.pnl-statement.pnl-dark {
-  --pnl-white: #0d0d0d;
-  --pnl-black: #e5e5e5;
-  --pnl-gray-50: #1a1a1a;
-  --pnl-gray-100: #1f1f1f;
-  --pnl-gray-200: #2b2b2b;
-  --pnl-gray-300: #3a3a3a;
-  --pnl-gray-400: #8a8a8a;
-  --pnl-gray-500: #b4b4b4;
-  --pnl-gray-900: #f4f4f4;
-  background: var(--pnl-white);
-  border-color: var(--pnl-gray-200);
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -2769,33 +3008,6 @@ html.light .app-aurora {
 .books-col-shadow-dark td.left-0 {
   box-shadow: 10px 0 12px -10px rgba(0, 0, 0, 0.7);
   clip-path: inset(0 -14px 0 0);
-}
-
-/* Keyboard focus is visible without polluting pointer clicks. */
-button:focus-visible,
-a:focus-visible,
-select:focus-visible,
-[role="option"]:focus-visible,
-tr[tabindex]:focus-visible {
-  outline: 2px solid rgba(16, 185, 129, 0.6);
-  outline-offset: 2px;
-}
-tr[tabindex]:focus-visible {
-  outline-offset: -2px;
-}
-input:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid rgba(16, 185, 129, 0.6);
-  outline-offset: 2px;
-}
-:where(button, a, select, input, textarea, [role="option"]) {
-  outline-color: rgba(16, 185, 129, 0.6);
-}
-html.light :where(button, a, select, input, textarea, [role="option"]) {
-  outline-color: rgb(5 150 105);
-}
-html.light :is(button, a, select, input, textarea, [role="option"]):focus-visible {
-  outline-color: rgb(5 150 105);
 }
 
 /* Print: the statement alone, ink-friendly. */

@@ -1,8 +1,12 @@
-/**
- * Currency formatting shared across the Treasury screens.
- *  - money:  null-safe currency, an em dash for empty balances
- *  - signed: an explicit +/− sign, for changes and movements
- */
-export const money = (n: number | null | undefined, currency = "USD"): string => (n == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n));
+import { money as format } from "./ui/format";
 
-export const signed = (n: number, currency = "USD"): string => `${n >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Math.abs(n))}`;
+/**
+ * Currency formatting shared across the Treasury screens, now through the
+ * design system's formatter (app/ui/format.ts, docs/DESIGN.md §10) until
+ * those screens call it directly:
+ *  - money:  cents with a true minus; an em dash when there is no balance
+ *  - signed: an explicit + or − sign, for changes and movements
+ */
+export const money = (n: number | null | undefined, currency = "USD"): string => (n == null ? "—" : format(n, { currency }));
+
+export const signed = (n: number, currency = "USD"): string => format(n, { currency, sign: "always" });

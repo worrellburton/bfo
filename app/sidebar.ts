@@ -26,8 +26,10 @@ export const SIDEBAR_BOOT_SCRIPT = `
       ? localStorage.getItem("bfo-mail-theme") !== "dark"
       : localStorage.getItem("bfo-theme") === "light";
     document.documentElement.classList.toggle("light", light);
+    // The design system's tokens follow data-theme (docs/DESIGN.md §2.1).
+    document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", light ? "#f9fafb" : "#000000");
+    if (meta) meta.setAttribute("content", light ? "#f7f7f8" : "#0b0b0c");
   } catch (e) {}
   ${APPEARANCE_BOOT}
 })();

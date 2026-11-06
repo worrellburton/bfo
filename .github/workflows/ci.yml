@@ -1,5 +1,5 @@
 # Checks every pull request and every push to main: types, lint, formatting,
-# tests with a coverage floor, a production audit of the dependencies, the
+# the design check, tests with a coverage floor, a production audit of the dependencies, the
 # build, and the app in a real browser (e2e/run.cjs). Same Node and cache
 # setup as ios-testflight.yml. deploy-check.yml runs after a merge.
 name: CI
@@ -30,6 +30,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      # The design system (docs/DESIGN.md §14.7): fails only when a file that
+      # has moved onto it (imports Page from app/ui) brings legacy styling back.
+      - run: npm run check:design -- --quiet
 
       # vitest with the coverage floor from vite.config.ts (the run fails under it).
       - run: npm run test:coverage

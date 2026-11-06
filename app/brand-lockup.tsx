@@ -9,8 +9,11 @@ import type { BrandFont, Finish } from "./brand";
 
 const loaded = new Set<string>();
 
+/** Served from public/fonts (app.css @font-face), so never fetched from Google. */
+const SELF_HOSTED = new Set(["Playfair Display", "Geist", "Geist Mono"]);
+
 export function loadBrandFont(font: BrandFont) {
-  if (typeof document === "undefined" || loaded.has(font.css)) return;
+  if (typeof document === "undefined" || loaded.has(font.css) || SELF_HOSTED.has(font.family)) return;
   loaded.add(font.css);
   const link = document.createElement("link");
   link.rel = "stylesheet";

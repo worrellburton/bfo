@@ -2614,16 +2614,16 @@ function ticketTexture(title: string, name: string): THREE.Texture {
   ctx.setLineDash([]);
   ctx.textAlign = "center";
   ctx.fillStyle = "#8c2a2f";
-  ctx.font = "700 26px Inter, system-ui, sans-serif";
+  ctx.font = "700 26px Geist, system-ui, sans-serif";
   ctx.fillText("ADMIT ONE", 256, 62);
   ctx.fillStyle = "#2e0f14";
   ctx.font = '700 36px "Playfair Display", Georgia, serif';
   ctx.fillText(title, 256, 118, 450);
-  ctx.font = "500 24px Inter, system-ui, sans-serif";
+  ctx.font = "500 24px Geist, system-ui, sans-serif";
   ctx.fillStyle = "rgba(46,15,20,0.75)";
   ctx.fillText(`Row 2, aisle  ·  ${name}`, 256, 170, 450);
   ctx.fillStyle = "#8c2a2f";
-  ctx.font = "600 16px Inter, system-ui, sans-serif";
+  ctx.font = "600 16px Geist, system-ui, sans-serif";
   ctx.fillText("ANYTHING IS POSSIBLE", 256, 202);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -2644,7 +2644,7 @@ function labelTexture(name: string): THREE.Texture {
   ctx.stroke();
   ctx.textAlign = "center";
   ctx.fillStyle = "#d4af37";
-  ctx.font = "600 30px Inter, system-ui, sans-serif";
+  ctx.font = "600 30px Geist, system-ui, sans-serif";
   ctx.fillText("RESERVED FOR", 320, 66);
   ctx.fillStyle = "#f4ede0";
   ctx.font = '700 64px "Playfair Display", Georgia, serif';

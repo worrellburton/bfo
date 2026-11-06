@@ -36,7 +36,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
   useBeforePaint(() => {
     document.documentElement.classList.toggle("light", effective === "light");
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", effective === "light" ? "#f9fafb" : "#000000");
+    // The design system's tokens follow data-theme (docs/DESIGN.md §2.1); the class stays for the rescue layer.
+    document.documentElement.dataset.theme = effective;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", effective === "light" ? "#f7f7f8" : "#0b0b0c");
     statusBarFor(effective === "dark");
   }, [effective]);
 

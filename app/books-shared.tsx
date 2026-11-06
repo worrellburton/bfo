@@ -1,7 +1,10 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { authFetch } from "./auth";
+import { ConfirmView } from "./ui/overlay";
+import { ListboxPanel } from "./ui/select";
+import { useListbox } from "./ui/select-shell";
 
 /** Full-detail Books transaction, as the API returns it. */
 export type Txn = {
@@ -848,12 +851,12 @@ export function useFocusTrap(ref: React.RefObject<HTMLElement | null>, active: b
 }
 
 /**
- * A fully custom dropdown — a rounded pill trigger and a themed popover list
- * with a checkmark on the current choice. Rendered through a portal with fixed
- * positioning so it escapes any scroll box (a native <select>'s option list
- * can't be styled, and an absolutely-positioned menu would be clipped).
- * Keyboard: arrows open and move, Enter chooses, Escape closes; focus returns
- * to the trigger. Below 640px it opens as a bottom sheet.
+ * A dropdown on a rounded pill trigger, with a check on the current choice.
+ * The pill is Books' own; the list it opens is the design system's
+ * (app/ui ListboxPanel: an anchored panel on desktop with search past ten
+ * options, a sheet on touch, through the one overlay manager). Keyboard:
+ * arrows open and move, Enter chooses, Escape closes; focus returns to the
+ * trigger.
  */
 export function Menu({
   value,
@@ -895,179 +898,10 @@ export function Menu({
   /** sm pills that must be thumb-sized below lg (card faces, phone editors). */
   touch?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [closing, setClosing] = useState(false);
-  // On phones the menu opens as a bottom sheet instead of an anchored popover.
-  const [sheet, setSheet] = useState(false);
-  const smUp = useMedia("(min-width: 640px)");
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  // Anchored to the trigger's top-left; `bottom` instead of `top` when the
-  // panel flips above so its lower edge hugs the trigger whatever its height.
-  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number; width: number; above: boolean } | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const closeTimer = useRef<number | null>(null);
-  const [filter, setFilter] = useState("");
-  const [hi, setHi] = useState(-1);
-  const listId = useId();
-  const titleId = `${listId}-title`;
-  const { t1, t2, t3 } = tiers(isDark);
-
-  const currentIndex = options.findIndex((o) => o.value === value);
-  const current = currentIndex >= 0 ? options[currentIndex] : undefined;
+  const shell = useListbox();
+  const open = shell.open;
+  const current = options.find((o) => o.value === value);
   const text = current?.short ?? current?.label ?? placeholder ?? options[0]?.short ?? options[0]?.label ?? "—";
-
-  const searchable = options.length > 10;
-  // Grouped lists (the chart of accounts) open as one compact scrolling column
-  // with sticky group heads — never a viewport-wide panel.
-  const grouped = options.some((o) => o.group);
-  // Short lists (Type, Period, Loan) take a 12rem floor so a three-item panel
-  // isn't 4× its trigger with the ✓ 150px from the label; long labels (the
-  // entity list) and searchable lists keep the 224px floor.
-  const longLabels = useMemo(() => options.some((o) => (o.short ?? o.label).length > 18), [options]);
-  // When only some options carry an icon (the entity list: "All entities" and
-  // "Unmapped" have none) every row gets a fixed slot so the labels share an x.
-  const iconSlot = useMemo(() => options.some((o) => o.icon) && options.some((o) => !o.icon), [options]);
-  const needle = filter.trim().toLowerCase();
-  const shown = needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
-  const groupCount = useMemo(() => new Set(options.map((o) => o.group ?? "Other")).size, [options]);
-
-  useEffect(() => {
-    if (!open) {
-      setFilter("");
-      setHi(-1);
-      setBox(null);
-    }
-  }, [open]);
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    },
-    [],
-  );
-
-  // Keep the keyboard highlight (or, on open, the current choice) in view.
-  useEffect(() => {
-    if (!open) return;
-    const el = listRef.current?.querySelector<HTMLElement>(hi >= 0 ? `[data-i="${hi}"]` : "[aria-selected='true']");
-    el?.scrollIntoView({ block: "nearest" });
-  }, [open, hi]);
-
-  useFocusTrap(panelRef, open && sheet, { initial: "container" });
-
-  function finishClose() {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-    setClosing(false);
-    setOpen(false);
-  }
-  // The exit animation plays before unmount; listeners come off at once and
-  // clicks are ignored meanwhile. Focus goes back to the trigger for every
-  // close the keyboard could have caused — not for a click elsewhere.
-  function requestClose(refocus: boolean) {
-    if (!open || closing) return;
-    setClosing(true);
-    if (refocus) btnRef.current?.focus({ preventScroll: true });
-    closeTimer.current = window.setTimeout(finishClose, 200);
-  }
-  function openMenu(seed = -1) {
-    if (closing || disabled) return;
-    setSheet(!smUp);
-    setHi(seed);
-    setOpen(true);
-  }
-  function choose(o: Option) {
-    if (closing) return;
-    onChange(o.value);
-    requestClose(true);
-  }
-
-  // Shared by the trigger (focus never left it) and the panel (search input).
-  function navKey(e: React.KeyboardEvent): boolean {
-    if (e.key === "ArrowDown") setHi((h) => Math.min(h + 1, shown.length - 1));
-    else if (e.key === "ArrowUp") setHi((h) => Math.max(h - 1, 0));
-    else if (e.key === "Home") setHi(0);
-    else if (e.key === "End") setHi(shown.length - 1);
-    else if (e.key === "Enter") {
-      const target = shown[hi] ?? (needle ? shown[0] : undefined);
-      if (target) choose(target);
-      else requestClose(true);
-    } else if (e.key === "Escape") requestClose(true);
-    else return false;
-    e.preventDefault();
-    return true;
-  }
-  function onTriggerKey(e: React.KeyboardEvent) {
-    if (disabled) return;
-    if (!open) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        openMenu(currentIndex);
-      }
-      return;
-    }
-    navKey(e);
-  }
-
-  useLayoutEffect(() => {
-    if (!open || sheet || closing) return;
-    function place() {
-      const el = btnRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      // Grouped lists are a fixed w-72 column; other lists match the trigger
-      // above a floor (12rem for short lists, 224px for long labels or a
-      // search field). Either way the panel never exceeds the viewport − 16px.
-      const floor = grouped ? 18 * rem : searchable || longLabels ? 224 : 12 * rem;
-      const width = Math.min(window.innerWidth - 16, Math.max(r.width, floor));
-      // Estimated height (rows h-8, group heads ≈ 2.2rem, search 3.5rem, p-1)
-      // capped at 60vh — only used to decide whether to flip above.
-      const menuH = Math.min(window.innerHeight * 0.6, options.length * 2 * rem + (grouped ? groupCount * 2.2 * rem : 0) + (options.length > 10 ? 3.5 * rem : 0) + 8);
-      const spaceBelow = window.innerHeight - r.bottom;
-      const above = spaceBelow < menuH + 12 && r.top > spaceBelow;
-      setBox({
-        left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)),
-        ...(above ? { bottom: window.innerHeight - r.top + 0.5 * rem } : { top: r.bottom + 0.5 * rem }),
-        width,
-        above,
-      });
-    }
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open, sheet, closing, options.length, grouped, groupCount, searchable, longLabels]);
-
-  useEffect(() => {
-    if (!open || closing) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
-      requestClose(false);
-    }
-    // preventDefault marks the Escape as consumed: the batch bar (which also
-    // listens on document) leaves the selection alone when a layer above it
-    // has already taken the key.
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        requestClose(true);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, closing]);
 
   // Three control heights: md toolbar (h-[40px] sm:h-9), sm in-row (h-7),
   // sm+touch (h-8 below lg with a 40px hit box, h-7 at lg). Height never
@@ -1108,28 +942,22 @@ export function Menu({
   // always show the glyph.
   const glyph = chevron === "hover" && !open ? "opacity-50 lg:opacity-0 lg:group-hover:opacity-50 lg:group-hover/menu:opacity-50 lg:group-focus-visible/menu:opacity-50" : "opacity-50";
 
-  const optionBase = `w-full flex items-center rounded-lg text-left cursor-pointer transition-colors ${sheet ? "min-h-[44px] px-3 gap-3 text-base" : "h-8 px-2 gap-2 text-xs"}`;
-  // Group heads stick to the top of the scrolling list in both the popover
-  // and the sheet, on the surface colour so rows slide underneath.
-  const groupHead = `${LABEL} ${t2} px-2 pt-2 pb-1 sticky top-0 z-10 ${sheet ? (isDark ? "bg-[#161616]/95" : "bg-white/95") : isDark ? "bg-[#161616]" : "bg-white"}`;
-  const enter = sheet ? "sheet-in" : box?.above ? "pop-in-up origin-bottom" : "pop-in origin-top";
-  const exit = sheet ? "sheet-out" : box?.above ? "pop-out-up" : "pop-out";
-
   return (
     <>
       <button
-        ref={btnRef}
+        ref={shell.triggerRef}
         type="button"
         disabled={disabled || readOnly}
-        onClick={() => {
-          if (closing) return;
-          if (open) requestClose(false);
-          else openMenu();
+        onClick={() => shell.setOpen(!open)}
+        onKeyDown={(e) => {
+          if (!open && !disabled && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            shell.setOpen(true);
+          }
         }}
-        onKeyDown={onTriggerKey}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-controls={open ? listId : undefined}
+        aria-controls={open ? shell.listId : undefined}
         aria-label={label ? `${label}: ${text}` : undefined}
         className={pill}
         title={typeof text === "string" && text.length > 18 ? text : undefined}
@@ -1138,83 +966,16 @@ export function Menu({
         <span className="truncate">{text}</span>
         {!readOnly && <Icon d={P.chevron} strokeWidth={2} className={`w-3 h-3 shrink-0 transition-[opacity,rotate] motion-reduce:transition-none ${open ? "rotate-180" : ""} ${glyph}`} />}
       </button>
-      {open &&
-        (sheet || box) &&
-        createPortal(
-          <>
-            {sheet && <div className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`} onClick={() => requestClose(true)} aria-hidden />}
-            <div
-              ref={panelRef}
-              id={listId}
-              role="listbox"
-              tabIndex={sheet ? -1 : undefined}
-              aria-labelledby={sheet && label ? titleId : undefined}
-              aria-activedescendant={hi >= 0 ? `${listId}-o${hi}` : undefined}
-              style={sheet ? { position: "fixed", left: 0, right: 0, bottom: 0 } : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width }}
-              onKeyDown={navKey}
-              onAnimationEnd={(e) => {
-                if (closing && e.target === e.currentTarget) finishClose();
-              }}
-              className={`z-[70] border overflow-hidden flex flex-col tabular-nums ${
-                sheet ? "rounded-t-2xl max-h-[72vh] pb-[max(env(safe-area-inset-bottom),12px)]" : "rounded-xl max-h-[60vh]"
-              } ${closing ? `${exit} pointer-events-none` : enter} ${popoverSurface(isDark)}`}
-            >
-              {sheet && <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />}
-              {sheet && label && (
-                <p id={titleId} className={`px-4 pt-2 pb-1 text-base font-semibold ${t1}`}>
-                  {label}
-                </p>
-              )}
-              {searchable && (
-                <div className={`shrink-0 border-b ${sheet ? "px-2 pt-1 pb-2" : "p-2"} ${hairline(isDark)}`}>
-                  <input
-                    autoFocus={!sheet}
-                    value={filter}
-                    onChange={(e) => {
-                      setFilter(e.target.value);
-                      setHi(0);
-                    }}
-                    placeholder="Search…"
-                    aria-label={`Filter ${label ?? "options"}`}
-                    // The popover field is focused for you on open, so the global
-                    // ring would fire on every click; the border step marks it.
-                    // (`!`: app.css's unlayered input ring outranks plain utilities.)
-                    className={`w-full rounded-full border ${sheet ? "h-[40px] px-3.5 text-[16px] placeholder:text-base" : "h-8 px-3 text-xs focus-visible:outline-0!"} ${textInput(isDark)}`}
-                  />
-                </div>
-              )}
-              <div ref={listRef} className={`flex-1 min-h-0 overflow-y-auto ${sheet ? "p-2 pb-2" : "p-1"}`}>
-                {shown.length === 0 && <p className={`px-2 py-2 text-xs ${t2}`}>No matches.</p>}
-                {shown.map((o, i) => {
-                  const sel = o.value === value;
-                  const newGroup = o.group && (i === 0 || shown[i - 1].group !== o.group);
-                  return (
-                    <Fragment key={`w-${o.value || "—"}`}>
-                      {newGroup && <p className={groupHead}>{o.group}</p>}
-                      <button
-                        type="button"
-                        id={`${listId}-o${i}`}
-                        role="option"
-                        aria-selected={sel}
-                        data-i={i}
-                        onClick={() => choose(o)}
-                        onMouseEnter={() => setHi(i)}
-                        className={`${optionBase} ${i === hi ? itemHighlight(isDark) : isDark ? "text-gray-200" : "text-gray-800"} ${sel ? "font-medium" : ""}`}
-                        title={o.short && o.short !== o.label ? o.label : undefined}
-                      >
-                        {iconSlot ? <span className={`inline-flex items-center shrink-0 w-[2.75rem] ${t2}`}>{o.icon}</span> : o.icon && <span className={`shrink-0 ${t2}`}>{o.icon}</span>}
-                        <span className="truncate flex-1">{o.short ?? o.label}</span>
-                        {o.hint && <span className={`shrink-0 text-xs ${t3}`}>{o.hint}</span>}
-                        {sel && <Icon d={P.check} strokeWidth={2.5} className="ml-auto w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                      </button>
-                    </Fragment>
-                  );
-                })}
-              </div>
-            </div>
-          </>,
-          document.body,
-        )}
+      <ListboxPanel
+        shell={shell}
+        label={label ?? "Options"}
+        options={options}
+        isChosen={(v) => v === value}
+        onPick={(o) => {
+          shell.setOpen(false);
+          onChange(o.value);
+        }}
+      />
     </>
   );
 }
@@ -1740,17 +1501,16 @@ function TxnHistoryPanel({
 }
 
 /**
- * An in-app confirm — replaces the browser's native confirm() so the choice
- * looks like the rest of the app. `onConfirm` is the primary action; the
- * optional `onAlt`/`altLabel` adds a middle path (e.g. "just this one"); the
- * backdrop, Escape, and Cancel all dismiss without acting. Focus lands on the
- * primary and is trapped; Enter acts on whichever button is focused.
+ * An in-app confirm, kept for Books' callers: it renders the design
+ * system's confirm (app/ui ConfirmView). `onConfirm` is the action; the
+ * optional `onAlt`/`altLabel` adds a second path (e.g. "Just this one");
+ * Escape, the scrim and Cancel call `onClose`. Focus starts on Cancel for a
+ * danger confirm, on the action otherwise; it is trapped and returned.
  */
 export function ConfirmDialog({
-  isDark,
   title,
   message,
-  confirmLabel = "Confirm",
+  confirmLabel = "Continue",
   cancelLabel = "Cancel",
   altLabel,
   tone = "default",
@@ -1758,6 +1518,7 @@ export function ConfirmDialog({
   onAlt,
   onClose,
 }: {
+  /** Kept for the callers; the dialog follows the theme by itself. */
   isDark: boolean;
   title: string;
   message?: ReactNode;
@@ -1769,71 +1530,16 @@ export function ConfirmDialog({
   onAlt?: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const titleId = useId();
-  const msgId = `${titleId}-m`;
-  useFocusTrap(ref, true);
-  // Registered once (the callback lives in a ref): an inline `onClose` used
-  // to re-hook this listener on every parent render, so a sibling's Escape
-  // handler could unhook it mid-dispatch. preventDefault tells lower layers
-  // (the batch bar) the key is taken.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCloseRef.current();
-      }
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
-  const { t1, t2 } = tiers(isDark);
-  const btn = `${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm`;
-  const primary = tone === "danger" ? "bg-red-600 text-white hover:bg-red-500 active:bg-red-700" : primaryBtn(isDark);
-  const ghost = ghostBtn(isDark);
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm fade-in"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+  return (
+    <ConfirmView
+      open
+      options={{ title, message, confirmLabel, cancelLabel, tone, alternative: altLabel && onAlt ? { label: altLabel, value: "alt" } : undefined }}
+      onResult={(r) => {
+        if (r === false) onClose();
+        else if (typeof r === "object" && r.alternative) onAlt?.();
+        else onConfirm();
       }}
-    >
-      <div
-        ref={ref}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={message ? msgId : undefined}
-        className={`w-full max-w-lg rounded-2xl border p-5 pop-in tabular-nums ${popoverSurface(isDark)}`}
-      >
-        <h3 id={titleId} className={`text-lg font-semibold tracking-tight ${t1}`}>
-          {title}
-        </h3>
-        {message && (
-          <div id={msgId} className={`mt-2 text-sm leading-relaxed ${t2}`}>
-            {message}
-          </div>
-        )}
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-          <button type="button" onClick={onClose} className={`${btn} ${ghost}`}>
-            {cancelLabel}
-          </button>
-          {altLabel && onAlt && (
-            <button type="button" onClick={onAlt} className={`${btn} ${outlineBtn(isDark)}`}>
-              {altLabel}
-            </button>
-          )}
-          <button type="button" data-autofocus onClick={onConfirm} className={`${btn} ${primary}`}>
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+    />
   );
 }
 

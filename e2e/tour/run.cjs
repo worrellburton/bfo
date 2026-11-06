@@ -607,7 +607,8 @@ const CONFIRM = "app/confirm-dialog.tsx";
 // viewport capture once `steps` has opened it. A surface opens `path`, or
 // `go` finds its record and opens that (path then describes it). `before`
 // runs before the page loads (a route override, a stored preference);
-// `signedOut` captures it as a visitor sees it; `expect` says what must be on
+// `signedOut` captures it as a visitor sees it; `maxHeight` lifts a page's
+// 3200px capture limit; `expect` says what must be on
 // screen for the capture to count (default: any dialog, menu or listbox for a
 // pop-up); `only` limits it to some sizes; `steps: null` lists a surface the
 // tour can't reach, with a note saying why. When the records have nothing to
@@ -896,6 +897,19 @@ const PAGES = [
     files: ["app/routes/signature-detail.tsx", "app/sign/api.ts", "app/sign/pdf-pages.tsx"],
   },
   { id: "not-found", kind: "page", title: "Page not found", path: "/no-such-page", files: ["app/routes/not-found.tsx"] },
+
+  // The design system itself: every token and component in every state (a development-only route).
+  {
+    id: "design-system",
+    kind: "page",
+    title: "Design system reference",
+    path: "/design",
+    signedOut: true,
+    files: ["docs/DESIGN.md", "app/ui/*", "app/app.css"],
+    // The whole reference, top to bottom, not the usual 3200px.
+    maxHeight: 20000,
+    note: "Development only (app/routes.ts); made-up records. Judge the system: tokens, type, components and their states, in the current theme.",
+  },
 ];
 
 /** The first mail row already read (opening an unread one would mark it read). */
@@ -2314,7 +2328,12 @@ async function capture(browser, surface, size, theme) {
           await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
           const { width } = page.viewportSize();
           const height = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)).catch(() => 900);
-          await page.screenshot({ path: file, fullPage: true, clip: { x: 0, y: 0, width, height: Math.min(Math.max(height, page.viewportSize().height), MAX_PAGE_H) }, timeout: 20000 });
+          await page.screenshot({
+            path: file,
+            fullPage: true,
+            clip: { x: 0, y: 0, width, height: Math.min(Math.max(height, page.viewportSize().height), surface.maxHeight ?? MAX_PAGE_H) },
+            timeout: 30000,
+          });
         } else {
           await page.screenshot({ path: file, timeout: 20000 });
         }

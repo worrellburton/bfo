@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, useTone } from "../entity/ui";
 import { Star } from "./glyphs";
 import { tap } from "./helpers";
+import { Segmented as UiSegmented } from "../ui";
 
 /** The appearance button: Mail's own light/dark switch. A sun in the dark, a moon in the light. */
 export function ThemeButton({ dark, onToggle, className = "", iconClassName = "h-5 w-5" }: { dark: boolean; onToggle: () => void; className?: string; iconClassName?: string }) {
@@ -53,7 +54,7 @@ export function useExit(open: boolean, ms: number): { shown: boolean; leaving: b
 
 // ── Controls ─────────────────────────────────────────────────────────────
 
-/** A row of pills where one is on. With `iconsOnly` the labels are tooltips. */
+/** A row of choices where one is on: the system's Segmented (app/ui). With `iconsOnly` the labels name the icons. */
 export function Segmented<K extends string>({
   label,
   value,
@@ -72,33 +73,15 @@ export function Segmented<K extends string>({
   stretch?: boolean;
   className?: string;
 }) {
-  const t = useTone();
   return (
-    <div
-      role="group"
-      aria-label={label}
-      className={`${stretch ? "flex w-full" : "inline-flex shrink-0"} items-center gap-0.5 rounded-xl p-0.5 ${t.dark ? "bg-white/[0.05]" : "bg-gray-100"} ${className}`}
-    >
-      {options.map((o) => {
-        const on = o.key === value;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            aria-pressed={on}
-            aria-label={iconsOnly ? o.label : undefined}
-            title={iconsOnly ? o.label : undefined}
-            onClick={() => onChange(o.key)}
-            className={`inline-flex h-6 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[9px] text-[12px] font-medium transition-colors max-sm:h-[38px] max-sm:text-[13.5px] md:pointer-coarse:h-[36px] ${
-              stretch ? "flex-1 justify-center px-2" : iconsOnly ? "w-7 justify-center max-sm:w-[40px] md:pointer-coarse:w-[40px]" : "px-2.5 max-sm:px-3 md:pointer-coarse:px-3"
-            } ${on ? (t.dark ? "bg-white/[0.1] text-white shadow-sm" : "bg-white text-gray-900 shadow-sm") : t.dark ? "text-gray-500 hover:text-gray-200" : "text-gray-500 hover:text-gray-900"}`}
-          >
-            {o.icon}
-            {!iconsOnly && o.label}
-          </button>
-        );
-      })}
-    </div>
+    <UiSegmented
+      label={label}
+      value={value}
+      onChange={onChange}
+      full={stretch}
+      className={className}
+      options={options.map((o) => ({ value: o.key, label: o.label, icon: o.icon, iconOnly: iconsOnly && !!o.icon }))}
+    />
   );
 }
 

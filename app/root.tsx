@@ -16,16 +16,8 @@ export const links: Route.LinksFunction = () => [
   { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
   // Installable as an app (Chrome's "Install BFO"; app/pwa.ts).
   { rel: "manifest", href: "/manifest.webmanifest" },
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  {
-    rel: "preconnect",
-    href: "https://fonts.gstatic.com",
-    crossOrigin: "anonymous",
-  },
-  {
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@400..600&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap",
-  },
+  // Fonts are self-hosted (app.css @font-face; docs/DESIGN.md §3.1): no visitor's address goes to a font service.
+  { rel: "preload", href: "/fonts/geist-latin.woff2", as: "font", type: "font/woff2", crossOrigin: "anonymous" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -37,7 +29,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* Phone browser chrome matches the app instead of flashing white. */}
         {/* Browser chrome colour — follows the app's theme (set before paint
             by the boot script and on every toggle), not the phone's. */}
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#0b0b0c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="BFO" />

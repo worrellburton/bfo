@@ -11,10 +11,29 @@
  * - Buttons come in three weights (primary, secondary, ghost) plus danger.
  *
  * Mobile: the root font is 11.9px, so tap targets are sized in px.
+ *
+ * Moving to the design system (docs/DESIGN.md §14.3): Button, IconButton,
+ * Section, Field, Input, Select, Textarea, Empty and Disclosure already draw
+ * with app/ui and its tokens, so these pages look like the system before
+ * they're rebuilt. Section, Field, Empty and Disclosure keep their legacy
+ * spacing (no `ds` on their roots) so the rows inside them don't move. New
+ * code imports from app/ui instead.
  */
 
-import { useId, useState, type ReactNode } from "react";
+import { Children, isValidElement, useId, useState, type ReactNode } from "react";
 import { useTheme } from "../theme";
+import {
+  Button as UiButton,
+  Count as UiCount,
+  Empty as UiEmpty,
+  IconButton as UiIconButton,
+  InfoToggle as UiInfoToggle,
+  Input as UiInput,
+  Select as UiSelect,
+  Textarea as UiTextarea,
+  cx,
+  type IconName as UiIconName,
+} from "../ui";
 
 // ── Theme ────────────────────────────────────────────────────────────────
 
@@ -89,6 +108,11 @@ export function buttonClass(kind: ButtonKind = "secondary", dark = true, size: "
   return `${base} ${k}`;
 }
 
+/** The legacy icon names that the system's set spells differently. */
+const UI_ICON: Partial<Record<IconName, UiIconName>> = { refresh: "sync", rename: "edit", pen: "edit" };
+const uiIcon = (name: IconName): UiIconName => UI_ICON[name] ?? (name as UiIconName);
+
+/** The system's Button (app/ui): ghost is `quiet`; a legacy danger is a quiet button in `negative`. */
 export function Button({
   kind = "secondary",
   size = "sm",
@@ -97,49 +121,29 @@ export function Button({
   className = "",
   ...rest
 }: { kind?: ButtonKind; size?: "sm" | "md"; icon?: IconName; className?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { dark } = useTone();
+  const variant = kind === "ghost" || kind === "danger" ? "quiet" : kind;
   return (
-    <button type="button" className={`${buttonClass(kind, dark, size)} ${className}`} {...rest}>
-      {icon && <Icon name={icon} className="h-3.5 w-3.5" />}
+    <UiButton variant={variant} size={size} icon={icon ? uiIcon(icon) : undefined} className={cx(kind === "danger" && "text-negative enabled:hover:text-negative", className)} {...rest}>
       {children}
-    </button>
+    </UiButton>
   );
 }
 
-/** A square icon-only button. `label` is its accessible name and tooltip. */
+/** A square icon-only button: the system's IconButton. `label` is its accessible name and tooltip. */
 export function IconButton({
   icon,
   label,
   tone = "ghost",
   className = "",
-  iconClassName = "h-3.5 w-3.5",
+  iconClassName: _iconClassName,
   ...rest
 }: {
   icon: IconName;
   label: string;
   tone?: "ghost" | "danger";
-  /** The icon's size, when the button is bigger than usual (a phone's toolbar). */ iconClassName?: string;
+  /** Ignored: the system sizes icons from tokens (16px desktop, 20px touch). */ iconClassName?: string;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { dark } = useTone();
-  const t =
-    tone === "danger"
-      ? dark
-        ? "text-gray-500 hover:bg-red-500/10 hover:text-red-400"
-        : "text-gray-400 hover:bg-red-50 hover:text-red-600"
-      : dark
-        ? "text-gray-500 hover:bg-white/[0.06] hover:text-white"
-        : "text-gray-400 hover:bg-gray-100 hover:text-gray-900";
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40 max-sm:h-[40px] max-sm:w-[40px] ${t} ${className}`}
-      {...rest}
-    >
-      <Icon name={icon} className={iconClassName} />
-    </button>
-  );
+  return <UiIconButton icon={uiIcon(icon)} label={label} className={cx(tone === "danger" && "enabled:hover:text-negative", className)} {...rest} />;
 }
 
 /** Text-weight action, for "Re-read", "Show all", inline links. */
@@ -240,6 +244,11 @@ export function Info({ children, label }: { children: ReactNode; label?: string 
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
+/**
+ * A card with a plain title (the system's Card look: solid `raised`, a
+ * `line` border, radius 12, the title in `section`). Its body keeps the
+ * legacy spacing its rows were written for.
+ */
 export function Section({
   title,
   count,
@@ -261,24 +270,23 @@ export function Section({
   flush?: boolean;
   className?: string;
 }) {
-  const t = useTone();
   const [open, setOpen] = useState(false);
   return (
-    <section id={id} className={`overflow-hidden rounded-2xl border ${t.surface} ${className}`}>
+    <section id={id} className={cx("min-w-0 overflow-hidden rounded-card border border-line bg-raised text-ink", className)}>
       {(title || actions) && (
-        <header className="flex min-h-[48px] items-center justify-between gap-3 px-5 py-3">
+        <header className="flex min-h-[52px] items-center justify-between gap-3 px-5 py-3 touch:min-h-[56px]">
           <div className="min-w-0">
-            <h2 className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] font-semibold tracking-[-0.005em] ${t.text}`}>
+            <h2 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-section text-ink">
               {title}
-              <Count n={count} alert={alert} />
-              {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} label={typeof title === "string" ? `About ${title}` : undefined} />}
+              {count ? <UiCount n={count} tone={alert ? "attention" : "neutral"} /> : null}
+              {info && <UiInfoToggle open={open} onToggle={setOpen} label={typeof title === "string" ? `About ${title}` : "About this"} />}
             </h2>
-            {info && <InfoText open={open}>{info}</InfoText>}
+            {info && open && <div className="mt-1 max-w-[68ch] text-small text-ink-2">{info}</div>}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
         </header>
       )}
-      <div className={flush ? "" : `border-t ${t.line}`}>{children}</div>
+      <div className={flush ? "" : "border-t border-line"}>{children}</div>
     </section>
   );
 }
@@ -335,9 +343,8 @@ export function Row({
   );
 }
 
-/** A collapsed list: "Label · n" that opens to its children. */
+/** A collapsed list: "Label · n" that opens to its children (the system's Disclosure look, in the legacy row). */
 export function Disclosure({ label, count, children, defaultOpen = false }: { label: ReactNode; count?: number; children: ReactNode; defaultOpen?: boolean }) {
-  const t = useTone();
   const [open, setOpen] = useState(defaultOpen);
   const id = useId();
   return (
@@ -347,23 +354,30 @@ export function Disclosure({ label, count, children, defaultOpen = false }: { la
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((o) => !o)}
-        className={`flex w-full cursor-pointer items-center gap-1.5 px-5 py-2.5 text-left text-[12px] transition-colors max-sm:min-h-[44px] ${t.muted} ${t.hover}`}
+        className="flex min-h-[36px] w-full cursor-pointer items-center gap-2 px-5 text-left text-small font-medium text-ink-2 hover:bg-hover hover:text-ink touch:min-h-[44px]"
       >
-        <Icon name="chevronRight" className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`} />
-        {label}
-        {count !== undefined && <span className="tabular-nums">· {count}</span>}
+        <span className={cx("inline-flex transition-transform duration-(--dur-3) ease-(--ease-standard)", open && "rotate-90")}>
+          <svg className="size-[16px] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d={PATHS.chevronRight} />
+          </svg>
+        </span>
+        <span>
+          {label}
+          {count !== undefined && <span className="tabular-nums"> · {count}</span>}
+        </span>
       </button>
       {open && <div id={id}>{children}</div>}
     </div>
   );
 }
 
+/** "Nothing here yet" inside a section: the system's Empty, in the legacy row's padding. */
 export function Empty({ children, action }: { children: ReactNode; action?: ReactNode }) {
-  const t = useTone();
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-[12.5px] ${t.muted}`}>
-      <span>{children}</span>
-      {action}
+    <div className="px-5 py-4">
+      <UiEmpty size="section" action={action}>
+        {children}
+      </UiEmpty>
     </div>
   );
 }
@@ -376,35 +390,71 @@ export function ErrorLine({ children }: { children: ReactNode }) {
 
 // ── Forms ────────────────────────────────────────────────────────────────
 
+/** A labelled field (the system's Field look): the label in small 500 ink above, a hint in small ink-2 below. */
 export function Field({ label, children, wide = false, hint, className = "" }: { label: string; children: ReactNode; wide?: boolean; hint?: ReactNode; className?: string }) {
-  const t = useTone();
   return (
-    <label className={`block ${wide ? "md:col-span-2" : ""} ${className}`}>
-      <span className={`mb-1.5 block text-[12px] ${t.muted}`}>{label}</span>
+    <label className={cx("block", wide && "md:col-span-2", className)}>
+      <span className="mb-[6px] block text-small font-medium text-ink">{label}</span>
       {children}
-      {hint && <span className={`mt-1 block text-[11.5px] ${t.faint}`}>{hint}</span>}
+      {hint && <span className="mt-[6px] block text-small text-ink-2">{hint}</span>}
     </label>
   );
 }
 
-function inputClass(dark: boolean, extra = "") {
-  const t = dark ? "border-white/10 bg-white/[0.03] text-white focus:border-[#818cf8]/60" : "border-gray-200 bg-white text-gray-900 focus:border-[#4f46e5]/50";
-  return `h-8 w-full rounded-lg border px-2.5 text-[13px] placeholder:text-gray-500 transition-colors focus:outline-none max-sm:h-[44px] max-sm:text-[16px] ${t} ${extra}`;
-}
-
+/** The system's Input (36px desktop, 44px touch; 16px text on touch). */
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { dark } = useTone();
-  return <input {...props} className={`${inputClass(dark)} ${props.className ?? ""}`} />;
+  return <UiInput {...(props as React.ComponentProps<typeof UiInput>)} />;
 }
 
-export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  const { dark } = useTone();
-  return <select {...props} className={`${inputClass(dark)} cursor-pointer ${props.className ?? ""}`} />;
+type OptionEl = { value?: string | number; children?: ReactNode; disabled?: boolean };
+
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (isValidElement(node)) return textOf((node.props as { children?: ReactNode }).children);
+  return "";
 }
 
+/** Reads <option> children (through arrays and fragments) as the system Select's options. */
+function optionsOf(children: ReactNode): { value: string; label: string; disabled?: boolean }[] {
+  const out: { value: string; label: string; disabled?: boolean }[] = [];
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return;
+    if (child.type === "option") {
+      const p = child.props as OptionEl;
+      const label = textOf(p.children);
+      out.push({ value: p.value === undefined ? label : String(p.value), label: label || "\u2014", disabled: p.disabled });
+    } else out.push(...optionsOf((child.props as { children?: ReactNode }).children));
+  });
+  return out;
+}
+
+/**
+ * The system's Select (no native <select>) for callers written against one:
+ * the <option> children become its options and `onChange` still receives
+ * an event-shaped object whose target.value is the choice.
+ */
+export function Select({ children, value, onChange, disabled, id, className, "aria-label": ariaLabel, title }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const options = optionsOf(children);
+  return (
+    <UiSelect
+      id={id}
+      label={ariaLabel ?? title ?? "Choose an option"}
+      value={value === undefined || value === null ? null : String(value)}
+      options={options}
+      disabled={disabled}
+      className={className}
+      onChange={(v) => {
+        const target = { value: v, name: "" } as unknown as EventTarget & HTMLSelectElement;
+        onChange?.({ target, currentTarget: target } as unknown as React.ChangeEvent<HTMLSelectElement>);
+      }}
+    />
+  );
+}
+
+/** The system's Textarea: starts at three lines, grows to ten. */
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const { dark } = useTone();
-  return <textarea {...props} className={`${inputClass(dark, "h-auto py-2")} ${props.className ?? ""}`} />;
+  return <UiTextarea {...props} />;
 }
 
 /** A small on/off switch. */

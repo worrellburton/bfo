@@ -174,6 +174,7 @@ selected, focused or a link".
 | Token | Light | Dark | Use |
 |---|---|---|---|
 | `scrim` | rgb(9 9 11 / 0.32) | rgb(0 0 0 / 0.60) | Behind every modal overlay. No blur |
+| `paper` | #ffffff | #ffffff | Documents and scans (§2.5) and the switch's thumb: white in both themes |
 | focus ring | `accent` | `accent` | 2px solid, 2px offset, on every focusable element |
 | `brand-ivory` | #f4ede0 | #f4ede0 | The wordmark on dark; the door's ink |
 | `brand-ink` | #0a0a0a | #0a0a0a | The wordmark on light |
@@ -326,7 +327,11 @@ else.
   screen. It is never used for dialog titles, avatars, initials, figures,
   tables, chips or buttons. Why: inside the app one typographic voice is
   calmer, and the serif keeps its meaning as the mark.
-- Fonts are self-hosted (§14.8, step 7). Inter is dropped.
+- Fonts are self-hosted (§14.8, step 7): variable woff2 files for Latin and
+  Latin Extended in `public/fonts/`, under the SIL Open Font License (its
+  text sits beside them). Inter is dropped. A brand typeface other than
+  Playfair Display, chosen in the logo studio, still loads from Google Fonts
+  when the door shows it; Playfair, Geist and Geist Mono never do.
 
 ### 3.2 Scale
 
@@ -1133,11 +1138,12 @@ unless it says otherwise.
   `aria-modal="true"`, are labelled by their title and described by their
   message, make the app behind `inert`, and lock the page's scroll without
   shifting it. Scrims never stack: an overlay opened over another adds none.
-- **Focus moves in** on open: to `initialFocus` if given; else to Cancel for
-  a destructive, billed or binding confirm; to the type-to-confirm field
-  when there is one; to the narrowest choice when the dialog offers a
-  scope; to the first field of a form; to the checked item in a menu, or
-  its first item; otherwise to the title. **Focus is trapped** while open
+- **Focus moves in** on open, to the first of these the overlay has:
+  `initialFocus`; the type-to-confirm field (§11.2); Cancel, for a
+  destructive, billed or binding confirm; the narrowest choice, when the
+  dialog offers a scope; the action, for a routine confirm; the first field
+  of a form (a popover's first control); the checked item in a menu or
+  listbox, or its first item; otherwise the title. **Focus is trapped** while open
   and **returned** to the opener on close (or to `<main>` if the opener has
   gone).
 - **Escape** closes the topmost overlay only. A scrim tap closes it too.
@@ -1145,7 +1151,14 @@ unless it says otherwise.
   changes?" instead of closing.
 - **The Ask button hides** while any modal overlay is open, and so does any
   other floating bar.
-- **Z order** (one ladder, as tokens; nothing else sets a z-index):
+- **Z order** (one ladder, as tokens; nothing else sets a z-index). Every
+  overlay renders into the one root, `<div id="overlays" data-overlay-root>`,
+  which sits above the page; inside it overlays stack in the order they
+  open, so a Select opened from a Dialog is above the Dialog. Until the flip
+  the root's own z-index is 1000, above the legacy layers (`z-[60]` to
+  `z-[300]`); at the flip it takes `popover`. Toasts and tooltips keep their
+  ladder values inside it. An overlay with a modal above it is inert, and a
+  tap outside the top one acts on the top one only.
 
 | Layer | z |
 |---|---:|
@@ -1532,6 +1545,15 @@ IRA, 401(k), Credit card), never from CSS `capitalize` or `uppercase`.
 Written with the lawyer's and the CPA's findings. These are presentation
 rules; the records behind them (what is logged, kept and sent) are the
 owning area's job, and the copy never claims a record that isn't written.
+
+**The record behind the pattern.** Server code writes each consequential
+action to the shared audit trail (`lib/audit.ts`, table `audit_log`): one
+append-only row saying who, what, to what, how many and when. One line in
+an endpoint, after the action succeeds:
+`await audit({ actor: user, action: "entity.archive", target: { type: "entity", id, label: name }, summary: "Archived " + name })`.
+It never throws into the request, and it drops secrets, codes, bodies and
+SSN-shaped text. A confirm that says "this is recorded" is true only once
+its endpoint makes that call.
 
 ### 11.1 Choosing the pattern for a consequential action
 
@@ -2052,6 +2074,15 @@ below, and **replace the focus rules** (today's emerald outline, lines
 
 Notes on the block:
 
+- As built, three details differ from the block above, on purpose. The
+  `@theme` is `@theme static`, so every token is in the stylesheet even
+  when no class names it (a chart or a canvas reads `var(--color-chart-2)`
+  from script). The focus rule sits outside the layers: unlayered rules
+  outrank every utility, so a legacy `focus:outline-none` can't remove the
+  ring; a component that needs it inset writes `outline-offset-[-2px]!`.
+  And the ring's selector skips `[tabindex="-1"]` (an element focused by
+  script, such as a dialog's title, shows no ring) and includes
+  `[role="option"]`. The `paper` token (§2.2) is added.
 - Every token above compiles to a utility: `bg-page`, `text-ink-2`,
   `border-edge`, `text-section`, `rounded-card`, `max-w-reading`, `z-modal`.
   The dark block redefines the same variables, so `[data-theme="dark"]` on
@@ -2073,8 +2104,9 @@ Notes on the block:
   (§14.8); replace the fixed backgrounds (`#000`, `rgb(249 250 251)`,
   `bg-white dark:bg-gray-950`) with `background-color: var(--color-page)`.
 - The `html.light` rescue layer (lines 35–157) stays, but append
-  `:not([data-theme="dark"] *)` to each of its selectors, so a region that
-  declares itself dark is never repainted. That alone fixes the invisible
+  `:not([data-theme="dark"], [data-theme="dark"] *)` to each of its
+  selectors, so a region that declares itself dark, and its own root, are
+  never repainted. That alone fixes the invisible
   close button on the paper-mail viewer and the white-on-white signing
   controls as soon as those regions, which are drawn dark today, set
   `data-theme="dark"` on their root. (The signing page then moves to tokens
@@ -2101,6 +2133,10 @@ Notes on the block:
 - Door routes set `data-theme="dark"` on their root and theme-color
   #05060b.
 - `confirm-dialog.tsx`'s `isDarkNow()` goes; components read tokens.
+- Already done in the foundation pass, because the tokens need it:
+  `theme.tsx` and the boot script set `data-theme` on `<html>` beside the
+  `light` class, and theme-color is #f7f7f8 or #0b0b0c. The three-way
+  setting, Mail's override and the Appearance panel are the shell's.
 
 ### 14.3 `app/ui/`: the shared components
 
@@ -2265,7 +2301,59 @@ function confirm(o: ConfirmOptions): Promise<false | true | { scope?: string; al
 `app/confirm-dialog.tsx` keeps exporting `confirmDialog` and `alertDialog`
 for existing callers, re-implemented on `confirm()`; `requireText` maps to
 `typeToConfirm`, `tone: "default"` keeps its meaning, and a missing
-`confirmLabel` is a type error in new code.
+`confirmLabel` is a type error in new code. A legacy caller with no label
+gets "Delete" (danger) or "Continue", never "Confirm"; an alert's one button
+reads "Close".
+
+**As built.** The signatures above hold; these were added where building
+showed a need, and each is optional:
+
+- Files: the manager is `overlay-manager.ts` (`useOverlay`, `usePresence`,
+  `useAnchor`), `confirm()` is `confirm.ts`, the pure rules are
+  `overlay-rules.ts` (tested), `toast()` is `toast.ts`, the tab title is
+  `page-title.ts` (`useDocumentTitle("Northwind Holdings, LLC",
+  "Entities")`), DateInput is `date-input.tsx`, the Button's skin is
+  `button-style.ts` (`buttonClasses()`, and `ButtonLayout`, the context a
+  phone footer sets so its buttons are `lg` and full width).
+- `Icon`: `size` (12, 16, 20, 24) where one size is meant on every device.
+- `IconButton`: `noTooltip` where the label is already visible.
+  `TextLink`: `onClick`. `LinkButton`: `replace`, `state`.
+- `Card`: `CardSection` (a subhead over a hairline inside a card) and
+  `Rows` (hairlines between `Row`s). A `Row` with no value reads "Not on
+  record" in `ink-3`; `Row` takes `hint` and `action`.
+- `Option`: `group` (a sticky heading), `icon` (only where marks differ
+  meaningfully) and `short` (the closed trigger's text). `Select` and
+  `MultiSelect`: `footnote`, `disabled`, `size`. `useListbox()` with
+  `ListboxPanel` opens the system's list from a trigger a legacy control
+  keeps (Books' pill uses it).
+- `Segmented`: an option may carry an `icon`, and `iconOnly`.
+- `ChoiceTiles`: `stacked` (always one column) and `hideLabel`.
+- `Checkbox` and `Switch`: `hint`, `disabled`.
+- `Empty`: inside a Card a page-size Empty sits 24px under the header
+  (the Card's padding plus 4), not 64.
+- `Table`: `groupTotal` (the band's figure) and `stickyFirst` (months
+  across).
+- `Money`: `tone="in"` (money in is `positive`, out stays `ink`, for a
+  ledger that mixes both) beside `direction` (a signed result).
+  `DateText`: `style="asof"` and `"time"`.
+- `Dialog` and `Sheet`: `description`; `Sheet` also `size` for the right
+  sheet. `Popover`: `open`/`onOpenChange` to control it, and `align`.
+- `ConfirmOptions`: `focus` ("cancel" or "confirm", overriding the tone's
+  rule) and `acknowledge` (one button: the legacy alert). The result
+  carries `version` when one was given.
+- `ErrorPage`: `home`; its "Search BFO" dispatches the `bfo:open-palette`
+  window event, which the shell's palette listens for.
+
+**Legacy exports that already draw with the system.** So pages look like the
+system before their owners rebuild them: `app/entity/ui.tsx`'s `Button`
+(ghost is `quiet`; a legacy danger is a quiet button in `negative`),
+`IconButton`, `Input`, `Select` (its `<option>` children become options;
+`onChange` still gets `{ target: { value } }`) and `Textarea` render the
+app/ui components; its `Section`, `Field`, `Empty` and `Disclosure` take the
+system's look but keep the legacy spacing their rows were written for (no
+`ds` on their roots, so the rows inside don't move). Books' `Menu` keeps its
+pill and opens `ListboxPanel`; Books' `ConfirmDialog` renders `ConfirmView`;
+Mail's `Segmented` renders the system's.
 
 The entity area's `app/entity/ui.tsx` (`Button`, `IconButton`, `Section`,
 `Row`, `Field`, `Input`, `Switch`, `Dot`, `Count`) and Books'
@@ -2287,7 +2375,15 @@ phones, the value in `body` `ink`, at least 44px on touch.
 - **The Ask button and floating bars** hide with
   `html[data-overlay="modal"] .ask-fab { visibility: hidden }`, and the same
   for `html[data-keyboard="open"]` (set from `visualViewport` on touch) and
-  `html[data-selection]`.
+  `html[data-selection]`. A floating bar opts in with a `data-floating`
+  attribute. With only a menu or popover open, `<html data-overlay="popover">`.
+- **Inert, as built:** the children of `<body>` other than the overlay root
+  are made inert when the first modal opens, and given back when the last
+  closes; anything a legacy component appends to `<body>` after that stays
+  live, so a legacy popup opened inside a new dialog still works.
+- **Toasts** centre on the content column using `--content-inset` (the
+  sidebar's width, which the shell sets on `<html>`), falling back to the
+  legacy `--inset`.
 - **`useOverlay({ open, onClose, modal, initialFocus, dirty })`** returns
   the panel ref and the ids for `aria-labelledby` and `aria-describedby`;
   it handles focus in, the trap, Escape, the scrim, the dirty-check and
@@ -2323,6 +2419,15 @@ function phone(e164: string): string;                                      // "(
 function accountLabel(a: { nickname?: string; name?: string; mask?: string }): string;
 function accountType(subtype: string): string;                             // "Roth IRA"
 ```
+
+As built: `n` for `percent()` is already in percent (12.5 is "12.5%").
+`count(0, …)` reads "No entities" (pass `{ zero: "numeral" }` for "0
+entities"). A calendar date ("2026-11-06") never shifts with the viewer's
+time zone; a timestamp shows in the viewer's zone. `date()`, `dateTime()`,
+`dateRange()`, `asOf()` and `relative()` take `{ now, timeZone }` for tests.
+Added: `time()` ("3:14 PM"), `duration()` ("about 3 minutes"),
+`isoDate()`, `parseDate()` (typed dates in common forms, for DateInput),
+`parseMoney()` (for MoneyInput) and `initials()` (for Avatar).
 
 ### 14.6 Moving a page: the checklist
 
@@ -2406,6 +2511,15 @@ Foundation adds `scripts/check-design.mjs` and the npm script. It scans
 A file that imports `Page` from `app/ui` is **strict**: any finding fails
 CI. Other files are reported but don't fail. After the flip, every file is
 strict.
+
+As built (`scripts/check-design.mjs`, tested in `tests/check-design.test.ts`):
+`npm run check:design` checks every file; `-- <files>` checks those;
+`-- --quiet` (CI) prints findings for strict files and a count per file for
+the rest; `-- --all-strict` treats every file as strict (the flip's test).
+Comments are skipped. The colour rule also covers `border-x|y|t|b|l|r`,
+`outline`, `placeholder`, `caret` and `shadow`; the overlay rule also
+`role="alertdialog"`; the native rule also `window.alert`. A false alarm
+in a strict file is fixed by rewriting the line, not by an exemption.
 
 ### 14.8 Order of work, and when the rescue layer goes
 
