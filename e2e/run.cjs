@@ -380,7 +380,7 @@ async function flows(browser) {
 }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined });
   try {
     await sweep(browser);
     await a11y(browser);
