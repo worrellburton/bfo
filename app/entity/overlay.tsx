@@ -1,24 +1,23 @@
 import { useEffect, useState } from "react";
+import { Disclosure, Icon, IconButton, cx } from "../ui";
 import { useEntity } from "./context";
-import { Disclosure, Icon, IconButton, useTone } from "./ui";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const isFiled = (note: string) => note.startsWith("Filed") || note.startsWith("Read");
 
 /**
- * Floating status while documents are read (a library scan, or uploads being
- * filed). Hides itself 12 s after a scan ends (the timer lives in scanLibrary),
- * unless Results has been opened; an upload-only toast goes away when
- * `sorting` returns to 0.
+ * The status of documents being read (a library scan, or uploads being
+ * filed), floating at the bottom of the content like a toast (§8.16): one
+ * line, a progress line, and the results behind a disclosure. It hides 12 s
+ * after a scan ends (the timer lives in scanLibrary) unless Results has been
+ * opened; an upload-only one goes when `sorting` returns to 0.
  */
 export function ScanToast() {
   const { page } = useEntity();
-  const t = useTone();
   const { scan, sorting, aiDown, setScan, scanHideTimer } = page;
-  // Once Results is opened, keep the toast until it is dismissed.
+  // Once Results is opened, keep it until it's dismissed.
   const [held, setHeld] = useState(false);
   useEffect(() => {
-    // A new scan (nothing done yet) starts un-held, so it auto-hides again.
     if (!scan || (!scan.finished && scan.done === 0)) setHeld(false);
     else if (held && scanHideTimer.current) clearTimeout(scanHideTimer.current);
   }, [scan, held, scanHideTimer]);
@@ -30,65 +29,47 @@ export function ScanToast() {
   const finished = !!scan?.finished && sorting === 0;
   const filed = notes.filter(isFiled).length;
   const pct = scan && total ? (done / total) * 100 : null;
-  const indeterminate = !finished && (pct == null || pct === 0);
 
   const title = finished
     ? filed
-      ? `Done — ${plural(filed, "update")}`
+      ? `Done: ${plural(filed, "update")}`
       : aiDown
-        ? "Paused — nothing filed"
-        : "Done — nothing new found"
+        ? "Paused: nothing filed"
+        : "Done: nothing new found"
     : scan
-      ? `Reading documents · ${Math.min(done + 1, total)} of ${total}`
+      ? `Reading documents, ${Math.min(done + 1, total)} of ${total}`
       : `Reading ${plural(sorting, "document")}…`;
-
-  const detail = aiDown ? "Paused — the document reader is unavailable." : finished ? `${plural(total, "document")} checked` : (scan?.current ?? null);
-
-  const fill = finished ? "bg-emerald-500" : t.dark ? "bg-[#818cf8]" : "bg-[#4f46e5]";
-  const good = t.dark ? "text-emerald-400" : "text-emerald-600";
+  const detail = aiDown ? "The document reader is unavailable." : finished ? `${plural(total, "document")} checked` : (scan?.current ?? null);
 
   return (
-    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4 lg:bottom-6">
-      <style>
-        {"@keyframes entity-toast-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}" +
-          "@keyframes entity-bar{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}"}
-      </style>
-      <div
-        className={`pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-xl motion-safe:animate-[entity-toast-in_320ms_cubic-bezier(0.16,1,0.3,1)_both] ${
-          t.dark ? "border-white/10 bg-[#0d0f17]/95 shadow-black/60" : "border-gray-200 bg-white/95 shadow-gray-900/15"
-        }`}
-      >
-        <div className="flex items-center gap-3 px-5 pb-2.5 pt-3">
-          {finished ? <Icon name="check" className={`h-3.5 w-3.5 ${good}`} strokeWidth={2.5} /> : <Icon name="sparkle" className={`h-3.5 w-3.5 motion-safe:animate-pulse ${t.accent}`} />}
-          <p className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-snug">
-            <span className={`text-[13px] font-semibold tabular-nums ${t.text}`}>{title}</span>
+    <div role="status" aria-live="polite" data-floating className="ds pointer-events-none fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] z-toast flex justify-center px-4 lg:bottom-6">
+      <div className="pointer-events-auto w-full max-w-[420px] overflow-hidden rounded-card border border-line-strong bg-overlay shadow-(--elevation-2)">
+        <div className="flex items-center gap-3 px-4 pt-3 pb-2">
+          <span className={finished ? "text-positive" : "text-ink-2"}>
+            <Icon name={finished ? "check" : "sparkle"} size={16} />
+          </span>
+          <p className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+            <span className="text-body font-medium text-ink tabular-nums">{title}</span>
             {detail && (
-              <span className={`max-w-full truncate text-[12px] ${t.muted}`} title={detail}>
+              <span className="max-w-full truncate text-small text-ink-2" title={detail}>
                 {detail}
               </span>
             )}
           </p>
           {finished && <IconButton icon="x" label="Dismiss" onClick={() => setScan(null)} className="-my-1 -mr-2" />}
         </div>
-
-        <div className="px-5 pb-3">
-          <div className={`h-1 overflow-hidden rounded-full ${t.dark ? "bg-white/[0.07]" : "bg-gray-100"}`}>
-            {indeterminate ? (
-              <div className={`h-full w-1/3 rounded-full motion-safe:animate-[entity-bar_1.4s_ease-in-out_infinite] ${fill}`} />
-            ) : (
-              <div className={`h-full rounded-full transition-[width] duration-500 ${fill}`} style={{ width: `${finished ? 100 : Math.max(6, pct ?? 0)}%` }} />
-            )}
+        <div className="px-4 pb-3">
+          <div className="h-[2px] overflow-hidden rounded-full bg-sunken">
+            <div className={cx("h-full rounded-full transition-[width] duration-(--dur-3)", finished ? "bg-positive" : "bg-accent")} style={{ width: `${finished ? 100 : Math.max(6, pct ?? 6)}%` }} />
           </div>
         </div>
-
         {notes.length > 0 && (
-          <div className={`border-t ${t.line}`} onClickCapture={() => setHeld(true)}>
+          <div className="border-t border-line px-4 py-1" onClickCapture={() => setHeld(true)}>
             <Disclosure label="Results" count={notes.length}>
-              <ul className="max-h-36 space-y-1 overflow-y-auto px-5 pb-3">
+              <ul className="flex max-h-36 flex-col gap-1 overflow-y-auto pb-2">
                 {notes.map((n, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
-                    <Icon name={isFiled(n) ? "check" : "doc"} className={`mt-px h-3 w-3 ${isFiled(n) ? good : t.muted}`} strokeWidth={isFiled(n) ? 2.25 : 1.75} />
-                    <span className={`min-w-0 break-words ${isFiled(n) ? t.text : t.muted}`}>{n}</span>
+                  <li key={i} className={cx("text-small break-words", isFiled(n) ? "text-ink" : "text-ink-2")}>
+                    {n}
                   </li>
                 ))}
               </ul>

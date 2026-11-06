@@ -14,13 +14,14 @@ export function whoOf(m: MailSummary, sent: boolean, mine: string[]): string {
   return m.to.map((a) => recipientLabel(a, mine)).join(", ") || "No recipients";
 }
 
-/** The unread mark: an 8px accent dot in its own gutter, read out as "Unread." (§8.9). */
+/** The unread mark: an 8px accent dot in the row's left gutter, beside the avatar, read out as "Unread." (§8.9). */
 export function UnreadDot({ on }: { on: boolean }) {
+  if (!on) return null;
   return (
-    <span className="flex w-2 shrink-0 justify-center self-start pt-[16px] touch:pt-[18px]">
-      {on && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
-      {on && <span className="sr-only">Unread. </span>}
-    </span>
+    <>
+      <span aria-hidden="true" className="absolute top-[30px] left-[4px] size-2 rounded-full bg-accent" />
+      <span className="sr-only">Unread. </span>
+    </>
   );
 }
 
@@ -185,7 +186,7 @@ export function MailListRow({
         aria-selected={onPick ? picked : undefined}
         style={dx !== 0 ? { transform: `translateX(${dx}px)`, touchAction: "pan-y" } : { touchAction: "pan-y" }}
         className={cx(
-          "group/row relative flex w-full cursor-pointer items-start gap-3 py-3 pr-4 pl-2 text-left outline-offset-[-2px]! select-none [-webkit-touch-callout:none]",
+          "group/row relative flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left outline-offset-[-2px]! select-none [-webkit-touch-callout:none]",
           !swiping && "transition-transform duration-(--dur-4) ease-(--ease-out)",
           picked || selected ? "bg-selected" : dx !== 0 ? "bg-raised" : "bg-raised hover:bg-hover active:bg-selected",
         )}

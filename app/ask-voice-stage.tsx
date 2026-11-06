@@ -227,9 +227,7 @@ function Line({ m, live = false }: { m: ChatMessage; live?: boolean }) {
     <div>
       <p className="mb-1 text-caption font-medium text-door-ink-2">{you ? "You" : live ? "BFO, speaking" : "BFO"}</p>
       <p className={cx("text-small whitespace-pre-wrap", you ? "text-door-ink-2" : "text-door-ink")}>{m.text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\*\*/g, "")}</p>
-      {!you && m.sources && m.sources.length > 0 && (
-        <p className="mt-1 text-caption text-door-ink-2">Read: {m.sources.map((s) => s.detail ?? s.label).join(" · ")}</p>
-      )}
+      {!you && m.sources && m.sources.length > 0 && <p className="mt-1 text-caption text-door-ink-2">Read: {m.sources.map((s) => s.detail ?? s.label).join(" · ")}</p>}
     </div>
   );
 }

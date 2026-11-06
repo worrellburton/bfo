@@ -20,7 +20,28 @@ import { canRecord, Player, Recorder } from "../ask-voice";
 import { VoiceStage, type Caption, type VoiceStatus } from "../ask-voice-stage";
 import { getUser } from "../auth";
 import { canLive, LiveVoice, type LiveStatus } from "../realtime-voice";
-import { Banner, Button, confirm, cx, Dialog, format, Icon, IconButton, List, ListRow, Page, Segmented, Sheet, Skeleton, Spinner, TextLink, useDocumentTitle, useFinePointer, useMedia, usePhone } from "../ui";
+import {
+  Banner,
+  Button,
+  confirm,
+  cx,
+  Dialog,
+  format,
+  Icon,
+  IconButton,
+  List,
+  ListRow,
+  Page,
+  Segmented,
+  Sheet,
+  Skeleton,
+  Spinner,
+  TextLink,
+  useDocumentTitle,
+  useFinePointer,
+  useMedia,
+  usePhone,
+} from "../ui";
 
 export function meta() {
   return [{ title: "Ask BFO · BFO" }];
@@ -750,7 +771,9 @@ export default function Ask() {
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={onKey}
                     rows={1}
-                    placeholder={live ? "Answering…" : mic === "listening" ? "Listening… choose Stop when you’re done" : mic === "transcribing" ? "Writing down what you said…" : "Ask about the office"}
+                    placeholder={
+                      live ? "Answering…" : mic === "listening" ? "Listening… choose Stop when you’re done" : mic === "transcribing" ? "Writing down what you said…" : "Ask about the office"
+                    }
                     aria-label="Your question"
                     className="min-h-[44px] flex-1 resize-none bg-transparent py-3 text-field text-ink outline-none! placeholder:text-ink-3"
                   />
@@ -760,7 +783,10 @@ export default function Ask() {
                     aria-pressed={speakOn}
                     aria-label="Read answers aloud"
                     title="Read answers aloud"
-                    className={cx("grid size-8 shrink-0 cursor-pointer place-items-center rounded-control touch:size-11", speakOn ? "bg-selected text-ink" : "text-ink-2 hover:bg-hover hover:text-ink")}
+                    className={cx(
+                      "grid size-8 shrink-0 cursor-pointer place-items-center rounded-control touch:size-11",
+                      speakOn ? "bg-selected text-ink" : "text-ink-2 hover:bg-hover hover:text-ink",
+                    )}
                   >
                     <svg className="size-(--icon)" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden>
                       <path

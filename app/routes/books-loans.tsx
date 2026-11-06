@@ -1,7 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch, canWrite } from "../auth";
 import { Menu, TxnTable, changedToast, displayName, entityLabel, ledgerMoney, memoText, txnCount, type Txn } from "../books-shared";
-import { Banner, Button, Card, ChoiceTiles, Dialog, Empty, IconButton, Input, List, ListRow, Page, PageHeader, Row, Rows, SearchField, Skeleton, Switch, Table, confirm, format, toast, useDocumentTitle, type Column } from "../ui";
+import {
+  Banner,
+  Button,
+  Card,
+  ChoiceTiles,
+  Dialog,
+  Empty,
+  IconButton,
+  Input,
+  List,
+  ListRow,
+  Page,
+  PageHeader,
+  Row,
+  Rows,
+  SearchField,
+  Skeleton,
+  Switch,
+  Table,
+  confirm,
+  format,
+  toast,
+  useDocumentTitle,
+  type Column,
+} from "../ui";
 
 export function meta() {
   return [{ title: "Loans · BFO" }];
@@ -58,7 +82,11 @@ export default function BooksLoans() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [loansRes, metaRes, looseRes] = await Promise.all([authFetch("/api/books/data?report=loans"), authFetch("/api/books/data?report=meta"), authFetch("/api/books/ledger?report=loan-activity").catch(() => null)]);
+      const [loansRes, metaRes, looseRes] = await Promise.all([
+        authFetch("/api/books/data?report=loans"),
+        authFetch("/api/books/data?report=meta"),
+        authFetch("/api/books/ledger?report=loan-activity").catch(() => null),
+      ]);
       const data = await loansRes.json().catch(() => ({}));
       if (!loansRes.ok) throw new Error(data?.message || "Couldn’t load the loans.");
       setLoans(data.loans ?? []);
@@ -101,7 +129,15 @@ export default function BooksLoans() {
       render: (l) => (
         <span>
           {l.name}
-          <span className="block text-small text-ink-2">{[l.holder_entity_name ? `Held by ${entityLabel(l.holder_entity_name)}` : "Holder not recorded", l.id ? null : "found from account categories", l.show_on_report ? null : "left off the Treasury report"].filter(Boolean).join(" · ")}</span>
+          <span className="block text-small text-ink-2">
+            {[
+              l.holder_entity_name ? `Held by ${entityLabel(l.holder_entity_name)}` : "Holder not recorded",
+              l.id ? null : "found from account categories",
+              l.show_on_report ? null : "left off the Treasury report",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
         </span>
       ),
     },
@@ -111,19 +147,38 @@ export default function BooksLoans() {
     { key: "out", header: "Outstanding", align: "right", width: "150px", sort: (a, b) => a.outstanding - b.outstanding, render: (l) => <span className="font-medium">{money(l.outstanding)}</span> },
   ];
 
-  const context = loans ? [`Owed to the family ${format.money(owedTo)}`, payable.length ? `owed by the family ${format.money(owedBy)}` : null, format.count(loans.length, "loan", "loans")].filter(Boolean).join(" · ") : undefined;
+  const context = loans
+    ? [`Owed to the family ${format.money(owedTo)}`, payable.length ? `owed by the family ${format.money(owedBy)}` : null, format.count(loans.length, "loan", "loans")].filter(Boolean).join(" · ")
+    : undefined;
   return (
     <Page width="workspace" header={<PageHeader title="Loans" context={context} create={writable ? { label: "Add loan", onClick: () => setEditing("new") } : undefined} />}>
-      {error && <Banner tone="negative" onDismiss={() => setError("")}>{error}</Banner>}
+      {error && (
+        <Banner tone="negative" onDismiss={() => setError("")}>
+          {error}
+        </Banner>
+      )}
       {orphans.length > 0 && (
         <Banner tone="warning" title={`${txnCount(orphans.length)} filed to Loans aren’t on a loan.`}>
-          {format.money(orphans.reduce((s, t) => s - t.amount, 0), { sign: "always" })} net. A loan’s balance only moves for the transactions attached to it; open a loan to attach the ones that name its borrower, or attach any of them from its search.
+          {format.money(
+            orphans.reduce((s, t) => s - t.amount, 0),
+            { sign: "always" },
+          )}{" "}
+          net. A loan’s balance only moves for the transactions attached to it; open a loan to attach the ones that name its borrower, or attach any of them from its search.
         </Banner>
       )}
       {!loans ? (
         <Skeleton kind="card" />
       ) : loans.length === 0 ? (
-        <Empty title="No loans yet" action={writable ? <Button variant="primary" onClick={() => setEditing("new")}>Add loan</Button> : undefined}>
+        <Empty
+          title="No loans yet"
+          action={
+            writable ? (
+              <Button variant="primary" onClick={() => setEditing("new")}>
+                Add loan
+              </Button>
+            ) : undefined
+          }
+        >
           Loans the family makes or owes appear here with what was lent, repaid and is outstanding.
         </Empty>
       ) : (
@@ -138,7 +193,12 @@ export default function BooksLoans() {
               requestAnimationFrame(() => detailRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
             }}
             totals={["Total owed to the family", "", "", "", money(owedTo)]}
-            phoneRow={(l) => ({ title: l.name, secondary: l.holder_entity_name ? `Held by ${entityLabel(l.holder_entity_name)}` : "Holder not recorded", trailing: money(l.outstanding), onClick: () => setOpenKey(keyOf(l)) })}
+            phoneRow={(l) => ({
+              title: l.name,
+              secondary: l.holder_entity_name ? `Held by ${entityLabel(l.holder_entity_name)}` : "Holder not recorded",
+              trailing: money(l.outstanding),
+              onClick: () => setOpenKey(keyOf(l)),
+            })}
           />
         </Card>
       )}
@@ -274,24 +334,50 @@ function LoanDetail({
           <Row label="Starting balance" hint={loan.starting_balance_as_of ? `As of ${format.date(loan.starting_balance_as_of, "medium")}` : "The date it was counted from isn’t recorded."}>
             {money(loan.starting_balance)}
           </Row>
-          <Row label="Interest rate" hint={related ? "A loan between family members or entities needs a rate at least at the applicable federal rate, or the IRS treats the difference as interest (IRC §7872)." : undefined}>
+          <Row
+            label="Interest rate"
+            hint={related ? "A loan between family members or entities needs a rate at least at the applicable federal rate, or the IRS treats the difference as interest (IRC §7872)." : undefined}
+          >
             {loan.rate !== null && loan.rate !== undefined ? format.percent(loan.rate, { decimals: 2 }) : undefined}
           </Row>
-          <Row label="Term">{loan.start_date || loan.maturity_date ? [loan.start_date ? `From ${format.date(loan.start_date, "medium")}` : null, loan.maturity_date ? `due ${format.date(loan.maturity_date, "medium")}` : null].filter(Boolean).join(", ") : undefined}</Row>
+          <Row label="Term">
+            {loan.start_date || loan.maturity_date
+              ? [loan.start_date ? `From ${format.date(loan.start_date, "medium")}` : null, loan.maturity_date ? `due ${format.date(loan.maturity_date, "medium")}` : null].filter(Boolean).join(", ")
+              : undefined}
+          </Row>
           <Row label="Outstanding" hint="Starting balance, plus what was lent, less what was repaid. Interest isn’t split out yet: each repayment reduces the balance in full.">
             <span className="font-medium">{money(loan.outstanding)}</span>
           </Row>
         </Rows>
 
         {unattached.length > 0 && (
-          <Banner tone="warning" title={`${txnCount(unattached.length)} name this borrower but aren’t on the loan.`} action={writable && loan.id ? <Button size="sm" variant="quiet" onClick={() => void attach(unattached.map((t) => t.transaction_id))}>Attach {unattached.length}</Button> : undefined}>
-            {format.money(unattached.reduce((s, t) => s - t.amount, 0), { sign: "always" })} net, filed to Loans by an account rule.
+          <Banner
+            tone="warning"
+            title={`${txnCount(unattached.length)} name this borrower but aren’t on the loan.`}
+            action={
+              writable && loan.id ? (
+                <Button size="sm" variant="quiet" onClick={() => void attach(unattached.map((t) => t.transaction_id))}>
+                  Attach {unattached.length}
+                </Button>
+              ) : undefined
+            }
+          >
+            {format.money(
+              unattached.reduce((s, t) => s - t.amount, 0),
+              { sign: "always" },
+            )}{" "}
+            net, filed to Loans by an account rule.
           </Banner>
         )}
 
         {writable && loan.id && (
           <div className="flex flex-col gap-3">
-            <Switch checked={loan.show_on_report} onChange={(v) => void setShown(v)} label="Show on the Treasury report" hint={loan.show_on_report ? undefined : `Left off${loan.hidden_reason ? `: ${loan.hidden_reason}` : ""}.`} />
+            <Switch
+              checked={loan.show_on_report}
+              onChange={(v) => void setShown(v)}
+              label="Show on the Treasury report"
+              hint={loan.show_on_report ? undefined : `Left off${loan.hidden_reason ? `: ${loan.hidden_reason}` : ""}.`}
+            />
             <div>
               <h3 className="mb-1 text-small font-semibold text-ink">Attach automatically</h3>
               <p className="mb-2 text-small text-ink-2">New transactions whose payee contains these words attach to this loan.</p>
@@ -306,7 +392,14 @@ function LoanDetail({
                 </ul>
               )}
               <div className="flex items-center gap-2">
-                <Input aria-label="Attach when the payee contains" placeholder="Words in the payee" value={ruleText} onChange={(e) => setRuleText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void addRule()} className="max-w-[280px]" />
+                <Input
+                  aria-label="Attach when the payee contains"
+                  placeholder="Words in the payee"
+                  value={ruleText}
+                  onChange={(e) => setRuleText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void addRule()}
+                  className="max-w-[280px]"
+                />
                 <Button size="sm" disabled={ruleText.trim().length < 3} disabledReason={ruleText.trim().length < 3 ? "At least 3 letters" : undefined} onClick={() => void addRule()}>
                   Add rule
                 </Button>
@@ -424,13 +517,29 @@ function HideDialog({ loan, post, onClose, onDone }: { loan: Loan; post: (url: s
         <span className="text-small font-medium text-ink">Reason</span>
         <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: forgiven in 2025, pending write-off" />
       </label>
-      {err && <Banner tone="negative" className="mt-3">{err}</Banner>}
+      {err && (
+        <Banner tone="negative" className="mt-3">
+          {err}
+        </Banner>
+      )}
     </Dialog>
   );
 }
 
 /** Add or edit a loan: who, which way, held by whom, the starting balance and its date, and the terms. */
-function LoanDialog({ loan, entities, onClose, onSaved, post }: { loan: Loan | null; entities: Entity[]; onClose: () => void; onSaved: (name: string) => void; post: (url: string, body: Record<string, unknown>) => Promise<any> }) {
+function LoanDialog({
+  loan,
+  entities,
+  onClose,
+  onSaved,
+  post,
+}: {
+  loan: Loan | null;
+  entities: Entity[];
+  onClose: () => void;
+  onSaved: (name: string) => void;
+  post: (url: string, body: Record<string, unknown>) => Promise<any>;
+}) {
   const [name, setName] = useState(loan?.name ?? "");
   const [direction, setDirection] = useState<"receivable" | "payable">(loan?.direction === "payable" ? "payable" : "receivable");
   const [holder, setHolder] = useState(entities.find((e) => e.name === loan?.holder_entity_name)?.id ?? "");
@@ -514,7 +623,19 @@ function LoanDialog({ loan, entities, onClose, onSaved, post }: { loan: Loan | n
             { value: "payable", title: "Owed by the family", description: "The family borrowed it." },
           ]}
         />
-        {field("Held by", <Menu value={holder} label="Held by" placeholder="Choose the entity" size="md" className="w-full" onChange={setHolder} options={entities.map((e) => ({ value: e.id, label: entityLabel(e.name) }))} />, "The entity whose books carry the loan.")}
+        {field(
+          "Held by",
+          <Menu
+            value={holder}
+            label="Held by"
+            placeholder="Choose the entity"
+            size="md"
+            className="w-full"
+            onChange={setHolder}
+            options={entities.map((e) => ({ value: e.id, label: entityLabel(e.name) }))}
+          />,
+          "The entity whose books carry the loan.",
+        )}
         {field("Other party", <Input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="The borrower or lender’s legal name" />)}
         <div className="grid gap-4 sm:grid-cols-2">
           {field("Starting balance", <Input inputMode="decimal" prefix="$" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" />)}

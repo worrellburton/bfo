@@ -2,7 +2,28 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { authFetch, canWrite } from "../auth";
 import { accountShort, displayName, entityLabel, ledgerMoney, memoText, txnCount } from "../books-shared";
-import { Banner, Button, Card, Dialog, Disclosure, Empty, Input, LinkButton, List, ListRow, Page, PageHeader, Skeleton, Status, Table, format, toast, useDocumentTitle, usePhone, type Column } from "../ui";
+import {
+  Banner,
+  Button,
+  Card,
+  Dialog,
+  Disclosure,
+  Empty,
+  Input,
+  LinkButton,
+  List,
+  ListRow,
+  Page,
+  PageHeader,
+  Skeleton,
+  Status,
+  Table,
+  format,
+  toast,
+  useDocumentTitle,
+  usePhone,
+  type Column,
+} from "../ui";
 
 export function meta() {
   return [{ title: "Review · BFO" }];
@@ -103,12 +124,21 @@ export default function BooksReview() {
 
   const c = review?.counts;
   const needsDecision = c ? (c.uncategorized ?? 0) + (c.checks ?? 0) + (c.mismatched ?? 0) : 0;
-  const context = review ? `${format.count(needsDecision + (c?.low_confidence ?? 0), "item", "items")} to decide · ${format.count(c?.duplicate_groups ?? 0, "possible duplicate", "possible duplicates")}` : undefined;
+  const context = review
+    ? `${format.count(needsDecision + (c?.low_confidence ?? 0), "item", "items")} to decide · ${format.count(c?.duplicate_groups ?? 0, "possible duplicate", "possible duplicates")}`
+    : undefined;
 
   return (
     <Page width="workspace" header={<PageHeader title="Review" context={context} />}>
       {failed && (
-        <Banner tone="negative" action={<Button variant="quiet" size="sm" onClick={() => void load()}>Try again</Button>}>
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        >
           Couldn’t load the review.
         </Banner>
       )}
@@ -128,7 +158,9 @@ export default function BooksReview() {
           <DecideSection review={review} writable={writable} />
 
           <Card id="duplicates" title="Possible duplicates" count={review.duplicates.length} countTone={review.duplicates.length ? "attention" : "neutral"} flush>
-            <p className="px-5 pb-3 text-small text-ink-2 touch:px-4">The same account, day and amount. Two rows from two feeds (the bank feed and an import) are probably the same payment counted twice; both still count in the reports until one is removed.</p>
+            <p className="px-5 pb-3 text-small text-ink-2 touch:px-4">
+              The same account, day and amount. Two rows from two feeds (the bank feed and an import) are probably the same payment counted twice; both still count in the reports until one is removed.
+            </p>
             {review.duplicates.length === 0 ? (
               <div className="border-t border-line px-5 py-4 touch:px-4">
                 <Empty size="section">Nothing looks doubled.</Empty>
@@ -187,12 +219,38 @@ function CountLink({ to, label, n }: { to: string; label: string; n: number }) {
 function DecideSection({ review, writable }: { review: Review; writable: boolean }) {
   const groups: Array<{ id?: string; title: string; hint: string; rows: Row[]; total: number }> = [
     { title: "Not categorized", hint: "No account yet, so they’re off the profit and loss.", rows: review.uncategorized ?? [], total: review.counts.uncategorized },
-    { title: "Checks with no payee", hint: "A check could be a gift, a distribution or a payment that needs a 1099. Add the payee and the account.", rows: review.checks ?? [], total: review.counts.checks ?? 0 },
-    { title: "Bank says tax, books say otherwise", hint: "The bank calls these tax payments but they’re filed elsewhere. An owner’s tax paid by an entity is usually a distribution.", rows: review.mismatched ?? [], total: review.counts.mismatched ?? 0 },
-    { id: "doubtful", title: "In a catch-all account", hint: "Filed to Other Operating Expenses or Other Income. A more specific account makes the statements clearer.", rows: review.low_confidence, total: review.counts.low_confidence },
+    {
+      title: "Checks with no payee",
+      hint: "A check could be a gift, a distribution or a payment that needs a 1099. Add the payee and the account.",
+      rows: review.checks ?? [],
+      total: review.counts.checks ?? 0,
+    },
+    {
+      title: "Bank says tax, books say otherwise",
+      hint: "The bank calls these tax payments but they’re filed elsewhere. An owner’s tax paid by an entity is usually a distribution.",
+      rows: review.mismatched ?? [],
+      total: review.counts.mismatched ?? 0,
+    },
+    {
+      id: "doubtful",
+      title: "In a catch-all account",
+      hint: "Filed to Other Operating Expenses or Other Income. A more specific account makes the statements clearer.",
+      rows: review.low_confidence,
+      total: review.counts.low_confidence,
+    },
   ].filter((g) => g.total > 0 || g.id);
   return (
-    <Card title="To decide" flush action={writable ? <LinkButton to="/books/transactions?type=uncategorized" size="sm" variant="primary">Categorize</LinkButton> : undefined}>
+    <Card
+      title="To decide"
+      flush
+      action={
+        writable ? (
+          <LinkButton to="/books/transactions?type=uncategorized" size="sm" variant="primary">
+            Categorize
+          </LinkButton>
+        ) : undefined
+      }
+    >
       {groups.every((g) => g.total === 0) ? (
         <div className="px-5 pb-5 touch:px-4">
           <Empty size="section">Everything has an account.</Empty>
@@ -307,7 +365,11 @@ function Reconciliation({ accounts, available, writable, onSetOpening }: { accou
   const outside = accounts.filter((a) => a.investment || a.status === "not_in_books");
   const status = (a: Account): ReactNode => {
     const s = a.status ?? (!a.has_ledger ? "no_rows" : "needs_opening");
-    return s === "off" && a.difference !== null && a.difference !== undefined ? <Status tone="warning">Off by {format.money(Math.abs(a.difference))}</Status> : <Status tone={STATUS[s].tone}>{STATUS[s].word}</Status>;
+    return s === "off" && a.difference !== null && a.difference !== undefined ? (
+      <Status tone="warning">Off by {format.money(Math.abs(a.difference))}</Status>
+    ) : (
+      <Status tone={STATUS[s].tone}>{STATUS[s].word}</Status>
+    );
   };
   const head = (a: Account) => (a.entity_name ? entityLabel(a.entity_name) : "No entity");
   const columns: Column<Account>[] = [
@@ -340,7 +402,10 @@ function Reconciliation({ accounts, available, writable, onSetOpening }: { accou
         ]
       : []),
   ];
-  const seen = books.map((a) => a.bank_seen_at).filter((d): d is string => !!d).sort()[0];
+  const seen = books
+    .map((a) => a.bank_seen_at)
+    .filter((d): d is string => !!d)
+    .sort()[0];
   return (
     <Card
       title="Bank vs books"
@@ -379,7 +444,9 @@ function Reconciliation({ accounts, available, writable, onSetOpening }: { accou
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-small text-ink-2">Investment and retirement accounts are tracked on Investments. An individual retirement account belongs to one person; check the mapping in Treasury if it shows a trust or company.</p>
+            <p className="mt-2 text-small text-ink-2">
+              Investment and retirement accounts are tracked on Investments. An individual retirement account belongs to one person; check the mapping in Treasury if it shows a trust or company.
+            </p>
           </Disclosure>
         </div>
       )}

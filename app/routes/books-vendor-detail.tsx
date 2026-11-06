@@ -163,7 +163,8 @@ export default function BooksVendorDetail() {
       setChange(null);
       setRenaming(null);
       const applied = Number(data.applied ?? 0);
-      const msg = c.field === "vendor_name" ? `Renamed to ${c.value}${applied ? ` on ${txnCount(applied)}` : ""}` : backfill ? `Changed ${txnCount(applied)} and new ones` : "Saved for new transactions";
+      const msg =
+        c.field === "vendor_name" ? `Renamed to ${c.value}${applied ? ` on ${txnCount(applied)}` : ""}` : backfill ? `Changed ${txnCount(applied)} and new ones` : "Saved for new transactions";
       if (c.field === "vendor_name" && c.value !== name) {
         changedToast(msg, data.undo, () => {
           // Undo also stops renaming new arrivals: the rule goes back to the old name.
@@ -183,13 +184,30 @@ export default function BooksVendorDetail() {
   }
 
   const context = txns
-    ? [entities.length === 1 ? `Paid from ${entityLabel(entities[0])}` : entities.length ? `${entities.length} entities` : null, txnCount(list.length), stats.first ? `since ${format.date(stats.first, "medium")}` : null].filter(Boolean).join(" · ")
+    ? [
+        entities.length === 1 ? `Paid from ${entityLabel(entities[0])}` : entities.length ? `${entities.length} entities` : null,
+        txnCount(list.length),
+        stats.first ? `since ${format.date(stats.first, "medium")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : undefined;
 
   const columns: Column<{ year: string; months: number[]; total: number }>[] = [
     { key: "year", header: "Year", width: "72px", render: (r) => r.year },
-    ...MONTHS.map((m, i) => ({ key: m, header: m, align: "right" as const, render: (r: { months: number[] }) => <span className={r.months[i] ? "" : "text-ink-3"}>{format.money(r.months[i], { precision: "dollars", sign: "accounting", zero: "dash" })}</span> })),
-    { key: "total", header: "Total", align: "right", width: "112px", render: (r) => <span className="font-medium">{format.money(r.total, { precision: "dollars", sign: "accounting", zero: "dash" })}</span> },
+    ...MONTHS.map((m, i) => ({
+      key: m,
+      header: m,
+      align: "right" as const,
+      render: (r: { months: number[] }) => <span className={r.months[i] ? "" : "text-ink-3"}>{format.money(r.months[i], { precision: "dollars", sign: "accounting", zero: "dash" })}</span>,
+    })),
+    {
+      key: "total",
+      header: "Total",
+      align: "right",
+      width: "112px",
+      render: (r) => <span className="font-medium">{format.money(r.total, { precision: "dollars", sign: "accounting", zero: "dash" })}</span>,
+    },
   ];
 
   return (
@@ -211,7 +229,11 @@ export default function BooksVendorDetail() {
         />
       }
     >
-      {error && <Banner tone="negative" onDismiss={() => setError("")}>{error}</Banner>}
+      {error && (
+        <Banner tone="negative" onDismiss={() => setError("")}>
+          {error}
+        </Banner>
+      )}
       {txns && list.length === 0 && !error ? (
         <Empty title={name ? "No transactions for this vendor" : "No vendor chosen"}>{name ? "Nothing in the books is filed under this name." : "Choose a vendor from the Vendors list."}</Empty>
       ) : (
@@ -219,7 +241,8 @@ export default function BooksVendorDetail() {
           {spread.accounts.length > 1 && (
             <Banner tone="warning" title="Filed more than one way.">
               {spread.accounts.map(([a, n]) => `${accountShort(a)} ${n}`).join(", ")}
-              {spread.types.length > 1 ? `; ${spread.types.map(([t, n]) => `${TYPE_OPTIONS.find((o) => o.value === t)?.label ?? "on a loan"} ${n}`).join(", ")}` : ""}. Set the vendor’s account below and refile the history if they should match.
+              {spread.types.length > 1 ? `; ${spread.types.map(([t, n]) => `${TYPE_OPTIONS.find((o) => o.value === t)?.label ?? "on a loan"} ${n}`).join(", ")}` : ""}. Set the vendor’s account below
+              and refile the history if they should match.
             </Banner>
           )}
           {person && wages && (
@@ -250,7 +273,16 @@ export default function BooksVendorDetail() {
             </Card>
             <Card title="How new transactions are filed">
               <Rows>
-                <Row label="Account" hint={ruleAccount ? `By the vendor’s rule${rule?.rule ? `, “${rule.rule.match}”` : ""}.` : mostAccount ? `No rule yet. ${mostAccount[1]} of ${list.length} are in ${accountShort(mostAccount[0])}.` : "No rule yet."}>
+                <Row
+                  label="Account"
+                  hint={
+                    ruleAccount
+                      ? `By the vendor’s rule${rule?.rule ? `, “${rule.rule.match}”` : ""}.`
+                      : mostAccount
+                        ? `No rule yet. ${mostAccount[1]} of ${list.length} are in ${accountShort(mostAccount[0])}.`
+                        : "No rule yet."
+                  }
+                >
                   <Menu
                     value={ruleAccount ?? ""}
                     placeholder="No default"
@@ -283,7 +315,16 @@ export default function BooksVendorDetail() {
               <Card title="By year" flush>
                 <List label="By year">
                   {matrix.map((r) => (
-                    <ListRow key={r.year} title={r.year} secondary={r.months.map((v, i) => (v ? `${MONTHS[i]} ${format.money(v, { precision: "compact" })}` : null)).filter(Boolean).slice(0, 4).join(" · ")} trailing={format.money(r.total, { precision: "dollars", sign: "accounting" })} />
+                    <ListRow
+                      key={r.year}
+                      title={r.year}
+                      secondary={r.months
+                        .map((v, i) => (v ? `${MONTHS[i]} ${format.money(v, { precision: "compact" })}` : null))
+                        .filter(Boolean)
+                        .slice(0, 4)
+                        .join(" · ")}
+                      trailing={format.money(r.total, { precision: "dollars", sign: "accounting" })}
+                    />
                   ))}
                 </List>
               </Card>
@@ -384,7 +425,21 @@ export default function BooksVendorDetail() {
  * A vendor's default account or type: from now on only (the default, and
  * where focus starts), or the history too, with what that reaches.
  */
-function DefaultDialog({ vendor, name, change, busy, onClose, onApply }: { vendor: string; name: string; change: Change; busy: boolean; onClose: () => void; onApply: (backfill: boolean, skipEdited: boolean) => void }) {
+function DefaultDialog({
+  vendor,
+  name,
+  change,
+  busy,
+  onClose,
+  onApply,
+}: {
+  vendor: string;
+  name: string;
+  change: Change;
+  busy: boolean;
+  onClose: () => void;
+  onApply: (backfill: boolean, skipEdited: boolean) => void;
+}) {
   const [scope, setScope] = useState<"future" | "all">("future");
   const [p, setP] = useState<PreviewReply | null | "loading">("loading");
   const [skip, setSkip] = useState(true);
@@ -431,7 +486,9 @@ function DefaultDialog({ vendor, name, change, busy, onClose, onApply }: { vendo
             {pv.edited > 0 && <Checkbox checked={skip} onChange={setSkip} label={`Leave the ${txnCount(pv.edited)} changed by hand as they are`} />}
             {pv.locked > 0 && <p>{txnCount(pv.locked)} in a closed period stay as they are.</p>}
             {pv.prior_years > 0 && <p>This reaches {txnCount(pv.prior_years)} from earlier years, which may already be on filed returns.</p>}
-            <p>Each change is recorded and can be undone right after. New transactions from {vendor} will {what}.</p>
+            <p>
+              Each change is recorded and can be undone right after. New transactions from {vendor} will {what}.
+            </p>
           </div>
         )}
       </div>
@@ -480,7 +537,14 @@ function RenameDialog({
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" busy={busy} busyLabel="Saving…" disabled={!ready} disabledReason={ready ? undefined : kind === "merge" ? "Choose a vendor" : "Type the new name"} onClick={() => onApply(target, true)}>
+          <Button
+            variant="primary"
+            busy={busy}
+            busyLabel="Saving…"
+            disabled={!ready}
+            disabledReason={ready ? undefined : kind === "merge" ? "Choose a vendor" : "Type the new name"}
+            onClick={() => onApply(target, true)}
+          >
             {kind === "rename" ? `Rename ${txnCount(count)}` : `Merge ${txnCount(count)}`}
           </Button>
         </>

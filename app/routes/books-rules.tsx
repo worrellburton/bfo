@@ -2,7 +2,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { authFetch, canWrite } from "../auth";
 import { accountShort, displayName, memoText, txnCount } from "../books-shared";
-import { Banner, Button, Card, Disclosure, Empty, IconButton, List, ListRow, Page, PageHeader, SearchField, Skeleton, Table, confirm, format, toast, useDocumentTitle, usePhone, type Column } from "../ui";
+import {
+  Banner,
+  Button,
+  Card,
+  Disclosure,
+  Empty,
+  IconButton,
+  List,
+  ListRow,
+  Page,
+  PageHeader,
+  SearchField,
+  Skeleton,
+  Table,
+  confirm,
+  format,
+  toast,
+  useDocumentTitle,
+  usePhone,
+  type Column,
+} from "../ui";
 
 export function meta() {
   return [{ title: "Rules · BFO" }];
@@ -133,16 +153,20 @@ export default function BooksRules() {
           <span className="text-ink-2">{r.match_kind === "vendor" ? "is " : "contains "}</span>
           {matchText(r.match)}
           {r.overlaps && r.overlaps.length > 0 && (
-            <span className="block text-small text-warning">
-              Also reached by {r.overlaps.map((o) => `“${matchText(o.match)}”${o.wins ? " (tried first)" : ""}`).join(", ")}
-            </span>
+            <span className="block text-small text-warning">Also reached by {r.overlaps.map((o) => `“${matchText(o.match)}”${o.wins ? " (tried first)" : ""}`).join(", ")}</span>
           )}
         </span>
       ),
     },
     { key: "do", header: "Do this", width: "28%", render: (r) => effects(r).join(" · ") || <span className="text-ink-3">Nothing</span> },
     { key: "matches", header: "Reaches", align: "right", width: "96px", sort: (a, b) => a.matches - b.matches, render: matchesLink },
-    { key: "added", header: "Added", width: "160px", sort: (a, b) => a.created_at.localeCompare(b.created_at), render: (r) => <span className="text-small text-ink-2">{[format.date(r.created_at, "short"), r.created_by_name].filter(Boolean).join(" · ")}</span> },
+    {
+      key: "added",
+      header: "Added",
+      width: "160px",
+      sort: (a, b) => a.created_at.localeCompare(b.created_at),
+      render: (r) => <span className="text-small text-ink-2">{[format.date(r.created_at, "short"), r.created_by_name].filter(Boolean).join(" · ")}</span>,
+    },
     ...(writable
       ? [
           {
@@ -159,11 +183,27 @@ export default function BooksRules() {
       : []),
   ];
 
-  const context = rules ? `${format.count(rules.length, "rule", "rules")}${ordered ? " · tried top to bottom; a payee’s exact name before words in it, then the longer text" : ""}${overlapping ? ` · ${overlapping} overlap` : ""}` : undefined;
+  const context = rules
+    ? `${format.count(rules.length, "rule", "rules")}${ordered ? " · tried top to bottom; a payee’s exact name before words in it, then the longer text" : ""}${overlapping ? ` · ${overlapping} overlap` : ""}`
+    : undefined;
   return (
     <Page width="workspace" header={<PageHeader title="Rules" context={context} />}>
-      {error && <Banner tone="negative" action={<Button variant="quiet" size="sm" onClick={() => void load()}>Try again</Button>}>{error}</Banner>}
-      <p className="max-w-[68ch] text-body text-ink-2">Rules are made when you file a payee’s transactions all at once, set a vendor’s default, rename or merge a vendor, or auto-attach a loan. They decide how new transactions are filed, before the built-in chart. Each change a rule makes is recorded in that transaction’s history.</p>
+      {error && (
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        >
+          {error}
+        </Banner>
+      )}
+      <p className="max-w-[68ch] text-body text-ink-2">
+        Rules are made when you file a payee’s transactions all at once, set a vendor’s default, rename or merge a vendor, or auto-attach a loan. They decide how new transactions are filed, before the
+        built-in chart. Each change a rule makes is recorded in that transaction’s history.
+      </p>
       <Card flush>
         <div className="px-5 py-3 touch:px-4">
           <SearchField value={q} onChange={setQ} placeholder="Search rules" label="Search rules" />

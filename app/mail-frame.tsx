@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import createDOMPurify, { type DOMPurify } from "dompurify";
 
 /**
@@ -84,16 +84,28 @@ function sanitizeMail(html: string, images: boolean): { html: string; remoteImag
  * blue links stay blue. Pictures are inverted a second time so they look as
  * sent. Mail designed dark comes out light; "Original colors" undoes it.
  */
-const darkCss = (ground: string) => `
-html{background:${ground};color-scheme:dark;}
-body{background:#fff;color:#111;filter:invert(0.93) hue-rotate(180deg);}
+/** Dark: the mail inverted by just enough that its white paper lands on the surface around the frame, so there's no edge. */
+const darkCss = (ground: Ground) => `
+html{background:${ground.css};color-scheme:dark;}
+body{background:#fff;color:#111;filter:invert(${(1 - ground.level).toFixed(3)}) hue-rotate(180deg);}
 img,picture,video,svg,canvas,[style*="background-image"],[background]{filter:invert(1) hue-rotate(180deg);}
 `;
 
-/** The reader's surface (the `raised` token), so a mail shown dark meets the page without an edge. */
-const raisedGround = () => (typeof document !== "undefined" ? getComputedStyle(document.documentElement).getPropertyValue("--color-raised").trim() : "") || "Canvas";
+/** The colour the frame sits on, and its lightness (0–1). */
+type Ground = { css: string; level: number };
+const DEFAULT_GROUND: Ground = { css: "Canvas", level: 0.07 };
 
-function frameDocument(body: string, images: boolean, dark: boolean): string {
+/** The first solid background behind an element (the reader's card on desktop, the page on a phone). */
+function groundOf(el: HTMLElement | null): Ground {
+  for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+    const bg = getComputedStyle(n).backgroundColor;
+    const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(bg);
+    if (m && (m[4] === undefined || Number(m[4]) > 0.5)) return { css: bg, level: (Number(m[1]) + Number(m[2]) + Number(m[3])) / 3 / 255 };
+  }
+  return DEFAULT_GROUND;
+}
+
+function frameDocument(body: string, images: boolean, dark: boolean, ground: Ground): string {
   // Pictures only from BFO (its image proxy), named outright too: a sandboxed srcdoc frame's own origin is opaque.
   const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src data:${images ? ` 'self' ${window.location.origin}` : ""}; font-src data:`;
   // The viewport meta and text-size-adjust keep iOS Safari from inflating the text of a wide (fixed-width) layout on its own.
@@ -106,7 +118,7 @@ img{max-width:100%;height:auto;}
 a{color:#4f46e5;}
 blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #ddd;color:#555;}
 pre{white-space:pre-wrap;}
-${dark ? darkCss(raisedGround()) : ""}</style></head><body>${body}</body></html>`;
+${dark ? darkCss(ground) : ""}</style></head><body>${body}</body></html>`;
 }
 
 /**
@@ -130,10 +142,15 @@ export function MailFrame({
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const dark = useDarkTheme() && !original;
+  const [ground, setGround] = useState<Ground>(DEFAULT_GROUND);
+  useLayoutEffect(() => {
+    const g = groundOf(ref.current?.parentElement ?? null);
+    setGround((cur) => (cur.css === g.css ? cur : g));
+  }, [dark]);
   const { srcDoc, remoteImages } = useMemo(() => {
     const clean = sanitizeMail(html, images);
-    return { srcDoc: frameDocument(clean.html, images, dark), remoteImages: clean.remoteImages };
-  }, [html, images, dark]);
+    return { srcDoc: frameDocument(clean.html, images, dark, ground), remoteImages: clean.remoteImages };
+  }, [html, images, dark, ground]);
   useEffect(() => onRemoteImages?.(remoteImages), [remoteImages, onRemoteImages]);
 
   useEffect(() => {
@@ -219,7 +236,7 @@ export function MailFrame({
       srcDoc={srcDoc}
       sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
       referrerPolicy="no-referrer"
-      className="block h-[120px] w-full border-0 bg-raised"
+      className="block h-[120px] w-full border-0 bg-transparent"
     />
   );
 }

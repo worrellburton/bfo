@@ -99,13 +99,20 @@ export default function HomeAnimations() {
               </p>
             )}
             <div className="flex items-center gap-2">
-              <button type="button" aria-label="Previous backdrop" onClick={() => step(-1)} className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full border border-door-edge text-door-ink-2 hover:text-door-ink">
+              <button
+                type="button"
+                aria-label="Previous backdrop"
+                onClick={() => step(-1)}
+                className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full border border-door-edge text-door-ink-2 hover:text-door-ink"
+              >
                 <Icon name="chevronLeft" size={20} />
               </button>
               {/* Phones: one caption, with dots for where it is in the set. */}
               <div className="min-w-0 flex-1 text-center md:hidden" aria-live="polite">
                 <p className="text-body font-medium">
-                  <span className="text-door-ink-2 tabular-nums">{index + 1} of {BACKDROPS.length} · </span>
+                  <span className="text-door-ink-2 tabular-nums">
+                    {index + 1} of {BACKDROPS.length} ·{" "}
+                  </span>
                   {picked.name}
                 </p>
                 <p className="mt-1 line-clamp-2 text-small text-door-ink-2">{picked.line}</p>
@@ -137,7 +144,12 @@ export default function HomeAnimations() {
                   );
                 })}
               </div>
-              <button type="button" aria-label="Next backdrop" onClick={() => step(1)} className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full border border-door-edge text-door-ink-2 hover:text-door-ink">
+              <button
+                type="button"
+                aria-label="Next backdrop"
+                onClick={() => step(1)}
+                className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full border border-door-edge text-door-ink-2 hover:text-door-ink"
+              >
                 <Icon name="chevronRight" size={20} />
               </button>
             </div>

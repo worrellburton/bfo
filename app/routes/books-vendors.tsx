@@ -106,21 +106,27 @@ export default function BooksVendors() {
         </span>
       ),
     },
-    ...MONTHS.map(
-      (m, i): Column<Vendor> => ({
-        key: m,
-        header: current && i === lastMonth ? `${m} (to ${now.getDate()})` : m,
-        align: "right",
-        width: current && i === lastMonth ? "104px" : "84px",
-        render: (v) => (i > lastMonth ? "" : <span className={v.monthly[i] ? "" : "text-ink-3"}>{dollars(v.monthly[i])}</span>),
-      }),
-    ),
+    ...MONTHS.map((m, i): Column<Vendor> => ({
+      key: m,
+      header: current && i === lastMonth ? `${m} (to ${now.getDate()})` : m,
+      align: "right",
+      width: current && i === lastMonth ? "104px" : "84px",
+      render: (v) => (i > lastMonth ? "" : <span className={v.monthly[i] ? "" : "text-ink-3"}>{dollars(v.monthly[i])}</span>),
+    })),
     { key: "spent", header: "Spent", align: "right", width: "104px", sort: (a, b) => a.spent - b.spent, render: (v) => <span className="font-medium">{dollars(v.spent)}</span> },
     ...(anyRefunds ? [{ key: "in", header: "Refunds", align: "right" as const, width: "96px", render: (v: Vendor) => (v.received ? dollars(v.received) : "") }] : []),
-    { key: "last", header: "Last paid", width: "120px", sort: (a, b) => a.last_date.localeCompare(b.last_date), render: (v) => <span className="text-ink-2">{format.date(v.last_date, "short")}</span> },
+    {
+      key: "last",
+      header: "Last paid",
+      width: "120px",
+      sort: (a, b) => a.last_date.localeCompare(b.last_date),
+      render: (v) => <span className="text-ink-2">{format.date(v.last_date, "short")}</span>,
+    },
   ];
   const yearLabel = current ? `${year} to ${format.date(now, "short")}` : year;
-  const context = vendors ? `${format.count(shown.length, "vendor", "vendors")} · ${format.money(totals.spent, { precision: "dollars" })} paid in ${yearLabel}${totals.received ? ` · ${format.money(totals.received, { precision: "dollars" })} refunded` : ""}` : undefined;
+  const context = vendors
+    ? `${format.count(shown.length, "vendor", "vendors")} · ${format.money(totals.spent, { precision: "dollars" })} paid in ${yearLabel}${totals.received ? ` · ${format.money(totals.received, { precision: "dollars" })} refunded` : ""}`
+    : undefined;
 
   return (
     <Page width="full" header={<PageHeader title="Vendors" context={context} />}>
@@ -148,7 +154,12 @@ export default function BooksVendors() {
           />
           {relatedCount > 0 && (
             <div className="mt-3">
-              <Checkbox checked={related} onChange={setRelated} label={`Include the family’s own entities (${relatedCount})`} hint="Payments between the family’s entities need their own basis (a loan, a contribution, a distribution) and aren’t vendor spend." />
+              <Checkbox
+                checked={related}
+                onChange={setRelated}
+                label={`Include the family’s own entities (${relatedCount})`}
+                hint="Payments between the family’s entities need their own basis (a loan, a contribution, a distribution) and aren’t vendor spend."
+              />
             </div>
           )}
         </div>
@@ -161,10 +172,22 @@ export default function BooksVendors() {
             loading={!vendors}
             stickyFirst
             onRowClick={(v) => navigate(`/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`)}
-            totals={[`Total, ${format.count(shown.length, "vendor", "vendors")}`, ...MONTHS.map((_, i) => (i > lastMonth ? "" : dollars(totals.monthly[i]))), dollars(totals.spent), ...(anyRefunds ? [dollars(totals.received)] : []), ""]}
+            totals={[
+              `Total, ${format.count(shown.length, "vendor", "vendors")}`,
+              ...MONTHS.map((_, i) => (i > lastMonth ? "" : dollars(totals.monthly[i]))),
+              dollars(totals.spent),
+              ...(anyRefunds ? [dollars(totals.received)] : []),
+              "",
+            ]}
             phoneRow={(v) => ({
               title: displayName(v.vendor),
-              secondary: [`Last paid ${format.date(v.last_date, "short")}`, v.entities.length > 1 ? `${v.entities.length} entities` : v.entities[0] ? entityLabel(v.entities[0]) : null, relOf.get(v.vendor) ? "Related party" : null].filter(Boolean).join(" · "),
+              secondary: [
+                `Last paid ${format.date(v.last_date, "short")}`,
+                v.entities.length > 1 ? `${v.entities.length} entities` : v.entities[0] ? entityLabel(v.entities[0]) : null,
+                relOf.get(v.vendor) ? "Related party" : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
               trailing: dollars(v.spent),
               to: `/books/vendors/detail?name=${encodeURIComponent(v.vendor)}`,
             })}
@@ -172,7 +195,10 @@ export default function BooksVendors() {
           />
         </div>
       </Card>
-      <p className="text-small text-ink-2">Spent counts posted money out filed as income or expense; transfers between the family’s own accounts aren’t vendors. Taxes paid are included, so the total won’t match the expenses on the profit and loss.</p>
+      <p className="text-small text-ink-2">
+        Spent counts posted money out filed as income or expense; transfers between the family’s own accounts aren’t vendors. Taxes paid are included, so the total won’t match the expenses on the
+        profit and loss.
+      </p>
     </Page>
   );
 }

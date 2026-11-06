@@ -45,7 +45,14 @@ export default function AssetDetail() {
   if (page.loadError && !page.asset) {
     return (
       <Page width="workspace">
-        <Banner tone="negative" action={<Button variant="quiet" onClick={page.retryLoad}>Try again</Button>}>
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" onClick={page.retryLoad}>
+              Try again
+            </Button>
+          }
+        >
           Couldn’t load this entity. Check your connection and try again.
         </Banner>
       </Page>

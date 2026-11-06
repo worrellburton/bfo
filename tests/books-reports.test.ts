@@ -475,6 +475,44 @@ describe("report=balance-sheet", () => {
   });
 });
 
+describe("report=balance-sheet, individuals' accounts", () => {
+  const ira = { account_id: "acc-ira", institution_name: "Cedar Funds", mask: "4712", subtype: "ira", account_name: "IRA", nickname: null, entity_id: ENT_B, entity_name: "Beta Trust (100%)", hidden: false, archived_at: null };
+  beforeEach(() => {
+    routes.unshift(
+      [/^GET plaid_account_prefs\?select=\*/, () => [ira]],
+      [/^GET plaid_account_state/, () => [{ account_id: "acc-ira", balance: 1000.4, seen_at: "2026-10-27T01:00:00Z" }]],
+      [/^GET book_loans/, () => []],
+      [/^GET book_transactions/, () => []],
+    );
+  });
+
+  it("keeps a retirement account out of the entity's sections and says whose it is", async () => {
+    const all = await get({ report: "balance-sheet" });
+    const ret = all.json.sections.find((s: any) => s.key === "retirement");
+    expect(ret.rows[0]).toMatchObject({ name: "IRA", type: "IRA", entity: "Beta Trust", shown: 1000 });
+    expect(ret.rows[0].notes[0]).toMatch(/belongs to its owner, not to Beta Trust/);
+    expect(all.json.total_assets).toBe(1000);
+
+    const trust = await get({ report: "balance-sheet", entity: ENT_B });
+    expect(trust.json.individual.rows).toHaveLength(1);
+    expect(trust.json.individual.counted).toBe(false);
+    expect(trust.json.total_assets).toBe(0);
+  });
+});
+
+describe("report=ledger", () => {
+  it("exports the year's posted rows with their bank account and records who took them", async () => {
+    routes.unshift(rows(ledger), [/^GET book_txn_receipt/, () => [{ transaction_id: "e1" }]], [/^POST audit_log/, () => json([], 201)]);
+    const r = await get({ report: "ledger", year: "2026" });
+    expect(r.status).toBe(200);
+    expect(r.json.rows).toHaveLength(7);
+    expect(r.json.rows.find((x: any) => x.transaction_id === "e1")).toMatchObject({ bank_account: "Ops", mask: "1234", account: "6100 Professional Fees", statement_line: "Operating expenses", type: "normal", receipts: 1 });
+    expect(r.json.rows.find((x: any) => x.transaction_id === "u1").statement_line).toBe("Uncategorized");
+    const logged = calls.find((c) => c.method === "POST" && c.path.startsWith("audit_log"));
+    expect(logged?.body).toMatchObject({ action: "books.export", actor_name: "Robert", count: 7 });
+  });
+});
+
 describe("report=loans", () => {
   it("returns the registry, its rules and the total outstanding", async () => {
     routes.unshift(

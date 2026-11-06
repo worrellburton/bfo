@@ -244,9 +244,9 @@ describe("auth and routing", () => {
     me = viewer;
     const actions = ["create_loan", "update_loan", "loan_rule", "delete_rule", "categorize_vendor", "vendor_settings", "batch_update", "add_receipt", "set_sunrise_sync", "delete_receipt"];
     for (const action of actions) {
-      expect(await post({ action }), action).toEqual({ status: 403, json: { error: "forbidden" } });
+      expect(await post({ action }), action).toMatchObject({ status: 403, json: { error: "forbidden" } });
     }
-    expect(await post({ transaction_id: "t1", book_category: "x" })).toEqual({ status: 403, json: { error: "forbidden" } });
+    expect(await post({ transaction_id: "t1", book_category: "x" })).toMatchObject({ status: 403, json: { error: "forbidden" } });
     expect(calls.filter((c) => c.method !== "GET")).toEqual([]);
     expect((await get({ report: "settings" })).status).toBe(200);
   });
@@ -267,7 +267,7 @@ describe("auth and routing", () => {
     routes.unshift([/^GET book_transactions/, () => failWith(500, "relation does not exist")]);
     const r = await get({ report: "transactions" });
     expect(r.status).toBe(500);
-    expect(r.json.error).toBe("books_data_failed");
+    expect(r.json.error).toBe("server_error");
     expect(JSON.stringify(r.json)).not.toMatch(/relation/);
   });
 });
@@ -283,9 +283,9 @@ describe("report=transactions", () => {
       [
         /^GET book_transactions\?select=date,amount/,
         () => [
-          { date: "2026-01-02", amount: 120 },
-          { date: "2026-02-03", amount: "-40.5" },
-          { date: "2026-03-04", amount: 10.25 },
+          { date: "2026-01-02", amount: 120, book_category: "6100 Professional Fees" },
+          { date: "2026-02-03", amount: "-40.5", book_category: "6100 Professional Fees" },
+          { date: "2026-03-04", amount: 10.25, book_category: null, plaid_category: "GENERAL_SERVICES" },
         ],
       ],
     );
@@ -295,14 +295,22 @@ describe("report=transactions", () => {
     expect(r.json.offset).toBe(0);
     expect(r.json.limit).toBe(2);
     expect(r.json.transactions.map((t: BookTxn) => t.entity_name)).toEqual(["Alpha LLC", "Beta Trust"]);
-    expect(r.json.summary).toEqual({ count: 3, expenses: 130.25, income: 40.5, first: "2026-01-02", last: "2026-03-04" });
+    // The P&L's arithmetic: a refund nets inside its expense account, and an uncategorized row sits beside the totals.
+    expect(r.json.summary).toEqual({
+      count: 3,
+      expenses: 79.5,
+      income: 0,
+      uncategorized: { in: 0, out: 10.25, net: -10.25, count: 1 },
+      first: "2026-01-02",
+      last: "2026-03-04",
+    });
 
     const [pageCall, sumCall] = txnCalls();
     // The fake records paths URL-decoded, so compare against the decoded filter.
     const filter = decodeURIComponent(transactionsFilter(prefs, { entity: ENT_A, type: "expenses", q: "ac_me" }));
     expect(pageCall.path).toBe(`book_transactions?select=*${filter}&order=amount.asc.nullslast,transaction_id.asc`);
     expect(pageCall.headers).toEqual({ Range: "0-1", Prefer: "count=exact" });
-    expect(sumCall.path).toBe(`book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,txn_type${filter}&order=date.asc,transaction_id.asc`);
+    expect(sumCall.path).toBe(`book_transactions?select=date,amount,book_category,plaid_category,loan_id,type_override,intercompany,counterparty_account_id,txn_type${filter}&order=date.asc,transaction_id.asc`);
   });
 
   it("leaves transfers, card payments, roll-ups and loans out of income and expenses", async () => {
@@ -324,7 +332,7 @@ describe("report=transactions", () => {
       ],
     );
     const r = await get({ report: "transactions" });
-    expect(r.json.summary).toEqual({ count: 8, expenses: 100, income: 1000, first: "2026-01-02", last: "2026-01-07" });
+    expect(r.json.summary).toEqual({ count: 8, expenses: 100, income: 1000, uncategorized: { in: 0, out: 0, net: 0, count: 0 }, first: "2026-01-02", last: "2026-01-07" });
   });
 
   it("summary=0 skips the totals query", async () => {

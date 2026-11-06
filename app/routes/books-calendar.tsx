@@ -203,7 +203,14 @@ export default function BooksCalendar() {
                       onClick={() => setDay(d)}
                       className={cx("flex h-full w-full cursor-pointer flex-col items-stretch gap-1 p-1 text-left hover:bg-hover sm:p-2", past && "bg-sunken")}
                     >
-                      <span className={cx("inline-flex size-6 items-center justify-center self-start rounded-full text-caption tabular-nums", today ? "bg-accent font-medium text-on-accent" : "text-ink-2")}>{d}</span>
+                      <span
+                        className={cx(
+                          "inline-flex size-6 items-center justify-center self-start rounded-full text-caption tabular-nums",
+                          today ? "bg-accent font-medium text-on-accent" : "text-ink-2",
+                        )}
+                      >
+                        {d}
+                      </span>
                       {phone ? (
                         items.length > 0 && <span className="text-caption text-ink-2 tabular-nums">{items.length}</span>
                       ) : (
@@ -231,7 +238,9 @@ export default function BooksCalendar() {
               );
             })}
           </div>
-          <p className="border-t border-line px-5 py-3 text-small text-ink-2 touch:px-4">Money in shows with a plus. A check means the payment came on a day that has passed. Choose a day to see everything on it.</p>
+          <p className="border-t border-line px-5 py-3 text-small text-ink-2 touch:px-4">
+            Money in shows with a plus. A check means the payment came on a day that has passed. Choose a day to see everything on it.
+          </p>
         </Card>
       )}
 
@@ -271,7 +280,13 @@ function Agenda({ byDay, cursor, todayIso, onDay }: { byDay: Map<number, Item[]>
 function DayDialog({ date, items, todayIso, onClose }: { date: string | null; items: Item[]; todayIso: string; onClose: () => void }) {
   const past = !!date && date < todayIso;
   return (
-    <Dialog open={!!date} onClose={onClose} title={date ? format.date(date, "long") : ""} description={past ? "This day has passed: each payment says whether it came." : "Projected from past payments. Nothing here is scheduled or approved."} size="md">
+    <Dialog
+      open={!!date}
+      onClose={onClose}
+      title={date ? format.date(date, "long") : ""}
+      description={past ? "This day has passed: each payment says whether it came." : "Projected from past payments. Nothing here is scheduled or approved."}
+      size="md"
+    >
       {items.length === 0 ? (
         <p className="text-body text-ink-2">Nothing expected.</p>
       ) : (
@@ -289,7 +304,14 @@ function DayDialog({ date, items, todayIso, onClose }: { date: string | null; it
                     {displayName(it.s.vendor)}
                   </Link>
                   <p className="text-small text-ink-2">
-                    {[it.s.cadence.charAt(0).toUpperCase() + it.s.cadence.slice(1), it.s.entity_name ? entityLabel(it.s.entity_name) : null, `last paid ${format.date(it.s.last_date, "short")}`, it.s.own_money ? "between own accounts" : null].filter(Boolean).join(" · ")}
+                    {[
+                      it.s.cadence.charAt(0).toUpperCase() + it.s.cadence.slice(1),
+                      it.s.entity_name ? entityLabel(it.s.entity_name) : null,
+                      `last paid ${format.date(it.s.last_date, "short")}`,
+                      it.s.own_money ? "between own accounts" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                   {past && <p className={cx("text-small", it.matched ? "text-ink-2" : "text-warning")}>{it.matched ? "Came" : "Hasn’t come"}</p>}
                   {it.s.stale && <p className="text-small text-ink-2">Hasn’t been paid for more than one and a half cycles; it may have stopped.</p>}

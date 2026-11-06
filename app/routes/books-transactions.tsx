@@ -13,7 +13,17 @@ export function meta() {
 type Entity = { id: string; name: string };
 /** Totals for the whole filtered set: the strip above the ledger. */
 type Summary = { count: number; expenses: number; income: number; first: string | null; last: string | null };
-type BankAccount = { account_id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null; institution_name: string; type?: string; subtype?: string | null; entity_name?: string | null };
+type BankAccount = {
+  account_id: string;
+  name: string;
+  official_name: string | null;
+  nickname: string | null;
+  mask: string | null;
+  institution_name: string;
+  type?: string;
+  subtype?: string | null;
+  entity_name?: string | null;
+};
 
 const PAGE = 100;
 const PERIOD_KEY = "bfo-books-period";
@@ -177,7 +187,11 @@ export default function BooksTransactions() {
   useEffect(() => {
     void (async () => {
       try {
-        const [metaRes, settingsRes, bankRes] = await Promise.all([authFetch("/api/books/data?report=meta"), authFetch("/api/books/data?report=settings"), authFetch("/api/plaid/data?report=treasury")]);
+        const [metaRes, settingsRes, bankRes] = await Promise.all([
+          authFetch("/api/books/data?report=meta"),
+          authFetch("/api/books/data?report=settings"),
+          authFetch("/api/plaid/data?report=treasury"),
+        ]);
         if (metaRes.ok) {
           const data = await metaRes.json();
           setEntities(data.entities ?? []);
@@ -250,7 +264,8 @@ export default function BooksTransactions() {
   async function loadOlderMercury() {
     const ok = await confirm({
       title: "Load older Mercury transactions?",
-      message: "Reads up to 24 months of history from Mercury for each Mercury account that’s still connected, and adds only what’s older than the bank feed already has. It takes a minute or two. Rows dated in a closed period aren’t changed.",
+      message:
+        "Reads up to 24 months of history from Mercury for each Mercury account that’s still connected, and adds only what’s older than the bank feed already has. It takes a minute or two. Rows dated in a closed period aren’t changed.",
       confirmLabel: "Load older transactions",
     });
     if (!ok) return;
@@ -274,7 +289,9 @@ export default function BooksTransactions() {
   const periodLabel = period === "all" ? "All time" : (periods.find((o) => o.value === period)?.label ?? period);
   const entityName = tagMatch ? entityLabel(tagMatch.name) : entity === "all" ? "All entities" : entity === "unmapped" ? "No entity" : entityLabel(entities.find((e) => e.id === entity)?.name);
   const spanText = summary?.first && summary?.last ? format.dateRange(summary.first, summary.last) : null;
-  const context = [entityName, period === "all" ? (spanText ? `All time, ${spanText}` : "All time") : periodLabel, "Cash basis", lastSynced ? `Bank feed updated ${format.dateTime(lastSynced)}` : null].filter(Boolean).join(" · ");
+  const context = [entityName, period === "all" ? (spanText ? `All time, ${spanText}` : "All time") : periodLabel, "Cash basis", lastSynced ? `Bank feed updated ${format.dateTime(lastSynced)}` : null]
+    .filter(Boolean)
+    .join(" · ");
   const net = summary ? summary.income - summary.expenses : 0;
 
   const filtered = !!q || entity !== "all" || type !== "all";
@@ -289,7 +306,9 @@ export default function BooksTransactions() {
     ? [
         { label: "Import a bank CSV…", onSelect: () => setImportOpen(true) },
         { label: "Load older Mercury transactions…", onSelect: () => void loadOlderMercury() },
-        ...(sunrise ? [{ label: "Sync each morning", hint: sunrise.on && sunrise.next ? `next ${format.time(sunrise.next)}` : undefined, checked: sunrise.on, onSelect: () => void toggleSunrise() }] : []),
+        ...(sunrise
+          ? [{ label: "Sync each morning", hint: sunrise.on && sunrise.next ? `next ${format.time(sunrise.next)}` : undefined, checked: sunrise.on, onSelect: () => void toggleSunrise() }]
+          : []),
         ...(admin ? [{ divider: true as const }, { label: "Close the books…", onSelect: () => setCloseOpen(true) }] : []),
       ]
     : [];
@@ -329,7 +348,15 @@ export default function BooksTransactions() {
       }
     >
       {error && (
-        <Banner tone="negative" onDismiss={() => setError("")} action={<Button variant="quiet" size="sm" onClick={() => void load()}>Try again</Button>}>
+        <Banner
+          tone="negative"
+          onDismiss={() => setError("")}
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        >
           {error}
         </Banner>
       )}
@@ -372,7 +399,11 @@ export default function BooksTransactions() {
                   value={tagMatch ? tagMatch.id : entity}
                   label="Entity"
                   onChange={setEntity}
-                  options={[{ value: "all", label: "All entities" }, ...entities.map((en) => ({ value: en.id, label: entityLabel(en.name), hint: entityTag(en.name) })), { value: "unmapped", label: "No entity", hint: "accounts not mapped yet" }]}
+                  options={[
+                    { value: "all", label: "All entities" },
+                    ...entities.map((en) => ({ value: en.id, label: entityLabel(en.name), hint: entityTag(en.name) })),
+                    { value: "unmapped", label: "No entity", hint: "accounts not mapped yet" },
+                  ]}
                 />
                 <Menu value={period} label="Period" onChange={setPeriod} options={periods} />
                 <Menu value={type} label="Type" onChange={(v) => setType(v as TxnType)} options={TYPES.map((o) => (o.value === "uncategorized" && uncat ? { ...o, hint: String(uncat) } : o))} />
@@ -388,11 +419,27 @@ export default function BooksTransactions() {
           ) : rows.length === 0 ? (
             <div className="px-5 py-6">
               {filtered ? (
-                <Empty size="section" action={<Button variant="quiet" size="sm" onClick={clearFilters}>Clear filters</Button>}>
+                <Empty
+                  size="section"
+                  action={
+                    <Button variant="quiet" size="sm" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  }
+                >
                   No transactions match{q ? ` “${q}”` : ""} in {periodLabel.toLowerCase()}.
                 </Empty>
               ) : (
-                <Empty title="No transactions yet" action={writable ? <Button variant="primary" onClick={() => void syncNow()}>Sync now</Button> : undefined}>
+                <Empty
+                  title="No transactions yet"
+                  action={
+                    writable ? (
+                      <Button variant="primary" onClick={() => void syncNow()}>
+                        Sync now
+                      </Button>
+                    ) : undefined
+                  }
+                >
                   Bank transactions appear here after the first sync. Anyone with access to Books can see them.
                 </Empty>
               )}
@@ -500,7 +547,18 @@ export default function BooksTransactions() {
 
 // ── Import a bank CSV ──────────────────────────────────────────────────────
 
-type Plan = { rows_in_file: number; to_add: number; already_here: number; near_matches: number; money_in: number; money_out: number; first: string; last: string; locked: number; closed_through: string | null };
+type Plan = {
+  rows_in_file: number;
+  to_add: number;
+  already_here: number;
+  near_matches: number;
+  money_in: number;
+  money_out: number;
+  first: string;
+  last: string;
+  locked: number;
+  closed_through: string | null;
+};
 
 async function sha256(text: string): Promise<string | null> {
   try {
@@ -644,7 +702,14 @@ function ImportCsvDialog({ open, accounts, onClose, onImported }: { open: boolea
         ) : (
           <>
             <Button onClick={onClose}>Cancel</Button>
-            <Button variant="primary" busy={busy === "import"} busyLabel="Importing…" disabled={!canImport} disabledReason={!account ? "Choose an account" : !rows.length ? "Choose a file" : undefined} onClick={() => void runImport()}>
+            <Button
+              variant="primary"
+              busy={busy === "import"}
+              busyLabel="Importing…"
+              disabled={!canImport}
+              disabledReason={!account ? "Choose an account" : !rows.length ? "Choose a file" : undefined}
+              onClick={() => void runImport()}
+            >
               {plan ? `Import ${txnCount(plan.to_add)}` : "Import"}
             </Button>
           </>
@@ -725,7 +790,9 @@ function ImportCsvDialog({ open, accounts, onClose, onImported }: { open: boolea
                 ))}
               </div>
             )}
-            {plan && plan.locked > 0 && <Banner tone="warning">{`${txnCount(plan.locked)} in this file ${plan.locked === 1 ? "is" : "are"} dated in a closed period (closed through ${format.date(plan.closed_through ?? plan.first, "medium")}). Remove them from the file, or ask an admin to reopen the period.`}</Banner>}
+            {plan && plan.locked > 0 && (
+              <Banner tone="warning">{`${txnCount(plan.locked)} in this file ${plan.locked === 1 ? "is" : "are"} dated in a closed period (closed through ${format.date(plan.closed_through ?? plan.first, "medium")}). Remove them from the file, or ask an admin to reopen the period.`}</Banner>
+            )}
             {busy === "plan" && <p className="text-small text-ink-2">Reading the file…</p>}
             <p className="text-small text-ink-2">Imported rows are your copy of the bank’s statement, not confirmed by the bank. They’re marked as imported and kept with the file’s name.</p>
           </>
@@ -750,7 +817,14 @@ function ClosePeriodDialog({ open, entities, onClose }: { open: boolean; entitie
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [periods, setPeriods] = useState<Array<{ id: number; entity_name: string | null; closed_through: string; closed_by_name: string | null; closed_at: string; reopened_at: string | null }> | null>(null);
+  const [periods, setPeriods] = useState<Array<{
+    id: number;
+    entity_name: string | null;
+    closed_through: string;
+    closed_by_name: string | null;
+    closed_at: string;
+    reopened_at: string | null;
+  }> | null>(null);
   const [available, setAvailable] = useState(true);
 
   const loadPeriods = useCallback(async () => {
@@ -829,7 +903,14 @@ function ClosePeriodDialog({ open, entities, onClose }: { open: boolean; entitie
         {!available && <Banner tone="info">Closing a period needs a database update that hasn’t been applied yet.</Banner>}
         <label className="flex flex-col gap-[6px]">
           <span className="text-small font-medium text-ink">Entity</span>
-          <Menu value={entity} label="Entity" size="md" className="w-full" onChange={setEntity} options={[{ value: "all", label: "Every entity" }, ...entities.map((e) => ({ value: e.id, label: entityLabel(e.name) }))]} />
+          <Menu
+            value={entity}
+            label="Entity"
+            size="md"
+            className="w-full"
+            onChange={setEntity}
+            options={[{ value: "all", label: "Every entity" }, ...entities.map((e) => ({ value: e.id, label: entityLabel(e.name) }))]}
+          />
         </label>
         <label className="flex flex-col gap-[6px]">
           <span className="text-small font-medium text-ink">Closed through</span>

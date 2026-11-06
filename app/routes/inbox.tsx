@@ -648,7 +648,7 @@ export default function Inbox() {
               )}
             </div>
           ) : reading ? (
-            <section aria-label="Message" className={cx("min-w-0 bg-raised", phone ? "-mx-4" : "rounded-card border border-line")}>
+            <section aria-label="Message" className={cx("min-w-0", phone ? "-mx-4 bg-page" : "rounded-card border border-line bg-raised")}>
               {reader}
             </section>
           ) : (

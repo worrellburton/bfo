@@ -132,7 +132,7 @@ export function Reader({
   return (
     <article className="relative pb-[calc(96px+env(safe-area-inset-bottom))] md:pb-6" aria-label={m?.subject || preview?.subject || "Message"}>
       {/* The top bar. */}
-      <div className={cx(sticky, "flex min-h-[52px] items-center gap-1 border-b border-line bg-raised px-2 md:rounded-t-card md:px-3")}>
+      <div className={cx(sticky, "flex min-h-[52px] items-center gap-1 border-b border-line bg-page px-2 md:rounded-t-card md:bg-raised md:px-3")}>
         <button
           type="button"
           onClick={onBack}

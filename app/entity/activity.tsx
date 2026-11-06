@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { authFetch } from "../auth";
-import { useEntity } from "./context";
-import { Button, Empty, ErrorLine, Icon, Section, useTone, type IconName } from "./ui";
-
 /**
- * Activity tab: everything that happened to the entity, newest first. Edits,
- * uploads and filings by people; Palm moving a filing along; paper mail from
- * Stable; invitations. Kept by the server as each change is written
- * (lib/activity.ts), so it's the same for everyone.
+ * Activity tab: everything that happened to the entity, newest first, as an
+ * audit trail: edits with before and after, uploads, documents removed and
+ * restored, filings, decisions and their reasons, facts read by AI and who
+ * accepted them, the state's record, Palm, Stable, shared links, invites.
+ * Kept by the server as each change is written (lib/activity.ts), append
+ * only, so it's the same for everyone.
+ *
+ * Grouped by day; a run of one person's edits within a few minutes shows as
+ * one line that opens to each. Filters by what and who, and exports the
+ * whole log (or the filtered part) as CSV.
  */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { authFetch } from "../auth";
+import { Banner, Button, Card, Icon, Select, Skeleton, cx, format, type IconName } from "../ui";
+import { useEntity } from "./context";
 
 type Field = { key: string; label: string; from: string | null; to: string | null };
 type ActivityItem = {
@@ -21,45 +27,85 @@ type ActivityItem = {
   detail: { fields?: Field[]; names?: string[]; owners?: string[]; reason?: string } | null;
 };
 
+/** One glyph per kind of event (§8.0: each glyph means one thing). */
 const ICON: Record<string, IconName> = {
   created: "plus",
   edit: "edit",
-  owners: "plus",
+  owners: "user",
   upload: "upload",
   delete: "trash",
-  rename: "rename",
+  rename: "edit",
   filed: "doc",
   unfiled: "doc",
   address: "mail",
-  palm: "sparkle",
-  state: "link",
+  palm: "doc",
+  state: "building",
+  decision: "building",
   check: "check",
   agreement: "doc",
+  governance: "user",
   mail: "mail",
-  access: "link",
+  access: "user",
+  share: "link",
+  ai: "sparkle",
+  archive: "lock",
+  hold: "lock",
+  closing: "calendar",
 };
 
-const SOURCE: Record<ActivityItem["source"], string> = { user: "", palm: "Palm", stable: "Stable", system: "BFO" };
+/** What the filter offers, by kind. */
+const GROUPS: { value: string; label: string; kinds: string[] }[] = [
+  { value: "all", label: "Everything", kinds: [] },
+  { value: "edits", label: "Edits to the record", kinds: ["edit", "created", "owners", "governance", "agreement", "decision", "archive", "closing"] },
+  { value: "documents", label: "Documents", kinds: ["upload", "delete", "rename", "filed", "unfiled", "share", "hold"] },
+  { value: "state", label: "The state and Palm", kinds: ["state", "palm", "mail", "address"] },
+  { value: "ai", label: "Read by AI", kinds: ["ai", "check"] },
+  { value: "access", label: "Access", kinds: ["access"] },
+];
+
+const SOURCE: Record<ActivityItem["source"], string> = { user: "Someone in the office", palm: "Palm", stable: "Stable", system: "BFO, automatically" };
 const PAGE = 50;
+const MAX_EXPORT = 5000;
+const GROUP_MS = 15 * 60 * 1000;
 
-const dayLabel = (d: Date) => {
-  const today = new Date();
-  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((start(today) - start(d)) / 86_400_000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return d.toLocaleDateString("en-US", { weekday: diff < 7 ? "long" : undefined, month: "short", day: "numeric", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
-};
-const time = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+const who = (i: ActivityItem) => i.actor_name || SOURCE[i.source];
+/** "5:30 AM MST": times in an audit trail carry their zone (§10.5). */
+const clock = (iso: string) => format.dateTime(iso, { zone: true }).split(", ").slice(2).join(", ");
+
+/** Consecutive edits by one person within a few minutes, shown as one line (the rows stay separate). */
+type Shown = { lead: ActivityItem; runs: ActivityItem[] };
+function group(items: ActivityItem[]): Shown[] {
+  const out: Shown[] = [];
+  for (const it of items) {
+    const last = out[out.length - 1];
+    const prev = last?.runs[last.runs.length - 1];
+    if (last && it.kind === "edit" && last.lead.kind === "edit" && who(it) === who(last.lead) && prev && Date.parse(prev.at) - Date.parse(it.at) < GROUP_MS) last.runs.push(it);
+    else out.push({ lead: it, runs: [it] });
+  }
+  return out;
+}
+
+/** The log as CSV: one row per entry, with each field's before and after. */
+export function activityCsv(items: ActivityItem[], entity: string): string {
+  const q = (s: unknown) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const head = ["Entity", "When (UTC)", "When (local)", "Who", "Source", "Kind", "What", "Details"];
+  const rows = items.map((i) => {
+    const fields = (i.detail?.fields ?? []).map((f) => `${f.label}: ${f.from ?? "blank"} -> ${f.to ?? "blank"}`);
+    const more = [...fields, ...(i.detail?.names ?? []), ...(i.detail?.owners?.length ? [`Now: ${i.detail.owners.join("; ")}`] : []), ...(i.detail?.reason ? [`Why: ${i.detail.reason}`] : [])].join(" | ");
+    return [entity, i.at, format.dateTime(i.at, { zone: true }), who(i), i.source, i.kind, i.summary, more].map(q).join(",");
+  });
+  return [head.map(q).join(","), ...rows].join("\n");
+}
 
 export function ActivityTab() {
   const { page, asset } = useEntity();
-  const t = useTone();
   const [items, setItems] = useState<ActivityItem[] | null>(null);
   const [more, setMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState<Set<number>>(new Set());
+  const [what, setWhat] = useState("all");
+  const [person, setPerson] = useState("all");
 
   const fetchPage = useCallback(
     async (before?: string) => {
@@ -67,7 +113,7 @@ export function ActivityTab() {
       if (before) q.set("before", before);
       const r = await authFetch(`/api/tree?${q}`);
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || "Couldn't load the activity.");
+      if (!r.ok) throw new Error("The activity didn’t load. Check your connection and try again.");
       return (j.activity ?? []) as ActivityItem[];
     },
     [page.id],
@@ -111,124 +157,161 @@ export function ActivityTab() {
     }
   }
 
-  const toggle = (id: number) =>
-    setOpen((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-
-  // Grouped by day, newest first.
-  const groups: { label: string; items: ActivityItem[] }[] = [];
-  for (const item of items ?? []) {
-    const label = dayLabel(new Date(item.at));
-    const last = groups[groups.length - 1];
-    if (last?.label === label) last.items.push(item);
-    else groups.push({ label, items: [item] });
+  /** Every entry (up to MAX_EXPORT), then the filters, as a CSV download. */
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      let all = items ?? [];
+      let next = more;
+      while (next && all.length < MAX_EXPORT) {
+        const page2 = await fetchPage(all[all.length - 1]?.at);
+        all = [...all, ...page2.filter((n) => !all.some((i) => i.id === n.id))];
+        next = page2.length === PAGE;
+      }
+      setItems(all);
+      setMore(next);
+      const blob = new Blob([activityCsv(all.filter(matches), asset.name)], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${asset.name} activity ${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setExporting(false);
+    }
   }
 
-  const dotCls = (s: ActivityItem["source"]) =>
-    s === "palm"
-      ? t.dark
-        ? "bg-[#818cf8]/15 text-[#a5b4fc] ring-[#818cf8]/25"
-        : "bg-indigo-50 text-indigo-600 ring-indigo-100"
-      : s === "stable"
-        ? t.dark
-          ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/20"
-          : "bg-emerald-50 text-emerald-700 ring-emerald-100"
-        : t.dark
-          ? "bg-white/[0.05] text-gray-300 ring-white/[0.08]"
-          : "bg-gray-50 text-gray-600 ring-gray-200";
+  const kinds = GROUPS.find((g) => g.value === what)?.kinds ?? [];
+  const matches = (i: ActivityItem) => (!kinds.length || kinds.includes(i.kind)) && (person === "all" || who(i) === person);
+  const people = useMemo(() => [...new Set((items ?? []).map(who))].sort(), [items]);
+  const shown = (items ?? []).filter(matches);
+  const days: { label: string; rows: Shown[] }[] = [];
+  for (const it of group(shown)) {
+    const label = format.date(it.lead.at, "medium");
+    const last = days[days.length - 1];
+    if (last?.label === label) last.rows.push(it);
+    else days.push({ label, rows: [it] });
+  }
+  const oldest = items?.length && !more ? items[items.length - 1].at : null;
 
   return (
-    <Section
+    <Card
       title="Activity"
-      info="Every change to this entity, who made it and when: edits, uploads and filings in BFO, Palm moving its filings along, and paper mail Stable received for it. Edits one person makes within a few minutes of each other show as one line."
-      actions={
-        <Button icon="refresh" onClick={() => void load()}>
-          Refresh
-        </Button>
+      info="Each change to this entity and who made it: edits with before and after, documents, decisions and their reasons, facts read by AI and who accepted them, the state's record, Palm and Stable. Entries are only ever added; none is changed or removed."
+      action={
+        items?.length ? (
+          <Button size="sm" icon="download" busy={exporting} busyLabel="Exporting…" onClick={() => void exportCsv()}>
+            Export CSV
+          </Button>
+        ) : undefined
       }
     >
       {error && (
-        <div className="px-5 pt-3">
-          <ErrorLine>{error}</ErrorLine>
-        </div>
+        <Banner tone="negative" className="mb-4" action={<Button variant="quiet" onClick={() => void load()}>Try again</Button>}>
+          {error}
+        </Banner>
       )}
       {items === null ? (
-        <p className={`px-5 py-5 text-[12.5px] ${t.muted}`}>Loading…</p>
+        <Skeleton kind="rows" rows={6} />
       ) : !items.length ? (
-        <Empty>Nothing yet. Changes to this entity show up here from now on.</Empty>
+        <p className="text-body text-ink-2">Nothing yet. Changes to this entity show up here as they’re made.</p>
       ) : (
-        <div className="px-5 py-2">
-          {groups.map((g) => (
-            <div key={g.label} className="py-2">
-              <p className={`pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${t.faint}`}>{g.label}</p>
-              <ol className="relative">
-                {g.items.map((item, i) => {
-                  const fields = item.detail?.fields?.filter((f) => f.from !== null || f.to !== null) ?? [];
-                  const names = item.detail?.names && item.detail.names.length > 1 ? item.detail.names : [];
-                  const extra = fields.length > 0 || names.length > 0 || !!item.detail?.owners?.length || !!item.detail?.reason;
-                  const isOpen = open.has(item.id);
-                  const who = item.actor_name || SOURCE[item.source] || "Someone";
-                  return (
-                    <li key={item.id} className="relative flex gap-3 py-2">
-                      {i < g.items.length - 1 && <span className={`absolute left-[13px] top-[34px] bottom-[-6px] w-px ${t.dark ? "bg-white/[0.06]" : "bg-gray-200"}`} aria-hidden />}
-                      <span className={`relative mt-0.5 flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full ring-1 ${dotCls(item.source)}`}>
-                        <Icon name={ICON[item.kind] ?? "info"} className="h-3.5 w-3.5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-3">
-                          <p className={`text-[13px] leading-snug ${t.text}`}>
-                            {extra ? (
-                              <button type="button" onClick={() => toggle(item.id)} className="cursor-pointer text-left hover:underline" aria-expanded={isOpen}>
-                                {item.summary}
-                              </button>
-                            ) : (
-                              item.summary
-                            )}
-                          </p>
-                          <time dateTime={item.at} title={new Date(item.at).toLocaleString()} className={`shrink-0 text-[11.5px] tabular-nums ${t.muted}`}>
-                            {time(new Date(item.at))}
-                          </time>
-                        </div>
-                        <p className={`mt-0.5 text-[11.5px] ${t.muted}`}>{who}</p>
-                        {extra && isOpen && (
-                          <div className={`mt-2 space-y-1 rounded-lg border px-3 py-2 text-[12px] ${t.line} ${t.soft}`}>
-                            {fields.map((f) => (
-                              <p key={f.key} className="break-words">
-                                <span className={t.muted}>{f.label}: </span>
-                                {f.from !== null && <span className="line-through decoration-1 opacity-60">{f.from}</span>}
-                                {f.from !== null && f.to !== null && <span className={`mx-1.5 ${t.faint}`}>→</span>}
-                                {f.to !== null ? <span className={t.text}>{f.to}</span> : <span className={t.faint}>cleared</span>}
-                              </p>
-                            ))}
-                            {names.map((n) => (
-                              <p key={n} className="break-words">
-                                {n}
-                              </p>
-                            ))}
-                            {item.detail?.owners?.length ? <p>Now: {item.detail.owners.join(" · ")}</p> : null}
-                            {item.detail?.reason && <p>{item.detail.reason}</p>}
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
+        <div className="flex max-w-[720px] flex-col gap-4">
+          <div className="flex flex-wrap gap-2">
+            <div className="w-full sm:w-[220px]">
+              <Select label="Show" value={what} onChange={setWhat} options={GROUPS.map((g) => ({ value: g.value, label: g.label }))} />
+            </div>
+            <div className="w-full sm:w-[220px]">
+              <Select label="By" value={person} onChange={setPerson} options={[{ value: "all", label: "Anyone" }, ...people.map((p) => ({ value: p, label: p }))]} />
+            </div>
+          </div>
+          {!shown.length && <p className="text-body text-ink-2">Nothing matches these filters{more ? " in what’s loaded" : ""}.</p>}
+          {days.map((d) => (
+            <section key={d.label} aria-label={d.label}>
+              <h3 className="pb-1 text-small font-medium text-ink-2">{d.label}</h3>
+              <ol className="flex flex-col">
+                {d.rows.map((row) => (
+                  <Entry key={row.lead.id} row={row} />
+                ))}
               </ol>
-            </div>
+            </section>
           ))}
-          {more && (
-            <div className="py-2">
-              <Button onClick={() => void loadMore()} disabled={loadingMore}>
-                {loadingMore ? "Loading…" : "Show older"}
+          <div className="flex flex-wrap items-center gap-3">
+            {more && (
+              <Button busy={loadingMore} busyLabel="Loading…" onClick={() => void loadMore()}>
+                Show older
               </Button>
-            </div>
-          )}
+            )}
+            {oldest && <p className="text-small text-ink-3">The oldest entry is from {format.date(oldest, "medium")}.</p>}
+          </div>
         </div>
       )}
-    </Section>
+    </Card>
+  );
+}
+
+/** One entry (or a run of edits): icon, what happened, who and when; it opens to the details when it has them. */
+function Entry({ row }: { row: Shown }) {
+  const [open, setOpen] = useState(false);
+  const it = row.lead;
+  const many = row.runs.length > 1;
+  const fields = (r: ActivityItem) => r.detail?.fields?.filter((f) => f.from !== null || f.to !== null) ?? [];
+  const has = (r: ActivityItem) => fields(r).length > 0 || (r.detail?.names?.length ?? 0) > 1 || !!r.detail?.owners?.length || !!r.detail?.reason;
+  const opens = many || row.runs.some(has);
+  const summary = many ? `${row.runs.length} edits to the record` : it.summary;
+  const body = (
+    <>
+      <span className="flex size-[28px] shrink-0 items-center justify-center rounded-full bg-sunken text-ink-2">
+        <Icon name={ICON[it.kind] ?? "info"} size={16} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-body text-pretty text-ink">{summary}</span>
+        <span className="block text-small text-ink-2 tabular-nums">
+          {who(it)} · {clock(many ? row.runs[row.runs.length - 1].at : it.at)}
+          {many ? `–${clock(it.at)}` : ""}
+        </span>
+      </span>
+      {opens && (
+        <span className="mt-[6px] shrink-0 text-ink-3">
+          <span className={cx("inline-flex transition-transform duration-(--dur-3)", open && "rotate-90")}>
+            <Icon name="chevronRight" size={16} />
+          </span>
+        </span>
+      )}
+    </>
+  );
+  return (
+    <li className="border-t border-line first:border-t-0">
+      {opens ? (
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full cursor-pointer items-start gap-3 rounded-control py-3 text-left hover:bg-hover touch:min-h-[48px]">
+          {body}
+        </button>
+      ) : (
+        <div className="flex items-start gap-3 py-3">{body}</div>
+      )}
+      {open && (
+        <div className="ds-reveal mb-3 ml-[40px] flex flex-col gap-2 text-small text-ink-2">
+          {row.runs.map((r) => (
+            <div key={r.id} className="flex flex-col gap-1">
+              {many && (
+                <p className="text-ink">
+                  {r.summary} <span className="text-ink-3">· {clock(r.at)}</span>
+                </p>
+              )}
+              {fields(r).map((f) => (
+                <p key={f.key} className="break-words">
+                  {f.label}: {f.from ?? "blank"} → <span className="text-ink">{f.to ?? "cleared"}</span>
+                </p>
+              ))}
+              {(r.detail?.names?.length ?? 0) > 1 && r.detail!.names!.map((n) => <p key={n} className="break-words">{n}</p>)}
+              {r.detail?.owners?.length ? <p>Now: {r.detail.owners.join(" · ")}</p> : null}
+              {r.detail?.reason && <p className="text-ink">Why: {r.detail.reason}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </li>
   );
 }
