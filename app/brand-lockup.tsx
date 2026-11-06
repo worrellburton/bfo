@@ -29,6 +29,26 @@ function useBrandFont(font: BrandFont | undefined) {
   }, [font?.css, font?.family]);
 }
 
+/**
+ * The flat wordmark the app's chrome uses (docs/DESIGN.md §9, §13): "BFO" in
+ * the chosen brand typeface, in the surrounding ink (currentColor), no
+ * metallic finish, no 3D. `size` is the font size in px; the caller sets the
+ * colour (text-ink in the app, door ink on the door).
+ */
+export function Wordmark({ font, size, className = "" }: { font: BrandFont; size: number; className?: string }) {
+  useBrandFont(font);
+  return (
+    <span
+      role="img"
+      aria-label="BFO"
+      className={`inline-block leading-none whitespace-nowrap ${className}`}
+      style={{ fontFamily: `"${font.family}", Georgia, serif`, fontWeight: font.weight, fontSize: size, letterSpacing: "0.08em", marginRight: "-0.08em" }}
+    >
+      BFO
+    </span>
+  );
+}
+
 export function BrandLockup({
   font,
   finish = "ivory",

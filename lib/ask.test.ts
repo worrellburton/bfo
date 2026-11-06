@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampInt, entitySummary, looseName, matchEntity, summarize, systemPrompt, titleFrom, toolLabel, toolsFor, transcript, txnKind, type Scope } from "./ask";
+import { clampInt, einLastFour, entityDetail, entitySummary, looseName, maskDigits, matchEntity, provenance, systemPrompt, thirtyDaysBefore, titleFrom, toolLabel, toolsFor, transcript, txnKind, type Scope } from "./ask";
 
 const staff: Scope = { user: { id: "u1", name: "Robert Burton", role: "owner", email: null, mail_address: null }, admin: true, staff: true, assetIds: null };
 const partner: Scope = { user: { id: "u2", name: "Sam", role: "partner", email: null, mail_address: null }, admin: false, staff: false, assetIds: new Set(["a1"]) };
@@ -52,28 +52,62 @@ describe("entity summary", () => {
 });
 
 describe("books", () => {
-  it("keeps the person's type, else the rules'", () => {
-    expect(txnKind({ type_override: "transfer", txn_type: "normal", intercompany: false })).toBe("transfer");
-    expect(txnKind({ type_override: null, txn_type: "normal", intercompany: true })).toBe("intercompany");
-    expect(txnKind({ type_override: null, txn_type: "transfer", intercompany: false })).toBe("transfer");
-    expect(txnKind({ type_override: null, txn_type: null, intercompany: null })).toBe("normal");
+  it("reads a row's kind the way the P&L does: a loan wins, then the person's type, then the rules'", () => {
+    const t = { loan_id: null, type_override: null, txn_type: "normal", intercompany: false };
+    expect(txnKind({ ...t, type_override: "transfer" })).toBe("transfer");
+    expect(txnKind({ ...t, intercompany: true })).toBe("intercompany");
+    expect(txnKind({ ...t, txn_type: "transfer" })).toBe("transfer");
+    expect(txnKind({ ...t, loan_id: "l1", type_override: "normal" })).toBe("loan");
+    expect(txnKind(t)).toBe("normal");
   });
-  it("adds up money in and out, transfers set aside", () => {
-    const s = summarize([
-      { amount: 100, book_category: "6100 Legal", entity_name: "A", type_override: null, txn_type: "normal", intercompany: false },
-      { amount: "250.5", book_category: "6100 Legal", entity_name: "B", type_override: null, txn_type: "normal", intercompany: false },
-      { amount: -1000, book_category: "4000 Rent", entity_name: "A", type_override: null, txn_type: "normal", intercompany: false },
-      { amount: 5000, book_category: null, entity_name: "A", type_override: null, txn_type: "transfer", intercompany: false },
-    ]);
-    expect(s.moneyOut).toBe(350.5);
-    expect(s.moneyIn).toBe(1000);
-    expect(s.transfersSetAside).toBe(5000);
-    expect(s.byCategory[0]).toEqual({ name: "4000 Rent", out: 0, in: 1000, count: 1 });
-    expect(s.byEntity.find((e) => e.name === "A")?.out).toBe(100);
+  it("compares treasury with the closest day 30 or more calendar days back, not the 31st row", () => {
+    const rows = [{ day: "2026-11-06" }, { day: "2026-10-20" }, { day: "2026-10-08" }, { day: "2026-10-01" }, { day: "2026-09-01" }];
+    expect(thirtyDaysBefore(rows)?.day).toBe("2026-10-01");
+    expect(thirtyDaysBefore([{ day: "2026-11-06" }, { day: "2026-11-01" }])).toBeNull();
   });
   it("clamps counts", () => {
     expect(clampInt("500", 1, 100, 10)).toBe(100);
     expect(clampInt(undefined, 1, 100, 10)).toBe(10);
+  });
+});
+
+describe("what the model never sees", () => {
+  it("an EIN beyond its last four", () => {
+    expect(einLastFour("12-3456789")).toBe("••-•••6789");
+    expect(einLastFour("")).toBeNull();
+    expect(entityDetail("a", { name: "X", ein: "12-3456789" }, null, new Map()).ein).toBe("••-•••6789");
+  });
+  it("a code inside a text", () => {
+    expect(maskDigits("Your code is 482913. Don't share it.")).toBe("Your code is ••••••. Don't share it.");
+    expect(maskDigits("Code: 123 456")).toBe("Code: ••• •••");
+    expect(maskDigits("Call me at 5")).toBe("Call me at 5");
+  });
+  it("staff notes, when a partner asks", () => {
+    expect(entityDetail("a", { name: "X", notes: "staff only" }, null, new Map(), new Date(), false)).not.toHaveProperty("notes");
+    expect(entityDetail("a", { name: "X", notes: "staff only" }, null, new Map(), new Date(), true).notes).toBe("staff only");
+  });
+  it("is told not to give legal or tax advice, and to cite period, basis and as-of", () => {
+    const p = systemPrompt(staff);
+    expect(p).toMatch(/aren't a lawyer or an accountant/);
+    expect(p).toMatch(/cash basis/);
+    expect(p).toMatch(/Never repeat a verification code/);
+  });
+});
+
+describe("provenance", () => {
+  it("names the books' period, basis and row count", () => {
+    const out = JSON.stringify({ from: "2026-07-01", to: "2026-09-30", entity: "All entities", transactions: 214, uncategorized: { count: 3 } });
+    expect(provenance("books_summary", { from: "2026-07-01", to: "2026-09-30" }, out)).toEqual({
+      tool: "books_summary",
+      label: "Adding up the books",
+      detail: "Books, Jul 1, 2026 – Sep 30, 2026 · cash basis, posted · 214 transactions · 3 uncategorized",
+    });
+  });
+  it("names the treasury's as-of", () => {
+    expect(provenance("treasury", {}, JSON.stringify({ asOf: "2026-11-06" })).detail).toBe("Treasury as of Nov 6, 2026");
+  });
+  it("survives a cut-off result", () => {
+    expect(provenance("search_mail", { query: "lease" }, "{not json").label).toBe("Searching mail for “lease”");
   });
 });
 

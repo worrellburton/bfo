@@ -1,10 +1,3 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { readActivity } from "../lib/activity.js";
-import { canWrite, currentUser, fail, handleError, isPartner, type AppUser } from "../lib/auth.js";
-import { accessibleAssetIds } from "../lib/entity-access.js";
-import { importAll, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
-import { applyOps, collectionValue, MAX_BODY_BYTES, parseOps, parsePath, readCollection, readIndex, readRows, valueAt, type Collection } from "../lib/tree.js";
-
 /**
  * The shared JSON tree (lib/tree.ts) for signed-in users. Any approved user
  * but "Email only" may read; owners, admins and members may write. Partners
@@ -15,11 +8,54 @@ import { applyOps, collectionValue, MAX_BODY_BYTES, parseOps, parsePath, readCol
  * GET ?path=assets&view=index      → { rows: [{ id, updated_at }] }   for change polling
  * GET ?path=assets&ids=a,b         → { rows: [{ id, data, updated_at }] }
  * GET ?path=assets/x&view=activity[&before=iso] → { activity }  what happened to it, newest first (staff only)
- * POST { ops: [{ op: "set"|"update", path, value }] } → { rows }  the rows touched (data null = removed)
+ * POST { ops: [{ op: "set"|"update", path, value }], source?: "scan" } → { rows }  the rows touched (data null = removed)
+ *
+ * The write rules (lib/tree.ts): members record new entities and fill in
+ * blanks, but changing an owner, or a legal name, form, tax class or EIN
+ * already on record, or deleting an entity, takes an owner or admin (403
+ * owner_or_admin). An EIN must look like one, never like an SSN (400
+ * bad_ein), and belong to one entity (409 ein_in_use). A change of owner is
+ * stamped with when and by whom, and goes to the audit trail. Notes are
+ * stamped with their author; only the author or an owner or admin may change
+ * or delete one, and deleting keeps it (deletedAt) rather than removing it.
+ * `source: "scan"` marks the write as the document scan's in the entity's
+ * activity, run by the person who started it.
  *
  * Every collection is copied out of Firebase on the first request after deploy,
  * and an entity's old Firebase files are moved when it is read (lib/firebase-bridge.ts).
+ *
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY; Firebase's public web config
+ * for the one-way copy (lib/firebase-bridge.ts).
  */
+
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { readActivity } from "../lib/activity.js";
+import { audit } from "../lib/audit.js";
+import { canWrite, currentUser, fail, handleError, isAdmin, isPartner, sb, type AppUser } from "../lib/auth.js";
+import { accessibleAssetIds } from "../lib/entity-access.js";
+import { importAll, migrateFirebaseFiles } from "../lib/firebase-bridge.js";
+import {
+  applyOps,
+  collectionValue,
+  einForms,
+  einProblem,
+  MAX_BODY_BYTES,
+  noteRules,
+  ownerStamps,
+  parseOps,
+  parsePath,
+  readCollection,
+  readIndex,
+  readRows,
+  rowKey,
+  simulate,
+  structuralChanges,
+  structuralRefusal,
+  touchedRows,
+  valueAt,
+  type Collection,
+  type Json,
+} from "../lib/tree.js";
 
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
 
@@ -118,5 +154,69 @@ async function write(req: VercelRequest, res: VercelResponse, me: AppUser) {
   const ops = parseOps(body);
   if (!Array.isArray(ops)) return fail(res, 400, ops.error, ops.message);
   await importAll();
-  return res.status(200).json({ rows: await applyOps(ops, { id: me.id, name: me.name || me.email || me.phone, source: "user" }) });
+
+  // Read what the write touches, and judge the rows as they'll be.
+  const touched = touchedRows(ops);
+  const ids = (c: Collection) => touched.filter((t) => t.collection === c).map((t) => t.id);
+  const assetIds = ids("assets");
+  const noteIds = ids("notes");
+  const before = new Map<string, Json>();
+  for (const [c, list] of [
+    ["assets", assetIds],
+    ["notes", noteIds],
+  ] as const) {
+    if (list.length) for (const r of await readRows(c, list)) before.set(rowKey(c, r.id), r.data);
+  }
+  const after = simulate(before, ops);
+  const name = me.name || me.email || me.phone || null;
+  const now = new Date();
+
+  const changes = structuralChanges(before, after, assetIds);
+  const refusal = structuralRefusal(changes, isAdmin(me));
+  if (refusal) return fail(res, 403, "owner_or_admin", refusal);
+  for (const c of changes) {
+    if (c.field !== "ein" || !c.to || c.deleted) continue;
+    const problem = einProblem(c.to);
+    if (problem) return fail(res, 400, "bad_ein", problem);
+    const forms = einForms(c.to);
+    const holders = (await sb<{ id: string; name: string | null }[]>(
+      `tree_nodes?collection=eq.assets&select=id,name:data->>name&data->>ein=in.(${encodeURIComponent(forms.map((f) => `"${f}"`).join(","))})`,
+    )) ?? [];
+    const other = holders.find((h) => h.id !== c.id && !changes.some((x) => x.id === h.id && (x.field === "ein" || x.deleted)));
+    if (other) return fail(res, 409, "ein_in_use", `${c.to} is already ${other.name || "another entity"}'s EIN.`);
+  }
+  const stamped = ownerStamps(changes, after, { id: me.id, name }, now);
+  if (!Array.isArray(stamped)) return fail(res, 400, "bad_effective_date", stamped.error);
+
+  const notes = noteRules(before, after, noteIds, { id: me.id, name, admin: isAdmin(me) }, now);
+  if (notes.refusal) return fail(res, notes.refusal.status, notes.refusal.code, notes.refusal.message);
+
+  const actor =
+    (body as { source?: unknown }).source === "scan"
+      ? { id: me.id, name: `Document scan, started by ${name ?? "staff"}`, source: "system" as const }
+      : { id: me.id, name, source: "user" as const };
+  const rows = await applyOps([...ops, ...stamped, ...notes.stamps], actor, before);
+
+  // The record people and counsel read: owner changes, and notes deleted or restored.
+  const label = (id: string) => {
+    const r = after.get(rowKey("assets", id)) ?? before.get(rowKey("assets", id));
+    return r && typeof r === "object" && !Array.isArray(r) && typeof r.name === "string" ? r.name : null;
+  };
+  for (const c of changes) {
+    if (c.field !== "ownerId" || c.created || c.deleted) continue;
+    const row = after.get(rowKey("assets", c.id));
+    const effective = row && typeof row === "object" && !Array.isArray(row) && typeof row.ownerEffective === "string" ? row.ownerEffective : null;
+    const to = c.to ? (label(c.to) ?? "another entity") : "no owner on record";
+    await audit({
+      actor: me,
+      action: "entity.owner_change",
+      target: { type: "entity", id: c.id, label: label(c.id) },
+      summary: `Recorded ${label(c.id) ?? "an entity"} as owned by ${to}${effective ? `, effective ${effective}` : ""}`,
+      detail: { from: c.from || null, to: c.to || null, effective },
+    });
+  }
+  for (const e of notes.events) {
+    await audit({ actor: me, action: e.kind === "delete" ? "note.delete" : "note.restore", target: { type: "note", id: e.id, label: e.title }, summary: `${e.kind === "delete" ? "Deleted" : "Restored"} the note “${e.title}”` });
+  }
+  return res.status(200).json({ rows });
 }

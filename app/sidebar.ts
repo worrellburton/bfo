@@ -1,49 +1,37 @@
-import { useEffect, useState } from "react";
 import { APPEARANCE_BOOT } from "./appearance";
+import { SIDEBAR_COLLAPSED, SIDEBAR_EXPANDED, SIDEBAR_KEY, THEME_COLOR, THEME_KEY } from "./shell-model";
 
 /**
- * The sidebar is an auto-collapsing rail: 60px of icons at rest, expanding to
- * 240px as an overlay while a fine pointer hovers it. One pair of numbers
- * drives the rail, the content inset and the flyout, so the edges never drift.
- */
-export const SIDEBAR_OPEN_W = 240;
-export const SIDEBAR_RAIL_W = 60;
-
-/**
- * Runs in <head> before first paint so the rail renders at its resting width
- * immediately — no flash from an unstyled default.
+ * The boot script: runs in <head> before first paint (app/root.tsx), so the
+ * first frame already has the right theme, browser-chrome colour and content
+ * inset, with no flash (docs/DESIGN.md §2.1, §9.1, §14.2).
+ *
+ * - Theme: the saved setting (Automatic when none), resolved against the
+ *   device; data-theme and the legacy `light` class on <html>; theme-color.
+ *   The door (landing, sign-in, finish setup) is always night.
+ * - The sidebar: --content-inset, the width the content sits right of (0 on
+ *   phones, the 64px rail on tablets, the saved or default width on desktop).
+ *   The shell keeps it current as the window changes.
  */
 export const SIDEBAR_BOOT_SCRIPT = `
 (function () {
+  var html = document.documentElement;
   try {
-    document.documentElement.style.setProperty("--sidebar-w", "${SIDEBAR_RAIL_W}px");
+    var saved = localStorage.getItem("${THEME_KEY}");
+    var dark = saved === "dark" || (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    html.classList.toggle("light", !dark);
+    html.setAttribute("data-theme", dark ? "dark" : "light");
+    var door = /^\\/(login|complete-profile)?(\\/|$)/.test(location.pathname);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", door ? "${THEME_COLOR.door}" : dark ? "${THEME_COLOR.dark}" : "${THEME_COLOR.light}");
   } catch (e) {}
   try {
-    // Apply the saved theme before first paint so the page and the browser
-    // chrome (theme-color) never flash the other colour.
-    // Mail keeps its own setting (light unless switched); the rest of the app its own.
-    var light = location.pathname.indexOf("/inbox") === 0
-      ? localStorage.getItem("bfo-mail-theme") !== "dark"
-      : localStorage.getItem("bfo-theme") === "light";
-    document.documentElement.classList.toggle("light", light);
-    // The design system's tokens follow data-theme (docs/DESIGN.md §2.1).
-    document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
-    var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", light ? "#f7f7f8" : "#0b0b0c");
+    var w = window.innerWidth;
+    var mode = localStorage.getItem("${SIDEBAR_KEY}");
+    if (mode !== "expanded" && mode !== "collapsed") mode = w >= 1280 ? "expanded" : "collapsed";
+    var inset = w < 768 ? 0 : w < 1024 ? ${SIDEBAR_COLLAPSED} : mode === "expanded" ? ${SIDEBAR_EXPANDED} : ${SIDEBAR_COLLAPSED};
+    html.style.setProperty("--content-inset", inset + "px");
   } catch (e) {}
   ${APPEARANCE_BOOT}
 })();
 `.trim();
-
-/** Pointer-based hover expansion is desktop-only; it never fires on touch. */
-export function useHoverCapable(): boolean {
-  const [capable, setCapable] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(hover: hover) and (pointer: fine)");
-    setCapable(query.matches);
-    const onChange = (e: MediaQueryListEvent) => setCapable(e.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return capable;
-}

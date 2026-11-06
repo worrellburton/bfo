@@ -2,10 +2,13 @@ import { fileKinds, type FileKind } from "./file-kind.js";
 import { likeTerm } from "./pg-filter.js";
 import { notifyNewMail, type NewMail } from "./push.js";
 import { createHash, randomUUID } from "node:crypto";
+import { audit, type AuditActor } from "./audit.js";
 import { birdPlatformFetch, sb } from "./auth.js";
 import { countRows } from "./db-pages.js";
 import { isOurAddress, MAIL_DOMAIN, onOurDomain } from "./mail-address.js";
 import { composeDocument, composeText } from "./mail-compose.js";
+import { paymentRisk } from "./mail-safety.js";
+import { tidySnippet } from "./mail-snippet.js";
 import { storageDownload, storageRemove, storageUpload } from "./storage.js";
 
 /**
@@ -18,6 +21,19 @@ import { storageDownload, storageRemove, storageUpload } from "./storage.js";
  * throttled sync that pages Bird's list. Sending goes through Bird's plain
  * email endpoint from the user's own address, and the sent copy is stored too.
  *
+ * Deleting is two steps, so nothing is lost to a slip: Delete moves mail to
+ * Trash (deleted_at, deleted_by), where it can be restored for 30 days; then
+ * it is removed for good, with its stored files, by the purge (a daily cron
+ * and the inbox's own sync), or sooner by "Delete forever". Mail on hold
+ * (one message's held_at, or a hold on its mailbox or on all mail in
+ * mail_holds) is never removed: Delete archives it instead. Every step is
+ * written to the shared audit log (lib/audit.ts) by its caller.
+ *
+ * HTTP surface: none; a library for api/mail.ts, api/mail-webhook.ts and
+ * lib/ask.ts. Who may call it: server code, after the caller's own role
+ * check. Env: BIRD_* through lib/auth.ts, SUPABASE_URL and
+ * SUPABASE_SERVICE_KEY (sb), MAIL_IGNORE_DOMAINS.
+ *
  * Pure pieces (routing, header parsing, snippets, html, limits, row mapping)
  * are exported on their own so they're tested without a network.
  */
@@ -26,8 +42,8 @@ import { storageDownload, storageRemove, storageUpload } from "./storage.js";
 
 export type MailAddress = { email: string; name?: string | null };
 type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
-/** "active": inbox and sent together, one row per conversation, latest activity first. */
-export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other";
+/** "active": inbox and sent together, one row per conversation, latest activity first. "trash": deleted, kept 30 days. */
+export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other" | "trash";
 type MailSummary = {
   id: string;
   folder: "inbox" | "sent" | "archive";
@@ -51,6 +67,11 @@ type MailSummary = {
   threadAt?: string;
   /** Received mail neither SPF nor DKIM vouches for: its From could be forged. */
   unverified?: boolean;
+  /** In Trash: when it was deleted, and when it goes for good (unless held). */
+  deletedAt?: string;
+  purgeAt?: string;
+  /** Kept for records: Delete archives it, and it never leaves Trash for good. */
+  held?: boolean;
 };
 /** Narrows a folder's list: everything, only unread, or only starred. */
 import type { MailFilter } from "./mail-filter.js";
@@ -64,6 +85,10 @@ type MailMessage = MailSummary & {
   deliveredTo: string | null;
   messageId: string | null;
   unverifiedSender: boolean;
+  /** Where the sender asked replies to go (Reply-To), when that's somewhere else. */
+  replyTo: MailAddress[];
+  /** Reads like payment or banking instructions (lib/mail-safety.ts): the reader asks for a call first. */
+  paymentRisk: boolean;
 };
 
 // ── Rows (public.mail_messages) ───────────────────────────────────────
@@ -102,14 +127,61 @@ export type MailRow = {
   /** The conversation (migration 20261023_mail_threads), and the time of its latest message. */
   thread_key?: string | null;
   thread_at?: string | null;
+  /** Trash and holds (migration 20261107_mail_trash). */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  held_at?: string | null;
+  held_by?: string | null;
+  /** The Reply-To addresses, when the sender gave any. */
+  reply_to?: MailAddress[] | null;
 };
 
 /** Columns a list needs — no bodies. */
 export const SUMMARY_COLUMNS =
   "id,user_id,folder,direction,from_email,from_name,to_addrs,cc_addrs,subject,snippet,occurred_at,created_at,read_at,starred_at,attachments,status,thread_key,thread_at,spf_pass,dkim_pass";
 
+// ── Trash's columns: there once migration 20261107_mail_trash is applied ──
+
+/**
+ * Whether the Trash and hold columns exist. Asked once per instance (and
+ * again a minute after a "no"), so code deployed before the migration keeps
+ * mail working: lists show everything, and Delete is refused rather than
+ * removing anything for good.
+ */
+let schemaState: { ready: boolean; at: number } | null = null;
+
+export async function mailSchemaReady(): Promise<boolean> {
+  if (schemaState && (schemaState.ready || Date.now() - schemaState.at < 60_000)) return schemaState.ready;
+  let ready = true;
+  try {
+    await sb("mail_messages?select=deleted_at,deleted_by,held_at,held_by,reply_to&limit=1");
+  } catch (err) {
+    ready = !/42703|PGRST204|column .* does not exist|Could not find the .* column/i.test(err instanceof Error ? err.message : String(err));
+  }
+  schemaState = { ready, at: Date.now() };
+  return ready;
+}
+
+/** For tests: forget what was learned about the columns. */
+export function resetMailSchema(ready?: boolean): void {
+  schemaState = ready === undefined ? null : { ready, at: Date.now() };
+}
+
+/** True unless the columns are known to be missing (code that never asked assumes the migration is in). */
+const trashOn = () => schemaState?.ready !== false;
+
+/** The summary columns, with Trash's when they exist. */
+export function summaryColumns(): string {
+  return trashOn() ? `${SUMMARY_COLUMNS},deleted_at,held_at` : SUMMARY_COLUMNS;
+}
+
+/** Messages not in Trash. "" before the migration (nothing can be in Trash then). */
+const notDeleted = (on = trashOn()) => (on ? "&deleted_at=is.null" : "");
+
 export type SummaryRow = Pick<
   MailRow,
+  | "deleted_at"
+  | "held_at"
   | "id"
   | "user_id"
   | "folder"

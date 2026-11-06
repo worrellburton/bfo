@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { collectionValue, compareKeys, parseOps, parsePath, touchedRows, valueAt } from "../lib/tree";
+import { collectionValue, compareKeys, einProblem, noteRules, ownerStamps, parseOps, parsePath, simulate, structuralChanges, structuralRefusal, touchedRows, valueAt, type TreeOp } from "../lib/tree";
 import { firebaseFilesOf, forgetImports, movedFilePath } from "../lib/firebase-bridge";
 import { isDocumentPath } from "../lib/document-path";
 
@@ -153,6 +153,85 @@ describe("operations", () => {
       { collection: "frameworks", id: "f" },
       { collection: "notes", id: "n" },
     ]);
+  });
+});
+
+describe("what a write may change", () => {
+  const rows = (o: Record<string, unknown>) => new Map(Object.entries(o) as [string, any][]);
+  const ops = (list: unknown[]) => parseOps({ ops: list }) as TreeOp[];
+
+  it("plays operations onto rows as tree_apply would", () => {
+    const before = rows({ "assets/x": { name: "A", ein: "12-3456789", corp: { d: 1 } } });
+    const after = simulate(
+      before,
+      ops([
+        { op: "update", path: "assets/x", value: { ownerId: "t", "corp/d": null } },
+        { op: "set", path: "assets/y", value: { name: "B" } },
+        { op: "update", path: "", value: { "notes/n/title": "Hi" } },
+        { op: "set", path: "assets/z", value: null },
+      ]),
+    );
+    expect(after.get("assets/x")).toEqual({ name: "A", ein: "12-3456789", ownerId: "t" });
+    expect(after.get("assets/y")).toEqual({ name: "B" });
+    expect(after.get("notes/n")).toEqual({ title: "Hi" });
+    expect(after.has("assets/z")).toBe(false);
+    expect(before.get("assets/x")).toEqual({ name: "A", ein: "12-3456789", corp: { d: 1 } });
+  });
+
+  it("lets members record new entities and fill blanks, and keeps owners, filled facts and deletions for owners and admins", () => {
+    const before = rows({ "assets/x": { name: "A", ein: "", type: "LLC" }, "assets/old": { name: "Old" } });
+    const judge = (list: unknown[], admin = false) => {
+      const o = ops(list);
+      const after = simulate(before, o);
+      return structuralRefusal(structuralChanges(before, after, [...new Set(touchedRows(o).map((t) => t.id))]), admin);
+    };
+    expect(judge([{ op: "set", path: "assets/new", value: { name: "N", type: "LLC", ein: "12-3456789", ownerId: "x" } }])).toBeNull();
+    expect(judge([{ op: "update", path: "assets/x", value: { ein: "12-3456789", llcType: "Partnership" } }])).toBeNull();
+    expect(judge([{ op: "update", path: "assets/x", value: { name: "A" } }])).toBeNull();
+    expect(judge([{ op: "update", path: "assets/x", value: { ownerId: "old" } }])).toMatch(/who owns/);
+    expect(judge([{ op: "update", path: "assets/x", value: { name: "B" } }])).toMatch(/legal name/);
+    expect(judge([{ op: "update", path: "assets/x", value: { type: "C-Corp" } }])).toMatch(/legal form/);
+    expect(judge([{ op: "set", path: "assets/old", value: null }])).toMatch(/delete an entity/);
+    expect(judge([{ op: "update", path: "assets/x", value: { ownerId: "old", name: "B" } }], true)).toBeNull();
+  });
+
+  it("checks an EIN's shape and never takes an SSN", () => {
+    expect(einProblem("12-3456789")).toBeNull();
+    expect(einProblem("123456789")).toBeNull();
+    expect(einProblem("123-45-6789")).toMatch(/Social Security/);
+    expect(einProblem("12-345")).toMatch(/9 digits/);
+  });
+
+  it("stamps a change of owner with when and by whom, and checks the effective date", () => {
+    const before = rows({ "assets/x": { name: "A", ownerId: "t" } });
+    const now = new Date("2026-11-06T15:00:00Z");
+    const after = simulate(before, ops([{ op: "update", path: "assets/x", value: { ownerId: "y", ownerEffective: "2026-10-01" } }]));
+    const changes = structuralChanges(before, after, ["x"]);
+    expect(ownerStamps(changes, after, { id: "u1", name: "Robert" }, now)).toEqual([
+      { op: "update", path: ["assets", "x"], value: { ownerChangedAt: "2026-11-06T15:00:00.000Z", ownerChangedBy: { id: "u1", name: "Robert" } } },
+    ]);
+    const bad = simulate(before, ops([{ op: "update", path: "assets/x", value: { ownerId: "y", ownerEffective: "Oct 1" } }]));
+    expect(ownerStamps(structuralChanges(before, bad, ["x"]), bad, { id: "u1", name: "Robert" }, now)).toEqual({ error: expect.stringMatching(/date/) });
+  });
+
+  it("stamps a new note's author, keeps deleted notes, and lets only the author or an admin change one", () => {
+    const now = new Date("2026-11-06T15:00:00Z");
+    const before = rows({ "notes/mine": { title: "Mine", createdBy: { id: "u1", name: "R" }, createdAt: 1 }, "notes/theirs": { title: "Theirs", createdBy: { id: "u2", name: "C" }, createdAt: 1 } });
+    const rule = (list: unknown[], admin = false) => {
+      const o = ops(list);
+      return noteRules(before, simulate(before, o), [...new Set(touchedRows(o).map((t) => t.id))], { id: "u1", name: "R", admin }, now);
+    };
+    expect(rule([{ op: "set", path: "notes/new", value: { title: "T", body: "B", createdBy: { id: "forged" } } }]).stamps).toEqual([
+      { op: "update", path: ["notes", "new"], value: { createdBy: { id: "u1", name: "R" }, createdAt: now.getTime(), deletedAt: null, deletedBy: null } },
+    ]);
+    expect(rule([{ op: "set", path: "notes/mine", value: null }]).refusal).toMatchObject({ status: 409, code: "notes_are_kept" });
+    expect(rule([{ op: "update", path: "notes/theirs", value: { deletedAt: 5 } }]).refusal).toMatchObject({ status: 403 });
+    expect(rule([{ op: "update", path: "notes/mine", value: { createdBy: { id: "u9" } } }]).refusal).toMatchObject({ status: 400 });
+    const del = rule([{ op: "update", path: "notes/mine", value: { deletedAt: 5 } }]);
+    expect(del.refusal).toBeUndefined();
+    expect(del.stamps).toEqual([{ op: "update", path: ["notes", "mine"], value: { deletedAt: now.getTime(), deletedBy: { id: "u1", name: "R" } } }]);
+    expect(del.events).toEqual([{ kind: "delete", id: "mine", title: "Mine" }]);
+    expect(rule([{ op: "update", path: "notes/theirs", value: { deletedAt: 5 } }], true).refusal).toBeUndefined();
   });
 });
 
@@ -315,5 +394,47 @@ describe("/api/tree", () => {
     expect(await call("POST", { body: { ops: [{ op: "set", path: "notes/n", value: { text: "x" } }] } })).toEqual({ status: 403, json: { error: "forbidden" } });
     me = member;
     expect((await call("POST", { body: { ops: [{ op: "set", path: "notes", value: {} }] } })).status).toBe(400);
+  });
+
+  describe("write rules", () => {
+    const admin = { ...member, id: "a1", role: "admin" };
+    const entity = (data: Record<string, unknown>) => [/GET tree_nodes\?collection=eq\.assets&id=in\./, () => [{ collection: "assets", id: "x", data, updated_at: "t" }]] as const;
+
+    it("keeps a change of owner for owners and admins, stamps it, and records it in the audit trail", async () => {
+      sbRoutes.push([...entity({ name: "Child, LLC", ownerId: "t" })]);
+      const body = { ops: [{ op: "update", path: "assets/x", value: { ownerId: "y", ownerEffective: "2026-10-01" } }] };
+      expect(await call("POST", { body })).toMatchObject({ status: 403, json: { error: "owner_or_admin" } });
+      expect(sbCalls.some((c) => c.path === "rpc/tree_apply")).toBe(false);
+      me = admin;
+      expect((await call("POST", { body })).status).toBe(200);
+      const rpc = sbCalls.find((c) => c.path === "rpc/tree_apply")!;
+      expect(rpc.body.ops[1]).toMatchObject({ op: "update", path: ["assets", "x"], value: { ownerChangedBy: { id: "a1", name: "Robert" } } });
+      const row = sbCalls.find((c) => c.method === "POST" && c.path === "audit_log")?.body;
+      expect(row).toMatchObject({ action: "entity.owner_change", target_id: "x", detail: { from: "t", to: "y", effective: "2026-10-01" } });
+    });
+
+    it("refuses an SSN in the EIN field, and an EIN another entity already has", async () => {
+      sbRoutes.push([...entity({ name: "Child, LLC" })]);
+      expect(await call("POST", { body: { ops: [{ op: "update", path: "assets/x", value: { ein: "123-45-6789" } }] } })).toMatchObject({ status: 400, json: { error: "bad_ein" } });
+      sbRoutes.unshift([/GET tree_nodes\?collection=eq\.assets&select=id,name/, () => [{ id: "p", name: "Parent, LLC" }]]);
+      const r = await call("POST", { body: { ops: [{ op: "update", path: "assets/x", value: { ein: "12-3456789" } }] } });
+      expect(r).toMatchObject({ status: 409, json: { error: "ein_in_use", message: "12-3456789 is already Parent, LLC's EIN." } });
+    });
+
+    it("stamps a note with its author and keeps it when deleted", async () => {
+      sbRoutes.push([/GET tree_nodes\?collection=eq\.notes&id=in\./, (c) => (c.path.includes('"old"') ? [{ collection: "notes", id: "old", data: { title: "Old", createdBy: { id: "u2" } }, updated_at: "t" }] : [])]);
+      expect((await call("POST", { body: { ops: [{ op: "set", path: "notes/n1", value: { title: "T", body: "B" } }] } })).status).toBe(200);
+      expect(sbCalls.find((c) => c.path === "rpc/tree_apply")!.body.ops[1]).toMatchObject({ path: ["notes", "n1"], value: { createdBy: { id: "u1", name: "Robert" } } });
+      expect((await call("POST", { body: { ops: [{ op: "set", path: "notes/old", value: null }] } })).status).toBe(409);
+      expect((await call("POST", { body: { ops: [{ op: "update", path: "notes/old", value: { deletedAt: 1 } }] } })).status).toBe(403);
+    });
+
+    it("credits a document scan's writes to the scan, started by the person who ran it", async () => {
+      let reads = 0;
+      sbRoutes.push([/GET tree_nodes\?collection=eq\.assets&id=in\./, () => [{ collection: "assets", id: "x", data: reads++ ? { name: "Child, LLC", address: "1 Main St" } : { name: "Child, LLC" }, updated_at: "t" }]]);
+      expect((await call("POST", { body: { source: "scan", ops: [{ op: "update", path: "assets/x", value: { address: "1 Main St" } }] } })).status).toBe(200);
+      const logged = sbCalls.find((c) => c.method === "POST" && c.path.startsWith("entity_activity"))?.body;
+      expect(logged?.[0]).toMatchObject({ actor_name: "Document scan, started by Robert", source: "system" });
+    });
   });
 });

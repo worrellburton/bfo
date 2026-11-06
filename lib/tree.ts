@@ -1,13 +1,20 @@
-import { describeChange, logActivity, type Actor } from "./activity.js";
-import { sb } from "./auth.js";
-
 /**
  * The shared JSON tree (public.tree_nodes): what the app used to keep in
  * Firebase Realtime Database. A path is "collection/id/…", so "assets" is
  * every entity, "assets/x" one entity and "assets/x/documents/d" one of its
  * documents. The pure pieces (paths, reading a value out of rows, checking
- * operations) are exported on their own so they're tested without a network.
+ * operations, and the rules on what a write may change) are exported on
+ * their own so they're tested without a network.
+ *
+ * HTTP surface: none; a library. api/tree.ts serves it to the browser, and
+ * the Palm and state-record jobs write through applyOps.
+ * Who may call it: server code, after its own role check. The write rules
+ * here (structuralRefusal, noteRules) are applied by api/tree.ts.
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY (through sb() in lib/auth.ts).
  */
+
+import { describeChange, logActivity, type Actor } from "./activity.js";
+import { sb } from "./auth.js";
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 export type TreeRow = { collection: string; id: string; data: Json; updated_at: string };
@@ -137,6 +144,180 @@ export function touchedRows(ops: TreeOp[]): { collection: Collection; id: string
   return out;
 }
 
+// ── What a write ends up changing ───────────────────────────────────────
+
+/** "collection/id": the key the write rules use for a row. */
+export const rowKey = (collection: string, id: string) => `${collection}/${id}`;
+
+const isObj = (v: Json | undefined): v is { [k: string]: Json } => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** `data` with `value` at `sub` (null removes, Firebase style); copies on the way down, never mutates. */
+function setIn(data: Json, sub: string[], value: Json): Json {
+  if (!sub.length) return value;
+  const base: { [k: string]: Json } = isObj(data) ? { ...data } : {};
+  const [k, ...rest] = sub;
+  const next = setIn(base[k] ?? null, rest, value);
+  if (next === null) delete base[k];
+  else base[k] = next;
+  return Object.keys(base).length ? base : null;
+}
+
+/**
+ * The rows as they'll be once `ops` are applied to `before` (keyed by
+ * rowKey; a missing key is a row that isn't there). Pure: it mirrors what
+ * tree_apply does, so a write can be judged before it's sent.
+ */
+export function simulate(before: Map<string, Json>, ops: TreeOp[]): Map<string, Json> {
+  const after = new Map(before);
+  const put = (path: string[], value: Json) => {
+    if (path.length < 2) return;
+    const key = rowKey(path[0], path[1]);
+    const next = setIn(after.get(key) ?? null, path.slice(2), value);
+    if (next === null) after.delete(key);
+    else after.set(key, next);
+  };
+  for (const o of ops) {
+    if (o.op === "set") put(o.path, o.value);
+    else for (const [k, v] of Object.entries(o.value as { [k: string]: Json })) put([...o.path, ...k.split("/").filter(Boolean)], v);
+  }
+  return after;
+}
+
+/** Fields that say what an entity is and who owns it: changing one once it's on record is an owner's or admin's call. */
+export const STRUCTURAL_FIELDS = ["ownerId", "name", "type", "llcType", "ein"] as const;
+export type StructuralField = (typeof STRUCTURAL_FIELDS)[number];
+
+const FIELD_WORDS: Record<StructuralField, string> = { ownerId: "owner", name: "legal name", type: "legal form", llcType: "tax classification", ein: "EIN" };
+
+const filled = (v: Json | undefined) => v !== null && v !== undefined && String(v).trim() !== "";
+const norm = (v: Json | undefined) => (filled(v) ? String(v).trim() : "");
+
+export type EntityChange = {
+  id: string;
+  field: StructuralField;
+  from: string;
+  to: string;
+  /** The entity is new in this write (recording one that exists). */
+  created: boolean;
+  /** The entity is removed in this write. */
+  deleted: boolean;
+};
+
+/** The structural fields this write changes, entity by entity. */
+export function structuralChanges(before: Map<string, Json>, after: Map<string, Json>, ids: string[]): EntityChange[] {
+  const out: EntityChange[] = [];
+  for (const id of ids) {
+    const b = before.get(rowKey("assets", id));
+    const a = after.get(rowKey("assets", id));
+    const created = b === undefined && a !== undefined;
+    const deleted = b !== undefined && a === undefined;
+    for (const field of STRUCTURAL_FIELDS) {
+      const from = norm(isObj(b) ? b[field] : undefined);
+      const to = norm(isObj(a) ? a[field] : undefined);
+      if (from !== to) out.push({ id, field, from, to, created, deleted });
+    }
+  }
+  return out;
+}
+
+/**
+ * Why someone who isn't an owner or an admin may not make these changes, or
+ * null. Members record new entities and fill in blanks (a scan does the
+ * same); changing an owner, or a legal name, form, tax class or EIN that's
+ * already on record, or deleting an entity, is an owner's or admin's call.
+ */
+export function structuralRefusal(changes: EntityChange[], admin: boolean): string | null {
+  if (admin) return null;
+  for (const c of changes) {
+    if (c.created) continue;
+    if (c.deleted) return "Only an owner or an admin can delete an entity.";
+    if (c.field === "ownerId") return "Only an owner or an admin can change who owns an entity.";
+    if (c.from) return `Only an owner or an admin can change an entity's ${FIELD_WORDS[c.field]} once it's on record.`;
+  }
+  return null;
+}
+
+/** An EIN's shape, checked when one is recorded: 9 digits, and never a Social Security number. */
+export function einProblem(raw: string): string | null {
+  const s = raw.trim();
+  if (/^\d{3}-\d{2}-\d{4}$/.test(s)) return "That looks like a Social Security number. An EIN is written 12-3456789.";
+  if (s.replace(/[\s-]/g, "").length !== 9 || !/^\d{2}-?\s?\d{7}$/.test(s)) return "An EIN is 9 digits, written 12-3456789.";
+  return null;
+}
+
+/** The forms an EIN may be stored in, to find another entity that already has it. */
+export function einForms(raw: string): string[] {
+  const d = raw.replace(/\D/g, "");
+  return d.length === 9 ? [`${d.slice(0, 2)}-${d.slice(2)}`, d] : [raw.trim()];
+}
+
+/**
+ * What the server adds to a write that changes an owner: when, and by whom.
+ * The effective date is the writer's (`ownerEffective`, YYYY-MM-DD); the
+ * stamp is the server's, so it can't be back-dated.
+ */
+export function ownerStamps(changes: EntityChange[], after: Map<string, Json>, by: { id: string; name: string | null }, now: Date): TreeOp[] | { error: string } {
+  const out: TreeOp[] = [];
+  for (const c of changes) {
+    if (c.field !== "ownerId" || c.deleted) continue;
+    const row = after.get(rowKey("assets", c.id));
+    const eff = isObj(row) ? row.ownerEffective : undefined;
+    if (eff != null && eff !== "" && (typeof eff !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(eff))) return { error: "The effective date must be a date (YYYY-MM-DD)." };
+    out.push({ op: "update", path: ["assets", c.id], value: { ownerChangedAt: now.toISOString(), ownerChangedBy: { id: by.id, name: by.name } } });
+  }
+  return out;
+}
+
+export type NoteRuling = {
+  refusal?: { status: number; code: string; message: string };
+  /** Writes the server adds: the author and time on a new note, who deleted and when. */
+  stamps: TreeOp[];
+  /** Deletions and restorations, for the audit trail. */
+  events: { kind: "delete" | "restore"; id: string; title: string }[];
+};
+
+/**
+ * The rules for notes. A new note is stamped with its author and the
+ * server's time. Notes are kept: delete sets deletedAt (and the server adds
+ * who), and a hard delete is refused. Only the note's author, or an owner
+ * or admin, may change or delete it, and nobody may change its author or date.
+ */
+export function noteRules(
+  before: Map<string, Json>,
+  after: Map<string, Json>,
+  ids: string[],
+  me: { id: string; name: string | null; admin: boolean },
+  now: Date,
+): NoteRuling {
+  const stamps: TreeOp[] = [];
+  const events: NoteRuling["events"] = [];
+  const by = { id: me.id, name: me.name };
+  for (const id of ids) {
+    const b = before.get(rowKey("notes", id));
+    const a = after.get(rowKey("notes", id));
+    if (b === undefined && a === undefined) continue;
+    if (b === undefined) {
+      stamps.push({ op: "update", path: ["notes", id], value: { createdBy: by, createdAt: now.getTime(), deletedAt: null, deletedBy: null } });
+      continue;
+    }
+    if (a === undefined) return { stamps: [], events: [], refusal: { status: 409, code: "notes_are_kept", message: "Notes are kept. Deleting one moves it to Deleted." } };
+    const author = isObj(b) && isObj(b.createdBy) ? b.createdBy.id : null;
+    if (!me.admin && author !== me.id) {
+      return { stamps: [], events: [], refusal: { status: 403, code: "not_your_note", message: "Only the person who wrote a note, or an owner or admin, can change or delete it." } };
+    }
+    const same = (k: string) => JSON.stringify(isObj(b) ? (b[k] ?? null) : null) === JSON.stringify(isObj(a) ? (a[k] ?? null) : null);
+    if (!same("createdBy") || !same("createdAt") || !same("deletedBy")) {
+      return { stamps: [], events: [], refusal: { status: 400, code: "note_history", message: "A note's author, date and deletion record can't be changed." } };
+    }
+    if (!same("deletedAt")) {
+      const deleting = isObj(a) && filled(a.deletedAt);
+      stamps.push({ op: "update", path: ["notes", id], value: deleting ? { deletedAt: now.getTime(), deletedBy: by } : { deletedAt: null, deletedBy: null } });
+      events.push({ kind: deleting ? "delete" : "restore", id, title: isObj(b) && typeof b.title === "string" ? b.title : "a note" });
+    }
+  }
+  return { stamps, events };
+}
+
 // ── Supabase ─────────────────────────────────────────────────────────────
 
 const enc = encodeURIComponent;
@@ -171,10 +352,19 @@ export async function readIndex(collection: Collection): Promise<{ id: string; u
  * Apply operations in one transaction, then return the rows they touched (null data = gone).
  * With an actor, each entity it changes gets the change in its activity (lib/activity.ts).
  */
-export async function applyOps(ops: TreeOp[], actor?: Actor): Promise<Array<TreeRow | { collection: Collection; id: string; data: null; updated_at: null }>> {
+export async function applyOps(
+  ops: TreeOp[],
+  actor?: Actor,
+  /** The touched entities as they were, when the caller has already read them (rowKey → data; missing = not there). */
+  known?: Map<string, Json>,
+): Promise<Array<TreeRow | { collection: Collection; id: string; data: null; updated_at: null }>> {
   const touched = touchedRows(ops);
   const assetIds = actor ? touched.filter((t) => t.collection === "assets").map((t) => t.id) : [];
-  const before = assetIds.length ? new Map((await readRows("assets", assetIds)).map((r) => [r.id, r.data])) : null;
+  const before = !assetIds.length
+    ? null
+    : known
+      ? new Map(assetIds.flatMap((id) => (known.has(rowKey("assets", id)) ? [[id, known.get(rowKey("assets", id))!] as const] : [])))
+      : new Map((await readRows("assets", assetIds)).map((r) => [r.id, r.data]));
   await sb("rpc/tree_apply", { method: "POST", body: { ops } });
   const byCollection = new Map<Collection, string[]>();
   for (const t of touched) byCollection.set(t.collection, [...(byCollection.get(t.collection) ?? []), t.id]);

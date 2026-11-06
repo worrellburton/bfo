@@ -3,16 +3,28 @@
  * signs on a public page, and the signed copy comes back with a certificate.
  *
  * Rows live in public.signature_requests (supabase/migrations/
- * 20261028_signature_requests.sql). The PDFs live in the private "documents"
- * bucket under signatures/<id>/: original.pdf as uploaded or generated,
- * current.pdf with the signatures stamped so far, signed.pdf once everyone
- * has signed (current plus a certificate page).
+ * 20261028_signature_requests.sql, and 20261107_signature_requests_records.sql
+ * for the fingerprints, the archive, the replaces chain and the filed copy).
+ * The PDFs live in the private "documents" bucket under signatures/<id>/:
+ * the original as uploaded or generated, the copy with the signatures stamped
+ * so far, and the signed copy once everyone has signed (the stamped pages
+ * plus a certificate page). A request tied to an entity also files its signed
+ * copy under assets/<id>/ with the entity's documents.
+ *
+ * The record a signature leaves, per party: the electronic-records consent
+ * (the disclosure's version, when, the network address and the device), the
+ * signature itself (when, from where, on what device, drawn or typed, and
+ * whether a game came first), the first opening, and any decline. The
+ * certificate prints all of it with the SHA-256 of the original and of the
+ * signed pages.
  *
  * Pure helpers (field geometry, status, tokens, the certificate text, the
- * emails) are here so they can be tested; api/sign.ts does the I/O.
+ * emails, what may be deleted or archived) are here so they can be tested;
+ * api/sign.ts does the I/O.
  *
- * Env: SUPABASE_URL, SUPABASE_SERVICE_KEY (storage and rows), the Bird email
- * vars sendEmail needs (BIRD_* in lib/auth.ts).
+ * HTTP surface: none (a library for api/sign.ts).
+ * Env: none read here; the caller's SUPABASE_URL, SUPABASE_SERVICE_KEY and
+ * the Bird email vars (BIRD_* in lib/auth.ts) carry the I/O.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -21,38 +33,74 @@ import { degrees, PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } 
 const SITE = "https://www.burtonfamilyoffice.com";
 export const SIGN_BUCKET = "documents";
 
+/**
+ * The version of the Electronic Records and Signatures Disclosure a signer
+ * agrees to (app/sign/disclosure.tsx holds the text, under the same version).
+ * Change both together when the words change; every consent records which
+ * version was shown.
+ */
+export const ESIGN_DISCLOSURE_VERSION = "2026-11-06";
+const KNOWN_DISCLOSURES = new Set([ESIGN_DISCLOSURE_VERSION]);
+
+/** How long a signing link works after it is sent (Remind sends a fresh one). */
+export const LINK_DAYS = 60;
+
 export type PartyKey = "a" | "b";
 type FieldType = "signature" | "initials" | "name" | "date" | "address";
 export type PartyStatus = "pending" | "sent" | "viewed" | "signed" | "declined";
 export type RequestStatus = "draft" | "sent" | "partial" | "completed" | "declined" | "voided";
-/** How the parties sign: the plain page, or the "Anything Is Possible" game in front of it (app/sign/game). */
 /** How the parties sign: the plain page, the Anything Is Possible theater game, or the racetrack game in front of it. */
 export type SignMode = "normal" | "game" | "race";
 
 /** Where a signer's mark goes: fractions of the page, y measured from the top. */
 export type SignField = { id: string; party: PartyKey; type: FieldType; page: number; x: number; y: number; w: number; h: number };
 
+/** A signer's agreement to use electronic records and signatures: which disclosure, when, and from where. */
+export type ConsentRecord = { version: string; at: string; ip?: string; device?: string };
+
 export type Party = {
   key: PartyKey;
   role: string;
+  /** The person who signs. */
   name: string;
   email: string;
+  /** The company the person signs for ("Northwind Holdings, LLC"), when they sign for one. */
+  entity?: string;
+  /** Their title in that company ("Manager"). */
+  title?: string;
   status: PartyStatus;
   /** sha-256 of the token in their link; the token itself is never stored. */
   tokenHash?: string;
   sentAt?: string;
+  /** When the link in their latest email stops working. */
+  expiresAt?: string;
   viewedAt?: string;
+  viewIp?: string;
+  viewDevice?: string;
   signedAt?: string;
   declinedAt?: string;
   declinedReason?: string;
+  declineIp?: string;
+  declineDevice?: string;
+  /** The network address the signature came from. */
   ip?: string;
+  /** The browser the signature came from (its user agent, clipped). */
+  device?: string;
+  /** Drawn with a finger or mouse, or typed and set in a script face. */
+  method?: "drawn" | "typed";
+  /** Where they signed: on the page straight away, or after the game. */
+  via?: "page" | "game";
+  /** The time zone the date stamp was written in. */
+  timeZone?: string;
   /** What they typed as their name when signing (the certificate shows it). */
   signedAs?: string;
   /** The address they typed when signing, when the document has an address field for them. */
   address?: string;
+  /** Their agreement to sign electronically, recorded just before the signature. */
+  consent?: ConsentRecord;
 };
 
-export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string };
+export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string; ip?: string; device?: string };
 
 export type SignatureRequestRow = {
   id: string;
@@ -80,7 +128,38 @@ export type SignatureRequestRow = {
   mode: SignMode;
   /** Bumped on every write; writes name the version they read so none overwrites another. */
   version: number;
+  // The columns below arrive with 20261107_signature_requests_records.sql; rows read before it lack them.
+  /** SHA-256 (hex) of the original document, as sent. */
+  original_sha256?: string | null;
+  /** SHA-256 of the signed pages before the certificate (printed on the certificate). */
+  executed_sha256?: string | null;
+  /** SHA-256 of the signed copy as filed and sent: the signed pages plus the certificate. */
+  signed_sha256?: string | null;
+  /** Archived: hidden from the list, kept whole (an executed or sent request is never deleted). */
+  archived_at?: string | null;
+  archived_by?: string | null;
+  archived_by_name?: string | null;
+  archived_reason?: string | null;
+  /** The request this one was sent again from, and the one that replaced it. */
+  replaces?: string | null;
+  replaced_by?: string | null;
+  /** Where the signed copy was filed with the entity's documents (assets/<id>/…). */
+  filed_path?: string | null;
 };
+
+/** The columns 20261107_signature_requests_records.sql adds; a write to a database without them leaves them out. */
+export const RECORD_COLUMNS = [
+  "original_sha256",
+  "executed_sha256",
+  "signed_sha256",
+  "archived_at",
+  "archived_by",
+  "archived_by_name",
+  "archived_reason",
+  "replaces",
+  "replaced_by",
+  "filed_path",
+] as const;
 
 /** What the office sees: the row without the token hashes. */
 type SignatureRequestView = Omit<SignatureRequestRow, "parties"> & { parties: Array<Omit<Party, "tokenHash">> };
@@ -110,6 +189,23 @@ export const versionPath = (id: string, which: "upload" | "current" | "signed") 
 /** True for a path versionPath made for this request's uploads. */
 export const isUploadPath = (id: string, path: string) => new RegExp(`^signatures/${id.replace(/[^0-9a-f-]/gi, "")}/upload-[a-z0-9]+-[0-9a-f]{8}\\.pdf$`).test(path);
 
+/** The SHA-256 of a file, as lowercase hex: the document's fingerprint on the certificate. */
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** Where the signed copy is filed with an entity's documents: under the entity, named after the request. */
+export function filedPath(assetId: string, title: string, id: string, now = Date.now()): string {
+  const safeAsset = assetId.replace(/[^\w-]/g, "_").slice(0, 80);
+  const safeTitle =
+    title
+      .replace(/[^\w .&,()-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "Document";
+  return `assets/${safeAsset}/${now}-${safeTitle} (signed ${id.slice(0, 8)}).pdf`;
+}
+
 // ── Tokens ────────────────────────────────────────────────────────────────
 
 export function newToken(): string {
@@ -121,6 +217,16 @@ export function hashToken(token: string): string {
 }
 
 export const TOKEN_RE = /^[A-Za-z0-9_-]{24,64}$/;
+
+/** When a link sent now stops working. */
+export function linkExpiry(from: Date = new Date()): string {
+  return new Date(from.getTime() + LINK_DAYS * 24 * 3600_000).toISOString();
+}
+
+/** True when the party's link has run out (links from before expiry was kept never do). */
+export function linkExpired(p: Pick<Party, "expiresAt">, now: Date = new Date()): boolean {
+  return !!p.expiresAt && Date.parse(p.expiresAt) < now.getTime();
+}
 
 // ── Status ────────────────────────────────────────────────────────────────
 
@@ -134,19 +240,112 @@ export function deriveStatus(parties: Party[], current: RequestStatus): RequestS
   return "sent";
 }
 
-/** Why a request can't go out yet, or null when it can. */
-export function sendBlocker(row: Pick<SignatureRequestRow, "original_path" | "fields" | "parties">): string | null {
+/** A name that reads as a company, trust or other organisation rather than a person. */
+export function looksLikeEntity(name: string): boolean {
+  return /\b(l\.?l\.?c|l\.?l\.?p|l\.?p|inc|incorporated|corp|corporation|company|co|ltd|limited|trust|foundation|partners(hip)?|holdings|pllc|pc|p\.c)\b\.?,?\s*$/i.test(name.trim()) || /,\s*(llc|inc|lp|ltd)\b/i.test(name);
+}
+
+/** "Northwind Holdings, LLC, by Alex Rivera, Manager", or the person's name alone. */
+export function signerCapacity(p: Pick<Party, "name" | "entity" | "title">): string {
+  if (!p.entity) return p.name;
+  return `${p.entity}, by ${p.name || "its signer"}${p.title ? `, ${p.title}` : ""}`;
+}
+
+/** Why a request can't go out yet, or null when it can. `sender` is the email of the person sending it. */
+export function sendBlocker(row: Pick<SignatureRequestRow, "original_path" | "fields" | "parties">, sender?: string | null): string | null {
   if (!row.original_path) return "Add the document first.";
   if (row.parties.length < 1) return "Add at least one party.";
   for (const p of row.parties) {
     if (!p.name.trim()) return `Name the ${p.role.toLowerCase() || "party"}.`;
+    if (!p.entity && looksLikeEntity(p.name)) return `${p.name} is a company: name the person who signs for it, and their title.`;
+    if (p.entity && !p.title?.trim()) return `Add ${p.name}'s title at ${p.entity}.`;
     if (!EMAIL_RE.test(p.email.trim())) return `${p.name || p.role} needs an email address.`;
     if (!row.fields.some((f) => f.party === p.key && f.type === "signature")) return `Place a signature field for ${p.name || p.role}.`;
   }
+  // A signing link goes to the signer, never to whoever presses Send in their place.
+  const me = sender?.trim().toLowerCase();
+  if (me) {
+    const mine = row.parties.filter((p) => p.email.trim().toLowerCase() === me);
+    if (mine.length > 1) return "Two parties have your email address. Each party needs their own.";
+  }
+  const emails = row.parties.map((p) => p.email.trim().toLowerCase());
+  if (new Set(emails).size !== emails.length) return "Two parties have the same email address. Each party needs their own.";
   return null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Why a request can't be deleted, or null when it can: only a draft that never went out. */
+export function deleteBlocker(row: Pick<SignatureRequestRow, "status" | "sent_at">): string | null {
+  if (row.status !== "draft" || row.sent_at) return "A request that has been sent is kept. Archive it instead.";
+  return null;
+}
+
+/** Why a request can't be archived now, or null. Open requests are voided first, so no link stays live on a hidden record. */
+export function archiveBlocker(row: Pick<SignatureRequestRow, "status" | "sent_at" | "archived_at">): string | null {
+  if (row.archived_at) return "It's already archived.";
+  if (row.status === "draft" && !row.sent_at) return "A draft that never went out can be deleted instead.";
+  if (row.status === "sent" || row.status === "partial") return "It's still out for signature. Void it first.";
+  return null;
+}
+
+/** A consent as the signer's page sends it: agreed, to a disclosure version this server knows. */
+export function consentProblem(consent: unknown, version: unknown): "consent" | "consent_version" | null {
+  if (consent !== true) return "consent";
+  if (typeof version !== "string" || !KNOWN_DISCLOSURES.has(version)) return "consent_version";
+  return null;
+}
+
+/** A time zone the browser named, if it's a real one; the date stamp is written in it. */
+export function cleanTimeZone(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(raw) || raw.length > 64) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: raw });
+    return raw;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A user agent, clipped and stripped to what's worth keeping as evidence. */
+export function cleanDevice(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  return s ? s.slice(0, 300) : undefined;
+}
+
+/** A user agent as a few words: "Safari on iPhone", "Chrome on Windows". */
+export function deviceSummary(ua: string | undefined): string {
+  if (!ua) return "";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+      ? "iPad"
+      : /Android/.test(ua)
+        ? "Android"
+        : /Mac OS X|Macintosh/.test(ua)
+          ? "Mac"
+          : /Windows/.test(ua)
+            ? "Windows"
+            : /CrOS/.test(ua)
+              ? "ChromeOS"
+              : /Linux/.test(ua)
+                ? "Linux"
+                : "";
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /OPR\/|Opera/.test(ua)
+      ? "Opera"
+      : /Firefox\/|FxiOS/.test(ua)
+        ? "Firefox"
+        : /CriOS|Chrome\//.test(ua)
+          ? "Chrome"
+          : /Safari\//.test(ua)
+            ? "Safari"
+            : "";
+  if (browser && os) return `${browser} on ${os}`;
+  return browser || os || "a browser";
+}
 
 /** Bounds a field's geometry to the page and sane sizes. */
 export function cleanField(raw: unknown, pageCount: number): SignField | null {
@@ -176,29 +375,44 @@ export function cleanMode(raw: unknown): SignMode {
 /** True for a mode that puts a game in front of the signing page. */
 export const isGameMode = (mode: SignMode | undefined): boolean => mode === "game" || mode === "race";
 
+/** The modes as words, for the history and the certificate. */
+export const MODE_WORDS: Record<SignMode, string> = { normal: "Normal e-signature", game: "Anything Is Possible film", race: "Racetrack game" };
+
 export function cleanParty(raw: unknown, key: PartyKey, prior?: Party): Party | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as Record<string, unknown>;
   const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const entity = str(p.entity, 160);
+  const title = str(p.title, 80);
+  const { entity: _e, title: _t, ...rest } = prior ?? ({ status: "pending" as PartyStatus } as Partial<Party>);
   return {
-    ...(prior ?? { status: "pending" as PartyStatus }),
+    ...(rest as Party),
     key,
     role: str(p.role, 40) || (key === "a" ? "Party A" : "Party B"),
     name: str(p.name, 120),
     email: str(p.email, 200).toLowerCase(),
+    ...(entity ? { entity } : {}),
+    ...(entity && title ? { title } : {}),
   };
 }
 
 // ── Dates ─────────────────────────────────────────────────────────────────
 
-export function officeDate(d: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "long", day: "numeric", year: "numeric" }).format(d);
+/** The signing date as stamped on the page: in the signer's own time zone when the page sent one, else the office's (Arizona). */
+export function officeDate(d: Date = new Date(), timeZone = "America/Phoenix"): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone, month: "long", day: "numeric", year: "numeric" }).format(d);
 }
 
-function officeDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(
-    new Date(iso),
-  );
+/** An audit stamp: "Nov 5, 2026, 6:58 AM MST", in Arizona time like everything the office keeps. */
+export function officeDateTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
+    .format(new Date(iso))
+    .replace(/[  ]/g, " ");
+}
+
+/** A date for an email: "January 5, 2027". */
+function longDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "long", day: "numeric", year: "numeric" }).format(new Date(iso));
 }
 
 // ── Stamping ──────────────────────────────────────────────────────────────
@@ -364,27 +578,55 @@ function drawWrapped(page: PDFPage, font: PDFFont, text: string, r: { x: number;
   });
 }
 
-/** Appends the certificate page: who signed what, when, from where. */
+/** Appends the certificate page (or pages): who signed what, when, from where, on what, after agreeing to what, and the document's fingerprints. */
 export async function appendCertificate(pdf: Uint8Array, row: SignatureRequestRow): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
   const first = doc.getPage(0).getSize();
-  const page = doc.addPage([first.width, first.height]);
+  let page = doc.addPage([first.width, first.height]);
   const serif = await doc.embedFont(StandardFonts.TimesRoman);
   const serifBold = await doc.embedFont(StandardFonts.TimesRomanBold);
   const sans = await doc.embedFont(StandardFonts.Helvetica);
   const ink = rgb(0.08, 0.08, 0.1);
-  const muted = rgb(0.45, 0.45, 0.47);
+  const muted = rgb(0.4, 0.4, 0.42);
   const ml = 56;
   const mr = first.width - 56;
   let y = first.height - 80;
-  const line = (text: string, font: PDFFont, size: number, color = ink, x = ml) => {
-    page.drawText(fontSafe(text, font), { x, y, size, font, color });
-    y -= size * 1.55;
+  const room = (need: number) => {
+    if (y - need >= 56) return;
+    page = doc.addPage([first.width, first.height]);
+    y = first.height - 64;
+  };
+  const line = (text: string, font: PDFFont, size: number, color = ink) => {
+    // Long lines (a device, a fingerprint) wrap at spaces, or anywhere when there are none.
+    const words = fontSafe(text, font).split(/(?<=\s)/);
+    const rows: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      if (font.widthOfTextAtSize(cur + w, size) <= mr - ml || !cur) cur += w;
+      else {
+        rows.push(cur.trimEnd());
+        cur = w;
+      }
+    }
+    if (cur) rows.push(cur.trimEnd());
+    for (let r of rows) {
+      while (font.widthOfTextAtSize(r, size) > mr - ml && r.length > 1) {
+        let cut = r.length - 1;
+        while (cut > 1 && font.widthOfTextAtSize(r.slice(0, cut), size) > mr - ml) cut--;
+        room(size * 1.55);
+        page.drawText(r.slice(0, cut), { x: ml, y, size, font, color });
+        y -= size * 1.55;
+        r = r.slice(cut);
+      }
+      room(size * 1.55);
+      page.drawText(r, { x: ml, y, size, font, color });
+      y -= size * 1.55;
+    }
   };
   const mark = fontSafe(row.brand || "BFO", serifBold);
   line(mark, serifBold, 14);
   y += 2;
-  page.drawText("SIGNATURE CERTIFICATE", { x: ml + serifBold.widthOfTextAtSize(mark, 14) + 10, y: y + 14 * 1.55 - 2, size: 7, font: sans, color: muted });
+  page.drawText("Signature certificate", { x: ml + serifBold.widthOfTextAtSize(mark, 14) + 10, y: y + 14 * 1.55 - 2, size: 8, font: sans, color: muted });
   page.drawLine({ start: { x: ml, y: y + 6 }, end: { x: mr, y: y + 6 }, thickness: 0.8, color: ink });
   y -= 22;
   line(row.title, serifBold, 18);
@@ -396,9 +638,11 @@ export async function appendCertificate(pdf: Uint8Array, row: SignatureRequestRo
       continue;
     }
     const bold = text.startsWith("## ");
+    if (bold) room(60);
     line(bold ? text.slice(3) : text, bold ? serifBold : serif, bold ? 12 : 10.5);
   }
   y -= 10;
+  room(60);
   page.drawLine({ start: { x: ml, y }, end: { x: mr, y }, thickness: 0.4, color: muted });
   y -= 16;
   for (const text of certificateFooter(row.brand)) line(text, sans, 8, muted);
@@ -407,25 +651,39 @@ export async function appendCertificate(pdf: Uint8Array, row: SignatureRequestRo
 
 /** The small print under the certificate; without BFO's name when the request is sent under another. */
 export function certificateFooter(brand: string | null): string[] {
-  return brand
-    ? ["Signed electronically. Each party opened a private link sent to the email address above, read the document,", "and signed it; the time and network address of each signature are recorded."]
-    : [
-        "Signed through BFO, Burton Family Office (burtonfamilyoffice.com). Each party opened a private link sent to the",
-        "email address above, read the document, and signed it; the time and network address of each signature are recorded.",
-      ];
+  const how =
+    "Each party opened a private link sent to the email address above, agreed to use electronic records and signatures, opened the document and signed it. The time, network address and device of each step are recorded. The SHA-256 fingerprints identify the original document and the signed pages exactly: a copy whose fingerprint differs is not this document.";
+  return brand ? [`Signed electronically. ${how}`] : [`Signed through BFO, Burton Family Office (burtonfamilyoffice.com). ${how}`];
+}
+
+/** How a party came to sign: on the page straight away, or after the request's game. */
+function signedThrough(row: Pick<SignatureRequestRow, "mode">, p: Party): string {
+  const method = p.method === "typed" ? "Signature typed" : p.method === "drawn" ? "Signature drawn" : "Signed";
+  if (!isGameMode(row.mode)) return `${method} on the signing page`;
+  return p.via === "game" ? `${method} on the signing page, after the ${MODE_WORDS[row.mode]}` : `${method} on the signing page (the ${MODE_WORDS[row.mode]} was offered first and skipped)`;
 }
 
 /** The certificate's lines (a "## " prefix is a heading; "" is a gap). */
 export function certificateLines(row: SignatureRequestRow): string[] {
   const out: string[] = [];
+  const from = (ip?: string, device?: string) => [ip ? ` from ${ip}` : "", device ? ` · ${deviceSummary(device)}` : ""].join("");
   for (const p of row.parties) {
-    out.push(`## ${p.role}: ${p.name}`);
+    out.push(`## ${p.role}: ${signerCapacity(p)}`);
     out.push(`Email ${p.email}`);
     if (p.signedAs && p.signedAs !== p.name) out.push(`Signed as ${p.signedAs}`);
-    out.push(p.signedAt ? `Signed ${officeDateTime(p.signedAt)}${p.ip ? ` from ${p.ip}` : ""}` : `Not signed`);
-    if (p.viewedAt) out.push(`First opened ${officeDateTime(p.viewedAt)}`);
+    if (p.consent) out.push(`Agreed to use electronic records and signatures ${officeDateTime(p.consent.at)}${from(p.consent.ip, p.consent.device)} (disclosure of ${p.consent.version})`);
+    if (p.signedAt) {
+      out.push(`Signed ${officeDateTime(p.signedAt)}${from(p.ip, p.device)}`);
+      out.push(signedThrough(row, p));
+    } else if (p.declinedAt) out.push(`Declined ${officeDateTime(p.declinedAt)}${from(p.declineIp, p.declineDevice)}`);
+    else out.push("Not signed");
+    if (p.viewedAt) out.push(`First opened ${officeDateTime(p.viewedAt)}${from(p.viewIp, p.viewDevice)}`);
     out.push("");
   }
+  out.push("## The document");
+  out.push(`Signing mode: ${MODE_WORDS[row.mode ?? "normal"]}${isGameMode(row.mode) ? " (optional; the signing page and its consent are the same in every mode)" : ""}`);
+  if (row.original_sha256) out.push(`Original document SHA-256: ${row.original_sha256}`);
+  if (row.executed_sha256) out.push(`Signed pages SHA-256 (pages 1 to ${row.pages.length || "end"}, before this certificate): ${row.executed_sha256}`);
   if (row.sent_at) out.push(`Sent for signature ${officeDateTime(row.sent_at)}${row.created_by_name ? ` by ${row.created_by_name}` : ""}`);
   if (row.completed_at) out.push(`Completed ${officeDateTime(row.completed_at)}`);
   return out;
@@ -435,7 +693,14 @@ export function certificateLines(row: SignatureRequestRow): string[] {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function shell(inner: string, brand: string | null = null): string {
+/** The links every signer's email carries: the disclosure (on the signing page) and the privacy notice. */
+function footerLinks(link: string | null): string {
+  const a = (href: string, label: string) => `<a href="${href}" style="color:rgba(255,255,255,0.7);text-decoration:underline;">${esc(label)}</a>`;
+  const parts = [...(link ? [a(`${link}#disclosure`, "Electronic records disclosure")] : []), a(`${SITE}/legal/privacy`, "Privacy")];
+  return `<div style="margin-top:24px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.7);">${parts.join(" &middot; ")}</div>`;
+}
+
+function shell(inner: string, brand: string | null = null, footer = ""): string {
   return `<!doctype html><html><body style="margin:0;background:#000;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
     <table role="presentation" width="100%" style="max-width:460px;background:#0b0b0b;border:1px solid rgba(255,255,255,0.12);border-radius:20px;" cellpadding="0" cellspacing="0">
@@ -443,10 +708,11 @@ function shell(inner: string, brand: string | null = null): string {
         ${
           brand
             ? `<div style="font-family:'Playfair Display',Georgia,serif;font-size:26px;line-height:1.2;color:#ffffff;">${esc(brand)}</div>`
-            : `<div style="font-family:'Playfair Display',Georgia,serif;font-size:13px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.5);">Burton Family Office</div>
+            : `<div style="font-size:13px;color:rgba(255,255,255,0.7);">Burton Family Office</div>
         <div style="margin-top:6px;font-family:'Playfair Display',Georgia,serif;font-size:40px;color:#ffffff;">BFO</div>`
         }
         ${inner}
+        ${footer}
       </td></tr>
     </table>
   </td></tr></table>
@@ -456,38 +722,48 @@ function shell(inner: string, brand: string | null = null): string {
 const button = (href: string, label: string) =>
   `<a href="${href}" style="display:inline-block;margin-top:26px;padding:12px 26px;border-radius:12px;background:#ffffff;color:#000;font-size:14px;font-weight:600;text-decoration:none;">${esc(label)}</a>`;
 
-/** The line that warns a game-mode signer to open the link on a computer. */
-export const GAME_NOTE = "This one is a little different: open the link on a computer. You'll walk into a theater, watch a short film, and sign on the other side of the door.";
+/** The line that tells a theater-mode signer what comes first. Signing never needs a computer: a phone signs on the page. */
+export const GAME_NOTE = "This one is a little different: on a computer, a short film plays before the signing page (about three minutes, sound on). On a phone or tablet, or if you'd rather skip it, you can read and sign straight away.";
 /** The same for the racetrack game. */
-export const RACE_NOTE = "This one is a little different: open the link on a computer. You'll race for it: two laps around a track, and you sign at the finish.";
+export const RACE_NOTE = "This one is a little different: on a computer, you race two laps around a track before the signing page (about three minutes, sound on). On a phone or tablet, or if you'd rather skip it, you can read and sign straight away.";
+
+/** "You're signing as Alex Rivera, Member." or "You're signing for Northwind Holdings, LLC as its Manager." */
+function signingAs(party: Party): string {
+  return party.entity ? `You're signing for ${party.entity} as its ${party.title || "authorised signer"}.` : `You're signing as ${party.name}, ${party.role}.`;
+}
 
 export function signRequestEmail(row: Pick<SignatureRequestRow, "title" | "created_by_name" | "brand"> & { mode?: SignMode }, party: Party, link: string, remind = false) {
   const from = row.brand || row.created_by_name || "Burton Family Office";
   const game = isGameMode(row.mode);
   const note = row.mode === "race" ? RACE_NOTE : GAME_NOTE;
+  const until = party.expiresAt ? `The link works until ${longDate(party.expiresAt)}.` : "";
   const subject = remind ? `Reminder: ${row.title} is waiting for your signature` : `${from} sent you ${row.title} to sign`;
-  const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\n${game ? `${note}\n\n` : ""}${game ? "Play and sign here" : "Review and sign it here"}:\n${link}\n\nYou're signing as ${party.name} (${party.role}). The link is private to you.\n`;
+  const text = `${from} ${remind ? "is still waiting for your signature on" : "sent you"} ${row.title}.\n\n${game ? `${note}\n\n` : ""}Review and sign it here:\n${link}\n\n${signingAs(party)} The link is private to you.${until ? ` ${until}` : ""}\n\nElectronic records disclosure: ${link}#disclosure\nPrivacy: ${SITE}/legal/privacy\n`;
   const html = shell(
     `
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(from)} ${remind ? "is still waiting for your signature on" : "sent you"}<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
-        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">You're signing as ${esc(party.name)}, ${esc(party.role)}.</div>
-        ${game ? `<div style="margin-top:14px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.65);">${esc(note)}</div>` : ""}
-        ${button(link, game ? "Play and sign" : "Review and sign")}
-        <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">This link is private to you. If you weren't expecting it, you can ignore this email.</div>`,
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">${esc(signingAs(party))}</div>
+        ${game ? `<div style="margin-top:14px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">${esc(note)}</div>` : ""}
+        ${button(link, "Review and sign")}
+        <div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.7);">This link is private to you.${until ? ` ${esc(until)}` : ""} If you weren't expecting it, you can ignore this email.</div>`,
     row.brand,
+    footerLinks(link),
   );
   return { subject, text, html };
 }
 
-export function signedCopyEmail(row: Pick<SignatureRequestRow, "title" | "brand">, party: Party, link: string) {
+export function signedCopyEmail(row: Pick<SignatureRequestRow, "title" | "brand"> & { signed_sha256?: string | null }, party: Party, link: string) {
   const subject = `${row.title}: signed by everyone`;
-  const text = `${row.title} has been signed by every party. Your copy, with the signature certificate, is here:\n${link}\n`;
+  const print = row.signed_sha256 ? `\n\nThe signed copy's SHA-256 fingerprint is ${row.signed_sha256}.` : "";
+  const text = `${row.title} has been signed by every party. Your copy, with the signature certificate, is here:\n${link}${print}\n\nPrivacy: ${SITE}/legal/privacy\n`;
   const html = shell(
     `
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">Signed by everyone<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
-        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">Your copy for ${esc(party.name)}, with the signature certificate.</div>
-        ${button(link, "Download the signed copy")}`,
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">Your copy for ${esc(party.name)}, with the signature certificate.</div>
+        ${button(link, "Download the signed copy")}
+        ${row.signed_sha256 ? `<div style="margin-top:20px;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.7);word-break:break-all;">SHA-256 fingerprint: ${esc(row.signed_sha256)}</div>` : ""}`,
     row.brand,
+    footerLinks(null),
   );
   return { subject, text, html };
 }
@@ -499,8 +775,52 @@ export function signedNoticeEmail(row: Pick<SignatureRequestRow, "id" | "title">
   const text = `${signer} signed ${row.title}.${completed ? " Everyone has signed; the signed copy is ready." : " Waiting on the other party."}\n\n${link}\n`;
   const html = shell(`
         <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(signer)} signed<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
-        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.5);">${completed ? "Everyone has signed. The signed copy, with its certificate, is ready." : "Waiting on the other party."}</div>
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">${completed ? "Everyone has signed. The signed copy, with its certificate, is ready." : "Waiting on the other party."}</div>
         ${button(link, "Open the request")}`);
+  return { subject, text, html };
+}
+
+/** The office's email when a party declines, with their reason (kept off the push, which shows on lock screens). */
+export function declinedNoticeEmail(row: Pick<SignatureRequestRow, "id" | "title">, signer: string, reason: string) {
+  const subject = `${signer} declined ${row.title}`;
+  const link = `${SITE}/tools/signatures/${row.id}`;
+  const said = reason ? `Their reason: ${reason}` : "They didn't give a reason.";
+  const text = `${signer} declined to sign ${row.title}. The request is closed.\n\n${said}\n\n${link}\n`;
+  const html = shell(`
+        <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">${esc(signer)} declined<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">The request is closed. ${esc(said)}</div>
+        ${button(link, "Open the request")}`);
+  return { subject, text, html };
+}
+
+/** The decliner's receipt: what they declined, when, and that nothing more is needed. */
+export function declineReceiptEmail(row: Pick<SignatureRequestRow, "title" | "brand" | "created_by_name">, party: Party, at: string) {
+  const from = row.brand || row.created_by_name || "Burton Family Office";
+  const subject = `You declined ${row.title}`;
+  const text = `You declined to sign ${row.title} on ${officeDateTime(at)}. ${from} has been told. Nothing more is needed from you.\n\nPrivacy: ${SITE}/legal/privacy\n`;
+  const html = shell(
+    `
+        <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">You declined<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">${esc(officeDateTime(at))}. ${esc(from)} has been told. Nothing more is needed from you, ${esc(party.name)}.</div>`,
+    row.brand,
+    footerLinks(null),
+  );
+  return { subject, text, html };
+}
+
+/** A party's notice that a request was withdrawn: their link stops working, and nothing more is needed. */
+export function withdrawnEmail(row: Pick<SignatureRequestRow, "title" | "brand" | "created_by_name">, party: Party, signedBefore: boolean) {
+  const from = row.brand || row.created_by_name || "Burton Family Office";
+  const subject = `${row.title} was withdrawn`;
+  const lost = signedBefore ? " Your signature on it no longer counts." : "";
+  const text = `${from} withdrew ${row.title}.${lost} The signing link no longer works, and nothing more is needed from you.\n\nPrivacy: ${SITE}/legal/privacy\n`;
+  const html = shell(
+    `
+        <div style="margin:28px 0 8px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.8);">Withdrawn<br/><strong style="color:#fff;">${esc(row.title)}</strong></div>
+        <div style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.7);">${esc(from)} withdrew this request.${esc(lost)} The signing link no longer works, and nothing more is needed from you, ${esc(party.name)}.</div>`,
+    row.brand,
+    footerLinks(null),
+  );
   return { subject, text, html };
 }
 

@@ -79,7 +79,26 @@ export type DocRule = {
   why: string;
   /** Where to get it. */
   howTo?: { label: string; url: string };
+  /**
+   * A recurring filing's slot (the annual report): the period the copy on
+   * file must cover, by the year it came due. One for an older year doesn't
+   * satisfy it (see `slotCurrent`).
+   */
+  period?: number;
 };
+
+/**
+ * Whether a document slot is satisfied: something is filed in it and, for a
+ * recurring filing, it covers the latest period that has come due (by
+ * `annualReportYear`, or a period recorded as filed). A copy whose year was
+ * never read counts, rather than flag what may be current.
+ */
+export function slotCurrent(rule: Pick<DocRule, "key" | "period">, a: PaperworkInput): boolean {
+  if (!a[rule.key]) return false;
+  if (rule.period == null) return true;
+  if (a.annualReportYear == null) return true;
+  return a.annualReportYear >= rule.period || !!a.filedPeriods?.[`state-annual-${rule.period}`];
+}
 
 /** What the rule book reads. Every field is optional; missing facts narrow the rules. */
 export type PaperworkInput = {
@@ -106,7 +125,36 @@ export type PaperworkInput = {
   ownerCount?: number;
   /** The owning entity on record, if any. */
   owner?: { name?: string; type?: string; llcType?: string } | null;
+  /** How many of the family's entities it owns on record (a trust's funding depends on it). */
+  ownsCount?: number;
+  /** A document that reads the tax class differently from the record (set by the document check). */
+  llcTypeConflict?: { value: string; docName?: string } | null;
+  /** The latest annual report or list on file, by the year it was filed for (read from Documents). */
+  annualReportYear?: number;
+  /** Filings recorded as made, by period key (obligations() names the keys: "state-annual-2026", "fed-2025"). */
+  filedPeriods?: Record<string, FiledRecord | null> | null;
+  /** The state's record as last read through Palm: whether it shows the filings current. */
+  stateRecord?: { mode?: string; checkedAt: number; status?: string | null; standing?: { registration?: string | null } | null } | null;
+  /** Someone saw the state's own site say active over Palm's lagging copy (lib/registry.ts). */
+  stateConfirmed?: { at: number; palmStatus?: string | null; palmRegistration?: string | null } | null;
+  /** The month (1–12) its tax year ends; a calendar year when not on record. */
+  taxYearEnd?: number | string | null;
 } & Partial<Record<DocKey, unknown>>;
+
+/** A filing recorded as made for one period: asset.filedPeriods[period key]. */
+export type FiledRecord = {
+  /** YYYY-MM-DD: the day it was filed (or the extension was). */
+  on: string;
+  /** "filed" (the default): the report or return itself. "extended": an extension, which moves the due date. */
+  kind?: "filed" | "extended";
+  /** The agency's confirmation or acceptance number. */
+  confirmation?: string | null;
+  /** The filed copy or the acceptance letter, in the entity's Documents. */
+  docId?: string | null;
+  /** Who recorded it, and when (ms). */
+  by?: string | null;
+  at?: number;
+};
 
 // ── States ────────────────────────────────────────────────────────────────
 
@@ -218,11 +266,19 @@ export function entityType(a: { name?: string; type?: string }): EntityType {
   return "LLC";
 }
 
-/** The tax class on record, or the IRS default when none is recorded. */
+/** A trust whose name says it's revocable (and not irrevocable): a grantor trust while the grantors live (IRC § 676). */
+export const revocableByName = (name?: string) => /\brevocable\b/i.test(name ?? "") && !/\birrevocable\b/i.test(name ?? "");
+
+/**
+ * The tax class on record, or the IRS default when none is recorded. A trust
+ * has no default: only one whose name says "Revocable" is read as a grantor
+ * trust, and then `isDefault` says it was assumed.
+ */
 export function taxClassOf(a: PaperworkInput): { value: TaxClass | null; isDefault: boolean } {
   const type = entityType(a);
   const recorded = (a.llcType ?? "").trim() as TaxClass;
   if (recorded && TAX_CLASSES[type].includes(recorded)) return { value: recorded, isDefault: false };
+  if (type === "Trust") return { value: revocableByName(a.name) ? "Grantor trust" : null, isDefault: true };
   // Form 8832 defaults: one owner → disregarded, two or more → partnership.
   if (type === "LLC") {
     if (a.ownerCount === 1 || (a.ownerCount == null && a.owner)) return { value: "Disregarded Entity", isDefault: true };
@@ -273,6 +329,19 @@ export function agentTerm(st: string | null): string {
   return st === "AZ" ? "Statutory agent" : "Registered agent";
 }
 
+/**
+ * Who keeps a company's state filings (its formation, agent, annual report):
+ * the Arizona Corporation Commission for Arizona LLCs and corporations (an
+ * Arizona limited partnership files with the Secretary of State), Delaware's
+ * Division of Corporations, and elsewhere the Secretary of State.
+ */
+export function filingAgency(state: string | null | undefined, type?: string | null): string {
+  const st = stateCode(state);
+  if (st === "AZ") return type === "LP" ? "Arizona Secretary of State" : "Arizona Corporation Commission";
+  if (st === "DE") return "Delaware Division of Corporations";
+  return st ? `${stateName(st)} Secretary of State` : "the state";
+}
+
 function goodStandingTitle(st: string | null): string {
   return st === "NV" ? "Certificate of Existence (good standing)" : "Certificate of Good Standing";
 }
@@ -282,22 +351,45 @@ function governingTitle(type: EntityType): string {
 }
 
 /** The state's recurring filing for this type, or null when there is none. */
-function annualFiling(type: EntityType, st: string | null): { title: string; fee: string; due: string } | null {
+function annualFiling(type: EntityType, st: string | null): { title: string; fee: string; due: string; lateFee: string; consequence: string } | null {
   if (type === "Trust" || !st) return null;
   if (st === "AZ") {
-    if (type === "C-Corp") return { title: "Arizona Annual Report (with Certificate of Disclosure)", fee: "$45", due: "on the incorporation anniversary date" };
+    if (type === "C-Corp")
+      return {
+        title: "Arizona Annual Report (with Certificate of Disclosure)",
+        fee: "$45",
+        due: "on the incorporation anniversary date",
+        lateFee: "$9 a month",
+        consequence: "Left unfiled, the Arizona Corporation Commission administratively dissolves the corporation (A.R.S. 10-1420).",
+      };
     return null; // AZ LLCs and plain LPs file no annual report.
   }
   if (st === "NV") {
+    const corp = type === "C-Corp";
     return {
-      title: type === "C-Corp" ? "Nevada Annual List of Officers and Directors + State Business License" : "Nevada Annual List + State Business License",
-      fee: type === "C-Corp" ? "$150+ list (by authorized shares) + $500 license" : "$150 list + $200 license",
+      title: corp ? "Nevada Annual List of Officers and Directors + State Business License" : "Nevada Annual List + State Business License",
+      fee: corp ? "$150+ list (by authorized shares) + $500 license" : "$150 list + $200 license",
       due: "by the last day of the anniversary month",
+      lateFee: "$75 list + $100 license",
+      consequence: `Until it's filed the ${corp ? "corporation" : "LLC"} is in default. Left in default, Nevada revokes its charter and its right to do business there (${corp ? "NRS 78.170–78.175" : "NRS 86.272–86.274"}); reinstating it then costs more.`,
     };
   }
   if (st === "DE") {
-    if (type === "C-Corp") return { title: "Delaware Annual Franchise Tax Report", fee: "$50 filing + franchise tax (minimum $175)", due: "March 1" };
-    return { title: "Delaware Annual Tax", fee: "$300 for 2025; $400 from June 1, 2027", due: "June 1" };
+    if (type === "C-Corp")
+      return {
+        title: "Delaware Annual Franchise Tax Report",
+        fee: "$50 filing + franchise tax (minimum $175)",
+        due: "March 1",
+        lateFee: "$200 + 1.5% a month interest",
+        consequence: "A year unpaid and Delaware voids the corporation's charter.",
+      };
+    return {
+      title: "Delaware Annual Tax",
+      fee: "$300 for 2025; $400 from June 1, 2027",
+      due: "June 1",
+      lateFee: "$200 + 1.5% a month interest",
+      consequence: "Three years unpaid and Delaware cancels the LLC's certificate of formation.",
+    };
   }
   return null;
 }
@@ -353,14 +445,23 @@ export function documentRules(a: PaperworkInput, today = new Date()): DocRule[] 
           (st === "AZ" || !st ? " (A.R.S. 14-11013)." : "."),
         howTo: st === "AZ" || !st ? LINKS.azTrustCert : undefined,
       },
-      {
-        key: "trustSchedule",
-        title: "Schedule A & assignments",
-        category: "Trust",
-        level: "recommended",
-        weight: 0,
-        why: "The list of assets in the trust, with the assignments or deeds that retitled each one (e.g. LLC interests assigned to the trustee). Without them, assets can fall outside the trust.",
-      },
+      (a.ownsCount ?? 0) > 0
+        ? {
+            key: "trustSchedule",
+            title: "Schedule A & assignments",
+            category: "Trust",
+            level: "expected",
+            weight: 10,
+            why: `It owns ${a.ownsCount === 1 ? "an entity" : `${a.ownsCount} entities`} on record. The assignment of each interest to the trustee (or a Schedule A that lists it) is what puts it in the trust; without one, the interest can fall outside the trust and pass through probate.`,
+          }
+        : {
+            key: "trustSchedule",
+            title: "Schedule A & assignments",
+            category: "Trust",
+            level: "recommended",
+            weight: 0,
+            why: "The list of assets in the trust, with the assignments or deeds that retitled each one (e.g. LLC interests assigned to the trustee). Without them, assets can fall outside the trust.",
+          },
     );
     if (!grantor) {
       rules.push({
@@ -509,22 +610,17 @@ export function documentRules(a: PaperworkInput, today = new Date()): DocRule[] 
   const age = monthsSince(a.formationDate, today);
   if (annual) {
     const firstDueYet = age == null || age >= 11;
+    const cycle = stateCycle(type, st, a.formationDate);
+    const latest = cycle ? lastDue(cycle, today) : null;
     rules.push({
       key: "annualReport",
       title: st === "DE" && type !== "C-Corp" ? "Delaware annual tax receipt" : `Latest ${annual.title}`,
       category: "State",
       level: firstDueYet ? (st === "DE" && type !== "C-Corp" ? "recommended" : "required") : "recommended",
       weight: firstDueYet && !(st === "DE" && type !== "C-Corp") ? 8 : 0,
-      why: `${annual.title}, due ${annual.due} (${annual.fee}). ${
-        st === "NV"
-          ? "Late: $75 + $100 penalties, then the charter is revoked."
-          : st === "DE"
-            ? type === "C-Corp"
-              ? "Late: $200 + 1.5%/month; a year unpaid voids the charter."
-              : "No report is filed — only the tax. Late: $200 + 1.5%/month; 3 years unpaid cancels the LLC."
-            : "Late: $9/month, then administrative dissolution."
-      }`,
+      why: `${annual.title}, due ${annual.due} (${annual.fee}).${st === "DE" && type !== "C-Corp" ? " No report is filed, only the tax." : ""} Late: ${annual.lateFee}. ${annual.consequence}`,
       howTo: annualLink(st),
+      ...(latest != null ? { period: latest } : {}),
     });
   }
   if (st && host && st !== host) {

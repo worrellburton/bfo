@@ -5,13 +5,20 @@ import { storageUpload } from "./storage.js";
 import { readCollection } from "./tree.js";
 
 /**
- * Stable (usestable.com): the family's mailbox at 5227 N 7th St, Phoenix.
- * Each piece of paper mail is copied into public.stable_mail, with its
- * envelope photo and, once scanned, its contents kept in the private "mail"
- * bucket (Stable's links expire), and tied to the BFO entity it's addressed
- * to. A webhook says something changed; the API is what's believed.
+ * Stable (usestable.com): the family office's mailbox in Phoenix. Each piece
+ * of paper mail is copied into public.stable_mail, with its envelope photo
+ * and, once scanned, its contents kept in the private "mail" bucket (Stable's
+ * links expire), and tied to the BFO entity it's addressed to. A webhook says
+ * something changed; the API is what's believed.
  *
- * STABLE_API_KEY: Stable → Settings → API keys.
+ * Filing is cautious: a piece is filed by itself ("auto") only when a line on
+ * the envelope names one entity exactly, entity type included, and no other
+ * entity shares that entity's name. Anything else waits in "Needs an entity"
+ * for staff, and partners see an auto-filed piece only once staff confirm it
+ * (api/stable.ts).
+ *
+ * HTTP surface: none; used by api/stable.ts and api/stable-webhook.ts.
+ * Env: STABLE_API_KEY (Stable → Settings → API keys).
  */
 
 const BASE = "https://api.usestable.com";
@@ -76,32 +83,147 @@ export const getMailItem = (id: string) => stable<StableMailItem>(`/v1/mail-item
 
 // ── Which entity a piece is for ─────────────────────────────────────────
 
-/** "Ledger Louise, L.L.C." → "ledger louise": compared without punctuation or the entity ending. */
+const DESIGNATORS = /\b(l ?l ?c|inc|incorporated|corp|corporation|co|company|ltd|limited|lp|l ?p|llp|l ?l ?l ?p|pllc|p ?l ?l ?c|trust|the)\b/g;
+
+/** "Northwind Holdings, L.L.C." → "northwind holdings": the base name, without punctuation or the entity type. */
 export function normName(s: string | null | undefined): string {
   return (s ?? "")
     .toLowerCase()
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9 ]+/g, " ")
-    .replace(/\b(l ?l ?c|inc|incorporated|corp|corporation|co|company|ltd|lp|l ?p|llp|pllc|trust|the)\b/g, " ")
+    .replace(DESIGNATORS, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/** The entity whose name the envelope carries: the matched business, then each address line. */
+/** The entity-type words, each written one way, so "L.L.C." and "LLC" or "Incorporated" and "Inc" compare equal. */
+const TYPE_WORD: [RegExp, string][] = [
+  [/\bl l l p\b/g, "llp"],
+  [/\bl l c\b/g, "llc"],
+  [/\bl l p\b/g, "llp"],
+  [/\bp l l c\b/g, "pllc"],
+  [/\bl p\b/g, "lp"],
+  [/\bincorporated\b/g, "inc"],
+  [/\bcorporation\b/g, "corp"],
+  [/\bcompany\b/g, "co"],
+  [/\blimited\b/g, "ltd"],
+];
+const TYPE_END = /\b(llc|inc|corp|co|ltd|lp|llp|pllc|trust)$/;
+
+/** "Northwind Holdings, L.L.C." → "northwind holdings llc": the full name, entity type included, compared without punctuation. */
+export function entityKey(s: string | null | undefined): string {
+  let k = (s ?? "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^the /, "");
+  for (const [re, to] of TYPE_WORD) k = k.replace(re, to);
+  return k;
+}
+
+/**
+ * The entity whose exact name the envelope carries, or null. A line must
+ * name the entity in full with its type ("NORTHWIND HOLDINGS LLC"), on its own
+ * or inside a longer line ("NORTHWIND HOLDINGS LLC C/O A RIVERA"). Never filed:
+ * a name two entities share once the type is set aside ("Northwind Trust" and
+ * "Northwind LLC"), since an envelope often drops or splits the type; and a
+ * piece whose lines name two different entities. Better unfiled than in front
+ * of the wrong entity's partner.
+ */
 export function matchEntity(item: StableMailItem, entities: { id: string; name: string }[]): string | null {
-  const byName = new Map(entities.map((e) => [normName(e.name), e.id] as const).filter(([n]) => n));
-  const lines = [item.recipients?.business?.name, item.recipients?.line1?.text, item.recipients?.line2?.text, item.businessRecipient];
-  for (const line of lines) {
-    const n = normName(line);
-    if (n && byName.has(n)) return byName.get(n)!;
+  const baseCount = new Map<string, number>();
+  for (const e of entities) {
+    const b = normName(e.name);
+    if (b) baseCount.set(b, (baseCount.get(b) ?? 0) + 1);
   }
-  // "Swisshelm Mountain Ventures LLC c/o Robert Burton": an entity name inside a longer line.
+  const keyed = new Map<string, string[]>();
+  for (const e of entities) {
+    const k = entityKey(e.name);
+    if (k) keyed.set(k, [...(keyed.get(k) ?? []), e.id]);
+  }
+  // Unambiguous names only: one entity with this full name, and no other with the same base name.
+  const usable = [...keyed.entries()].filter(([k, ids]) => ids.length === 1 && (baseCount.get(normName(k)) ?? 0) <= 1).map(([k, ids]) => [k, ids[0]] as const);
+  const lines = [item.recipients?.business?.name, item.recipients?.line1?.text, item.recipients?.line2?.text, item.businessRecipient].map(entityKey).filter(Boolean);
+  const hits = new Set<string>();
   for (const line of lines) {
-    const n = ` ${normName(line)} `;
-    const hit = [...byName.entries()].filter(([name]) => name.length >= 6 && n.includes(` ${name} `)).sort((a, b) => b[0].length - a[0].length)[0];
-    if (hit) return hit[1];
+    for (const [key, id] of usable) {
+      if (line === key) hits.add(id);
+      // Inside a longer line: only a full name that ends in its entity type, long enough not to be a common word.
+      else if (key.length >= 8 && TYPE_END.test(key) && ` ${line} `.includes(` ${key} `)) hits.add(id);
+    }
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
+// ── Checks inside a piece ───────────────────────────────────────────────
+
+/** One check Stable found in a piece, as far as Stable's record says. Amounts in cents; null when not given or unclear. */
+export type PaperCheck = {
+  amountCents: number | null;
+  payer: string | null;
+  payee: string | null;
+  number: string | null;
+  date: string | null;
+  /** Stable's deposit status (pending, processing, completed…). */
+  status: string | null;
+  depositedAt: string | null;
+  /** Where it went, as Stable names the account ("Operating •• 4821"). */
+  account: string | null;
+};
+
+const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : typeof v === "number" && Number.isFinite(v) ? String(v) : null);
+const pick = (o: Record<string, unknown>, ...keys: string[]) => {
+  for (const k of keys) {
+    const v = o[k];
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const inner = v as Record<string, unknown>;
+      const n = text(inner.name) ?? text(inner.displayName) ?? text(inner.label);
+      if (n) return n;
+    }
+    const t = text(v);
+    if (t) return t;
   }
   return null;
+};
+
+/**
+ * An amount in cents, only when its unit is plain: a field named in cents, or
+ * dollars written with a decimal point ("1240.00", "$1,240.00", 1240.5). A
+ * bare whole number could be either, so it isn't guessed. Pure.
+ */
+export function centsOf(o: Record<string, unknown>): number | null {
+  for (const k of ["amountCents", "amount_cents", "amountInCents", "amount_in_cents"]) {
+    const v = o[k];
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0) return v;
+  }
+  const raw = o.amount && typeof o.amount === "object" ? ((o.amount as Record<string, unknown>).value ?? (o.amount as Record<string, unknown>).amount) : o.amount;
+  if (typeof raw === "string") {
+    const m = /^\s*\$?\s*([\d,]+\.\d{1,2})\s*$/.exec(raw);
+    if (m) return Math.round(Number(m[1].replace(/,/g, "")) * 100);
+  }
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0 && !Number.isInteger(raw)) return Math.round(raw * 100);
+  return null;
+}
+
+/** Each check in Stable's record of a piece, read field by field; unknown shapes give empty fields, never a guess. Pure. */
+export function checksOf(item: Pick<StableMailItem, "checks" | "depositDetails"> | null | undefined): PaperCheck[] {
+  const list = Array.isArray(item?.checks) ? item.checks : [];
+  return list.slice(0, 20).map((c) => {
+    const o = (c && typeof c === "object" ? c : {}) as Record<string, unknown>;
+    const dep = (o.depositDetails && typeof o.depositDetails === "object" ? o.depositDetails : o.deposit && typeof o.deposit === "object" ? o.deposit : {}) as Record<string, unknown>;
+    return {
+      amountCents: centsOf(o),
+      payer: pick(o, "payer", "payerName", "from", "drawer", "issuer"),
+      payee: pick(o, "payee", "payeeName", "payTo", "to"),
+      number: pick(o, "checkNumber", "number", "check_number"),
+      date: pick(o, "checkDate", "date", "issuedAt", "dated"),
+      status: pick(dep, "status") ?? pick(o, "depositStatus", "status") ?? text(item?.depositDetails?.status),
+      depositedAt: pick(dep, "depositedAt", "completedAt", "date") ?? pick(o, "depositedAt"),
+      account: pick(dep, "account", "accountName", "destination", "bankAccount") ?? pick(o, "account", "depositAccount"),
+    };
+  });
 }
 
 // ── Keeping a piece ─────────────────────────────────────────────────────
@@ -166,7 +288,9 @@ export async function saveMail(items: StableMailItem[], entities?: { id: string;
     const scan = prev?.scan_path ?? (scanned ? await keep(item.scanDetails!.imageUrl!, `${item.id}/scan`) : null);
     rows.push({
       id: item.id,
-      asset_id: prev?.assigned === "hand" ? prev.asset_id : (matchEntity(item, list) ?? prev?.asset_id ?? null),
+      // Staff's choice stands. Otherwise the envelope decides, under today's rules; with no entity list to compare
+      // against (it couldn't be read), the earlier answer stays rather than unfiling everything.
+      asset_id: prev?.assigned === "hand" ? prev.asset_id : list.length ? matchEntity(item, list) : (prev?.asset_id ?? null),
       assigned: prev?.assigned ?? "auto",
       from_name: item.from ?? null,
       recipient: item.recipients?.line1?.text ?? item.businessRecipient ?? null,

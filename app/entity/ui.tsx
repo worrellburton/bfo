@@ -1,23 +1,19 @@
 /**
- * The entity page's building blocks. One visual language, deliberately quiet:
+ * The entity page's legacy building blocks, drawn with the design system's
+ * tokens (docs/DESIGN.md §2.2, §14.3). New code imports from app/ui; these
+ * stay so the tabs and the Mail views written against them keep compiling
+ * and look like the system while they move.
  *
- * - A Section is a card with a plain title and optional actions — no kicker
- *   line above the title, no paragraph under it.
- * - Rows are label → value, separated by hairlines. Values carry the weight;
- *   labels are small and muted.
- * - Status is a dot and one or two words (Dot).
- * - Explanations are never shown by default: an (i) button reveals them
- *   (Row `info`, or <Info>), and long lists sit behind a Disclosure.
- * - Buttons come in three weights (primary, secondary, ghost) plus danger.
- *
- * Mobile: the root font is 11.9px, so tap targets are sized in px.
- *
- * Moving to the design system (docs/DESIGN.md §14.3): Button, IconButton,
- * Section, Field, Input, Select, Textarea, Empty and Disclosure already draw
- * with app/ui and its tokens, so these pages look like the system before
- * they're rebuilt. Section, Field, Empty and Disclosure keep their legacy
- * spacing (no `ds` on their roots) so the rows inside them don't move. New
- * code imports from app/ui instead.
+ * - useTone() hands back token classes (text-ink, text-ink-2, border-line…)
+ *   that follow the theme in CSS, so every caller passes contrast in both
+ *   themes without an isDark branch of its own. `dark` is still there for
+ *   callers that branch on it.
+ * - Button, IconButton, Input, Select and Textarea render the app/ui ones.
+ * - Section, Row, Rows, Field, Empty and Disclosure take the system's look
+ *   but keep the legacy row spacing (no `ds` on their roots).
+ * - Status is a dot and a word in ink (Dot): the dot carries the colour.
+ * - Count is the system's: neutral, or attention in amber, never red.
+ * - The (i) is the system's InfoToggle (3:1 or better, 44px on touch).
  */
 
 import { Children, isValidElement, useId, useState, type ReactNode } from "react";
@@ -31,29 +27,34 @@ import {
   Input as UiInput,
   Select as UiSelect,
   Textarea as UiTextarea,
+  buttonClasses,
   cx,
   type IconName as UiIconName,
 } from "../ui";
 
 // ── Theme ────────────────────────────────────────────────────────────────
 
-export function useTone() {
+/**
+ * The legacy tone set, as design tokens. Each role keeps its old name:
+ * text (ink), soft and muted (ink-2, secondary), faint (ink-3, tertiary:
+ * still 4.5:1 or better on every surface in both themes).
+ */
+export const useTone = () => {
   const { theme } = useTheme();
-  const dark = theme === "dark";
   return {
-    dark,
-    surface: "glass-card",
-    line: dark ? "border-white/[0.06]" : "border-gray-100",
-    divide: dark ? "divide-white/[0.06]" : "divide-gray-100",
-    text: dark ? "text-gray-100" : "text-gray-900",
-    soft: dark ? "text-gray-400" : "text-gray-600",
-    muted: dark ? "text-gray-500" : "text-gray-500",
-    faint: dark ? "text-gray-600" : "text-gray-400",
-    accent: dark ? "text-[#a5b4fc]" : "text-[#4f46e5]",
-    hover: dark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50",
-    input: `${dark ? "border-white/10 bg-white/[0.03] text-white focus:border-[#818cf8]/60" : "border-gray-200 bg-white text-gray-900 focus:border-[#4f46e5]/50"} rounded-lg border placeholder:text-gray-500 focus:outline-none transition-colors max-sm:text-[16px]`,
+    dark: theme === "dark",
+    surface: "border-line bg-raised",
+    line: "border-line",
+    divide: "divide-line",
+    text: "text-ink",
+    soft: "text-ink-2",
+    muted: "text-ink-2",
+    faint: "text-ink-3",
+    accent: "text-accent",
+    hover: "hover:bg-hover",
+    input: "rounded-control border border-edge bg-field text-ink placeholder:text-ink-3",
   };
-}
+};
 
 // ── Icons ────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,12 @@ const PATHS = {
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, className = "h-3.5 w-3.5", strokeWidth = 1.75 }: { name: IconName; className?: string; strokeWidth?: number }) {
+/**
+ * A legacy icon. Its default size is the legacy 3.5 spacing units, written
+ * as the same calc so it renders as before outside `ds` (10.4px) and as
+ * 14px inside it. New code uses app/ui's Icon, sized by --icon.
+ */
+export function Icon({ name, className = "h-[calc(var(--spacing)*3.5)] w-[calc(var(--spacing)*3.5)]", strokeWidth = 1.75 }: { name: IconName; className?: string; strokeWidth?: number }) {
   return (
     <svg className={`shrink-0 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={strokeWidth} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d={PATHS[name]} />
@@ -95,17 +101,10 @@ export function Icon({ name, className = "h-3.5 w-3.5", strokeWidth = 1.75 }: { 
 
 type ButtonKind = "primary" | "secondary" | "ghost" | "danger";
 
-export function buttonClass(kind: ButtonKind = "secondary", dark = true, size: "sm" | "md" = "sm") {
-  const base = `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
-    size === "sm" ? "h-7 px-2.5 text-[12px] max-sm:h-[40px] max-sm:px-3" : "h-8 px-3 text-[12.5px] max-sm:h-[44px]"
-  }`;
-  const k = {
-    primary: dark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700",
-    secondary: dark ? "border border-white/[0.1] text-gray-200 hover:bg-white/[0.05]" : "border border-gray-200 text-gray-700 hover:bg-gray-50",
-    ghost: dark ? "text-gray-400 hover:bg-white/[0.05] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900",
-    danger: dark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50",
-  }[kind];
-  return `${base} ${k}`;
+/** The system's button skin for a legacy call site (ghost is quiet; a legacy danger is a quiet button in negative). */
+export function buttonClass(kind: ButtonKind = "secondary", _dark = true, size: "sm" | "md" = "sm") {
+  const variant = kind === "ghost" || kind === "danger" ? "quiet" : kind;
+  return cx(buttonClasses({ variant, size }), kind === "danger" && "text-negative enabled:hover:text-negative");
 }
 
 /** The legacy icon names that the system's set spells differently. */
@@ -146,13 +145,15 @@ export function IconButton({
   return <UiIconButton icon={uiIcon(icon)} label={label} className={cx(tone === "danger" && "enabled:hover:text-negative", className)} {...rest} />;
 }
 
-/** Text-weight action, for "Re-read", "Show all", inline links. */
+/** A text-weight action ("Re-read", "Show all"): accent, underlined on hover, a 44px hit area on touch. */
 export function TextButton({ children, className = "", ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { accent } = useTone();
   return (
     <button
       type="button"
-      className={`relative inline-flex cursor-pointer items-center gap-1 text-[12px] font-medium hover:underline disabled:cursor-wait disabled:opacity-50 max-sm:after:absolute max-sm:after:-inset-y-[13px] max-sm:after:-inset-x-2 max-sm:after:content-[''] ${accent} ${className}`}
+      className={cx(
+        "relative inline-flex cursor-pointer items-center gap-1 text-small font-medium text-accent hover:text-accent-hover hover:underline disabled:cursor-not-allowed disabled:text-ink-disabled disabled:no-underline touch:after:absolute touch:after:-inset-x-[8px] touch:after:-inset-y-[12px] touch:after:content-['']",
+        className,
+      )}
       {...rest}
     >
       {children}
@@ -164,67 +165,39 @@ export function TextButton({ children, className = "", ...rest }: React.ButtonHT
 
 export type Tone = "good" | "warn" | "bad" | "muted" | "accent";
 
-export function toneText(tone: Tone, dark: boolean) {
-  return {
-    good: dark ? "text-emerald-400" : "text-emerald-700",
-    warn: dark ? "text-amber-300" : "text-amber-700",
-    bad: dark ? "text-red-400" : "text-red-600",
-    muted: "text-gray-500",
-    accent: dark ? "text-[#a5b4fc]" : "text-[#4f46e5]",
-  }[tone];
+/** A tone as a token text colour. `_dark` is ignored: tokens follow the theme. */
+export function toneText(tone: Tone, _dark?: boolean) {
+  return { good: "text-positive", warn: "text-warning", bad: "text-negative", muted: "text-ink-3", accent: "text-accent" }[tone];
 }
 
-/** A status: a dot and a word or two. */
+const DOT_FILL: Record<Tone, string> = { good: "bg-positive", warn: "bg-warning", bad: "bg-negative", muted: "bg-ink-3", accent: "bg-accent" };
+
+/** A status: an 8px dot in the tone's colour and a word or two in ink (the dot carries the colour, §2.4). */
 export function Dot({ tone, children, className = "" }: { tone: Tone; children?: ReactNode; className?: string }) {
-  const { dark } = useTone();
-  const bg = { good: "bg-emerald-400", warn: "bg-amber-400", bad: "bg-red-400", muted: dark ? "bg-gray-600" : "bg-gray-300", accent: "bg-[#818cf8]" }[tone];
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] ${toneText(tone, dark)} ${className}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${bg}`} aria-hidden="true" />
+    <span className={cx("inline-flex items-center gap-[6px] whitespace-nowrap text-small text-ink", className)}>
+      <span className={cx("size-2 shrink-0 rounded-full", DOT_FILL[tone])} aria-hidden="true" />
       {children}
     </span>
   );
 }
 
+/** A count on a pill: neutral, or attention (amber) for things that need the person. Never red. */
 export function Count({ n, alert = false }: { n?: number; alert?: boolean }) {
-  const { dark } = useTone();
   if (!n) return null;
-  return (
-    <span
-      className={`min-w-[18px] rounded-full px-1.5 text-center text-[10.5px] tabular-nums leading-[18px] ${
-        alert ? (dark ? "bg-red-400/15 text-red-300" : "bg-red-50 text-red-700") : dark ? "bg-white/[0.07] text-gray-400" : "bg-gray-100 text-gray-500"
-      }`}
-    >
-      {n}
-    </span>
-  );
+  return <UiCount n={n} tone={alert ? "attention" : "neutral"} />;
 }
 
 // ── On-demand explanation ────────────────────────────────────────────────
 
-/** The (i) toggle. Pair with <InfoText open> where the text should appear. */
+/** The (i) toggle (the system's InfoToggle). Pair with <InfoText open> where the text should appear. */
 export function InfoToggle({ open, onToggle, label = "What is this?" }: { open: boolean; onToggle: () => void; label?: string }) {
-  const { dark } = useTone();
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-expanded={open}
-      title={label}
-      onClick={onToggle}
-      className={`relative inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors max-sm:after:absolute max-sm:after:-inset-3 max-sm:after:content-[''] ${
-        open ? (dark ? "text-[#a5b4fc]" : "text-[#4f46e5]") : dark ? "text-gray-600 hover:text-gray-300" : "text-gray-300 hover:text-gray-600"
-      }`}
-    >
-      <Icon name="info" className="h-3.5 w-3.5" strokeWidth={1.6} />
-    </button>
-  );
+  return <UiInfoToggle label={label} open={open} onToggle={() => onToggle()} />;
 }
 
 export function InfoText({ open, children, className = "" }: { open: boolean; children: ReactNode; className?: string }) {
-  const { soft } = useTone();
   if (!open) return null;
-  return <div className={`mt-1.5 max-w-[68ch] text-[12px] leading-relaxed ${soft} ${className}`}>{children}</div>;
+  return <div className={cx("mt-[6px] max-w-[68ch] text-small text-pretty text-ink-2", className)}>{children}</div>;
 }
 
 /** Inline (i) with its own text, for one-off explanations. */
@@ -283,7 +256,7 @@ export function Section({
             </h2>
             {info && open && <div className="mt-1 max-w-[68ch] text-small text-ink-2">{info}</div>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+          {actions && <div className="flex shrink-0 items-center gap-[6px]">{actions}</div>}
         </header>
       )}
       <div className={flush ? "" : "border-t border-line"}>{children}</div>
@@ -293,13 +266,14 @@ export function Section({
 
 /** Rows with hairlines between them. */
 export function Rows({ children, className = "" }: { children: ReactNode; className?: string }) {
-  const t = useTone();
-  return <div className={`divide-y ${t.divide} ${className}`}>{children}</div>;
+  return <div className={cx("divide-y divide-line", className)}>{children}</div>;
 }
 
 /**
  * label → value, with optional actions on the right and an optional (i)
- * that reveals `info` under the row.
+ * that reveals `info` under the row. The label column is 144px from sm up
+ * (the system's Row), stacked above the value on phones. No value reads
+ * "Not on record".
  */
 export function Row({
   label,
@@ -309,7 +283,7 @@ export function Row({
   id,
   className = "",
   stacked = false,
-  labelWidth = "sm:w-44",
+  labelWidth = "sm:w-[144px]",
 }: {
   label?: ReactNode;
   children?: ReactNode;
@@ -321,19 +295,18 @@ export function Row({
   /** Width of the label column from sm up (Tailwind class). */
   labelWidth?: string;
 }) {
-  const t = useTone();
   const [open, setOpen] = useState(false);
   return (
-    <div id={id} className={`scroll-mt-32 px-5 py-3 lg:scroll-mt-20 ${className}`}>
-      <div className={`flex gap-x-4 gap-y-1 ${stacked ? "flex-col" : "flex-col sm:flex-row sm:items-baseline"}`}>
+    <div id={id} className={cx("scroll-mt-32 px-5 py-3 lg:scroll-mt-20", className)}>
+      <div className={cx("flex gap-x-4 gap-y-1", stacked ? "flex-col" : "flex-col sm:flex-row sm:items-baseline")}>
         {label !== undefined && (
-          <div className={`flex shrink-0 items-center gap-1.5 text-[12px] ${t.muted} ${stacked ? "" : labelWidth}`}>
-            {label}
+          <div className={cx("flex shrink-0 items-center gap-[6px] text-small text-ink-2", !stacked && labelWidth)}>
+            <span className="min-w-0">{label}</span>
             {info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} label={typeof label === "string" ? `About ${label}` : undefined} />}
           </div>
         )}
-        <div className={`min-w-0 flex-1 text-[13px] leading-snug ${t.text}`}>
-          {children ?? <span className={t.faint}>—</span>}
+        <div className="min-w-0 flex-1 text-body text-ink">
+          {children ?? <span className="text-ink-3">Not on record</span>}
           {label === undefined && info && <InfoToggle open={open} onToggle={() => setOpen((o) => !o)} />}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-1 sm:-my-1">{actions}</div>}
@@ -382,10 +355,10 @@ export function Empty({ children, action }: { children: ReactNode; action?: Reac
   );
 }
 
+/** A line saying what went wrong, in negative. */
 export function ErrorLine({ children }: { children: ReactNode }) {
-  const { dark } = useTone();
   if (!children) return null;
-  return <p className={`px-5 py-2.5 text-[12px] leading-snug ${dark ? "text-red-300" : "text-red-600"}`}>{children}</p>;
+  return <p className="px-5 py-[10px] text-small text-pretty text-negative">{children}</p>;
 }
 
 // ── Forms ────────────────────────────────────────────────────────────────
@@ -423,14 +396,14 @@ function optionsOf(children: ReactNode): { value: string; label: string; disable
     if (child.type === "option") {
       const p = child.props as OptionEl;
       const label = textOf(p.children);
-      out.push({ value: p.value === undefined ? label : String(p.value), label: label || "\u2014", disabled: p.disabled });
+      out.push({ value: p.value === undefined ? label : String(p.value), label: label || "—", disabled: p.disabled });
     } else out.push(...optionsOf((child.props as { children?: ReactNode }).children));
   });
   return out;
 }
 
 /**
- * The system's Select (no native <select>) for callers written against one:
+ * The system's Select (no native select) for callers written against one:
  * the <option> children become its options and `onChange` still receives
  * an event-shaped object whose target.value is the choice.
  */
@@ -457,9 +430,8 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
   return <UiTextarea {...props} />;
 }
 
-/** A small on/off switch. */
+/** A small on/off switch with no visible label of its own (the row beside it names the setting). */
 export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
-  const { dark } = useTone();
   return (
     <button
       type="button"
@@ -467,9 +439,17 @@ export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => v
       aria-checked={on}
       aria-label={label}
       onClick={onToggle}
-      className={`relative inline-flex h-[18px] w-[32px] shrink-0 cursor-pointer items-center rounded-full transition-colors ${on ? (dark ? "bg-[#818cf8]" : "bg-[#4f46e5]") : dark ? "bg-white/15" : "bg-gray-300"}`}
+      className={cx(
+        "relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer items-center rounded-full transition-colors duration-(--dur-1) touch:h-[26px] touch:w-[44px]",
+        on ? "bg-accent" : "bg-edge",
+      )}
     >
-      <span className={`inline-block h-[14px] w-[14px] rounded-full bg-white shadow transition-transform ${on ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
+      <span
+        className={cx(
+          "inline-block size-[16px] rounded-full bg-paper shadow-(--elevation-1) transition-transform duration-(--dur-1) touch:size-[22px]",
+          on ? "translate-x-[18px] touch:translate-x-[20px]" : "translate-x-[2px]",
+        )}
+      />
     </button>
   );
 }

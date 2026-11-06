@@ -1,9 +1,14 @@
 /**
- * Writing a text from BFO's number: the number as typed made into E.164, the
- * numbers that can't be texted back (short codes, named senders), and how
- * many SMS segments a text costs, for the composer's counter. Pure string
- * work, so the Phone page (app/routes/phone.tsx) and the send itself
- * (lib/sms-send.ts) use the same rules.
+ * Writing a text from BFO's number, and the rules every text follows: the
+ * number as typed made into E.164, the numbers that can't be texted back
+ * (short codes, named senders), how many SMS segments a text costs, the
+ * opt-out keywords (STOP, START, HELP) and who has opted out, the line a
+ * first text ends with, and how long a sign-in code shows before it's
+ * masked. Pure string work, so the Phone page (app/routes/phone.tsx), the
+ * send (lib/sms-send.ts) and the list (api/texts.ts) use the same rules.
+ *
+ * HTTP surface: none. Who may call it: anyone; it holds no data.
+ * Env: none.
  */
 
 export type Normalized = { ok: true; e164: string } | { ok: false; why: string };
@@ -98,3 +103,97 @@ export function smsSegments(text: string): Segments {
 export const MAX_SEGMENTS = 12;
 /** The longest text the Phone page sends, in characters. */
 export const MAX_TEXT = 1600;
+
+// ── Opt-out keywords ────────────────────────────────────────────────────
+
+/** The words carriers treat as opting out, back in, or asking for help (CTIA; the toll-free network's list). */
+const STOP_WORDS = new Set(["stop", "stopall", "stop all", "unsubscribe", "cancel", "end", "quit", "optout", "opt out", "revoke"]);
+const START_WORDS = new Set(["start", "unstop", "subscribe", "optin", "opt in"]);
+const HELP_WORDS = new Set(["help", "info"]);
+
+export type Keyword = "stop" | "start" | "help";
+
+/**
+ * The keyword a text is, when the whole text is one ("STOP", "Stop.",
+ * " unsubscribe "), or null. A sentence that only mentions one ("please
+ * don't stop") isn't a keyword.
+ */
+export function keywordOf(body: string | null | undefined): Keyword | null {
+  const w = (body ?? "")
+    .toLowerCase()
+    .replace(/[^a-z ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!w) return null;
+  if (STOP_WORDS.has(w)) return "stop";
+  if (START_WORDS.has(w)) return "start";
+  if (HELP_WORDS.has(w)) return "help";
+  return null;
+}
+
+/**
+ * Whether a number has opted out: the newest STOP or START it sent decides.
+ * `texts` are that number's texts in either direction (any order); only the
+ * ones it sent count. Returns when it opted out, or null.
+ */
+export function optedOutAt(texts: { direction?: "in" | "out" | null; body: string | null; receivedAt: string }[]): string | null {
+  let latest: { kind: Keyword; at: string } | null = null;
+  for (const x of texts) {
+    if ((x.direction ?? "in") !== "in") continue;
+    const kind = keywordOf(x.body);
+    if (kind !== "stop" && kind !== "start") continue;
+    if (!latest || x.receivedAt > latest.at) latest = { kind, at: x.receivedAt };
+  }
+  return latest?.kind === "stop" ? latest.at : null;
+}
+
+/** The last line of a first text to a number: how to stop (carrier rules, and the office's SMS terms). */
+export const STOP_LINE = "Reply STOP to opt out.";
+/** How a first text starts, so the person knows who it's from; the sender can change it. */
+export const FIRST_TEXT_GREETING = "Burton Family Office: ";
+/** The answer to HELP: who this is and how to stop. */
+export const HELP_REPLY = "Burton Family Office. Reply STOP to stop texts from this number.";
+
+/** A first text with the STOP line at its end (once, whatever the sender typed). */
+export function withStopLine(body: string): string {
+  const b = body.trim();
+  if (/reply stop to (opt out|stop)\W*$/i.test(b)) return b;
+  return `${b}\n${STOP_LINE}`;
+}
+
+// ── Sign-in codes ───────────────────────────────────────────────────────
+
+/** How long a code shows in full after it arrives; then it's "••••••" until someone with access asks to see it. */
+export const CODE_SHOWN_MS = 10 * 60_000;
+/** How long a code someone asked to see stays shown before it's masked again. */
+export const CODE_REVEAL_MS = 60_000;
+/** After this long a code text's body is purged, not just masked (api/texts.ts). */
+export const CODE_KEEP_DAYS = 90;
+
+/** Whether a code that arrived at `receivedAt` still shows in full at `now`. */
+export function codeShown(receivedAt: string, now: number = Date.now()): boolean {
+  const t = Date.parse(receivedAt);
+  return Number.isFinite(t) && now - t < CODE_SHOWN_MS;
+}
+
+/** The mask a code becomes: one bullet per digit, at least four. */
+export const codeMask = (code: string | null | undefined) => "•".repeat(Math.max(4, (code ?? "").replace(/\D/g, "").length || 6));
+
+/**
+ * The text with its code masked wherever it appears, in any of the forms
+ * extractCode reads ("482913", "482-913", "482 913", "G-482913"). The code is
+ * shown once, in its own place, so the body never repeats it.
+ */
+export function maskCode(body: string, code: string | null | undefined): string {
+  const digits = (code ?? "").replace(/\D/g, "");
+  if (!digits) return body;
+  const mask = codeMask(digits);
+  // Digits with an optional space or hyphen between any two, never inside a longer run of digits.
+  const pattern = new RegExp(`(?<!\\d)${digits.split("").join("[\\s-]?")}(?!\\d)`, "g");
+  return body.replace(pattern, mask);
+}
+
+/** Every run of 4 to 8 digits masked (for places a code must never reach: the assistant, a lock screen). Phone numbers keep their shape. */
+export function maskDigitRuns(text: string): string {
+  return text.replace(/(?<![\d(+-])\d{3}[\s-]\d{3}(?![\d-])|(?<![\d(+-])\d{4,8}(?![\d-])/g, (m) => "•".repeat(m.replace(/\D/g, "").length));
+}

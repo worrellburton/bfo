@@ -43,6 +43,17 @@ export function counterpartyText(name: string | null, merchant: string | null): 
 // The family's entities, as they appear inside bank descriptions.
 const ENTITY_NAMES = /sundown investments|fdj hesperia|ledger louise|breezewood|palomino|persons lodge|swisshelm|ledger burton|wadr law/i;
 
+/** "CHECK", "Check 1042", "CHECK #1042": a check with nothing to say who was paid. */
+const BARE_CHECK = /^(check|chk)(\s*#?\s*\d+)?$/i;
+
+/** A Mercury description whose payee is someone outside the family (not one of its entities or accounts). */
+function namesOutsidePayee(name: string | null): boolean {
+  const m = (name ?? "").match(MERCURY_PAYEE);
+  if (!m) return false;
+  const payee = m[1].trim();
+  return !!payee && !ENTITY_NAMES.test(payee) && !/\bburton\b|mercury (checking|savings|credit)|\bio card\b/i.test(payee);
+}
+
 const MOVEMENT = /^(TRANSFER_IN|TRANSFER_OUT|INCOME|LOAN_DISBURSEMENTS|LOAN_PAYMENTS)$/;
 
 const RULES: Rule[] = [
@@ -74,7 +85,6 @@ const RULES: Rule[] = [
   // Cash out of the family's own accounts — a draw, not an operating expense,
   // so it stays off the income statement.
   { match: /atm withdrawal|withdrawal authorized/i, category: "9200 Owner Draws", type: "transfer" },
-  { match: /^check$/i, category: "6900 Other Operating Expenses", type: "normal" },
 
   { match: /catalog digital/i, category: "6150 Contract Services", type: "normal" },
 
@@ -117,43 +127,136 @@ const PLAID_FALLBACK: Array<[RegExp, string]> = [
 export { ACCOUNTS, sectionOf } from "./books-accounts.js";
 
 import { fetchAll } from "./db-pages.js";
+import { normName, ruleMatches, type TaughtRule } from "./books/ledger.js";
 
 type Db = (path: string, init?: RequestInit) => Promise<Response>;
 
-/**
- * Apply `patch` to every transaction whose merchant/description literally
- * contains `needle` (case-insensitive) and satisfies `baseFilter`.
- *
- * The database narrows the candidates with an `ilike` whose LIKE
- * metacharacters are escaped (bank descriptors like ACH_PMT carry `_`), and
- * JS makes the final call with the same `includes()` the nightly rule engine
- * uses, so the two never disagree. Pages are ordered, so none are skipped
- * or read twice. Returns the count patched; a failed patch is logged, not
- * counted.
- */
-export async function patchMatching(db: Db, needle: string, baseFilter: string, patch: Record<string, unknown>): Promise<number> {
-  const n = needle.trim().toLowerCase();
-  if (n.length < 2) return 0;
+/** A row a taught rule was tested against, with every field a bulk change may set (its before-values). */
+export type MatchedRow = {
+  transaction_id: string;
+  account_id: string;
+  date: string;
+  amount: number;
+  name: string | null;
+  merchant_name: string | null;
+  book_category: string | null;
+  type_override: string | null;
+  loan_id: string | null;
+  txn_type: string;
+  intercompany: boolean;
+  entity_id?: string | null;
+  entity_name?: string | null;
+};
 
+const MATCH_COLUMNS = "transaction_id,account_id,date,amount,name,merchant_name,book_category,type_override,loan_id,txn_type,intercompany";
+
+/**
+ * Every synced row a taught rule matches (lib/books/ledger.ts ruleMatches:
+ * the payee exactly, or its words on word boundaries; the rule's entity and
+ * start date), narrowed by `baseFilter`. The database narrows the candidates
+ * with an `ilike` whose LIKE metacharacters are escaped (bank descriptors
+ * like ACH_PMT carry `_`), and JS makes the final call with the same matcher
+ * the nightly sync uses, so the two never disagree. `entityOf` stamps each
+ * row with the entity its account maps to now (for scope and the lock).
+ */
+export async function findMatching(db: Db, rule: TaughtRule | string, baseFilter: string, entityOf?: (accountId: string) => { id: string | null; name: string | null } | null): Promise<MatchedRow[]> {
+  const r: TaughtRule = typeof rule === "string" ? { match: rule } : rule;
+  const n = normName(r.match);
+  if (n.length < 2) return [];
   // `, ( ) *` are PostgREST structure in an or=() filter: widened to wildcards (the JS check below is exact).
   const safe = encodeURIComponent(n.replace(/[,()*]/g, "*").replace(/([\\%_])/g, "\\$1"));
-  const path =
-    `book_transactions?select=transaction_id,name,merchant_name` + `&or=(name.ilike.*${safe}*,merchant_name.ilike.*${safe}*)` + (baseFilter ? `&${baseFilter}` : "") + `&order=transaction_id.asc`;
-  const rows = await fetchAll<{ transaction_id: string; name: string | null; merchant_name: string | null }>(path, db);
-  const ids = rows.filter((t) => `${t.merchant_name ?? ""} ${t.name ?? ""}`.toLowerCase().includes(n)).map((t) => t.transaction_id);
+  const path = `book_transactions?select=${MATCH_COLUMNS}` + `&or=(name.ilike.*${safe}*,merchant_name.ilike.*${safe}*)` + (baseFilter ? `&${baseFilter}` : "") + `&order=transaction_id.asc`;
+  const rows = await fetchAll<MatchedRow>(path, db);
+  return rows
+    .map((t) => {
+      const e = entityOf?.(t.account_id);
+      return e ? { ...t, amount: Number(t.amount), entity_id: e.id, entity_name: e.name } : { ...t, amount: Number(t.amount) };
+    })
+    .filter((t) => ruleMatches(r, { name: t.name, merchant_name: t.merchant_name, date: t.date, entity_id: entityOf ? (t.entity_id ?? null) : undefined }));
+}
 
-  let done = 0;
-  for (let i = 0; i < ids.length; i += 200) {
-    const chunk = ids.slice(i, i + 200);
-    const list = chunk.map((id) => `"${id}"`).join(",");
+export type PatchResult = {
+  /** Rows patched. */
+  applied: number;
+  ids: string[];
+  /** Each patched row's values before the change, for the history and Undo. */
+  before: Map<string, Record<string, unknown>>;
+  /** Rows the rule matched but `exclude` set aside (a closed period, a hand edit). */
+  excluded: MatchedRow[];
+  /** Rows whose patch failed (logged, not counted). */
+  failed: number;
+};
+
+/**
+ * Apply `patch` to every row a taught rule matches (findMatching) and
+ * satisfies `baseFilter`, except rows `exclude` sets aside. Returns which
+ * rows changed and their values before, so the caller can write one history
+ * row per field per row and offer an Undo. A failed chunk is logged and
+ * counted, not thrown.
+ */
+export async function patchMatching(
+  db: Db,
+  rule: TaughtRule | string,
+  baseFilter: string,
+  patch: Record<string, unknown>,
+  opts: { entityOf?: (accountId: string) => { id: string | null; name: string | null } | null; exclude?: (row: MatchedRow) => boolean } = {},
+): Promise<PatchResult> {
+  const rows = await findMatching(db, rule, baseFilter, opts.entityOf);
+  const excluded = opts.exclude ? rows.filter(opts.exclude) : [];
+  const out = new Set(excluded.map((r) => r.transaction_id));
+  const todo = rows.filter((r) => !out.has(r.transaction_id));
+  const before = new Map<string, Record<string, unknown>>();
+  const ids: string[] = [];
+  let failed = 0;
+  for (let i = 0; i < todo.length; i += 200) {
+    const chunk = todo.slice(i, i + 200);
+    const list = chunk.map((t) => `"${t.transaction_id.replace(/"/g, "")}"`).join(",");
     const r = await db(`book_transactions?transaction_id=in.(${list})`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });
-    if (r.ok) done += chunk.length;
-    else console.error("books: rule patch failed", r.status, (await r.text().catch(() => "")).slice(0, 200));
+    if (r.ok) {
+      for (const t of chunk) {
+        ids.push(t.transaction_id);
+        before.set(t.transaction_id, { ...t });
+      }
+    } else {
+      failed += chunk.length;
+      console.error("books: rule patch failed", r.status, (await r.text().catch(() => "")).slice(0, 200));
+    }
   }
-  return done;
+  return { applied: ids.length, ids, before, excluded, failed };
+}
+
+/** A rule's pattern as words: "internal revenue, gcrevenu, …". */
+function readable(source: string): string {
+  return source
+    .replace(/\\b/g, "")
+    .replace(/\\s[*+]?/g, " ")
+    .replace(/\\\./g, ".")
+    .replace(/[()?^$\\*+]/g, "")
+    .replace(/\|/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The built-in chart rules, in the order they're tried, as the Rules page
+ * lists them (read-only): what each looks for, and what it does.
+ */
+export function builtInRules(): Array<{ match: string; category: string | null; type: string | null; payeeOnly: boolean; plaid: string | null }> {
+  const list = RULES.map((r) => ({
+    match: readable(r.match.source),
+    category: r.category,
+    type: r.type ?? null,
+    payeeOnly: !!r.counterparty,
+    plaid: r.plaid ? readable(r.plaid.source).replace(/_/g, " ").toLowerCase() : null,
+  }));
+  return [
+    ...list,
+    { match: "a bare check with no payee", category: null, type: null, payeeOnly: false, plaid: null },
+    ...PLAID_FALLBACK.map(([re, category]) => ({ match: `the bank's own category: ${readable(re.source).replace(/_/g, " ").toLowerCase()}`, category, type: null, payeeOnly: false, plaid: null })),
+  ];
 }
 
 export function categorize(name: string | null, merchant: string | null, plaidCategory: string | null): { category: string | null; type: RuleType | null } {
@@ -166,6 +269,14 @@ export function categorize(name: string | null, merchant: string | null, plaidCa
     if (rule.plaid && !rule.plaid.test(plaid)) continue;
     return { category: rule.category, type: rule.type ?? null };
   }
+  // A bare check names no payee: it could be a gift, a distribution or a
+  // 1099 payment, so it waits on Review for a person (it used to file itself
+  // to Other Operating Expenses).
+  if (BARE_CHECK.test((name ?? "").trim()) && (!merchant || BARE_CHECK.test(merchant.trim()))) return { category: null, type: null };
+  // A transfer is "internal" only when the other side is the family's own:
+  // a Mercury payment naming an outside person or business goes to Review
+  // instead of quietly leaving the P&L as an internal transfer.
+  if (/^TRANSFER_(IN|OUT)$/.test(plaid) && namesOutsidePayee(name)) return { category: null, type: null };
   for (const [re, category] of PLAID_FALLBACK) {
     if (re.test(plaid)) return { category, type: null };
   }

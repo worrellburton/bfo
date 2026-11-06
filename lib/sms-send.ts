@@ -1,25 +1,33 @@
 import { birdPlatformFetch, sb } from "./auth.js";
-import { MAX_SEGMENTS, MAX_TEXT, smsSegments, toE164 } from "./sms-compose.js";
+import { HELP_REPLY, keywordOf, MAX_SEGMENTS, MAX_TEXT, optedOutAt, smsSegments, toE164, withStopLine } from "./sms-compose.js";
 import { forOurNumber, textNumber } from "./sms-inbound.js";
 import { scopeIn } from "./sms-setup.js";
 export { SMS_STATUS_EVENTS } from "./sms-setup.js";
 
 /**
- * Texting back from BFO's Bird number, for the Phone page: POST
- * /v1/sms/messages from textNumber() (category "service": a reply to someone
- * who texted the office), then the text kept in public.sms_messages as an
+ * Texting from BFO's Bird number, for the Phone page: POST /v1/sms/messages
+ * from textNumber() (category "service": replies, and people who agreed to
+ * texts from the office), then the text kept in public.sms_messages as an
  * outbound row (direction 'out', id = Bird's sms_id). Bird's delivery
  * receipts (sms.sent, sms.delivered, sms.undelivered, sms.failed,
  * sms.rejected, sms.expired) reach api/mail-webhook.ts, which hands them to
  * applySmsStatus: the message is re-read from Bird by id and its status
  * moved forward, never back.
  *
+ * Before a text goes, the number's history decides: a number whose newest
+ * keyword was STOP isn't texted until it sends START; a number BFO has never
+ * texted with needs the sender to confirm the person agreed to texts, and
+ * that first text ends with "Reply STOP to opt out." A HELP gets the office's
+ * name and how to stop (answerKeyword, for the webhook).
+ *
  * Pure (tested on their own): Bird's refusals and failures in one plain
  * sentence, and which status wins when receipts arrive out of order. The
- * number and segment rules are lib/sms-compose.ts, shared with the browser.
+ * number, segment and keyword rules are lib/sms-compose.ts, shared with the
+ * browser.
  *
- * Called by api/texts.ts (owners and admins) and api/mail-webhook.ts.
- * Needs BIRD_ACCESS_KEY; BIRD_SMS_FROM optional (the number texts go from).
+ * HTTP surface: none. Called by api/texts.ts (owners and admins) and
+ * api/mail-webhook.ts. Needs BIRD_ACCESS_KEY; BIRD_SMS_FROM optional (the
+ * number texts go from).
  */
 
 export { smsSegments, toE164 } from "./sms-compose.js";
@@ -126,25 +134,96 @@ export type SentText = {
   readAt: string;
   status: string;
   error: string | null;
+  /** Who in the office sent it (their name), for "Sent by Jane". */
+  sentBy: string | null;
+  sentById: string | null;
 };
+
+/** The forms a number may be stored in ("+14805551234", "14805551234", "4805551234"), for a PostgREST in.() list. Pure. */
+export function numberForms(e164: string): string[] {
+  const d = e164.replace(/\D/g, "");
+  const forms = new Set([e164, d]);
+  if (/^1\d{10}$/.test(d)) forms.add(d.slice(1));
+  return [...forms];
+}
+
+/** What BFO has exchanged with a number: whether anything at all, and when it opted out (null: it hasn't). */
+export async function historyWith(e164: string): Promise<{ any: boolean; optedOutAt: string | null }> {
+  const list = numberForms(e164)
+    .map((f) => encodeURIComponent(`"${f}"`))
+    .join(",");
+  const rows =
+    (await sb<{ direction: "in" | "out" | null; body: string | null; received_at: string }[] | null>(
+      `sms_messages?or=(from_number.in.(${list}),to_number.in.(${list}))&select=direction,body,received_at&order=received_at.desc&limit=200`,
+    )) ?? [];
+  return { any: rows.length > 0, optedOutAt: optedOutAt(rows.map((r) => ({ direction: r.direction, body: r.body, receivedAt: r.received_at }))) };
+}
 
 /**
  * Sends `text` to `to` from BFO's number and keeps it. `key` (from the Phone
  * page, one per attempt) goes to Bird as the Idempotency-Key, so a retry after
- * a lost answer doesn't send twice. Throws SmsRefused with a plain sentence.
+ * a lost answer doesn't send twice. A number that opted out is refused; a
+ * number BFO has never texted with is refused unless `consent` says the
+ * person agreed to texts, and that first text ends with the STOP line.
+ * Throws SmsRefused with a plain sentence. `first` says it was the first.
  */
-export async function sendText({ to, text, userId, key }: { to: string; text: string; userId: string; key?: string }): Promise<SentText> {
+export async function sendText({
+  to,
+  text,
+  userId,
+  userName = null,
+  key,
+  consent = false,
+}: {
+  to: string;
+  text: string;
+  userId: string;
+  userName?: string | null;
+  key?: string;
+  /** The sender confirmed the person agreed to texts from the office (needed for a first text). */
+  consent?: boolean;
+}): Promise<SentText & { first: boolean }> {
   const from = textNumber();
   const number = toE164(to, from);
   if (!number.ok) throw new SmsRefused("bad_number", number.why, 400);
-  const body = text.trim();
-  if (!body) throw new SmsRefused("empty", "Write something to send.", 400);
-  if (body.length > MAX_TEXT) throw new SmsRefused("too_long", `A text can be at most ${MAX_TEXT} characters.`, 400);
-  if (smsSegments(body).segments > MAX_SEGMENTS) throw new SmsRefused("too_long", `This text is too long: Bird sends at most ${MAX_SEGMENTS} parts. Shorten it and try again.`, 400);
+  const typed = text.trim();
+  if (!typed) throw new SmsRefused("empty", "Write something to send.", 400);
+  if (typed.length > MAX_TEXT) throw new SmsRefused("too_long", `A text can be at most ${MAX_TEXT} characters.`, 400);
 
+  const history = await historyWith(number.e164);
+  if (history.optedOutAt) throw new SmsRefused("opted_out", "They replied STOP, so BFO can't text them until they reply START.", 422);
+  if (!history.any && !consent) throw new SmsRefused("consent_needed", "Confirm they've agreed to texts from the office before the first text.", 422);
+  const first = !history.any;
+  const body = first ? withStopLine(typed) : typed;
+  if (body.length > MAX_TEXT || smsSegments(body).segments > MAX_SEGMENTS)
+    throw new SmsRefused("too_long", `This text is too long: Bird sends at most ${MAX_SEGMENTS} parts. Shorten it and try again.`, 400);
+
+  const sent = await deliver({ to: number.e164, body, key, sentBy: userId });
+  return { ...sent, sentBy: userName, sentById: userId, first };
+}
+
+/**
+ * A text that is a keyword (lib/sms-compose.ts keywordOf), answered as the
+ * carriers expect: HELP gets the office's name and how to stop. STOP and
+ * START are confirmed by the toll-free network itself, so nothing is sent for
+ * them here. Called by api/mail-webhook.ts after it keeps an inbound text.
+ */
+export async function answerKeyword(row: { from_number: string; body: string | null }): Promise<"answered" | "none"> {
+  if (keywordOf(row.body) !== "help") return "none";
+  const number = toE164(row.from_number, textNumber());
+  if (!number.ok) return "none";
+  const history = await historyWith(number.e164);
+  if (history.optedOutAt) return "none";
+  await deliver({ to: number.e164, body: HELP_REPLY, sentBy: null });
+  return "answered";
+}
+
+/** Bird's send and the stored row, shared by a person's text and the HELP answer. */
+async function deliver({ to, body, key, sentBy }: { to: string; body: string; key?: string; sentBy: string | null }): Promise<Omit<SentText, "sentBy" | "sentById">> {
+  const from = textNumber();
   const r = await birdPlatformFetch("/v1/sms/messages", {
     method: "POST",
-    body: { to: number.e164, from, text: body, category: "service" },
+    body: { to, from, text: body, category: "service" },
     ...(key && /^[\w-]{8,80}$/.test(key) ? { headers: { "Idempotency-Key": key } } : {}),
   });
   const answer = await r.text();
@@ -163,14 +242,14 @@ export async function sendText({ to, text, userId, key }: { to: string; text: st
     id: msg.id,
     direction: "out",
     from_number: (msg.from ?? from).slice(0, 40),
-    to_number: (msg.to ?? number.e164).slice(0, 40),
+    to_number: (msg.to ?? to).slice(0, 40),
     body,
     code: null,
     // For an outbound row, when BFO sent it.
     received_at: msg.created_at && !Number.isNaN(Date.parse(msg.created_at)) ? new Date(msg.created_at).toISOString() : now,
     read_at: now,
-    read_by: userId,
-    sent_by: userId,
+    read_by: sentBy,
+    sent_by: sentBy,
     status: msg.status ?? "accepted",
     // Refused at once (a suppressed recipient): the reason is in the 202 already, and its receipt changes nothing.
     error: isFailed(msg.status) ? failureSentence(msg.last_error, msg.status) : null,
