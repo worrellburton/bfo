@@ -5,7 +5,7 @@ import { displayName, entityLabel, ledgerMoney } from "../books-shared";
 import { Banner, Button, Card, Checkbox, Dialog, Disclosure, Icon, IconButton, List, ListRow, Page, PageHeader, Skeleton, cx, format, useDocumentTitle, usePhone } from "../ui";
 
 export function meta() {
-  return [{ title: "Calendar · BFO" }];
+  return [{ title: "Recurring · BFO" }];
 }
 
 type Stream = {
@@ -78,7 +78,7 @@ function daysIn(s: Stream, year: number, month: number): number[] {
  * own accounts are left out unless asked for.
  */
 export default function BooksCalendar() {
-  useDocumentTitle("Calendar");
+  useDocumentTitle("Recurring");
   const phone = usePhone();
   const [streams, setStreams] = useState<Stream[] | null>(null);
   const [error, setError] = useState("");
@@ -139,7 +139,7 @@ export default function BooksCalendar() {
   const regular = (streams ?? []).filter((s) => !s.stale && (own || !s.own_money)).length;
 
   return (
-    <Page width="full" header={<PageHeader title="Calendar" context={`${format.count(regular, "regular payment", "regular payments")} · projected from past payments, not scheduled or approved`} />}>
+    <Page width="full" header={<PageHeader title="Recurring" context={`${format.count(regular, "regular payment", "regular payments")} · projected from past payments, not scheduled or approved`} />}>
       {error && <Banner tone="negative">{error}</Banner>}
       <Card>
         <div className="flex flex-wrap items-center gap-3">
